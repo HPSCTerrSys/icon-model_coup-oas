@@ -143,7 +143,16 @@ MODULE mo_atmo_model
     &                                   art_calc_ntracer_and_names
 #endif
   USE mo_sync,                    ONLY: global_max
-
+#ifdef COUP_OAS_ECLM
+  USE mo_oasis_define
+  USE mo_impl_constants,          ONLY: min_rlcell_int, grf_bdywidth_c
+  USE mo_parallel_config,         ONLY: idx_1d, nproma
+  USE mo_loopindices,             ONLY: get_indices_c
+  USE mo_mpi,                     ONLY: p_comm_work
+  USE mod_oasis,                  ONLY: oasis_abort, oasis_set_couplcomm, oasis_enddef,      &
+                                        oasis_def_partition, oasis_def_var, OASIS_In,        &
+                                        OASIS_Out, OASIS_Real
+#endif
 #ifndef __NO_ICON_COMIN__
   USE comin_host_interface,       ONLY: comin_parallel_mpi_handshake,     &
     &                                   comin_plugin_primaryconstructor,  &
@@ -193,11 +202,170 @@ CONTAINS
     INTEGER  :: maxrss
 #endif
 #endif
+#ifdef COUP_OAS_ECLM
+    INTEGER :: i_startblk, i_endblk, jb, jc, i_startidx, i_endidx, &
+               rl_start, rl_end, c, cc, jg
+    INTEGER :: oas_prt = 6
+#endif
 
     !---------------------------------------------------------------------
     ! construct the atmo model
     CALL construct_atmo_model(atm_namelist_filename,shr_namelist_filename)
 
+#ifdef COUP_OAS_ECLM
+
+    ! local coupling communicator for work processors
+    CALL oasis_set_couplcomm(p_comm_work)
+
+    IF(msg_level >= 30 ) then
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis start' !SPo
+      FLUSH(oas_prt)
+    END IF
+
+    IF (n_dom > 1) CALL oasis_abort(oas_comp_id, &
+      'oas_icon_partition', 'Number of ICON domain > 1 when coupled to CLM.')
+
+!   oas_nlat = p_patch(1)%n_patch_cells_g - cc
+    oas_nlat = p_patch(1)%n_patch_cells_g
+    oas_nlon = 1
+
+    ALLOCATE( oas_part(2+p_patch(1)%n_patch_cells) )
+    oas_part(1) = 4
+!    rl_start = grf_bdywidth_c+1
+!    rl_start = 1
+    rl_start = 1 !max_rlcell
+    rl_end   = min_rlcell_int
+    i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
+    i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
+    c = 0
+    DO jb = i_startblk, i_endblk
+      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
+      DO jc = i_startidx, i_endidx
+        c = c + 1
+        jg = idx_1d(jc,jb)
+!        oas_part(jg+2) = p_patch(1)%cells%decomp_info%glb_index(jg)
+        oas_part(c+2) = p_patch(1)%cells%decomp_info%glb_index(jg)
+      END DO
+    END DO
+    oas_part(2) = c
+
+    IF(msg_level >= 30 ) then !SPo
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis decomp'
+      FLUSH(oas_prt)
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' c = ',c,' oas_nlat=',oas_nlat
+      FLUSH(oas_prt)
+    END IF
+
+    CALL oasis_def_partition(oas_part_id, oas_part, oas_error, oas_nlat*oas_nlon)
+    IF (oas_error /= 0) &
+      CALL oasis_abort(oas_comp_id, oas_comp_name, 'Failure in oasis_def_partition')
+
+    IF(msg_level >= 30 ) then !SPo
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_def_parition finished'
+      FLUSH(oas_prt)
+    END IF
+
+    ! setup partitions for OASIS3-MCT
+    !
+    oas_var_nodims(1) = 1   ! rang of field array
+    oas_var_nodims(2) = 1   ! 'bundle' always 1 in OASIS3-MCT
+    oas_vshape(1)     = 1
+    oas_vshape(2)     = oas_part(2)
+
+    ! define variables for OASIS3-MCT
+    !
+    oas_snd_meta(1)%clpname = "ICOTEMPE"
+    oas_snd_meta(2)%clpname = "ICOUWIND"
+    oas_snd_meta(3)%clpname = "ICOVWIND"
+    oas_snd_meta(4)%clpname = "ICOSPWAT"
+    oas_snd_meta(5)%clpname = "ICOTHICK"
+    oas_snd_meta(6)%clpname = "ICOPRESS"
+    oas_snd_meta(7)%clpname = "ICODIRSW"
+    oas_snd_meta(8)%clpname = "ICODIFSW"
+    oas_snd_meta(9)%clpname = "ICOLONGW"
+    oas_snd_meta(10)%clpname = "ICOCVPRE"
+    oas_snd_meta(11)%clpname = "ICOGSPRE"
+
+    oas_rcv_meta(1)%clpname = "ICOINFRA"
+    oas_rcv_meta(2)%clpname = "ICOALBED"
+    oas_rcv_meta(3)%clpname = "ICOALBEI"
+    oas_rcv_meta(4)%clpname = "ICO_TAUX"
+    oas_rcv_meta(5)%clpname = "ICO_TAUY"
+    oas_rcv_meta(6)%clpname = "ICOSHFLX"
+    oas_rcv_meta(7)%clpname = "ICOLHFLX"
+    oas_rcv_meta(8)%clpname = "ICOTGRND"
+
+
+    DO jg = 1, SIZE(oas_snd_meta)
+      CALL oasis_def_var(oas_snd_meta(jg)%vid, oas_snd_meta(jg)%clpname, oas_part_id, &
+        oas_var_nodims, OASIS_Out, oas_vshape, OASIS_Real, oas_error)
+      IF (oas_error /= 0) THEN
+        CALL message('Failure in oasis_def_var for ', oas_snd_meta(jg)%clpname)
+        CALL oasis_abort(oas_comp_id, oas_comp_name, '')
+      END IF
+    END DO
+    DO jg = 1, SIZE(oas_rcv_meta)
+      CALL oasis_def_var(oas_rcv_meta(jg)%vid, oas_rcv_meta(jg)%clpname, oas_part_id, &
+        oas_var_nodims, OASIS_In, oas_vshape, OASIS_Real, oas_error)
+      IF (oas_error /= 0) THEN
+        CALL message('Failure in oasis_def_var for ', oas_rcv_meta(jg)%clpname)
+        CALL oasis_abort(oas_comp_id, oas_comp_name, '')
+      END IF
+    END DO
+    IF(msg_level >= 30 ) then !SPo
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_def_var finished'
+      FLUSH(oas_prt)
+    END IF
+
+    CALL oasis_enddef(oas_error)
+
+    IF(msg_level >= 30 ) then !SPo
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_enddef finished'
+      FLUSH(oas_prt)
+    END IF
+
+    ! allocate memory for data exchange
+    ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),11), stat=oas_error )
+    IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+      'Failure in allocating icon send buffers' )
+    ALLOCATE( oas_rcv_field(oas_vshape(1):oas_vshape(2),8), stat=oas_error )
+    IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+      'Failure in allocating icon receive buffers' )
+    ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,11), stat=oas_error )
+    IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+      'Failure in allocating icon receive buffers' )
+
+    ! allocate memory and initialize mask
+    ALLOCATE( loas_clm_c(nproma, p_patch(1)%nblks_c), stat=oas_error )
+    IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+      'Failure in allocating icon mask' )
+    loas_clm_c(:,:) = .TRUE.
+
+!    ! set oasis mask
+!    rl_start = 1
+!    rl_end   = min_rlcell_int
+!    i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
+!    i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
+!    DO jb = i_startblk, i_endblk
+!      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
+!        i_endidx, rl_start, rl_end)
+!      DO jc = i_startidx, i_endidx
+!        loas_clm_c(jc,jb) = ext_data(1)%atm%llsm_atm_c(jc,jb) .OR. ext_data(1)%atm%llake_c(jc,jb)
+!!        loas_clm_c(jc,jb) = ext_data(jg)%atm%llsm_atm_c(jc,jb)
+!      END DO
+!    END DO
+
+
+    IF(msg_level >= 30 ) then !SPo
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis allocate buffers'
+      FLUSH(oas_prt)
+    END IF
+
+    ! initialize buffers
+    oas_snd_field = -1000.
+    oas_rcv_field = -1000.
+    oas_rcv_field_icon = -1000.
+#endif
 
     !---------------------------------------------------------------------
     ! constructs the nonhydrostatic atmospheric model
@@ -230,6 +398,14 @@ CONTAINS
     ! 13. Integration finished. Carry out the shared clean-up processes
     !---------------------------------------------------------------------
     CALL destruct_atmo_model ()
+
+#ifdef COUP_OAS_ECLM
+    ! descruct oasis variables
+    DEALLOCATE( oas_snd_field, stat=oas_error )
+    DEALLOCATE( oas_rcv_field, stat=oas_error )
+    DEALLOCATE( oas_rcv_field_icon, stat=oas_error )
+    DEALLOCATE( loas_clm_c, stat=oas_error )
+#endif
 
     !---------------------------------------------------------------------
     ! (optional:) write resident set size from OS

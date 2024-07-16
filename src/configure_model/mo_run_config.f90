@@ -32,6 +32,9 @@ MODULE mo_run_config
   PUBLIC :: luse_radarfwo
   PUBLIC :: radarnmlfile
   PUBLIC :: lvert_nest, num_lev, nshift, nsteps, dtime
+#ifdef COUP_OAS_ECLM
+  PUBLIC :: jstep0                    ! non-namelist variables
+#endif
   PUBLIC :: ltimer, timers_level, activate_sync_timers, msg_level
   PUBLIC :: iqv, iqc, iqi, iqs, iqr, nqtendphy, iqt, ico2, ich4, in2o, io3
   PUBLIC :: iqni, iqg, iqm_max
@@ -72,6 +75,9 @@ MODULE mo_run_config
 
     INTEGER :: nsteps          !< number of time steps to integrate
     REAL(wp):: dtime           !< [s] length of a time step
+#ifdef COUP_OAS_ECLM
+    INTEGER :: jstep0          !< restart time step
+#endif
     
     LOGICAL :: ltimer          !< if .TRUE.,  the timer is switched on
     INTEGER :: timers_level    !< what level of timers to run

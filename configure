@@ -748,6 +748,7 @@ enable_jsbach_hd
 enable_quincy
 enable_waves
 enable_coupling
+enable_oascoupling
 enable_aes
 enable_nwp
 enable_ecrad
@@ -1532,6 +1533,7 @@ Model Features:
   --enable-waves          enable the ocean surface wave component of ICON
                           [default=no]
   --enable-coupling       enable the coupling [default=yes]
+  --enable-oascoupling    enable the oasis coupling [default=no]
   --enable-aes            enable the AES physics package [default=yes]
   --enable-nwp            enable the NWP physics package [default=yes]
   --enable-ecrad          enable usage of the ECMWF radiation scheme (ECRAD)
@@ -3102,6 +3104,14 @@ else
   enable_coupling=yes
 fi
 
+# Check whether --enable-oascoupling was given.
+if test "${enable_oascoupling+set}" = set; then :
+  enableval=$enable_oascoupling; if test x"$enableval" != xno; then :
+  enable_oascoupling=yes
+fi
+else
+  enable_oascoupling=no
+fi
 
 # Check whether --enable-aes was given.
 if test "${enable_aes+set}" = set; then :
@@ -5654,6 +5664,10 @@ fi
 
 if test "x$enable_coupling" = xyes; then :
   as_fn_append FCFLAGS " ${FC_PP_DEF}YAC_coupling"
+fi
+
+if test "x$enable_oascoupling" = xyes; then :
+  as_fn_append FCFLAGS " ${FC_PP_DEF}COUP_OAS_ECLM"
 fi
 
 if test "x$enable_aes" = xno; then :

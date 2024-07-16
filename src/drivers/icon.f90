@@ -65,6 +65,10 @@ PROGRAM icon
   USE mo_icon_output_model, ONLY: icon_output_driver
 #endif
 
+#ifdef COUP_OAS_ECLM
+  USE mo_oasis_define
+#endif
+
 #if defined ICON_MEMORY_TRACING
 #  if ICON_MEMORY_TRACING == 1
   USE mo_mtrace,            ONLY: start_memory_tracing

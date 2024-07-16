@@ -200,6 +200,10 @@ MODULE mo_name_list_output
   USE mo_intp_lonlat_types,         ONLY: lonlat_grids
 #endif
   USE mo_fortran_tools,             ONLY: insert_dimension, init, set_acc_host_or_device
+#ifdef COUP_OAS_ECLM
+  USE mo_mpi,                       ONLY: mpi_comm_null
+  USE mod_oasis,                    ONLY: oasis_set_couplcomm, oasis_enddef
+#endif
 
   IMPLICIT NONE
 
@@ -2771,6 +2775,9 @@ CONTAINS
     LOGICAL             :: l_complete, lhas_output, &
       &                    lset_timers_for_idle_pe, is_io_root
     INTEGER             :: jg, jstep, action
+#ifdef COUP_OAS_ECLM
+    INTEGER             :: oas_error
+#endif
     TYPE(t_par_output_event), POINTER :: ev
     LOGICAL             :: is_ocean
 
@@ -2795,6 +2802,10 @@ CONTAINS
       CALL construct_dummy_coupling("name_list_output")
       CALL timer_stop(timer_coupling)
     END IF
+#ifdef COUP_OAS_ECLM
+    CALL oasis_set_couplcomm(mpi_comm_null)
+    CALL oasis_enddef(oas_error)
+#endif
 
     ! FIXME: Explain this braindead weirdnes.
     IF (is_ocean) &

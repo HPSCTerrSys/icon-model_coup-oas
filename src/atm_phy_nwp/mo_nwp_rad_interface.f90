@@ -63,6 +63,11 @@ MODULE mo_nwp_rad_interface
   USE mo_nwp_aerosol,          ONLY: nwp_aerosol_interface, nwp_aerosol_cleanup
   USE mo_fortran_tools,        ONLY: set_acc_host_or_device
   USE mo_run_config,           ONLY: msg_level
+#ifdef COUP_OAS_ECLM
+  USE mo_oasis_define,         ONLY: oas_rcv_field_icon, loas_clm_c
+  USE mo_impl_constants,       ONLY: min_rlcell_int
+  USE mo_loopindices,          ONLY: get_indices_c
+#endif
 
   IMPLICIT NONE
 
@@ -134,6 +139,14 @@ MODULE mo_nwp_rad_interface
     REAL(wp):: zsct                    ! solar constant (at time of year)
     REAL(wp):: dsec                    ! [s] time increment of radiative transfer wrt. datetime
 
+
+#ifdef COUP_OAS_ECLM
+!SPo check
+    INTEGER :: jb, jc          !< loop indices
+    INTEGER :: rl_start, rl_end
+    INTEGER :: i_startblk, i_endblk    !> blocks
+    INTEGER :: i_startidx, i_endidx    !< slices
+#endif
     LOGICAL :: is_new_day
     LOGICAL :: is_new_month
 
@@ -261,6 +274,27 @@ MODULE mo_nwp_rad_interface
       ! albedo based on tabulated bare soil values
       CALL sfc_albedo(pt_patch, ext_data, lnd_prog, wtr_prog, lnd_diag, prm_diag, lzacc)
     ENDIF
+#ifdef COUP_OAS_ECLM
+    ! for masked points run full albedo calculation; should be revised in future
+!    rl_start = grf_bdywidth_c+1
+    rl_start = 1
+    rl_end   = min_rlcell_int
+    i_startblk = pt_patch%cells%start_blk(rl_start, 1)
+    i_endblk   = pt_patch%cells%end_blk(rl_end,MAX(1,pt_patch%n_childdom))
+    DO jb = i_startblk, i_endblk
+      CALL get_indices_c(pt_patch, jb, i_startblk, i_endblk, i_startidx, &
+        i_endidx, rl_start, rl_end)
+      DO jc = i_startidx, i_endidx
+        IF ( loas_clm_c(jc,jb) ) THEN
+          prm_diag%albdif(jc,jb) = oas_rcv_field_icon(jc,jb,2)
+          prm_diag%albvisdif(jc,jb) = prm_diag%albdif(jc,jb)
+          prm_diag%albnirdif(jc,jb) = prm_diag%albdif(jc,jb)
+          prm_diag%albnirdir(jc,jb) = oas_rcv_field_icon(jc,jb,3)
+          prm_diag%albvisdir(jc,jb) = prm_diag%albnirdir(jc,jb)
+        END IF
+      END DO
+    END DO
+#endif
 
     IF (timers_level > 6) CALL timer_stop(timer_preradiaton)
     

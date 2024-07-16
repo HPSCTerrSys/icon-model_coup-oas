@@ -31,6 +31,10 @@ MODULE mo_restart
     &                                destruct_dummy_coupling
   USE mo_timer, ONLY: print_timer, timer_start, timer_stop, timer_model_init, &
     &                 ltimer, timer_coupling
+#ifdef COUP_OAS_ECLM
+  USE mo_mpi, ONLY: mpi_comm_null
+  USE mod_oasis, ONLY: oasis_set_couplcomm, oasis_enddef
+#endif
 
   IMPLICIT NONE
   PRIVATE
@@ -89,6 +93,9 @@ CONTAINS
   SUBROUTINE detachRestartProcs(timer_started)
     LOGICAL, INTENT(IN) :: timer_started
     INTEGER :: restartModule
+#ifdef COUP_OAS_ECLM
+    INTEGER :: oas_error
+#endif
     CHARACTER(*), PARAMETER :: routine = modname//":detachRestartProcs"
 
     IF(process_mpi_restart_size <= 0) RETURN    ! no dedicated restart processes configured -> noop
@@ -104,6 +111,10 @@ CONTAINS
       CALL construct_dummy_coupling ( "restart" )
       IF (ltimer) CALL timer_stop(timer_coupling)
     END IF
+#ifdef COUP_OAS_ECLM
+    CALL oasis_set_couplcomm(mpi_comm_null)
+    CALL oasis_enddef(oas_error)
+#endif
     IF (timer_started) CALL timer_stop(timer_model_init)
     CALL restartWritingParameters(opt_restartModule = restartModule)
     SELECT CASE(restartModule)

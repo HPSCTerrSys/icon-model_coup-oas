@@ -231,6 +231,9 @@ MODULE mo_async_latbc
   USE mo_timer,                     ONLY: ltimer, timer_start, timer_stop, &
     &                                     timer_coupling
   USE mo_coupling_config,           ONLY: is_coupled_run
+#ifdef COUP_OAS_ECLM
+  USE mod_oasis,                    ONLY: oasis_set_couplcomm, oasis_enddef
+#endif
   USE mo_dummy_coupling_frame,      ONLY: construct_dummy_coupling, &
     &                                     destruct_dummy_coupling
 
@@ -289,6 +292,9 @@ CONTAINS
     LOGICAL                 :: done
     TYPE(t_latbc_data)      :: latbc
     TYPE(datetime)          :: latbc_read_datetime
+#ifdef COUP_OAS_ECLM
+    INTEGER :: oas_error
+#endif
 
     ! call to initalize the prefetch processor with grid data
     CALL init_prefetch(latbc)
@@ -298,6 +304,10 @@ CONTAINS
     ! construct_io_coupling needs to be called before init_name_list_output
     ! due to calling sequence in subroutine atmo_model for other atmosphere
     ! processes
+#ifdef COUP_OAS_ECLM
+    CALL oasis_set_couplcomm(mpi_comm_null)
+    CALL oasis_enddef(oas_error)
+#endif
     IF ( is_coupled_run() ) THEN
       IF (ltimer) CALL timer_start(timer_coupling)
       CALL construct_dummy_coupling("async_latbc")

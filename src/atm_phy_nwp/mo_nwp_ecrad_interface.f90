@@ -79,7 +79,9 @@ MODULE mo_nwp_ecrad_interface
                                    &   ecrad_store_fluxes, add_3D_diffuse_rad,   &
                                    &   get_indices_rad_subblock
 #endif
-
+#ifdef COUP_OAS_ECLM
+  USE mo_oasis_define,           ONLY: oas_rcv_field_icon, loas_clm_c
+#endif
 
   IMPLICIT NONE
 
@@ -320,9 +322,20 @@ CONTAINS
 
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR
+#ifdef COUP_OAS_ECLM
+!      prm_diag%tsfctrad(i_startidx:i_endidx,jb) = oas_rcv_field_icon(i_startidx:i_endidx,jb,1)
+      DO jc = i_startidx, i_endidx
+        IF ( loas_clm_c(jc,jb) ) THEN
+          prm_diag%tsfctrad(jc,jb) = oas_rcv_field_icon(jc,jb,1)
+        ELSE
+          prm_diag%tsfctrad(jc,jb) = lnd_prog%t_g(jc,jb)
+        END IF
+      ENDDO
+#else
         do jc = i_startidx_sub, i_endidx_sub
           prm_diag%tsfctrad(jc,jb) = lnd_prog%t_g(jc,jb)
         end do
+#endif
         !$ACC END PARALLEL
 
         !$ACC DATA PRESENT(cosmu0mask)
@@ -942,9 +955,19 @@ CONTAINS
         &                       i_startidx, i_endidx, rl_start, rl_end)
 
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1)
+#ifdef COUP_OAS_ECLM
+      DO jc = i_startidx, i_endidx
+        IF ( loas_clm_c(jc,jb) ) THEN
+          prm_diag%tsfctrad(jc,jb) = oas_rcv_field_icon(jc,jb,1)
+        ELSE
+          prm_diag%tsfctrad(jc,jb) = lnd_prog%t_g(jc,jb)
+        END IF
+      ENDDO
+#else
       DO jc = i_startidx, i_endidx
         prm_diag%tsfctrad(jc,jb) = lnd_prog%t_g(jc,jb)
       ENDDO ! jc
+#endif
       !$ACC END PARALLEL LOOP
     ENDDO ! jb
 !$OMP END DO NOWAIT

@@ -988,6 +988,7 @@ SUBROUTINE nwp_turbtrans  ( tcall_turb_jg,                     & !>in
 !> GME turbulence scheme
 !-------------------------------------------------------------------------
 
+#ifndef COUP_OAS_ECLM
       ! turbulent diffusion coefficients at the surface
       CALL parturs( zsurf=p_metrics%z_ifc(:,nlevp1,jb), z1=p_metrics%z_mc(:,nlev,jb),   & !in
         &           u1=p_diag%u(:,nlev,jb), v1=p_diag%v(:,nlev,jb),                     & !in
@@ -1001,6 +1002,7 @@ SUBROUTINE nwp_turbtrans  ( tcall_turb_jg,                     & !>in
         &           lhfl_s=prm_diag%lhfl_s(:,jb), qhfl_s=prm_diag%qhfl_s(:,jb),         & !out, out
         &           umfl_s=prm_diag%umfl_s(:,jb), vmfl_s=prm_diag%vmfl_s(:,jb),         & !out, out
         &           lacc=lzacc                                                          ) !in
+#endif
 
 
       !DR inside "nearsfc", lhfl_s is converted to qhfl_s via

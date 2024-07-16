@@ -163,6 +163,12 @@ AC_ARG_ENABLE([coupling],
   [AS_IF([test x"$enableval" != xno], [enable_coupling=yes])],
   [enable_coupling=yes])
 
+AC_ARG_ENABLE([oascoupling],
+  [AS_HELP_STRING([--enable-oascoupling],
+     [enable the oasis coupling @<:@default=no@:>@])],
+  [AS_IF([test x"$enableval" != xno], [enable_oascoupling=yes])],
+  [enable_oascoupling=no])
+
 AC_ARG_ENABLE([aes],
   [AS_HELP_STRING([--enable-aes],
      [enable the AES physics package @<:@default=yes@:>@])],
@@ -870,6 +876,9 @@ AS_VAR_IF([enable_waves], [no],
 
 AS_VAR_IF([enable_coupling], [yes],
   [AS_VAR_APPEND([FCFLAGS], [" ${FC_PP_DEF}YAC_coupling"])])
+
+AS_VAR_IF([enable_oascoupling], [yes],
+  [AS_VAR_APPEND([FCFLAGS], [" ${FC_PP_DEF}COUP_OAS_ECLM"])])
 
 AS_VAR_IF([enable_aes], [no],
   [AS_VAR_APPEND([FCFLAGS], [" ${FC_PP_DEF}__NO_AES__"])])
