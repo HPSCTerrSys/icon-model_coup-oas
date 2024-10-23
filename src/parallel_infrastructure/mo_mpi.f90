@@ -266,6 +266,10 @@ MODULE mo_mpi
 #endif
   USE mo_exception,           ONLY: init_logger
 
+#ifdef COUP_OAS_ECLM
+  USE mo_oasis_define
+#endif
+
 #ifndef __NO_ICON_COMIN__
   USE comin_host_interface,   ONLY: comin_callback_context_call,  &
     &                               EP_FINISH, COMIN_DOMAIN_OUTSIDE_LOOP
@@ -2465,6 +2469,17 @@ CONTAINS
 #else
     CALL MPI_INIT (p_error)
 #endif
+
+#ifdef COUP_OAS_ECLM
+    ! init OASIS coupler
+    CALL oasis_init_comp(oas_comp_id, oas_comp_name, oas_error)
+    IF (oas_error /= 0) &
+      CALL oasis_abort(oas_comp_id, 'oas_icon_init', 'Failure in oasis_init')
+    CALL oasis_get_localcomm(kl_comm, oas_error)
+    IF (oas_error /= 0) &
+      CALL oasis_abort(oas_comp_id, 'oas_icon_init', 'Failure in oasis_get_localcomm')
+#endif
+
     IF (p_error /= MPI_SUCCESS) THEN
        WRITE (nerr,'(a,a)') routine, ' MPI_INIT failed.'
        WRITE (nerr,'(a,i4)') ' Error =  ', p_error
@@ -2510,6 +2525,11 @@ CONTAINS
 #endif
     END IF
 
+#ifdef COUP_OAS_ECLM
+    CALL MPI_COMM_DUP (kl_comm, global_mpi_communicator, p_error)
+!    WRITE (nerr,'(a,a)') routine, ' DEBUG: MPI_COMM_DUP'
+#endif
+
     ! generate icon, comin, and yac communicator (if appropriate)
 #if !defined __NO_ICON_COMIN__ && defined YAC_coupling
     CALL set_mpi_global_communicators( &
@@ -2529,6 +2549,9 @@ CONTAINS
     ELSE
       yname = '(unnamed)'
     END IF
+#ifdef COUP_OAS_ECLM
+    yname = TRIM("icon_COUPLED")
+#endif
     global_mpi_name = yname
 
 
@@ -2797,6 +2820,11 @@ CONTAINS
     ! to prevent abort due to unfinished communication
     CALL p_barrier(process_mpi_all_comm)
 
+#ifdef COUP_OAS_ECLM
+    CALL oasis_terminate(oas_error)
+    IF (oas_error /= 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+      'Failure in oasis_terminate')
+#endif
     CALL MPI_FINALIZE (p_error)
 
     IF (p_error /= MPI_SUCCESS) THEN
@@ -2829,7 +2857,11 @@ CONTAINS
 #endif
 
 #ifndef NOMPI
+#ifdef COUP_OAS_ECLM
+    CALL oasis_abort(oas_comp_id, oas_comp_name, 'Abort mpi through oasis')
+#else
     CALL MPI_ABORT (MPI_COMM_WORLD, 1, p_error)
+#endif
 
     IF (p_error /= MPI_SUCCESS) THEN
        WRITE (nerr,'(a)') ' MPI_ABORT failed.'
