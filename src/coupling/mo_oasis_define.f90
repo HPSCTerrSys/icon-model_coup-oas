@@ -12,6 +12,7 @@ INTEGER               :: oas_comp_id
 CHARACTER(len=4)      :: oas_comp_name="icon"
 INTEGER               :: kl_comm              ! local communicator 
 INTEGER               :: oas_error            ! return error code
+LOGICAL               :: lpe_cpl = .FALSE.
 INTEGER               :: oas_nlat
 INTEGER               :: oas_nlon
 INTEGER               :: oas_var_nodims(2)
