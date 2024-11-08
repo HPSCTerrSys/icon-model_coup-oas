@@ -336,7 +336,7 @@ MODULE mo_nh_stepping
     LOGICAL                              :: l_exist
 #ifdef COUP_OAS_ECLM
     INTEGER    :: rl_start, rl_end, i_startblk, i_endblk, jb, jc, &
-                & i_startidx, i_endidx, ii, oas_i
+                & i_startidx, i_endidx, ii, oas_i, isnd
     CHARACTER(len=1024)     :: oas_message
     INTEGER                 :: oas_prt = 6
 #endif
@@ -526,7 +526,8 @@ MODULE mo_nh_stepping
     END IF
 
     ! set oasis mask
-    rl_start = 1
+!    rl_start = 1
+    rl_start = grf_bdywidth_c+1
     rl_end   = min_rlcell_int
     i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
     i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
@@ -548,16 +549,18 @@ MODULE mo_nh_stepping
     oas_snd_field(:,7) = 0._wp
     oas_snd_field(:,8) = 0._wp
 
-!    rl_start = grf_bdywidth_c+1
-    rl_start = 1
+    rl_start = grf_bdywidth_c+1
     rl_end   = min_rlcell_int
     i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
     i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
+    ii = 0
     DO jb = i_startblk, i_endblk
-      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, &
+      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
         i_endidx, rl_start, rl_end)
       DO jc = i_startidx, i_endidx
-        ii = idx_1d(jc,jb)
+        ii = ii+1
+!        WRITE(oas_message,*) 'DEBUG SPo swflx_dn_sfc_diff  ',ii, ' at 0: ', MAX(0._wp, prm_diag(1)%swflxsfc(jc,jb) - prm_diag(1)%swflx_dn_sfc_diff(jc,jb))
+!        CALL message(routine, oas_message)
         oas_snd_field(ii,1)  = p_nh_state(1)%diag%temp(jc,p_patch(1)%nlev,jb)
         oas_snd_field(ii,2)  = p_nh_state(1)%diag%u(jc,p_patch(1)%nlev,jb)
         oas_snd_field(ii,3)  = p_nh_state(1)%diag%v(jc,p_patch(1)%nlev,jb)
@@ -574,13 +577,18 @@ MODULE mo_nh_stepping
         ! prm_diag(1)%hail_gsp_rate(jc,jb)
       END DO
     END DO
-    DO ii = 1, SIZE(oas_snd_meta)
-      WRITE(oas_message,*) 'Init sending  ', oas_snd_meta(ii)%clpname, ' at 0: ', &
-        MINVAL(oas_snd_field(:,ii)), MAXVAL(oas_snd_field(:,ii))
+    DO isnd = 1, SIZE(oas_snd_meta)
+      WRITE(oas_message,*) 'Init sending  ', oas_snd_meta(isnd)%clpname, ' at 0: ', &
+        MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
+    END DO
+
+    DO isnd = 1, SIZE(oas_snd_meta)
+      WRITE(oas_message,*) 'Init sending  ', oas_snd_meta(isnd)%clpname, ' at 0: ', &
+        MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
       CALL message(routine, oas_message)
-      CALL oasis_put(oas_snd_meta(ii)%vid, 0, oas_snd_field(:,ii), oas_error)
+      CALL oasis_put(oas_snd_meta(isnd)%vid, 0, oas_snd_field(:,isnd), oas_error)
       IF (oas_error .NE. OASIS_Ok .AND. oas_error .LT. OASIS_Sent) THEN
-        WRITE(oas_message,*) 'Init failure in oasis_put of ', oas_snd_meta(ii)%clpname
+        WRITE(oas_message,*) 'Init failure in oasis_put of ', oas_snd_meta(isnd)%clpname
         CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
       END IF
     END DO
@@ -591,8 +599,6 @@ MODULE mo_nh_stepping
     END IF
 
     DO oas_i = 1, SIZE(oas_rcv_meta)
-!      WRITE(oas_message,*) 'Init receiving  ', oas_rcv_meta(oas_i)%clpname,  " at t-1"
-!      CALL message(routine, oas_message)
       CALL oasis_get(oas_rcv_meta(oas_i)%vid, 0, oas_rcv_field(:,oas_i), oas_error)
       WRITE(oas_message,*) 'Init received  ', oas_rcv_meta(oas_i)%clpname, ' at t=0', &
           MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
@@ -602,29 +608,23 @@ MODULE mo_nh_stepping
         CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
       END IF
      ! transform thru oasis recieved variable into something icon can use
-      !
-      !DO jb = 1, p_patch(jg)%nblks_c
-      !  DO jc = 
-      !    glb_idx_1d = p_patch(jg)%cells%decomp_info%glb_index(idx_1d(jc,jb))
-      !    oas_rcv_field(jc,jb) = oas_rcv_field(oas_i,glb_idx_1d)
-      !  END DO
-      !END DO
 
       IF(msg_level > 30 ) THEN
         WRITE(oas_message,*) "ICONOAS: Init icon transforming received vars"
         CALL message(routine, oas_message)
       END IF
 
-!      rl_start = grf_bdywidth_c+1
-      rl_start = 1
+      rl_start = grf_bdywidth_c+1
       rl_end   = min_rlcell_int
       i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
       i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
+      ii = 0
       DO jb = i_startblk, i_endblk
         CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
           i_endidx, rl_start, rl_end)
         DO jc = i_startidx, i_endidx
-          ii = idx_1d(jc,jb)
+!          ii = idx_1d(jc,jb)
+          ii = ii + 1
           oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
         END DO
       END DO
@@ -1988,7 +1988,7 @@ MODULE mo_nh_stepping
 #ifdef COUP_OAS_ECLM
     INTEGER                              :: sim_time_oas, oas_i
     CHARACTER(len=128)                   :: oas_message
-    INTEGER :: ii, jc, jb
+    INTEGER :: ii, jc, jb, isnd
     INTEGER :: rl_start, rl_end, i_startblk, i_endblk, i_startidx, i_endidx, nlev
 #endif
     TYPE(t_pi_atm), POINTER :: ptr_latbc_data_atm_old, ptr_latbc_data_atm_new
@@ -2137,7 +2137,6 @@ MODULE mo_nh_stepping
 
     ! coupling counter (org in tenth of sec)
 !    sim_time_oas = FLOOR(sim_time * 10.)
-!     sim_time_oas = NINT(sim_time)
     sim_time_oas = NINT(sim_time - jstep0 * dt_loc)
 
     !CALL diagnose_pres_temp (p_metrics, pt_prog, pt_prog_rcf,   &
@@ -2165,16 +2164,17 @@ MODULE mo_nh_stepping
     oas_snd_field(:,7) = 0._wp
     oas_snd_field(:,8) = 0._wp
 
-!    rl_start = grf_bdywidth_c+1
-    rl_start = 1
+    rl_start = grf_bdywidth_c+1
     rl_end   = min_rlcell_int
     i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
     i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
+    ii=0
     DO jb = i_startblk, i_endblk
       CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, &
         i_endidx, rl_start, rl_end)
       DO jc = i_startidx, i_endidx
-        ii = idx_1d(jc,jb)
+!        ii = idx_1d(jc,jb)
+        ii = ii+1
         oas_snd_field(ii,1)  = p_nh_state(1)%diag%temp(jc,nlev,jb)
         oas_snd_field(ii,2)  = p_nh_state(1)%diag%u(jc,nlev,jb)
         oas_snd_field(ii,3)  = p_nh_state(1)%diag%v(jc,nlev,jb)
@@ -2192,15 +2192,15 @@ MODULE mo_nh_stepping
       END DO
     END DO
 
-    DO ii = 1, SIZE(oas_snd_meta)
-      CALL oasis_put(oas_snd_meta(ii)%vid, sim_time_oas, oas_snd_field(:,ii), oas_error)
+    DO isnd = 1, SIZE(oas_snd_meta)
+      CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_snd_field(:,isnd), oas_error)
       IF(msg_level >= 14 ) THEN
-        WRITE(oas_message,*) 'ICONOAS: Sending  ', oas_snd_meta(ii)%clpname, ' at ',sim_time_oas,' ', &
-                MINVAL(oas_snd_field(:,ii)), MAXVAL(oas_snd_field(:,ii))
+        WRITE(oas_message,*) 'ICONOAS: Sending  ', oas_snd_meta(isnd)%clpname, ' at ',sim_time_oas,' ', &
+                MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
         CALL message(routine, oas_message)
       END IF
       IF (oas_error .NE. OASIS_Ok .AND. oas_error .LT. OASIS_Sent) THEN
-        WRITE(oas_message,*) 'Failure in oasis_put of ', oas_snd_meta(ii)%clpname
+        WRITE(oas_message,*) 'Failure in oasis_put of ', oas_snd_meta(isnd)%clpname
         CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
       END IF
     END DO
@@ -2230,28 +2230,22 @@ MODULE mo_nh_stepping
       END IF
       ! transform thru oasis recieved variable into something icon can use
       !
-      !DO jb = 1, p_patch(jg)%nblks_c
-      !  DO jc = 
-      !    glb_idx_1d = p_patch(jg)%cells%decomp_info%glb_index(idx_1d(jc,jb))
-      !    oas_rcv_field(jc,jb) = oas_rcv_field(oas_i,glb_idx_1d)
-      !  END DO
-      !END DO
-
       IF(msg_level > 30 ) THEN
         WRITE(oas_message,*) "ICONOAS: icon transforming received vars"
         CALL message(routine, oas_message)
       END IF
 
       rl_start = grf_bdywidth_c+1
-      rl_start = 1
       rl_end   = min_rlcell_int
       i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
       i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
+      ii =0
       DO jb = i_startblk, i_endblk
         CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
           i_endidx, rl_start, rl_end)
         DO jc = i_startidx, i_endidx
-          ii = idx_1d(jc,jb)
+!          ii = idx_1d(jc,jb)
+          ii = ii +1
           oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
         END DO
       END DO

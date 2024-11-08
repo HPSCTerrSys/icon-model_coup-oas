@@ -65,6 +65,7 @@ MODULE mo_nwp_rad_interface
   USE mo_run_config,           ONLY: msg_level
 #ifdef COUP_OAS_ECLM
   USE mo_oasis_define,         ONLY: oas_rcv_field_icon, loas_clm_c
+  USE mo_impl_constants_grf,   ONLY: grf_bdywidth_c
   USE mo_impl_constants,       ONLY: min_rlcell_int
   USE mo_loopindices,          ONLY: get_indices_c
 #endif
@@ -276,8 +277,8 @@ MODULE mo_nwp_rad_interface
     ENDIF
 #ifdef COUP_OAS_ECLM
     ! for masked points run full albedo calculation; should be revised in future
-!    rl_start = grf_bdywidth_c+1
-    rl_start = 1
+    rl_start = grf_bdywidth_c+1
+!    rl_start = 1
     rl_end   = min_rlcell_int
     i_startblk = pt_patch%cells%start_blk(rl_start, 1)
     i_endblk   = pt_patch%cells%end_blk(rl_end,MAX(1,pt_patch%n_childdom))

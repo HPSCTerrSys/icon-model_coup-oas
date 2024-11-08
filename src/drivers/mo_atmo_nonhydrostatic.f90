@@ -202,7 +202,7 @@ USE mo_icon2dace,           ONLY: init_dace, finish_dace
   USE mo_impl_constants,          ONLY: min_rlcell_int, grf_bdywidth_c
   USE mo_parallel_config,         ONLY: idx_1d, nproma
   USE mo_loopindices,             ONLY: get_indices_c
-  USE mo_mpi,                     ONLY: p_pe_work, p_comm_work_only, mpi_comm_null !p_comm_work
+  USE mo_mpi,                     ONLY: p_pe_work, p_comm_work_only, mpi_comm_null, p_sum !p_comm_work
   USE mod_oasis,                  ONLY: oasis_abort, oasis_set_couplcomm, oasis_enddef,      &
                                         oasis_def_partition, oasis_def_var, OASIS_In,        &
                                         OASIS_Out, OASIS_Real
@@ -233,7 +233,7 @@ CONTAINS
 
 #ifdef COUP_OAS_ECLM
     INTEGER :: i_startblk, i_endblk, jb, jc, i_startidx, i_endidx, &
-               rl_start, rl_end, c, cc, jg
+               rl_start, rl_end, c, cc, cl, jg, ic
     INTEGER :: oas_prt = 6
 #endif
 
@@ -274,29 +274,46 @@ CONTAINS
       'oas_icon_partition', 'Number of ICON domain > 1 when coupled to CLM.')
 
    IF ( lpe_cpl ) THEN
-!   oas_nlat = p_patch(1)%n_patch_cells_g - cc
-    oas_nlat = p_patch(1)%n_patch_cells_g
-    oas_nlon = 1
 
-    ALLOCATE( oas_part(2+p_patch(1)%n_patch_cells) )
-    oas_part(1) = 4
-!    rl_start = grf_bdywidth_c+1
-!    rl_start = 1
-    rl_start = 1 !max_rlcell
+    rl_start = grf_bdywidth_c+1
     rl_end   = min_rlcell_int
     i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
     i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
+
+    ! (1) calculate length of oas_part on current proc
+    c = 0
+    DO jb = i_startblk, i_endblk
+      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
+      c = c + i_endidx - i_startidx + 1
+    END DO
+    ALLOCATE( oas_part(c+2) )
+    oas_part(1) = 4 ! 4: POINTS partitioning
+    oas_part(2) = c ! number of points in the partition
+
+    cc = p_sum(oas_part(2), comm=p_comm_work_only) ! number of points active in coupling
+    cl = p_patch(1)%n_patch_cells_g - cc           ! number of points lateral boundaries
+
+    IF(msg_level >= 10 ) then
+       WRITE(oas_prt,*) 'iconoas: number of total grid points active in coupling cc ',cc,' number of lat. bound. points ',cl
+       FLUSH(oas_prt)
+    END IF
+
+    ! (2) fill the partition with the cell indices
     c = 0
     DO jb = i_startblk, i_endblk
       CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
       DO jc = i_startidx, i_endidx
         c = c + 1
-        jg = idx_1d(jc,jb)
-!        oas_part(jg+2) = p_patch(1)%cells%decomp_info%glb_index(jg)
-        oas_part(c+2) = p_patch(1)%cells%decomp_info%glb_index(jg)
+        ic = idx_1d(jc,jb)
+!        WRITE(oas_prt,*) 'DEBUG SPo idx_1d ',ic, ' glb_index-9944: ', p_patch(1)%cells%decomp_info%glb_index(ic)-cl
+!        FLUSH(oas_prt)
+        oas_part(c+2) = p_patch(1)%cells%decomp_info%glb_index(ic)-cl ! shift global index for coupling
       END DO
     END DO
-    oas_part(2) = c
+
+!    oas_nlat = p_patch(1)%n_patch_cells_g
+    oas_nlat = cc
+    oas_nlon = 1
 
     IF(msg_level >= 30 ) then !SPo
       WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis decomp'
@@ -420,9 +437,9 @@ CONTAINS
     END IF
 
     ! initialize buffers
-    oas_snd_field = -1000.
-    oas_rcv_field = -1000.
-    oas_rcv_field_icon = -1000.
+    oas_snd_field = -1000._wp
+    oas_rcv_field = -1000._wp
+    oas_rcv_field_icon = -1000._wp
 
    END IF ! lpe_cpl
 #endif
