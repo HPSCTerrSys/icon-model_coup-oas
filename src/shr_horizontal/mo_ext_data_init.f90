@@ -265,8 +265,8 @@ CONTAINS
 
         ELSE
           DO jg = 1, n_dom
-            ext_data(jg)%atm%fr_land(:,:)     = 0._wp       ! land fraction
-            ext_data(jg)%atm%llsm_atm_c(:,:)  = .FALSE.     ! land-sea mask
+            ext_data(jg)%atm%fr_land(:,:)     = 1._wp       ! land fraction
+            ext_data(jg)%atm%llsm_atm_c(:,:)  = .TRUE.     ! land-sea mask
             ext_data(jg)%atm%llake_c(:,:)     = .FALSE.     ! lake mask
 !
             ext_data(jg)%atm%urb_isa(:,:)     = 0._wp       ! impervious surface area fraction of the urban canopy
@@ -289,28 +289,30 @@ CONTAINS
             ext_data(jg)%atm%rootdp(:,:)      = 1._wp       ! root depth
             ext_data(jg)%atm%skinc(:,:)       = 30._wp      ! skin conductivity
             ext_data(jg)%atm%rsmin(:,:)       = 150._wp     ! minimal stomata resistence
-            ext_data(jg)%atm%soiltyp(:,:)     = 8           ! soil type
-            ext_data(jg)%atm%z0(:,:)          = 0.001_wp    ! roughness length
+            ext_data(jg)%atm%soiltyp(:,:)     = 4           ! soil type
+            ext_data(jg)%atm%z0(:,:)          = 0.1_wp      ! roughness length
             ext_data(jg)%atm%topography_c(:,:)= 0.0_wp      ! topographic height
             i_lctype(jg) = GLOBCOVER2009
-  
+            ext_data(jg)%atm%lu_class_fraction(:,:,:) = 0._wp ! lu_class to zero with
+            ext_data(jg)%atm%lu_class_fraction(:,:,1) = 1._wp ! exception of one lu class
+
             !Special setup for tiles
-            ext_data(jg)%atm%soiltyp_t(:,:,:) = 8           ! soil type
+            ext_data(jg)%atm%soiltyp_t(:,:,:) = 4           ! soil type
             ext_data(jg)%atm%frac_t(:,:,:)    = 0._wp       ! set all tiles to 0
-            ext_data(jg)%atm%frac_t(:,:,isub_water) = 1._wp ! set only ocean to 1
-            ext_data(jg)%atm%lc_class_t(:,:,:) = 1          ! land cover class
+            ext_data(jg)%atm%frac_t(:,:,1)    = 1._wp       ! set only first tile to 1
+            ext_data(jg)%atm%lc_class_t(:,:,:) = 2          ! land cover class
   
           END DO
 
         ENDIF
      
-        IF (l_scm_mode) THEN
+!        IF (l_scm_mode) THEN
           ! necessary call to initialize some extpar variables without reading the extpar file
           CALL read_ext_data_atm (p_patch, ext_data, nlev_o3, cdi_extpar_id, &
             &                     extpar_varnames_dict)
           CALL message(routine,'read_ext_data_atm completed' )
-        ENDIF
-
+!        ENDIF
+           
         DO jg = 1, n_dom
           ext_data(jg)%atm%emis_rad(:,:)    = zemiss_def ! longwave surface emissivity
         END DO
