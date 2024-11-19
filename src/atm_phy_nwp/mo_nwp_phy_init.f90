@@ -453,6 +453,42 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
             p_diag_lnd%qv_s_t(jc,jb,1) = p_diag_lnd%qv_s(jc,jb)
           END DO
 
+        ELSE IF ( nh_test_name == 'CBL' ) THEN
+
+          DO jc = i_startidx, i_endidx
+            p_prog_lnd_now%t_g  (jc,jb)   = th_cbl(1)
+            p_prog_lnd_new%t_g  (jc,jb)   = p_prog_lnd_now%t_g (jc,jb)
+            p_prog_lnd_now%t_g_t(jc,jb,1) = p_prog_lnd_now%t_g (jc,jb)
+            p_prog_lnd_new%t_g_t(jc,jb,1) = p_prog_lnd_now%t_g (jc,jb)
+            p_diag_lnd%qv_s(jc,jb)     = &
+              &  0.4_wp * spec_humi(sat_pres_water(p_prog_lnd_now%t_g (jc,jb)),p_diag%pres_sfc(jc,jb))
+            p_diag_lnd%qv_s_t(jc,jb,1) = p_diag_lnd%qv_s(jc,jb)
+          END DO
+
+           DO jt = 1, ntiles_total
+              DO jk = 1,nlev_soil+1
+                DO jc = i_startidx, i_endidx
+                  p_prog_lnd_now%t_so_t(jc,jk,jb,jt) = p_prog_lnd_now%t_g(jc,jb)
+                  p_prog_lnd_new%t_so_t(jc,jk,jb,jt) = p_prog_lnd_now%t_g(jc,jb)
+                END DO
+              END DO
+             ! set soil water content to 0.5*(fcap+pwp), use soil type (4)
+              DO jk = 1,nlev_soil
+                DO jc = i_startidx, i_endidx
+                  p_prog_lnd_now%w_so_t(jc,jk,jb,jt) = 0.5_wp * (cfcap(4)+cpwp(4)) * dzsoil_icon(jk)
+                  p_prog_lnd_new%w_so_t(jc,jk,jb,jt) = 0.5_wp * (cfcap(4)+cpwp(4)) * dzsoil_icon(jk)
+                END DO
+              END DO
+            END DO
+
+          ! initialize T skin as top soil layer (as done in mo_initicon_utils.f90)
+          DO jt = 1, ntiles_total
+            DO jc = i_startidx, i_endidx
+              p_prog_lnd_now%t_sk_t(jc,jb,jt) =  p_prog_lnd_now%t_so_t(jc,1,jb,jt)
+              p_prog_lnd_new%t_sk_t(jc,jb,jt) =  p_prog_lnd_new%t_so_t(jc,1,jb,jt)
+            END DO
+          END DO
+
         ELSE IF ( ( nh_test_name == 'RCE' .OR. nh_test_name == 'RCE_Tconst' &
                & .OR. nh_test_name == 'RCE_Tprescr' )                       &
       &            .AND. atm_phy_nwp_config(jg)%inwp_turb/=ismag) THEN !
