@@ -66,6 +66,7 @@ MODULE mo_nwp_turbtrans_interface
   USE mo_run_config,           ONLY: timers_level
   USE mo_fortran_tools,        ONLY: set_acc_host_or_device
   USE mo_coupling_config,      ONLY: is_coupled_to_waves
+  USE mo_extpar_config,        ONLY: itopo
 
 #ifdef ICON_USE_CUDA_GRAPH
   USE mo_acc_device_management,ONLY: accGraph, accBeginCapture, accEndCapture, accGraphLaunch
@@ -351,6 +352,7 @@ SUBROUTINE nwp_turbtrans  ( tcall_turb_jg,                     & !>in
           ENDIF
           ! ensure that z0 does not fall below the minimum allowed value
           z0_mod = MAX(z0_mod,ext_data%atm%z0_lcc_min(lc_class))
+          if (itopo == 0) THEN; z0_mod = 0.01_wp; ENDIF !SPo bad hack, need to fix lc_class somehow
           ! Modify roughness length depending on snow cover
           prm_diag%gz0_t(jc,jb,jt) = grav *( (1._wp-lnd_diag%snowfrac_t(jc,jb,jt)**2)*z0_mod + &
             lnd_diag%snowfrac_t(jc,jb,jt)**2*ext_data%atm%z0_lcc_min(lc_class) )
