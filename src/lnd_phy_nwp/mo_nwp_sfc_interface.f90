@@ -1202,11 +1202,11 @@ CONTAINS
 
           prm_diag%lhfl_bs_t     (jc,jb,isubs) = lhfl_bs_t     (ic)
           lnd_diag%rstom_t       (jc,jb,isubs) = rstom_t       (ic)
-
+#ifndef COUP_OAS_ECLM
           prm_diag%shfl_s_t      (jc,jb,isubs) = shfl_s_t      (ic)
           prm_diag%lhfl_s_t      (jc,jb,isubs) = lhfl_s_t      (ic)
           prm_diag%qhfl_s_t      (jc,jb,isubs) = qhfl_s_t      (ic)
-
+#endif
           IF (itype_trvg == 3) lnd_diag%plantevap_t(jc,jb,isubs) = plevap_t(ic)     
 
           IF(lmulti_snow) THEN
@@ -1429,9 +1429,11 @@ CONTAINS
 
              prm_diag%lhfl_bs_t     (jc,jb,is1) = prm_diag%lhfl_bs_t     (jc,jb,is2)
              lnd_diag%rstom_t       (jc,jb,is1) = lnd_diag%rstom_t       (jc,jb,is2)
+#ifndef COUP_OAS_ECLM
              prm_diag%shfl_s_t      (jc,jb,is1) = prm_diag%shfl_s_t      (jc,jb,is2)
              prm_diag%lhfl_s_t      (jc,jb,is1) = prm_diag%lhfl_s_t      (jc,jb,is2)
              prm_diag%qhfl_s_t      (jc,jb,is1) = prm_diag%qhfl_s_t      (jc,jb,is2)
+#endif
              prm_diag%albdif_t      (jc,jb,is1) = prm_diag%albdif_t      (jc,jb,is2)
              !$ACC LOOP SEQ
              DO jk= 1, nlev_soil+1
