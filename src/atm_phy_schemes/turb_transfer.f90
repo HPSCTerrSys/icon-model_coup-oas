@@ -1810,6 +1810,7 @@ my_thrd_id = omp_get_thread_num()
       END DO
 ! 4h) Berechnung der Enthalpie- und Impulsflussdichten sowie der EDR am Unterrand:
 
+#ifndef COUP_OAS_ECLM
       IF ((lsrflux .AND. PRESENT(shfl_s)) .OR. lrunscm) THEN
 !DIR$ IVDEP
          !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -1884,6 +1885,7 @@ my_thrd_id = omp_get_thread_num()
          END DO
       END IF
       !$ACC END PARALLEL !!
+#endif
 
 !----------------------------------------
 
