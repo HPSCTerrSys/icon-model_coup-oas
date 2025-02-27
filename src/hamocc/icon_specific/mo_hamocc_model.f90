@@ -118,6 +118,7 @@ MODULE mo_hamocc_model
   USE mo_ocean_hamocc_interface, ONLY: hamocc_to_ocean_init, hamocc_to_ocean_end, hamocc_to_ocean_interface
   USE mo_dynamics_config,        ONLY: nold, nnew
   USE mo_ocean_math_operators,   ONLY: update_height_hamocc
+  USE mo_coupling_utils,         ONLY: cpl_construct, cpl_destruct
   USE mo_dummy_coupling_frame,   ONLY: construct_dummy_coupling, &
     &                                  destruct_dummy_coupling
   USE mo_icon_output_tools,      ONLY: init_io_processes, prepare_output
@@ -359,6 +360,7 @@ MODULE mo_hamocc_model
 
       IF (ltimer) CALL timer_start(timer_coupling)
       CALL destruct_dummy_coupling ( get_my_process_name() )
+      CALL cpl_destruct()
       IF (ltimer) CALL timer_stop(timer_coupling)
     END IF
 
@@ -435,6 +437,7 @@ MODULE mo_hamocc_model
       ! due to calling sequence in subroutine atmo_model for other atmosphere
       ! processes
       IF (ltimer) CALL timer_start(timer_coupling)
+      CALL cpl_construct()
       CALL construct_dummy_coupling ( get_my_process_name()  )
       IF (ltimer) CALL timer_stop(timer_coupling)
     END IF

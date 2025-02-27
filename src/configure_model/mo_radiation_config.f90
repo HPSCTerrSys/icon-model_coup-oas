@@ -18,7 +18,8 @@ MODULE mo_radiation_config
 
   IMPLICIT NONE
   PUBLIC
-  PUBLIC :: cams_clim_filename
+  PUBLIC :: cams_aero_filename
+
   !--------------------------------------------------------------------------
   ! Basic configuration setup for radiation
   !--------------------------------------------------------------------------
@@ -87,17 +88,17 @@ MODULE mo_radiation_config
     INTEGER  :: irad_aero   !< aerosols
     LOGICAL  :: lrad_aero_diag  !< diagnose aerosols
     ENUM, BIND(C)
-        ENUMERATOR :: iRadAeroNone=0,        iRadAeroConst=2,        iRadAeroTegen=6,   iRadAeroCAMSclim=7, &
-          &           iRadAeroART=9,         iRadAeroConstKinne=12,  iRadAeroKinne=13,  iRadAeroVolc=14,    &
-          &           iRadAeroKinneVolc=15,  iRadAeroKinneVolcSP=18, iRadAeroKinneSP=19
+        ENUMERATOR :: iRadAeroNone=0,         iRadAeroConst=2,      iRadAeroTegen=6,        iRadAeroCAMSclim=7, &
+          &           iRadAeroCAMStd=8,       iRadAeroART=9,        iRadAeroConstKinne=12,  iRadAeroKinne=13,   &
+          &           iRadAeroVolc=14,        iRadAeroKinneVolc=15, iRadAeroKinneVolcSP=18, iRadAeroKinneSP=19
     END ENUM
     !
     ! --- Name of the file that contains  dynamic greenhouse values
     !
     CHARACTER(LEN=filename_max)  :: ghg_filename
     !
-    !> NetCDF file with CAMS 3D climatology
-    CHARACTER(LEN=filename_max) :: cams_clim_filename
+    !> NetCDF file with CAMS 3D aerosols
+    CHARACTER(LEN=filename_max) :: cams_aero_filename
     !
     ! --- Default gas mixing ratios - 1990 values (CMIP5)
     !

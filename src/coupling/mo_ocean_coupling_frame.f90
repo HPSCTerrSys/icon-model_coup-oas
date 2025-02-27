@@ -26,8 +26,7 @@ MODULE mo_ocean_coupling_frame
   !-------------------------------------------------------------
   ! For the coupling
   !
-  USE mo_coupling_utils,      ONLY: cpl_construct, cpl_destruct, &
-    &                               cpl_def_main, cpl_enddef
+  USE mo_coupling_utils,      ONLY: cpl_def_main, cpl_enddef
   USE mo_coupling_config,     ONLY: is_coupled_run, is_coupled_to_atmo, &
     &                               is_coupled_to_output
   USE mo_output_coupling,     ONLY: construct_output_coupling, &
@@ -77,9 +76,6 @@ CONTAINS
     IF (ltimer) CALL timer_start(timer_coupling_init)
 
     CALL message(str_module, 'Constructing the ocean coupling frame.')
-
-    ! initialise coupler
-    CALL cpl_construct()
 
     patch_no = 1
     patch_horz => patch_3d%p_patch_2d(patch_no)
@@ -148,9 +144,6 @@ CONTAINS
     IF (is_coupled_run()) THEN
 
       CALL message(str_module, 'Destructing the coean coupling frame.')
-
-      ! destruct coupler
-      CALL cpl_destruct()
 
     END IF
 

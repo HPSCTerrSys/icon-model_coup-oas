@@ -4031,8 +4031,11 @@ lurbalb &
 L & .TRUE. &  & If .TRUE., use urban albedo and emissivity (Wouters et al.\ 2016) & lterra\_urb = .TRUE.
 \tabularnewline
 
-lurbahf &
-L & .TRUE. &  & If .TRUE., use urban anthropogenic heat flux (Wouters et al.\ 2016) & lterra\_urb = .TRUE.
+itype\_ahf &
+I & 2 &  & If $\ge$1, use urban anthropogenic heat flux (Wouters et al.\ 2016) \\
+1: constant value given by the first entry in tuning\_nml:tune\_urbahf \\
+2: variable value depending on climatological T2M as specified in tuning\_nml:tune\_urbahf \\
+3: to be implemented (variable value depending on time-filtered predicted T2M) & lterra\_urb = .TRUE.
 \tabularnewline
 
 itype\_kbmo &
@@ -4086,6 +4089,11 @@ allowed range: 0 -- 2 & itype\_evsl = 2,3,4
 cr\_bsmin &
 R & 110. & s/m & minimum bare soil evaporation resistance (see Schulz and Vogel 2020) \\
 Note: c\_soil and c\_soil\_urb are ignored in this case & itype\_evsl = 5 or icpl\_da\_sfcevap = 4
+\tabularnewline
+
+%\hline
+rsmin\_fac &
+R & 1. &  & scaling factor for rsmin.
 \tabularnewline
 
 %\hline
@@ -5111,10 +5119,20 @@ I&
 0&
  &
 0: off \\
-1: simple coupling between autoconversion and Tegen aerosol climatology; requires irad\_aero=6 or 9 \\
+1: simple coupling between autoconversion and Tegen aerosol climatology; requires irad\_aero=6, 7 or 9 \\
 3: use cloud-droplet number climatology from external parameter file. External parameter files containing cloud-droplet number climatology can be generated with extpar code from version rc\_5.14 \\
 More advanced options are in preparation&
 currently only for inwp\_gscp = 1
+\tabularnewline
+
+lscale\_cdnc&
+L&
+.FALSE.&
+&
+.TRUE.: scaling of external (MODIS) cdnc with a time varying 2-dimensional factor derived from the simple plume scheme. It is advisable to turn the scaling off at least for the years 2000-2020. &
+climate projections using\\
+icpl\_aero\_gscp = 3\\
+irad\_aero = 18,19
 \tabularnewline
 
 icpl\_aero\_ice&
@@ -5122,8 +5140,7 @@ I&
 0&
  &
 0: ice nucleating particles concentration defined by temperature using Cooper (1987) formula \\
-1: ice nucleating particles concentration defined by temperature and dust concentration from CAMS climatology using DeMott (2015) formula; requires irad\_aero=7 \\
-2: ice nucleating particles concentration defined by temperature and dust concentration from Tegen climatology using DeMott (2015) formula; requires irad\_aero=6
+1: ice nucleating particles concentration defined by temperature and dust concentration using DeMott (2015) formula; requires irad\_aero=6, 7 or 8 \\
 \tabularnewline
 
 %\hline
@@ -5244,7 +5261,7 @@ I&
 0&
  &
 0: off \\
-1: simple coupling between autoconversion and Tegen aerosol climatology; requires irad\_aero=6 &
+1: simple coupling between autoconversion and Tegen aerosol climatology; requires irad\_aero=6 or 7 &
 \tabularnewline
 
 
@@ -6049,6 +6066,18 @@ albedo\_type=2
 \tabularnewline
 
 \hline
+tune\_albedo\_wso&
+R(2)&
+0.0, 0.0&
+-&
+Add a correction to MODIS albedo over [dry,wet] soil for soil types 3-6. Valid range: [-0.03, 0.03]. Supposed to be negative for wet soil. &
+run\_nml:iforcing = inwp\\
+nwp\_phy\_nml:inwp\_surface = 1\\
+itype\_albedo = 2\\
+direct\_albedo = 3,4
+\tabularnewline
+
+\hline
 itune\_slopecorr&
 I&
 0&
@@ -6103,6 +6132,27 @@ R&
 &
 Tuning factor for direct solar irradiance in sunshine duration diagnostic to account for the 
 delta-Eddington scaling in ecRad and other possible biases (e.g. liquid/ice water path) &
+\tabularnewline
+
+\hline
+tune\_urbahf&
+R(4)&
+0., 2., 2., 50.& W m$^{-2}$
+&
+Tuning factors for specifying the anthropogenic heat flux (AHF) depending on climatological T2M. \\
+first value: constant base value independent of temperature \\
+second value: gradient per K below T2M = 15$^\circ$C for heating \\
+third value: gradient per K above T2M = 20$^\circ$C for cooling \\
+fourth value: upper limit for AHF & lterra\_urb=.TRUE.
+\tabularnewline
+
+\hline
+tune\_urbisa&
+R(2)&
+0.6, 1.0&
+&
+Lower and upper bound for variable ISA parameterization (fraction of impervious surface area on urban tiles) 
+depending on smoothed urban fraction & lterra\_urb=.TRUE.
 \tabularnewline
 
 
@@ -7469,7 +7519,7 @@ Slope correction for surface radiation:\\
 (Remark: sky-view correction not yet activated) \\
 3: Slope correction for direct solar radiation including shading, but no further consideration
 of sky-view factor effects.
-&
+& 2 and 3 require the additional field HORIZON to be present in the extpar data
 \tabularnewline
 
 
@@ -7632,7 +7682,8 @@ Aerosols\\
 2: global constant\\
 3: externally specified\\
 6: Tegen aerosol climatology {\color{red}for run\_nml/iforcing = 3 (NWP) .AND. itopo =1 }\\
-7: CAMS 3D aerosol climatology, the filename can be specified via cams\_clim\_filename in \&radiation\_nml\\
+7: CAMS 3D aerosol climatology, the filename can be specified via cams\_aero\_filename in \&radiation\_nml\\
+8: CAMS 3D forecasted aerosol, the filename can be specified via cams\_aero\_filename in \&radiation\_nml\\
 9: ART online aerosol radiation interaction, uses Tegen for aerosols not chosen to be represented in ART {\color{red}for run\_nml/iforcing = 3 (NWP) .AND. itopo =1 .AND. lart=TRUE .AND. iart\_ari=1}\\
 12: tropospheric 'Kinne' aerosols, constant in time\\
 13: total tropospheric 'Kinne' aerosols, time dependent from file \\
@@ -7667,16 +7718,16 @@ Path to the folder containing ecRad optical properties files.
 \tabularnewline
 
 %\hline
-cams\_clim\_filename &
+cams\_aero\_filename &
 C&
-"CAMS\_clim\_ \\
+"CAMS\_aero\_ \\
 R<nroot0>B<jlev>\_ \\
 DOM<idom>.nc"&
 &
-Path to the file containing CAMS 3D climatology data\\
-Data can be prepared using the script scripts/preprocessing/ \\ make\_camsclim\_onICONgrid.sh 
+Path to the file containing CAMS 3D data\\
+Climatology data can be prepared using the script scripts/preprocessing/ \\ make\_camsclim\_onICONgrid.sh 
 & inwp\_radiation=4 (ecRad)\\
-irad\_aero=7 (CAMS 3D climatology)
+irad\_aero=7 or 8 (CAMS 3D climatology or forecasted aerosols)
 \tabularnewline
 
 %\hline
@@ -8926,6 +8977,12 @@ Type of diagnostics of synoptic near surface variables:\\
 rlam\_heat &
 R                &     10.0     & 1 &
 Scaling factor of the laminar boundary layer for heat (scalars). The larger rlam\_heat, the larger is the laminar resistance. &
+\tabularnewline
+
+%\hline
+rat\_lam &
+R                &     1.0     & 1 &
+Ratio of laminar scaling factors for vapour and heat. The larger rat\_lam, the larger is the laminar resistance for evaporation compared to sensible heat. &
 \tabularnewline
 
 %\hline

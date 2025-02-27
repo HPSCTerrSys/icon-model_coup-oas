@@ -34,7 +34,7 @@ MODULE mo_ext_data_init
                                    frlndtile_thrhld, frlake_thrhld, frsea_thrhld, isub_water,       &
                                    isub_seaice, isub_lake, sstice_mode, sst_td_filename,            &
                                    ci_td_filename, itype_lndtbl, c_soil, c_soil_urb, cskinc,        &
-                                   lterra_urb, itype_eisa, cr_bsmin, itype_evsl
+                                   lterra_urb, itype_eisa, cr_bsmin, itype_evsl, itype_ahf, rsmin_fac
   USE mo_atm_phy_nwp_config, ONLY: atm_phy_nwp_config, iprog_aero
   USE mo_extpar_config,      ONLY: itopo, itype_lwemiss, extpar_filename, generate_filename,    &
     &                              generate_td_filename, extpar_varnames_map_file,              &
@@ -42,8 +42,8 @@ MODULE mo_ext_data_init
     &                              itype_vegetation_cycle, read_nc_via_cdi, pp_sso
   USE mo_initicon_config,    ONLY: icpl_da_sfcevap, dt_ana, icpl_da_seaice, icpl_da_snowalb
   USE mo_radiation_config,   ONLY: irad_o3, albedo_type, islope_rad,    &
-    &                              irad_aero, iRadAeroTegen, iRadAeroART
-  USE mo_process_topo,       ONLY: smooth_topo_real_data, postproc_sso, smooth_frland
+    &                              irad_aero, iRadAeroTegen, iRadAeroART, iRadAeroCAMSclim, iRadAeroCAMStd
+  USE mo_process_topo,       ONLY: smooth_topo_real_data, postproc_sso, smooth_frland, smooth_urbfrac
   USE mo_model_domain,       ONLY: t_patch
   USE mo_exception,          ONLY: message, message_text, finish
   USE mo_grid_config,        ONLY: n_dom, nroot
@@ -72,7 +72,7 @@ MODULE mo_ext_data_init
   USE mo_util_uuid_types,    ONLY: t_uuid, uuid_string_length
   USE mo_util_uuid,          ONLY: OPERATOR(==), uuid_unparse
   USE mo_dictionary,         ONLY: t_dictionary
-  USE mo_nwp_tuning_config,  ONLY: itune_albedo
+  USE mo_nwp_tuning_config,  ONLY: itune_albedo, tune_urbahf, tune_urbisa
   USE mo_cdi,                ONLY: FILETYPE_GRB2, streamOpenRead, streamInqFileType, &
     &                              streamInqVlist, vlistInqVarZaxis, zaxisInqSize,   &
     &                              vlistNtsteps, vlistInqVarGrid, cdiInqAttTxt,    &
@@ -271,7 +271,6 @@ CONTAINS
 !
             ext_data(jg)%atm%urb_isa(:,:)     = 0._wp       ! impervious surface area fraction of the urban canopy
             IF (lterra_urb) THEN
-              ext_data(jg)%atm%fr_paved(:,:)    = 0._wp       ! impervious surface area (ISA) fraction
               ext_data(jg)%atm%urb_ai(:,:)      = 2._wp       ! surface area index of the urban canopy
               ext_data(jg)%atm%urb_alb_red(:,:) = 0.9_wp      ! albedo reduction factor for the urban canopy
               ext_data(jg)%atm%urb_fr_bld(:,:)  = 0.667_wp    ! building area fraction with respect to urban tile
@@ -373,6 +372,12 @@ CONTAINS
                &                 p_int_state(jg),            &
                &                 ext_data(jg)%atm%fr_land,   &
                &                 ext_data(jg)%atm%fr_land_smt)
+           ENDIF
+           IF (lterra_urb) THEN
+             CALL smooth_urbfrac (p_patch(jg),                &
+               &                 p_int_state(jg),             &
+               &                 ext_data(jg)%atm%lu_class_fraction(:,:,ext_data(jg)%atm%i_lc_urban),  &
+               &                 ext_data(jg)%atm%fr_urb_smt)
            ENDIF
          ENDIF
 
@@ -1188,10 +1193,8 @@ CONTAINS
         ! Urban canopy parameters
         DO ilu = 1, num_lcc
           IF (ilu == ext_data(jg)%atm%i_lc_urban) THEN
-            ext_data(jg)%atm%fr_paved_lcc(ilu) = 1._wp        ! Impervious surface area (ISA) fraction for urban land use class
-            ext_data(jg)%atm%ahf_lcc(ilu)      = 15._wp       ! Anthropogenic heat flux for urban land use class
+            ext_data(jg)%atm%ahf_lcc(ilu)      = tune_urbahf(1) ! Anthropogenic heat flux for urban land use class
           ELSE
-            ext_data(jg)%atm%fr_paved_lcc(ilu) = 0._wp
             ext_data(jg)%atm%ahf_lcc(ilu)      = 0._wp
           ENDIF
         ENDDO
@@ -1238,16 +1241,21 @@ CONTAINS
         ! If ocean coupling is used, then try to read the land sea masks. If no LSM is present
         ! in the extpar file, we assume that the file fits the ocean LSM.
 
-        IF ( is_coupled_to_ocean() .AND. read_inq_varexists(stream_id, 'cell_sea_land_mask')) THEN
+        IF (is_coupled_to_ocean()) THEN
+          IF (read_netcdf_parallel) THEN
+            do_patch_land_sea_mask = read_inq_varexists(stream_id, 'cell_sea_land_mask')
+          ELSE
+            do_patch_land_sea_mask = parameters%inqVarId('cell_sea_land_mask') >= 0
+          END IF
 
           ! --- option NWP grids for coupling: Read fraction of land (land-sea mask) from
           ! interpolated ocean grid (ocean: integer 0/1 lsm). lsm_ctr_c is the fraction of land.
           ! 0.0 is ocean, 1.0 is land, fractions on coasts (lakes are land).
           ! Used in routine lsm_ocean_atmo.
 
-          CALL read_extdata('cell_sea_land_mask', ext_data(jg)%atm%lsm_ctr_c)
-
-          do_patch_land_sea_mask = .TRUE.
+          IF (do_patch_land_sea_mask) THEN
+            CALL read_extdata('cell_sea_land_mask', ext_data(jg)%atm%lsm_ctr_c)
+          END IF
 
         ENDIF
 
@@ -1342,7 +1350,7 @@ CONTAINS
             CALL read_extdata('emi_so2', arr2d=ext_data(jg)%atm%emi_so2)
           ENDIF
           ! Read time dependent data
-          IF ( irad_aero == iRadAeroTegen .OR. irad_aero == iRadAeroART) THEN
+          IF (ANY (irad_aero == (/iRadAeroTegen, iRadAeroART, iRadAeroCAMSclim, iRadAeroCAMStd/))) THEN
             CALL read_extdata('AER_SS',   arr3d=ext_data(jg)%atm_td%aer_ss)
             CALL read_extdata('AER_DUST', arr3d=ext_data(jg)%atm_td%aer_dust)
             CALL read_extdata('AER_ORG',  arr3d=ext_data(jg)%atm_td%aer_org)
@@ -1363,6 +1371,10 @@ CONTAINS
           IF ( atm_phy_nwp_config(jg)%icpl_aero_gscp == 3  ) THEN
             ! cloud droplet climatology (time dependent monthly means)
             CALL read_extdata('cdnc',   arr3d=ext_data(jg)%atm_td%cdnc)
+!$OMP PARALLEL
+            ! cdnc climatology is in cm**-3, here is the conversion to m**-3
+            CALL var_scale(ext_data(jg)%atm_td%cdnc, 1.0e6_wp, lacc=.FALSE.)
+!$OMP END PARALLEL
           END IF
 
           !--------------------------------
@@ -1780,12 +1792,13 @@ CONTAINS
                ! Urban Canopy Parameters (UCPs)
                !
                ! impervious surface area fraction of the urban canopy
-               ext_data(jg)%atm%urb_isa_t(jc,jb,1)       = ext_data(jg)%atm%fr_paved_lcc(ext_data(jg)%atm%lc_class_t(jc,jb,1))
+               IF (lterra_urb .AND. lhave_urban) THEN
+                 ext_data(jg)%atm%urb_isa_t(jc,jb,1)  =  MIN(tune_urbisa(2), MAX(tune_urbisa(1), ext_data(jg)%atm%fr_urb_smt(jc,jb)))
+               ELSE
+                 ext_data(jg)%atm%urb_isa_t(jc,jb,1)  = 0._wp
+               ENDIF
 
                IF (lterra_urb) THEN
-                 ! impervious surface area (ISA) fraction
-                 ext_data(jg)%atm%fr_paved_t(jc,jb,1)    = ext_data(jg)%atm%fr_paved_lcc(ext_data(jg)%atm%lc_class_t(jc,jb,1))
-
                  ! building area fraction with respect to urban tile
                  ext_data(jg)%atm%urb_fr_bld_t(jc,jb,1)  = 0.667_wp
 
@@ -1864,7 +1877,7 @@ CONTAINS
                ext_data(jg)%atm%skinc_t(jc,jb,1)    = ext_data(jg)%atm%skinc_lcc(ext_data(jg)%atm%lc_class_t(jc,jb,1))
 
                ! minimum stomatal resistance
-               ext_data(jg)%atm%rsmin2d_t(jc,jb,1)  = ext_data(jg)%atm%rsmin(jc,jb)
+               ext_data(jg)%atm%rsmin2d_t(jc,jb,1)  = ext_data(jg)%atm%rsmin(jc,jb) * rsmin_fac
 
                ! soil type
                ext_data(jg)%atm%soiltyp_t(jc,jb,1)  = ext_data(jg)%atm%soiltyp(jc,jb)
@@ -2018,12 +2031,13 @@ CONTAINS
                  ! Urban Canopy Parameters (UCPs)
                  !
                  ! impervious surface area fraction of the urban canopy
-                 ext_data(jg)%atm%urb_isa_t(jc,jb,i_lu)       = ext_data(jg)%atm%fr_paved_lcc(lu_subs)
+                 IF (lterra_urb .AND. lu_subs == ext_data(jg)%atm%i_lc_urban) THEN
+                   ext_data(jg)%atm%urb_isa_t(jc,jb,i_lu)  =  MIN(tune_urbisa(2), MAX(tune_urbisa(1), ext_data(jg)%atm%fr_urb_smt(jc,jb)))
+                 ELSE
+                   ext_data(jg)%atm%urb_isa_t(jc,jb,i_lu)  = 0._wp
+                 ENDIF
 
                  IF (lterra_urb) THEN
-                   ! impervious surface area (ISA) fraction
-                   ext_data(jg)%atm%fr_paved_t(jc,jb,i_lu)    = ext_data(jg)%atm%fr_paved_lcc(lu_subs)
-
                    ! building area fraction with respect to urban tile
                    ext_data(jg)%atm%urb_fr_bld_t(jc,jb,i_lu)  = 0.667_wp
 
@@ -2085,13 +2099,15 @@ CONTAINS
 
                  ! evaporative soil area index
                  IF (icpl_da_sfcevap >= 4 .OR. itype_evsl == 5) THEN
-                   ext_data(jg)%atm%eai_t (jc,jb,i_lu)   = MERGE(0.75_wp,2.0_wp,lu_subs == ext_data(jg)%atm%i_lc_urban)
+                   ext_data(jg)%atm%eai_t (jc,jb,i_lu)   = MERGE(0.75_wp,2.0_wp,lu_subs == ext_data(jg)%atm%i_lc_urban &
+                                                                .AND. .NOT. lterra_urb)
                    ext_data(jg)%atm%r_bsmin(jc,jb)       = cr_bsmin
                    ! on non-urban tiles, the eai is reduced only if no urban tile is present on the grid point
                    IF (.NOT. lhave_urban) ext_data(jg)%atm%eai_t(jc,jb,i_lu) =                                             &
                                           2.0_wp - 1.25_wp*tile_frac(ext_data(jg)%atm%i_lc_urban)
                  ELSE
-                   ext_data(jg)%atm%eai_t (jc,jb,i_lu)   = MERGE(c_soil_urb,c_soil,lu_subs == ext_data(jg)%atm%i_lc_urban)
+                   ext_data(jg)%atm%eai_t (jc,jb,i_lu)   = MERGE(c_soil_urb,c_soil,lu_subs == ext_data(jg)%atm%i_lc_urban &
+                                                                .AND. .NOT. lterra_urb)
                    ext_data(jg)%atm%r_bsmin(jc,jb)       = 50._wp ! previously hard-coded in TERRA
                  ENDIF
 
@@ -2110,7 +2126,7 @@ CONTAINS
                  ENDIF
 
                  ! minimum stomatal resistance
-                 ext_data(jg)%atm%rsmin2d_t(jc,jb,i_lu)  = ext_data(jg)%atm%stomresmin_lcc(lu_subs)
+                 ext_data(jg)%atm%rsmin2d_t(jc,jb,i_lu)  = ext_data(jg)%atm%stomresmin_lcc(lu_subs) * rsmin_fac
 
                  ! soil type
                  ext_data(jg)%atm%soiltyp_t(jc,jb,i_lu)  = ext_data(jg)%atm%soiltyp(jc,jb)
@@ -2303,7 +2319,6 @@ CONTAINS
 !
                ext_data(jg)%atm%urb_isa_t(jc,jb,jt)     = ext_data(jg)%atm%urb_isa_t(jc,jb,jt_in)
                IF (lterra_urb) THEN
-                 ext_data(jg)%atm%fr_paved_t(jc,jb,jt)    = ext_data(jg)%atm%fr_paved_t(jc,jb,jt_in)
                  ext_data(jg)%atm%urb_ai_t(jc,jb,jt)      = ext_data(jg)%atm%urb_ai_t(jc,jb,jt_in)
                  ext_data(jg)%atm%urb_alb_red_t(jc,jb,jt) = ext_data(jg)%atm%urb_alb_red_t(jc,jb,jt_in)
                  ext_data(jg)%atm%urb_fr_bld_t(jc,jb,jt)  = ext_data(jg)%atm%urb_fr_bld_t(jc,jb,jt_in)
@@ -2475,7 +2490,6 @@ CONTAINS
 !
       ext_data%atm%urb_isa    (i_startidx:i_endidx,jb) = 0._wp
       IF (lterra_urb) THEN
-        ext_data%atm%fr_paved   (i_startidx:i_endidx,jb) = 0._wp
         ext_data%atm%urb_ai     (i_startidx:i_endidx,jb) = 0._wp
         ext_data%atm%urb_alb_red(i_startidx:i_endidx,jb) = 0._wp
         ext_data%atm%urb_fr_bld (i_startidx:i_endidx,jb) = 0._wp
@@ -2515,10 +2529,6 @@ CONTAINS
               &              + ext_data%atm%urb_isa_t(jc,jb,jt) * area_frac
 
           IF (lterra_urb) THEN
-            ! impervious surface area (ISA) fraction (aggregated)
-            ext_data%atm%fr_paved(jc,jb) = ext_data%atm%fr_paved(jc,jb)       &
-              &              + ext_data%atm%fr_paved_t(jc,jb,jt) * area_frac
-
             ! surface area index of the urban canopy (aggregated)
             ext_data%atm%urb_ai(jc,jb) = ext_data%atm%urb_ai(jc,jb)           &
               &              + ext_data%atm%urb_ai_t(jc,jb,jt) * area_frac
@@ -2722,7 +2732,7 @@ CONTAINS
     INTEGER  :: i_startblk, i_endblk,i_startidx, i_endidx
     INTEGER  :: i_count,ilu
 
-    REAL(wp) :: t2mclim_hc(nproma),t_asyfac(nproma),tdiff_norm,wfac,dtdz_clim,trans_width
+    REAL(wp) :: t2mclim_hc(nproma),t_asyfac(nproma),tdiff_norm,wfac,dtdz_clim,trans_width,ahf_heat,ahf_cool
     REAL(wp), DIMENSION(num_lcc) :: laimin,threshold_temp,temp_asymmetry,rd_fac
 
     INTEGER, PARAMETER :: nparam = 4  ! Number of parameters used in lookup table 
@@ -2785,7 +2795,7 @@ CONTAINS
     i_endblk   = p_patch%cells%end_block(rl_end)
 
 !$OMP PARALLEL
-!$OMP DO PRIVATE(jb,jt,ic,i_startidx,i_endidx,i_count,jc,ilu,t2mclim_hc,t_asyfac,tdiff_norm,wfac)
+!$OMP DO PRIVATE(jb,jt,ic,i_startidx,i_endidx,i_count,jc,ilu,t2mclim_hc,t_asyfac,tdiff_norm,wfac,ahf_heat,ahf_cool)
     DO jb = i_startblk, i_endblk
 
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
@@ -2855,6 +2865,12 @@ CONTAINS
                    ext_data%atm%t2m_climgrad(jc,jb) <= 0._wp) THEN
             wfac = (t2mclim_hc(jc)-(threshold_temp(ilu)-temp_asymmetry(ilu)))/(temp_asymmetry(ilu)+trans_width)
             ext_data%atm%rootdp_t(jc,jb,jt) = ext_data%atm%rootdp_t(jc,jb,jt)*(wfac + (1._wp-wfac)/rd_fac(ilu))
+          ENDIF
+
+          IF (lterra_urb .AND. itype_ahf == 2 .AND. ilu == ext_data%atm%i_lc_urban) THEN
+            ahf_heat = tune_urbahf(2)*MAX(0._wp,288.15_wp-t2mclim_hc(jc))
+            ahf_cool = tune_urbahf(3)*MAX(0._wp,t2mclim_hc(jc)-293.15_wp)
+            ext_data%atm%ahf_t(jc,jb,jt) = MIN(tune_urbahf(1) + MAX(ahf_heat,ahf_cool), tune_urbahf(4))
           ENDIF
 
         ENDDO

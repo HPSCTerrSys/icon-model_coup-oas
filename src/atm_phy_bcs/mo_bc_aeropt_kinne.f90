@@ -415,7 +415,7 @@ SUBROUTINE set_bc_aeropt_kinne (    current_date,                         &
 
 ! !LOCAL VARIABLES
   
-  INTEGER                           :: jl,jk,jwl,jl_from1
+  INTEGER                           :: jl,jk,jwl
   REAL(wp), DIMENSION(kbdim,klev)   :: zh_vr, &
                                        zdeltag_vr
   REAL(wp), DIMENSION(kbdim)        :: zq_int ! integral height profile
@@ -588,11 +588,11 @@ SUBROUTINE set_bc_aeropt_kinne (    current_date,                         &
            ! ATTENTION: The output data in paer_tau_lw_vr are stored with indices 1:kproma-jcs+1
            !
            IF ( from_coupler ) THEN
-              paer_tau_lw_vr(jl-jcs+1,jk,jwl)=zq_aod_c(jl,jk) * &
+              paer_tau_lw_vr(jl,jk,jwl)=zq_aod_c(jl,jk) * &
                    zs_i(jl,jwl) * &
                    ext_aeropt_kinne(jg)% aod_c_f(jl,jwl,krow,1)
            ELSE
-              paer_tau_lw_vr(jl-jcs+1,jk,jwl)=zq_aod_c(jl,jk) * &
+              paer_tau_lw_vr(jl,jk,jwl)=zq_aod_c(jl,jk) * &
                     zs_i(jl,jwl) * &
                     (tiw%weight1*ext_aeropt_kinne(jg)% aod_c_f(jl,jwl,krow,tiw%month1_index) + &
                     tiw%weight2*ext_aeropt_kinne(jg)% aod_c_f(jl,jwl,krow,tiw%month2_index))
@@ -650,31 +650,27 @@ SUBROUTINE set_bc_aeropt_kinne (    current_date,                         &
            ! aerosol optical depth 
            ztaua_c(jl,jwl) = zt_c(jl,jwl)*zq_aod_c(jl,jk)
            ztaua_f(jl,jwl) = zt_f(jl,jwl)*zq_aod_f(jl,jk)
-           !
-           ! ATTENTION: The output data in paer_tau/piz/cg_sw_vr are stored with indices 1:kproma-jcs+1
-           !
-           jl_from1 = jl-jcs+1
-           paer_tau_sw_vr(jl_from1,jk,jwl) = &
+           paer_tau_sw_vr(jl,jk,jwl) = &
                          & ztaua_c(jl,jwl) + &
                          & ztaua_f(jl,jwl) 
-           paer_piz_sw_vr(jl_from1,jk,jwl) = &
+           paer_piz_sw_vr(jl,jk,jwl) = &
                       & ztaua_c(jl,jwl)*zs_c(jl,jwl) + &
                       & ztaua_f(jl,jwl)*zs_f(jl,jwl)
-           IF (paer_tau_sw_vr(jl_from1,jk,jwl) /= 0._wp) THEN
-              paer_piz_sw_vr(jl_from1,jk,jwl) = paer_piz_sw_vr(jl_from1,jk,jwl) / &
-                                              & paer_tau_sw_vr(jl_from1,jk,jwl)
+           IF (paer_tau_sw_vr(jl,jk,jwl) /= 0._wp) THEN
+              paer_piz_sw_vr(jl,jk,jwl) = paer_piz_sw_vr(jl,jk,jwl) / &
+                                              & paer_tau_sw_vr(jl,jk,jwl)
            ELSE
-              paer_piz_sw_vr(jl_from1,jk,jwl) = 1._wp
+              paer_piz_sw_vr(jl,jk,jwl) = 1._wp
            END IF
-           paer_cg_sw_vr(jl_from1,jk,jwl)  = &
+           paer_cg_sw_vr(jl,jk,jwl)  = &
                          & ztaua_c(jl,jwl)*zs_c(jl,jwl)*zg_c(jl,jwl) + &
                          & ztaua_f(jl,jwl)*zs_f(jl,jwl)*zg_f(jl,jwl)
-           IF (paer_tau_sw_vr(jl_from1,jk,jwl) /= 0._wp) THEN
-              paer_cg_sw_vr (jl_from1,jk,jwl) = paer_cg_sw_vr (jl_from1,jk,jwl) / &
-                                              & paer_piz_sw_vr(jl_from1,jk,jwl) / &
-                                              & paer_tau_sw_vr(jl_from1,jk,jwl)
+           IF (paer_tau_sw_vr(jl,jk,jwl) /= 0._wp) THEN
+              paer_cg_sw_vr (jl,jk,jwl) = paer_cg_sw_vr (jl,jk,jwl) / &
+                                              & paer_piz_sw_vr(jl,jk,jwl) / &
+                                              & paer_tau_sw_vr(jl,jk,jwl)
            ELSE
-              paer_cg_sw_vr(jl_from1,jk,jwl) = 0._wp
+              paer_cg_sw_vr(jl,jk,jwl) = 0._wp
            END IF
         END DO
      END DO

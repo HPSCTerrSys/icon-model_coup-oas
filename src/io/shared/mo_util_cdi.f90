@@ -112,7 +112,8 @@ MODULE mo_util_cdi
 
   CONTAINS
     PROCEDURE :: findVarId => inputParametersFindVarId  !< determine the ID of an named variable
-
+    PROCEDURE :: inqVarId => inputParametersInqVarId
+    PROCEDURE :: inqVarIdTiles => inputParametersInqVarIdTiles
   END TYPE
 
 CONTAINS
@@ -285,16 +286,15 @@ CONTAINS
   END FUNCTION compareTiledVars
 
   !---------------------------------------------------------------------------------------------------------------------------------
-  !> Determine the datatype of the given variable in the input file
+  !> Try to find the ID of the given tile of the given variable in the input file.
   !---------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE inputParametersFindVarId(me, name, tileinfo, varID, tile_index)
-    IMPLICIT NONE
-    CLASS(t_inputParameters), INTENT(IN)  :: me
-    CHARACTER(len=*),         INTENT(IN)  :: name
-    TYPE(t_tileinfo_grb2),    INTENT(IN)  :: tileinfo
-    INTEGER,                  INTENT(OUT) :: varID, tile_index
+  SUBROUTINE inputParametersInqVarIdTiles(me, name, tileinfo, varID, tile_index)
+    CLASS(t_inputParameters), INTENT(IN)  :: me !< Input parameters.
+    CHARACTER(len=*),         INTENT(IN)  :: name !< Name of the variable.
+    TYPE(t_tileinfo_grb2),    INTENT(IN)  :: tileinfo !< GRIB tile information.
+    INTEGER,                  INTENT(OUT) :: varID !< CDI variable ID.
+    INTEGER,                  INTENT(OUT) :: tile_index !< CDI tile index.
 
-    CHARACTER(len=*), PARAMETER :: routine = modname//':inputParametersFindVarId'
     CHARACTER(len=DICT_MAX_STRLEN) :: mapped_name
     INTEGER :: i, j, tlen
 
@@ -318,10 +318,47 @@ CONTAINS
       END DO
     END DO
 
+  END SUBROUTINE inputParametersInqVarIdTiles
+
+  !---------------------------------------------------------------------------------------------------------------------------------
+  !> Try to find the ID of the given variable in the input file.
+  !---------------------------------------------------------------------------------------------------------------------------------
+  FUNCTION inputParametersInqVarId(me, name) RESULT(varID)
+    CLASS(t_inputParameters), INTENT(IN)  :: me !< Input parameters.
+    CHARACTER(len=*),         INTENT(IN)  :: name !< Name of the variable.
+    INTEGER                               :: varID !< CDI variable ID.
+
+    INTEGER :: tile_index
+
+    CALL me%inqVarIdTiles(name, trivial_tile_att%getTileinfo_grb2(), varID, tile_index)
+
+  END FUNCTION inputParametersInqVarId
+
+  !---------------------------------------------------------------------------------------------------------------------------------
+  !> Determine the datatype of the given variable in the input file
+  !---------------------------------------------------------------------------------------------------------------------------------
+  SUBROUTINE inputParametersFindVarId(me, name, tileinfo, varID, tile_index)
+    IMPLICIT NONE
+    CLASS(t_inputParameters), INTENT(IN)  :: me
+    CHARACTER(len=*),         INTENT(IN)  :: name
+    TYPE(t_tileinfo_grb2),    INTENT(IN)  :: tileinfo
+    INTEGER,                  INTENT(OUT) :: varID, tile_index
+
+    CHARACTER(len=*), PARAMETER :: routine = modname//':inputParametersFindVarId'
+    CHARACTER(len=DICT_MAX_STRLEN) :: mapped_name
+    INTEGER :: i, j, tlen
+
+    CALL me%inqVarIdTiles(name, tileinfo, varID, tile_index)
 
     ! insanity check
     IF(varID < 0) THEN
       IF(my_process_is_stdio()) THEN
+        mapped_name = name
+        IF (me%have_dict) &
+          & mapped_name = me%dict%get(TRIM(name), DEFAULT=name)
+        mapped_name = tolower(mapped_name)
+        tlen = LEN_TRIM(mapped_name)
+
         PRINT '(5a)', routine, ": mapped_name = '", mapped_name(1:tlen), "'", "", &
              routine, ": tile idx = ", tileinfo%idx, ", att = ", tileinfo%att, &
              routine, ": list of variables:"

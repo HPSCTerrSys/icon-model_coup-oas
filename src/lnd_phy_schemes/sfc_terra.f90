@@ -84,7 +84,7 @@ USE mo_lnd_nwp_config,     ONLY: lmulti_snow, l2lay_rho_snow,     &
   &                              itype_root, itype_heatcond,      &
   &                              itype_hydbound,                  &
   &                              itype_canopy, tau_skin,          &
-  &                              lterra_urb, lurbahf, itype_eisa, &
+  &                              lterra_urb, itype_ahf, itype_eisa, &
   &                              lstomata,                        &
   &                              max_toplaydepth, itype_interception, &
   &                              cwimax_ml
@@ -1407,9 +1407,6 @@ ENDDO
     lhfl_pl(i,ke_soil+1)  = 0.0_wp
     rstom  (i)            = 0.0_wp
     zahf   (i)            = 0.0_wp         ! TERRA_URB: Anthropogenic heat flux
-!   IF (lterra_urb .AND. (itype_eisa==2)) THEN
-!     zeisa(i)            = 0.0_wp
-!   ENDIF
   ENDDO
 
   ! REORDER
@@ -2627,13 +2624,7 @@ ENDDO
              + zrr    (i  )  & ! formation of dew
              + zrs    (i  )    ! formation of rime
 
-!     IF (lterra_urb .AND. (itype_eisa == 2)) THEN
-!       ze_sum = ze_sum + zeisa(i)     ! impervious surface evaporation
-!     END IF
-!     zqvfl_s(i) = ze_sum   !US:  is this some other variable? zqhfl_sfc or so?    yes, it is zqhfl_sfc
-
       qv_s(i) = qv (i) - ze_sum /(zrhoch(i) + eps_div)
-!JH   qv_s(i,nnew) = qv_s(i,nx)
     END DO
   ELSE          IF (itype_interception == 2) THEN
     !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(ze_sum)
@@ -2646,13 +2637,7 @@ ENDDO
              + zdrr   (i) &
              + zrrs   (i)
 
-!     IF (lterra_urb .AND. (itype_eisa == 2)) THEN
-!       ze_sum = ze_sum + zeisa(i)     ! impervious surface evaporation
-!     END IF
-!     zqvfl_s(i) = ze_sum   !US:  is this some other variable? zqhfl_sfc or so?
-
       qv_s(i) = qv (i) - ze_sum /(zrhoch(i) + eps_div)
-!JH   qv_s(i,nnew) = qv_s(i,nx)
     END DO
   END IF
   !$ACC END PARALLEL
@@ -3977,7 +3962,7 @@ ENDDO
   ELSE  ! single-layer snow model
 
     ! TERRA_URB: Set anthropogenic heat flux
-    IF (lterra_urb .AND. lurbahf) THEN
+    IF (lterra_urb .AND. itype_ahf >= 1) THEN
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
       !$ACC LOOP GANG VECTOR
       DO i = ivstart, ivend
@@ -3995,12 +3980,7 @@ ENDDO
       ! part of surface based on area mean values calculated in radiation
       ! code (positive = downward)
 
-!     IF (lterra_urb) THEN
-!       ! modification of the infrared albedo according to the buliding fraction
-!       ztalb = sa_uf(i) * ctalb_bm * alb_red_uf(i) + (1.0_wp - sa_uf(i)) * Ctalb
-!     ELSE
-        ztalb = Ctalb
-!     END IF
+      ztalb = Ctalb
 
       zgstr     =   sigma*(1._wp - ztalb) * ( (1._wp - zf_snow(i))* &
                     ztsk(i) + zf_snow(i)*ztsnow(i) )**4 + thbs(i)

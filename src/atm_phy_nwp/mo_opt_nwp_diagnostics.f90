@@ -4155,9 +4155,7 @@ CONTAINS
              lacc      = lzacc                             )
 
       CASE ( 4, 5, 6, 8 )
-#ifdef _OPENACC
-        CALL finish(routine, 'compute_field_dbz_2mom is supported by OpenACC, but never tested.')
-#endif
+
         CALL compute_field_dbz_2mom( npr       = nproma,                           &
              nlev      = ptr_patch%nlev,                   &
              nblks     = ptr_patch%nblks_c,                &
@@ -4368,6 +4366,8 @@ CONTAINS
                linterp_mode_dualpol = (synradar_meta%itype_refl >= 5), &
                ydir_lookup_read     = TRIM(ydir_mielookup_read), &
                ydir_lookup_write    = TRIM(ydir_mielookup_write), &
+               ext_tune_fac_pure    = synradar_meta%ext_tune_fac_pure, &
+               ext_tune_fac_melt    = synradar_meta%ext_tune_fac_melt, &
                zh_radar             = dbz3d_lin(:,:,:), &
                lhydrom_choice_testing = synradar_meta%lhydrom_choice_testing &
                )
@@ -4554,6 +4554,8 @@ CONTAINS
                luse_muD_relation_rain  = atm_phy_nwp_config(jg)%cfg_2mom%luse_mu_Dm_rain, &
                ydir_lookup_read  = TRIM(ydir_mielookup_read), &
                ydir_lookup_write = TRIM(ydir_mielookup_write), &
+               ext_tune_fac_pure    = synradar_meta%ext_tune_fac_pure, &
+               ext_tune_fac_melt    = synradar_meta%ext_tune_fac_melt, &
                zh_radar          = dbz3d_lin(:,:,:), &
                lhydrom_choice_testing = synradar_meta%lhydrom_choice_testing &
                )

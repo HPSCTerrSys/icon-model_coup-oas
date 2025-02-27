@@ -478,6 +478,18 @@ CONTAINS
          & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc, &
          & ldims=shape2d_c, in_group=groups("wave_phy"))
 
+    cf_desc    = t_cf_var('hrms_frac', '-', 'square ratio (Hrms / Hmax)**2', datatype_flt)
+    grib2_desc = grib2_var(255, 255, 255, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+    CALL add_var(p_diag_list, 'hrmc_frac', p_diag%hrms_frac,          &
+         & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc, &
+         & ldims=shape2d_c)
+
+    cf_desc    = t_cf_var('wbr_frac', '-', 'fraction of breaking waves', datatype_flt)
+    grib2_desc = grib2_var(255, 255, 255, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+    CALL add_var(p_diag_list, 'wbr_frac', p_diag%wbr_frac,          &
+         & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc, &
+         & ldims=shape2d_c, in_group=groups("wave_phy"))
+
     cf_desc    = t_cf_var('wave_num_c', '1/m', 'wave number at cell center', datatype_flt)
     grib2_desc = grib2_var(255, 255, 255, ibits, GRID_UNSTRUCTURED, GRID_CELL)
     CALL add_var(p_diag_list, 'wave_num_c', p_diag%wave_num_c,      &

@@ -96,6 +96,7 @@ CONTAINS
     LOGICAL :: linput_sf1      ! if .TRUE., calculate wind input source function term, first call
     LOGICAL :: linput_sf2      ! if .TRUE., calculate wind input source function term, second call
     LOGICAL :: ldissip_sf      ! if .TRUE., calculate dissipation source function term
+    LOGICAL :: lwave_brk_sf    ! if .TRUE., calculate wave breaking dissipation source function term
     LOGICAL :: lnon_linear_sf  ! if .TRUE., calculate non linear source function term
     LOGICAL :: lbottom_fric_sf ! if .TRUE., calculate bottom_friction source function term
     LOGICAL :: lwave_stress1   ! if .TRUE., calculate wave stress, first call
@@ -118,7 +119,7 @@ CONTAINS
          roair, RNUAIR, RNUAIRM, ROWATER, XEPS, XINVEPS, &
          XKAPPA, XNLEV, BETAMAX, ZALP, jtot_tauhf, ALPHA_CH, &
          depth, depth_min, depth_max, niter_smooth, &
-         linput_sf1, linput_sf2, ldissip_sf, lnon_linear_sf, lbottom_fric_sf, &
+         linput_sf1, linput_sf2, ldissip_sf, lwave_brk_sf, lnon_linear_sf, lbottom_fric_sf, &
          lwave_stress1, lwave_stress2, peak_u10, peak_v10, peak_lat, peak_lon, &
          impl_fac
 
@@ -166,6 +167,7 @@ CONTAINS
     linput_sf1 =       .TRUE. !< if .TRUE., calculate wind input source function term, first call
     linput_sf2 =       .TRUE. !< if .TRUE., calculate wind input source function term, second call
     ldissip_sf =       .TRUE. !< if .TRUE., calculate dissipation source function term
+    lwave_brk_sf =     .TRUE. !< if .TRUE., calculate wave breaking dissipation source function term
     lnon_linear_sf =   .TRUE. !< if .TRUE., calculate non linear source function term
     lbottom_fric_sf =  .TRUE. !< if .TRUE., calculate bottom_friction source function term
     lwave_stress1  =   .TRUE. !< if .TRUE., calculate wave stress, first call
@@ -261,6 +263,7 @@ CONTAINS
       wave_config(jg)%linput_sf1        = linput_sf1
       wave_config(jg)%linput_sf2        = linput_sf2
       wave_config(jg)%ldissip_sf        = ldissip_sf
+      wave_config(jg)%lwave_brk_sf      = lwave_brk_sf
       wave_config(jg)%lnon_linear_sf    = lnon_linear_sf
       wave_config(jg)%lbottom_fric_sf   = lbottom_fric_sf
       wave_config(jg)%lwave_stress1     = lwave_stress1

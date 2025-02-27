@@ -2,12 +2,6 @@
 # This file can be parsed using yaml
 # Data is stored in <icon_data_rootFolder>/buildbot_data/ref/<experiment_hash>
 icon_data_rootFolder: /users/icontest/pool/data/ICON
-builder: daint_cpu_nvidia_mixed
+builder: daint_cpu_cce
 # The list below maps each experiment to its current experiment_hash
-"atm_qubicc_nc_test": c25e5550a092985619e486802c082add865d12c7
-"c2sm_clm_r13b03_seaice": e2cfced3aaa42ed5030b904927a5f4375561f67a
-"mch_opr_r04b07": 3ae215eafaa2ca3f717c01026ba4293a7a990573
-"mch_opr_r04b07_lhn_00": 223abf8d6404ae754b7ab5e8f43f74a2874ed902
-"mch_opr_r04b07_sstice_inst": bc81618137dd1bd1e2418691d2b009cea82cbc7e
-"mch_opr_r19b07_lpi": 5de4c6bf8135236417a80e8fdd7d6ddb638bc56d
-"mch_opr_r19b07_midnight": 44bf2b0564d5d5739285eaf65b7cf78f08e32ac0
+"atm_qubicc_nc_test": 721b824b69e22c1310a6197b3a69adcae4def8c1

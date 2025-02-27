@@ -34,6 +34,7 @@ MODULE mo_reff_main
   USE mo_reff_types,           ONLY: t_reff_calc
   USE mo_2mom_mcrph_driver,    ONLY: two_mom_reff_coefficients 
   USE mo_parallel_config,      ONLY: nproma
+  USE mo_radiation_config,     ONLY: irad_aero, iRadAeroTegen, iRadAeroCAMSclim, iRadAeroCAMStd
   USE mo_cpl_aerosol_microphys,ONLY: ncn_from_tau_aerosol_speccnconst_dust, ice_nucleation
   USE microphysics_1mom_schemes, ONLY: get_params_for_ncn_calculation, get_params_for_reff_coefficients, get_cloud_number
   USE mo_index_list,           ONLY: generate_index_list_batched
@@ -202,7 +203,7 @@ MODULE mo_reff_main
   ! one moment scheme. 
   ! It contains copied code from the 1 moment scheme, because many functions are hard-coded.
   SUBROUTINE one_mom_calculate_ncn( ncn, return_fct, reff_calc, k_start,             &
-       &                           k_end, indices, n_ind,                            & 
+       &                           k_end, indices, n_ind,                            &
        &                           icpl_aero_ice, cams5, cams6, z_ifc, aer_dust,     &
        &                           q, t, rho, surf_cloud_num)
 
@@ -294,37 +295,41 @@ MODULE mo_reff_main
       ENDIF
 
     CASE (1)   ! Ice
-
-      IF ( icpl_aero_ice == 1) THEN ! use DeMott with CAMS dust aerosols
-        !$ACC DATA PRESENT(n_ind, indices, ncn, rho, t, cams5, cams6)
-        !$ACC PARALLEL DEFAULT(NONE) ASYNC(1) FIRSTPRIVATE(k_start, k_end)
-        !$ACC LOOP SEQ
-        DO k = k_start,k_end
-          !$ACC LOOP GANG VECTOR PRIVATE(jc, aerncn, dummy)
-          DO ic  = 1,n_ind(k)
-            jc        = indices(ic,k)
-            aerncn = 1.0E-6_wp*rho(jc,k)*( cams5(jc,k)/4.72911E-16_wp + cams6(jc,k)/1.55698E-15_wp )
-            CALL ice_nucleation ( t(jc,k), aerncn=aerncn , znin=dummy )
-            ncn(jc,k) = dummy
-          ENDDO
-        ENDDO
-        !$ACC END PARALLEL
-        !$ACC END DATA
-      ELSE IF (icpl_aero_ice == 2) THEN ! use Tegen dust with DeMott formula
-        !$ACC DATA PRESENT(n_ind, indices, ncn, t, z_ifc, aer_dust)
-        !$ACC PARALLEL DEFAULT(NONE) ASYNC(1) FIRSTPRIVATE(k_start, k_end)
-        !$ACC LOOP SEQ
-        DO k = k_start,k_end
-          !$ACC LOOP GANG VECTOR PRIVATE(jc, aerncn, dummy)
-          DO ic  = 1,n_ind(k)
-            jc        = indices(ic,k)
-            CALL ncn_from_tau_aerosol_speccnconst_dust (z_ifc(jc,k), z_ifc(jc,k+1), aer_dust(jc), aerncn)
-            CALL ice_nucleation ( t(jc,k), aerncn=aerncn , znin=dummy )
-            ncn(jc,k) = dummy
-          ENDDO
-        ENDDO
-        !$ACC END PARALLEL
-        !$ACC END DATA
+      IF (icpl_aero_ice == 1) THEN
+        SELECT CASE(irad_aero)
+          CASE (iRadAeroCAMSclim, iRadAeroCAMStd)! use DeMott with CAMS dust aerosols
+            !$ACC DATA PRESENT(n_ind, indices, ncn, rho, t, cams5, cams6)
+            !$ACC PARALLEL DEFAULT(NONE) ASYNC(1) FIRSTPRIVATE(k_start, k_end)
+            !$ACC LOOP SEQ
+            DO k = k_start,k_end
+              !$ACC LOOP GANG VECTOR PRIVATE(jc, aerncn, dummy)
+              DO ic  = 1,n_ind(k)
+                jc        = indices(ic,k)
+                aerncn = 1.0E-6_wp*rho(jc,k)*( cams5(jc,k)/4.72911E-16_wp + cams6(jc,k)/1.55698E-15_wp )
+                CALL ice_nucleation ( t(jc,k), aerncn=aerncn , znin=dummy )
+                ncn(jc,k) = dummy
+              ENDDO
+            ENDDO
+            !$ACC END PARALLEL
+            !$ACC END DATA
+          CASE (iRadAeroTegen) ! use Tegen dust with DeMott formula
+            !$ACC DATA PRESENT(n_ind, indices, ncn, t, z_ifc, aer_dust)
+            !$ACC PARALLEL DEFAULT(NONE) ASYNC(1) FIRSTPRIVATE(k_start, k_end)
+            !$ACC LOOP SEQ
+            DO k = k_start,k_end
+              !$ACC LOOP GANG VECTOR PRIVATE(jc, aerncn, dummy)
+              DO ic  = 1,n_ind(k)
+                jc        = indices(ic,k)
+                CALL ncn_from_tau_aerosol_speccnconst_dust (z_ifc(jc,k), z_ifc(jc,k+1), aer_dust(jc), aerncn)
+                CALL ice_nucleation ( t(jc,k), aerncn=aerncn , znin=dummy )
+                ncn(jc,k) = dummy
+              ENDDO
+            ENDDO
+            !$ACC END PARALLEL
+            !$ACC END DATA
+          CASE DEFAULT
+            CALL finish('mo_reff_main', 'icpl_aero_ice = 1 only available for irad_aero = 6,7,8.')
+        END SELECT
       ELSE ! FR: Cooper (1986) used by Greg Thompson(2008)
         ! Some constant coefficients
         IF( lsuper_coolw) THEN
@@ -1070,7 +1075,7 @@ MODULE mo_reff_main
           ! Constant cloud_num
           CALL one_mom_calculate_ncn( ncn, return_fct, reff_calc, k_start,              &
                &                      k_end, indices, n_ind,                            &
-               &                      icpl_aero_ice, cams5, cams6, z_ifc, aer_dust, q) 
+               &                      icpl_aero_ice, cams5, cams6, z_ifc, aer_dust, q)
         END IF
 
       CASE DEFAULT

@@ -26,7 +26,7 @@
 MODULE mo_nwp_reff_interface
 
   USE mo_kind,                 ONLY: wp, i4
-  USE mo_exception,            ONLY: message, message_text
+  USE mo_exception,            ONLY: finish, message, message_text
 
   USE mo_run_config,           ONLY: msg_level, iqc, iqi, iqr, iqs,       &
                                        iqni, iqg, iqh, iqnr, iqns,     &
@@ -42,6 +42,7 @@ MODULE mo_nwp_reff_interface
   USE mo_loopindices,          ONLY: get_indices_c
   USE mo_nonhydrostatic_config,ONLY: kstart_moist
   USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config, iprog_aero, icpl_aero_ice
+  USE mo_radiation_config,     ONLY: irad_aero, iRadAeroTegen, iRadAeroCAMSclim, iRadAeroCAMStd
   USE mo_nwp_tuning_config,    ONLY: tune_zceff_min, tune_v0snow, tune_zvz0i, tune_icesedi_exp
 
   USE mo_reff_types,           ONLY: t_reff_calc_dom,  nreff_max_calc
@@ -527,10 +528,15 @@ MODULE mo_nwp_reff_interface
         END IF
 
         IF ( icpl_aero_ice == 1) THEN
-          ptr_cams5=>p_nh_diag%camsaermr(:,:,jb,5)
-          ptr_cams6=>p_nh_diag%camsaermr(:,:,jb,6)
-        ELSE IF (icpl_aero_ice == 2) THEN
-          ptr_aer_dust=>prm_diag%aerosol(:,idu,jb)
+          SELECT CASE(irad_aero)
+            CASE (iRadAeroCAMStd, iRadAeroCAMSclim)
+              ptr_cams5=>p_nh_diag%camsaermr(:,:,jb,5)
+              ptr_cams6=>p_nh_diag%camsaermr(:,:,jb,6)
+            CASE (iRadAeroTegen)
+              ptr_aer_dust=>prm_diag%aerosol(:,idu,jb)
+            CASE DEFAULT
+              CALL finish('mo_nwp_reff_interface', 'icpl_aero_ice = 1 only available for irad_aero = 6,7,8.')
+            END SELECT
         ENDIF
 
         CALL calculate_ncn (    ncn, reff_calc_dom(jg)%reff_calc_arr(ireff) ,indices,       &

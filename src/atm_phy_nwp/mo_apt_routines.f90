@@ -385,9 +385,6 @@ MODULE mo_apt_routines
               ext_data%atm%eai_t(jc,jb,jt)     = ext_data%atm%eai_t(jc,jb,jt)                                  &
                                                * (1.0_wp - ext_data%atm%urb_isa_t(jc,jb,jt))
             END IF
-
-          ELSE
-            ext_data%atm%rsmin2d_t(jc,jb,jt) = ext_data%atm%stomresmin_lcc(ilu)
           ENDIF
 
           ! Tuning factor for skin conductivity

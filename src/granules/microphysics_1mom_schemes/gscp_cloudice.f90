@@ -333,7 +333,6 @@ SUBROUTINE cloudice (                &
     zprvs       (nvec),     & !
     zprvi       (nvec)
 
-
   REAL    (KIND=wp   ) ::   &
     zcsdep            ,     & !
     zcidep            ,     & !
@@ -1069,14 +1068,20 @@ llqi =  zqik > zqmin
             END IF
             zsvidep = MIN( sidep, zsvmax )
           ELSEIF ( sidep < 0.0_wp ) THEN
-            IF (k < ke) THEN
+            IF (.NOT. (lsedi_ice .OR. lorig_icon) .OR. k < ke) THEN
               zsvisub  =   MAX (   sidep,  zsvmax)
               zsvisub  = - MAX ( zsvisub, -zsimax)
             ELSE
               zsvisub = - MAX(sidep, zsvmax )
               IF (zsvisub > zsimax) THEN
+                ! Prefer reducing precipitation over reducing sublimation in
+                ! lowest level to reduce time-step dependence. Factor 2 because
+                ! zpki enters the final precipitation with a factor 1/2 (Crank-
+                ! Nicholson).
+                zpki(iv) = zpki(iv) - 2._wp * (zsvisub - zsimax)*rhog*dz(iv,k)
+                zsvisub = zsvisub + 0.5 * MIN(0._wp, zpki(iv) / (rhog*dz(iv,k)))
+                zpki(iv) = MAX(0._wp, zpki(iv))
                 zzai = zsvisub/(z1orhog*zdtr)
-                zpki(iv) = MIN( zpki(iv) , zzai )
                 zqik = zzai*zimi
                 zsimax   = zsvisub
               ENDIF
@@ -1234,10 +1239,6 @@ llqi =  zqik > zqmin
         zprvr(iv) = qrg*rhog*zvzr(iv)
         zprvs(iv) = qsg*rhog*zvzs(iv)
         zprvi(iv) = qig*rhog*zvzi(iv)
-
-        IF (zprvr(iv) <= zqmin) zprvr(iv)=0.0_wp
-        IF (zprvs(iv) <= zqmin) zprvs(iv)=0.0_wp
-        IF (zprvi(iv) <= zqmin) zprvi(iv)=0.0_wp
 
         ! for the latent heat nudging
         IF (ldass_lhn) THEN

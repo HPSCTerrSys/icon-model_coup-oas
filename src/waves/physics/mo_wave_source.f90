@@ -26,6 +26,7 @@ MODULE mo_wave_source
 
   USE mo_kind,                ONLY: wp
   USE mo_model_domain,        ONLY: t_patch
+  USE mo_parallel_config,     ONLY: nproma
   USE mo_impl_constants,      ONLY: MAX_CHAR_LENGTH, min_rlcell
   USE mo_loopindices,         ONLY: get_indices_c
   USE mo_run_config,          ONLY: dtime
@@ -45,6 +46,7 @@ MODULE mo_wave_source
   PUBLIC :: src_dissipation
   PUBLIC :: src_bottom_friction
   PUBLIC :: src_nonlinear_transfer
+  PUBLIC :: src_wave_breaking
   !
   ! implicit time integration scheme
   PUBLIC :: integrate_in_time_src
@@ -326,6 +328,170 @@ CONTAINS
 !$OMP ENDDO NOWAIT
 !$OMP END PARALLEL
   END SUBROUTINE src_dissipation
+
+  !>
+  !! Calculation of dissipation due to depth-induced wave breaking
+  !!
+  !! Adaptation of WAM 4.6 code, SUBROUTINE SFBRK
+  !!
+  !! output:
+  !! hrms_frac
+  !! wbr_frac
+  !! sl
+  !! fl
+  !!
+  !! Reference
+  !! Battjes & Janssen (Coastal Engineering, 1978)
+  !!
+  SUBROUTINE src_wave_breaking(p_patch, wave_config, depth_c, tracer, p_diag, p_source)
+    CHARACTER(len=MAX_CHAR_LENGTH), PARAMETER :: &
+         & routine =  modname//'src_wave_breaking'
+
+    TYPE(t_patch),       INTENT(IN)         :: p_patch
+    TYPE(t_wave_config), TARGET, INTENT(IN) :: wave_config
+    REAL(wp),            INTENT(IN)         :: depth_c(:,:)
+    REAL(wp),            INTENT(IN)         :: tracer(:,:,:,:)
+    TYPE(t_wave_diag),   INTENT(INOUT)      :: p_diag
+    TYPE(t_wave_source), INTENT(INOUT)      :: p_source
+
+    TYPE(t_wave_config), POINTER :: wc => NULL()
+
+    REAL(wp), PARAMETER :: alpha = 1.0_wp
+
+    REAL(wp) :: qb, sbr(nproma), dsbr(nproma)
+
+    INTEGER :: i_rlstart, i_rlend, i_startblk, i_endblk
+    INTEGER :: i_startidx, i_endidx
+    INTEGER :: jb,jc,jf,jd,jt,jk
+
+    wc => wave_config
+
+    i_rlstart  = 1
+    i_rlend    = min_rlcell
+    i_startblk = p_patch%cells%start_block(i_rlstart)
+    i_endblk   = p_patch%cells%end_block(i_rlend)
+    jk         = p_patch%nlev
+
+    CALL breaking_waves_frac(p_patch, p_diag%emean, depth_c, & ! IN
+      &                      p_diag%hrms_frac, & !OUT
+      &                      p_diag%wbr_frac)    !OUT
+
+!$OMP PARALLEL
+!$OMP DO PRIVATE(jc,jb,jf,jd,jt,i_startidx,i_endidx,qb,sbr,dsbr) ICON_OMP_DEFAULT_SCHEDULE
+    DO jb = i_startblk, i_endblk
+      CALL get_indices_c( p_patch, jb, i_startblk, i_endblk,           &
+        &                 i_startidx, i_endidx, i_rlstart, i_rlend)
+
+      DO jc = i_startidx, i_endidx
+
+        qb = MIN(1.0_wp,p_diag%wbr_frac(jc,jb))
+
+        sbr(jc) = -alpha*2.0_wp * p_diag%f1mean(jc,jb)
+
+        IF (p_diag%hrms_frac(jc,jb) <= 1.0_wp) THEN
+          sbr(jc) = sbr(jc)*qb/p_diag%hrms_frac(jc,jb)
+        END IF
+
+        IF ( (p_diag%hrms_frac(jc,jb) < 1.0_wp             ) .AND. &
+          &  (ABS(p_diag%hrms_frac(jc,jb)-qb) > 0.0_wp ) ) THEN
+          dsbr(jc) = sbr(jc) * (1.0_wp - qb) / (p_diag%hrms_frac(jc,jb) - qb)
+        ELSE
+          dsbr(jc) = 0.0_wp
+        END IF
+      END DO
+
+      DO jf = 1,wc%nfreqs
+        DO jd = 1,wc%ndirs
+          !
+          jt = wc%tracer_ind(jd,jf)
+          !
+          DO jc = i_startidx, i_endidx
+            p_source%sl(jc,jb,jt) = p_source%sl(jc,jb,jt) + sbr(jc) * tracer(jc,jk,jb,jt)
+            p_source%fl(jc,jb,jt) = p_source%fl(jc,jb,jt) + dsbr(jc)
+          END DO
+        END DO
+      END DO
+
+    END DO
+!$OMP ENDDO NOWAIT
+!$OMP END PARALLEL
+
+  END SUBROUTINE src_wave_breaking
+
+  !>
+  !! Calculation of fraction of breaking waves
+  !!
+  !! Adaptation of WAM 4.6 code, SUBROUTINE CMPQB
+  !! ADDED BY WEIMIN LUO, POL, MAY 1996
+  !! BASED ON THE CODE OF G. Ph. van Vledder, Delft Hydraulics
+  !!
+  !! Method
+  !!
+  !!     Newton-Raphson implementation of
+  !!
+  !!     1 - QB
+  !!     ------ = - (HRMS/HMAX)^2
+  !!     ln(QB)
+  !!
+  !!
+  !!     If HRMS > HMAX --> QB = 1
+  !!
+  SUBROUTINE breaking_waves_frac(p_patch, emean, depth_c, hrms_frac, wbr_frac)
+    CHARACTER(len=MAX_CHAR_LENGTH), PARAMETER :: &
+      & routine =  modname//'breaking_waves_frac'
+
+    TYPE(t_patch), INTENT(IN)    :: p_patch
+    REAL(wp),      INTENT(IN)    :: emean(:,:)     ! total energy (nproma,nblks_c)
+    REAL(wp),      INTENT(IN)    :: depth_c(:,:)
+    REAL(wp),      INTENT(INOUT) :: hrms_frac(:,:) ! square ratio (Hrms / Hmax)**2 BB
+    REAL(wp),      INTENT(INOUT) :: wbr_frac(:,:)  ! fraction of breaking waves QB
+
+    INTEGER :: i_rlstart, i_rlend, i_startblk, i_endblk
+    INTEGER :: i_startidx, i_endidx
+    INTEGER :: jc,jb
+
+    REAL(wp), PARAMETER :: gamd  = 0.8  !! Parameter of depth limited wave height
+    REAL(wp) :: frac_0(nproma) !Q0
+
+    i_rlstart  = 1
+    i_rlend    = min_rlcell
+    i_startblk = p_patch%cells%start_block(i_rlstart)
+    i_endblk   = p_patch%cells%end_block(i_rlend)
+
+!$OMP PARALLEL
+!$OMP DO PRIVATE(jb,jc,i_startidx,i_endidx,frac_0) ICON_OMP_DEFAULT_SCHEDULE
+    DO jb = i_startblk, i_endblk
+      CALL get_indices_c( p_patch, jb, i_startblk, i_endblk,           &
+        &                 i_startidx, i_endidx, i_rlstart, i_rlend)
+
+      ! calculation of BB (Hrms / Hmax)**2 BB = 8.*EMEAN/(GAMD*DEPTH)**2 
+      DO jc = i_startidx, i_endidx
+        hrms_frac(jc,jb) = 8.0_wp * emean(jc,jb)/(gamd*depth_c(jc,jb))**2
+      END DO
+
+      ! initialisation of frac_0
+      DO jc = i_startidx, i_endidx
+        IF (hrms_frac(jc,jb)>=0.25_wp) THEN
+          frac_0(jc) = (2.0_wp * SQRT(hrms_frac(jc,jb))-1.0_wp )**2
+        ELSE
+          frac_0(jc) = 0.0_wp
+        END IF
+      END DO
+
+      DO jc = i_startidx, i_endidx
+        IF (hrms_frac(jc,jb) < 1.0_wp) THEN
+          wbr_frac(jc,jb) = frac_0(jc) - &
+            & hrms_frac(jc,jb) * (frac_0(jc)-EXP((frac_0(jc)-1.0_wp)/hrms_frac(jc,jb))) / &
+            & (hrms_frac(jc,jb) - EXP((frac_0(jc)-1.0_wp)/hrms_frac(jc,jb)))
+        ELSE
+          wbr_frac(jc,jb) = 1.0_wp
+        END IF
+      END DO
+    END DO
+!$OMP ENDDO NOWAIT
+!$OMP END PARALLEL
+
+  END SUBROUTINE breaking_waves_frac
 
 
   !>

@@ -209,8 +209,8 @@ CONTAINS
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx, i_endidx, start_prog_cells, end_prog_cells)
 
       DO jc = i_startidx, i_endidx
-        rain_rate(jc,jb) = prm_diag%rain_con_rate(jc,jb) + prm_diag%rain_gsp_rate(jc,jb)
-        snow_rate(jc,jb) = prm_diag%snow_con_rate(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)
+        rain_rate(jc,jb) = prm_diag%rain_con_rate_corr(jc,jb) + prm_diag%rain_gsp_rate(jc,jb)
+        snow_rate(jc,jb) = prm_diag%snow_con_rate_corr(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)
 
         IF (have_ice) snow_rate(jc,jb) = snow_rate(jc,jb) + prm_diag%ice_gsp_rate(jc,jb)
         IF (have_hail) snow_rate(jc,jb) = snow_rate(jc,jb) + prm_diag%hail_gsp_rate(jc,jb)
@@ -224,10 +224,10 @@ CONTAINS
     !    prm_diag%sp_10m  (:,:)                         10m wind speed [m/s]
     !    pt_diag%pres_sfc (:,:)                         surface pressure [Pa]
     !
-    ! 2. prm_diag%rain_con_rate(:,:)                    convective surface rain rate    [kg/m2/s]
+    ! 2. prm_diag%rain_con_rate_corr(:,:)               convective surface rain rate    [kg/m2/s]
     !    prm_diag%rain_gsp_rate(:,:)                    grid-scale surface rain rate    [kg/m2/s]
     !
-    !    prm_diag%snow_con_rate    (:,:)                convective surface snow_rate    [kg/m2/s]
+    !    prm_diag%snow_con_rate_corr(:,:)               convective surface snow_rate    [kg/m2/s]
     !    prm_diag%snow_gsp_rate    (:,:)                grid_scale surface snow rate    [kg/m2/s]
     !    prm_diag%ice_gsp_rate     (:,:)                grid_scale surface ice rate     [kg/m2/s]
     !    prm_diag%graupel_gsp_rate (:,:)                grid_scale surface graupel rate [kg/m2/s]

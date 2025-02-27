@@ -49,8 +49,7 @@ MODULE mo_atmo_coupling_frame
 
   USE mo_exception           ,ONLY: finish, message
 
-  USE mo_coupling_utils      ,ONLY: cpl_construct, cpl_destruct, &
-    &                               cpl_def_main, cpl_sync_def, cpl_enddef
+  USE mo_coupling_utils      ,ONLY: cpl_def_main, cpl_sync_def, cpl_enddef
 
   USE mtime                  ,ONLY: timedeltaToString, MAX_TIMEDELTA_STR_LEN
 
@@ -114,9 +113,6 @@ CONTAINS
     IF (ltimer) CALL timer_start (timer_coupling_init)
 
     CALL message(str_module, 'Constructing the atmosphere coupling frame.')
-
-    ! initialise coupler
-    CALL cpl_construct()
 
     jg = 1
     patch_horz => p_patch(jg)
@@ -267,9 +263,6 @@ CONTAINS
     IF ( is_coupled_run() ) THEN
 
       CALL message(str_module, 'Destructing the atmosphere coupling frame.')
-
-      ! destruct coupler
-      CALL cpl_destruct()
 
     END IF
 

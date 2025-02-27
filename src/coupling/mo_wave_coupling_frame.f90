@@ -25,8 +25,7 @@ MODULE mo_wave_coupling_frame
   USE mtime,              ONLY: timedeltaToString, MAX_TIMEDELTA_STR_LEN
   USE mo_coupling_config, ONLY: is_coupled_run, is_coupled_to_atmo
   USE mo_wave_atmo_coupling, ONLY: construct_wave_atmo_coupling
-  USE mo_coupling_utils,  ONLY: cpl_construct, cpl_destruct, &
-    &                           cpl_def_main, cpl_enddef
+  USE mo_coupling_utils,  ONLY: cpl_def_main, cpl_enddef
   USE mo_timer,           ONLY: timer_start, timer_stop, timer_coupling_init
 
   IMPLICIT NONE
@@ -80,9 +79,6 @@ CONTAINS
 
     CALL message(str_module, 'Constructing the wave coupling frame.')
 
-    ! initialise coupler
-    CALL cpl_construct()
-
     jg = 1
     patch_horz => p_patch(jg)
 
@@ -125,9 +121,6 @@ CONTAINS
     IF ( is_coupled_run() ) THEN
 
       CALL message(str_module, 'Destructing the wave coupling frame.')
-
-      ! destruct coupler
-      CALL cpl_destruct()
 
     END IF
 

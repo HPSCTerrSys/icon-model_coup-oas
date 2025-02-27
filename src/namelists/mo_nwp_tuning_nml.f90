@@ -16,6 +16,7 @@
 
 MODULE mo_nwp_tuning_nml
 
+  USE mo_exception,           ONLY: finish
   USE mo_kind,                ONLY: wp
   USE mo_io_units,            ONLY: nnml, nnml_output
   USE mo_impl_constants,      ONLY: max_dom
@@ -71,6 +72,7 @@ MODULE mo_nwp_tuning_nml
     &                               config_tune_gustlim_agl      => tune_gustlim_agl,      &
     &                               config_tune_gustlim_fac      => tune_gustlim_fac,      &
     &                               config_itune_albedo          => itune_albedo,          &
+    &                               config_tune_albedo_wso       => tune_albedo_wso,       &
     &                               config_itune_slopecorr       => itune_slopecorr,       &
     &                               config_itune_o3              => itune_o3,              &
     &                               config_lcalib_clcov          => lcalib_clcov,          &
@@ -81,7 +83,9 @@ MODULE mo_nwp_tuning_nml
     &                               config_tune_sc_invmin        => tune_sc_invmin,        &
     &                               config_tune_sc_invmax        => tune_sc_invmax,        &
     &                               config_tune_dursun_scaling   => tune_dursun_scaling,   &
-    &                               config_tune_sbmccn           => tune_sbmccn
+    &                               config_tune_sbmccn           => tune_sbmccn,           &
+    &                               config_tune_urbahf           => tune_urbahf,           &
+    &                               config_tune_urbisa           => tune_urbisa
   
   IMPLICIT NONE
   PRIVATE
@@ -221,6 +225,10 @@ MODULE mo_nwp_tuning_nml
   INTEGER :: &                     !< (MODIS) albedo tuning
     &  itune_albedo                ! 0: no tuning
 
+  REAL(wp):: &                     !< bare soil albedo correction for soil types 3-6
+    &  tune_albedo_wso(2)          ! tune_albedo_wso(1): albedo correction added over dry soil (w_so(1) < 0.001 m)
+                                   ! tune_albedo_wso(2): albedo correction added over wet soil (w_so(1) > 0.002 m)
+
   INTEGER :: &                     !< slope-dependent tuning of parameters affecting stable PBLs
     &  itune_slopecorr             ! 1: slope-dependent reduction of rlam_heat and near-surface tkhmin
 
@@ -266,10 +274,18 @@ MODULE mo_nwp_tuning_nml
 
   REAL(wp) :: &                    !< scaling of direct solar rediation to tune sunshine duration
        &  tune_dursun_scaling      !< in corresponding diagnostic
+
+  REAL(wp) :: &                    !< tuning of anthropogenic heat flux
+       &  tune_urbahf(4)
+
+  REAL(wp) :: &                    !< lower and upper bound for variable ISA paraeterization 
+       &  tune_urbisa(2)           !< depending on smoothed urban fraction
+  
   
   NAMELIST/nwp_tuning_nml/ tune_gkwake, tune_gkdrag, tune_gfluxlaun, tune_gcstar, &
     &                      tune_zceff_min, tune_v0snow, tune_zvz0i,               &
-    &                      tune_entrorg, itune_albedo, max_freshsnow_inc,         &
+    &                      tune_entrorg, itune_albedo, tune_albedo_wso,           &
+    &                      max_freshsnow_inc,                                     &
     &                      tune_capdcfac_et, tune_box_liq, tune_rhebc_land,       &
     &                      tune_rhebc_ocean, tune_rcucov, tune_texc,              &
     &                      tune_qexc, tune_minsnowfrac,tune_rhebc_land_trop,      &
@@ -285,7 +301,8 @@ MODULE mo_nwp_tuning_nml
     &                      tune_sc_eis, tune_sc_invmin, tune_sc_invmax,           &
     &                      tune_capethresh, tune_gkdrag_enh, tune_grcrit_enh,     &
     &                      tune_minsso_gwd, tune_dursun_scaling, tune_sbmccn,     &
-    &                      itune_slopecorr, tune_gustlim_agl, tune_gustlim_fac
+    &                      itune_slopecorr, tune_gustlim_agl, tune_gustlim_fac,   &
+    &                      tune_urbahf, tune_urbisa
 
 CONTAINS
 
@@ -425,6 +442,7 @@ CONTAINS
     tune_dust_abs   = 0._wp        ! no tuning of LW absorption of mineral dust
     tune_difrad_3dcont = 0.5_wp    ! tuning factor for 3D contribution to diagnosed diffuse radiation (no impact on prognostic results!)
     itune_albedo    = 0            ! original (measured) albedo
+    tune_albedo_wso = (/0._wp, 0._wp/) ! no bare soil albedo correction for soil types 3-6 (dry soil, wet soil)
     itune_o3        = 2            ! standard ozone tuning for EcRad
     itune_slopecorr  = 0           ! slope-dependent reduction of rlam_heat and near-surface tkhmin
     !
@@ -452,6 +470,10 @@ CONTAINS
 
     !> scaling of direct solar radiation in sunshine duration diagnostic
     tune_dursun_scaling = 1._wp
+
+    !> Tuning parameters for TERRA-URB
+    tune_urbahf = (/0._wp,2._wp,2._wp,50._wp/)   ! anthropogenic heat flux; base values and gradients for heating and cooling; upper limit
+    tune_urbisa = (/0.6_wp,1._wp/)        ! lower and upper bound for variable ISA parameterization depending on smoothed urban fraction
 
     IF (my_process_is_stdio()) THEN
       iunit = temp_defaults()
@@ -528,7 +550,9 @@ CONTAINS
     ! 4. Sanity check
     !----------------------------------------------------
 
-
+    IF ( ANY (ABS(tune_albedo_wso) >= 0.3_wp)) THEN
+      CALL finish(TRIM(routine), 'albedo correction tune_albedo_wso must be in the range -0.3 to 0.3')
+    ENDIF
 
     !----------------------------------------------------
     ! 5. Fill the configuration state
@@ -580,6 +604,7 @@ CONTAINS
     config_tune_gustlim_agl      = tune_gustlim_agl
     config_tune_gustlim_fac      = tune_gustlim_fac
     config_itune_albedo          = itune_albedo
+    config_tune_albedo_wso       = tune_albedo_wso    
     config_itune_slopecorr       = itune_slopecorr
     config_itune_o3              = itune_o3
     config_lcalib_clcov          = lcalib_clcov
@@ -591,9 +616,11 @@ CONTAINS
     config_tune_sc_invmax        = tune_sc_invmax
     config_tune_dursun_scaling   = tune_dursun_scaling
     config_tune_sbmccn           = tune_sbmccn
+    config_tune_urbisa           = tune_urbisa
+    config_tune_urbahf           = tune_urbahf
 
     !$ACC UPDATE DEVICE(config_tune_gust_factor, config_itune_gust_diag, config_tune_gustsso_lim) ASYNC(1)
-    !$ACC UPDATE DEVICE(config_tune_gustlim_agl, config_tune_gustlim_fac) ASYNC(1)
+    !$ACC UPDATE DEVICE(config_tune_gustlim_agl, config_tune_gustlim_fac, config_tune_albedo_wso) ASYNC(1)
 
     !-----------------------------------------------------
     ! 6. Store the namelist for restart

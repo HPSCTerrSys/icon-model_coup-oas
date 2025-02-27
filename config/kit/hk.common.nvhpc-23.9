@@ -63,7 +63,7 @@ ZLIB_LIBS='-lz'
 
 ################################################################################
 
-BUILD_ENV="export LD_LIBRARY_PATH=\"${PGI_ROOT}/lib:${MPI_ROOT}/lib:${CUDA_ROOT}/lib64:${HDF5_ROOT}/lib:${NETCDF_ROOT}/lib:${NETCDFF_ROOT}/lib:${ECCODES_ROOT}/lib64:${FYAML_ROOT}/lib:${SERIALBOX2_ROOT}/lib:/usr/lib64:/usr/lib\";export PATH=\"${HDF5_ROOT}/bin:${NETCDF_ROOT}/bin/:/usr/bin\";"
+BUILD_ENV="export LD_LIBRARY_PATH=\"${PGI_ROOT}/lib:${MPI_ROOT}/lib:${CUDA_ROOT}/lib64:${HDF5_ROOT}/lib:${NETCDF_ROOT}/lib:${NETCDFF_ROOT}/lib:${ECCODES_ROOT}/lib64:${FYAML_ROOT}/lib:${SERIALBOX2_ROOT}/lib:/usr/lib64:/usr/lib\";export PATH=\"${HDF5_ROOT}/bin:${NETCDF_ROOT}/bin/:/usr/bin\"; unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH INCLUDE LIBRARY_PATH;"
 
 LDFLAGS="-L${PGI_ROOT}/lib -L${MPI_ROOT}/lib -L${CUDA_ROOT}/lib64 -L${HDF5_ROOT}/lib -L${NETCDF_ROOT}/lib -L${NETCDFF_ROOT}/lib -L${ECCODES_ROOT}/lib64 -L${FYAML_ROOT}/lib -L${SERIALBOX2_ROOT}/lib"
 LIBS="-Wl,--as-needed ${PGI_LIBS} ${MPI_LIBS} ${CUDA_LIBS} ${HDF5_LIBS} ${NETCDF_LIBS} ${NETCDFF_LIBS} ${ECCODES_LIBS} ${FYAML_LIBS} ${SERIALBOX2_LIBS} ${XML2_LIBS} ${ZLIB_LIBS} -lrt"

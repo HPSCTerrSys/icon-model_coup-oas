@@ -20,7 +20,7 @@ MODULE mo_atmo_model
     &                                   my_process_is_work,      &
     &                                   my_process_is_mpi_test
   USE mo_timer,                   ONLY: init_timer, timer_start, timer_stop,                  &
-    &                                   timers_level, timer_model_init,                       &
+    &                                   timers_level, timer_model_init, timer_coupling,       &
     &                                   timer_domain_decomp, timer_compute_coeffs,            &
     &                                   timer_ext_data, print_timer
 #ifdef HAVE_RADARFWO
@@ -48,6 +48,8 @@ MODULE mo_atmo_model
   USE mo_util_sysinfo,            ONLY: util_get_maxrss
 #endif
 #endif
+  USE mo_coupling_config,         ONLY: is_coupled_run
+  USE mo_coupling_utils,          ONLY: cpl_construct, cpl_destruct
   USE mo_impl_constants,          ONLY: SUCCESS, inwp, LSS_JSBACH, min_rlcell_int, min_rlcell
   USE mo_impl_constants_grf,      ONLY: grf_bdywidth_c, grf_bdywidth_e
   USE mo_zaxis_type,              ONLY: zaxisTypeList, t_zaxisTypeList
@@ -388,6 +390,16 @@ CONTAINS
     !-------------------------------------------------------------------
     IF (ltimer) CALL init_timer
     IF (timers_level > 1) CALL timer_start(timer_model_init)
+
+    !-------------------------------------------------------------------
+    ! 3.3 construct basic coupler
+    !-------------------------------------------------------------------
+
+    IF (is_coupled_run()) THEN
+      IF (ltimer) CALL timer_start(timer_coupling)
+      CALL cpl_construct()
+      IF (ltimer) CALL timer_stop(timer_coupling)
+    END IF
 
     !-------------------------------------------------------------------
     ! initialize dynamic list of vertical axes
@@ -784,6 +796,11 @@ CONTAINS
     IF (error_status/=SUCCESS) THEN
       CALL finish(routine, 'deallocate for patch array failed')
     ENDIF
+
+    ! destruct basic coupler
+    IF (is_coupled_run()) THEN
+      CALL cpl_destruct()
+    END IF
 
     ! close memory logging files
     CALL memory_log_terminate

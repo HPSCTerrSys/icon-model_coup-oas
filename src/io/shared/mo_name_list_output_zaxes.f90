@@ -65,8 +65,7 @@ MODULE mo_name_list_output_zaxes
     &                                             ZA_reference, ZA_reference_half, ZA_reference_half_hhl,        &
     &                                             ZA_sediment_bottom_tw_half, ZA_snow, ZA_snow_half, ZA_toa,     &
     &                                             ZA_OCEAN_SEDIMENT, ZA_height_2m_layer, ZA_ECHOTOP,             &
-    &                                             ZA_TROPOPAUSE, ZA_WSHEAR, ZA_PRESSURE_LAPSERATE, ZA_SRH,       &
-    &                                             ZA_HORIZONTAL_PLANE_OS, ZA_TERRAIN_TANGENT_PLANE_OS
+    &                                             ZA_TROPOPAUSE, ZA_WSHEAR, ZA_PRESSURE_LAPSERATE, ZA_SRH
   USE mo_level_selection_types,             ONLY: t_level_selection
   USE mo_util_vgrid_types,                  ONLY: vgrid_buffer
   USE mo_math_utilities,                    ONLY: set_zlev, t_value_set
@@ -172,12 +171,6 @@ CONTAINS
 
     ! for having variable on the tropopause niveau
     CALL verticalAxisList%append(single_level_axis(ZA_TROPOPAUSE, opt_grib2_level_type=7))
-
-    ! horizontal reference surface including non-local radiative effects of terrain
-    CALL verticalAxisList%append(single_level_axis(ZA_HORIZONTAL_PLANE_OS,opt_grib2_level_type=208))
-
-    !  plane tangent to terrain including non-local radiative effects of terrain
-    CALL verticalAxisList%append(single_level_axis(ZA_TERRAIN_TANGENT_PLANE_OS,opt_grib2_level_type=209))
 
     ! --------------------------------------------------------------------------------------
     ! Definitions for single layers --------------------------------------------------------

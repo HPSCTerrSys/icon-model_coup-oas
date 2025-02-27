@@ -90,6 +90,7 @@ MODULE mo_wave_config
     LOGICAL :: linput_sf1      ! if .TRUE., calculate wind input source function term, first call
     LOGICAL :: linput_sf2      ! if .TRUE., calculate wind input source function term, second call
     LOGICAL :: ldissip_sf      ! if .TRUE., calculate dissipation source function term
+    LOGICAL :: lwave_brk_sf    ! if .TRUE., calculate wave breaking dissipation source function term
     LOGICAL :: lnon_linear_sf  ! if .TRUE., calculate non linear source function term
     LOGICAL :: lbottom_fric_sf ! if .TRUE., calculate bottom_friction source function term
     LOGICAL :: lwave_stress1   ! if .TRUE., calculate wave stress, first call

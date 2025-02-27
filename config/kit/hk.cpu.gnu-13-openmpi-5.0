@@ -57,7 +57,7 @@ ZLIB_LIBS='-lz'
 
 ################################################################################
 
-BUILD_ENV="export LD_LIBRARY_PATH=\"${GCC_ROOT}/lib64:${MPI_ROOT}/lib64:${CUDA_ROOT}/lib64:${HDF5_ROOT}/lib:${NETCDF_ROOT}/lib:${NETCDFF_ROOT}/lib:${ECCODES_ROOT}/lib64:${FYAML_ROOT}/lib:${BLAS_LAPACK_LIB_DIR}:/usr/lib64\"; export PATH=\"${HDF5_ROOT}/bin:${NETCDF_ROOT}/bin/:/usr/bin\";"
+BUILD_ENV="export LD_LIBRARY_PATH=\"${GCC_ROOT}/lib64:${MPI_ROOT}/lib64:${CUDA_ROOT}/lib64:${HDF5_ROOT}/lib:${NETCDF_ROOT}/lib:${NETCDFF_ROOT}/lib:${ECCODES_ROOT}/lib64:${FYAML_ROOT}/lib:${BLAS_LAPACK_LIB_DIR}:/usr/lib64\"; export PATH=\"${GCC_ROOT}/bin:${HDF5_ROOT}/bin:${NETCDF_ROOT}/bin/:/usr/bin\"; unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH INCLUDE LIBRARY_PATH;"
 
 LDFLAGS="-L${GCC_ROOT}/lib64 -L${MPI_ROOT}/lib64 -L${CUDA_ROOT}/lib64 -L${HDF5_ROOT}/lib -L${NETCDF_ROOT}/lib -L${NETCDFF_ROOT}/lib -L${ECCODES_ROOT}/lib64 -L${FYAML_ROOT}/lib -L${BLAS_LAPACK_LIB_DIR}"
 LIBS="-Wl,--disable-new-dtags -Wl,--as-needed ${MPI_LIBS} ${XML2_LIBS} ${ZLIB_LIBS} ${ECCODES_LIBS} ${FYAML_LIBS} ${BLAS_LAPACK_LIBS} ${NETCDFF_LIBS} ${NETCDF_LIBS} ${HDF5_LIBS}"

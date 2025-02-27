@@ -56,7 +56,7 @@ MODULE mo_nonhydro_state
     &                                iqtke, ltestcase, lart,                    &
     &                                iqbin, iqb_i, iqb_e, iqb_s            
   USE mo_coupling_config,      ONLY: is_coupled_to_ocean
-  USE mo_radiation_config,     ONLY: irad_aero, iRadAeroCAMSclim
+  USE mo_radiation_config,     ONLY: irad_aero, iRadAeroCAMSclim, iRadAeroCAMStd
   USE mo_io_config,            ONLY: inextra_2d, inextra_3d, lnetcdf_flt64_output, &
     &                                t_var_in_output
   USE mo_limarea_config,       ONLY: latbc_config
@@ -1743,7 +1743,7 @@ MODULE mo_nonhydro_state
                 & lopenacc = .TRUE. )
     __acc_attach(p_diag%v)
 
-    IF (irad_aero == iRadAeroCAMSclim) THEN
+    IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
       cf_desc    = t_cf_var('CAMS_aerosols', 'kg kg-1', 'CAMS aerosols mixing ratios', datatype_flt)
       grib2_desc = grib2_var(255, 255, 255, ibits, GRID_UNSTRUCTURED, GRID_CELL)
       CALL add_var( p_diag_list, 'camsaermr', p_diag%camsaermr,                   &

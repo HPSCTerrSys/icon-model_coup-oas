@@ -98,7 +98,7 @@ CONTAINS
     uadd_sso = MAX(0._wp, SQRT(u_env**2 + v_env**2) - SQRT(u1**2 + v1**2))
     SELECT CASE (itune_gust_diag)
     CASE (4)     ! gust param based on 10-min averaged wind
-      offset = 6._wp
+      offset = 6._wp+6._wp*fr_oce
     CASE (3)     ! ICON-D2 with subgrid-scale condensation
       offset = 10._wp+6._wp*fr_oce
     CASE (2)     ! ICON global with MERIT/REMA orography data
@@ -577,7 +577,9 @@ CONTAINS
     INTEGER  :: jk,jc
     INTEGER  :: iq_start
     REAL(wp) :: zrhox(nproma,kend,5)
-    REAL(wp) :: zrhox_clip(nproma,kend)
+    REAL(wp) :: zrhox_clip(nproma,kend) !< Negative sum of clipped water tracer density [kg/m3].
+    REAL(wp) :: zwtr_clip_rate(nproma) !< Total negative sum of clipped vapor mass rate [kg/m2/s].
+    REAL(wp) :: zrhoqv
 #ifndef __NO_ICON_LES__
     REAL(wp) :: nudgecoeff  ! SCM Nudging
     REAL(wp) :: z_ddt_q_nudge
@@ -590,7 +592,7 @@ CONTAINS
     CALL set_acc_host_or_device(lzacc, lacc)
 
     !$ACC DATA PRESENT(p_rho_now, prm_nwp_tend, prm_diag, pt_prog_rcf) &
-    !$ACC   CREATE(zrhox, zrhox_clip) &
+    !$ACC   CREATE(zrhox, zrhox_clip, zwtr_clip_rate) &
     !$ACC   COPYIN(kstart_moist) &
     !$ACC   IF(lzacc)
 
@@ -605,6 +607,7 @@ CONTAINS
 
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     zrhox_clip(:,:) = 0._wp
+    zwtr_clip_rate(:) = 0._wp
     !$ACC END KERNELS
 
     ! add tendency due to convection
@@ -614,8 +617,9 @@ CONTAINS
       idx = conv_list(jt)
       IF (idx <= 0) CYCLE
 
-      !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
+      !$ACC LOOP SEQ
       DO jk = kstart_moist(jg), kend
+        !$ACC LOOP GANG(STATIC: 1) VECTOR
         DO jc = i_startidx, i_endidx
           zrhox(jc,jk,jt) = p_rho_now(jc,jk)*pt_prog_rcf%tracer(jc,jk,jb,idx)  &
             &             + pdtime*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,idx)
@@ -634,25 +638,38 @@ CONTAINS
         CYCLE         ! special treatment see below
       ENDIF
       !
-      !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
+      !$ACC LOOP SEQ
       DO jk = kstart_moist(jg), kend
+        !$ACC LOOP GANG(STATIC: 1) VECTOR
         DO jc = i_startidx, i_endidx
           pt_prog_rcf%tracer(jc,jk,jb,idx) = zrhox(jc,jk,jt)/p_rho_now(jc,jk)
         ENDDO
       ENDDO
     ENDDO ! jt
     !
-    ! Special treatment for qv. 
+    ! Special treatment for qv.
     ! Rediagnose tracer mass fraction and substract mass created by artificial clipping.
-    !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
+    !$ACC LOOP SEQ
     DO jk = kstart_moist(jg), kend
+      !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(zrhoqv)
       DO jc = i_startidx, i_endidx
-        pt_prog_rcf%tracer(jc,jk,jb,iqv) = MAX(0._wp, &
-          &                                    (zrhox(jc,jk,pos_qv) + zrhox_clip(jc,jk)) &
-          &                                    /p_rho_now(jc,jk)                         &
-          &                                   )
+        zrhoqv = zrhox(jc,jk,pos_qv) + zrhox_clip(jc,jk)
+        ! Keep total mass of clipped water vapor. Used to reduce convective rain and snow.
+        zwtr_clip_rate(jc) = zwtr_clip_rate(jc) &
+          & + p_metrics%ddqz_z_full(jc,jk,jb) / pdtime * MIN(0._wp, zrhoqv)
+        pt_prog_rcf%tracer(jc,jk,jb,iqv) = MAX(0._wp, zrhoqv/p_rho_now(jc,jk))
       ENDDO
     ENDDO
+    !$ACC END PARALLEL
+
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC LOOP GANG VECTOR
+    DO jc = i_startidx, i_endidx
+      ! First remove clipped mass from rain, then from snow.
+      prm_diag%rain_con_rate_corr(jc,jb) = MAX(0._wp, prm_diag%rain_con_rate(jc,jb) + zwtr_clip_rate(jc))
+      zwtr_clip_rate(jc) = MIN(0._wp, zwtr_clip_rate(jc) + prm_diag%rain_con_rate(jc,jb))
+      prm_diag%snow_con_rate_corr(jc,jb) = MAX(0._wp, prm_diag%snow_con_rate(jc,jb) + zwtr_clip_rate(jc))
+    END DO
     !$ACC END PARALLEL
 
 !!  Update of two-moment number densities using the updates from the convective parameterization

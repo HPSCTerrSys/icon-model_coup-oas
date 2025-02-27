@@ -167,6 +167,7 @@ MODULE mo_io_config
     LOGICAL :: cape_mu      = .FALSE. !< Flag. TRUE if computation of most unstable CAPE is desired
     LOGICAL :: cin_mu       = .FALSE. !< Flag. TRUE if computation of most unstable convective inhibition MU is desired
     LOGICAL :: hpbl         = .FALSE. !< Flag. TRUE if computation of boundary layer height is desired
+    LOGICAL :: aod_550nm    = .FALSE. !< Flag. TRUE if computation of aerosol optical depth at 550 nm is desired
     LOGICAL :: cape_3km     = .FALSE. !< Flag. TRUE if computation of CAPE 3KM is desired
     LOGICAL :: lfc_ml       = .FALSE. !< Flag. TRUE if computation of the Level of Free Convection is desired
     LOGICAL :: lcl_ml       = .FALSE. !< Flag. TRUE if computation of the Lifted Condensation Level is desired
@@ -345,6 +346,7 @@ CONTAINS
         var_in_output(jg)%swiss00     = is_variable_in_output_dom(var_name="swiss00", jg=jg)
         var_in_output(jg)%cloudtop    = is_variable_in_output_dom(var_name="cloudtop", jg=jg)
         var_in_output(jg)%hpbl        = is_variable_in_output_dom(var_name="hpbl", jg=jg)
+        var_in_output(jg)%aod_550nm   = is_variable_in_output_dom(var_name="aod_550nm", jg=jg)
 
         ! add vars for global mean calculations
         var_in_output(jg)%tas_gmean   = is_variable_in_output_dom(var_name="tas_gmean", jg=jg)

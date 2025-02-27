@@ -92,7 +92,7 @@ SUBROUTINE interpol_vec_ubc(p_pp, p_pc, p_grf, p_vn_in, p_vn_out, lacc)
     npromz_ubcintp = nproma_ubcintp
   ENDIF
 
-  !$ACC DATA CREATE(vn_aux)
+  !$ACC DATA CREATE(vn_aux) IF(SIZE(vn_aux) > 0)
 
 !$OMP PARALLEL
 !$OMP DO PRIVATE (jb,je,nlen,nshift) ICON_OMP_DEFAULT_SCHEDULE
@@ -100,7 +100,7 @@ SUBROUTINE interpol_vec_ubc(p_pp, p_pc, p_grf, p_vn_in, p_vn_out, lacc)
     nlen = MERGE(nproma_ubcintp, npromz_ubcintp, jb /= nblks_ubcintp)
     nshift = (jb-1)*nproma_ubcintp
 
-    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) PRESENT(p_pp%edges%refin_ctrl)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) PRESENT(p_pp%edges%refin_ctrl) IF(SIZE(vn_aux) > 0)
     !$ACC LOOP GANG VECTOR COLLAPSE(2)
     DO je = nshift+1, nshift+nlen
       DO jk = 1,2

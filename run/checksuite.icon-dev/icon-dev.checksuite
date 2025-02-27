@@ -16,11 +16,12 @@ set +x
 cd ..
 
 # get paths standardized by pwd
-SCRIPT_DIR=`pwd`
+SCRIPT_DIR=${SCRIPT_DIR:=`pwd`}
 cd ..
 MODEL_DIR=`pwd`
 cd $SCRIPT_DIR
 
+PREFIX=${PREFIX:=exp}
 
 #################### functions ##########################################
 function one_or_more_are_files
@@ -684,8 +685,10 @@ SCRIPT=${EXPERIMENT}
 
 cd ${MODEL_DIR}
 
-if [ ! -f ${SCRIPT_DIR}/exp.${SCRIPT}.run -o "$FORCE_MRS" == 'yes' ]; then
-    ./make_runscripts ${SCRIPT} -d
+MRS_SUBDIR="${SCRIPT_DIR#${MODEL_DIR}}"
+
+if [ ! -f ${SCRIPT_DIR}/${PREFIX}.${SCRIPT}.run -o "$FORCE_MRS" == 'yes' ]; then
+    ./make_runscripts ${SCRIPT} -d ${MRS_SUBDIR:+-r ${MRS_SUBDIR}}
 fi
 
 if [ ! -d experiments ]; then
@@ -693,19 +696,19 @@ if [ ! -d experiments ]; then
 fi
 
 # check if the test runscript exists
-if [ ! -f ${SCRIPT_DIR}/exp.${SCRIPT}.run ]; then
+if [ ! -f ${SCRIPT_DIR}/${PREFIX}.${SCRIPT}.run ]; then
     if [ "$COLOUR" == 'no' ]; then
-        echo "did not find base runscript ${SCRIPT_DIR}/exp.${SCRIPT}.run"
+        echo "did not find base runscript ${SCRIPT_DIR}/${PREFIX}.${SCRIPT}.run"
     else
-        echo "\033[31mdid not find base runscript ${SCRIPT_DIR}/exp.${SCRIPT}.run\033[00m"
+        echo "\033[31mdid not find base runscript ${SCRIPT_DIR}/${PREFIX}.${SCRIPT}.run\033[00m"
     fi
     exit 1
 else
-    echo "found runscript ${SCRIPT_DIR}/exp.${SCRIPT}.run"
+    echo "found runscript ${SCRIPT_DIR}/${PREFIX}.${SCRIPT}.run"
 fi
 
 # find out on which system we are
-TARGET_MACHINE=`grep "# target machine is " ${SCRIPT_DIR}/exp.${SCRIPT}.run`
+TARGET_MACHINE=`grep "# target machine is " ${SCRIPT_DIR}/${PREFIX}.${SCRIPT}.run`
 TARGET_MACHINE=${TARGET_MACHINE#'# target machine is '}
 
 # variables to track the test results
@@ -725,8 +728,8 @@ EXP_BASE=${EXPERIMENT}_${TEST}
 EXP_TEST=${EXPERIMENT}_${TEST}
 if [ "${OVERWRITE}" == 'yes' -o ! -d ${MODEL_DIR}/experiments/${EXP_BASE} ]; then
     cd ${SCRIPT_DIR}
-    RUN_SCRIPT=exp.${EXP_BASE}.run
-    sed    s/${SCRIPT}/${EXP_BASE}/g < exp.${SCRIPT}.run > ${RUN_SCRIPT} # change experiment name
+    RUN_SCRIPT=${PREFIX}.${EXP_BASE}.run
+    sed    s/${SCRIPT}/${EXP_BASE}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT} # change experiment name
     sed -i s/data.${EXP_BASE}/data.${SCRIPT}/g             ${RUN_SCRIPT} # except in the data package name
 
     echo "Perform $TEST run"
@@ -761,28 +764,28 @@ if [[ ${MD} =~ .*u.* ]]; then
     cd ${REFERENCE} || exit 1
     RUN_STATUS=-1
     if [ ! -d experiments/${EXP_BASE} ] ;then 
-        if [ ! -f run/exp.${SCRIPT}.run -o "$FORCE_MRS" == 'yes' ]; then
-            ${MODEL_DIR}/make_runscripts ${SCRIPT}
+        if [ ! -f run/${PREFIX}.${SCRIPT}.run -o "$FORCE_MRS" == 'yes' ]; then
+            ${MODEL_DIR}/make_runscripts ${SCRIPT} ${MRS_SUBDIR:+-r ${MRS_SUBDIR}}
         fi
         if [ ! -d experiments ]; then
             mkdir experiments
         fi
         cd run
-        if [ ! -f exp.${SCRIPT}.run ]; then
+        if [ ! -f ${PREFIX}.${SCRIPT}.run ]; then
             if [ "$COLOUR" == 'no' ]; then
                 echo 'reference model: '$REFERENCE
-                echo "did not find base runscript for reference model exp.${SCRIPT}.run"
+                echo "did not find base runscript for reference model ${PREFIX}.${SCRIPT}.run"
             else
                 echo -e "\033[31mreference model: $REFERENCE\033[00m"
-                echo -e "\033[31mdid not find base runscript for reference model exp.${SCRIPT}.run\033[00m"
+                echo -e "\033[31mdid not find base runscript for reference model ${PREFIX}.${SCRIPT}.run\033[00m"
             fi
             exit 1
         else
-            echo "found base runscript exp.${SCRIPT}.run"
+            echo "found base runscript ${PREFIX}.${SCRIPT}.run"
         fi
 
-        RUN_SCRIPT=exp.${EXP_BASE}.run
-        sed    s/${SCRIPT}/${EXP_BASE}/g < exp.${SCRIPT}.run > ${RUN_SCRIPT} # change experiment name
+        RUN_SCRIPT=${PREFIX}.${EXP_BASE}.run
+        sed    s/${SCRIPT}/${EXP_BASE}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT} # change experiment name
         sed -i s/data.${EXP_BASE}/data.${SCRIPT}/g             ${RUN_SCRIPT} # except in the data package name
 
         echo "Perform $TEST run"
@@ -836,9 +839,9 @@ if [[ ${MD} =~ .*r.* ]]; then
             exit 1
         fi
 
-        RUN_SCRIPT=exp.${EXP_TEST}.run
+        RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
         cd ${SCRIPT_DIR}
-        sed    s/${SCRIPT}/${EXP_TEST}/g < exp.${SCRIPT}.run > ${RUN_SCRIPT}
+        sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
         sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
 
         sed s/restart:=\".false.\"/restart:=\".true.\"/g < ${RUN_SCRIPT} > ${RUN_SCRIPT}.out
@@ -885,9 +888,9 @@ if [[ ${MD} =~ .*n.* ]]; then
     EXP_TEST=${EXPERIMENT}_${TEST}
     if [ "${OVERWRITE}" == 'yes' -o ! -d ${MODEL_DIR}/experiments/${EXP_TEST} ]; then
 
-        RUN_SCRIPT=exp.${EXP_TEST}.run
+        RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
         cd ${SCRIPT_DIR}
-        sed    s/${SCRIPT}/${EXP_TEST}/g < exp.${SCRIPT}.run > ${RUN_SCRIPT}
+        sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
         sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
 
         N_NPROMA=`grep "nproma=" ${RUN_SCRIPT}`
@@ -938,17 +941,17 @@ if [[ ${MD} =~ .*m.* ]]; then
     EXP_TEST=${EXPERIMENT}_${TEST}
     if [ "${OVERWRITE}" == 'yes' -o ! -d ${MODEL_DIR}/experiments/${EXP_TEST} ]; then
         cd ${SCRIPT_DIR}
-        MPI=`grep with_mpi exp.${SCRIPT}.run`
+        MPI=`grep with_mpi ${PREFIX}.${SCRIPT}.run`
         MPIYES='# with_mpi=yes'
         if [ "$MPI" == "$MPIYES" ]; then
 
             # find out how many nodes and processes per node are in use
 
-            N_NODES=`grep "no_of_nodes=" exp.${SCRIPT}.run`
+            N_NODES=`grep "no_of_nodes=" ${PREFIX}.${SCRIPT}.run`
             eval N_NODES=\""${N_NODES#'no_of_nodes='}"\"
-            OMP_NUM_THREADS=`grep "export OMP_NUM_THREADS=" exp.${SCRIPT}.run`
+            OMP_NUM_THREADS=`grep "export OMP_NUM_THREADS=" ${PREFIX}.${SCRIPT}.run`
             eval OMP_NUM_THREADS=\""${OMP_NUM_THREADS#'export OMP_NUM_THREADS='}"\"
-            N_PPNODE=`grep "mpi_procs_pernode=" exp.${SCRIPT}.run`
+            N_PPNODE=`grep "mpi_procs_pernode=" ${PREFIX}.${SCRIPT}.run`
             eval N_PPNODE=\""${N_PPNODE#'mpi_procs_pernode='}"\"
             N_PROCS=$(( N_NODES * N_PPNODE ))
 
@@ -956,9 +959,9 @@ if [[ ${MD} =~ .*m.* ]]; then
 
 	        TEST_POSSIBLE='yes'
 
-                RUN_SCRIPT=exp.${EXP_TEST}.run
+                RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
                 cd ${SCRIPT_DIR}
-                sed    s/${SCRIPT}/${EXP_TEST}/g < exp.${SCRIPT}.run > ${RUN_SCRIPT}
+                sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
                 sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
 
                 if [ $N_PPNODE -gt 1 ]; then
@@ -1053,23 +1056,23 @@ if [[ ${MD} =~ .*o.* ]]; then
     EXP_TEST=${EXPERIMENT}_${TEST}
     if [ "${OVERWRITE}" == 'yes' -o ! -d ${MODEL_DIR}/experiments/${EXP_TEST} ]; then
         cd ${SCRIPT_DIR}
-        OMP=`grep with_openmp exp.${SCRIPT}.run`
+        OMP=`grep with_openmp ${PREFIX}.${SCRIPT}.run`
         OMPYES='# with_openmp=yes'
         if [ "$OMP" == "$OMPYES" ]; then
 
             # find out how many omp threads are in use
 
-            N_OMP_NUM_THREADS=`grep "export OMP_NUM_THREADS=" exp.${SCRIPT}.run`
+            N_OMP_NUM_THREADS=`grep "export OMP_NUM_THREADS=" ${PREFIX}.${SCRIPT}.run`
             eval N_OMP_NUM_THREADS=\""${N_OMP_NUM_THREADS#'export OMP_NUM_THREADS='}"\"
-            N_ICON_THREADS=`grep "export ICON_THREADS=" exp.${SCRIPT}.run`
+            N_ICON_THREADS=`grep "export ICON_THREADS=" ${PREFIX}.${SCRIPT}.run`
             eval N_ICON_THREADS=\""${N_ICON_THREADS#'export ICON_THREADS='}"\"
 
             if [ $N_OMP_NUM_THREADS -gt 1 ]; then
 
 	        TEST_POSSIBLE='yes'
 
-                RUN_SCRIPT=exp.${EXP_TEST}.run
-                sed    s/${SCRIPT}/${EXP_TEST}/g < exp.${SCRIPT}.run > ${RUN_SCRIPT}
+                RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
+                sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
                 sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
 
                 N_OMP_NUM_THREADS_NEW=$(( N_OMP_NUM_THREADS - 1 ))
@@ -1079,7 +1082,7 @@ if [[ ${MD} =~ .*o.* ]]; then
                 # number of tasks to the number of threads, these need
                 # to be fixed too
                 OMP_NUM_THREADS=$N_OMP_NUM_THREADS
-                N_PPNODE=`grep "mpi_procs_pernode=" exp.${SCRIPT}.run`
+                N_PPNODE=`grep "mpi_procs_pernode=" ${PREFIX}.${SCRIPT}.run`
                 eval N_PPNODE=\""${N_PPNODE#'mpi_procs_pernode='}"\"
 
                 # change script variables
@@ -1207,9 +1210,9 @@ if [[ ${MD} =~ .*g.* ]]; then
     EXP_TEST=${EXPERIMENT}_${TEST}
     if [ "${OVERWRITE}" == 'yes' -o ! -d ${MODEL_DIR}/experiments/${EXP_TEST} ]; then
 
-        RUN_SCRIPT=exp.${EXP_TEST}.run
+        RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
         cd ${SCRIPT_DIR}
-        sed    s/${SCRIPT}/${EXP_TEST}/g < exp.${SCRIPT}.run > ${RUN_SCRIPT}
+        sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
         sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
 
         nml_replace_or_add lcuda_graph_lnd .TRUE. lnd_nml ${RUN_SCRIPT}

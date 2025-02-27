@@ -1344,7 +1344,9 @@ SUBROUTINE ice_nucleation_demott ( t, aerncn , znin )
   REAL(KIND=ireals), PARAMETER :: gama = 0.46_ireals
   REAL(KIND=ireals), PARAMETER :: delta = -11.6_ireals
 
-  znin  = alpha * (aerncn**beta) * (EXP(gama * (t0 - t)+delta))  
+  znin = alpha * (aerncn**beta) * (EXP(gama * (t0 - t)+delta))  
+
+  znin = MAX(MIN(znin,1.0E7_ireals),1.0E-7_ireals)
 
 END SUBROUTINE ice_nucleation_demott
 

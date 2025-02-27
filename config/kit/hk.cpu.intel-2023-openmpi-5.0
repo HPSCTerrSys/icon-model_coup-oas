@@ -53,9 +53,9 @@ ZLIB_LIBS='-lz'
 
 ################################################################################
 
-BUILD_ENV="export LD_LIBRARY_PATH=\"${INTEL_ROOT}/lib:${INTEL_ROOT}/compiler/lib/intel64:${MPI_ROOT}/lib64:${CUDA_ROOT}/lib64:${HDF5_ROOT}/lib:${NETCDF_ROOT}/lib:${NETCDFF_ROOT}/lib:${ECCODES_ROOT}/lib64:${FYAML_ROOT}/lib:${MKL_ROOT}/lib/intel64:/usr/lib64:/usr/lib\"; export PATH=\"${HDF5_ROOT}/bin:${NETCDF_ROOT}/bin/:/usr/bin\";"
+BUILD_ENV="export LD_LIBRARY_PATH=\"${INTEL_ROOT}/lib:${INTEL_ROOT}/compiler/lib/intel64:${INTEL_ROOT}/compiler/lib/intel64_lin:${MPI_ROOT}/lib64:${CUDA_ROOT}/lib64:${HDF5_ROOT}/lib:${NETCDF_ROOT}/lib:${NETCDFF_ROOT}/lib:${ECCODES_ROOT}/lib64:${FYAML_ROOT}/lib:${MKL_ROOT}/lib/intel64:/usr/lib64:/usr/lib\"; export PATH=\"${HDF5_ROOT}/bin:${NETCDF_ROOT}/bin/:/usr/bin\"; unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH INCLUDE LIBRARY_PATH;"
 
-LDFLAGS="-L${INTEL_ROOT}/lib -L${INTEL_ROOT}/compiler/lib/intel64 -L${MPI_ROOT}/lib64 -L${CUDA_ROOT}/lib64 -L${HDF5_ROOT}/lib -L${NETCDF_ROOT}/lib -L${NETCDFF_ROOT}/lib -L${MKL_ROOT}/lib/intel64 -L${ECCODES_ROOT}/lib64 -L${FYAML_ROOT}/lib"
+LDFLAGS="-L${INTEL_ROOT}/lib -L${INTEL_ROOT}/compiler/lib/intel64 -L${INTEL_ROOT}/compiler/lib/intel64_lin -L${MPI_ROOT}/lib64 -L${CUDA_ROOT}/lib64 -L${HDF5_ROOT}/lib -L${NETCDF_ROOT}/lib -L${NETCDFF_ROOT}/lib -L${MKL_ROOT}/lib/intel64 -L${ECCODES_ROOT}/lib64 -L${FYAML_ROOT}/lib"
 LIBS="-Wl,--disable-new-dtags -Wl,--as-needed ${MPI_LIBS} ${XML2_LIBS} ${ZLIB_LIBS} ${ECCODES_LIBS} ${FYAML_LIBS} ${MKL_LIBS} ${NETCDFF_LIBS} ${NETCDF_LIBS} ${HDF5_LIBS}"
 
 ARCH="-m64 -march=core-avx2 -mtune=core-avx2"

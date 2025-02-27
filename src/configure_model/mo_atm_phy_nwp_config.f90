@@ -122,6 +122,7 @@ MODULE mo_atm_phy_nwp_config
     REAL(wp) :: qi0, qc0
 
     INTEGER  :: icpl_aero_gscp     !! type of aerosol-microphysics coupling
+    LOGICAL  :: lscale_cdnc        !! switch to activate the scaling of MODIS CDNCs
 
     REAL(wp) :: ustart_raylfric    !! velocity at which extra Rayleigh friction starts
     REAL(wp) :: efdt_min_raylfric  !! e-folding time corresponding to maximum relaxation 

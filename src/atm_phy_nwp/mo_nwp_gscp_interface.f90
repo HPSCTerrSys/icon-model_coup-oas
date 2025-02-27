@@ -63,6 +63,7 @@ MODULE mo_nwp_gscp_interface
                                      iqgl, iqhl, ldass_lhn, &
                                      iqb_i, iqb_e
   USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config, iprog_aero
+  USE mo_radiation_config,     ONLY: irad_aero, iRadAeroTegen, iRadAeroCAMSclim, iRadAeroCAMStd
   USE microphysics_1mom_schemes,ONLY: graupel_run, cloudice_run, kessler_run, cloudice2mom_run, get_cloud_number
   USE mo_2mom_mcrph_driver,    ONLY: two_moment_mcrph
   USE mo_2mom_mcrph_util,      ONLY: set_qnc,set_qnr,set_qni,set_qns,set_qng,&
@@ -349,29 +350,32 @@ CONTAINS
           !$ACC END PARALLEL
         ENDIF
 
-        IF ( icpl_aero_ice == 1) THEN ! use DeMott with CAMS dust aerosols
-          ! units are [1/m^3] BUT we want to convert to cm^-3 to use in DeMott formula so we multiply by 10^-6
-          !   p_diag%extra_3d(iv,k,jblock,1) = znin
-          !   p_diag%extra_3d(iv,k,jblock,2) = aerncn
-          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-          !$ACC LOOP GANG VECTOR COLLAPSE(2) PRIVATE(aerncn)
-          DO jk=1,nlev
-            DO jc=i_startidx,i_endidx
-              aerncn = 1.0E-6_wp*p_prog%rho(jc,jk,jb)*( p_diag%camsaermr(jc,jk,jb,5)/4.72911E-16_wp + p_diag%camsaermr(jc,jk,jb,6)/1.55698E-15_wp )
-              CALL ice_nucleation ( t=p_diag%temp(jc,jk,jb), aerncn=aerncn , znin=zninc(jc,jk) )
-            ENDDO
-          ENDDO
-          !$ACC END PARALLEL
-        ELSE IF (icpl_aero_ice == 2) THEN ! use Tegen dust with DeMott formula
-          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-          !$ACC LOOP GANG VECTOR COLLAPSE(2) PRIVATE(aerncn)
-          DO jk=1,nlev
-            DO jc=i_startidx,i_endidx
-              CALL ncn_from_tau_aerosol_speccnconst_dust (p_metrics%z_ifc(jc,jk,jb), p_metrics%z_ifc(jc,jk+1,jb), prm_diag%aerosol(jc,idu,jb), aerncn)    
-              CALL ice_nucleation ( t=p_diag%temp(jc,jk,jb), aerncn=aerncn , znin=zninc(jc,jk) )
-            ENDDO
-          ENDDO
-          !$ACC END PARALLEL
+        IF ( icpl_aero_ice == 1) THEN ! use DeMott ice nucleation
+          SELECT CASE(irad_aero)
+            CASE (iRadAeroCAMStd, iRadAeroCAMSclim)
+              ! units are [1/m^3] BUT we want to convert to cm^-3 to use in DeMott formula so we multiply by 10^-6
+              !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+              !$ACC LOOP GANG VECTOR COLLAPSE(2) PRIVATE(aerncn)
+              DO jk=1,nlev
+                DO jc=i_startidx,i_endidx
+                  aerncn = 1.0E-6_wp*p_prog%rho(jc,jk,jb)*( p_diag%camsaermr(jc,jk,jb,5)/4.72911E-16_wp + p_diag%camsaermr(jc,jk,jb,6)/1.55698E-15_wp )
+                  CALL ice_nucleation ( t=p_diag%temp(jc,jk,jb), aerncn=aerncn , znin=zninc(jc,jk) )
+                ENDDO
+              ENDDO
+              !$ACC END PARALLEL
+            CASE (iRadAeroTegen)
+              !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+              !$ACC LOOP GANG VECTOR COLLAPSE(2) PRIVATE(aerncn)
+              DO jk=1,nlev
+                DO jc=i_startidx,i_endidx
+                  CALL ncn_from_tau_aerosol_speccnconst_dust (p_metrics%z_ifc(jc,jk,jb), p_metrics%z_ifc(jc,jk+1,jb), prm_diag%aerosol(jc,idu,jb), aerncn)
+                  CALL ice_nucleation ( t=p_diag%temp(jc,jk,jb), aerncn=aerncn , znin=zninc(jc,jk) )
+                ENDDO
+              ENDDO
+              !$ACC END PARALLEL
+            CASE DEFAULT
+              CALL finish('mo_nwp_gscp_interface', 'icpl_aero_ice = 1 only available for irad_aero = 6,7,8.')
+          END SELECT
         ELSE ! use Cooper (1987) formula
           !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
           !$ACC LOOP GANG VECTOR COLLAPSE(2)
@@ -557,6 +561,9 @@ CONTAINS
         CASE(5)  ! two-moment scheme with prognostic cloud droplet number
                  ! and budget equations for CCN and IN
 
+#ifdef _OPENACC
+          CALL finish('mo_nwp_gscp_interface', 'inwp_gscp=5 supported by OpenACC but not tested')
+#endif
           CALL two_moment_mcrph(                       &
                        isize  = nproma,                &!in: array size
                        ke     = nlev,                  &!in: end level/array size

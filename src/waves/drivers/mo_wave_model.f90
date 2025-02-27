@@ -75,6 +75,7 @@ MODULE mo_wave_model
 
   ! coupling
   USE mo_coupling_config,         ONLY: is_coupled_run
+  USE mo_coupling_utils,          ONLY: cpl_construct, cpl_destruct
   USE mo_wave_coupling_frame,     ONLY: construct_wave_coupling, &
     &                                   destruct_wave_coupling
 
@@ -189,6 +190,16 @@ CONTAINS
     IF (timers_level > 1) CALL timer_start(timer_model_init)
 
     !-------------------------------------------------------------------
+    ! 3.3 construct basic coupler
+    !-------------------------------------------------------------------
+
+    IF (is_coupled_run()) THEN
+      IF (ltimer) CALL timer_start(timer_coupling)
+      CALL cpl_construct()
+      IF (ltimer) CALL timer_stop(timer_coupling)
+    END IF
+
+    !-------------------------------------------------------------------
     ! initialize dynamic list of vertical axes
     !-------------------------------------------------------------------
 
@@ -298,6 +309,13 @@ CONTAINS
     END IF
 
     CALL destruct_icon_communication()
+
+    ! destruct basic coupler
+    IF (is_coupled_run()) THEN
+      IF (ltimer) CALL timer_start(timer_coupling)
+      CALL cpl_destruct()
+      IF (ltimer) CALL timer_stop(timer_coupling)
+    END IF
 
     CALL message(routine, 'clean-up finished')
 

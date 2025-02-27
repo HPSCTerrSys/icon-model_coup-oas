@@ -63,8 +63,9 @@ $addexp "checksuite.les/exp.ac3_les_20210211.run" --builders "levante_intel_hybr
 # NVIDIA for GPU: failing currently because:
 #              mo_ice_interface:ice_fast_interface: This part has not been ported to GPU.
 # add tolerance check to daint builders
-$addexp "checksuite.icon-dev/check.mch_dev_icon-ch2_small"                --builders "balfrin_cpu_nvidia balfrin_gpu_nvidia balfrin_cpu_nvidia_mixed balfrin_gpu_nvidia_mixed" --list $listname
 $addexp "checksuite.icon-dev/check.mch_kenda-ch1_small"                   --builders "balfrin_cpu_nvidia balfrin_gpu_nvidia balfrin_cpu_nvidia_mixed balfrin_gpu_nvidia_mixed" --list $listname
+$addexp "checksuite.icon-dev/check.mch_kenda-ch1_dev_small"               --builders "balfrin_cpu_nvidia balfrin_gpu_nvidia" --list $listname
+$addexp "checksuite.icon-dev/check.mch_kenda-ch1_dev2_small"              --builders "balfrin_cpu_nvidia balfrin_gpu_nvidia" --list $listname
 $addexp "checksuite.icon-dev/check.mch_icon-ch2_small"                    --builders "balfrin_cpu_nvidia balfrin_gpu_nvidia balfrin_cpu_nvidia_mixed balfrin_gpu_nvidia_mixed" --list $listname
 $addexp "checksuite.icon-dev/check.mch_ch_r04b09_dace"                    --builders "DAINT_CPU_nvidia DAINT_GPU_nvidia" --list $listname
 $addexp "checksuite.icon-dev/check.mch_ch_r04b09_dace_synsat"             --builders "DAINT_CPU_nvidia DAINT_GPU_nvidia" --list $listname
@@ -77,12 +78,6 @@ $addexp "checksuite.icon-dev/check.mch_bench_r19b07_dev"                  --buil
 
 # GPU builders explicitly turned off due to unresolved bug
 $addexp "checksuite.icon-dev/check.mch_opr_r19b07_midnight"               --builders "balfrin_cpu_nvidia DAINT_CPU_nvidia" --list $listname
-# add tolerance check for 2-moment scheme
-$addexp "checksuite.icon-dev/check.mch_opr_r19b07_2m"                     --builders "balfrin_cpu_nvidia balfrin_gpu_nvidia DAINT_CPU_nvidia DAINT_GPU_nvidia" --list $listname
-# add tolerance check for 2-moment scheme using gscp=5
-$addexp "checksuite.icon-dev/check.mch_opr_r19b07_2m_gscp5"               --builders "DAINT_CPU_nvidia DAINT_GPU_nvidia" --list $listname
-# add tolerance check for the explicit 2-moment scheme
-$addexp "checksuite.icon-dev/check.mch_opr_r19b07_2m_expl"                --builders "balfrin_cpu_nvidia balfrin_gpu_nvidia DAINT_CPU_nvidia DAINT_GPU_nvidia" --list $listname
 # add tolerance check for 3d-turbulence scheme
 $addexp "checksuite.icon-dev/check.mch_opr_r19b07_turb"                   --builders "balfrin_cpu_nvidia balfrin_gpu_nvidia DAINT_CPU_nvidia DAINT_GPU_nvidia" --list $listname
 # add tolerance check for c2sm seaice case
@@ -160,7 +155,7 @@ $addexp  checksuite.infrastructure/checkExternals/exp.check_externals_LEVANTE.ru
 ./adddep --from-experiment "checksuite.infrastructure/comin/exp.build_comin_plugins_LEVANTE.run" --to-experiment "checksuite.infrastructure/checkExternals/exp.check_externals_LEVANTE.run" --builders "levante_gcc" --list $listname
 
 # icon-clm tests
-$addexp checksuite.clm/clmexp.ICON_CLM --builders levante_intel_hybrid --list ${listname} --runflags="ntasks=32 queue=shared"
+$addexp "checksuite.clm/check.ICON_CLM" --builders "levante_intel levante_gcc_hybrid" --list ${listname} --runflags="ntasks=32 queue=shared"
 
 # remove tests for NAG which are buggy or take too long
 for experiment in exp.esm_bb_ruby0 exp.test_nwp_R02B04N06multi exp.test_nwp_R02B04_R02B05_nest

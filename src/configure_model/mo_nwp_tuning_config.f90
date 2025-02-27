@@ -66,6 +66,7 @@ MODULE mo_nwp_tuning_config
   PUBLIC :: tune_gustlim_agl, tune_gustlim_fac
   PUBLIC :: itune_gust_diag
   PUBLIC :: itune_albedo
+  PUBLIC :: tune_albedo_wso
   PUBLIC :: itune_slopecorr
   PUBLIC :: itune_o3
   PUBLIC :: lcalib_clcov
@@ -77,6 +78,7 @@ MODULE mo_nwp_tuning_config
   PUBLIC :: tune_sc_invmax
   PUBLIC :: tune_dursun_scaling
   PUBLIC :: tune_sbmccn
+  PUBLIC :: tune_urbahf, tune_urbisa
   
   !!--------------------------------------------------------------------------
   !! Basic configuration setup for physics tuning
@@ -233,6 +235,11 @@ MODULE mo_nwp_tuning_config
     &  itune_albedo                ! 1: dimmed Sahara
                                    ! 2: dimmed Sahara and brighter Antarctica
 
+  REAL(wp):: &                     !< bare soil albedo correction for soil types 3-6
+    &  tune_albedo_wso(2)          ! tune_albedo_wso(1): albedo correction added over dry soil (w_so(1) < 0.001 m)
+                                   ! tune_albedo_wso(2): albedo correction added over wet soil (w_so(1) > 0.002 m)
+  !$ACC DECLARE CREATE(tune_albedo_wso)
+
   INTEGER :: &                     !< slope-dependent tuning of parameters affecting stable PBLs
     &  itune_slopecorr             ! 1: slope-dependent reduction of rlam_heat and near-surface tkhmin
 
@@ -266,7 +273,13 @@ MODULE mo_nwp_tuning_config
 
   REAL(wp) :: &                    !< scaling of direct solar rediation to tune sunshine duration
        &  tune_dursun_scaling      !< in corresponding diagnostic
-  
+
+  REAL(wp) :: &                    !< tuning of anthropogenic heat flux
+       &  tune_urbahf(4)
+
+  REAL(wp) :: &                    !< lower and upper bound for variable ISA paraeterization 
+       &  tune_urbisa(2)           !< depending on smoothed urban fraction
+
 !  END TYPE t_nwp_tuning_config
 
 

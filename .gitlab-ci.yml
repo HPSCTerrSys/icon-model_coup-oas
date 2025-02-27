@@ -22,6 +22,26 @@ stages:
     DEFAULT: '\033[0m'
     RED: '\033[0;31m'
 
+Licenses:
+  stage: basic
+
+  variables:
+    GIT_DEPTH: 1
+    GIT_SUBMODULE_STRATEGY: none
+
+  before_script:
+    - python3 -m pip install --upgrade pip
+    - python3 -m pip install reuse
+    - reuse --version
+
+  script:
+    - reuse lint
+
+  tags:
+    - sphinx
+
+  interruptible: true
+
 OpenACC Style:
   stage: basic
 
@@ -92,6 +112,7 @@ Autoreconf:
 
   variables:
     AUTOCONF_VERSION: "2.69"
+    AUTOCONF_SHA256: 954bd69b391edc12d6a4a51a2dd1476543da5c6bbf05a95b59dc0dd6fd4c2969
     GIT_SUBMODULE_STRATEGY: none
 
   before_script:
@@ -99,11 +120,18 @@ Autoreconf:
     - |
       # Installing Autoconf
       (
-        set -eux
-        mkdir autoconf && cd autoconf
-        curl -L https://de.freedif.org/gnu/autoconf/autoconf-${AUTOCONF_VERSION}.tar.gz | tar xz --strip-components=1
-        ./configure && make -j4 && make install
-      )
+        set -x
+        mkdir autoconf && \
+        cd autoconf && \
+        curl -OL https://ftpmirror.gnu.org/gnu/autoconf/autoconf-${AUTOCONF_VERSION}.tar.gz && \
+        echo "${AUTOCONF_SHA256} autoconf-${AUTOCONF_VERSION}.tar.gz" | sha256sum -c && \
+        tar xfz autoconf-${AUTOCONF_VERSION}.tar.gz --strip-components=1 && \
+        ./configure && \
+        make -j4 install
+      ) || {
+        printf "${RED}ERROR: failed to install Autoconf ${AUTOCONF_VERSION}${DEFAULT}\n"
+        exit 1
+      }
 
   script:
     - autoreconf -fvi
@@ -113,7 +141,7 @@ Autoreconf:
       test ! -s autoreconf.patch || {
         printf "${RED}ERROR: the automatically generated Autotools files \
       (e.g. 'configure') are inconsistent with 'configure.ac' and/or \
-      Autoconf ${AUTOCONF_VERSION} (see artifacts)${DEFAULT}\n" >&2
+      Autoconf ${AUTOCONF_VERSION} (see artifacts)${DEFAULT}\n"
         exit 1
       }
 
@@ -126,6 +154,21 @@ Autoreconf:
     expire_in: 1 week
     expose_as: 'Autoreconf Git Patch'
     when: on_failure
+
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - .gitlab-ci.yml
+        - config.h.in
+        - configure
+        - configure.ac
+        - m4/**/*
+        - utils/config.guess
+        - utils/config.sub
+        - utils/install-sh
+    - if: $CI_PIPELINE_SOURCE != "merge_request_event"
+
+  interruptible: true
 
 Granules:
   stage: test

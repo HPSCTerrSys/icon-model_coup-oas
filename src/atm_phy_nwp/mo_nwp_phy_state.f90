@@ -75,7 +75,10 @@ USE mo_grid_config,         ONLY: n_dom, n_dom_start, nexlevs_rrg_vnest
 USE mo_atm_phy_nwp_config,  ONLY: atm_phy_nwp_config, icpl_aero_conv, iprog_aero
 USE turb_data,              ONLY: ltkecon
 USE mo_initicon_config,     ONLY: icpl_da_sfcevap, icpl_da_snowalb, icpl_da_skinc, icpl_da_seaice
-USE mo_radiation_config,    ONLY: irad_aero, iRadAeroTegen, iRadAeroART, iRadAeroNone, iRadAeroConst, iRadAeroCAMSclim, islope_rad
+USE mo_radiation_config,    ONLY: irad_aero, iRadAeroTegen, iRadAeroART, iRadAeroNone, &
+                                  iRadAeroConst, iRadAeroCAMSclim, iRadAeroCAMStd, islope_rad, &
+                                  iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc, iRadAeroKinneVolc, &
+                                  iRadAeroKinneVolcSP, iRadAeroKinneSP
 USE mo_lnd_nwp_config,      ONLY: ntiles_total, ntiles_water, nlev_soil
 USE mo_nwp_tuning_config,   ONLY: itune_gust_diag
 USE mo_var_list,            ONLY: add_var, add_ref, t_var_list_ptr
@@ -97,8 +100,7 @@ USE mo_zaxis_type,          ONLY: ZA_REFERENCE, ZA_REFERENCE_HALF,          &
   &                               ZA_HEIGHT_2M_LAYER, ZA_TOA, ZA_DEPTH_BELOW_LAND,   &
   &                               ZA_PRESSURE_0, ZA_PRESSURE_400, ZA_SRH, &
   &                               ZA_PRESSURE_800, ZA_CLOUD_BASE, ZA_CLOUD_TOP,  &
-  &                               ZA_ISOTHERM_ZERO, ZA_ECHOTOP, ZA_WSHEAR, ZA_PRESSURE_LAPSERATE, &
-  &                               ZA_HORIZONTAL_PLANE_OS, ZA_TERRAIN_TANGENT_PLANE_OS
+  &                               ZA_ISOTHERM_ZERO, ZA_ECHOTOP, ZA_WSHEAR, ZA_PRESSURE_LAPSERATE
 USE mo_physical_constants,  ONLY: grav
 #ifndef __NO_ICON_LES__
 USE mo_ls_forcing_nml,      ONLY: is_ls_forcing
@@ -479,6 +481,7 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       &     diag%w_ctmax, &
       &     diag%wshear_u, &
       &     diag%wshear_v, &
+      &     diag%aod_550nm,   &
       &     diag%z_pbl)
 
 
@@ -589,24 +592,47 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
     END SELECT
 
 
+    ! &      diag%rain_con_rate_corr(nproma,nblks_c)
+    cf_desc    = t_cf_var('rain_con_rate_corr', 'kg m-2 s-1',                 &
+      & 'convective rain rate, corrected for water conservation',             &
+      &                   datatype_flt)
+    grib2_desc = grib2_var(255, 255, 255, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+    CALL add_var( diag_list, 'rain_con_rate_corr', diag%rain_con_rate_corr,   &
+                & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,    &
+                & ldims=shape2d, loutput=.TRUE., lrestart=.FALSE.,            &
+                & isteptype=TSTEP_INSTANT, lopenacc=.TRUE.)
+    __acc_attach(diag%rain_con_rate_corr)
+
     ! &      diag%rain_con_rate(nproma,nblks_c)
-    cf_desc    = t_cf_var('rain_con_rate', 'kg m-2 s-1', 'convective rain rate', &
+    cf_desc    = t_cf_var('rain_con_rate', 'kg m-2 s-1',                 &
+      & 'convective rain rate (convection scheme output for next time step)', &
       &                   datatype_flt)
     grib2_desc = grib2_var(0, 1, 76, ibits, GRID_UNSTRUCTURED, GRID_CELL)
     CALL add_var( diag_list, 'rain_con_rate', diag%rain_con_rate,             &
                 & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,    &
-                & ldims=shape2d,                                              &
+                & ldims=shape2d, loutput=.TRUE., lrestart=.TRUE.,             &
                 & isteptype=TSTEP_INSTANT, lopenacc=.TRUE.)
     __acc_attach(diag%rain_con_rate)
 
+    ! &      diag%snow_con_rate_corr(nproma,nblks_c)
+    cf_desc    = t_cf_var('snow_con_rate_corr', 'kg m-2 s-1',                 &
+      & 'convective snow rate, corrected for water conservation',             &
+      &                   datatype_flt)
+    grib2_desc = grib2_var(255, 255, 255, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+    CALL add_var( diag_list, 'snow_con_rate_corr', diag%snow_con_rate_corr,   &
+                & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,    &
+                & ldims=shape2d, loutput=.TRUE., lrestart=.FALSE.,            &
+                & isteptype=TSTEP_INSTANT, lopenacc=.TRUE.)
+    __acc_attach(diag%snow_con_rate_corr)
 
     ! &      diag%snow_con_rate(nproma,nblks_c)
-    cf_desc    = t_cf_var('snow_con_rate', 'kg m-2 s-1', 'convective snow rate', &
+    cf_desc    = t_cf_var('snow_con_rate', 'kg m-2 s-1',                      &
+      & 'convective snow rate (convection scheme output for next time step)', &
       &                   datatype_flt)
     grib2_desc = grib2_var(0, 1, 55, ibits, GRID_UNSTRUCTURED, GRID_CELL)
     CALL add_var( diag_list, 'snow_con_rate', diag%snow_con_rate,             &
                 & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,    &
-                & ldims=shape2d,                                              &
+                & ldims=shape2d, loutput=.TRUE., lrestart=.TRUE.,             &
                 & isteptype=TSTEP_INSTANT, lopenacc=.TRUE.)
     __acc_attach(diag%snow_con_rate)
 
@@ -1989,9 +2015,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
     IF (islope_rad(k_jg) > 0) THEN
       ! &      diag%swflxsfc_os(nproma,nblks_c)
       cf_desc    = t_cf_var('sob_s_os', 'W m-2', 'shortwave net flux at surface incl. orographic shading', datatype_flt)
-      grib2_desc = grib2_var(0, 4, 9, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 9, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 208)
       CALL add_var( diag_list, 'sob_s_os', diag%swflxsfc_os,                     &
-        & GRID_UNSTRUCTURED_CELL, ZA_HORIZONTAL_PLANE_OS, cf_desc, grib2_desc,   &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,            &
         & ldims=shape2d,                                                      &
         & in_group=groups("rad_vars"),                                        &
         & lopenacc=.TRUE. )
@@ -1999,9 +2026,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
 
       ! &      diag%swflxsfc_tan_os(nproma,nblks_c)
       cf_desc    = t_cf_var('sob_s_tan_os', 'W m-2', 'shortwave net flux at surface incl. slope-dependent and orgraphic shading', datatype_flt)
-      grib2_desc = grib2_var(0, 4, 9, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 9, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 209)
       CALL add_var( diag_list, 'sob_s_tan_os', diag%swflxsfc_tan_os,                     &
-        & GRID_UNSTRUCTURED_CELL, ZA_TERRAIN_TANGENT_PLANE_OS, cf_desc, grib2_desc,   &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,            &
         & ldims=shape2d,                                                      &
         & in_group=groups("rad_vars"),                                        &
         & lopenacc=.TRUE. )
@@ -2122,18 +2150,20 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
     IF (islope_rad(k_jg) > 0) THEN
       ! &      diag%swflx_up_sfc_os(nproma,nblks_c)
       cf_desc    = t_cf_var('sou_s_os', 'W m-2', 'shortwave upward flux at surface incl. orographic shading', datatype_flt)
-      grib2_desc = grib2_var(0, 4, 8, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 8, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 208)
       CALL add_var( diag_list, 'sou_s_os', diag%swflx_up_sfc_os,                 &
-        & GRID_UNSTRUCTURED_CELL, ZA_HORIZONTAL_PLANE_OS, cf_desc, grib2_desc,   &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,            &
         & ldims=shape2d, lrestart=.FALSE., in_group=groups("rad_vars"),       &
         & lopenacc=.TRUE. )
       __acc_attach(diag%swflx_up_sfc_os)
 
       ! &      diag%swflx_up_sfc_tan_os(nproma,nblks_c)
       cf_desc    = t_cf_var('sou_s_tan_os', 'W m-2', 'shortwave upward flux at surface incl. slope-dependent and orographic shading', datatype_flt)
-      grib2_desc = grib2_var(0, 4, 8, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 8, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 209)
       CALL add_var( diag_list, 'sou_s_tan_os', diag%swflx_up_sfc_tan_os,                 &
-        & GRID_UNSTRUCTURED_CELL, ZA_TERRAIN_TANGENT_PLANE_OS, cf_desc, grib2_desc,   &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,            &
         & ldims=shape2d, lrestart=.FALSE., in_group=groups("rad_vars"),       &
         & lopenacc=.TRUE. )
       __acc_attach(diag%swflx_up_sfc_tan_os)
@@ -2172,9 +2202,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
     IF (islope_rad(k_jg) > 0) THEN
       ! &      diag%swflx_par_sfc_tan_os(nproma,nblks_c)
       cf_desc    = t_cf_var('swflx_par_sfc_tan_os', 'W m-2', 'downward photosynthetically active flux at surface incl. slope-dependent and orographic shading', datatype_flt)
-      grib2_desc = grib2_var(0, 4, 10, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 10, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 209)
       CALL add_var( diag_list, 'swflx_par_sfc_tan_os', diag%swflx_par_sfc_tan_os, &
-        & GRID_UNSTRUCTURED_CELL, ZA_TERRAIN_TANGENT_PLANE_OS, cf_desc, grib2_desc,            &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,            &
         & ldims=shape2d, lrestart=.TRUE., in_group=groups("rad_vars"),        &
         & lopenacc=.TRUE.)
       __acc_attach(diag%swflx_par_sfc_tan_os)
@@ -2342,9 +2373,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A53,A4,A18)') "Surface net solar radiation incl. orographic shading ", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 9, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 9, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 208)
       CALL add_var( diag_list, TRIM(name), diag%swflxsfc_a_os,                &
-        & GRID_UNSTRUCTURED_CELL, ZA_HORIZONTAL_PLANE_OS, cf_desc, grib2_desc, &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,          &
         & ldims=shape2d,                                                    &
         & isteptype=a_steptype, in_group=groups("rad_vars"),                &
         & hor_interp=create_hor_interp_metadata(                            &
@@ -2358,9 +2390,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A73,A4,A18)') "Surface net solar radiation incl. slope-dependent and orographic shading ", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 9, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 9, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 209)
       CALL add_var( diag_list, TRIM(name), diag%swflxsfc_a_tan_os,                &
-        & GRID_UNSTRUCTURED_CELL, ZA_TERRAIN_TANGENT_PLANE_OS, cf_desc, grib2_desc, &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,          &
         & ldims=shape2d,                                                    &
         & isteptype=a_steptype, in_group=groups("rad_vars"),                &
         & hor_interp=create_hor_interp_metadata(                            &
@@ -2471,9 +2504,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A56,A4,A18)') "Surface down solar direct rad. incl. orographic shading ", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 198, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 198, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 208)
       CALL add_var( diag_list, TRIM(name), diag%asodird_s_os,                &
-        & GRID_UNSTRUCTURED_CELL, ZA_HORIZONTAL_PLANE_OS, cf_desc, grib2_desc,&
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,         &
         & ldims=shape2d,                                                   &
         & isteptype=a_steptype, in_group=groups("rad_vars"),               &
         & hor_interp=create_hor_interp_metadata(                           &
@@ -2487,9 +2521,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A76,A4,A18)') "Surface down solar direct rad. incl. slope-dependent and orographic shading ", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 198, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 198, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 209)
       CALL add_var( diag_list, TRIM(name), diag%asodird_s_tan_os,                &
-        & GRID_UNSTRUCTURED_CELL, ZA_TERRAIN_TANGENT_PLANE_OS, cf_desc, grib2_desc,&
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,         &
         & ldims=shape2d,                                                   &
         & isteptype=a_steptype, in_group=groups("rad_vars"),               &
         & hor_interp=create_hor_interp_metadata(                           &
@@ -2536,9 +2571,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A32,A4,A18)') "Surface down solar rad. os ", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 7, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 7, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 208)
       CALL add_var( diag_list, TRIM(name), diag%asod_s_os,                   &
-        & GRID_UNSTRUCTURED_CELL, ZA_HORIZONTAL_PLANE_OS, cf_desc, grib2_desc,&
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,         &
         & ldims=shape2d, isteptype=a_steptype,                             &
         & hor_interp=create_hor_interp_metadata(                           &
         &    hor_intp_type=HINTP_TYPE_LONLAT_BCTR,                         &
@@ -2551,9 +2587,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A32,A4,A18)') "Surface down solar rad. tan os ", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 7, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 7, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 209)
       CALL add_var( diag_list, TRIM(name), diag%asod_s_tan_os,                   &
-        & GRID_UNSTRUCTURED_CELL, ZA_TERRAIN_TANGENT_PLANE_OS, cf_desc, grib2_desc,&
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,         &
         & ldims=shape2d, isteptype=a_steptype,                             &
         & hor_interp=create_hor_interp_metadata(                           &
         &    hor_intp_type=HINTP_TYPE_LONLAT_BCTR,                         &
@@ -2584,9 +2621,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A48,A4,A18)') "Surface up solar diff. incl. orographic shading ", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 8, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 8, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 208)
       CALL add_var( diag_list, TRIM(name), diag%asodifu_s_os,                &
-        & GRID_UNSTRUCTURED_CELL, ZA_HORIZONTAL_PLANE_OS, cf_desc, grib2_desc,&
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,         &
         & ldims=shape2d,                                                   &
         & isteptype=a_steptype, in_group=groups("rad_vars"),               &
         & hor_interp=create_hor_interp_metadata(                           &
@@ -2600,9 +2638,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A67,A4,A18)') "Surface up solar diff. incl. slope-dependent and orographic shading", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 8, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 8, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 209)
       CALL add_var( diag_list, TRIM(name), diag%asodifu_s_tan_os,                &
-        & GRID_UNSTRUCTURED_CELL, ZA_TERRAIN_TANGENT_PLANE_OS, cf_desc, grib2_desc,&
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,         &
         & ldims=shape2d,                                                   &
         & isteptype=a_steptype, in_group=groups("rad_vars"),               &
         & hor_interp=create_hor_interp_metadata(                           &
@@ -2634,9 +2673,10 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       WRITE(long_name,'(A62,A4,A18)') "Downward PAR flux incl. slope-dependent and orographic shading", meaning, &
                                     &" since model start"
       cf_desc    = t_cf_var(name, varunits, long_name, datatype_flt)
-      grib2_desc = grib2_var(0, 4, 10, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      grib2_desc = grib2_var(0, 4, 10, ibits, GRID_UNSTRUCTURED, GRID_CELL)      &
+                   + t_grib2_int_key("typeOfFirstFixedSurface", 209)
       CALL add_var( diag_list, TRIM(name), diag%aswflx_par_sfc_tan_os,     &
-        & GRID_UNSTRUCTURED_CELL, ZA_TERRAIN_TANGENT_PLANE_OS, cf_desc, grib2_desc,         &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,         &
         & ldims=shape2d,                                                   & 
         & isteptype=a_steptype, in_group=groups("rad_vars"),               &
         & hor_interp=create_hor_interp_metadata(                           &
@@ -2673,8 +2713,7 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       & ldims=shape2d, lrestart=.FALSE., lopenacc=.TRUE. ) 
     __acc_attach(diag%pref_aerdis)
 
-
-    IF (irad_aero == iRadAeroTegen .OR. irad_aero == iRadAeroART) THEN ! Tegen aerosol climatology, time-interpolated values 
+    IF (ANY (irad_aero == (/iRadAeroTegen, iRadAeroART, iRadAeroCAMSclim, iRadAeroCAMStd/))) THEN ! Tegen aerosol climatology, time-interpolated values 
                                                     ! (needed as state fields for coupling with microphysics and convection)
       IF (atm_phy_nwp_config(k_jg)%icpl_aero_gscp > 1 .OR. icpl_aero_conv > 1 .OR. iprog_aero > 0) THEN
         lrestart = .TRUE.
@@ -2803,6 +2842,15 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       & ldims=shape2d, lrestart=lrestart, lopenacc=.TRUE. )
     __acc_attach(diag%cloud_num)
 
+    IF (atm_phy_nwp_config(k_jg)%lscale_cdnc) THEN
+      ! &      diag%cloud_num_fac(nproma,nblks_c)
+      cf_desc    = t_cf_var('cloud_num_fac', '-', 'cloud droplet number concentration scaling factor', datatype_flt)
+      grib2_desc = grib2_var(255, 255, 255, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+      CALL add_var( diag_list, 'cloud_num_fac', diag%cloud_num_fac,         &
+        & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,          &
+        & ldims=shape2d, lrestart=lrestart, lopenacc=.FALSE. )
+    ENDIF
+
     ! estimated inversion strength
     ! &      diag%conv_eis(nproma,nblks_c)
     cf_desc    = t_cf_var('conv_eis', 'm-3', 'estimated inversion strength', datatype_flt)
@@ -2811,6 +2859,19 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,          &
       & ldims=shape2d, lrestart=lrestart, lopenacc=.TRUE. )
     __acc_attach(diag%conv_eis)
+
+    IF (var_in_output%aod_550nm) THEN
+      IF (ANY (irad_aero == (/iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc, iRadAeroKinneVolc, iRadAeroKinneVolcSP,  &
+          iRadAeroKinneSP/))) THEN  ! Kinne aerosol climatology
+
+        ! &      diag%aod_550nm(nproma,nblks_c)
+        cf_desc    = t_cf_var('aod_550nm', '-', 'aerosol optical depth 550 nm', datatype_flt)
+        grib2_desc = grib2_var(255, 255, 255, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+        CALL add_var( diag_list, 'aod_550nm', diag%aod_550nm,           &
+          & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc, ldims=shape2d, lrestart=.FALSE., &
+          & lopenacc=.FALSE.)
+      ENDIF
+    ENDIF  ! var_in_output
 
     !------------------
     !Radiation 3D variables

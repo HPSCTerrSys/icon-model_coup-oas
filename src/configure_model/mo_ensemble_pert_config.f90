@@ -29,6 +29,9 @@ MODULE mo_ensemble_pert_config
     &                        tune_box_liq_asy, tune_thicklayfac, tune_gkdrag_enh
   USE mo_turbdiff_config,    ONLY: turbdiff_config
   USE mo_gribout_config,     ONLY: gribout_config
+#ifdef __ICON_ART
+  USE mo_art_config,         ONLY: art_config
+#endif
   USE mo_atm_phy_nwp_config, ONLY: atm_phy_nwp_config  ! Also to prepare perturbations of 2mom parameters;
                                                        ! these are in container atm_phy_nwp_config(jg) % cfg_2mom
   USE mo_assimilation_config,ONLY: assimilation_config
@@ -48,7 +51,7 @@ MODULE mo_ensemble_pert_config
   USE mo_exception,          ONLY: message_text, message, finish
   USE mtime,                 ONLY: datetime, getDayOfYearFromDateTime
   USE mo_mpi,                ONLY: p_io, p_comm_work, p_bcast
-  USE mo_run_config,         ONLY: ldass_lhn
+  USE mo_run_config,         ONLY: lart, ldass_lhn
 #ifdef _OPENACC
   USE ISO_C_BINDING,         ONLY: C_SIZEOF
   USE openacc,               ONLY: acc_is_present
@@ -66,7 +69,8 @@ MODULE mo_ensemble_pert_config
             range_rprcon, range_qexc, range_turlen, range_a_hshr, range_rain_n0fac, range_box_liq_asy,  &
             itype_pert_gen, timedep_pert, range_a_stab, range_c_diff, range_q_crit, range_thicklayfac,  &
             box_liq_sv, thicklayfac_sv, box_liq_asy_sv, range_lhn_coef, range_lhn_artif_fac,            &
-            range_fac_lhn_down, range_fac_lhn_up, range_fac_ccqc, range_rmfdeps, range_entrorg_mult
+            range_fac_lhn_down, range_fac_lhn_up, range_fac_ccqc, range_rmfdeps, range_entrorg_mult,    &
+            range_dustyci_crit, range_dustyci_rhi
 
   !!--------------------------------------------------------------------------
   !! Basic configuration setup for ensemble perturbations
@@ -209,6 +213,12 @@ MODULE mo_ensemble_pert_config
   REAL(wp) :: &                    !< Maximum leaf area index related to land-cover class
     &  range_laimax
 
+  REAL(wp) :: &                    !< Dust specific mass concentration threshold for dusty cirrus
+    &  range_dustyci_crit, rnd_dustyci_crit
+
+  REAL(wp) :: &                    !< Ice saturation ratio threshold for dusty cirrus
+    &  range_dustyci_rhi, rnd_dustyci_rhi
+
   REAL(wp) :: &                    !< Standard deviation of SST perturbations specified in SST analysis (K)
     &  stdev_sst_pert              !  this switch controls the correction term sst_pert_corrfac, compensating the systematic
                                    !  increase of evaporation related to the SST perturbations
@@ -234,6 +244,10 @@ MODULE mo_ensemble_pert_config
                                     q_crit_sv, alpha0_sv, alpha0_max_sv, lhn_coef_sv, lhn_artif_fac_sv, fac_lhn_down_sv,    &
                                     fac_lhn_up_sv, gkdrag_enh_sv
 
+#ifdef __ICON_ART
+  ! Dusty Cirrus
+  REAL(wp), DIMENSION(1:max_dom) :: dustyci_crit_sv, dustyci_rhi_sv
+#endif
 
 
   CONTAINS
@@ -459,6 +473,13 @@ MODULE mo_ensemble_pert_config
     fac_lhn_down_sv(1:max_dom)  = assimilation_config(1:max_dom)%fac_lhn_down
     fac_lhn_up_sv(1:max_dom)    = assimilation_config(1:max_dom)%fac_lhn_up
 
+#ifdef __ICON_ART
+    ! Dusty Cirrus
+    IF (lart .AND. art_config(1)%lart_dusty_cirrus) THEN
+      dustyci_crit_sv(1:max_dom) = art_config(1:max_dom)%rart_dustyci_crit
+      dustyci_rhi_sv(1:max_dom)  = art_config(1:max_dom)%rart_dustyci_rhi
+    ENDIF ! lart, lart_dusty_cirrus
+#endif
 
   END SUBROUTINE save_unperturbed_params
 
@@ -619,6 +640,17 @@ MODULE mo_ensemble_pert_config
     rnd_fac = range_cwimax_ml**(2._wp*(rnd_num-0.5_wp))
     cwimax_ml = cwimax_ml_sv * rnd_fac
 
+#ifdef __ICON_ART
+    ! Dusty Cirrus
+    IF (lart .AND. art_config(1)%lart_dusty_cirrus) THEN
+      CALL random_gen(rnd_dustyci_crit, rnd_num)
+      art_config(1:max_dom)%rart_dustyci_crit = dustyci_crit_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_dustyci_crit
+      CALL random_gen(rnd_dustyci_rhi, rnd_num)
+      art_config(1:max_dom)%rart_dustyci_rhi  = dustyci_rhi_sv(1:max_dom)  + 2._wp*(rnd_num-0.5_wp)*range_dustyci_rhi
+    ENDIF ! lart, lart_dusty_cirrus
+#endif
+
+
 #ifdef _OPENACC
     IF(acc_is_present(tune_gkdrag)) CALL finish("set_scalar_ens_pert", & 
         "Internal error. `tune_gkdrag` is supposed to be on CPU only.")
@@ -747,6 +779,14 @@ MODULE mo_ensemble_pert_config
 
       WRITE(message_text,'(2f8.4,e11.4)') tune_minsnowfrac, c_soil, cwimax_ml
       CALL message('Perturbed values, minsnowfrac, c_soil, cwimax_ml', TRIM(message_text))
+
+#ifdef __ICON_ART
+      ! Dusty Cirrus
+      IF (lart .AND. art_config(1)%lart_dusty_cirrus) THEN
+        WRITE(message_text,'(2f8.4)') art_config(1)%rart_dustyci_crit, art_config(1)%rart_dustyci_rhi
+        CALL message('Perturbed values, dustyci_crit, dustyci_rhi', TRIM(message_text))
+      ENDIF ! lart, lart_dusty_cirrus
+#endif
 
     ENDIF
 

@@ -39,7 +39,7 @@ MODULE mo_nwp_diagnosis
   USE mo_math_divrot,        ONLY: rot_vertex
   USE mo_intp,               ONLY: verts2cells_scalar
   USE mo_parallel_config,    ONLY: nproma, proc0_offloading
-  USE mo_lnd_nwp_config,     ONLY: nlev_soil, ntiles_total, isub_water
+  USE mo_lnd_nwp_config,     ONLY: nlev_soil, ntiles_total, ntiles_water, isub_water
   USE mo_nwp_lnd_types,      ONLY: t_lnd_diag, t_wtr_prog, t_lnd_prog
   USE mo_physical_constants, ONLY: tmelt, grav, cpd, vtmpc1, dtdz_standardatm
   USE mo_atm_phy_nwp_config, ONLY: atm_phy_nwp_config
@@ -249,8 +249,8 @@ CONTAINS
         DO jc =  i_startidx, i_endidx
           ! grid scale + convective
           prm_diag%tot_prec_rate(jc,jb) = prm_diag%prec_gsp_rate(jc,jb) &
-            &                           + prm_diag%rain_con_rate(jc,jb) &
-            &                           + prm_diag%snow_con_rate(jc,jb)
+            &                           + prm_diag%rain_con_rate_corr(jc,jb) &
+            &                           + prm_diag%snow_con_rate_corr(jc,jb)
         ENDDO
         !$ACC END PARALLEL LOOP
       ELSE
@@ -353,7 +353,7 @@ CONTAINS
         IF (lcall_phy_jg(itsfc)) THEN
           !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
           !$ACC LOOP GANG VECTOR COLLAPSE(2)
-          DO jt=1,ntiles_total
+          DO jt=1,ntiles_total + ntiles_water
 !DIR$ IVDEP
             DO jc = i_startidx, i_endidx
               lnd_diag%runoff_s_t(jc,jb,jt) = lnd_diag%runoff_s_t(jc,jb,jt) + lnd_diag%runoff_s_inst_t(jc,jb,jt)
@@ -2867,4 +2867,3 @@ CONTAINS
   END SUBROUTINE nwp_diag_global
 
 END MODULE mo_nwp_diagnosis
-

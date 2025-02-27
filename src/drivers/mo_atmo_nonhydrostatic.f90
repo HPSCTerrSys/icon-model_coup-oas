@@ -1064,7 +1064,7 @@ CONTAINS
           ELSE
             CALL meteogram_init(meteogram_output_config(jg), jg, p_patch(jg), &
               &                ext_data(jg), p_nh_state(jg), prm_diag(jg),    &
-              &                p_lnd_state(jg), prm_nwp_tend(jg), iforcing,                     &
+              &                p_lnd_state(jg), prm_nwp_tend(jg), iforcing,   &
               &                grid_uuid=p_patch(jg)%grid_uuid,               &
               &                number_of_grid_used=number_of_grid_used(jg) )
           END IF

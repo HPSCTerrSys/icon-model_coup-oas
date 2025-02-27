@@ -42,6 +42,7 @@ USE mo_interpol_config,     ONLY: rbf_vec_dim_c, rbf_c2grad_dim,                
   &                               rbf_vec_dim_v, rbf_vec_dim_e, lsq_lin_set,    &
   &                               lsq_high_set
 USE mo_initicon_config,     ONLY: icpl_da_seaice, icpl_da_snowalb
+USE mo_lnd_nwp_config,      ONLY: lterra_urb
 USE mo_intp_data_strc,      ONLY: t_int_state
 USE mo_intp_rbf_coeffs,     ONLY: rbf_vec_index_cell, rbf_vec_index_edge,                &
   &                               rbf_vec_index_vertex, rbf_vec_compute_coeff_cell,      &
@@ -351,7 +352,7 @@ SUBROUTINE allocate_int_state( ptr_patch, ptr_int)
     llde         = atm_phy_nwp_config(MAX(1,ptr_patch%id))%lstoch_deep
     
     ptr_int%cell_environ%is_used = lsdi .OR. llpi .OR. llpim .OR. lmconv .OR. llsc .OR. llsd .OR. llde .OR. &
-                                   icpl_da_seaice >= 2 .OR. icpl_da_snowalb >= 2
+                                   icpl_da_seaice >= 2 .OR. icpl_da_snowalb >= 2 .OR. lterra_urb
 
     IF ( ptr_int%cell_environ%is_used ) THEN
       !

@@ -29,7 +29,7 @@ MODULE mo_coupling_utils
   USE mtime,              ONLY: datetimeToString, MAX_DATETIME_STR_LEN
   USE mo_timer,           ONLY: timer_start, timer_stop, timer_coupling_put, &
     &                           timer_coupling_get, timer_coupling_very_1stget, &
-    &                           timer_coupling_1stget, &
+    &                           timer_coupling_1stget, timer_coupling_init, &
     &                           timer_coupling_init_def_comp, &
     &                           timer_coupling_init_enddef
 #ifdef YAC_coupling
@@ -116,12 +116,16 @@ CONTAINS
 
     INTEGER :: global_rank, ierror
 
+    IF (ltimer) CALL timer_start (timer_coupling_init)
+
     yac_is_initialised = .TRUE.
 
     CALL yac_finit_comm ( p_comm_yac, yac_instance_id )
     CALL MPI_COMM_RANK ( p_comm_yac, global_rank, ierror )
     IF ( global_rank == 0 .AND. cpl_config_file_exists()) &
       CALL yac_fread_config_yaml( yac_instance_id, TRIM(yaml_filename) )
+
+    IF (ltimer) CALL timer_stop(timer_coupling_init)
 
 #endif
 

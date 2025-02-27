@@ -40,7 +40,8 @@ MODULE mo_wave_stepping
   USE mo_wave_forcing_state,       ONLY: wave_forcing_state
   USE mo_wave_diagnostics,         ONLY: calculate_output_diagnostics
   USE mo_wave_source,              ONLY: src_wind_input, src_dissipation, src_bottom_friction, &
-    &                                    src_nonlinear_transfer, integrate_in_time_src
+    &                                    src_nonlinear_transfer, integrate_in_time_src, &
+    &                                    src_wave_breaking
   USE mo_wave_physics,             ONLY: total_energy, wm1_wm2_wavenumber, set_energy2emin, &
        &                                 mean_frequency_energy, air_sea,  last_prog_freq_ind, &
        &                                 impose_high_freq_tail, tm1_tm2_periods, wave_stress, &
@@ -533,6 +534,17 @@ CONTAINS
             &  wave_num_c  = p_wave_state(jg)%diag%wave_num_c,    & !in
             &  depth       = wave_ext_data(jg)%bathymetry_c,      & !in
             &  tracer      = p_wave_state(jg)%prog(n_new)%tracer, & !in
+            &  p_source    = p_wave_state(jg)%source)               !inout: fl, sl
+        END IF
+
+        ! Calculate dissipation due to depth-induced wave breaking
+        IF (wave_config(jg)%lwave_brk_sf) THEN
+          CALL src_wave_breaking(                               &
+            &  p_patch     = p_patch(jg),                         & !in
+            &  wave_config = wave_config(jg),                     & !in
+            &  depth_c     = wave_ext_data(jg)%bathymetry_c,      & !in
+            &  tracer      = p_wave_state(jg)%prog(n_new)%tracer, & !in
+            &  p_diag      = p_wave_state(jg)%diag,               & !inout, in: emean, f1mean out: hrms_frac, wbr_frac
             &  p_source    = p_wave_state(jg)%source)               !inout: fl, sl
         END IF
 

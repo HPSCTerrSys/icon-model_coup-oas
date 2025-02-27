@@ -49,7 +49,7 @@ MODULE mo_nml_crosscheck
   USE mo_aes_vdf_config,           ONLY: aes_vdf_config
   USE mo_radiation_config,         ONLY: irad_aero, iRadAeroNone, iRadAeroConst,           &
     &                                    iRadAeroTegen, iRadAeroART, iRadAeroConstKinne,   &
-    &                                    iRadAeroCAMSclim,                                 &
+    &                                    iRadAeroCAMSclim, iRadAeroCAMStd,                 &
     &                                    iRadAeroKinne, iRadAeroVolc, iRadAeroKinneVolc,   &
     &                                    iRadAeroKinneVolcSP, iRadAeroKinneSP,             &
     &                                    irad_o3, irad_h2o, irad_co2, irad_ch4,            &
@@ -366,19 +366,28 @@ CONTAINS
             CALL finish(routine,'irad_aero=6 (Tegen) requires itopo=1')
           ENDIF
 
-          IF ( .NOT. ANY ( irad_aero ==  (/iRadAeroTegen, iRadAeroART, iRadAeroConstKinne, iRadAeroKinne,   &
-                           iRadAeroVolc, iRadAeroKinneVolc, iRadAeroKinneVolcSP, iRadAeroKinneSP/) ) .AND.  &
+          IF ( .NOT. ANY ( irad_aero ==  (/iRadAeroTegen, iRadAeroCAMSclim , iRadAeroCAMStd ,  &
+                         &  iRadAeroART, iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc,      &
+                         &  iRadAeroKinneVolc, iRadAeroKinneVolcSP, iRadAeroKinneSP/) ) .AND.  &
             &  ( atm_phy_nwp_config(jg)%icpl_aero_gscp > 0 .OR. icpl_aero_conv > 0 ) ) THEN
-            CALL finish(routine,'aerosol-precipitation coupling requires irad_aero=6, 9, 12, 13, 14, 15, 18 or 19')
+            CALL finish(routine,'aerosol-precipitation coupling requires irad_aero=6,7,8,9,12,13,14,15,18 or 19')
           ENDIF
 
-          ! check if CAMS aerosols are available for DeMott ice nucleation scheme
-          IF ( irad_aero /= iRadAeroCAMSclim .AND. icpl_aero_ice == 1  ) THEN
-            CALL finish(routine,'aerosol-ice coupling 1 requires irad_aero= 7')
+          ! reset lscale_cdnc to .false. if the SP scheme or icpl_aero_gscp = 3 (or both) are not set
+          IF ( atm_phy_nwp_config(jg)%lscale_cdnc .AND. atm_phy_nwp_config(jg)%icpl_aero_gscp /= 3 ) THEN
+            IF ( .NOT. ANY ( irad_aero ==  (/iRadAeroKinneVolcSP, iRadAeroKinneSP/) ) ) THEN
+              atm_phy_nwp_config(jg)%lscale_cdnc = .false.
+              CALL message(routine,'cdnc scaling is only effective in combination with the simple plumes &
+                                   &(irad_aero=18,19) and icpl_aero_gscp = 3; reset lscale_cdnc to .false.')
+            ENDIF
           ENDIF
+
+          ! check if CAMS/Tegen aerosols are available for DeMott ice nucleation scheme
+          IF (icpl_aero_ice == 1 .AND. .NOT. ANY(irad_aero == (/iRadAeroTegen, iRadAeroCAMSclim, iRadAeroCAMStd/) ) ) &
+            & CALL finish(routine,'icpl_aero_ice = 1 requires irad_aero= 6,7 or 8')
 
 #ifdef _OPENACC
-          IF ( icpl_aero_ice == 1 .OR. icpl_aero_ice == 2) THEN
+          IF ( icpl_aero_ice == 1 ) THEN
             CALL finish(routine,'DeMott ice nucleation icpl_aero_ice > 0 is currently not supported on GPU.')
           END IF
 #endif
@@ -417,9 +426,9 @@ CONTAINS
               &  CALL finish(routine,'For inwp_radiation = 4, irad_cfc11 has to be 0, 2 or 4')
             IF (.NOT. ANY( irad_cfc12   == (/0,2,4/)       ) ) &
               &  CALL finish(routine,'For inwp_radiation = 4, irad_cfc12 has to be 0, 2 or 4')
-            IF (.NOT. ANY( irad_aero    == (/iRadAeroNone, iRadAeroConst, iRadAeroTegen, iRadAeroART,           &
-              &                              iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc, iRadAeroCAMSclim, &
-              &                              iRadAeroKinneVolc, iRadAeroKinneVolcSP, iRadAeroKinneSP/) ) ) THEN
+            IF (.NOT. ANY( irad_aero    == (/iRadAeroNone, iRadAeroConst, iRadAeroTegen, iRadAeroART, &
+              &             iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc, iRadAeroCAMSclim,        &
+              &             iRadAeroCAMStd, iRadAeroKinneVolc, iRadAeroKinneVolcSP, iRadAeroKinneSP/) ) ) THEN
               WRITE(message_text,'(a,i2,a)') 'irad_aero = ', irad_aero,' is invalid for inwp_radiation=4'
               CALL finish(routine,message_text)
             ENDIF
@@ -561,6 +570,9 @@ CONTAINS
 #ifdef _OPENACC
     IF ( irad_aero == iRadAeroCAMSclim) THEN
         CALL finish(routine,'CAMS 3D climatology irad_aero=7 is currently not supported on GPU.')
+    END IF
+    IF ( irad_aero == iRadAeroCAMStd) THEN
+        CALL finish(routine,'CAMS forecast irad_aero=8 is currently not supported on GPU.')
     END IF
     IF ( atm_phy_nwp_config(jg)%icpl_aero_gscp == 3 ) THEN
         CALL finish(routine,'Using cloud-droplet number climatology icpl_aero_gscp = 3 is currently not supported on GPU.')
@@ -942,11 +954,12 @@ CONTAINS
           &   art_config(jg)%iart_init_aero >  0  .OR.  &
           &   art_config(jg)%iart_radioact  >  0  .OR.  &
           &   art_config(jg)%iart_seasalt   >  0  .OR.  &
-          &   art_config(jg)%iart_volcano   >  0  .OR.  &
-          &   art_config(jg)%lart_chem            .OR.  &
-          &   art_config(jg)%lart_chemtracer            ) THEN
+          &   art_config(jg)%iart_volcano   >  0  ) THEN
         CALL finish(routine,  &
           &  'mo_nml_crosscheck: art_crosscheck: some activated art switches are currently not supported on GPU.')
+      ELSEIF (    art_config(jg)%lart_chem            .OR.  &
+              &   art_config(jg)%lart_chemtracer            ) THEN 
+        CALL message(routine, 'WARNING: The switches lartchem and lart_chemtracer are not supported on GPU. Use them at your own risk. However, using this with OEM-specific cases is safe at the moment.') 
       END IF
     ENDDO
 #endif

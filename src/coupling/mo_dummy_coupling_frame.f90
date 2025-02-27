@@ -23,8 +23,7 @@ MODULE mo_dummy_coupling_frame
   USE mo_exception,       ONLY: message, message_text
   USE mo_timer,           ONLY: ltimer, timer_start, timer_stop, &
     &                           timer_coupling_init
-  USE mo_coupling_utils,  ONLY: cpl_construct, cpl_destruct, &
-    &                           cpl_def_main_dummy, cpl_enddef
+  USE mo_coupling_utils,  ONLY: cpl_def_main_dummy, cpl_enddef
 
   IMPLICIT NONE
 
@@ -53,9 +52,6 @@ CONTAINS
       "YAC dummy initialisation for processes of type ",  TRIM(comp_name)
     CALL message(routine, message_text)
 
-    ! construct coupler
-    CALL cpl_construct()
-
     ! Inform YAC about what we are
     CALL cpl_def_main_dummy(routine, TRIM(comp_name))
 
@@ -79,9 +75,6 @@ CONTAINS
       WRITE(message_text,*) &
         "YAC termination of processes of type ", TRIM(comp_name)
       CALL message(routine, message_text)
-
-      ! destruct coupler
-      CALL cpl_destruct()
 
     ENDIF
 

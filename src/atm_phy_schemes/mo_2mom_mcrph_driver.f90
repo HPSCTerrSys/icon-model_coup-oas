@@ -258,9 +258,7 @@ CONTAINS
     lprogmelt = PRESENT(qgl)
     
 #ifdef _OPENACC
-    IF (ldass_lhn) THEN
-      CALL finish(routine, 'LHN not available on GPU for two-moment microphysics')
-    ELSEIF (lprogmelt) THEN
+    IF (lprogmelt) THEN
       CALL finish(routine, 'lprogmelt not available on GPU for two-moment microphysics')
     ENDIF
 #endif
@@ -332,7 +330,14 @@ CONTAINS
 
     ! Initialize qrsflux for LHN:
     IF (ldass_lhn) THEN
-      qrsflux(:,:) = 0.0_wp
+      !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
+      !$ACC LOOP GANG VECTOR COLLAPSE(2)
+      DO kk = kts,kte
+        DO ii = its,ite
+          qrsflux(ii,kk) = 0.0_wp
+        ENDDO
+      ENDDO
+      !$ACC END PARALLEL
     END IF
 
     IF (clipping) THEN
@@ -628,9 +633,7 @@ CONTAINS
       logical, parameter :: lmicro_impl = .true.  ! microphysics within semi-implicit sedimentation loop?
 
 #ifdef _OPENACC
-    IF (ldass_lhn) THEN
-      CALL finish(routine, 'LHN not available on GPU for two-moment microphysics')
-    ELSEIF (lprogmelt) THEN
+    IF (lprogmelt) THEN
       CALL finish(routine, 'lprogmelt not available on GPU for two-moment microphysics')
     ENDIF
 #endif
@@ -913,7 +916,12 @@ CONTAINS
             qrsflux(:,k) = qr_flux_new + qi_flux_new + qs_flux_new + qg_flux_new + qh_flux_new + &
                            lg_flux_new + lh_flux_new
           ELSE
-            qrsflux(:,k) = qr_flux_new + qi_flux_new + qs_flux_new + qg_flux_new + qh_flux_new
+            !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
+            !$ACC LOOP GANG VECTOR
+            DO ii = its, ite
+              qrsflux(ii,k) = qr_flux_new(ii) + qi_flux_new(ii) + qs_flux_new(ii) + qg_flux_new(ii) + qh_flux_new(ii)
+            ENDDO
+            !$ACC END PARALLEL
           END IF
         END IF
 
@@ -941,12 +949,17 @@ CONTAINS
       END IF
 
       IF (ldass_lhn) THEN
-        qrsflux(:,kte) = qr_flux_new + qi_flux_new + qs_flux_new + qg_flux_new + qh_flux_new
+        !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
+        !$ACC LOOP GANG VECTOR
+        DO ii = its, ite
+          qrsflux(ii,kte) = qr_flux_new(ii) + qi_flux_new(ii) + qs_flux_new(ii) + qg_flux_new(ii) + qh_flux_new(ii)
+        ENDDO
+        !$ACC END PARALLEL
       END IF
 
       !$ACC WAIT
       !$ACC END DATA ! DATA CREATE PRESENT
-      
+
     END SUBROUTINE clouds_twomoment_implicit
    
    !
@@ -954,15 +967,14 @@ CONTAINS
    ! flux-form semi-lagrangian scheme after the microphysics.
    !
    SUBROUTINE sedimentation_explicit()
-     ! D.Rieger: the parameter lfullyexplicit needs to be set false, otherwise the nproma/mpi tests of buildbot are not passed
-     LOGICAL, PARAMETER :: lfullyexplicit = .FALSE.
-     REAL(wp) :: cmax, rdzmaxdt
-     REAL(wp) :: prec3D_tmp(isize,ke)
+    ! D.Rieger: the parameter lfullyexplicit needs to be set false, otherwise the nproma/mpi tests of buildbot are not passed
+    LOGICAL, PARAMETER :: lfullyexplicit = .FALSE.
+    REAL(wp) :: cmax, rdzmaxdt
+    REAL(wp) :: prec3D_tmp(isize,ke)
+    INTEGER :: ii, kk
 
 #ifdef _OPENACC
-    IF (ldass_lhn) THEN
-      CALL finish(routine, 'LHN not available on GPU for two-moment microphysics')
-    ELSEIF (lprogmelt) THEN
+    IF (lprogmelt) THEN
       CALL finish(routine, 'lprogmelt not available on GPU for two-moment microphysics')
     ENDIF
 #endif
@@ -992,34 +1004,97 @@ CONTAINS
 #ifndef _OPENACC
      IF (ANY(qr(its:ite,kts:kte)>0._wp)) THEN
 #endif
-       IF (ldass_lhn) prec3D_tmp(:,:) = 0.0_wp
-       DO ii=1,ntsedi_rain
-         CALL sedi_icon_rain(rain,rain_coeffs,qr,qnr,prec_r,prec3D_tmp,qc,rhocorr, &
-           & rdz,dt/ntsedi_rain,its,ite,kts,kte,cmax,lacc=.TRUE.)
-       END DO
-       IF (ldass_lhn) qrsflux(:,:) = qrsflux(:,:) + prec3D_tmp(:,:)
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            prec3D_tmp(ii,kk) = 0.0_wp
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
+      DO ii=1,ntsedi_rain
+        CALL sedi_icon_rain(rain,rain_coeffs,qr,qnr,prec_r,prec3D_tmp,qc,rhocorr, &
+          & rdz,dt/ntsedi_rain,its,ite,kts,kte,cmax,lacc=.TRUE.)
+      END DO
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            qrsflux(ii,kk) = qrsflux(ii,kk) + prec3D_tmp(ii,kk)
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
 #ifndef _OPENACC
      END IF
 
      IF (ANY(qi(its:ite,kts:kte)>0._wp)) THEN
 #endif
-       IF (ldass_lhn) prec3D_tmp(:,:) = 0.0_wp
-       CALL sedi_icon_sphere(ice,ice_coeffs,qi,qni,prec_i,prec3D_tmp,rhocorr,rdz,dt,its,ite,kts,kte,lacc=.TRUE.)
-       IF (ldass_lhn) qrsflux(:,:) = qrsflux(:,:) + prec3D_tmp(:,:)
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            prec3D_tmp(ii,kk) = 0.0_wp
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
+      CALL sedi_icon_sphere(ice,ice_coeffs,qi,qni,prec_i,prec3D_tmp,rhocorr,rdz,dt,its,ite,kts,kte,lacc=.TRUE.)
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            qrsflux(ii,kk) = qrsflux(ii,kk) + prec3D_tmp(ii,kk)
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
 #ifndef _OPENACC
      END IF
 
      IF (ANY(qs(its:ite,kts:kte)>0._wp)) THEN
 #endif
-       IF (ldass_lhn) prec3D_tmp(:,:) = 0.0_wp
-       CALL sedi_icon_sphere(snow,snow_coeffs,qs,qns,prec_s,prec3D_tmp,rhocorr,rdz,dt,its,ite,kts,kte,lacc=.TRUE.)
-       IF (ldass_lhn) qrsflux(:,:) = qrsflux(:,:) + prec3D_tmp(:,:)
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            prec3D_tmp(ii,kk) = 0.0_wp
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
+      CALL sedi_icon_sphere(snow,snow_coeffs,qs,qns,prec_s,prec3D_tmp,rhocorr,rdz,dt,its,ite,kts,kte,lacc=.TRUE.)
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            qrsflux(ii,kk) = qrsflux(ii,kk) + prec3D_tmp(ii,kk)
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
 #ifndef _OPENACC
      END IF
 
      IF (ANY(qg(its:ite,kts:kte)>0._wp)) THEN
 #endif
-       IF (ldass_lhn) prec3D_tmp(:,:) = 0.0_wp
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            prec3D_tmp(ii,kk) = 0.0_wp
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
        IF (lprogmelt) THEN
          DO ii=1,ntsedi_graupel
            call sedi_icon_sphere_lwf(graupel_lwf,graupel_coeffs,qg,qng,qgl,&
@@ -1031,13 +1106,31 @@ CONTAINS
              & its,ite,kts,kte,cmax,lacc=.TRUE.)
          END DO
        END IF
-       IF (ldass_lhn) qrsflux(:,:) = qrsflux(:,:) + prec3D_tmp(:,:)
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            qrsflux(ii,kk) = qrsflux(ii,kk) + prec3D_tmp(ii,kk)
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
 #ifndef _OPENACC
      END IF
 
      IF (ANY(qh(its:ite,kts:kte)>0._wp)) THEN
 #endif
-       IF (ldass_lhn) prec3D_tmp(:,:) = 0.0_wp
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            prec3D_tmp(ii,kk) = 0.0_wp
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
        IF (lprogmelt) THEN
          DO ii=1,ntsedi_hail
            call sedi_icon_sphere_lwf(hail_lwf,hail_coeffs,qh,qnh,qhl,&
@@ -1049,7 +1142,16 @@ CONTAINS
              & its,ite,kts,kte,cmax,lacc=.TRUE.)
          END DO
        END IF
-       IF (ldass_lhn) qrsflux(:,:) = qrsflux(:,:) + prec3D_tmp(:,:)
+      IF (ldass_lhn) THEN
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
+        DO kk = kts,kte
+          DO ii = its,ite
+            qrsflux(ii,kk) = qrsflux(ii,kk) + prec3D_tmp(ii,kk)
+          ENDDO
+        ENDDO
+        !$ACC END PARALLEL
+      ENDIF
 #ifndef _OPENACC
      END IF
 #endif

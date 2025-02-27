@@ -96,6 +96,8 @@ MODULE mo_wave_types
       &  tm1(:,:),            & ! total wave m1 period           (nproma,nblks_c) (s)
       &  tm2(:,:),            & ! total wave m2 period           (nproma,nblks_c) (s)
       &  ds(:,:),             & ! total directional wave spread  (nproma,nblks_c) (deg)
+      &  hrms_frac(:,:),      & ! square ratio (Hrms / Hmax)**2  (nproma,nblks_c) (-)
+      &  wbr_frac(:,:),       & ! fraction of breaking waves     (nproma,nblks_c) (-)
       ! wind sea
       &  emean_sea(:,:),      & ! wind sea energy                (nproma,nblks_c) (m^2)
       &  femean_sea(:,:),     & ! wind sea mean frequency energy (nproma,nblks_c) (m^2)

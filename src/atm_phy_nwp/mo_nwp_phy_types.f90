@@ -97,6 +97,7 @@ MODULE mo_nwp_phy_types
       &   acdnc(:,:,:),        & !! cloud droplet number concentration                   [1/m**3]
       &   cape    (:,:),       & !! convective available energy
       &   cloud_num(:,:),      & !! 2D cloud droplet number concentration for simple aerosol-cloud coupling [1/m**3]
+      &   cloud_num_fac(:,:),  & !! scaling factor for cloud_num, can be used for icpl_aero_gscp = 3 and lscale_cdnc = true
       &   conv_eis(:,:),       & !! estimated inversion strength
       &   con_gust(:,:),       & !! convective gusts near surface
       &   con_udd(:,:,:,:),    & !!(nproma,nlev,nblks,8) convective up/downdraft fields
@@ -272,8 +273,10 @@ MODULE mo_nwp_phy_types
       &  graupel_gsp_rate (:,:),  & !! grid_scale surface graupel rate                 [kg/m2/s]
       &  hail_gsp_rate    (:,:),  & !! grid_scale surface hail rate                    [kg/m2/s]
       !  convective
-      &  rain_con_rate    (:,:),  & !! convective surface rain rate                    [kg/m2/s]
-      &  snow_con_rate    (:,:),  & !! convective surface snow_rate                    [kg/m2/s]
+      &  rain_con_rate_corr(:,:), & !! convective surface rain rate (water-conserving) [kg/m2/s]
+      &  rain_con_rate    (:,:),  & !! convective surface rain rate (next time step)   [kg/m2/s]
+      &  snow_con_rate_corr(:,:), & !! convective surface snow_rate (water-conserving) [kg/m2/s]
+      &  snow_con_rate    (:,:),  & !! convective surface snow rate (next time step)   [kg/m2/s]
       &  rain_con_rate_3d (:,:,:),& !! 3d convective rain rate (convection scheme)     [kg/m2/s]
       &  snow_con_rate_3d (:,:,:),& !! 3d convective snow_rate (convection scheme)     [kg/m2/s]
       !
@@ -505,7 +508,8 @@ MODULE mo_nwp_phy_types
       cloudtop(:,:),       & !< Cloud Top
       srh(:,:,:),          & !< Storm relative helicity with right-moving storm motion after Bunkers et al. (2000)
       tot_pr_max(:,:),     & !< Time maximum total precipitation rate
-      hpbl(:,:)              !< Boundary layer height  (m)
+      hpbl(:,:),           & !< Boundary layer height  (m)
+      aod_550nm(:,:)         !< aerosol optical depth visible 550 nm (spectral band 25)
 
     ! Buffer field needed when vertical nesting is combined with a reduced radiation
     ! grid and latm_above_top = .TRUE.

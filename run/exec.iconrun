@@ -342,8 +342,6 @@ ldd ${MODEL}
 #
 # TODO: be less atmospheric centric, i.e. do not assume that atmosphere is always component 1
 ICON_COMPONENT1_VH_procs=$(( ${num_restart_procs:-0} + ${num_io_procs:-0} + ${num_prefetch_proc:-0} + ${num_io_procs_radar:-0}))
-ICON_COMPONENT2_VE_procs=0 # Note: probably one has to substrace $proc0_shift here if proc0_shift is used for the second component.
-ICON_COMPONENT2_VH_procs=0 # TODO: use information about coupled processes to fill this
 
 #
 # start experiment

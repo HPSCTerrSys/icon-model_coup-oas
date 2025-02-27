@@ -70,6 +70,7 @@ case "$use_host" in
     # server (buildmac1.mpimet.mpg.de) in the same way:
     echo "$use_host" | grep '^\([dw]14[6-9]-[1-9][0-9]\{0,2\}\|buildmac1\)\.mpimet\.mpg\.de$' >/dev/null 2>&1 || use_site=mpg.de ;;
   uan0?) use_site=csc.fi ;;
+  *.leonardo.local) use_site=cineca.it ;;
 esac
 test x"$ICON_DOCKER" = x1 && use_site=docker
 
@@ -246,7 +247,7 @@ case "$use_site" in
     use_sync_submit='sbatch --wait'
     use_load_profile='. /etc/profile'
     use_mpi_startrun='@MPI_LAUNCH@ -n ${SLURM_NPROCS}'
-    use_load_modules=""
+    use_load_modules="${MODULELIST}"
     case "$use_host" in
       uc2*) use_target='uc2' ;;
       fh2*) use_target='fh2' ;;
@@ -280,6 +281,17 @@ case "$use_site" in
     else
       use_target='lumi_cpu'
       use_mpi_startrun="srun ${ICON_CONTAINER_WRAPPER-}"
+    fi
+  ;;
+
+  cineca.it)
+    use_shell='/usr/bin/bash'
+    use_submit='sbatch'
+    use_sync_submit='sbatch --wait'
+    use_mpi_startrun='@MPI_LAUNCH@ -n ${SLURM_NPROCS}'
+    use_target='leo'; 
+    if test xyes = x"${use_gpu}"; then 
+        use_mpi_startrun='@MPI_LAUNCH@ -n ${SLURM_NPROCS} ${basedir}/run/run_wrapper/leo.sh'
     fi
   ;;
 

@@ -23,6 +23,9 @@
 ! - "W" is optional and read if available in the input data (note that "W" may in fact contain OMEGA).
 ! - "QV", "QC", "QI" are always read
 ! - "QR", "QS" are read if available
+! - Other tracer fields (such as ART tracers) are read, if available AND contained in the variable group 
+!   LATBC_PREFETCH_VARS. This allows to skip the read-in of individual fields, if their latbc entry in tracers.xml is 
+!   empty.
 !
 ! The other fields for the lateral boundary conditions are read
 ! from file, based on the following decision tree.  Note that the
@@ -211,9 +214,7 @@ MODULE mo_async_latbc
   USE mo_var_list_register,         ONLY: t_vl_register_iter
   USE mo_var_metadata,              ONLY: get_var_name
   USE mo_var,                       ONLY: t_var
-#ifdef __ICON_ART
   USE mo_var_groups,                ONLY: var_groups_dyn
-#endif
   USE mo_limarea_config,            ONLY: latbc_config
   USE mo_dictionary,                ONLY: t_dictionary
   USE mo_util_string,               ONLY: add_to_list, tolower
@@ -745,23 +746,6 @@ CONTAINS
 
     is_work = my_process_is_work()
 
-    !!!! FIXME !!!
-    ! Strictly speaking, the group LATBC_PREFETCH_VARS is no longer necessary.
-    ! Currently, the group size is used below for allocating nlev, mapped_name, ... (see below).
-    ! A better way to do this, is to count the total number of 'lreads' in check_variables.
-    ! This would give the exact number of necessary buffers (rather than an upper bound).
-    ! The corresponding ALLOCATE (latbc%buffer%nlev ...) then must be performed after the call
-    ! to check_variables.
-    ! In addition the group LATBC_PREFETCH_VARS is used for determining the internal names
-    ! of the variables to be read. If we decide to remove LATBC_PREFETCH_VARS, an alternative
-    ! way of getting the names is required (e.g. getting them somehow from check_variables).
-    ! For optional variables, e.g. the additional (ART) tracers, this change would require a
-    ! different way to specify which of these tracers are to be used as lateral boundary.
-    !
-    !>Looks for variable groups ("group:xyz") and collects
-    ! them to map prefetch variable names onto
-    ! GRIB2 shortnames or NetCDF var names.
-
     ! loop over all variables and collects the variables names
     ! corresponding to the group "LATBC_PREFETCH_VARS"
     CALL vlr_group(LATBC_PREFETCH_VARS, grp_vars, ngrp_prefetch_vars, &
@@ -929,9 +913,7 @@ CONTAINS
     CHARACTER(:), ALLOCATABLE :: cur_name     !< name of current tracer
     INTEGER :: cur_idx, iv, idx, numlbc_tracer
     TYPE(t_var), POINTER :: cur_var
-#ifdef __ICON_ART
-    INTEGER :: art_aerosol_grp_id, latbc_prefetch_vars_grp_id
-#endif
+    INTEGER :: latbc_prefetch_vars_grp_id
 
        ! --- CHECK WHICH VARIABLES ARE AVAILABLE IN THE DATA SET ---
        ! Check if rain water (QR) is provided as input
@@ -944,10 +926,7 @@ CONTAINS
        buffer%idx_tracer(:) = -1
        numlbc_tracer = 0
 
-#ifdef __ICON_ART
-       art_aerosol_grp_id = var_groups_dyn%group_id('ART_AEROSOL')
        latbc_prefetch_vars_grp_id = var_groups_dyn%group_id('LATBC_PREFETCH_VARS')
-#endif
 
        ! Loop through the p_tracer_list
        DO iv = 1, p_nh_state_lists(1)%tracer_list(1)%p%nvars
@@ -959,16 +938,15 @@ CONTAINS
          IF (cur_idx > iqs) THEN
            numlbc_tracer = numlbc_tracer + 1
            ! Check if additional tracer variables are provided as input
-           buffer%lread_tracer(numlbc_tracer) = &
-             &  (test_cdi_varID(fileID_latbc, cur_name, latbc_dict) /= -1)
-#ifdef __ICON_ART
-           ! Force lread_tracer to .FALSE. for ART AEROSOL (mainly for pollen) tracers that are not part of 
-           ! LATBC_PREFETCH_VARS, i.e. their latbc entry in tracers.xml is empty. Also see variable c_latbc in 
-           ! art_tracer_def_wrapper in mo_art_tracer_def_wrapper.f90.
-           IF (cur_var%info%in_group(art_aerosol_grp_id) .AND. (.NOT. cur_var%info%in_group(latbc_prefetch_vars_grp_id))) THEN
+           IF (.NOT. cur_var%info%in_group(latbc_prefetch_vars_grp_id)) THEN
+             ! Force lread_tracer to .FALSE. for additional (mainly for ART pollen) tracers that are not part of 
+             ! LATBC_PREFETCH_VARS, i.e. their latbc entry in tracers.xml is empty. Also see variable c_latbc in 
+             ! art_tracer_def_wrapper in mo_art_tracer_def_wrapper.f90.
              buffer%lread_tracer(numlbc_tracer) = .FALSE.
+           ELSE
+             buffer%lread_tracer(numlbc_tracer) = &
+               &  (test_cdi_varID(fileID_latbc, cur_name, latbc_dict) /= -1)
            ENDIF
-#endif
            ! Save plain variable name and index
            buffer%name_tracer(numlbc_tracer) = cur_name
            buffer%idx_tracer(numlbc_tracer)  = cur_idx

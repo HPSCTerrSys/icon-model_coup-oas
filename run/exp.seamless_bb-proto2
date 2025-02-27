@@ -760,6 +760,7 @@ cat >> ${atm_namelist} << EOF
  itopo                   = 1
  n_iter_smooth_topo      = 1
  heightdiff_threshold    = 3000.
+ read_nc_via_cdi         = .true. ! Test CDI code path, other seamless_bbs test parallel NetCDF.
 /
 &lnd_nml
  ntiles                  = 3

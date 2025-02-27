@@ -5719,7 +5719,7 @@ CONTAINS
 
              nuc_n = acoeff * atan(bcoeff * log(wcb) + ccoeff) + dcoeff
 
-             nuc_n = MAX(MAX(nuc_n,10.0e-6_wp) - n_c,0.0_wp)
+             nuc_n = MAX(MAX(nuc_n,1.0e7_wp) - n_c,0.0_wp)
 
              nuc_q = MIN(nuc_n * cloud%x_min, atmo%qv(i,k))
              nuc_n = nuc_q / cloud%x_min

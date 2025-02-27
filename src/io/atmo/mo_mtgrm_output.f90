@@ -142,7 +142,7 @@ MODULE mo_meteogram_output
 #endif
   USE mo_model_domain,          ONLY: t_patch, t_grid_cells
   USE mo_parallel_config,       ONLY: nproma, p_test_run
-  USE mo_impl_constants,        ONLY: inwp, max_dom, SUCCESS
+  USE mo_impl_constants,        ONLY: inwp, max_dom, SUCCESS, REAL_T
   USE mo_math_constants,        ONLY: pi, pi_180
   USE mo_communication,         ONLY: idx_1d, blk_no, idx_no
   USE mo_ext_data_types,        ONLY: t_external_data, t_external_atmos
@@ -179,6 +179,15 @@ MODULE mo_meteogram_output
   USE mo_grid_config,           ONLY: grid_sphere_radius, is_plane_torus
   USE mo_aes_phy_memory,        ONLY: prm_field
   USE mo_fortran_tools,         ONLY: assert_acc_device_only, set_acc_host_or_device
+  ! generalized meteogram output
+  USE mo_var_list_register,     ONLY: t_vl_register_iter
+  USE mo_var,                   ONLY: t_var_ptr, level_type_ml
+  USE mo_var_metadata,          ONLY: get_var_timelevel
+  USE mo_var_metadata_types,    ONLY: t_var_metadata
+  USE mo_var_groups,            ONLY: var_groups_dyn
+  USE mo_util_string,           ONLY: toupper
+  USE mo_zaxis_type,            ONLY: ZA_SURFACE, ZA_ATMOSPHERE, &
+    &                                 ZA_REFERENCE, ZA_REFERENCE_HALF
 #ifdef _OPENACC
   USE openacc,                  ONLY: acc_is_present
 #endif
@@ -467,6 +476,14 @@ CONTAINS
     CHARACTER(len=14) :: c_thresh_int
     INTEGER           :: i
 
+    ! gereralized meteogram output
+    INTEGER                       :: idx_group_mtgrm
+    TYPE(t_vl_register_iter)      :: vl_iter
+    TYPE(t_var_ptr), POINTER      :: elem
+    TYPE(t_var_metadata), POINTER :: info
+    INTEGER                       :: iv
+    CHARACTER(len=128)            :: var_name_mtgrm
+
     var_list%no_atmo_vars = 0
     var_list%no_sfc_vars = 0
 
@@ -601,6 +618,49 @@ CONTAINS
     CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
       &               "PHALF", "Pa", "Pressure on the half levels", &
       &               var_info, diag%pres_ifc(:,:,:))
+
+
+    ! generalized meteogram output
+    idx_group_mtgrm = var_groups_dyn%group_id("METEOGRAM")
+    DO WHILE(vl_iter%next())
+      ! skip e.g. p_tracer_list defined for advection
+      IF (.NOT. vl_iter%cur%p%loutput) CYCLE
+      IF (vl_iter%cur%p%vlevel_type /= level_type_ml) CYCLE
+      IF (vl_iter%cur%p%patch_id /= jg)  CYCLE
+      LOOPVAR : DO iv = 1, vl_iter%cur%p%nvars
+        elem => vl_iter%cur%p%vl(iv)
+        info => elem%p%info
+        ! for time-level dependent variables: output only once
+        IF (get_var_timelevel(info%name) > 1)  CYCLE
+        IF ( info%in_group(idx_group_mtgrm) ) THEN
+          IF (ASSOCIATED(elem%p%r_ptr))  THEN
+            SELECT CASE(info%data_type)
+            CASE(REAL_T)
+              IF (info%grib2%category /= 18) THEN
+                ! change case of variable name to upper
+                var_name_mtgrm = toupper(info%cf%standard_name)
+              ELSE
+                ! for nuclear variables (parameterCategory = 18) do not change case
+                var_name_mtgrm = info%cf%standard_name
+              END IF
+              IF ( info%vgrid == ZA_REFERENCE .AND. info%ndims == 3 ) THEN
+                CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_ML, &
+                  &               var_name_mtgrm, info%cf%units, &
+                  &               info%cf%long_name, var_info, elem%p%r_ptr(:,:,:,1,1))
+              ELSE IF ( info%vgrid == ZA_REFERENCE_HALF .AND. info%ndims == 3 ) THEN
+                CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
+                  &               var_name_mtgrm, info%cf%units, &
+                  &               info%cf%long_name, var_info, elem%p%r_ptr(:,:,:,1,1))
+              ELSE IF ( ANY((/ZA_SURFACE, ZA_ATMOSPHERE/) == info%vgrid) .AND. info%ndims == 2 ) THEN
+                CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
+                  &              var_name_mtgrm, info%cf%units, &
+                  &              info%cf%long_name, sfc_var_info, elem%p%r_ptr(:,:,1,1,1))
+              END IF
+            END SELECT
+          END IF
+        END IF
+      ENDDO LOOPVAR
+    ENDDO
 
     ! -- soil related
     IF (  atm_phy_nwp_config%inwp_surface == 1 ) THEN

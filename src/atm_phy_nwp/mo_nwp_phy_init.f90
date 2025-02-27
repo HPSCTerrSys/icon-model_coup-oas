@@ -51,6 +51,7 @@ MODULE mo_nwp_phy_init
   USE mo_newcld_optics,       ONLY: setup_newcld_optics
   USE mo_lrtm_setup,          ONLY: lrtm_setup
   USE mo_radiation_config,    ONLY: irad_aero, iRadAeroTegen, iRadAeroART,            &
+    &                               iRadAeroCAMSclim, iRadAeroCAMStd,                 &
     &                               iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc,  &
     &                               iRadAeroKinneVolc,  iRadAeroKinneVolcSP,          &
     &                               iRadAeroKinneSP,                                  &
@@ -994,8 +995,10 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
           !
           ! Setup Tegen aerosol needs to be done only once for all domains
           IF (irad_aero == iRadAeroTegen .OR. irad_aero == iRadAeroART) THEN
-            IF (ecrad_conf%i_gas_model == IGasModelIFSRRTMG) THEN
+            IF (ecrad_conf%i_gas_model_sw == IGasModelIFSRRTMG .AND. ecrad_conf%i_gas_model_lw == IGasModelIFSRRTMG) THEN
               CALL init_aerosol_props_tegen_ecrad(ecrad_conf, .TRUE.)
+            ELSE IF (ecrad_conf%i_gas_model_sw .NE. ecrad_conf%i_gas_model_lw ) THEN
+              CALL finish(routine, "Differing gas models for LW and SW are currently unsupported. ")
             ELSE
               CALL init_aerosol_props_tegen_ecrad(ecrad_conf, .FALSE.)
             ENDIF !ecrad_conf%i_gas_model
@@ -1027,6 +1030,12 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
         !
         ! Read ozone transient data
         IF (irad_o3 == 5) CALL read_bc_ozone(ini_date%date%year,p_patch,irad_o3,vmr2mmr_opt=o3mr2gg)
+
+        ! cloud_num_fac is used in clim_cdnc, but is only available after the 1st call of init_slowphys
+        ! however, clim_cdnc has to be called once before the 1st call of init_slowphys
+        IF (atm_phy_nwp_config(jg)%lscale_cdnc .AND. linit_mode) THEN
+          prm_diag%cloud_num_fac(:,:) = 1._wp
+        ENDIF
 
         !------------------------------------------------------------
         ! Initialize solar flux in SW bands and solar constant (W/m2)
@@ -1882,7 +1891,7 @@ END SUBROUTINE init_nwp_phy
     jg = p_patch%id
     nlev = p_patch%nlev
 
-    IF (irad_aero /= iRadAeroTegen .AND. irad_aero /= iRadAeroART) RETURN
+    IF (ALL (irad_aero /= (/iRadAeroTegen, iRadAeroART, iRadAeroCAMSclim, iRadAeroCAMStd/))) RETURN
     IF (atm_phy_nwp_config(jg)%icpl_aero_gscp /= 1 .AND. icpl_aero_conv /= 1) RETURN
 
     
@@ -1959,9 +1968,8 @@ END SUBROUTINE init_nwp_phy
     INTEGER  :: imo1, imo2
     INTEGER  :: rl_start, rl_end, i_startblk, i_endblk, i_startidx, i_endidx
     INTEGER  :: jb, jc
-    LOGICAL  :: landpoint
 
-    REAL(wp) :: wgt, zlat, ncloud
+    REAL(wp) :: wgt
 
     TYPE(t_time_interpolation_weights) :: current_time_interpolation_weights
 
@@ -1985,45 +1993,21 @@ END SUBROUTINE init_nwp_phy
     i_endblk   = p_patch%cells%end_block(rl_end)
 
 !$OMP PARALLEL
-!$OMP DO PRIVATE(jb,jc,i_startidx,i_endidx,zlat,landpoint,ncloud)
+!$OMP DO PRIVATE(jb,jc,i_startidx,i_endidx)
     DO jb = i_startblk, i_endblk
 
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
-
         DO jc = i_startidx, i_endidx
+          ! Calculate the weighted average of monthly cloud droplet number
+          prm_diag%cloud_num(jc,jb) = ( ext_data%atm_td%cdnc(jc,jb,imo1) + &
+                   ( ext_data%atm_td%cdnc(jc,jb,imo2) - ext_data%atm_td%cdnc(jc,jb,imo1) ) * wgt )
 
-          zlat = p_patch%cells%center(jc,jb)%lat*rad2deg
- 
-          landpoint = (ext_data%atm%llsm_atm_c(jc,jb) .OR. ext_data%atm%llake_c(jc,jb))
-
-          ! Initialize a background value of 30 cm-3 
-          prm_diag%cloud_num(jc,jb) = 30e6_wp
-
-          ! Increase cloud_num in Southern Ocean toward pole
-          ncloud = 120e6_wp * MIN(ABS(zlat)/90.0_wp,1.0_wp)
-          ncloud = MAX(prm_diag%cloud_num(jc,jb),ncloud)
-          prm_diag%cloud_num(jc,jb) = MERGE(ncloud, prm_diag%cloud_num(jc,jb), zlat < 0.0_wp )
-
-          ! Now overwrite with cloud droplet number climatology 
-          ncloud = ( ext_data%atm_td%cdnc(jc,jb,imo1) + &
-                   ( ext_data%atm_td%cdnc(jc,jb,imo2) - ext_data%atm_td%cdnc(jc,jb,imo1) ) * wgt ) * 1e6_wp
-          prm_diag%cloud_num(jc,jb) = MERGE(ncloud, prm_diag%cloud_num(jc,jb), ncloud > 0.0e6_wp )
-          ! Over land except Antarctica should be at least 175 cm-3
-          IF ( landpoint .AND. zlat > -57.0_wp) THEN
-            prm_diag%cloud_num(jc,jb) = MAX(175e6_wp, prm_diag%cloud_num(jc,jb))
+          ! scaling of external cdnc with a scaling factor derived from the simple plumes
+          IF ( atm_phy_nwp_config(p_patch%id)%lscale_cdnc ) THEN
+              prm_diag%cloud_num(jc,jb) = prm_diag%cloud_num_fac(jc,jb) * prm_diag%cloud_num(jc,jb)
           ENDIF
-
-          ! Replace too small values over ocean in Antarctica with 70 cm-3
-          IF ( zlat <= -57.0_wp) THEN
-            prm_diag%cloud_num(jc,jb) = MAX(70e6_wp, prm_diag%cloud_num(jc,jb))
-          ENDIF
-
-          ! Default 100cm-3 over ocean in towards Arctics 
-          IF ( .NOT. landpoint .AND. zlat > 57.0_wp) THEN
-            prm_diag%cloud_num(jc,jb) = MAX(100e6_wp, prm_diag%cloud_num(jc,jb))
-          ENDIF
-
         ENDDO
+
     ENDDO
 !$OMP END DO
 !$OMP END PARALLEL

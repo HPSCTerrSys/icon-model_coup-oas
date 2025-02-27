@@ -58,7 +58,7 @@ MODULE mo_nwp_ecrad_interface
                                    &   iRadAeroNone, iRadAeroConst, iRadAeroTegen,            &
                                    &   iRadAeroART, iRadAeroConstKinne, iRadAeroKinne,        &
                                    &   iRadAeroVolc, iRadAeroKinneVolc,  iRadAeroKinneVolcSP, &
-                                   &   iRadAeroKinneSP, iRadAeroCAMSclim
+                                   &   iRadAeroKinneSP, iRadAeroCAMSclim, iRadAeroCAMStd
   USE mo_phys_nest_utilities,    ONLY: t_upscale_fields, upscale_rad_input, downscale_rad_output
   USE mtime,                     ONLY: datetime
 #ifdef __ECRAD
@@ -255,7 +255,7 @@ CONTAINS
 
     IF ( ecrad_conf%use_aerosols ) THEN
       ! Allocate aerosol container
-      IF ( irad_aero == iRadAeroCAMSclim ) THEN
+      IF ( irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
         CALL ecrad_aerosol%allocate( nproma_sub, 1, nlev, ecrad_conf%n_aerosol_types)
         ALLOCATE(ptr_camsaermr(n_camsaermr))
       ELSE
@@ -304,7 +304,7 @@ CONTAINS
           ptr_reff_qi => prm_diag%reff_qi(jcs:jce,:,jb)
         ENDIF
 
-        IF (irad_aero == iRadAeroCAMSclim) THEN
+        IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
           DO jt = 1, n_camsaermr
             ptr_camsaermr(jt)%p => pt_diag%camsaermr(jcs:jce,:,jb,jt)
           ENDDO
@@ -414,7 +414,7 @@ CONTAINS
               &                         zaeq3(jcs:jce,:,jb), zaeq4(jcs:jce,:,jb),  &
               &                         zaeq5(jcs:jce,:,jb),                       &
               &                         ecrad_conf, ecrad_aerosol, lacc=.TRUE.)
-          CASE(iRadAeroCAMSclim)
+          CASE(iRadAeroCAMSclim,iRadAeroCAMStd)
             ! Fill aerosol configuration type with CAMS 3D climatology/forecasted aerosols
             CALL nwp_ecrad_prep_aerosol(1, nlev, i_startidx_rad, i_endidx_rad,      &
               &                         ecrad_aerosol, ptr_camsaermr)
@@ -522,7 +522,7 @@ CONTAINS
       CALL opt_ptrs_sw(jw)%finalize()
     ENDDO
     DEALLOCATE( opt_ptrs_lw, opt_ptrs_sw )
-    IF (irad_aero == iRadAeroCAMSclim) DEALLOCATE( ptr_camsaermr )
+    IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) DEALLOCATE( ptr_camsaermr )
 !$OMP END PARALLEL
 
     !$ACC END DATA
@@ -882,7 +882,7 @@ CONTAINS
       ENDDO
     END IF
 
-     IF (irad_aero == iRadAeroCAMSclim) THEN
+     IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
        DO jt = 1, n_camsaermr
          CALL input_extra_flds%assign(pt_diag%camsaermr(:,:,:,jt), irg_camsaermr(jt))
        ENDDO
@@ -1043,7 +1043,7 @@ CONTAINS
 
     IF ( ecrad_conf%use_aerosols ) THEN
       ! Allocate aerosol container
-      IF ( irad_aero == iRadAeroCAMSclim) THEN
+      IF ( irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
         CALL ecrad_aerosol%allocate( nproma_sub, 1, nlev_rg, ecrad_conf%n_aerosol_types)
         ALLOCATE(ptr_camsaermr(n_camsaermr))
       ELSE
@@ -1113,7 +1113,7 @@ CONTAINS
         IF ( irg_reff_qs > 0 ) ptr_reff_qs => zrg_extra_reff(jcs:jce,:,jb,irg_reff_qs)
         IF ( irg_reff_qg > 0 ) ptr_reff_qg => zrg_extra_reff(jcs:jce,:,jb,irg_reff_qg)
 
-        IF (irad_aero == iRadAeroCAMSclim) THEN
+        IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
           IF ( ALL(irg_camsaermr(:)  > 0) ) THEN
             DO jt = 1, n_camsaermr
               ptr_camsaermr(jt)%p  => zrg_extra_flds(jcs:jce,:,jb,irg_camsaermr(jt))
@@ -1197,7 +1197,7 @@ CONTAINS
               &                         zrg_aeq3(jcs:jce,:,jb), zrg_aeq4(jcs:jce,:,jb),   &
               &                         zrg_aeq5(jcs:jce,:,jb),                           &
               &                         ecrad_conf, ecrad_aerosol, lacc=.TRUE.)
-          CASE(iRadAeroCAMSclim)
+          CASE(iRadAeroCAMSclim,iRadAeroCAMStd)
             ! Fill aerosol configuration type with CAMS 3D climatology/forecasted aerosols
             CALL nwp_ecrad_prep_aerosol(1, nlev_rg, i_startidx_rad, i_endidx_rad,  &
               &                         ecrad_aerosol, ptr_camsaermr)  
@@ -1277,7 +1277,7 @@ CONTAINS
       CALL opt_ptrs_sw(jw)%finalize()
     ENDDO
     DEALLOCATE( opt_ptrs_lw, opt_ptrs_sw )
-    IF (irad_aero == iRadAeroCAMSclim) DEALLOCATE( ptr_camsaermr )
+    IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) DEALLOCATE( ptr_camsaermr )
 !$OMP END PARALLEL
 
 ! Downscale radiative fluxes from reduced radiation grid to full grid

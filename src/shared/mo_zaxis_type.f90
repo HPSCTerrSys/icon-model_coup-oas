@@ -69,8 +69,7 @@ MODULE mo_zaxis_type
     &   ZA_SEDIMENT_BOTTOM_TW_HALF, ZA_DEPTH_BELOW_SEA, ZA_DEPTH_BELOW_SEA_HALF,        &
     &   ZA_GENERIC_ICE, ZA_OCEAN_SEDIMENT, ZA_PRES_FL_BOT_TOP, ZA_ATMOSPHERE,           &
     &   ZA_HEIGHT_2M_LAYER, ZA_ECHOTOP, ZA_TROPOPAUSE, ZA_wshear,                       &
-    &   ZA_PRESSURE_LAPSERATE, ZA_SRH, ZA_HORIZONTAL_PLANE_OS,                          &
-    &   ZA_TERRAIN_TANGENT_PLANE_OS
+    &   ZA_PRESSURE_LAPSERATE, ZA_SRH
 
   !> Derived type holding a the ICON-internal key for a single
   !  vertical axis type. See "t_zaxisTypeList" for details.
@@ -234,10 +233,7 @@ CONTAINS
     ZA_ATMOSPHERE              = za_list%register(cdi_zaxis_type=ZAXIS_ATMOSPHERE         , is_2D=.TRUE.)
     ZA_HEIGHT_2M_LAYER         = za_list%register(cdi_zaxis_type=ZAXIS_HEIGHT             , is_2D=.TRUE.)
     ZA_TROPOPAUSE              = za_list%register(cdi_zaxis_type=ZAXIS_GENERIC            , is_2D=.TRUE.)    
-    ! horizontal reference surface including non-local radiative effects of terrain
-    ZA_HORIZONTAL_PLANE_OS     = za_list%register(cdi_zaxis_type=ZAXIS_SURFACE            , is_2D=.TRUE.)
-    !  plane tangent to terrain including non-local radiative effects of terrain
-    ZA_TERRAIN_TANGENT_PLANE_OS     = za_list%register(cdi_zaxis_type=ZAXIS_SURFACE            , is_2D=.TRUE.)
+
   END FUNCTION new_zaxisTypeList
 
 

@@ -24,8 +24,7 @@ function kill_nvsmi()
 trap kill_nvsmi ERR
 trap kill_nvsmi EXIT
 
-lrank=$SLURM_LOCALID
-echo lrank: $lrank
+lrank=${OMPI_COMM_WORLD_LOCAL_RANK:-$SLURM_LOCALID}
 
 # Local Task 0 runs always the nvidia-smi logger
 # To enable logging of nvidia-smi by setting the following in your run script
@@ -51,6 +50,8 @@ gpus=(0 1 2 3)
 export CUDA_VISIBLE_DEVICES=${gpus[$((lrank % ${#gpus[@]} ))]}
 
 export KMP_AFFINITY=scatter
+
+echo "lrank: $lrank (${OMPI_COMM_WORLD_LOCAL_RANK}:-${SLURM_LOCALID}), gpu: $CUDA_VISIBLE_DEVICES"
 
 "$@"
 return=$?
