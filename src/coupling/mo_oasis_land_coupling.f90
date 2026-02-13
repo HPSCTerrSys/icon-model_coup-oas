@@ -1,0 +1,245 @@
+!
+! MODULE: mo_oasis_land_coupling
+! Subroutines for OASIS3-MCT land-atmosphere coupling
+!
+#ifdef COUP_OAS_ECLM
+
+MODULE mo_oasis_land_coupling
+  !
+  ! Subroutines for OASIS3-MCT land-atmosphere coupling
+  ! This module handles OASIS mask creation, field sending, and field receiving
+  !
+
+  USE mo_oasis_define
+  USE mo_kind,              ONLY: wp
+  USE mo_exception,         ONLY: message, finish
+  USE mo_parallel_config,   ONLY: nproma
+  USE mo_run_config,        ONLY: msg_level, iqv
+  USE mo_dynamics_config,   ONLY: nnow, nnow_rcf
+  USE mo_nonhydro_state,    ONLY: p_nh_state
+  USE mo_nonhydro_types,    ONLY: t_nh_state
+  USE mo_impl_constants,    ONLY: min_rlcell_int, grf_bdywidth_c
+  USE mo_model_domain,      ONLY: p_patch, t_patch
+  USE mo_ext_data_state,    ONLY: ext_data
+  USE mo_ext_data_types,    ONLY: t_external_data
+  USE mo_nwp_phy_state,     ONLY: prm_diag
+  USE mo_nwp_phy_types,     ONLY: t_nwp_phy_diag
+  USE mo_nwp_lnd_types,     ONLY: t_lnd_state
+  USE mo_loopindices,       ONLY: get_indices_c
+
+  IMPLICIT NONE
+
+  PRIVATE
+
+  PUBLIC :: oasis_create_mask
+  PUBLIC :: oasis_send_fields
+  PUBLIC :: oasis_receive_fields
+  
+  CHARACTER(LEN=*), PARAMETER :: modname = 'mo_oasis_land_coupling'
+
+CONTAINS
+
+  !-----------------------------------------------------------------------------
+  !
+  ! OASIS3-MCT subroutines
+  !
+  !-----------------------------------------------------------------------------
+
+  SUBROUTINE oasis_create_mask(p_patch, ext_data)
+    !
+    ! Creates OASIS mask for land-atmosphere coupling
+    ! Sets loas_clm_c based on land and lake information
+    !
+    ! Arguments
+    TYPE(t_patch), INTENT(IN) :: p_patch   !< Unstructured triangular grid and patch info
+    TYPE(t_external_data), INTENT(IN) :: ext_data  !< External data (land-sea mask, lake mask)
+
+    ! Local variables
+    INTEGER :: jb, jc, rl_start, rl_end
+    INTEGER :: i_startblk, i_endblk, i_startidx, i_endidx
+    CHARACTER(len=1024) :: oas_message
+    CHARACTER(LEN=*), PARAMETER :: routine = modname//':oasis_create_mask'
+
+    IF(msg_level >= 30 ) then
+      WRITE(oas_message,*) 'iconoas setup oasis mask'
+      CALL message(routine, oas_message)
+    END IF
+
+    ! set oasis mask
+!    rl_start = 1
+    rl_start = grf_bdywidth_c+1
+    rl_end   = min_rlcell_int
+    i_startblk = p_patch%cells%start_blk(rl_start, 1)
+    i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
+    DO jb = i_startblk, i_endblk
+      CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
+        i_endidx, rl_start, rl_end)
+      DO jc = i_startidx, i_endidx
+        loas_clm_c(jc,jb) = ext_data%atm%llsm_atm_c(jc,jb) .OR. ext_data%atm%llake_c(jc,jb)
+!        loas_clm_c(jc,jb) = ext_data%atm%llsm_atm_c(jc,jb)
+      END DO
+    END DO
+
+  END SUBROUTINE oasis_create_mask
+
+  !-----------------------------------------------------------------------------
+
+  SUBROUTINE oasis_send_fields(sim_time_oas, p_patch, p_nh_state, prm_diag)
+    !
+    ! Sends OASIS fields to the coupler
+    !
+    ! Arguments
+    INTEGER, INTENT(IN) :: sim_time_oas  !< OASIS simulation time (0 for init, sim_time_oas for periodic)
+    TYPE(t_patch), INTENT(IN) :: p_patch   !< Unstructured triangular grid and patch info
+    TYPE(t_nh_state), INTENT(IN) :: p_nh_state   !< Non-hydrostatic state
+    TYPE(t_nwp_phy_diag), INTENT(IN) :: prm_diag   !< Parametrized physics diagnostics
+
+    ! Local variables
+    INTEGER :: nlev, ii, jb, jc, isnd, rl_start, rl_end
+    INTEGER :: i_startblk, i_endblk, i_startidx, i_endidx
+    CHARACTER(len=1024) :: oas_message
+    INTEGER :: oas_prt = 6
+    CHARACTER(LEN=*), PARAMETER :: routine = modname//':oasis_send_fields'
+
+    ! Initialize nlev
+    nlev = p_patch%nlev
+
+    IF(msg_level >= 30 ) then
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis send fields'
+      FLUSH(oas_prt)
+    END IF
+
+    oas_snd_field(:,7) = 0._wp
+    oas_snd_field(:,8) = 0._wp
+
+    rl_start = grf_bdywidth_c+1
+    rl_end   = min_rlcell_int
+    i_startblk = p_patch%cells%start_blk(rl_start, 1)
+    i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
+    ii = 0
+    DO jb = i_startblk, i_endblk
+      CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
+        i_endidx, rl_start, rl_end)
+      DO jc = i_startidx, i_endidx
+        ii = ii+1
+!        WRITE(oas_message,*) 'DEBUG SPo swflx_dn_sfc_diff  ',ii, ' at 0: ', MAX(0._wp, prm_diag(1)%swflxsfc(jc,jb) - prm_diag(1)%swflx_dn_sfc_diff(jc,jb))
+!        CALL message(routine, oas_message)
+        oas_snd_field(ii,1)  = p_nh_state%diag%temp(jc,nlev,jb)
+        oas_snd_field(ii,2)  = p_nh_state%diag%u(jc,nlev,jb)
+        oas_snd_field(ii,3)  = p_nh_state%diag%v(jc,nlev,jb)
+        oas_snd_field(ii,4)  = p_nh_state%prog(nnow(1))%tracer(jc,nlev,jb,iqv)
+        oas_snd_field(ii,5)  = &
+          p_nh_state%metrics%z_mc(jc,nlev,jb) - p_nh_state%metrics%z_ifc(jc,nlev+1,jb)
+        oas_snd_field(ii,6)  = p_nh_state%diag%pres_sfc(jc,jb)
+        oas_snd_field(ii,7)  = MAX(0._wp, prm_diag%swflxsfc(jc,jb) - prm_diag%swflx_dn_sfc_diff(jc,jb))
+        oas_snd_field(ii,8)  = prm_diag%swflx_dn_sfc_diff(jc,jb)
+        oas_snd_field(ii,9)  = prm_diag%lwflxsfc(jc,jb) + prm_diag%lwflx_up_sfc(jc,jb)
+        oas_snd_field(ii,10) = prm_diag%rain_con_rate(jc,jb) + prm_diag%rain_gsp_rate(jc,jb)
+        oas_snd_field(ii,11) = prm_diag%snow_con_rate(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)! + &
+        !  prm_diag(1)%ice_gsp_rate(jc,jb) + prm_diag(1)%graupel_gsp_rate(jc,jb) + &
+        ! prm_diag(1)%hail_gsp_rate(jc,jb)
+      END DO
+    END DO
+
+    ! Send and log fields
+    DO isnd = 1, SIZE(oas_snd_meta)
+      ! Send fields to OASIS
+      CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_snd_field(:,isnd), oas_error)
+      IF(msg_level >= 14 ) THEN
+        WRITE(oas_message,*) 'ICONOAS: Sending  ', oas_snd_meta(isnd)%clpname, ' at ',sim_time_oas,' ', &
+                MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
+        CALL message(routine, oas_message)
+      END IF
+      IF (oas_error .NE. OASIS_Ok .AND. oas_error .LT. OASIS_Sent) THEN
+        WRITE(oas_message,*) 'Failure in oasis_put of ', oas_snd_meta(isnd)%clpname
+        CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
+      END IF
+    END DO
+
+  END SUBROUTINE oasis_send_fields
+
+  !-----------------------------------------------------------------------------
+
+!  SUBROUTINE oasis_receive_fields(sim_time_oas, p_patch, p_lnd_state)
+   SUBROUTINE oasis_receive_fields(sim_time_oas, p_patch)
+    !
+    ! Receives OASIS fields from the coupler and transforms them into ICON format
+    !
+    ! Arguments
+    INTEGER, INTENT(IN) :: sim_time_oas  !< OASIS simulation time (0 for init, sim_time_oas for periodic)
+    TYPE(t_patch), INTENT(IN) :: p_patch   !< Unstructured triangular grid and patch info
+!    TYPE(t_lnd_state), INTENT(INOUT) :: p_lnd_state  !< Land state (receives data from coupler)
+ 
+    ! Local variables
+    INTEGER :: ii, jb, jc, oas_i, rl_start, rl_end
+    INTEGER :: i_startblk, i_endblk, i_startidx, i_endidx
+    CHARACTER(len=1024) :: oas_message
+    INTEGER :: oas_prt = 6
+    CHARACTER(LEN=*), PARAMETER :: routine = modname//':oasis_receive_fields'
+
+    IF(msg_level >= 30 ) then
+      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis receive fields'
+      FLUSH(oas_prt)
+    END IF
+
+    DO oas_i = 1, SIZE(oas_rcv_meta)
+      IF(msg_level > 30 ) THEN
+        WRITE(oas_message,*) 'Receiving  ', oas_rcv_meta(oas_i)%clpname,&
+          " at t=", sim_time_oas
+        CALL message(routine, oas_message)
+      END IF
+
+      ! Receive field from OASIS
+      CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_rcv_field(:,oas_i), oas_error)
+
+      ! Logfiles min and max of received field
+      IF(msg_level >= 14 ) THEN
+        WRITE(oas_message,*) 'ICONOAS: Received  ', oas_rcv_meta(oas_i)%clpname, ' at t=', sim_time_oas,' ',&
+                MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
+        CALL message(routine, oas_message)
+      END IF
+
+      IF (oas_error .NE. OASIS_Ok .AND. oas_error .LT. OASIS_Recvd) THEN
+        WRITE(oas_message,*) 'Failure in oasis_get of ', oas_rcv_meta(oas_i)%clpname
+        CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
+      END IF
+
+      ! transform thru oasis recieved variable into something icon can use
+      IF(msg_level > 30 ) THEN
+        WRITE(oas_message,*) "ICONOAS: icon transforming received vars"
+        CALL message(routine, oas_message)
+      END IF
+
+      rl_start = grf_bdywidth_c+1
+      rl_end   = min_rlcell_int
+      i_startblk = p_patch%cells%start_blk(rl_start, 1)
+      i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
+      ii = 0
+      DO jb = i_startblk, i_endblk
+        CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
+          i_endidx, rl_start, rl_end)
+        DO jc = i_startidx, i_endidx
+!          ii = idx_1d(jc,jb)
+          ii = ii + 1
+          oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
+        END DO
+      END DO
+
+      IF(msg_level > 30 ) THEN
+        WRITE(oas_message,*) "ICONOAS: icon transformed received vars"
+        CALL message(routine, oas_message)
+
+        ! check:
+        WRITE(oas_message,*) "ICONOAS: for ", oas_i, " got rank0-local min, max=", &
+          MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
+        CALL message(routine, oas_message)
+      END IF
+    END DO
+
+  END SUBROUTINE oasis_receive_fields
+
+  !-----------------------------------------------------------------------------
+
+END MODULE mo_oasis_land_coupling
+
+#endif
