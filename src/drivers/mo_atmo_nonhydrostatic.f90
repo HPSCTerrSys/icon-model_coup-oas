@@ -198,14 +198,7 @@ USE mo_icon2dace,           ONLY: init_dace, finish_dace
     &                             icon_call_callback
 #endif
 #ifdef COUP_OAS_ECLM
-  USE mo_oasis_define
-  USE mo_impl_constants,          ONLY: min_rlcell_int, grf_bdywidth_c
-  USE mo_parallel_config,         ONLY: idx_1d, nproma
-  USE mo_loopindices,             ONLY: get_indices_c
-  USE mo_mpi,                     ONLY: p_pe_work, p_comm_work_only, mpi_comm_null, p_sum !p_comm_work
-  USE mod_oasis,                  ONLY: oasis_abort, oasis_set_couplcomm, oasis_enddef,      &
-                                        oasis_def_partition, oasis_def_var, OASIS_In,        &
-                                        OASIS_Out, OASIS_Real
+  USE mo_oasis_land_coupling,     ONLY: construct_oasis_coupling
 #endif
 
 
@@ -231,12 +224,6 @@ CONTAINS
     CHARACTER(*), PARAMETER :: routine = "atmo_nonhydrostatic"
     INTEGER :: ierr
 
-#ifdef COUP_OAS_ECLM
-    INTEGER :: i_startblk, i_endblk, jb, jc, i_startidx, i_endidx, &
-               rl_start, rl_end, c, cc, cl, jg, ic
-    INTEGER :: oas_prt = 6
-#endif
-
     ! construct the atmospheric nonhydrostatic model
     CALL construct_atmo_nonhydrostatic(latbc)
 
@@ -250,198 +237,9 @@ CONTAINS
     ENDIF
 
 #ifdef COUP_OAS_ECLM
-
-    IF(msg_level >= 30 ) then
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_start'
-      FLUSH(oas_prt)
-    END IF
-
-    ! local coupling communicator for work processors
-!    CALL oasis_set_couplcomm(p_comm_work)
-    IF ( p_pe_work < p_patch(1)%proc0) THEN
-      lpe_cpl = .FALSE.
-      CALL oasis_set_couplcomm(mpi_comm_null)
-    ELSE
-      lpe_cpl = .TRUE.
-      CALL oasis_set_couplcomm(p_comm_work_only)
-    ENDIF
-    IF(msg_level >= 30 ) then
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis set couplcomm'
-      FLUSH(oas_prt)
-    END IF
-
-    IF (n_dom > 1) CALL oasis_abort(oas_comp_id, &
-      'oas_icon_partition', 'Number of ICON domain > 1 when coupled to CLM.')
-
-   IF ( lpe_cpl ) THEN
-
-    rl_start = grf_bdywidth_c+1
-    rl_end   = min_rlcell_int
-    i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
-    i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
-
-    ! (1) calculate length of oas_part on current proc
-    c = 0
-    DO jb = i_startblk, i_endblk
-      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
-      c = c + i_endidx - i_startidx + 1
-    END DO
-    ALLOCATE( oas_part(c+2) )
-    oas_part(1) = 4 ! 4: POINTS partitioning
-    oas_part(2) = c ! number of points in the partition
-
-    cc = p_sum(oas_part(2), comm=p_comm_work_only) ! number of points active in coupling
-    cl = p_patch(1)%n_patch_cells_g - cc           ! number of points lateral boundaries
-
-    IF(msg_level >= 10 ) then
-       WRITE(oas_prt,*) 'iconoas: number of total grid points active in coupling cc ',cc,' number of lat. bound. points ',cl
-       FLUSH(oas_prt)
-    END IF
-
-    ! (2) fill the partition with the cell indices
-    c = 0
-    DO jb = i_startblk, i_endblk
-      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
-      DO jc = i_startidx, i_endidx
-        c = c + 1
-        ic = idx_1d(jc,jb)
-!        WRITE(oas_prt,*) 'DEBUG SPo idx_1d ',ic, ' glb_index-9944: ', p_patch(1)%cells%decomp_info%glb_index(ic)-cl
-!        FLUSH(oas_prt)
-        oas_part(c+2) = p_patch(1)%cells%decomp_info%glb_index(ic)-cl ! shift global index for coupling
-      END DO
-    END DO
-
-!    oas_nlat = p_patch(1)%n_patch_cells_g
-    oas_nlat = cc
-    oas_nlon = 1
-
-    IF(msg_level >= 30 ) then !SPo
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis decomp'
-      FLUSH(oas_prt)
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' c = ',c,' oas_nlat=',oas_nlat
-      FLUSH(oas_prt)
-    END IF
-
-    CALL oasis_def_partition(oas_part_id, oas_part, oas_error, oas_nlat*oas_nlon)
-    IF (oas_error /= 0) &
-      CALL oasis_abort(oas_comp_id, oas_comp_name, 'Failure in oasis_def_partition')
-
-    IF(msg_level >= 30 ) then !SPo
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_def_parition finished'
-      FLUSH(oas_prt)
-    END IF
-
-    ! setup partitions for OASIS3-MCT
-    !
-    oas_var_nodims(1) = 1   ! rang of field array
-    oas_var_nodims(2) = 1   ! 'bundle' always 1 in OASIS3-MCT
-    oas_vshape(1)     = 1
-    oas_vshape(2)     = oas_part(2)
-
-    ! define variables for OASIS3-MCT
-    !
-    oas_snd_meta(1)%clpname = "ICOTEMPE"
-    oas_snd_meta(2)%clpname = "ICOUWIND"
-    oas_snd_meta(3)%clpname = "ICOVWIND"
-    oas_snd_meta(4)%clpname = "ICOSPWAT"
-    oas_snd_meta(5)%clpname = "ICOTHICK"
-    oas_snd_meta(6)%clpname = "ICOPRESS"
-    oas_snd_meta(7)%clpname = "ICODIRSW"
-    oas_snd_meta(8)%clpname = "ICODIFSW"
-    oas_snd_meta(9)%clpname = "ICOLONGW"
-    oas_snd_meta(10)%clpname = "ICOCVPRE"
-    oas_snd_meta(11)%clpname = "ICOGSPRE"
-
-    oas_rcv_meta(1)%clpname = "ICOINFRA"
-    oas_rcv_meta(2)%clpname = "ICOALBED"
-    oas_rcv_meta(3)%clpname = "ICOALBEI"
-    oas_rcv_meta(4)%clpname = "ICO_TAUX"
-    oas_rcv_meta(5)%clpname = "ICO_TAUY"
-    oas_rcv_meta(6)%clpname = "ICOSHFLX"
-    oas_rcv_meta(7)%clpname = "ICOLHFLX"
-    oas_rcv_meta(8)%clpname = "ICOTGRND"
-
-
-    DO jg = 1, SIZE(oas_snd_meta)
-      CALL oasis_def_var(oas_snd_meta(jg)%vid, oas_snd_meta(jg)%clpname, oas_part_id, &
-        oas_var_nodims, OASIS_Out, oas_vshape, OASIS_Real, oas_error)
-      IF (oas_error /= 0) THEN
-        CALL message('Failure in oasis_def_var for ', oas_snd_meta(jg)%clpname)
-        CALL oasis_abort(oas_comp_id, oas_comp_name, '')
-      END IF
-    END DO
-    DO jg = 1, SIZE(oas_rcv_meta)
-      CALL oasis_def_var(oas_rcv_meta(jg)%vid, oas_rcv_meta(jg)%clpname, oas_part_id, &
-        oas_var_nodims, OASIS_In, oas_vshape, OASIS_Real, oas_error)
-      IF (oas_error /= 0) THEN
-        CALL message('Failure in oasis_def_var for ', oas_rcv_meta(jg)%clpname)
-        CALL oasis_abort(oas_comp_id, oas_comp_name, '')
-      END IF
-    END DO
-    IF(msg_level >= 30 ) then !SPo
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_def_var finished'
-      FLUSH(oas_prt)
-    END IF
-
-!    CALL oasis_enddef(oas_error)
-
-!    IF(msg_level >= 30 ) then !SPo
-!      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_enddef finished'
-!      FLUSH(oas_prt)
-!    END IF
-!   END IF ! lpe_cpl
-
-    ! allocate memory for data exchange
-    ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),11), stat=oas_error )
-    IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
-      'Failure in allocating icon send buffers' )
-    ALLOCATE( oas_rcv_field(oas_vshape(1):oas_vshape(2),8), stat=oas_error )
-    IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
-      'Failure in allocating icon receive buffers' )
-    ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,11), stat=oas_error )
-    IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
-      'Failure in allocating icon receive buffers' )
-
-    ! allocate memory and initialize mask
-    ALLOCATE( loas_clm_c(nproma, p_patch(1)%nblks_c), stat=oas_error )
-    IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
-      'Failure in allocating icon mask' )
-    loas_clm_c(:,:) = .TRUE.
-
-    ! set oasis mask
-    rl_start = 1
-    rl_end   = min_rlcell_int
-    i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
-    i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
-    DO jb = i_startblk, i_endblk
-      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
-        i_endidx, rl_start, rl_end)
-      DO jc = i_startidx, i_endidx
-        loas_clm_c(jc,jb) = ext_data(1)%atm%llsm_atm_c(jc,jb) .OR. ext_data(1)%atm%llake_c(jc,jb)
-!!        loas_clm_c(jc,jb) = ext_data(jg)%atm%llsm_atm_c(jc,jb)
-      END DO
-    END DO
-
-    CALL oasis_enddef(oas_error)
-
-    IF(msg_level >= 30 ) then !SPo
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_enddef finished'
-      FLUSH(oas_prt)
-    END IF
-   ELSE ! lpe_cpl
-
-    CALL oasis_enddef(oas_error)
-    IF(msg_level >= 30 ) then !SPo
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis_enddef finished (on non-worker process)'
-      FLUSH(oas_prt)
-    END IF
-
-    ! initialize buffers
-    oas_snd_field = -1000._wp
-    oas_rcv_field = -1000._wp
-    oas_rcv_field_icon = -1000._wp
-
-   END IF ! lpe_cpl
+    IF (ltimer) CALL timer_start(timer_coupling)
+    CALL construct_oasis_coupling(p_patch(1:), ext_data(1:))
+    IF (ltimer) CALL timer_stop(timer_coupling)
 #endif
 
     !------------------------------------------------------------------

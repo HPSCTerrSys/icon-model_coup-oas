@@ -7,13 +7,13 @@
 MODULE mo_oasis_land_coupling
   !
   ! Subroutines for OASIS3-MCT land-atmosphere coupling
-  ! This module handles OASIS mask creation, field sending, and field receiving
+  ! This module handles OASIS construction, mask creation, field sending, and field receiving
   !
 
   USE mo_oasis_define
   USE mo_kind,              ONLY: wp
   USE mo_exception,         ONLY: message, finish
-  USE mo_parallel_config,   ONLY: nproma
+  USE mo_parallel_config,   ONLY: nproma, idx_1d
   USE mo_run_config,        ONLY: msg_level, iqv
   USE mo_dynamics_config,   ONLY: nnow, nnow_rcf
   USE mo_nonhydro_state,    ONLY: p_nh_state
@@ -25,12 +25,18 @@ MODULE mo_oasis_land_coupling
   USE mo_nwp_phy_state,     ONLY: prm_diag
   USE mo_nwp_phy_types,     ONLY: t_nwp_phy_diag
   USE mo_nwp_lnd_types,     ONLY: t_lnd_state
-  USE mo_loopindices,       ONLY: get_indices_c
+  USE mo_loopindices,       ONLY: get_indices_c 
+  USE mo_grid_config,       ONLY: n_dom
+  USE mo_mpi,               ONLY: p_pe_work, p_comm_work_only, mpi_comm_null, p_sum
+  USE mod_oasis,            ONLY: oasis_abort, oasis_set_couplcomm, oasis_enddef,      &
+                                  oasis_def_partition, oasis_def_var, OASIS_In,        &
+                                  OASIS_Out, OASIS_Real
 
   IMPLICIT NONE
 
   PRIVATE
 
+  PUBLIC :: construct_oasis_coupling
   PUBLIC :: oasis_create_mask
   PUBLIC :: oasis_send_fields
   PUBLIC :: oasis_receive_fields
@@ -43,6 +49,227 @@ CONTAINS
   !
   ! OASIS3-MCT subroutines
   !
+  !-----------------------------------------------------------------------------
+
+  SUBROUTINE construct_oasis_coupling(p_patch, ext_data)
+    !
+    ! Constructs and initializes the OASIS3-MCT coupling infrastructure
+    ! This subroutine:
+    ! - Sets up the coupling communicator
+    ! - Defines partitions and grid decomposition
+    ! - Defines send and receive variables
+    ! - Allocates coupling field buffers
+    ! - Creates the coupling mask
+    ! - Finalizes OASIS definitions
+    !
+    ! Arguments
+    TYPE(t_patch), INTENT(IN) :: p_patch(:)   !< Unstructured triangular grid and patch info
+    TYPE(t_external_data), INTENT(IN) :: ext_data(:)  !< External data (land-sea mask, lake mask)
+
+
+    ! Local variables
+    INTEGER :: i_startblk, i_endblk, jb, jc, i_startidx, i_endidx
+    INTEGER :: rl_start, rl_end, c, cc, cl, jg, ic
+    CHARACTER(len=1024) :: oas_message
+    INTEGER :: oas_prt = 6
+    CHARACTER(LEN=*), PARAMETER :: routine = modname//':construct_oasis_coupling'
+
+    IF(msg_level >= 30 ) THEN
+      WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' OASIS coupling initialization started'
+      FLUSH(oas_prt)
+    END IF
+
+    ! local coupling communicator for work processors
+    IF ( p_pe_work < p_patch(1)%proc0) THEN
+      lpe_cpl = .FALSE.
+      CALL oasis_set_couplcomm(mpi_comm_null)
+    ELSE
+      lpe_cpl = .TRUE.
+      CALL oasis_set_couplcomm(p_comm_work_only)
+    ENDIF
+
+    IF(msg_level >= 30 ) THEN
+      WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' oasis set couplcomm'
+      FLUSH(oas_prt)
+    END IF
+
+    !  Check domain count
+    IF (n_dom > 1) THEN
+      CALL oasis_abort(oas_comp_id, oas_comp_name, &
+        'Number of ICON domains > 1 when coupled to CLM.')
+    END IF
+
+    !  Process OASIS partition setup on coupling PEs
+    IF ( lpe_cpl ) THEN
+
+      rl_start = grf_bdywidth_c+1
+      rl_end   = min_rlcell_int
+      i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
+      i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
+
+      ! (1) Calculate length of oas_part on current process
+      c = 0
+      DO jb = i_startblk, i_endblk
+        CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
+        c = c + i_endidx - i_startidx + 1
+      END DO
+      ALLOCATE( oas_part(c+2) )
+      oas_part(1) = 4 ! 4: POINTS partitioning
+      oas_part(2) = c ! number of points in the partition
+
+      cc = p_sum(oas_part(2), comm=p_comm_work_only) ! number of points active in coupling
+      cl = p_patch(1)%n_patch_cells_g - cc           ! number of points lateral boundaries
+
+      IF(msg_level >= 10 ) THEN
+        WRITE(oas_prt,*) 'ICONOAS: total grid points in coupling: ',cc,' lateral boundary points: ',cl
+        FLUSH(oas_prt)
+      END IF
+
+      ! (2) Fill the partition with the cell indices
+      c = 0
+      DO jb = i_startblk, i_endblk
+        CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
+        DO jc = i_startidx, i_endidx
+          c = c + 1
+          ic = idx_1d(jc,jb)
+          oas_part(c+2) = p_patch(1)%cells%decomp_info%glb_index(ic)-cl ! shift global index for coupling
+        END DO
+      END DO
+
+      oas_nlat = cc
+      oas_nlon = 1
+
+      IF(msg_level >= 30 ) THEN
+        WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' partition information: c=',c,' oas_nlat=',oas_nlat
+        FLUSH(oas_prt)
+      END IF
+
+      ! Define partition in OASIS
+      CALL oasis_def_partition(oas_part_id, oas_part, oas_error, oas_nlat*oas_nlon)
+      IF (oas_error /= 0) THEN
+        CALL oasis_abort(oas_comp_id, oas_comp_name, 'Failure in oasis_def_partition')
+      END IF
+
+      IF(msg_level >= 30 ) THEN
+        WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' oasis_def_partition completed'
+        FLUSH(oas_prt)
+      END IF
+
+      ! Setup partition metadata for OASIS3-MCT
+      oas_var_nodims(1) = 1   ! rang of field array
+      oas_var_nodims(2) = 1   ! 'bundle' always 1 in OASIS3-MCT
+      oas_vshape(1)     = 1
+      oas_vshape(2)     = oas_part(2)
+
+      ! Define send variables for OASIS3-MCT
+      oas_snd_meta(1)%clpname = "ICOTEMPE"
+      oas_snd_meta(2)%clpname = "ICOUWIND"
+      oas_snd_meta(3)%clpname = "ICOVWIND"
+      oas_snd_meta(4)%clpname = "ICOSPWAT"
+      oas_snd_meta(5)%clpname = "ICOTHICK"
+      oas_snd_meta(6)%clpname = "ICOPRESS"
+      oas_snd_meta(7)%clpname = "ICODIRSW"
+      oas_snd_meta(8)%clpname = "ICODIFSW"
+      oas_snd_meta(9)%clpname = "ICOLONGW"
+      oas_snd_meta(10)%clpname = "ICOCVPRE"
+      oas_snd_meta(11)%clpname = "ICOGSPRE"
+
+      ! Define receive variables for OASIS3-MCT
+      oas_rcv_meta(1)%clpname = "ICOINFRA"
+      oas_rcv_meta(2)%clpname = "ICOALBED"
+      oas_rcv_meta(3)%clpname = "ICOALBEI"
+      oas_rcv_meta(4)%clpname = "ICO_TAUX"
+      oas_rcv_meta(5)%clpname = "ICO_TAUY"
+      oas_rcv_meta(6)%clpname = "ICOSHFLX"
+      oas_rcv_meta(7)%clpname = "ICOLHFLX"
+      oas_rcv_meta(8)%clpname = "ICOTGRND"
+
+      ! Register send variables with OASIS
+      DO jg = 1, SIZE(oas_snd_meta)
+        CALL oasis_def_var(oas_snd_meta(jg)%vid, oas_snd_meta(jg)%clpname, oas_part_id, &
+          oas_var_nodims, OASIS_Out, oas_vshape, OASIS_Real, oas_error)
+        IF (oas_error /= 0) THEN
+          WRITE(oas_message,*) 'Failure in oasis_def_var for ', oas_snd_meta(jg)%clpname
+          CALL message(routine, oas_message)
+          CALL oasis_abort(oas_comp_id, oas_comp_name, '')
+        END IF
+      END DO
+
+      ! Register receive variables with OASIS
+      DO jg = 1, SIZE(oas_rcv_meta)
+        CALL oasis_def_var(oas_rcv_meta(jg)%vid, oas_rcv_meta(jg)%clpname, oas_part_id, &
+          oas_var_nodims, OASIS_In, oas_vshape, OASIS_Real, oas_error)
+        IF (oas_error /= 0) THEN
+          WRITE(oas_message,*) 'Failure in oasis_def_var for ', oas_rcv_meta(jg)%clpname
+          CALL message(routine, oas_message)
+          CALL oasis_abort(oas_comp_id, oas_comp_name, '')
+        END IF
+      END DO
+
+      IF(msg_level >= 30 ) THEN
+        WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' oasis_def_partition completed'
+        FLUSH(oas_prt)
+      END IF
+
+      ! Allocate memory for data exchange
+      ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),11), stat=oas_error )
+      IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+          'Failure in allocating ICON send buffers')
+
+      ALLOCATE( oas_rcv_field(oas_vshape(1):oas_vshape(2),8), stat=oas_error )
+      IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+          'Failure in allocating ICON receive buffers')
+
+      ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,8), stat=oas_error )
+      IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+          'Failure in allocating ICON receive buffer arrays')
+
+      ! Allocate and initialize coupling mask
+      ALLOCATE( loas_clm_c(nproma, p_patch(1)%nblks_c), stat=oas_error )
+      IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+          'Failure in allocating ICON coupling mask')
+      loas_clm_c(:,:) = .TRUE.
+
+      ! Create the OASIS coupling mask
+      CALL oasis_create_mask(p_patch(1), ext_data(1))
+
+      IF(msg_level >= 20 ) THEN
+        WRITE(oas_message,*) 'ICONOAS: Coupling mask created'
+        CALL message(routine, oas_message)
+      END IF
+
+      ! Finalize OASIS definitions
+      CALL oasis_enddef(oas_error)
+
+      IF(msg_level >= 30 ) THEN
+        WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' oasis_enddef completed on coupling processor'
+        FLUSH(oas_prt)
+      END IF
+
+    ELSE ! lpe_cpl
+
+      ! For non-coupling PEs, still call oasis_enddef
+      CALL oasis_enddef(oas_error)
+
+      IF(msg_level >= 30 ) THEN
+        WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' oasis_enddef completed on non-coupling processor'
+        FLUSH(oas_prt)
+      END IF
+
+    END IF ! lpe_cpl
+
+    ! Initialize buffers with dummy values
+    oas_snd_field = -1000._wp
+    oas_rcv_field = -1000._wp
+    oas_rcv_field_icon = -1000._wp
+
+    IF(msg_level >= 30 ) THEN
+      WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' OASIS coupling initialization completed'
+      FLUSH(oas_prt)
+    END IF
+
+  END SUBROUTINE construct_oasis_coupling
+
   !-----------------------------------------------------------------------------
 
   SUBROUTINE oasis_create_mask(p_patch, ext_data)
@@ -66,7 +293,6 @@ CONTAINS
     END IF
 
     ! set oasis mask
-!    rl_start = 1
     rl_start = grf_bdywidth_c+1
     rl_end   = min_rlcell_int
     i_startblk = p_patch%cells%start_blk(rl_start, 1)

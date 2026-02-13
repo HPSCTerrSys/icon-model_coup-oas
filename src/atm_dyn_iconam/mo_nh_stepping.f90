@@ -263,13 +263,7 @@ MODULE mo_nh_stepping
     &                                    icon_call_callback
 #endif
 #ifdef COUP_OAS_ECLM
-  USE mo_oasis_define
-  USE mo_oasis_land_coupling,      ONLY: oasis_create_mask, oasis_send_fields, oasis_receive_fields
-  USE mo_parallel_config,          ONLY: idx_1d
-  USE mo_nonhydro_types,           ONLY: t_nh_metrics, t_nh_prog, t_nh_diag
-  USE mo_run_config,               ONLY: iqv
-  USE mo_impl_constants,           ONLY: min_rlcell_int, grf_bdywidth_c
-  USE mo_loopindices,              ONLY: get_indices_c
+  USE mo_oasis_land_coupling,      ONLY: oasis_send_fields, oasis_receive_fields
 #endif
   USE mo_coupling_config       ,ONLY: is_coupled_to_output
   USE mo_output_coupling       ,ONLY: output_coupling
@@ -522,7 +516,6 @@ MODULE mo_nh_stepping
     END IF
 
     ! Call the OASIS coupling subroutines for initialization
-    CALL oasis_create_mask(p_patch(1), ext_data(1))
     CALL oasis_send_fields(0, p_patch(1), p_nh_state(1), prm_diag(1))
     CALL oasis_receive_fields(0, p_patch(1))
 !    CALL oasis_receive_fields(0, p_patch(1), p_lnd_state(1))
