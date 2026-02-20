@@ -329,12 +329,6 @@ MODULE mo_nh_stepping
     INTEGER                              :: month, year
     LOGICAL                              :: is_mpi_workroot
     LOGICAL                              :: l_exist
-#ifdef COUP_OAS_ECLM
-    INTEGER    :: rl_start, rl_end, i_startblk, i_endblk, jb, jc, &
-                & i_startidx, i_endidx, ii, oas_i, isnd
-    CHARACTER(len=1024)     :: oas_message
-    INTEGER                 :: oas_prt = 6
-#endif
 
     is_mpi_workroot = my_process_is_mpi_workroot()
 
@@ -889,9 +883,6 @@ MODULE mo_nh_stepping
   REAL(wp)                             :: sim_time     !< elapsed simulation time
 #ifdef COUP_OAS_ECLM
   INTEGER                              :: sim_time_oas     !< elapsed simulation time
-  CHARACTER(len=128)                   :: oas_message
-  INTEGER :: nlev, rl_start, rl_end, i_startblk, &
-           & i_endblk, i_startidx, i_endidx, ii
 #endif
 
   LOGICAL :: l_isStartdate, l_isExpStopdate, l_isRestart, l_isCheckpoint, l_doWriteRestart
@@ -1871,10 +1862,7 @@ MODULE mo_nh_stepping
 
     REAL(wp)                             :: sim_time !< elapsed simulation time on this grid level
 #ifdef COUP_OAS_ECLM
-    INTEGER                              :: sim_time_oas, oas_i
-    CHARACTER(len=128)                   :: oas_message
-    INTEGER :: ii, jc, jb, isnd
-    INTEGER :: rl_start, rl_end, i_startblk, i_endblk, i_startidx, i_endidx, nlev
+    INTEGER                              :: sim_time_oas
 #endif
     TYPE(t_pi_atm), POINTER :: ptr_latbc_data_atm_old, ptr_latbc_data_atm_new
 
