@@ -175,14 +175,35 @@ CONTAINS
       oas_snd_meta(11)%clpname = "ICOGSPRE"
 
       ! Define receive variables for OASIS3-MCT
+      IF (ALLOCATED(oas_rcv_meta)) THEN
+        DEALLOCATE(oas_rcv_meta)
+      END IF
+      IF (loascplscheme_exchcoef) THEN
+        oas_rcv_nvar = 8
+      ELSE
+        oas_rcv_nvar = 8
+      END IF
+      ALLOCATE(oas_rcv_meta(oas_rcv_nvar), stat = oas_error)
+      IF (oas_error > 0) THEN
+        CALL oasis_abort(oas_comp_id, oas_comp_name, &
+          'Failure in allocating ICON receive metadata')
+      END IF
       oas_rcv_meta(1)%clpname = "ICOINFRA"
       oas_rcv_meta(2)%clpname = "ICOALBED"
       oas_rcv_meta(3)%clpname = "ICOALBEI"
-      oas_rcv_meta(4)%clpname = "ICO_TAUX"
-      oas_rcv_meta(5)%clpname = "ICO_TAUY"
-      oas_rcv_meta(6)%clpname = "ICOSHFLX"
-      oas_rcv_meta(7)%clpname = "ICOLHFLX"
-      oas_rcv_meta(8)%clpname = "ICOTGRND"
+      IF (loascplscheme_exchcoef) THEN
+        oas_rcv_meta(4)%clpname = "ICO_RAM1"
+        oas_rcv_meta(5)%clpname = "ICO_RAH1"
+        oas_rcv_meta(6)%clpname = "ICO_RAW1"
+        oas_rcv_meta(7)%clpname = "ICOQVSFC"
+        oas_rcv_meta(8)%clpname = "ICOTGRND"
+      ELSE
+        oas_rcv_meta(4)%clpname = "ICO_TAUX"
+        oas_rcv_meta(5)%clpname = "ICO_TAUY"
+        oas_rcv_meta(6)%clpname = "ICOSHFLX"
+        oas_rcv_meta(7)%clpname = "ICOLHFLX"
+        oas_rcv_meta(8)%clpname = "ICOTGRND"
+      END IF
 
       ! Register send variables with OASIS
       DO jg = 1, SIZE(oas_snd_meta)
@@ -216,11 +237,11 @@ CONTAINS
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON send buffers')
 
-      ALLOCATE( oas_rcv_field(oas_vshape(1):oas_vshape(2),8), stat=oas_error )
+      ALLOCATE( oas_rcv_field(oas_vshape(1):oas_vshape(2),oas_rcv_nvar), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON receive buffers')
 
-      ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,8), stat=oas_error )
+      ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,oas_rcv_nvar), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON receive buffer arrays')
 

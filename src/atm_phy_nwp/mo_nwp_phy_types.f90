@@ -326,6 +326,9 @@ MODULE mo_nwp_phy_types
       rcld(:,:,:)     ,    & !> standard deviation of the saturation deficit    --
       tcm(:,:)        ,    & !! turbulent transfer coefficients for momentum    --
       tch(:,:)        ,    & !! turbulent transfer coefficients for heat        --
+#ifdef COUP_OAS_ECLM
+      tcw(:,:)        ,    & !! turbulent transfer coefficients for water
+#endif
       tfm(:,:)        ,    & !! factor of laminar transfer of momentum          --
       tfh(:,:)        ,    & !! factor of laminar transfer of scalars           --
       tfv(:,:)        ,    & !! laminar reduction factor for evaporation        --
