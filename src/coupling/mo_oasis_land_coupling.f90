@@ -14,7 +14,8 @@ MODULE mo_oasis_land_coupling
   USE mo_kind,              ONLY: wp
   USE mo_exception,         ONLY: message, finish
   USE mo_parallel_config,   ONLY: nproma, idx_1d
-  USE mo_run_config,        ONLY: msg_level, iqv
+  USE mo_run_config,        ONLY: msg_level, iqv, &
+                                   config_loascplscheme_exchcoef => loascplscheme_exchcoef
   USE mo_dynamics_config,   ONLY: nnow, nnow_rcf
   USE mo_nonhydro_state,    ONLY: p_nh_state
   USE mo_nonhydro_types,    ONLY: t_nh_state
@@ -77,6 +78,14 @@ CONTAINS
     IF(msg_level >= 30 ) THEN
       WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' OASIS coupling initialization started'
       FLUSH(oas_prt)
+    END IF
+
+    ! take the (namelist-configurable) coupling scheme choice from run_nml
+    loascplscheme_exchcoef = config_loascplscheme_exchcoef
+
+    IF(msg_level >= 10 ) THEN
+      WRITE(oas_message,*) 'ICONOAS: loascplscheme_exchcoef = ', loascplscheme_exchcoef
+      CALL message(routine, oas_message)
     END IF
 
     ! local coupling communicator for work processors
