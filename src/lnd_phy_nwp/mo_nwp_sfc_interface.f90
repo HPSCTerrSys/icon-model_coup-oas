@@ -1070,9 +1070,13 @@ CONTAINS
         &  opt_acc_async_queue = acc_async_queue               ) !IN OpenACC stream to run on
 #else
         ! ground temperature
-        lnd_prog_new%t_s_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
-        lnd_prog_new%t_g_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
-        lnd_prog_new%t_sk_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+        DO jc = i_startidx, i_endidx
+          IF ( loas_clm_c(jc,jb) ) THEN
+            lnd_prog_new%t_s_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+            lnd_prog_new%t_g_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+            lnd_prog_new%t_sk_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+          END IF
+        END DO
 
         IF (loascplscheme_exchcoef) THEN
           ! Exchange coefficient approach: couple transfer coefficients
