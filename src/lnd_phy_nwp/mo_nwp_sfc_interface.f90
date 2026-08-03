@@ -49,8 +49,8 @@ MODULE mo_nwp_sfc_interface
 #ifdef COUP_OAS_ECLM
   USE mo_oasis_define
   USE mo_physical_constants,  ONLY: lh_v => alv, lh_s => als, t0_melt =>tmelt,        &
-                                    r_d   => rd, rvd_m_o=>vtmpc1, & ! SPo add rd & r_v/r_d - 1 
-                                    cp_d => cpd
+                                    r_d   => rd, rvd_m_o=>vtmpc1, & ! SPo add rd & r_v/r_d - 1
+                                    cp_d => cpd, rd_o_cpd
   !USE mo_nwp_lnd_state,       ONLY: p_lnd_state
   !USE mo_dynamics_config,     ONLY: nnow
 !  USE mo_oasis_define,        ONLY: oas_rcv_field_icon, loas_clm_c
@@ -1103,8 +1103,11 @@ CONTAINS
               zrhocw(jc,jb)  = prm_diag%tcw(jc,jb) * vel_2d(jc,jb)*p_prog%rho(jc,nlev,jb) + eps_soil
 
               ! latent + sensible heat fluxes
-              prm_diag%shfl_s_t(jc,jb,1) = cp_d*zrhoch(jc,jb) * ( p_diag%temp(jc,nlev,jb)/p_prog%exner(jc, nlev, jb) - lnd_prog_new%t_sk_t(jc,jb,1) )
-              
+              prm_diag%shfl_s_t(jc,jb,1) = cp_d*zrhoch(jc,jb) * (                              &
+                   p_diag%temp(jc,nlev,jb)                                                     &
+                     * (p_diag%pres_sfc(jc,jb)/p_diag%pres(jc,nlev,jb))**rd_o_cpd              &
+                   - lnd_prog_new%t_sk_t(jc,jb,1) )
+
               prm_diag%qhfl_s_t(jc,jb,1) = zrhocw(jc,jb) * ( p_prog_rcf%tracer(jc, nlev, jb, iqv) - lnd_diag%qv_s_t(jc,jb,1) )
               qhfl_help(jc,jb) = 0.5_wp+SIGN(0.5_wp, oas_rcv_field_icon(jc,jb,8) - t0_melt)
               prm_diag%lhfl_s_t(jc,jb,1) = prm_diag%qhfl_s_t(jc,jb,1) * &
