@@ -25,7 +25,7 @@ TYPE :: t_oas_field
   CHARACTER(len = 8)  :: clpname
   INTEGER             :: vid
 END TYPE t_oas_field
-TYPE(t_oas_field), DIMENSION(11)  :: oas_snd_meta
+TYPE(t_oas_field), DIMENSION(12)  :: oas_snd_meta
 TYPE(t_oas_field), ALLOCATABLE :: oas_rcv_meta(:)
 REAL, ALLOCATABLE     :: oas_snd_field(:,:), oas_rcv_field(:,:)
 REAL(wp), ALLOCATABLE :: oas_rcv_field_icon(:,:,:)

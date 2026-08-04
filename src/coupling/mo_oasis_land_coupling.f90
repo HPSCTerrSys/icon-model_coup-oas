@@ -182,6 +182,7 @@ CONTAINS
       oas_snd_meta(9)%clpname = "ICOLONGW"
       oas_snd_meta(10)%clpname = "ICOCVPRE"
       oas_snd_meta(11)%clpname = "ICOGSPRE"
+      oas_snd_meta(12)%clpname = "ICOTOPOG"
 
       ! Define receive variables for OASIS3-MCT
       IF (ALLOCATED(oas_rcv_meta)) THEN
@@ -242,7 +243,7 @@ CONTAINS
       END IF
 
       ! Allocate memory for data exchange
-      ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),11), stat=oas_error )
+      ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),12), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON send buffers')
 
@@ -394,6 +395,7 @@ CONTAINS
         oas_snd_field(ii,11) = prm_diag%snow_con_rate(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)! + &
         !  prm_diag(1)%ice_gsp_rate(jc,jb) + prm_diag(1)%graupel_gsp_rate(jc,jb) + &
         ! prm_diag(1)%hail_gsp_rate(jc,jb)
+        oas_snd_field(ii,12) = p_nh_state%metrics%z_ifc(jc,nlev+1,jb)
       END DO
     END DO
 
