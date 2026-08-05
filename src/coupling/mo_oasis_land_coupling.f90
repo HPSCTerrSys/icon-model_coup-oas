@@ -217,6 +217,7 @@ CONTAINS
 
       ! Register send variables with OASIS
       DO jg = 1, SIZE(oas_snd_meta)
+        oas_var_nodims(2) = MERGE(oas_nbnd, 1, jg == 7 .OR. jg == 8)
         CALL oasis_def_var(oas_snd_meta(jg)%vid, oas_snd_meta(jg)%clpname, oas_part_id, &
           oas_var_nodims, OASIS_Out, oas_vshape, OASIS_Real, oas_error)
         IF (oas_error /= 0) THEN
@@ -228,6 +229,7 @@ CONTAINS
 
       ! Register receive variables with OASIS
       DO jg = 1, SIZE(oas_rcv_meta)
+        oas_var_nodims(2) = MERGE(oas_nbnd, 1, jg == 2 .OR. jg == 3)
         CALL oasis_def_var(oas_rcv_meta(jg)%vid, oas_rcv_meta(jg)%clpname, oas_part_id, &
           oas_var_nodims, OASIS_In, oas_vshape, OASIS_Real, oas_error)
         IF (oas_error /= 0) THEN
@@ -243,7 +245,7 @@ CONTAINS
       END IF
 
       ! Allocate memory for data exchange
-      ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),12), stat=oas_error )
+      ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),SIZE(oas_snd_meta)+2), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON send buffers')
 
@@ -251,7 +253,11 @@ CONTAINS
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON receive buffers')
 
-      ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,oas_rcv_nvar), stat=oas_error )
+      ALLOCATE( oas_field_bnd(oas_vshape(1):oas_vshape(2),oas_nbnd), stat=oas_error )
+      IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+          'Failure in allocating ICON bundled receive buffer')
+
+      ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,oas_rcv_nvar+2), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON receive buffer arrays')
 
@@ -292,6 +298,7 @@ CONTAINS
     ! Initialize buffers with dummy values
     oas_snd_field = -1000._wp
     oas_rcv_field = -1000._wp
+    oas_field_bnd = -1000._wp
     oas_rcv_field_icon = -1000._wp
 
     IF(msg_level >= 30 ) THEN
@@ -366,8 +373,10 @@ CONTAINS
       FLUSH(oas_prt)
     END IF
 
-    oas_snd_field(:,7) = 0._wp
-    oas_snd_field(:,8) = 0._wp
+    oas_snd_field(:,7)  = 0._wp
+    oas_snd_field(:,8)  = 0._wp
+    oas_snd_field(:,13) = 0._wp
+    oas_snd_field(:,14) = 0._wp
 
     rl_start = grf_bdywidth_c+1
     rl_end   = min_rlcell_int
@@ -388,8 +397,10 @@ CONTAINS
         oas_snd_field(ii,5)  = &
           p_nh_state%metrics%z_mc(jc,nlev,jb) - p_nh_state%metrics%z_ifc(jc,nlev+1,jb)
         oas_snd_field(ii,6)  = p_nh_state%diag%pres_sfc(jc,jb)
-        oas_snd_field(ii,7)  = MAX(0._wp, prm_diag%swflxsfc(jc,jb) - prm_diag%swflx_dn_sfc_diff(jc,jb))
-        oas_snd_field(ii,8)  = prm_diag%swflx_dn_sfc_diff(jc,jb)
+        oas_snd_field(ii,7)  = prm_diag%swflx_vis_sfc(jc,jb) * (1._wp - prm_diag%fr_vis_sfc_diff(jc,jb))
+        oas_snd_field(ii,13) = prm_diag%swflx_nir_sfc(jc,jb) * (1._wp - prm_diag%fr_nir_sfc_diff(jc,jb))
+        oas_snd_field(ii,8)  = prm_diag%swflx_vis_sfc(jc,jb) * prm_diag%fr_vis_sfc_diff(jc,jb)
+        oas_snd_field(ii,14) = prm_diag%swflx_nir_sfc(jc,jb) * prm_diag%fr_nir_sfc_diff(jc,jb)
         oas_snd_field(ii,9)  = prm_diag%lwflxsfc(jc,jb) + prm_diag%lwflx_up_sfc(jc,jb)
         oas_snd_field(ii,10) = prm_diag%rain_con_rate(jc,jb) + prm_diag%rain_gsp_rate(jc,jb)
         oas_snd_field(ii,11) = prm_diag%snow_con_rate(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)! + &
@@ -402,7 +413,13 @@ CONTAINS
     ! Send and log fields
     DO isnd = 1, SIZE(oas_snd_meta)
       ! Send fields to OASIS
-      CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_snd_field(:,isnd), oas_error)
+      IF (isnd == 7 .OR. isnd == 8) THEN
+        oas_field_bnd(:,1) = oas_snd_field(:,isnd)
+        oas_field_bnd(:,2) = oas_snd_field(:,SIZE(oas_snd_meta)+isnd-6)
+        CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_field_bnd(:,:), oas_error)
+      ELSE
+        CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_snd_field(:,isnd), oas_error)
+      END IF
       IF(msg_level >= 14 ) THEN
         WRITE(oas_message,*) 'ICONOAS: Sending  ', oas_snd_meta(isnd)%clpname, ' at ',sim_time_oas,' ', &
                 MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
@@ -448,7 +465,12 @@ CONTAINS
       END IF
 
       ! Receive field from OASIS
-      CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_rcv_field(:,oas_i), oas_error)
+      IF (oas_i == 2 .OR. oas_i == 3) THEN
+        CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_field_bnd(:,:), oas_error)
+        oas_rcv_field(:,oas_i) = oas_field_bnd(:,1)
+      ELSE
+        CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_rcv_field(:,oas_i), oas_error)
+      END IF
 
       ! Logfiles min and max of received field
       IF(msg_level >= 14 ) THEN
@@ -480,6 +502,9 @@ CONTAINS
 !          ii = idx_1d(jc,jb)
           ii = ii + 1
           oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
+          IF (oas_i == 2 .OR. oas_i == 3) THEN
+            oas_rcv_field_icon(jc,jb,oas_rcv_nvar+oas_i-1) = oas_field_bnd(ii,2)
+          END IF
         END DO
       END DO
 

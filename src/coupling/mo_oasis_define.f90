@@ -30,6 +30,11 @@ TYPE(t_oas_field), ALLOCATABLE :: oas_rcv_meta(:)
 REAL, ALLOCATABLE     :: oas_snd_field(:,:), oas_rcv_field(:,:)
 REAL(wp), ALLOCATABLE :: oas_rcv_field_icon(:,:,:)
 LOGICAL, ALLOCATABLE  :: loas_clm_c(:,:)      ! coupling mask
+! SPo: Albedo (rcv vars 2, 3) and downward shortwave (snd vars 7, 8) are exchanged as
+! bundled 3D fields carrying both radiation bands. Band 1 stays in the variable's own
+! slot; band 2 goes to an appended slot (oas_nvar+2).
+INTEGER, PARAMETER    :: oas_nbnd = 2       ! 1 = visible, 2 = near-infrared
+REAL, ALLOCATABLE     :: oas_field_bnd(:,:) ! staging buffer for bundled put/get
 
 PUBLIC :: &
  oas_comp_id, oas_comp_name, kl_comm, oas_error, oas_nlat, &
