@@ -1140,16 +1140,18 @@ CONTAINS
           ! SPo calculate effective qv_s based on clm fluxes following
           ! terra_multlay
           DO jc = i_startidx, i_endidx
-            qv_s_help(jc,jb) =  prm_diag%tvh_t(jc,jb,1) * &
-                p_diag%pres_sfc(jc,jb)/(r_d*lnd_prog_new%t_g_t(jc,jb,1) * &
-                (1._wp + rvd_m_o * lnd_diag%qv_s_t(jc,jb,1))) + 1.E-6_wp
-            lnd_diag%qv_s_t(jc,jb,1) = p_prog_rcf%tracer(jc,nlev,jb,iqv) - &
-                                        prm_diag%qhfl_s_t(jc,jb,1) / qv_s_help(jc,jb)
-            ! SPo qv_s may violate the saturation constraint 
-            lnd_diag%qv_s_t(jc,jb,1) = MIN(lnd_diag%qv_s_t(jc,jb,1), &
-                spec_humi(sat_pres_water(lnd_prog_new%t_g_t(jc,jb,1)),p_diag%pres_sfc(jc,jb)))
-  !           !SPo limiter
-  !           lnd_diag%qv_s_t(jc,jb,1) = min(max(1.E-5_wp,lnd_diag%qv_s_t(jc,jb,1)),1E-1_wp)
+            IF ( loas_clm_c(jc,jb) ) THEN
+              qv_s_help(jc,jb) =  prm_diag%tvh_t(jc,jb,1) * &
+                  p_diag%pres_sfc(jc,jb)/(r_d*lnd_prog_new%t_g_t(jc,jb,1) * &
+                  (1._wp + rvd_m_o * lnd_diag%qv_s_t(jc,jb,1))) + 1.E-6_wp
+              lnd_diag%qv_s_t(jc,jb,1) = p_prog_rcf%tracer(jc,nlev,jb,iqv) - &
+                                          prm_diag%qhfl_s_t(jc,jb,1) / qv_s_help(jc,jb)
+              ! SPo qv_s may violate the saturation constraint
+              lnd_diag%qv_s_t(jc,jb,1) = MIN(lnd_diag%qv_s_t(jc,jb,1), &
+                  spec_humi(sat_pres_water(lnd_prog_new%t_g_t(jc,jb,1)),p_diag%pres_sfc(jc,jb)))
+              !SPo limiter
+              lnd_diag%qv_s_t(jc,jb,1) = MIN(MAX(1.E-5_wp,lnd_diag%qv_s_t(jc,jb,1)),1E-1_wp)
+            END IF
           END DO
 
         END IF

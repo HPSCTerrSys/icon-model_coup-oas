@@ -265,7 +265,7 @@ CONTAINS
       ALLOCATE( loas_clm_c(nproma, p_patch(1)%nblks_c), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON coupling mask')
-      loas_clm_c(:,:) = .TRUE.
+      loas_clm_c(:,:) = .FALSE.
 
       ! Create the OASIS coupling mask
       CALL oasis_create_mask(p_patch(1), ext_data(1))
@@ -467,7 +467,7 @@ CONTAINS
       ! Receive field from OASIS
       IF (oas_i == 2 .OR. oas_i == 3) THEN
         CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_field_bnd(:,:), oas_error)
-        oas_rcv_field(:,oas_i) = oas_field_bnd(:,1)
+        IF (oas_error >= OASIS_Recvd) oas_rcv_field(:,oas_i) = oas_field_bnd(:,1)
       ELSE
         CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_rcv_field(:,oas_i), oas_error)
       END IF
@@ -490,23 +490,24 @@ CONTAINS
         CALL message(routine, oas_message)
       END IF
 
-      rl_start = grf_bdywidth_c+1
-      rl_end   = min_rlcell_int
-      i_startblk = p_patch%cells%start_blk(rl_start, 1)
-      i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
-      ii = 0
-      DO jb = i_startblk, i_endblk
-        CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
-          i_endidx, rl_start, rl_end)
-        DO jc = i_startidx, i_endidx
-!          ii = idx_1d(jc,jb)
-          ii = ii + 1
-          oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
-          IF (oas_i == 2 .OR. oas_i == 3) THEN
-            oas_rcv_field_icon(jc,jb,oas_rcv_nvar+oas_i-1) = oas_field_bnd(ii,2)
-          END IF
+      IF (oas_error >= OASIS_Recvd) THEN
+        rl_start = grf_bdywidth_c+1
+        rl_end   = min_rlcell_int
+        i_startblk = p_patch%cells%start_blk(rl_start, 1)
+        i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
+        ii = 0
+        DO jb = i_startblk, i_endblk
+          CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
+            i_endidx, rl_start, rl_end)
+          DO jc = i_startidx, i_endidx
+            ii = ii + 1
+            oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
+            IF (oas_i == 2 .OR. oas_i == 3) THEN
+              oas_rcv_field_icon(jc,jb,oas_rcv_nvar+oas_i-1) = oas_field_bnd(ii,2)
+            END IF
+          END DO
         END DO
-      END DO
+      END IF
 
       IF(msg_level > 30 ) THEN
         WRITE(oas_message,*) "ICONOAS: icon transformed received vars"
