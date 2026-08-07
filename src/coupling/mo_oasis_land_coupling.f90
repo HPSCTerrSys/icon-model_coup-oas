@@ -14,7 +14,7 @@ MODULE mo_oasis_land_coupling
   USE mo_kind,              ONLY: wp
   USE mo_exception,         ONLY: message, finish
   USE mo_parallel_config,   ONLY: nproma, idx_1d
-  USE mo_run_config,        ONLY: msg_level, iqv, &
+  USE mo_run_config,        ONLY: msg_level, iqv, debug_check_level, &
                                    config_loascplscheme_exchcoef => loascplscheme_exchcoef
   USE mo_dynamics_config,   ONLY: nnow, nnow_rcf
   USE mo_nonhydro_state,    ONLY: p_nh_state
@@ -467,10 +467,16 @@ CONTAINS
       ! Receive field from OASIS
       IF (oas_i == 2 .OR. oas_i == 3) THEN
         CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_field_bnd(:,:), oas_error)
-        IF (oas_error >= OASIS_Recvd) oas_rcv_field(:,oas_i) = oas_field_bnd(:,1)
+        IF (oas_error >= OASIS_Recvd) THEN
+          oas_rcv_field(:,oas_i) = oas_field_bnd(:,1)
+          IF (debug_check_level >= 14) &
+            CALL oasis_report_invalid(oas_rcv_meta(oas_i)%clpname, oas_field_bnd(:,2), sim_time_oas)
+        END IF
       ELSE
         CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_rcv_field(:,oas_i), oas_error)
       END IF
+      IF (oas_error >= OASIS_Recvd .AND. debug_check_level >= 14) &
+        CALL oasis_report_invalid(oas_rcv_meta(oas_i)%clpname, oas_rcv_field(:,oas_i), sim_time_oas)
 
       ! Logfiles min and max of received field
       IF(msg_level >= 14 ) THEN
@@ -521,6 +527,26 @@ CONTAINS
     END DO
 
   END SUBROUTINE oasis_receive_fields
+
+  !-----------------------------------------------------------------------------
+  !
+  ! Reports a received field that is above 1e5. Writes from every process.
+  !
+  SUBROUTINE oasis_report_invalid(clpname, field, sim_time_oas)
+
+    CHARACTER(len=*), INTENT(IN) :: clpname
+    REAL,             INTENT(IN) :: field(:)
+    INTEGER,          INTENT(IN) :: sim_time_oas
+
+    INTEGER, PARAMETER :: oas_prt = 6
+
+    IF ( ANY(field /= field) .OR. MAXVAL(ABS(field)) > 1.E5 ) THEN
+      WRITE(oas_prt,*) 'ICONOAS: invalid ', clpname, ' at t=', sim_time_oas, &
+        ' min/max ', MINVAL(field), MAXVAL(field)
+      FLUSH(oas_prt)
+    END IF
+
+  END SUBROUTINE oasis_report_invalid
 
   !-----------------------------------------------------------------------------
 
