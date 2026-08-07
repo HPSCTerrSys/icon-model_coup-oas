@@ -47,14 +47,7 @@ MODULE mo_nwp_sfc_interface
   USE mo_initicon_config,     ONLY: icpl_da_sfcevap, dt_ana, icpl_da_skinc, icpl_da_seaice
   USE mo_coupling_config,     ONLY: is_coupled_to_ocean
 #ifdef COUP_OAS_ECLM
-  USE mo_oasis_define
-  USE mo_physical_constants,  ONLY: lh_v => alv, lh_s => als, t0_melt =>tmelt,        &
-                                    r_d   => rd, rvd_m_o=>vtmpc1, & ! SPo add rd & r_v/r_d - 1
-                                    cp_d => cpd, rd_o_cpd
-  !USE mo_nwp_lnd_state,       ONLY: p_lnd_state
-  !USE mo_dynamics_config,     ONLY: nnow
-!  USE mo_oasis_define,        ONLY: oas_rcv_field_icon, loas_clm_c
-  USE data_turbulence,        ONLY: vel_min ! SPo for ExchCoef scheme
+  USE mo_oasis_land_coupling, ONLY: oasis_apply_surface
 #endif
   USE mo_ensemble_pert_config,ONLY: sst_pert_corrfac
   USE mo_satad,               ONLY: sat_pres_water, sat_pres_ice, spec_humi, dqsatdT_ice
@@ -285,14 +278,6 @@ CONTAINS
     REAL(wp) :: plevap_t    (nproma)
     REAL(wp) :: rstom_t     (nproma)
     REAL(wp) :: z0_t        (nproma)
-
-#ifdef COUP_OAS_ECLM
-    REAL(wp) :: qhfl_help(nproma,p_patch%nblks_c)
-    REAL(wp) :: qv_s_help(nproma,p_patch%nblks_c)
-    REAL(wp) :: vel_2d(nproma,p_patch%nblks_c)  ! ExCoA
-    REAL(wp) :: zrhoch(nproma,p_patch%nblks_c)  ! ExCoA
-    REAL(wp) :: zrhocw(nproma,p_patch%nblks_c)  ! ExCoA
-#endif
 
     CHARACTER(len=*), PARAMETER :: routine = 'mo_nwp_sfc_interface:nwp_surface'
 
@@ -1069,92 +1054,8 @@ CONTAINS
         &  lacc          = lzacc                             , & !IN flag to run OpenACC code
         &  opt_acc_async_queue = acc_async_queue               ) !IN OpenACC stream to run on
 #else
-        ! ground temperature
-        DO jc = i_startidx, i_endidx
-          IF ( loas_clm_c(jc,jb) ) THEN
-            lnd_prog_new%t_s_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
-            lnd_prog_new%t_g_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
-            lnd_prog_new%t_sk_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
-          END IF
-        END DO
-
-        IF (loascplscheme_exchcoef) THEN
-          ! Exchange coefficient approach: couple transfer coefficients
-          DO jc = i_startidx, i_endidx
-            IF ( loas_clm_c(jc,jb) ) THEN
-              ! Calculate 2D wind speed at lowest level with minimum threshold
-              vel_2d(jc,jb) = MAX( vel_min, SQRT(p_diag%u(jc,nlev,jb)**2 + p_diag%v(jc,nlev,jb)**2) )
-
-              ! Exchange coefficients
-              ! Convert from eCLM
-              prm_diag%tcm_t(jc,jb,1) = 1._wp / (oas_rcv_field_icon(jc,jb,4) * vel_2d(jc,jb))   ! ICO_RAM1 - momentum
-              prm_diag%tch_t(jc,jb,1) = 1._wp / (oas_rcv_field_icon(jc,jb,5) * vel_2d(jc,jb))   ! ICO_RAH1 - sensible heat
-              prm_diag%tcw(jc,jb)     = 1._wp / (oas_rcv_field_icon(jc,jb,6) * vel_2d(jc,jb))   ! ICO_RAW1 - latent heat
-
-              lnd_diag%qv_s_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,7)
-
-              ! follow steps as in terra
-!              ztmch(i) = tch(i)*zuv*g*zrho_atm(i)
-!              zrhoch(i)   = ztmch(i)*(1._wp/g) + eps_soil
-!              zth_low (i) =    t(i) * EXP(rdocp*LOG(ps(i)/zplow))
-!             ztsk    (i) = t_sk_now  (i)
-!              zshfl_s(i) = cp_d*zrhoch(i) * (zth_low(i) - ztsk(i))
-              zrhoch(jc,jb)  = prm_diag%tch_t(jc,jb,1)*vel_2d(jc,jb)*p_prog%rho(jc,nlev,jb) + eps_soil
-              zrhocw(jc,jb)  = prm_diag%tcw(jc,jb) * vel_2d(jc,jb)*p_prog%rho(jc,nlev,jb) + eps_soil
-
-              ! latent + sensible heat fluxes
-              prm_diag%shfl_s_t(jc,jb,1) = cp_d*zrhoch(jc,jb) * (                              &
-                   p_diag%temp(jc,nlev,jb)                                                     &
-                     * (p_diag%pres_sfc(jc,jb)/p_diag%pres(jc,nlev,jb))**rd_o_cpd              &
-                   - lnd_prog_new%t_sk_t(jc,jb,1) )
-
-              prm_diag%qhfl_s_t(jc,jb,1) = zrhocw(jc,jb) * ( p_prog_rcf%tracer(jc, nlev, jb, iqv) - lnd_diag%qv_s_t(jc,jb,1) )
-              qhfl_help(jc,jb) = 0.5_wp+SIGN(0.5_wp, oas_rcv_field_icon(jc,jb,8) - t0_melt)
-              prm_diag%lhfl_s_t(jc,jb,1) = prm_diag%qhfl_s_t(jc,jb,1) * &
-                   (qhfl_help(jc,jb)*lh_v + (1._wp-qhfl_help(jc,jb))*lh_s)
-
-              ! momentum flux
-              prm_diag%umfl_s_t(jc,jb,1) = p_prog%rho(jc,nlev,jb) * prm_diag%tcm_t(jc,jb,1) * vel_2d(jc,jb) * p_diag%u(jc,nlev,jb)
-              prm_diag%vmfl_s_t(jc,jb,1) = p_prog%rho(jc,nlev,jb) * prm_diag%tcm_t(jc,jb,1) * vel_2d(jc,jb) * p_diag%v(jc,nlev,jb)
-            END IF
-          END DO
-        ELSE
-          ! Direct flux approach: couple fluxes 
-          DO jc = i_startidx, i_endidx
-            IF ( loas_clm_c(jc,jb) ) THEN
-             ! revise sign based on ICON definition
-             prm_diag%umfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,4),p_diag%u(jc,nlev,jb))
-             prm_diag%vmfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,5),p_diag%v(jc,nlev,jb))
-
-             ! change sign according to definition between eCLM/ICON
-             prm_diag%shfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,6)
-             prm_diag%lhfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,7)
-
-             ! follow steps as in terra
-             qhfl_help(jc,jb) = 0.5_wp+SIGN(0.5_wp, oas_rcv_field_icon(jc,jb,8) - t0_melt)
-             prm_diag%qhfl_s_t(jc,jb,1) = prm_diag%lhfl_s_t(jc,jb,1) / &
-                   (qhfl_help(jc,jb)*lh_v + (1._wp-qhfl_help(jc,jb))*lh_s)
-            END IF
-          END DO
-
-          ! SPo calculate effective qv_s based on clm fluxes following
-          ! terra_multlay
-          DO jc = i_startidx, i_endidx
-            IF ( loas_clm_c(jc,jb) ) THEN
-              qv_s_help(jc,jb) =  prm_diag%tvh_t(jc,jb,1) * &
-                  p_diag%pres_sfc(jc,jb)/(r_d*lnd_prog_new%t_g_t(jc,jb,1) * &
-                  (1._wp + rvd_m_o * lnd_diag%qv_s_t(jc,jb,1))) + 1.E-6_wp
-              lnd_diag%qv_s_t(jc,jb,1) = p_prog_rcf%tracer(jc,nlev,jb,iqv) - &
-                                          prm_diag%qhfl_s_t(jc,jb,1) / qv_s_help(jc,jb)
-              ! SPo qv_s may violate the saturation constraint
-              lnd_diag%qv_s_t(jc,jb,1) = MIN(lnd_diag%qv_s_t(jc,jb,1), &
-                  spec_humi(sat_pres_water(lnd_prog_new%t_g_t(jc,jb,1)),p_diag%pres_sfc(jc,jb)))
-              !SPo limiter
-              lnd_diag%qv_s_t(jc,jb,1) = MIN(MAX(1.E-5_wp,lnd_diag%qv_s_t(jc,jb,1)),1E-1_wp)
-            END IF
-          END DO
-
-        END IF
+        CALL oasis_apply_surface(jb, i_startidx, i_endidx, nlev, p_diag, p_prog, &
+          &                      p_prog_rcf, prm_diag, lnd_prog_new, lnd_diag)
 #endif
 
         ! Multiply w_snow with old snow fraction in order to obtain the area-average SWE needed for

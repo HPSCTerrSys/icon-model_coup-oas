@@ -18,14 +18,20 @@ MODULE mo_oasis_land_coupling
                                    config_loascplscheme_exchcoef => loascplscheme_exchcoef
   USE mo_dynamics_config,   ONLY: nnow, nnow_rcf
   USE mo_nonhydro_state,    ONLY: p_nh_state
-  USE mo_nonhydro_types,    ONLY: t_nh_state
+  USE mo_nonhydro_types,    ONLY: t_nh_state, t_nh_diag, t_nh_prog
   USE mo_impl_constants,    ONLY: min_rlcell_int, grf_bdywidth_c
   USE mo_model_domain,      ONLY: p_patch, t_patch
   USE mo_ext_data_state,    ONLY: ext_data
   USE mo_ext_data_types,    ONLY: t_external_data
   USE mo_nwp_phy_state,     ONLY: prm_diag
   USE mo_nwp_phy_types,     ONLY: t_nwp_phy_diag
-  USE mo_nwp_lnd_types,     ONLY: t_lnd_state
+  USE mo_nwp_lnd_types,     ONLY: t_lnd_state, t_lnd_prog, t_lnd_diag
+  USE mo_physical_constants,ONLY: lh_v => alv, lh_s => als, t0_melt => tmelt,          &
+                                  r_d => rd, rvd_m_o => vtmpc1,                        &
+                                  cp_d => cpd, rd_o_cpd
+  USE mo_satad,             ONLY: sat_pres_water, spec_humi
+  USE sfc_terra_data,       ONLY: eps_soil
+  USE data_turbulence,      ONLY: vel_min
   USE mo_loopindices,       ONLY: get_indices_c 
   USE mo_grid_config,       ONLY: n_dom
   USE mo_mpi,               ONLY: p_pe_work, p_comm_work_only, mpi_comm_null, p_sum
@@ -41,6 +47,7 @@ MODULE mo_oasis_land_coupling
   PUBLIC :: oasis_create_mask
   PUBLIC :: oasis_send_fields
   PUBLIC :: oasis_receive_fields
+  PUBLIC :: oasis_apply_surface
   
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_oasis_land_coupling'
 
@@ -527,6 +534,118 @@ CONTAINS
     END DO
 
   END SUBROUTINE oasis_receive_fields
+
+  !-----------------------------------------------------------------------------
+  !
+  ! Applies the fields received from eCLM to the ICON surface state
+  !
+  SUBROUTINE oasis_apply_surface(jb, i_startidx, i_endidx, nlev, p_diag, p_prog, &
+    &                            p_prog_rcf, prm_diag, lnd_prog_new, lnd_diag)
+
+    ! Arguments
+    INTEGER,              INTENT(IN)    :: jb           !< block index
+    INTEGER,              INTENT(IN)    :: i_startidx   !< first cell of the block
+    INTEGER,              INTENT(IN)    :: i_endidx     !< last cell of the block
+    INTEGER,              INTENT(IN)    :: nlev         !< lowest model level
+    TYPE(t_nh_diag),      INTENT(IN)    :: p_diag       !< diag vars
+    TYPE(t_nh_prog),      INTENT(IN)    :: p_prog       !< dynamic prognostic vars
+    TYPE(t_nh_prog),      INTENT(IN)    :: p_prog_rcf   !< call freq
+    TYPE(t_nwp_phy_diag), INTENT(INOUT) :: prm_diag     !< atm phys vars
+    TYPE(t_lnd_prog),     INTENT(INOUT) :: lnd_prog_new !< prog vars for sfc
+    TYPE(t_lnd_diag),     INTENT(INOUT) :: lnd_diag     !< diag vars for sfc
+
+    ! Local variables
+    INTEGER  :: jc
+    REAL(wp) :: vel_2d, zrhoch, zrhocw, qhfl_help, qv_s_help
+
+        ! ground temperature
+        DO jc = i_startidx, i_endidx
+          IF ( loas_clm_c(jc,jb) ) THEN
+            lnd_prog_new%t_s_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+            lnd_prog_new%t_g_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+            lnd_prog_new%t_sk_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+          END IF
+        END DO
+
+        IF (loascplscheme_exchcoef) THEN
+          ! Exchange coefficient approach: couple transfer coefficients
+          DO jc = i_startidx, i_endidx
+            IF ( loas_clm_c(jc,jb) ) THEN
+              ! Calculate 2D wind speed at lowest level with minimum threshold
+              vel_2d = MAX( vel_min, SQRT(p_diag%u(jc,nlev,jb)**2 + p_diag%v(jc,nlev,jb)**2) )
+
+              ! Exchange coefficients
+              ! Convert from eCLM
+              prm_diag%tcm_t(jc,jb,1) = 1._wp / (oas_rcv_field_icon(jc,jb,4) * vel_2d)   ! ICO_RAM1 - momentum
+              prm_diag%tch_t(jc,jb,1) = 1._wp / (oas_rcv_field_icon(jc,jb,5) * vel_2d)   ! ICO_RAH1 - sensible heat
+              prm_diag%tcw(jc,jb)     = 1._wp / (oas_rcv_field_icon(jc,jb,6) * vel_2d)   ! ICO_RAW1 - latent heat
+
+              lnd_diag%qv_s_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,7)
+
+              ! follow steps as in terra
+!              ztmch(i) = tch(i)*zuv*g*zrho_atm(i)
+!              zrhoch(i)   = ztmch(i)*(1._wp/g) + eps_soil
+!              zth_low (i) =    t(i) * EXP(rdocp*LOG(ps(i)/zplow))
+!             ztsk    (i) = t_sk_now  (i)
+!              zshfl_s(i) = cp_d*zrhoch(i) * (zth_low(i) - ztsk(i))
+              zrhoch  = prm_diag%tch_t(jc,jb,1)*vel_2d*p_prog%rho(jc,nlev,jb) + eps_soil
+              zrhocw  = prm_diag%tcw(jc,jb) * vel_2d*p_prog%rho(jc,nlev,jb) + eps_soil
+
+              ! latent + sensible heat fluxes
+              prm_diag%shfl_s_t(jc,jb,1) = cp_d*zrhoch * (                              &
+                   p_diag%temp(jc,nlev,jb)                                                     &
+                     * (p_diag%pres_sfc(jc,jb)/p_diag%pres(jc,nlev,jb))**rd_o_cpd              &
+                   - lnd_prog_new%t_sk_t(jc,jb,1) )
+
+              prm_diag%qhfl_s_t(jc,jb,1) = zrhocw * ( p_prog_rcf%tracer(jc, nlev, jb, iqv) - lnd_diag%qv_s_t(jc,jb,1) )
+              qhfl_help = 0.5_wp+SIGN(0.5_wp, oas_rcv_field_icon(jc,jb,8) - t0_melt)
+              prm_diag%lhfl_s_t(jc,jb,1) = prm_diag%qhfl_s_t(jc,jb,1) * &
+                   (qhfl_help*lh_v + (1._wp-qhfl_help)*lh_s)
+
+              ! momentum flux
+              prm_diag%umfl_s_t(jc,jb,1) = p_prog%rho(jc,nlev,jb) * prm_diag%tcm_t(jc,jb,1) * vel_2d * p_diag%u(jc,nlev,jb)
+              prm_diag%vmfl_s_t(jc,jb,1) = p_prog%rho(jc,nlev,jb) * prm_diag%tcm_t(jc,jb,1) * vel_2d * p_diag%v(jc,nlev,jb)
+            END IF
+          END DO
+        ELSE
+          ! Direct flux approach: couple fluxes
+          DO jc = i_startidx, i_endidx
+            IF ( loas_clm_c(jc,jb) ) THEN
+             ! revise sign based on ICON definition
+             prm_diag%umfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,4),p_diag%u(jc,nlev,jb))
+             prm_diag%vmfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,5),p_diag%v(jc,nlev,jb))
+
+             ! change sign according to definition between eCLM/ICON
+             prm_diag%shfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,6)
+             prm_diag%lhfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,7)
+
+             ! follow steps as in terra
+             qhfl_help = 0.5_wp+SIGN(0.5_wp, oas_rcv_field_icon(jc,jb,8) - t0_melt)
+             prm_diag%qhfl_s_t(jc,jb,1) = prm_diag%lhfl_s_t(jc,jb,1) / &
+                   (qhfl_help*lh_v + (1._wp-qhfl_help)*lh_s)
+            END IF
+          END DO
+
+          ! SPo calculate effective qv_s based on clm fluxes following
+          ! terra_multlay
+          DO jc = i_startidx, i_endidx
+            IF ( loas_clm_c(jc,jb) ) THEN
+              qv_s_help =  prm_diag%tvh_t(jc,jb,1) * &
+                  p_diag%pres_sfc(jc,jb)/(r_d*lnd_prog_new%t_g_t(jc,jb,1) * &
+                  (1._wp + rvd_m_o * lnd_diag%qv_s_t(jc,jb,1))) + 1.E-6_wp
+              lnd_diag%qv_s_t(jc,jb,1) = p_prog_rcf%tracer(jc,nlev,jb,iqv) - &
+                                          prm_diag%qhfl_s_t(jc,jb,1) / qv_s_help
+              ! SPo qv_s may violate the saturation constraint
+              lnd_diag%qv_s_t(jc,jb,1) = MIN(lnd_diag%qv_s_t(jc,jb,1), &
+                  spec_humi(sat_pres_water(lnd_prog_new%t_g_t(jc,jb,1)),p_diag%pres_sfc(jc,jb)))
+              !SPo limiter
+              lnd_diag%qv_s_t(jc,jb,1) = MIN(MAX(1.E-5_wp,lnd_diag%qv_s_t(jc,jb,1)),1E-1_wp)
+            END IF
+          END DO
+
+        END IF
+
+  END SUBROUTINE oasis_apply_surface
 
   !-----------------------------------------------------------------------------
   !
