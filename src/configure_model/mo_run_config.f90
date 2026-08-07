@@ -34,6 +34,7 @@ MODULE mo_run_config
   PUBLIC :: lvert_nest, num_lev, nshift, nsteps, dtime
 #ifdef COUP_OAS_ECLM
   PUBLIC :: jstep0                    ! non-namelist variables
+  PUBLIC :: loascplscheme_exchcoef
 #endif
   PUBLIC :: ltimer, timers_level, activate_sync_timers, msg_level
   PUBLIC :: iqv, iqc, iqi, iqs, iqr, nqtendphy, iqt, ico2, ich4, in2o, io3
@@ -77,6 +78,7 @@ MODULE mo_run_config
     REAL(wp):: dtime           !< [s] length of a time step
 #ifdef COUP_OAS_ECLM
     INTEGER :: jstep0          !< restart time step
+    LOGICAL :: loascplscheme_exchcoef !< use exchange-coefficient (vs. direct-flux) OASIS/eCLM coupling scheme
 #endif
     
     LOGICAL :: ltimer          !< if .TRUE.,  the timer is switched on

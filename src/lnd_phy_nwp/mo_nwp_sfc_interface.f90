@@ -47,12 +47,7 @@ MODULE mo_nwp_sfc_interface
   USE mo_initicon_config,     ONLY: icpl_da_sfcevap, dt_ana, icpl_da_skinc, icpl_da_seaice
   USE mo_coupling_config,     ONLY: is_coupled_to_ocean
 #ifdef COUP_OAS_ECLM
-  USE mo_oasis_define
-  USE mo_physical_constants,  ONLY: lh_v => alv, lh_s => als, t0_melt =>tmelt,        &
-                                    r_d   => rd, rvd_m_o=>vtmpc1 ! SPo add rd & r_v/r_d - 1 
-  !USE mo_nwp_lnd_state,       ONLY: p_lnd_state
-  !USE mo_dynamics_config,     ONLY: nnow
-!  USE mo_oasis_define,        ONLY: oas_rcv_field_icon, loas_clm_c
+  USE mo_oasis_land_coupling, ONLY: oasis_apply_surface
 #endif
   USE mo_ensemble_pert_config,ONLY: sst_pert_corrfac
   USE mo_satad,               ONLY: sat_pres_water, sat_pres_ice, spec_humi, dqsatdT_ice
@@ -283,11 +278,6 @@ CONTAINS
     REAL(wp) :: plevap_t    (nproma)
     REAL(wp) :: rstom_t     (nproma)
     REAL(wp) :: z0_t        (nproma)
-
-#ifdef COUP_OAS_ECLM
-    REAL(wp) :: qhfl_help(nproma,p_patch%nblks_c)
-    REAL(wp) :: qv_s_help(nproma,p_patch%nblks_c)
-#endif
 
     CHARACTER(len=*), PARAMETER :: routine = 'mo_nwp_sfc_interface:nwp_surface'
 
@@ -1064,42 +1054,8 @@ CONTAINS
         &  lacc          = lzacc                             , & !IN flag to run OpenACC code
         &  opt_acc_async_queue = acc_async_queue               ) !IN OpenACC stream to run on
 #else
-        DO jc = i_startidx, i_endidx
-          IF ( loas_clm_c(jc,jb) ) THEN
-           ! revise sign based on ICON definition
-           prm_diag%umfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,4),p_diag%u(jc,nlev,jb))
-           prm_diag%vmfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,5),p_diag%v(jc,nlev,jb))
-
-           ! change sign according to definition between eCLM/ICON
-           prm_diag%shfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,6)
-           prm_diag%lhfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,7)
-
-           !
-           lnd_prog_new%t_s_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
-           lnd_prog_new%t_g_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
-           lnd_prog_new%t_sk_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
-
-           ! follow steps as in terra
-           qhfl_help(jc,jb) = 0.5_wp+SIGN(0.5_wp, oas_rcv_field_icon(jc,jb,8) - t0_melt)
-           prm_diag%qhfl_s_t(jc,jb,1) = prm_diag%lhfl_s_t(jc,jb,1) / &
-                 (qhfl_help(jc,jb)*lh_v + (1._wp-qhfl_help(jc,jb))*lh_s)
-          END IF
-        END DO
-
-        ! SPo calculate effective qv_s based on clm fluxes following
-        ! terra_multlay
-        DO jc = i_startidx, i_endidx
-           qv_s_help(jc,jb) =  prm_diag%tvh_t(jc,jb,1) * &
-               p_diag%pres_sfc(jc,jb)/(r_d*lnd_prog_new%t_g_t(jc,jb,1) * &
-               (1._wp + rvd_m_o * lnd_diag%qv_s_t(jc,jb,1))) + 1.E-6_wp
-           lnd_diag%qv_s_t(jc,jb,1) = p_prog_rcf%tracer(jc,nlev,jb,iqv) - &
-                                      prm_diag%qhfl_s_t(jc,jb,1) / qv_s_help(jc,jb)
-           ! SPo qv_s may violate the saturation constraint 
-           lnd_diag%qv_s_t(jc,jb,1) = MIN(lnd_diag%qv_s_t(jc,jb,1), &
-               spec_humi(sat_pres_water(lnd_prog_new%t_g_t(jc,jb,1)),p_diag%pres_sfc(jc,jb)))
-!           !SPo limiter
-!           lnd_diag%qv_s_t(jc,jb,1) = min(max(1.E-5_wp,lnd_diag%qv_s_t(jc,jb,1)),1E-1_wp)
-        END DO
+        CALL oasis_apply_surface(jb, i_startidx, i_endidx, nlev, p_diag, p_prog, &
+          &                      p_prog_rcf, prm_diag, lnd_prog_new, lnd_diag)
 #endif
 
         ! Multiply w_snow with old snow fraction in order to obtain the area-average SWE needed for

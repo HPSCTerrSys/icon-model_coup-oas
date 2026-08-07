@@ -1014,6 +1014,7 @@ enddo
 !        Update of surface fluxes, if the vertical diffusion has determined them implicitly:
 
 !Achtung: "lscadif" ergaenzt
+#ifndef COUP_OAS_ECLM
          IF (.NOT.(lsfluse .AND. lsflcnd) .AND. lscadif) THEN 
             !effektive Oberfl.flussdichten wurden neu bestimmt
 
@@ -1078,6 +1079,7 @@ enddo
             END DO
             !$ACC END PARALLEL
          END IF
+#endif
 
          !Note:
          !The fluxes updated here are those effectively used for the atmospheric budgets and may slightly

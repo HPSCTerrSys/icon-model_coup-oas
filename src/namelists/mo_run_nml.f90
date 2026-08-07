@@ -41,6 +41,9 @@ MODULE mo_run_nml
                          & config_profiling_output => profiling_output, &
                          & config_check_uuid_gracefully => check_uuid_gracefully, &
                          & cfg_modelTimeStep => modelTimeStep
+#ifdef COUP_OAS_ECLM
+  USE mo_run_config, ONLY: config_loascplscheme_exchcoef => loascplscheme_exchcoef
+#endif
 #ifdef HAVE_RADARFWO
   USE radar_data_namelist, ONLY: radar_config_radarnmlfile => radarnmlfile
 #endif
@@ -106,6 +109,9 @@ CONTAINS
 
     INTEGER  :: nsteps            ! number of time steps
     REAL(wp) :: dtime             ! [s] length of a time step
+#ifdef COUP_OAS_ECLM
+    LOGICAL :: loascplscheme_exchcoef ! use exchange-coefficient (vs. direct-flux) eCLM coupling scheme
+#endif
 
     LOGICAL :: ltimer        ! if .TRUE., wallclock timers are switched on
     INTEGER :: timers_level  ! what level of timers to run
@@ -145,6 +151,9 @@ CONTAINS
       &                msg_timestamp, debug_check_level,               &
       &                restart_filename, profiling_output,             &
       &                check_uuid_gracefully, modelTimeStep
+#ifdef COUP_OAS_ECLM
+    NAMELIST /run_nml/ loascplscheme_exchcoef
+#endif
 
 
     !------------------------------------------------------------
@@ -172,6 +181,9 @@ CONTAINS
                          ! will not work properly.
 
     nsteps = -999
+#ifdef COUP_OAS_ECLM
+    loascplscheme_exchcoef = .FALSE.
+#endif
 
     ! Note: The default needs to be empty, since there exist
     ! concurrent namelist parameters to specify these values:
@@ -275,6 +287,9 @@ CONTAINS
 
     config_nsteps          = nsteps  
     config_dtime           = dtime 
+#ifdef COUP_OAS_ECLM
+    config_loascplscheme_exchcoef = loascplscheme_exchcoef
+#endif
 
     config_ltimer          = ltimer
     config_timers_level    = timers_level

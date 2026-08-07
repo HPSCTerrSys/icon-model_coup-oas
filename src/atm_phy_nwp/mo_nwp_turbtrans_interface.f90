@@ -67,6 +67,9 @@ MODULE mo_nwp_turbtrans_interface
   USE mo_fortran_tools,        ONLY: set_acc_host_or_device
   USE mo_coupling_config,      ONLY: is_coupled_to_waves
   USE mo_extpar_config,        ONLY: itopo
+#ifdef COUP_OAS_ECLM
+  USE mo_oasis_define,         ONLY: loas_clm_c
+#endif
 
 #ifdef ICON_USE_CUDA_GRAPH
   USE mo_acc_device_management,ONLY: accGraph, accBeginCapture, accEndCapture, accGraphLaunch
@@ -521,18 +524,45 @@ SUBROUTINE nwp_turbtrans  ( tcall_turb_jg,                     & !>in
           &  rh_2m=prm_diag%rh_2m(:,jb),                                               & !out
           &  u_10m=prm_diag%u_10m_t(:,jb,1),                                           & !out
           &  v_10m=prm_diag%v_10m_t(:,jb,1),                                           & !out
+#ifdef COUP_OAS_ECLM
+          ! store temporary
+          &  shfl_s=shfl_s_t(:,1),                                                     & !out
+          &  qvfl_s=qhfl_s_t(:,1),                                                     & !out
+          &  umfl_s=umfl_s_t(:,1),                                                     & !out
+          &  vmfl_s=vmfl_s_t(:,1),                                                     & !out
+#else
           &  shfl_s=prm_diag%shfl_s_t(:,jb,1),                                         & !out
           &  qvfl_s=prm_diag%qhfl_s_t(:,jb,1),                                         & !out
           &  umfl_s=prm_diag%umfl_s_t(:,jb,1),                                         & !out
           &  vmfl_s=prm_diag%vmfl_s_t(:,jb,1),                                         & !out
+#endif
           &  lacc=lzacc,                                                               & !in
           &  opt_acc_async_queue=1                                       ) !in
-        
+
         !$ACC END DATA
 
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         !$ACC LOOP GANG VECTOR
         DO jc = i_startidx, i_endidx
+#ifdef COUP_OAS_ECLM
+          lhfl_s_t(jc,1) = &
+            &  qhfl_s_t(jc,1) * lh_v
+
+          ! fix latent heat flux over seaice
+          IF (wtr_prog_new%h_ice(jc,jb) > 0._wp ) THEN
+            lhfl_s_t(jc,1) = (lh_s/lh_v) * lhfl_s_t(jc,1)
+          ENDIF
+
+          ! store turbtran's diagnosed fluxes only where not coupled to eCLM;
+          ! masked (land/lake) points keep the fluxes TERRA already set from OASIS
+          IF ( .NOT. loas_clm_c(jc,jb) ) THEN
+            prm_diag%shfl_s_t(jc,jb,1) = shfl_s_t(jc,1)
+            prm_diag%lhfl_s_t(jc,jb,1) = lhfl_s_t(jc,1)
+            prm_diag%qhfl_s_t(jc,jb,1) = qhfl_s_t(jc,1)
+            prm_diag%umfl_s_t(jc,jb,1) = umfl_s_t(jc,1)
+            prm_diag%vmfl_s_t(jc,jb,1) = vmfl_s_t(jc,1)
+          END IF
+#else
           prm_diag%lhfl_s_t(jc,jb,1) = &
             &  prm_diag%qhfl_s_t(jc,jb,1) * lh_v
 
@@ -540,6 +570,7 @@ SUBROUTINE nwp_turbtrans  ( tcall_turb_jg,                     & !>in
           IF (wtr_prog_new%h_ice(jc,jb) > 0._wp ) THEN
             prm_diag%lhfl_s_t(jc,jb,1) = (lh_s/lh_v) * prm_diag%lhfl_s_t(jc,jb,1)
           ENDIF
+#endif
 
           ! copy
           prm_diag%gz0(jc,jb)   = prm_diag%gz0_t(jc,jb,1)
@@ -884,11 +915,13 @@ SUBROUTINE nwp_turbtrans  ( tcall_turb_jg,                     & !>in
 
 
             ! Store
+#ifndef COUP_OAS_ECLM
             prm_diag%shfl_s_t(jc,jb,jt) = shfl_s_t(ic,jt)
             prm_diag%lhfl_s_t(jc,jb,jt) = lhfl_s_t(ic,jt)
             prm_diag%qhfl_s_t(jc,jb,jt) = qhfl_s_t(ic,jt)
             prm_diag%umfl_s_t(jc,jb,jt) = umfl_s_t(ic,jt)
             prm_diag%vmfl_s_t(jc,jb,jt) = vmfl_s_t(ic,jt)
+#endif
             prm_diag%u_10m_t (jc,jb,jt) = u_10m_t(ic,jt)  ! needed by TERRA and turbtran
             prm_diag%v_10m_t (jc,jb,jt) = v_10m_t(ic,jt)  ! needed by TERRA and turbtran
             prm_diag%tch_t   (jc,jb,jt) = tch_t(ic,jt)    ! needed by TERRA

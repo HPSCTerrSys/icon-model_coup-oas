@@ -14,17 +14,24 @@ MODULE mo_oasis_land_coupling
   USE mo_kind,              ONLY: wp
   USE mo_exception,         ONLY: message, finish
   USE mo_parallel_config,   ONLY: nproma, idx_1d
-  USE mo_run_config,        ONLY: msg_level, iqv
+  USE mo_run_config,        ONLY: msg_level, iqv, debug_check_level, &
+                                   config_loascplscheme_exchcoef => loascplscheme_exchcoef
   USE mo_dynamics_config,   ONLY: nnow, nnow_rcf
   USE mo_nonhydro_state,    ONLY: p_nh_state
-  USE mo_nonhydro_types,    ONLY: t_nh_state
+  USE mo_nonhydro_types,    ONLY: t_nh_state, t_nh_diag, t_nh_prog
   USE mo_impl_constants,    ONLY: min_rlcell_int, grf_bdywidth_c
   USE mo_model_domain,      ONLY: p_patch, t_patch
   USE mo_ext_data_state,    ONLY: ext_data
   USE mo_ext_data_types,    ONLY: t_external_data
   USE mo_nwp_phy_state,     ONLY: prm_diag
   USE mo_nwp_phy_types,     ONLY: t_nwp_phy_diag
-  USE mo_nwp_lnd_types,     ONLY: t_lnd_state
+  USE mo_nwp_lnd_types,     ONLY: t_lnd_state, t_lnd_prog, t_lnd_diag
+  USE mo_physical_constants,ONLY: lh_v => alv, lh_s => als, t0_melt => tmelt,          &
+                                  r_d => rd, rvd_m_o => vtmpc1,                        &
+                                  cp_d => cpd, rd_o_cpd
+  USE mo_satad,             ONLY: sat_pres_water, spec_humi
+  USE sfc_terra_data,       ONLY: eps_soil
+  USE data_turbulence,      ONLY: vel_min
   USE mo_loopindices,       ONLY: get_indices_c 
   USE mo_grid_config,       ONLY: n_dom
   USE mo_mpi,               ONLY: p_pe_work, p_comm_work_only, mpi_comm_null, p_sum
@@ -40,6 +47,7 @@ MODULE mo_oasis_land_coupling
   PUBLIC :: oasis_create_mask
   PUBLIC :: oasis_send_fields
   PUBLIC :: oasis_receive_fields
+  PUBLIC :: oasis_apply_surface
   
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_oasis_land_coupling'
 
@@ -77,6 +85,14 @@ CONTAINS
     IF(msg_level >= 30 ) THEN
       WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' OASIS coupling initialization started'
       FLUSH(oas_prt)
+    END IF
+
+    ! take the (namelist-configurable) coupling scheme choice from run_nml
+    loascplscheme_exchcoef = config_loascplscheme_exchcoef
+
+    IF(msg_level >= 10 ) THEN
+      WRITE(oas_message,*) 'ICONOAS: loascplscheme_exchcoef = ', loascplscheme_exchcoef
+      CALL message(routine, oas_message)
     END IF
 
     ! local coupling communicator for work processors
@@ -173,19 +189,42 @@ CONTAINS
       oas_snd_meta(9)%clpname = "ICOLONGW"
       oas_snd_meta(10)%clpname = "ICOCVPRE"
       oas_snd_meta(11)%clpname = "ICOGSPRE"
+      oas_snd_meta(12)%clpname = "ICOTOPOG"
 
       ! Define receive variables for OASIS3-MCT
+      IF (ALLOCATED(oas_rcv_meta)) THEN
+        DEALLOCATE(oas_rcv_meta)
+      END IF
+      IF (loascplscheme_exchcoef) THEN
+        oas_rcv_nvar = 8
+      ELSE
+        oas_rcv_nvar = 8
+      END IF
+      ALLOCATE(oas_rcv_meta(oas_rcv_nvar), stat = oas_error)
+      IF (oas_error > 0) THEN
+        CALL oasis_abort(oas_comp_id, oas_comp_name, &
+          'Failure in allocating ICON receive metadata')
+      END IF
       oas_rcv_meta(1)%clpname = "ICOINFRA"
       oas_rcv_meta(2)%clpname = "ICOALBED"
       oas_rcv_meta(3)%clpname = "ICOALBEI"
-      oas_rcv_meta(4)%clpname = "ICO_TAUX"
-      oas_rcv_meta(5)%clpname = "ICO_TAUY"
-      oas_rcv_meta(6)%clpname = "ICOSHFLX"
-      oas_rcv_meta(7)%clpname = "ICOLHFLX"
-      oas_rcv_meta(8)%clpname = "ICOTGRND"
+      IF (loascplscheme_exchcoef) THEN
+        oas_rcv_meta(4)%clpname = "ICO_RAM1"
+        oas_rcv_meta(5)%clpname = "ICO_RAH1"
+        oas_rcv_meta(6)%clpname = "ICO_RAW1"
+        oas_rcv_meta(7)%clpname = "ICOQVSFC"
+        oas_rcv_meta(8)%clpname = "ICOTGRND"
+      ELSE
+        oas_rcv_meta(4)%clpname = "ICO_TAUX"
+        oas_rcv_meta(5)%clpname = "ICO_TAUY"
+        oas_rcv_meta(6)%clpname = "ICOSHFLX"
+        oas_rcv_meta(7)%clpname = "ICOLHFLX"
+        oas_rcv_meta(8)%clpname = "ICOTGRND"
+      END IF
 
       ! Register send variables with OASIS
       DO jg = 1, SIZE(oas_snd_meta)
+        oas_var_nodims(2) = MERGE(oas_nbnd, 1, jg == 7 .OR. jg == 8)
         CALL oasis_def_var(oas_snd_meta(jg)%vid, oas_snd_meta(jg)%clpname, oas_part_id, &
           oas_var_nodims, OASIS_Out, oas_vshape, OASIS_Real, oas_error)
         IF (oas_error /= 0) THEN
@@ -197,6 +236,7 @@ CONTAINS
 
       ! Register receive variables with OASIS
       DO jg = 1, SIZE(oas_rcv_meta)
+        oas_var_nodims(2) = MERGE(oas_nbnd, 1, jg == 2 .OR. jg == 3)
         CALL oasis_def_var(oas_rcv_meta(jg)%vid, oas_rcv_meta(jg)%clpname, oas_part_id, &
           oas_var_nodims, OASIS_In, oas_vshape, OASIS_Real, oas_error)
         IF (oas_error /= 0) THEN
@@ -212,15 +252,19 @@ CONTAINS
       END IF
 
       ! Allocate memory for data exchange
-      ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),11), stat=oas_error )
+      ALLOCATE( oas_snd_field(oas_vshape(1):oas_vshape(2),SIZE(oas_snd_meta)+2), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON send buffers')
 
-      ALLOCATE( oas_rcv_field(oas_vshape(1):oas_vshape(2),8), stat=oas_error )
+      ALLOCATE( oas_rcv_field(oas_vshape(1):oas_vshape(2),oas_rcv_nvar), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON receive buffers')
 
-      ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,8), stat=oas_error )
+      ALLOCATE( oas_field_bnd(oas_vshape(1):oas_vshape(2),oas_nbnd), stat=oas_error )
+      IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
+          'Failure in allocating ICON bundled receive buffer')
+
+      ALLOCATE( oas_rcv_field_icon(nproma, p_patch(1)%nblks_c,oas_rcv_nvar+2), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON receive buffer arrays')
 
@@ -228,7 +272,7 @@ CONTAINS
       ALLOCATE( loas_clm_c(nproma, p_patch(1)%nblks_c), stat=oas_error )
       IF (oas_error > 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
           'Failure in allocating ICON coupling mask')
-      loas_clm_c(:,:) = .TRUE.
+      loas_clm_c(:,:) = .FALSE.
 
       ! Create the OASIS coupling mask
       CALL oasis_create_mask(p_patch(1), ext_data(1))
@@ -261,6 +305,7 @@ CONTAINS
     ! Initialize buffers with dummy values
     oas_snd_field = -1000._wp
     oas_rcv_field = -1000._wp
+    oas_field_bnd = -1000._wp
     oas_rcv_field_icon = -1000._wp
 
     IF(msg_level >= 30 ) THEN
@@ -335,8 +380,10 @@ CONTAINS
       FLUSH(oas_prt)
     END IF
 
-    oas_snd_field(:,7) = 0._wp
-    oas_snd_field(:,8) = 0._wp
+    oas_snd_field(:,7)  = 0._wp
+    oas_snd_field(:,8)  = 0._wp
+    oas_snd_field(:,13) = 0._wp
+    oas_snd_field(:,14) = 0._wp
 
     rl_start = grf_bdywidth_c+1
     rl_end   = min_rlcell_int
@@ -357,20 +404,29 @@ CONTAINS
         oas_snd_field(ii,5)  = &
           p_nh_state%metrics%z_mc(jc,nlev,jb) - p_nh_state%metrics%z_ifc(jc,nlev+1,jb)
         oas_snd_field(ii,6)  = p_nh_state%diag%pres_sfc(jc,jb)
-        oas_snd_field(ii,7)  = MAX(0._wp, prm_diag%swflxsfc(jc,jb) - prm_diag%swflx_dn_sfc_diff(jc,jb))
-        oas_snd_field(ii,8)  = prm_diag%swflx_dn_sfc_diff(jc,jb)
+        oas_snd_field(ii,7)  = prm_diag%swflx_vis_sfc(jc,jb) * (1._wp - prm_diag%fr_vis_sfc_diff(jc,jb))
+        oas_snd_field(ii,13) = prm_diag%swflx_nir_sfc(jc,jb) * (1._wp - prm_diag%fr_nir_sfc_diff(jc,jb))
+        oas_snd_field(ii,8)  = prm_diag%swflx_vis_sfc(jc,jb) * prm_diag%fr_vis_sfc_diff(jc,jb)
+        oas_snd_field(ii,14) = prm_diag%swflx_nir_sfc(jc,jb) * prm_diag%fr_nir_sfc_diff(jc,jb)
         oas_snd_field(ii,9)  = prm_diag%lwflxsfc(jc,jb) + prm_diag%lwflx_up_sfc(jc,jb)
         oas_snd_field(ii,10) = prm_diag%rain_con_rate(jc,jb) + prm_diag%rain_gsp_rate(jc,jb)
         oas_snd_field(ii,11) = prm_diag%snow_con_rate(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)! + &
         !  prm_diag(1)%ice_gsp_rate(jc,jb) + prm_diag(1)%graupel_gsp_rate(jc,jb) + &
         ! prm_diag(1)%hail_gsp_rate(jc,jb)
+        oas_snd_field(ii,12) = p_nh_state%metrics%z_ifc(jc,nlev+1,jb)
       END DO
     END DO
 
     ! Send and log fields
     DO isnd = 1, SIZE(oas_snd_meta)
       ! Send fields to OASIS
-      CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_snd_field(:,isnd), oas_error)
+      IF (isnd == 7 .OR. isnd == 8) THEN
+        oas_field_bnd(:,1) = oas_snd_field(:,isnd)
+        oas_field_bnd(:,2) = oas_snd_field(:,SIZE(oas_snd_meta)+isnd-6)
+        CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_field_bnd(:,:), oas_error)
+      ELSE
+        CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_snd_field(:,isnd), oas_error)
+      END IF
       IF(msg_level >= 14 ) THEN
         WRITE(oas_message,*) 'ICONOAS: Sending  ', oas_snd_meta(isnd)%clpname, ' at ',sim_time_oas,' ', &
                 MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
@@ -416,7 +472,18 @@ CONTAINS
       END IF
 
       ! Receive field from OASIS
-      CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_rcv_field(:,oas_i), oas_error)
+      IF (oas_i == 2 .OR. oas_i == 3) THEN
+        CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_field_bnd(:,:), oas_error)
+        IF (oas_error >= OASIS_Recvd) THEN
+          oas_rcv_field(:,oas_i) = oas_field_bnd(:,1)
+          IF (debug_check_level >= 14) &
+            CALL oasis_report_invalid(oas_rcv_meta(oas_i)%clpname, oas_field_bnd(:,2), sim_time_oas)
+        END IF
+      ELSE
+        CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_rcv_field(:,oas_i), oas_error)
+      END IF
+      IF (oas_error >= OASIS_Recvd .AND. debug_check_level >= 14) &
+        CALL oasis_report_invalid(oas_rcv_meta(oas_i)%clpname, oas_rcv_field(:,oas_i), sim_time_oas)
 
       ! Logfiles min and max of received field
       IF(msg_level >= 14 ) THEN
@@ -436,20 +503,24 @@ CONTAINS
         CALL message(routine, oas_message)
       END IF
 
-      rl_start = grf_bdywidth_c+1
-      rl_end   = min_rlcell_int
-      i_startblk = p_patch%cells%start_blk(rl_start, 1)
-      i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
-      ii = 0
-      DO jb = i_startblk, i_endblk
-        CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
-          i_endidx, rl_start, rl_end)
-        DO jc = i_startidx, i_endidx
-!          ii = idx_1d(jc,jb)
-          ii = ii + 1
-          oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
+      IF (oas_error >= OASIS_Recvd) THEN
+        rl_start = grf_bdywidth_c+1
+        rl_end   = min_rlcell_int
+        i_startblk = p_patch%cells%start_blk(rl_start, 1)
+        i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
+        ii = 0
+        DO jb = i_startblk, i_endblk
+          CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
+            i_endidx, rl_start, rl_end)
+          DO jc = i_startidx, i_endidx
+            ii = ii + 1
+            oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
+            IF (oas_i == 2 .OR. oas_i == 3) THEN
+              oas_rcv_field_icon(jc,jb,oas_rcv_nvar+oas_i-1) = oas_field_bnd(ii,2)
+            END IF
+          END DO
         END DO
-      END DO
+      END IF
 
       IF(msg_level > 30 ) THEN
         WRITE(oas_message,*) "ICONOAS: icon transformed received vars"
@@ -463,6 +534,138 @@ CONTAINS
     END DO
 
   END SUBROUTINE oasis_receive_fields
+
+  !-----------------------------------------------------------------------------
+  !
+  ! Applies the fields received from eCLM to the ICON surface state
+  !
+  SUBROUTINE oasis_apply_surface(jb, i_startidx, i_endidx, nlev, p_diag, p_prog, &
+    &                            p_prog_rcf, prm_diag, lnd_prog_new, lnd_diag)
+
+    ! Arguments
+    INTEGER,              INTENT(IN)    :: jb           !< block index
+    INTEGER,              INTENT(IN)    :: i_startidx   !< first cell of the block
+    INTEGER,              INTENT(IN)    :: i_endidx     !< last cell of the block
+    INTEGER,              INTENT(IN)    :: nlev         !< lowest model level
+    TYPE(t_nh_diag),      INTENT(IN)    :: p_diag       !< diag vars
+    TYPE(t_nh_prog),      INTENT(IN)    :: p_prog       !< dynamic prognostic vars
+    TYPE(t_nh_prog),      INTENT(IN)    :: p_prog_rcf   !< call freq
+    TYPE(t_nwp_phy_diag), INTENT(INOUT) :: prm_diag     !< atm phys vars
+    TYPE(t_lnd_prog),     INTENT(INOUT) :: lnd_prog_new !< prog vars for sfc
+    TYPE(t_lnd_diag),     INTENT(INOUT) :: lnd_diag     !< diag vars for sfc
+
+    ! Local variables
+    INTEGER  :: jc
+    REAL(wp) :: vel_2d, zrhoch, zrhocw, qhfl_help, qv_s_help
+
+        ! ground temperature
+        DO jc = i_startidx, i_endidx
+          IF ( loas_clm_c(jc,jb) ) THEN
+            lnd_prog_new%t_s_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+            lnd_prog_new%t_g_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+            lnd_prog_new%t_sk_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
+          END IF
+        END DO
+
+        IF (loascplscheme_exchcoef) THEN
+          ! Exchange coefficient approach: couple transfer coefficients
+          DO jc = i_startidx, i_endidx
+            IF ( loas_clm_c(jc,jb) ) THEN
+              ! Calculate 2D wind speed at lowest level with minimum threshold
+              vel_2d = MAX( vel_min, SQRT(p_diag%u(jc,nlev,jb)**2 + p_diag%v(jc,nlev,jb)**2) )
+
+              ! Exchange coefficients
+              ! Convert from eCLM
+              prm_diag%tcm_t(jc,jb,1) = 1._wp / (oas_rcv_field_icon(jc,jb,4) * vel_2d)   ! ICO_RAM1 - momentum
+              prm_diag%tch_t(jc,jb,1) = 1._wp / (oas_rcv_field_icon(jc,jb,5) * vel_2d)   ! ICO_RAH1 - sensible heat
+              prm_diag%tcw(jc,jb)     = 1._wp / (oas_rcv_field_icon(jc,jb,6) * vel_2d)   ! ICO_RAW1 - latent heat
+
+              lnd_diag%qv_s_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,7)
+
+              ! follow steps as in terra
+!              ztmch(i) = tch(i)*zuv*g*zrho_atm(i)
+!              zrhoch(i)   = ztmch(i)*(1._wp/g) + eps_soil
+!              zth_low (i) =    t(i) * EXP(rdocp*LOG(ps(i)/zplow))
+!             ztsk    (i) = t_sk_now  (i)
+!              zshfl_s(i) = cp_d*zrhoch(i) * (zth_low(i) - ztsk(i))
+              zrhoch  = prm_diag%tch_t(jc,jb,1)*vel_2d*p_prog%rho(jc,nlev,jb) + eps_soil
+              zrhocw  = prm_diag%tcw(jc,jb) * vel_2d*p_prog%rho(jc,nlev,jb) + eps_soil
+
+              ! latent + sensible heat fluxes
+              prm_diag%shfl_s_t(jc,jb,1) = cp_d*zrhoch * (                              &
+                   p_diag%temp(jc,nlev,jb)                                                     &
+                     * (p_diag%pres_sfc(jc,jb)/p_diag%pres(jc,nlev,jb))**rd_o_cpd              &
+                   - lnd_prog_new%t_sk_t(jc,jb,1) )
+
+              prm_diag%qhfl_s_t(jc,jb,1) = zrhocw * ( p_prog_rcf%tracer(jc, nlev, jb, iqv) - lnd_diag%qv_s_t(jc,jb,1) )
+              qhfl_help = 0.5_wp+SIGN(0.5_wp, oas_rcv_field_icon(jc,jb,8) - t0_melt)
+              prm_diag%lhfl_s_t(jc,jb,1) = prm_diag%qhfl_s_t(jc,jb,1) * &
+                   (qhfl_help*lh_v + (1._wp-qhfl_help)*lh_s)
+
+              ! momentum flux
+              prm_diag%umfl_s_t(jc,jb,1) = p_prog%rho(jc,nlev,jb) * prm_diag%tcm_t(jc,jb,1) * vel_2d * p_diag%u(jc,nlev,jb)
+              prm_diag%vmfl_s_t(jc,jb,1) = p_prog%rho(jc,nlev,jb) * prm_diag%tcm_t(jc,jb,1) * vel_2d * p_diag%v(jc,nlev,jb)
+            END IF
+          END DO
+        ELSE
+          ! Direct flux approach: couple fluxes
+          DO jc = i_startidx, i_endidx
+            IF ( loas_clm_c(jc,jb) ) THEN
+             ! revise sign based on ICON definition
+             prm_diag%umfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,4),p_diag%u(jc,nlev,jb))
+             prm_diag%vmfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,5),p_diag%v(jc,nlev,jb))
+
+             ! change sign according to definition between eCLM/ICON
+             prm_diag%shfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,6)
+             prm_diag%lhfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,7)
+
+             ! follow steps as in terra
+             qhfl_help = 0.5_wp+SIGN(0.5_wp, oas_rcv_field_icon(jc,jb,8) - t0_melt)
+             prm_diag%qhfl_s_t(jc,jb,1) = prm_diag%lhfl_s_t(jc,jb,1) / &
+                   (qhfl_help*lh_v + (1._wp-qhfl_help)*lh_s)
+            END IF
+          END DO
+
+          ! SPo calculate effective qv_s based on clm fluxes following
+          ! terra_multlay
+          DO jc = i_startidx, i_endidx
+            IF ( loas_clm_c(jc,jb) ) THEN
+              qv_s_help =  prm_diag%tvh_t(jc,jb,1) * &
+                  p_diag%pres_sfc(jc,jb)/(r_d*lnd_prog_new%t_g_t(jc,jb,1) * &
+                  (1._wp + rvd_m_o * lnd_diag%qv_s_t(jc,jb,1))) + 1.E-6_wp
+              lnd_diag%qv_s_t(jc,jb,1) = p_prog_rcf%tracer(jc,nlev,jb,iqv) - &
+                                          prm_diag%qhfl_s_t(jc,jb,1) / qv_s_help
+              ! SPo qv_s may violate the saturation constraint
+              lnd_diag%qv_s_t(jc,jb,1) = MIN(lnd_diag%qv_s_t(jc,jb,1), &
+                  spec_humi(sat_pres_water(lnd_prog_new%t_g_t(jc,jb,1)),p_diag%pres_sfc(jc,jb)))
+              !SPo limiter
+              lnd_diag%qv_s_t(jc,jb,1) = MIN(MAX(1.E-5_wp,lnd_diag%qv_s_t(jc,jb,1)),1E-1_wp)
+            END IF
+          END DO
+
+        END IF
+
+  END SUBROUTINE oasis_apply_surface
+
+  !-----------------------------------------------------------------------------
+  !
+  ! Reports a received field that is above 1e5. Writes from every process.
+  !
+  SUBROUTINE oasis_report_invalid(clpname, field, sim_time_oas)
+
+    CHARACTER(len=*), INTENT(IN) :: clpname
+    REAL,             INTENT(IN) :: field(:)
+    INTEGER,          INTENT(IN) :: sim_time_oas
+
+    INTEGER, PARAMETER :: oas_prt = 6
+
+    IF ( ANY(field /= field) .OR. MAXVAL(ABS(field)) > 1.E5 ) THEN
+      WRITE(oas_prt,*) 'ICONOAS: invalid ', clpname, ' at t=', sim_time_oas, &
+        ' min/max ', MINVAL(field), MAXVAL(field)
+      FLUSH(oas_prt)
+    END IF
+
+  END SUBROUTINE oasis_report_invalid
 
   !-----------------------------------------------------------------------------
 

@@ -3253,6 +3253,18 @@ SUBROUTINE new_nwp_phy_diag_list( k_jg, klev, klevp1, kblks,    &
       & ldims=shape2d,                                                    &
       & in_group=groups("pbl_vars"), lopenacc=.TRUE. )
     __acc_attach(diag%tch)
+
+#ifdef COUP_OAS_ECLM
+    ! &      diag%tcw(nproma,nblks_c)
+    cf_desc    = t_cf_var('tcw', ' ','turbulent transfer coefficients for water', &
+         &                datatype_flt)
+    grib2_desc = grib2_var(0, 0, 19, ibits, GRID_UNSTRUCTURED, GRID_CELL)
+    CALL add_var( diag_list, 'tcw', diag%tcw,                             &
+      & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc,          &
+      & ldims=shape2d,                                                    &
+      & in_group=groups("pbl_vars"), lopenacc=.TRUE. )
+    __acc_attach(diag%tcw)
+#endif
     
     ! &      diag%tfm(nproma,nblks_c)
     cf_desc    = t_cf_var('tfm', ' ','factor of laminar transfer of momentum', datatype_flt)
