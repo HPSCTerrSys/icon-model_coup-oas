@@ -531,6 +531,8 @@ CONTAINS
           MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
         CALL message(routine, oas_message)
       END IF
+
+      IF (oas_error >= OASIS_Recvd) loas_rcv_valid = .TRUE.
     END DO
 
   END SUBROUTINE oasis_receive_fields
