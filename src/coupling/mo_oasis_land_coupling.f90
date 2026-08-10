@@ -617,6 +617,15 @@ CONTAINS
              prm_diag%umfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,4),p_diag%u(jc,nlev,jb))
              prm_diag%vmfl_s_t(jc,jb,1) = SIGN(oas_rcv_field_icon(jc,jb,5),p_diag%v(jc,nlev,jb))
 
+             ! momentum transfer velocity calculation. Thus, turbdiff applies eCLM's drag
+             vel_2d = MAX( vel_min, SQRT(p_diag%u(jc,nlev,jb)**2 + p_diag%v(jc,nlev,jb)**2) )
+             prm_diag%tvm_t(jc,jb,1) = SQRT(oas_rcv_field_icon(jc,jb,4)**2 +           &
+                                            oas_rcv_field_icon(jc,jb,5)**2)            &
+                                     / (p_prog%rho(jc,nlev,jb) * vel_2d)
+             prm_diag%tvm(jc,jb)     = prm_diag%tvm_t(jc,jb,1)
+             prm_diag%tcm_t(jc,jb,1) = prm_diag%tvm_t(jc,jb,1) / vel_2d
+             prm_diag%tcm(jc,jb)     = prm_diag%tcm_t(jc,jb,1)
+
              ! change sign according to definition between eCLM/ICON
              prm_diag%shfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,6)
              prm_diag%lhfl_s_t(jc,jb,1) = -oas_rcv_field_icon(jc,jb,7)
