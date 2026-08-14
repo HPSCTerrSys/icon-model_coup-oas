@@ -284,6 +284,10 @@ USE data_1d_global, ONLY : &
 !SCLM---------------------------------------------------------------------------
 
 USE mo_fortran_tools, ONLY: set_acc_host_or_device
+
+#ifdef COUP_OAS_ECLM
+USE mo_oasis_land_coupling, ONLY: oasis_apply_transfer
+#endif
 !===============================================================================
 
 IMPLICIT NONE
@@ -1794,6 +1798,10 @@ my_thrd_id = omp_get_thread_num()
 
       END DO !Iteration
 
+#ifdef COUP_OAS_ECLM
+      CALL oasis_apply_transfer(iblock, ivstart, ivend, vel_2d, rhon(:,ke1),   &
+        &                       tvm, tvh, tcm, tch)
+#endif
 
 ! 4j) Berechnung der Standardabweichnung des Saettigungsdefizites:
 
