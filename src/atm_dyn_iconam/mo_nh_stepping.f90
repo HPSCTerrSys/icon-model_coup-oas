@@ -263,12 +263,7 @@ MODULE mo_nh_stepping
     &                                    icon_call_callback
 #endif
 #ifdef COUP_OAS_ECLM
-  USE mo_oasis_define
-  USE mo_parallel_config,          ONLY: idx_1d
-  USE mo_nonhydro_types,           ONLY: t_nh_metrics, t_nh_prog, t_nh_diag
-  USE mo_run_config,               ONLY: iqv
-  USE mo_impl_constants,           ONLY: min_rlcell_int, grf_bdywidth_c
-  USE mo_loopindices,              ONLY: get_indices_c
+  USE mo_oasis_land_coupling,      ONLY: oasis_send_fields, oasis_receive_fields
 #endif
   USE mo_coupling_config       ,ONLY: is_coupled_to_output
   USE mo_output_coupling       ,ONLY: output_coupling
@@ -334,12 +329,6 @@ MODULE mo_nh_stepping
     INTEGER                              :: month, year
     LOGICAL                              :: is_mpi_workroot
     LOGICAL                              :: l_exist
-#ifdef COUP_OAS_ECLM
-    INTEGER    :: rl_start, rl_end, i_startblk, i_endblk, jb, jc, &
-                & i_startidx, i_endidx, ii, oas_i, isnd
-    CHARACTER(len=1024)     :: oas_message
-    INTEGER                 :: oas_prt = 6
-#endif
 
     is_mpi_workroot = my_process_is_mpi_workroot()
 
@@ -497,150 +486,6 @@ MODULE mo_nh_stepping
 
     ENDDO
 
-#ifdef COUP_OAS_ECLM
-    !CALL diagnose_pres_temp (p_metrics, pt_prog, pt_prog_rcf,   &
-    !     &                      pt_diag, pt_patch,                 &
-    !     &                      lnd_prog          = lnd_prog_new)
-
-    CALL diag_for_output_dyn(lacc=.FALSE.)
-    IF(.NOT.atm_phy_nwp_config(1)%is_les_phy) THEN
-      ! diagnostics which are only required for output
-      CALL nwp_diag_for_output(mtime_current, kstart_moist(1), & !in
-        &                      ih_clch(1), ih_clcm(1), & !in
-        &                      phy_params(1), & !in
-        &                      p_patch(1), & !in
-        &                      p_nh_state(1)%metrics, & !in
-        &                      p_nh_state(1)%prog(nnow(1)), & !in  !nnow or nnew?
-        &                      p_nh_state(1)%prog(nnow_rcf(1)), & !in  !nnow or nnew?
-        &                      p_nh_state(1)%diag, & !in
-        &                      p_lnd_state(1)%diag_lnd, & !in
-        & p_lnd_state(1)%prog_lnd(nnow_rcf(1)), & !in
-        & p_lnd_state(1)%prog_wtr(nnow_rcf(1)), & !inout
-        &                      ext_data(1), & !in
-        &                      prm_diag(1) ) !inout
-    END IF
-
-    IF(msg_level >= 30 ) then !SPo
-      WRITE(oas_message,*) 'iconoas setup oasis mask'
-      CALL message(routine, oas_message)
-    END IF
-
-    ! set oasis mask
-!    rl_start = 1
-    rl_start = grf_bdywidth_c+1
-    rl_end   = min_rlcell_int
-    i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
-    i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
-    DO jb = i_startblk, i_endblk
-      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
-        i_endidx, rl_start, rl_end)
-      DO jc = i_startidx, i_endidx
-        loas_clm_c(jc,jb) = ext_data(1)%atm%llsm_atm_c(jc,jb) .OR. ext_data(1)%atm%llake_c(jc,jb)
-!        loas_clm_c(jc,jb) = ext_data(1)%atm%llsm_atm_c(jc,jb)
-      END DO
-    END DO
-
-
-    IF(msg_level >= 30 ) then !SPo
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis send fields'
-      FLUSH(oas_prt)
-    END IF
-
-    oas_snd_field(:,7) = 0._wp
-    oas_snd_field(:,8) = 0._wp
-
-    rl_start = grf_bdywidth_c+1
-    rl_end   = min_rlcell_int
-    i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
-    i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
-    ii = 0
-    DO jb = i_startblk, i_endblk
-      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
-        i_endidx, rl_start, rl_end)
-      DO jc = i_startidx, i_endidx
-        ii = ii+1
-!        WRITE(oas_message,*) 'DEBUG SPo swflx_dn_sfc_diff  ',ii, ' at 0: ', MAX(0._wp, prm_diag(1)%swflxsfc(jc,jb) - prm_diag(1)%swflx_dn_sfc_diff(jc,jb))
-!        CALL message(routine, oas_message)
-        oas_snd_field(ii,1)  = p_nh_state(1)%diag%temp(jc,p_patch(1)%nlev,jb)
-        oas_snd_field(ii,2)  = p_nh_state(1)%diag%u(jc,p_patch(1)%nlev,jb)
-        oas_snd_field(ii,3)  = p_nh_state(1)%diag%v(jc,p_patch(1)%nlev,jb)
-        oas_snd_field(ii,4)  = p_nh_state(1)%prog(nnow(1))%tracer(jc,p_patch(1)%nlev,jb,iqv)
-        oas_snd_field(ii,5)  = &
-          p_nh_state(1)%metrics%z_mc(jc,p_patch(1)%nlev,jb) - p_nh_state(1)%metrics%z_ifc(jc,p_patch(1)%nlev+1,jb)
-        oas_snd_field(ii,6)  = p_nh_state(1)%diag%pres_sfc(jc,jb)
-        oas_snd_field(ii,7)  = MAX(0._wp, prm_diag(1)%swflxsfc(jc,jb) - prm_diag(1)%swflx_dn_sfc_diff(jc,jb))
-        oas_snd_field(ii,8)  = prm_diag(1)%swflx_dn_sfc_diff(jc,jb)
-        oas_snd_field(ii,9)  = prm_diag(1)%lwflxsfc(jc,jb) + prm_diag(1)%lwflx_up_sfc(jc,jb)
-        oas_snd_field(ii,10) = prm_diag(1)%rain_con_rate(jc,jb) + prm_diag(1)%rain_gsp_rate(jc,jb)
-        oas_snd_field(ii,11) = prm_diag(1)%snow_con_rate(jc,jb) + prm_diag(1)%snow_gsp_rate(jc,jb)! + &
-        !  prm_diag(1)%ice_gsp_rate(jc,jb) + prm_diag(1)%graupel_gsp_rate(jc,jb) + &
-        ! prm_diag(1)%hail_gsp_rate(jc,jb)
-      END DO
-    END DO
-    DO isnd = 1, SIZE(oas_snd_meta)
-      WRITE(oas_message,*) 'Init sending  ', oas_snd_meta(isnd)%clpname, ' at 0: ', &
-        MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
-    END DO
-
-    DO isnd = 1, SIZE(oas_snd_meta)
-      WRITE(oas_message,*) 'Init sending  ', oas_snd_meta(isnd)%clpname, ' at 0: ', &
-        MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
-      CALL message(routine, oas_message)
-      CALL oasis_put(oas_snd_meta(isnd)%vid, 0, oas_snd_field(:,isnd), oas_error)
-      IF (oas_error .NE. OASIS_Ok .AND. oas_error .LT. OASIS_Sent) THEN
-        WRITE(oas_message,*) 'Init failure in oasis_put of ', oas_snd_meta(isnd)%clpname
-        CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
-      END IF
-    END DO
-
-    IF(msg_level >= 30 ) then !SPo
-      WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis receive fields'
-      FLUSH(oas_prt)
-    END IF
-
-    DO oas_i = 1, SIZE(oas_rcv_meta)
-      CALL oasis_get(oas_rcv_meta(oas_i)%vid, 0, oas_rcv_field(:,oas_i), oas_error)
-      WRITE(oas_message,*) 'Init received  ', oas_rcv_meta(oas_i)%clpname, ' at t=0', &
-          MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
-      CALL message(routine, oas_message)
-      IF (oas_error .NE. OASIS_Ok .AND. oas_error .LT. OASIS_Recvd) THEN
-        WRITE(oas_message,*) 'Init failure in oasis_get of ', oas_rcv_meta(oas_i)%clpname
-        CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
-      END IF
-     ! transform thru oasis recieved variable into something icon can use
-
-      IF(msg_level > 30 ) THEN
-        WRITE(oas_message,*) "ICONOAS: Init icon transforming received vars"
-        CALL message(routine, oas_message)
-      END IF
-
-      rl_start = grf_bdywidth_c+1
-      rl_end   = min_rlcell_int
-      i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
-      i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
-      ii = 0
-      DO jb = i_startblk, i_endblk
-        CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
-          i_endidx, rl_start, rl_end)
-        DO jc = i_startidx, i_endidx
-!          ii = idx_1d(jc,jb)
-          ii = ii + 1
-          oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
-        END DO
-      END DO
-
-      IF(msg_level > 30 ) THEN
-        WRITE(oas_message,*) "ICONOAS: Init icon transformed received vars"
-        CALL message(routine, oas_message)
-
-      ! check:
-        WRITE(oas_message,*) "ICONOAS: Init for ", oas_i, " got rank0-local min, max=", &
-          MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
-        CALL message(routine, oas_message)
-      END IF
-        END DO
-#endif
-
     IF (isRestart() .AND. itune_gust_diag == 4) THEN
       CALL get_prev_trigger_time(prm_nwp_diag_list(:), 'u_10m_a', prm_diag(:)%prev_v10mavg_reset)
     ENDIF
@@ -754,6 +599,36 @@ MODULE mo_nh_stepping
       ! in prognostic equations
       CALL aggr_landvars(p_patch(1:), ext_data(:), p_lnd_state(:), lacc=.TRUE.)
     ENDIF!is_restart
+
+#ifdef COUP_OAS_ECLM
+    ! Call the coupling subroutines for initialization, after init_slowphysics
+    ! so that the radiation fields sent to eCLM are available
+
+    ! CALL diagnose_pres_temp (p_metrics, pt_prog, pt_prog_rcf,   &
+    !     &                      pt_diag, pt_patch,                 &
+    !     &                      lnd_prog          = lnd_prog_new)
+
+    CALL diag_for_output_dyn(lacc=.FALSE.)
+    IF(.NOT.atm_phy_nwp_config(1)%is_les_phy) THEN
+      ! diagnostics which are only required for output
+      CALL nwp_diag_for_output(mtime_current, kstart_moist(1), & !in
+        &                      ih_clch(1), ih_clcm(1), & !in
+        &                      phy_params(1), & !in
+        &                      p_patch(1), & !in
+        &                      p_nh_state(1)%metrics, & !in
+        &                      p_nh_state(1)%prog(nnow(1)), & !in  !nnow or nnew?
+        &                      p_nh_state(1)%prog(nnow_rcf(1)), & !in  !nnow or nnew?
+        &                      p_nh_state(1)%diag, & !in
+        &                      p_lnd_state(1)%diag_lnd, & !in
+        & p_lnd_state(1)%prog_lnd(nnow_rcf(1)), & !in
+        & p_lnd_state(1)%prog_wtr(nnow_rcf(1)), & !inout
+        &                      ext_data(1), & !in
+        &                      prm_diag(1) ) !inout
+    END IF
+
+    CALL oasis_send_fields(0, p_patch(1), p_nh_state(1), prm_diag(1))
+    CALL oasis_receive_fields(0, p_patch(1))
+#endif
 #endif /* __NO_NWP__ */
 
   CASE (iaes)
@@ -1008,9 +883,6 @@ MODULE mo_nh_stepping
   REAL(wp)                             :: sim_time     !< elapsed simulation time
 #ifdef COUP_OAS_ECLM
   INTEGER                              :: sim_time_oas     !< elapsed simulation time
-  CHARACTER(len=128)                   :: oas_message
-  INTEGER :: nlev, rl_start, rl_end, i_startblk, &
-           & i_endblk, i_startidx, i_endidx, ii
 #endif
 
   LOGICAL :: l_isStartdate, l_isExpStopdate, l_isRestart, l_isCheckpoint, l_doWriteRestart
@@ -1990,10 +1862,7 @@ MODULE mo_nh_stepping
 
     REAL(wp)                             :: sim_time !< elapsed simulation time on this grid level
 #ifdef COUP_OAS_ECLM
-    INTEGER                              :: sim_time_oas, oas_i
-    CHARACTER(len=128)                   :: oas_message
-    INTEGER :: ii, jc, jb, isnd
-    INTEGER :: rl_start, rl_end, i_startblk, i_endblk, i_startidx, i_endidx, nlev
+    INTEGER                              :: sim_time_oas
 #endif
     TYPE(t_pi_atm), POINTER :: ptr_latbc_data_atm_old, ptr_latbc_data_atm_new
 
@@ -2136,8 +2005,6 @@ MODULE mo_nh_stepping
 
 #ifdef COUP_OAS_ECLM
     ! compute oasis' send variables
-    !
-    nlev = p_patch(1)%nlev
 
     ! coupling counter (org in tenth of sec)
 !    sim_time_oas = FLOOR(sim_time * 10.)
@@ -2165,105 +2032,10 @@ MODULE mo_nh_stepping
         &                      prm_diag(1) ) !inout
     END IF
 
-    oas_snd_field(:,7) = 0._wp
-    oas_snd_field(:,8) = 0._wp
-
-    rl_start = grf_bdywidth_c+1
-    rl_end   = min_rlcell_int
-    i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
-    i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
-    ii=0
-    DO jb = i_startblk, i_endblk
-      CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, &
-        i_endidx, rl_start, rl_end)
-      DO jc = i_startidx, i_endidx
-!        ii = idx_1d(jc,jb)
-        ii = ii+1
-        oas_snd_field(ii,1)  = p_nh_state(1)%diag%temp(jc,nlev,jb)
-        oas_snd_field(ii,2)  = p_nh_state(1)%diag%u(jc,nlev,jb)
-        oas_snd_field(ii,3)  = p_nh_state(1)%diag%v(jc,nlev,jb)
-        oas_snd_field(ii,4)  = p_nh_state(1)%prog(nnow(1))%tracer(jc,nlev,jb,iqv)
-        oas_snd_field(ii,5)  = &
-          p_nh_state(1)%metrics%z_mc(jc,nlev,jb) - p_nh_state(1)%metrics%z_ifc(jc,nlev+1,jb)
-        oas_snd_field(ii,6)  = p_nh_state(1)%diag%pres_sfc(jc,jb)
-        oas_snd_field(ii,7)  = MAX(0._wp, prm_diag(1)%swflxsfc(jc,jb) - prm_diag(1)%swflx_dn_sfc_diff(jc,jb))
-        oas_snd_field(ii,8)  = prm_diag(1)%swflx_dn_sfc_diff(jc,jb)
-        oas_snd_field(ii,9)  = prm_diag(1)%lwflxsfc(jc,jb) + prm_diag(1)%lwflx_up_sfc(jc,jb)
-        oas_snd_field(ii,10) = prm_diag(1)%rain_con_rate(jc,jb) + prm_diag(1)%rain_gsp_rate(jc,jb)
-        oas_snd_field(ii,11) = prm_diag(1)%snow_con_rate(jc,jb) + prm_diag(1)%snow_gsp_rate(jc,jb)! + &
-        !  prm_diag(1)%ice_gsp_rate(jc,jb) + prm_diag(1)%graupel_gsp_rate(jc,jb) + &
-        ! prm_diag(1)%hail_gsp_rate(jc,jb)
-      END DO
-    END DO
-
-    DO isnd = 1, SIZE(oas_snd_meta)
-      CALL oasis_put(oas_snd_meta(isnd)%vid, sim_time_oas, oas_snd_field(:,isnd), oas_error)
-      IF(msg_level >= 14 ) THEN
-        WRITE(oas_message,*) 'ICONOAS: Sending  ', oas_snd_meta(isnd)%clpname, ' at ',sim_time_oas,' ', &
-                MINVAL(oas_snd_field(:,isnd)), MAXVAL(oas_snd_field(:,isnd))
-        CALL message(routine, oas_message)
-      END IF
-      IF (oas_error .NE. OASIS_Ok .AND. oas_error .LT. OASIS_Sent) THEN
-        WRITE(oas_message,*) 'Failure in oasis_put of ', oas_snd_meta(isnd)%clpname
-        CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
-      END IF
-    END DO
-    IF(msg_level > 30 ) THEN
-      WRITE(oas_message,*) 'ICONOAS: sim_time= ', sim_time
-      CALL message(routine, oas_message)
-    END IF
-
-    DO oas_i = 1, SIZE(oas_rcv_meta)
-      IF(msg_level > 30 ) THEN
-        WRITE(oas_message,*) 'Receiving  ', oas_rcv_meta(oas_i)%clpname,&
-          " at t=", sim_time_oas
-        CALL message(routine, oas_message)
-      END IF
-
-      CALL oasis_get(oas_rcv_meta(oas_i)%vid, sim_time_oas, oas_rcv_field(:,oas_i), oas_error)
-
-      IF(msg_level >= 14 ) THEN
-        WRITE(oas_message,*) 'ICONOAS: Received  ', oas_rcv_meta(oas_i)%clpname, ' at t=', sim_time_oas,' ',&
-                MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
-        CALL message(routine, oas_message)
-      END IF
-
-      IF (oas_error .NE. OASIS_Ok .AND. oas_error .LT. OASIS_Recvd) THEN
-        WRITE(oas_message,*) 'Failure in oasis_get of ', oas_rcv_meta(oas_i)%clpname
-        CALL oasis_abort(oas_comp_id, oas_comp_name, oas_message)
-      END IF
-      ! transform thru oasis recieved variable into something icon can use
-      !
-      IF(msg_level > 30 ) THEN
-        WRITE(oas_message,*) "ICONOAS: icon transforming received vars"
-        CALL message(routine, oas_message)
-      END IF
-
-      rl_start = grf_bdywidth_c+1
-      rl_end   = min_rlcell_int
-      i_startblk = p_patch(1)%cells%start_blk(rl_start, 1)
-      i_endblk   = p_patch(1)%cells%end_blk(rl_end, MAX(1,p_patch(1)%n_childdom))
-      ii =0
-      DO jb = i_startblk, i_endblk
-        CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx,&
-          i_endidx, rl_start, rl_end)
-        DO jc = i_startidx, i_endidx
-!          ii = idx_1d(jc,jb)
-          ii = ii +1
-          oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
-        END DO
-      END DO
-
-      IF(msg_level > 30 ) THEN
-        WRITE(oas_message,*) "ICONOAS: icon transformed received vars"
-        CALL message(routine, oas_message)
-
-        ! check:
-        WRITE(oas_message,*) "ICONOAS: for ", oas_i, " got rank0-local min, max=", &
-          MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
-        CALL message(routine, oas_message)
-      END IF
-    END DO
+    ! Call the OASIS coupling subroutines for time step exchange
+    CALL oasis_send_fields(sim_time_oas, p_patch(1), p_nh_state(1), prm_diag(1))
+    CALL oasis_receive_fields(sim_time_oas, p_patch(1))
+!    CALL oasis_receive_fields(sim_time_oas, p_patch(1), p_lnd_state(1))
 
 #endif
 

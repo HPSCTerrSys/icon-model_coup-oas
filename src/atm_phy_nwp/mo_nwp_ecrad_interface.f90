@@ -80,7 +80,7 @@ MODULE mo_nwp_ecrad_interface
                                    &   get_indices_rad_subblock
 #endif
 #ifdef COUP_OAS_ECLM
-  USE mo_oasis_define,           ONLY: oas_rcv_field_icon, loas_clm_c
+  USE mo_oasis_define,           ONLY: oas_rcv_field_icon, loas_clm_c, loas_rcv_valid
 #endif
 
   IMPLICIT NONE
@@ -325,7 +325,7 @@ CONTAINS
 #ifdef COUP_OAS_ECLM
 !      prm_diag%tsfctrad(i_startidx:i_endidx,jb) = oas_rcv_field_icon(i_startidx:i_endidx,jb,1)
       DO jc = i_startidx, i_endidx
-        IF ( loas_clm_c(jc,jb) ) THEN
+        IF ( loas_clm_c(jc,jb) .AND. loas_rcv_valid ) THEN
           prm_diag%tsfctrad(jc,jb) = oas_rcv_field_icon(jc,jb,1)
         ELSE
           prm_diag%tsfctrad(jc,jb) = lnd_prog%t_g(jc,jb)
@@ -957,7 +957,7 @@ CONTAINS
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1)
 #ifdef COUP_OAS_ECLM
       DO jc = i_startidx, i_endidx
-        IF ( loas_clm_c(jc,jb) ) THEN
+        IF ( loas_clm_c(jc,jb) .AND. loas_rcv_valid ) THEN
           prm_diag%tsfctrad(jc,jb) = oas_rcv_field_icon(jc,jb,1)
         ELSE
           prm_diag%tsfctrad(jc,jb) = lnd_prog%t_g(jc,jb)

@@ -267,7 +267,9 @@ MODULE mo_mpi
   USE mo_exception,           ONLY: init_logger
 
 #ifdef COUP_OAS_ECLM
-  USE mo_oasis_define
+  USE mo_oasis_coupling_frame,ONLY: construct_oasis_coupling, destruct_oasis_coupling, &
+                                  & abort_oasis_icon
+  USE mo_oasis_define,        ONLY: kl_comm
 #endif
 
 #ifndef __NO_ICON_COMIN__
@@ -2470,16 +2472,6 @@ CONTAINS
     CALL MPI_INIT (p_error)
 #endif
 
-#ifdef COUP_OAS_ECLM
-    ! init OASIS coupler
-    CALL oasis_init_comp(oas_comp_id, oas_comp_name, oas_error)
-    IF (oas_error /= 0) &
-      CALL oasis_abort(oas_comp_id, 'oas_icon_init', 'Failure in oasis_init')
-    CALL oasis_get_localcomm(kl_comm, oas_error)
-    IF (oas_error /= 0) &
-      CALL oasis_abort(oas_comp_id, 'oas_icon_init', 'Failure in oasis_get_localcomm')
-#endif
-
     IF (p_error /= MPI_SUCCESS) THEN
        WRITE (nerr,'(a,a)') routine, ' MPI_INIT failed.'
        WRITE (nerr,'(a,i4)') ' Error =  ', p_error
@@ -2526,8 +2518,8 @@ CONTAINS
     END IF
 
 #ifdef COUP_OAS_ECLM
+    CALL construct_oasis_coupling
     CALL MPI_COMM_DUP (kl_comm, global_mpi_communicator, p_error)
-!    WRITE (nerr,'(a,a)') routine, ' DEBUG: MPI_COMM_DUP'
 #endif
 
     ! generate icon, comin, and yac communicator (if appropriate)
@@ -2821,9 +2813,7 @@ CONTAINS
     CALL p_barrier(process_mpi_all_comm)
 
 #ifdef COUP_OAS_ECLM
-    CALL oasis_terminate(oas_error)
-    IF (oas_error /= 0) CALL oasis_abort(oas_comp_id, oas_comp_name, &
-      'Failure in oasis_terminate')
+    CALL destruct_oasis_coupling
 #endif
     CALL MPI_FINALIZE (p_error)
 
@@ -2858,7 +2848,7 @@ CONTAINS
 
 #ifndef NOMPI
 #ifdef COUP_OAS_ECLM
-    CALL oasis_abort(oas_comp_id, oas_comp_name, 'Abort mpi through oasis')
+    CALL abort_oasis_icon('Abort mpi through oasis')
 #else
     CALL MPI_ABORT (MPI_COMM_WORLD, 1, p_error)
 #endif

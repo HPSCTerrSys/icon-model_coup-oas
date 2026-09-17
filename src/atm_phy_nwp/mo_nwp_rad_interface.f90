@@ -64,7 +64,7 @@ MODULE mo_nwp_rad_interface
   USE mo_fortran_tools,        ONLY: set_acc_host_or_device
   USE mo_run_config,           ONLY: msg_level
 #ifdef COUP_OAS_ECLM
-  USE mo_oasis_define,         ONLY: oas_rcv_field_icon, loas_clm_c
+  USE mo_oasis_define,         ONLY: oas_rcv_field_icon, loas_clm_c, oas_rcv_nvar, loas_rcv_valid
   USE mo_impl_constants_grf,   ONLY: grf_bdywidth_c
   USE mo_impl_constants,       ONLY: min_rlcell_int
   USE mo_loopindices,          ONLY: get_indices_c
@@ -286,12 +286,14 @@ MODULE mo_nwp_rad_interface
       CALL get_indices_c(pt_patch, jb, i_startblk, i_endblk, i_startidx, &
         i_endidx, rl_start, rl_end)
       DO jc = i_startidx, i_endidx
-        IF ( loas_clm_c(jc,jb) ) THEN
-          prm_diag%albdif(jc,jb) = oas_rcv_field_icon(jc,jb,2)
-          prm_diag%albvisdif(jc,jb) = prm_diag%albdif(jc,jb)
-          prm_diag%albnirdif(jc,jb) = prm_diag%albdif(jc,jb)
-          prm_diag%albnirdir(jc,jb) = oas_rcv_field_icon(jc,jb,3)
-          prm_diag%albvisdir(jc,jb) = prm_diag%albnirdir(jc,jb)
+        IF ( loas_clm_c(jc,jb) .AND. loas_rcv_valid ) THEN
+          prm_diag%albvisdir(jc,jb) = oas_rcv_field_icon(jc,jb,2)
+          prm_diag%albvisdif(jc,jb) = oas_rcv_field_icon(jc,jb,3)
+          prm_diag%albnirdir(jc,jb) = oas_rcv_field_icon(jc,jb,oas_rcv_nvar+1)
+          prm_diag%albnirdif(jc,jb) = oas_rcv_field_icon(jc,jb,oas_rcv_nvar+2)
+          ! SPo: Take weights from EURO-CORDEX domain (EXTPAR)
+          prm_diag%albdif(jc,jb) = 0.46_wp*prm_diag%albvisdif(jc,jb) &
+            &                    + 0.54_wp*prm_diag%albnirdif(jc,jb)
         END IF
       END DO
     END DO
