@@ -30,6 +30,7 @@ TYPE(t_oas_field), ALLOCATABLE :: oas_rcv_meta(:)
 REAL, ALLOCATABLE     :: oas_snd_field(:,:), oas_rcv_field(:,:)
 REAL(wp), ALLOCATABLE :: oas_rcv_field_icon(:,:,:)
 LOGICAL, ALLOCATABLE  :: loas_clm_c(:,:)      ! coupling mask
+LOGICAL               :: loas_rcv_valid = .FALSE. ! .TRUE. once eCLM fields have been received
 ! SPo: Albedo (rcv vars 2, 3) and downward shortwave (snd vars 7, 8) are exchanged as
 ! bundled 3D fields carrying both radiation bands. Band 1 stays in the variable's own
 ! slot; band 2 goes to an appended slot (oas_nvar+2).
@@ -40,7 +41,7 @@ PUBLIC :: &
  oas_comp_id, oas_comp_name, kl_comm, oas_error, oas_nlat, &
  oas_nlon, oas_var_nodims, oas_vshape, oas_part, &
  oas_snd_field, oas_rcv_field, oas_snd_meta, oas_rcv_meta, &
- loas_clm_c, loascplscheme_exchcoef
+ loas_clm_c, loascplscheme_exchcoef, loas_rcv_valid
 
 END MODULE mo_oasis_define
 #endif

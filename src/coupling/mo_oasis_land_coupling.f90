@@ -48,6 +48,7 @@ MODULE mo_oasis_land_coupling
   PUBLIC :: oasis_send_fields
   PUBLIC :: oasis_receive_fields
   PUBLIC :: oasis_apply_surface
+  PUBLIC :: oasis_apply_transfer
   
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_oasis_land_coupling'
 
@@ -198,7 +199,7 @@ CONTAINS
       IF (loascplscheme_exchcoef) THEN
         oas_rcv_nvar = 8
       ELSE
-        oas_rcv_nvar = 8
+        oas_rcv_nvar = 9
       END IF
       ALLOCATE(oas_rcv_meta(oas_rcv_nvar), stat = oas_error)
       IF (oas_error > 0) THEN
@@ -220,6 +221,7 @@ CONTAINS
         oas_rcv_meta(6)%clpname = "ICOSHFLX"
         oas_rcv_meta(7)%clpname = "ICOLHFLX"
         oas_rcv_meta(8)%clpname = "ICOTGRND"
+        oas_rcv_meta(9)%clpname = "ICO_RAH1"
       END IF
 
       ! Register send variables with OASIS
@@ -531,6 +533,8 @@ CONTAINS
           MINVAL(oas_rcv_field(:,oas_i)), MAXVAL(oas_rcv_field(:,oas_i))
         CALL message(routine, oas_message)
       END IF
+
+      IF (oas_error >= OASIS_Recvd) loas_rcv_valid = .TRUE.
     END DO
 
   END SUBROUTINE oasis_receive_fields
@@ -646,6 +650,42 @@ CONTAINS
         END IF
 
   END SUBROUTINE oasis_apply_surface
+
+  !-----------------------------------------------------------------------------
+  !
+  ! Replaces the surface-layer transfer quantities by the eCLM ones, called from
+  ! turbtran after the transfer coefficients are complete and before the
+  ! near-surface diagnostics are formed.
+  !
+  SUBROUTINE oasis_apply_transfer(iblock, ivstart, ivend, vel_2d, rho_s,       &
+    &                             tvm, tvh, tcm, tch)
+
+    ! Arguments
+    INTEGER,  INTENT(IN)    :: iblock          !< block index
+    INTEGER,  INTENT(IN)    :: ivstart         !< first cell of the block
+    INTEGER,  INTENT(IN)    :: ivend           !< last cell of the block
+    REAL(wp), INTENT(IN)    :: vel_2d(:)       !< wind speed at the transfer-layer top
+    REAL(wp), INTENT(IN)    :: rho_s(:)        !< air density at the surface level
+    REAL(wp), INTENT(INOUT) :: tvm(:), tvh(:)  !< transfer velocities
+    REAL(wp), INTENT(INOUT) :: tcm(:), tch(:)  !< transfer coefficients
+
+    ! Local variables
+    INTEGER :: i
+
+    IF ( loascplscheme_exchcoef .OR. .NOT. loas_rcv_valid ) RETURN
+
+    DO i = ivstart, ivend
+      IF ( loas_clm_c(i,iblock) ) THEN
+        tvm(i) = SQRT(oas_rcv_field_icon(i,iblock,4)**2 +                      &
+          &           oas_rcv_field_icon(i,iblock,5)**2)                       &
+          &    / (rho_s(i) * vel_2d(i))
+        tcm(i) = tvm(i) / vel_2d(i)
+        tvh(i) = 1._wp / oas_rcv_field_icon(i,iblock,9)
+        tch(i) = tvh(i) / vel_2d(i)
+      END IF
+    END DO
+
+  END SUBROUTINE oasis_apply_transfer
 
   !-----------------------------------------------------------------------------
   !

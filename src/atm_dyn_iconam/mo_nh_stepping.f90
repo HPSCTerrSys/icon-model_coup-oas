@@ -486,36 +486,6 @@ MODULE mo_nh_stepping
 
     ENDDO
 
-#ifdef COUP_OAS_ECLM
-    !CALL diagnose_pres_temp (p_metrics, pt_prog, pt_prog_rcf,   &
-    !     &                      pt_diag, pt_patch,                 &
-    !     &                      lnd_prog          = lnd_prog_new)
-
-    CALL diag_for_output_dyn(lacc=.FALSE.)
-    IF(.NOT.atm_phy_nwp_config(1)%is_les_phy) THEN
-      ! diagnostics which are only required for output
-      CALL nwp_diag_for_output(mtime_current, kstart_moist(1), & !in
-        &                      ih_clch(1), ih_clcm(1), & !in
-        &                      phy_params(1), & !in
-        &                      p_patch(1), & !in
-        &                      p_nh_state(1)%metrics, & !in
-        &                      p_nh_state(1)%prog(nnow(1)), & !in  !nnow or nnew?
-        &                      p_nh_state(1)%prog(nnow_rcf(1)), & !in  !nnow or nnew?
-        &                      p_nh_state(1)%diag, & !in
-        &                      p_lnd_state(1)%diag_lnd, & !in
-        & p_lnd_state(1)%prog_lnd(nnow_rcf(1)), & !in
-        & p_lnd_state(1)%prog_wtr(nnow_rcf(1)), & !inout
-        &                      ext_data(1), & !in
-        &                      prm_diag(1) ) !inout
-    END IF
-
-    ! Call the OASIS coupling subroutines for initialization
-    CALL oasis_send_fields(0, p_patch(1), p_nh_state(1), prm_diag(1))
-    CALL oasis_receive_fields(0, p_patch(1))
-!    CALL oasis_receive_fields(0, p_patch(1), p_lnd_state(1))
-
-#endif
-
     IF (isRestart() .AND. itune_gust_diag == 4) THEN
       CALL get_prev_trigger_time(prm_nwp_diag_list(:), 'u_10m_a', prm_diag(:)%prev_v10mavg_reset)
     ENDIF
@@ -629,6 +599,36 @@ MODULE mo_nh_stepping
       ! in prognostic equations
       CALL aggr_landvars(p_patch(1:), ext_data(:), p_lnd_state(:), lacc=.TRUE.)
     ENDIF!is_restart
+
+#ifdef COUP_OAS_ECLM
+    ! Call the coupling subroutines for initialization, after init_slowphysics
+    ! so that the radiation fields sent to eCLM are available
+
+    ! CALL diagnose_pres_temp (p_metrics, pt_prog, pt_prog_rcf,   &
+    !     &                      pt_diag, pt_patch,                 &
+    !     &                      lnd_prog          = lnd_prog_new)
+
+    CALL diag_for_output_dyn(lacc=.FALSE.)
+    IF(.NOT.atm_phy_nwp_config(1)%is_les_phy) THEN
+      ! diagnostics which are only required for output
+      CALL nwp_diag_for_output(mtime_current, kstart_moist(1), & !in
+        &                      ih_clch(1), ih_clcm(1), & !in
+        &                      phy_params(1), & !in
+        &                      p_patch(1), & !in
+        &                      p_nh_state(1)%metrics, & !in
+        &                      p_nh_state(1)%prog(nnow(1)), & !in  !nnow or nnew?
+        &                      p_nh_state(1)%prog(nnow_rcf(1)), & !in  !nnow or nnew?
+        &                      p_nh_state(1)%diag, & !in
+        &                      p_lnd_state(1)%diag_lnd, & !in
+        & p_lnd_state(1)%prog_lnd(nnow_rcf(1)), & !in
+        & p_lnd_state(1)%prog_wtr(nnow_rcf(1)), & !inout
+        &                      ext_data(1), & !in
+        &                      prm_diag(1) ) !inout
+    END IF
+
+    CALL oasis_send_fields(0, p_patch(1), p_nh_state(1), prm_diag(1))
+    CALL oasis_receive_fields(0, p_patch(1))
+#endif
 #endif /* __NO_NWP__ */
 
   CASE (iaes)
