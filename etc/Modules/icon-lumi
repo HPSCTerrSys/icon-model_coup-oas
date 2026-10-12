@@ -1,0 +1,20 @@
+#%Module1.0
+
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+
+source [file join [file dirname $ModulesCurrentModulefile] .pkg]
+
+prepend-path MODULEPATH "/appl/local/climatedt/sw/modules/cray-sles15-zen2"
+module switch cdo cdo/2.4.0-gcc-12.2.0
+prepend-path PATH "/project/project_465000454/icon/sw/probtest/bin"
+
+source [file join [file dirname $ModulesCurrentModulefile] icon-runtime]

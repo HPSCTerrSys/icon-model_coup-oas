@@ -1,17 +1,16 @@
-! Configuration of the parameterization for ...,
-! that is used in the AES physics package.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Configuration of the parameterization for ...,
+! that is used in the AES physics package.
 
 MODULE mo_aes_rad_config
 
@@ -40,7 +39,7 @@ MODULE mo_aes_rad_config
   !! Name of this unit
   !!
   CHARACTER(LEN=*), PARAMETER :: name = 'aes_rad'
-  
+
   !>
   !! Configuration type containing parameters and switches for the configuration of the MPI physics package
   !!
@@ -103,6 +102,7 @@ MODULE mo_aes_rad_config
      INTEGER  :: irad_cfc11     !< CFC 11
      INTEGER  :: irad_cfc12     !< CFC 12
      INTEGER  :: irad_aero      !< aerosols
+     LOGICAL  :: lrad_aero_diag !< .FALSE. but has to be .TRUE. for aerosol diagnostics
      !
      ! --- Volume mixing ratios - 1990 values (CMIP5)
      !
@@ -126,14 +126,10 @@ MODULE mo_aes_rad_config
      REAL(wp) :: frad_cfc11
      REAL(wp) :: frad_cfc12
      !
-     ! --- Flag for clear-sky computations
+     ! --- Internal flags for clear-sky computations
      !
-     LOGICAL  :: lclearsky
-     !
-! For stratocumulus calculations
-     INTEGER  :: k_lts      ! first level > 3.2km
-     LOGICAL  :: inhom_lts
-     REAL(wp) :: inhom_lts_max
+     LOGICAL  :: lclrsky_lw
+     LOGICAL  :: lclrsky_sw
      !
   END TYPE t_aes_rad_config
 
@@ -164,7 +160,7 @@ CONTAINS
     !
     aes_rad_config(:)% lyr_perp       = .FALSE.
     aes_rad_config(:)% yr_perp        = -99999
-    aes_rad_config(:)% nmonth         =  0   
+    aes_rad_config(:)% nmonth         =  0
     aes_rad_config(:)% ldiur          = .TRUE.
     aes_rad_config(:)% l_sph_symm_irr = .FALSE.
     !
@@ -178,7 +174,8 @@ CONTAINS
     aes_rad_config(:)% irad_o2        = 2
     aes_rad_config(:)% irad_cfc11     = 2
     aes_rad_config(:)% irad_cfc12     = 2
-    aes_rad_config(:)% irad_aero      = 2
+    aes_rad_config(:)% irad_aero      = 0
+    aes_rad_config(:)% lrad_aero_diag = .FALSE.
     !
     ! Default volume mixing ratios: 1990 values (CMIP5)
     aes_rad_config(:)% vmr_co2        =  348.0e-06_wp
@@ -197,11 +194,8 @@ CONTAINS
     aes_rad_config(:)% frad_cfc11     = 1.0_wp
     aes_rad_config(:)% frad_cfc12     = 1.0_wp
     !
-    aes_rad_config(:)% lclearsky      = .TRUE.
-    !
-    aes_rad_config(:)% inhom_lts      = .FALSE.
-    aes_rad_config(:)% inhom_lts_max  = 0.8_wp
-    aes_rad_config(:)% k_lts          = 73            ! preliminary, unused
+    aes_rad_config(:)% lclrsky_lw     = .FALSE.
+    aes_rad_config(:)% lclrsky_sw     = .FALSE.
     !
   END SUBROUTINE init_aes_rad_config
 
@@ -222,13 +216,12 @@ CONTAINS
     ! Shortcuts to components of aes_rad_config
     !
     LOGICAL , POINTER :: l_orbvsop87, l_sph_symm_irr, ldiur, lyr_perp
-    INTEGER , POINTER :: isolrad, nmonth, yr_perp, k_lts
+    INTEGER , POINTER :: isolrad, nmonth, yr_perp
     REAL(wp), POINTER :: fsolrad, cecc, cobld, clonp
     INTEGER , POINTER :: irad_h2o, irad_co2, irad_ch4, irad_n2o, irad_o3, irad_o2, irad_cfc11, irad_cfc12, irad_aero
     REAL(wp), POINTER ::            vmr_co2,  vmr_ch4,  vmr_n2o,           vmr_o2,  vmr_cfc11,  vmr_cfc12
     REAL(wp), POINTER :: frad_h2o, frad_co2, frad_ch4, frad_n2o, frad_o3, frad_o2
-    LOGICAL , POINTER :: lclearsky, inhom_lts
-    REAL(wp), POINTER :: inhom_lts_max
+    LOGICAL , POINTER :: lrad_aero_diag
     REAL(wp), POINTER :: frad_cfc11, frad_cfc12
 
     CALL message    ('','')
@@ -264,6 +257,7 @@ CONTAINS
        irad_cfc11 => aes_rad_config(jg)% irad_cfc11
        irad_cfc12 => aes_rad_config(jg)% irad_cfc12
        irad_aero  => aes_rad_config(jg)% irad_aero
+       lrad_aero_diag => aes_rad_config(jg)% lrad_aero_diag
        !
        vmr_co2    => aes_rad_config(jg)% vmr_co2
        vmr_ch4    => aes_rad_config(jg)% vmr_ch4
@@ -280,12 +274,6 @@ CONTAINS
        frad_o2    => aes_rad_config(jg)% frad_o2
        frad_cfc11 => aes_rad_config(jg)% frad_cfc11
        frad_cfc12 => aes_rad_config(jg)% frad_cfc12
-       !
-       lclearsky  => aes_rad_config(jg)% lclearsky
-       !
-       inhom_lts  => aes_rad_config(jg)% inhom_lts
-       inhom_lts_max  => aes_rad_config(jg)% inhom_lts_max
-       k_lts      => aes_rad_config(jg)% k_lts
 
        WRITE(cg,'(i0)') jg
        !
@@ -297,13 +285,13 @@ CONTAINS
        CALL message   ('','')
        !
        SELECT CASE (isolrad)
-       CASE (0) 
+       CASE (0)
           CALL message('','SRTM default solar spectrum')
-       CASE (1) 
+       CASE (1)
           CALL message('','Time dependent solar spectrum from file')
-       CASE (2) 
+       CASE (2)
           CALL message('','Average 1844-1856 of transient CMIP5 solar')
-       CASE (3) 
+       CASE (3)
           CALL message('','Average 1979-1988 of transient CMIP5 solar spectrum')
        CASE (4)
           CALL message('','Solar flux for RCE simulations with diurnal cycle')
@@ -313,7 +301,7 @@ CONTAINS
           CALL message('','Average 1850-1873 of transient CMIP6 solar')
        CASE (7)
           CALL message('','Solar flux for RCEmip analyticalsimulations without diurnal cycle')
-       CASE default 
+       CASE default
           WRITE (message_text, '(a,i0,a)') &
                'ERROR: isolrad = ', isolrad, ' is not supported'
           CALL finish(routine,message_text)
@@ -381,7 +369,7 @@ CONTAINS
        END SELECT
        !
        ! --- Check  CO2
-       ! 
+       !
        SELECT CASE (irad_co2)
        CASE(0)
           CALL message('','No CO2 in radiation')
@@ -404,7 +392,7 @@ CONTAINS
        END SELECT
        !
        ! --- Check CH4
-       ! 
+       !
        SELECT CASE (irad_ch4)
        CASE(0)
           CALL message('','No CH4 in radiation')
@@ -426,7 +414,7 @@ CONTAINS
        END SELECT
        !
        ! --- Check N2O
-       ! 
+       !
        SELECT CASE (irad_n2o)
        CASE(0)
           CALL message('','No N2O in radiation')
@@ -448,7 +436,7 @@ CONTAINS
        END SELECT
        !
        ! --- Check CFCs
-       ! 
+       !
        SELECT CASE (irad_cfc11)
        CASE(0)
           CALL message('','No CFC11 in radiation')
@@ -478,7 +466,7 @@ CONTAINS
        END SELECT
        !
        ! --- Check O3
-       ! 
+       !
        SELECT CASE (irad_o3)
        CASE(0)
           CALL message('','No O3 in radiation')
@@ -502,7 +490,7 @@ CONTAINS
        END SELECT
        !
        ! --- Check O2
-       ! 
+       !
        SELECT CASE (irad_o2)
        CASE(0)
           CALL message('','No O2  in radiation')
@@ -517,11 +505,31 @@ CONTAINS
        END SELECT
        !
        ! --- Check aerosol
-       ! 
+       !
        SELECT CASE (irad_aero)
        CASE(0)
           CALL message('','No aerosol in radiation')
+       CASE(12)
+          CALL message('','only Kinne natural background aerosols are used')
+       CASE(13)
+          CALL message('','time dependent Kinne aerosols are used')
+       CASE(18)
+          CALL message('','Kinne natural background aerosols + simple plume anthropogenic aerosols + volcanic aerosols are used')
+#ifdef _OPENACC
+          CALL message('','volcanic aerosols are NOT tested on gpus although they may work even on gpus')
+#endif
+       CASE(19)
+          CALL message('','Kinne natural background aerosols + simple plume anthropogenic aerosols are used')
+       CASE default
+          WRITE (message_text, '(a,i0,a)') &
+               'ERROR: irad_aero   =',irad_aero, ' is not supported'
+          CALL finish(routine,message_text)
        END SELECT
+       IF (lrad_aero_diag) THEN
+          CALL message('','aerosol optical properties are diagnosed')
+       ELSE
+          CALL message('','aerosol optical properties are not diagnosed, if you wish to diagnose, put aes_rad_config(jg)%lrad_aero_diag=.TRUE.')
+       END IF
        !
        ! --- Check scaling factors
        !
@@ -574,16 +582,6 @@ CONTAINS
           CALL print_value('CFC12           : frad_cfc12 =',frad_cfc12)
        ELSE
           CALL finish(routine,'ERROR: Negative frad_cfc12 is not allowed')
-       END IF
-       !
-       CALL message('','')
-       CALL message('','Computing efficiency')
-       CALL message('','--------------------')
-       !
-       IF (lclearsky) THEN
-          CALL message('','Clear sky fluxes are computed')
-       ELSE
-          CALL message('','Clear sky fluxes are not computed')
        END IF
        !
        CALL message   ('','')
@@ -650,6 +648,7 @@ CONTAINS
        CALL print_value('    aes_rad_config('//TRIM(cg)//')% irad_cfc11    ',aes_rad_config(jg)% irad_cfc11    )
        CALL print_value('    aes_rad_config('//TRIM(cg)//')% irad_cfc12    ',aes_rad_config(jg)% irad_cfc12    )
        CALL print_value('    aes_rad_config('//TRIM(cg)//')% irad_aero     ',aes_rad_config(jg)% irad_aero     )
+       CALL print_value('    aes_rad_config('//TRIM(cg)//')% lrad_aero_diag',aes_rad_config(jg)% lrad_aero_diag)
        CALL message    ('','')
        CALL print_value('    aes_rad_config('//TRIM(cg)//')% vmr_co2       ',aes_rad_config(jg)% vmr_co2       )
        CALL print_value('    aes_rad_config('//TRIM(cg)//')% vmr_ch4       ',aes_rad_config(jg)% vmr_ch4       )
@@ -666,8 +665,6 @@ CONTAINS
        CALL print_value('    aes_rad_config('//TRIM(cg)//')% frad_o2       ',aes_rad_config(jg)% frad_o2       )
        CALL print_value('    aes_rad_config('//TRIM(cg)//')% frad_cfc11    ',aes_rad_config(jg)% frad_cfc11    )
        CALL print_value('    aes_rad_config('//TRIM(cg)//')% frad_cfc12    ',aes_rad_config(jg)% frad_cfc12    )
-       CALL message    ('','')
-       CALL print_value('    aes_rad_config('//TRIM(cg)//')% lclearsky     ',aes_rad_config(jg)% lclearsky     )
        CALL message    ('','')
        !
     END DO

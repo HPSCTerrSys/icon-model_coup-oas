@@ -1,16 +1,15 @@
-! Contains sea ice advection routines (on ICON grid).
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains sea ice advection routines (on ICON grid).
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -21,7 +20,7 @@ MODULE mo_ice_advection
   !
   USE mo_kind,                ONLY: wp
   USE mo_util_dbg_prnt,       ONLY: dbg_print
-  USE mo_exception,           ONLY: message, message_text, finish  
+  USE mo_exception,           ONLY: message, message_text, finish
   USE mo_run_config,          ONLY: dtime
   USE mo_parallel_config,     ONLY: nproma
   USE mo_sync,                ONLY: SYNC_C, SYNC_E, sync_patch_array, sync_patch_array_mult
@@ -88,9 +87,10 @@ CONTAINS
     !$ACC DATA CREATE(tmp, z_adv_flux_h, flux_hi, flux_conc, flux_hs) IF(lzacc)
 
     !upwind estimate of tracer flux
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
+    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     tmp(:,:,:) = p_ice%hi(:,:,:) * p_ice%conc(:,:,:)
     !$ACC END KERNELS
+    !$ACC WAIT(1)
     CALL upwind_hflux_ice( p_patch_3D, tmp,  p_ice%vn_e, z_adv_flux_h, lacc=lzacc )
     DO jk=1,p_ice%kice
       CALL div_oce_3D( z_adv_flux_h(:,jk,:), patch_2D, p_op_coeff%div_coeff, flux_hi  (:,jk,:),&
@@ -103,9 +103,10 @@ CONTAINS
         & 1, cells_in_domain, lacc=lzacc )
     ENDDO
 
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
+    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     tmp(:,:,:) = p_ice%hs(:,:,:) * p_ice%conc(:,:,:)
     !$ACC END KERNELS
+    !$ACC WAIT(1)
     CALL upwind_hflux_ice( p_patch_3D, tmp, p_ice%vn_e, z_adv_flux_h, lacc=lzacc )
     DO jk=1,p_ice%kice
       CALL div_oce_3D( z_adv_flux_h(:,jk,:), patch_2D, p_op_coeff%div_coeff, flux_hs  (:,jk,:),&
@@ -115,7 +116,7 @@ CONTAINS
     DO jk = 1,p_ice%kice
       DO jb = cells_in_domain%start_block, cells_in_domain%end_block
         CALL get_index_range(cells_in_domain, jb, i_startidx_c, i_endidx_c)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jc = i_startidx_c, i_endidx_c
           IF ( p_patch_3D%lsm_c(jc,1,jb) <= sea_boundary ) THEN
 
@@ -140,22 +141,18 @@ CONTAINS
         END DO
         !$ACC END PARALLEL LOOP
       END DO
+    !$ACC WAIT(1)
     END DO
 
 !--------------------------------------------------------------------------------------------------
 ! Sync results
 !--------------------------------------------------------------------------------------------------
-    CALL sync_patch_array_mult(sync_c, patch_2D, 5, &
-      & p_ice%vol(:,:,:), p_ice%vols(:,:,:), p_ice%conc(:,:,:), p_ice%hs(:,:,:), p_ice%hi(:,:,:))
-
-!     CALL sync_patch_array(SYNC_C, patch_2D, p_ice%vol (:,:,:))
-!     CALL sync_patch_array(SYNC_C, patch_2D, p_ice%vols(:,:,:))
-!     CALL sync_patch_array(SYNC_C, patch_2D, p_ice%conc(:,:,:))
-!     CALL sync_patch_array(SYNC_C, patch_2D, p_ice%hs  (:,:,:))
-!     CALL sync_patch_array(SYNC_C, patch_2D, p_ice%hi  (:,:,:))
+    CALL sync_patch_array_mult(sync_c, patch_2D, 5, lacc=lzacc,&
+      & f3din1=p_ice%vol(:,:,:), f3din2=p_ice%vols(:,:,:), f3din3=p_ice%conc(:,:,:), &
+      & f3din4=p_ice%hs(:,:,:), f3din5=p_ice%hi(:,:,:))
 
 !     CALL finish('sea_ice:upwind advect','Test sync ok')
-   
+
     !---------DEBUG DIAGNOSTICS-------------------------------------------
     CALL dbg_print('ice_adv: vol ice'  , p_ice%vol , str_module, 4, in_subset=patch_2D%cells%owned)
     CALL dbg_print('ice_adv: vol snow' , p_ice%vols, str_module, 4, in_subset=patch_2D%cells%owned)
@@ -229,7 +226,7 @@ CONTAINS
           ENDIF
           ! TODO ram - remove patch_2D%cells%area(jc,jb) and test
           ! See also thermodyn/mo_sea_ice.f90
-          IF ( p_ice%conc(jc,jk,jb) > 0.0_wp) THEN 
+          IF ( p_ice%conc(jc,jk,jb) > 0.0_wp) THEN
             p_ice%hi(jc,jk,jb) = p_ice%vol (jc,jk,jb)   &
               &         /( p_ice%conc(jc,jk,jb)*patch_2D%cells%area(jc,jb) )
             p_ice%hs(jc,jk,jb) = p_ice%vols(jc,jk,jb)   &
@@ -243,11 +240,11 @@ CONTAINS
 ! Sync results
 !--------------------------------------------------------------------------------------------------
 
-    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%vol (:,:,:))
-    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%vols(:,:,:))
-    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%conc(:,:,:))
-    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%hs  (:,:,:))
-    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%hi  (:,:,:))
+    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%vol (:,:,:), lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%vols(:,:,:), lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%conc(:,:,:), lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%hs  (:,:,:), lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%hi  (:,:,:), lacc=.FALSE.)
 
     !---------DEBUG DIAGNOSTICS-------------------------------------------
     CALL dbg_print('ice_adv: vol ice'  , p_ice%vol , str_module, 4, in_subset=patch_2D%cells%owned)
@@ -291,10 +288,11 @@ CONTAINS
     patch_2D         => p_patch_3D%p_patch_2D(1)
     edges_in_domain => patch_2D%edges%in_domain
     !-----------------------------------------------------------------------
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
+    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     pupflux_e(:,:,:) = 0.0_wp
     !$ACC END KERNELS
-    
+    !$ACC WAIT(1)
+
     IF ( PRESENT(opt_slev) ) THEN
       slev = opt_slev
     ELSE
@@ -324,12 +322,12 @@ CONTAINS
 
       CALL get_index_range(edges_in_domain, jb, i_startidx, i_endidx)
 
+      !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
 #ifdef __LOOP_EXCHANGE
       DO je = i_startidx, i_endidx
         DO jk = slev, elev
 #else
 !CDIR UNROLL=6
-      !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) IF(lzacc)
       DO jk = slev, elev
         DO je = i_startidx, i_endidx
 #endif
@@ -349,6 +347,7 @@ CONTAINS
       END DO  ! end loop over levels
       !$ACC END PARALLEL LOOP
     END DO  ! end loop over blocks
+    !$ACC WAIT(1)
 !ICON_OMP_END_DO_NOWAIT
 !ICONOMP_END_PARALLEL
 

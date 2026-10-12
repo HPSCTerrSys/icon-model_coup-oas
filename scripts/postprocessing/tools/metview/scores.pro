@@ -1,15 +1,16 @@
+pro scores, direxp, dirref, expnum, expref, inidate, step1, step2, nfor, levtype, $
+                    stat, fname
 ; ICON
 ;
 ; ---------------------------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
 ; SPDX-License-Identifier: BSD-3-Clause
 ; ---------------------------------------------------------------
 
-pro scores, direxp, dirref, expnum, expref, inidate, step1, step2, nfor, levtype, stat
-;------------------------------------------------------------
+;----------------------------------------------------------------
 ; Plot scores from ICON experiments.
 ;
 ; run as: .run scores paperopenl paperclose
@@ -18,10 +19,10 @@ pro scores, direxp, dirref, expnum, expref, inidate, step1, step2, nfor, levtype
 ;                'dei2_084','dei2_083','201201','24','31','ml', 'mean'
 ;
 ; Martin Koehler, Sep 2012
-;------------------------------------------------------------
+;----------------------------------------------------------------
 
 print, 'Arguments: ', direxp, ' ', dirref, ' ', expnum, ' ', expref, ' ', $
-  inidate, ' ', step1, ' ', step2, ' ', nfor, ' ', levtype, ' ', stat
+  inidate, ' ', step1, ' ', step2, ' ', nfor, ' ', levtype, ' ', stat, ' ', fname
 
 nlev=90
 nlevpl=25
@@ -83,22 +84,100 @@ print, ''
 close,/all
 openr, 1, file1
 openr, 2, file2
-spawn,'wc -l '+file1, nlines1
-spawn,'wc -l '+file2, nlines2
-nlines1=strsplit(nlines1,/extract)
-nlines2=strsplit(nlines2,/extract)
+nlines1=0
+nlines2=0
+temp=' '
+WHILE (NOT EOF(1)) DO BEGIN
+   READF,1, temp
+   nlines1=nlines1+1
+ENDWHILE
+WHILE (NOT EOF(2)) DO BEGIN
+   READF,2, temp
+   nlines2=nlines2+1
+ENDWHILE
+close,/all
 
-var1=make_array(nword,nlines1(0),/string)
-var2=make_array(nword,nlines2(0),/string)
-tmp=''
-for nn=1,nlines1(0) do begin
-  readf, 1, tmp
-  var1(*,nn-1) = strsplit(tmp,/extract)
-end
-for nn=1,nlines2(0) do begin
-  readf, 2, tmp
-  var2(*,nn-1) = strsplit(tmp,/extract)
-end
+var1=make_array(nword,nlines1,/string)
+var2=make_array(nword,nlines2,/string)
+v1=StrArr(nlines1)
+v2=StrArr(nlines1)
+v3=StrArr(nlines1)
+v4=StrArr(nlines1)
+v5=StrArr(nlines1)
+v6=StrArr(nlines1)
+v7=StrArr(nlines1)
+v8=StrArr(nlines1)
+v9=StrArr(nlines1)
+v10=StrArr(nlines1)
+v11=StrArr(nlines1)
+v12=StrArr(nlines1)
+v13=StrArr(nlines1)
+v14=StrArr(nlines1)
+v15=StrArr(nlines1)
+v16=StrArr(nlines1)
+v17=StrArr(nlines1)
+v18=StrArr(nlines1)
+v19=StrArr(nlines1)
+readcol,file1,v1,v2,v3,v4,v5,v6,v7,v8,v9,v10,v11,v12,v13,v14,v15,v16,v17,v18,v19,format='A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A'
+var1[0,*]=v1
+var1[1,*]=v2
+var1[2,*]=v3
+var1[3,*]=v4
+var1[4,*]=v5
+var1[5,*]=v6
+var1[6,*]=v7
+var1[7,*]=v8
+var1[8,*]=v9
+var1[9,*]=v10
+var1[10,*]=v11
+var1[11,*]=v12
+var1[12,*]=v13
+var1[13,*]=v14
+var1[14,*]=v15
+var1[15,*]=v16
+var1[16,*]=v17
+var1[17,*]=v18
+var1[18,*]=v19
+
+v1=StrArr(nlines2)
+v2=StrArr(nlines2)
+v3=StrArr(nlines2)
+v4=StrArr(nlines2)
+v5=StrArr(nlines2)
+v6=StrArr(nlines2)
+v7=StrArr(nlines2)
+v8=StrArr(nlines2)
+v9=StrArr(nlines2)
+v10=StrArr(nlines2)
+v11=StrArr(nlines2)
+v12=StrArr(nlines2)
+v13=StrArr(nlines2)
+v14=StrArr(nlines2)
+v15=StrArr(nlines2)
+v16=StrArr(nlines2)
+v17=StrArr(nlines2)
+v18=StrArr(nlines2)
+v19=StrArr(nlines2)
+readcol,file2,v1,v2,v3,v4,v5,v6,v7,v8,v9,v10,v11,v12,v13,v14,v15,v16,v17,v18,v19,format='A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A'
+var2[0,*]=v1
+var2[1,*]=v2
+var2[2,*]=v3
+var2[3,*]=v4
+var2[4,*]=v5
+var2[5,*]=v6
+var2[6,*]=v7
+var2[7,*]=v8
+var2[8,*]=v9
+var2[9,*]=v10
+var2[10,*]=v11
+var2[11,*]=v12
+var2[12,*]=v13
+var2[13,*]=v14
+var2[14,*]=v15
+var2[15,*]=v16
+var2[16,*]=v17
+var2[17,*]=v18
+var2[18,*]=v19
 
 var2d  = ['TOT_PREC' , 'TCC'      , 'HCC'     , 'MCC'     , 'LCC'     , $
           'TQV'      , 'TQC'      , 'TQI'     , $
@@ -126,7 +205,7 @@ nvar3zl= n_elements(var3zl)
 pres_l = ['1', '2', '3', '5', '7', '10', '20', '30', '50', '70', '100', '150', '200', '250', '300', '400', '500', $
           '600', '700', '800', '850', '900', '925', '950', '1000']
 
-paperopenl
+paperopenl,fname
 loadct,13
 
 
@@ -167,11 +246,11 @@ CASE levtype OF
     if (     rms1  +      rms2   ) lt 1e-8 then begin
       rms  = 0.5
     endif
-  
+
     xxx =-0.11+nn*0.125
     yyy =0.93
     vert=0.01
-  
+
     xyouts, xxx+0.035, yyy+0.015, var3d(nn-1), /normal, charsize=0.7                      ;title each column: variable name
     header = 'level    rms      new'
     xyouts, xxx, yyy, header, /normal, charsize=0.7                                       ;header (level, rms, new)
@@ -203,7 +282,7 @@ CASE levtype OF
     xyouts,   xr(0)+0.09  , yr(0)-nk*vert, string(err1,format='(g8.3)'), /normal, charsize=0.4, alignment=1.0 ;new error value
   end
   end
-  
+
   xr = [-0.01,0.0] * amp_ml_rms * refer
   plots, xr(0:1)+0.50, 0.015+[0.0,0.0],  /normal                                          ;reference 1% (bottom page)
   xyouts,xr(1)  +0.51, 0.010, refer_txt, /normal, charsize=0.6                            ;text refernce value
@@ -250,11 +329,11 @@ CASE levtype OF
     if (     rms1  +      rms2   ) lt 1e-8 then begin
       rms  = 0.5
     endif
-  
+
     xxx =-0.23+nn*0.25
     yyy =0.90
     vert=0.033
-  
+
     if stat eq 'rms' then begin
       headernew = 'new'
       header    = 'level      rms        ref'
@@ -264,7 +343,7 @@ CASE levtype OF
     endelse
     xyouts, xxx+0.067, yyy+0.015, headernew, /normal, charsize=0.7,alignment=0.0     ;header (level, rms, new)
     xyouts, xxx-0.007, yyy,       header,    /normal, charsize=0.7                   ;header (level, rms, new)
- 
+
     for nerr=1,2 do begin
       if nerr eq 2 and stat eq 'rms' then continue
       if nerr eq 1 then begin
@@ -293,7 +372,7 @@ CASE levtype OF
       plots,    xr(3:4)+0.04, [yr(3)+0.004,yr(4)-0.004]-nk*vert,      /normal    ;zero
       xr= [-0.01,0.01]             * amp * refer + xxx + xoff
       plots,    xr(0:1)+0.04, yr(0:1)-nk*vert+0.005, /normal                     ;reference 1%
-  
+
       xyouts,   xr(0)       , yr(0)-nk*vert, pres_l(nk-1),/normal, charsize=0.7  ;level
       xyouts,   xr(0)+0.09  , yr(0)-nk*vert+0.007, string(err1,format='(g8.3)'), /normal, charsize=0.5, alignment=1.0 ;new error value
       xyouts,   xr(0)+0.09  , yr(0)-nk*vert-0.007, string(err2,format='(g8.3)'), /normal, charsize=0.5, alignment=1.0 ;old error value
@@ -342,11 +421,11 @@ CASE levtype OF
     if (     rms1  +      rms2   ) lt 1e-8 then begin
       rms  = 0.5
     endif
-  
+
     xxx =-0.11+nn*0.14
     yyy =0.93
     vert=0.01
-  
+
     xyouts, xxx+0.03, yyy+0.015, var3zl(nn-1), /normal, charsize=0.7                     ;title each column: variable name
     header = 'level    rms      new'
     xyouts, xxx, yyy, header, /normal, charsize=0.7                                      ;header (level, rms, new)
@@ -377,7 +456,7 @@ CASE levtype OF
     xyouts,   xr(0)+0.07,   yr(0)-nk*vert, err1,   /normal, charsize=0.4                  ;new error value
    end
   end
-  
+
   xr = [-0.01,0.0] * amp_zl_rms * refer
   plots, xr(0:1)+0.50, 0.015+[0.0,0.0],  /normal                                          ;reference 1% (bottom page)
   xyouts,xr(1)  +0.51, 0.010, refer_txt, /normal, charsize=0.6                            ;text refernce value
@@ -390,7 +469,7 @@ CASE levtype OF
  'sfc': BEGIN
 
   xyouts, 0.15, 0.97, /normal, charsize=1.0, title+'   '+levtype
-  
+
   ; surface parameters (e.g. fluxes) --------------------------------------------------------
 
   for nn=1,nvar2d do begin
@@ -411,12 +490,12 @@ CASE levtype OF
       bias = ( abs(mean1) - abs(mean2) ) / (     rms1   +     rms2   ) + 0.5
     endelse
     rms  =     rms1   / (     rms1   +     rms2   )
-   ;print, var2d(nn-1), ' exp',expref, ' bias:', bias2, 'rms:', rms2 
-  
+   ;print, var2d(nn-1), ' exp',expref, ' bias:', bias, 'rms:', rms2
+
     xxx = 0.05
     yyy = 0.92
     vert= 0.045
-  
+
     if stat eq 'rms' then begin
       header = 'variable                    rms                new,ref'
     endif else begin
@@ -480,12 +559,12 @@ CASE levtype OF
       bias = ( abs(mean1) - abs(mean2) ) / (     rms1   +     rms2   ) + 0.5
     endelse
     rms  =     rms1   / (     rms1   +     rms2   )
-   ;print, var2obs(nn-1), ' exp',expref, ' bias:', bias2, 'rms:', rms2 
-  
+   ;print, var2obs(nn-1), ' exp',expref, ' bias:', bias2, 'rms:', rms2
+
     xxx = 0.55
     yyy = 0.30
     vert= 0.038
-  
+
     for nerr=1,2 do begin
       if nerr eq 2 and stat eq 'rms' then continue
       if nerr eq 1 then begin
@@ -544,12 +623,12 @@ CASE levtype OF
       bias = ( abs(mean1) - abs(mean2) ) / (     rms1   +     rms2   ) + 0.5
     endelse
     rms  =     rms1   / (     rms1   +     rms2   )
-   ;print, var3lnd(nn-1), ' exp',expref, ' bias:', bias2, 'rms:', rms2 
-  
+   ;print, var3lnd(nn-1), ' exp',expref, ' bias:', bias2, 'rms:', rms2
+
     xxx = 0.55
     yyy = 0.92
     vert= 0.038
-  
+
     if stat eq 'rms' then begin
       header = 'variable                    rms                new,ref'
     endif else begin
@@ -592,20 +671,20 @@ CASE levtype OF
       xyouts,   xr(0)+0.18,   yr(0)-vertical+0.008, err1,  /normal, charsize=0.6
       xyouts,   xr(0)+0.18,   yr(0)-vertical-0.008, err2,  /normal, charsize=0.6
     end
-   end  
+   end
   end
 
   if stat eq 'rms' then begin
     xr = [-0.01,0.0] * amp_sfc_bias * refer
     plots, xr(0:1)+0.40, 0.015+[0.0,0.0],  /normal                                ;reference 1% (bottom page)
     xyouts,xr(1)  +0.41, 0.010, refer_txt+' rms', /normal, charsize=0.6           ;text refernce value
-  
+
   endif else begin
 
     xr = [-0.01,0.0] * amp_sfc_bias * refer
     plots, xr(0:1)+0.40, 0.015+[0.0,0.0],  /normal                                ;reference 1% (bottom page)
     xyouts,xr(1)  +0.41, 0.010, refer_txt+' bias', /normal, charsize=0.6          ;text refernce value
-  
+
     xr = [-0.01,0.0] * amp_sfc_rms * refer
     plots, xr(0:1)+0.60, 0.015+[0.0,0.0],  /normal                                ;reference 1% (bottom page)
     xyouts,xr(1)  +0.61, 0.010, refer_txt+' rms', /normal, charsize=0.6           ;text refernce value

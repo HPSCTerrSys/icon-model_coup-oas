@@ -1,0 +1,16 @@
+--- # ICON probtest tolerance data
+# This file can be parsed using yaml
+# Data is stored in <icon_data_rootFolder>/buildbot_data/ref/<experiment_hash>
+icon_data_rootFolder: /capstor/store/cscs/userlab/cws01/pool/data/ICON/
+builder: santis_cpu_nvhpc
+# The list below maps each experiment to its current experiment_hash
+"c2sm_clm_r13b03_seaice": db7a4af51a17c6aff4c64b5ddbac3d2430ea2339
+"dwd_run_ICON_09_R2B4N5_EPS": 2f75db48e5f80e1733871cf73869ee2a6f0edaa0
+"exclaim_ape_R02B04": 4d199072fd1daf0d231369dc1a56a24195180bc6
+"mch_icon-ch1_small": fbf9fa7637dd92943f239df32fca093c3950deb2
+"mch_icon-ch2_small": 8be5e8fb6246ef0fb8909db4e2b34d8fbbb4e975
+"mch_opr_r04b07_sstice_inst": 74c9cc82830655a40e97f88f33fda9bf9a7cd80d
+"mch_opr_r19b07_2m_expl": c56c73105db00e76f13a64bb8ae287509b933f37
+"mch_opr_r19b07_2m_impl": 95674ea888e49195c0ea0056311d72a623c31abf
+"mch_opr_r19b07_lpi": 7c0d6cbd561400826504fb41b0a56b6bae16b35c
+"mch_opr_r19b07_turb": 5e984e1e08e49539bb08225843ecdfe9f60fc037

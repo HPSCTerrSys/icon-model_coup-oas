@@ -1,16 +1,15 @@
-!
-! Module containing subroutine computing the vertical integral of the internal energy
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module containing subroutine computing the vertical integral of the internal energy
 
 MODULE mo_diagnose_uvi
 
@@ -92,7 +91,7 @@ CONTAINS
       DO jc = jcs, jce
 
         qliquid =   p_nh_state(jg)%prog(jtl_trc)%tracer(jc,jk,jb,iqc) &
-                & + p_nh_state(jg)%prog(jtl_trc)%tracer(jc,jk,jb,iqr) 
+                & + p_nh_state(jg)%prog(jtl_trc)%tracer(jc,jk,jb,iqr)
 
         qfrozen =   p_nh_state(jg)%prog(jtl_trc)%tracer(jc,jk,jb,iqi) &
                 & + p_nh_state(jg)%prog(jtl_trc)%tracer(jc,jk,jb,iqs) &

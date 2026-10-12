@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -9,12 +9,12 @@
 # ---------------------------------------------------------------
 
 # Metview Macro: ICON errors
-# 
+#
 # run as: metview4 -b zonal.error dei2_005 dei2_004 T ml diff 20120101 00 20120102 00 1 R2B06
 #
 # export PLOTDIR=metplots
 # export DATADIR=grb_data
-# export DATAREF=../../184/201201/grb_data 
+# export DATAREF=../../184/201201/grb_data
 # export YYYYMM=201201
 # export LMONTH=0
 # export TAILFILE=.grb
@@ -23,11 +23,11 @@
 #
 # Koehler Martin, August 2011
 #-----------------------------------------------------------------------
-  
+
 # --- argument list
 
 mode = runmode()
-if mode = 'batch' or mode = 'execute' then  
+if mode = 'batch' or mode = 'execute' then
   args    = arguments()
   print()
   print("zonal.error parameters: ", args)
@@ -35,10 +35,10 @@ if mode = 'batch' or mode = 'execute' then
   expref  = args[2]      # experiment ID of reference experiment
   varname = args[3]      # variable name (e.g. T)
   levtype = args[4]      # level type (e.g. pl, ml, lnd)
-  stat    = args[5]      # statistic (snap, ctr or diff) 
-  inidate = args[6]      # 
-  initime = args[7]      # 
-  verdate = args[8]      # 
+  stat    = args[5]      # statistic (snap, ctr or diff)
+  inidate = args[6]      #
+  initime = args[7]      #
+  verdate = args[8]      #
   vertime = args[9]      #
   ndays   = args[10]     # mean of multiple forecasts separated by one day
   exphres = args[11]     # horizontal resolution (e.g. R2B04)
@@ -71,10 +71,13 @@ dataref  = getenv("DATAREF")
 tailfile = getenv("TAILFILE")
 lmonth   = getenv("LMONTH")
 yyyymm   = getenv("YYYYMM")
+sctemp   = getenv("SCTEMP")
 
 
 #-----------------------------------------------------------------------
 # --- setup
+
+ifsdir = sctemp&'/../ifs_data'
 
 grid = [1.0,1.0]         # default: '' or [1.5,1.5]
 
@@ -83,26 +86,26 @@ precision( 4 )           # precision of numbers in plots
 expres  = 'NWP.'&exphres&'L90'
 
 case levtype of
-  'ml':  
+  'ml':
      vartitle = varname&'  ml'
      varplot  = varname
      end
-  'pl':  
-     vartitle = varname&'  pl'  
+  'pl':
+     vartitle = varname&'  pl'
      varplot  = varname&'_P'
      end
-  'zl':  
-     vartitle = varname&'  zl'  
+  'zl':
+     vartitle = varname&'  zl'
      varplot  = varname&'_Z'
      end
-  'sfc': 
+  'sfc':
      vartitle = varname
      varplot  = varname
-     end 
-  'lnd': 
+     end
+  'lnd':
      vartitle = varname
      varplot  = varname
-     end 
+     end
 end case
 
 # for tendencies use diff-type contours (zero=white)
@@ -136,7 +139,7 @@ case stat of
     title   = vartitle&'    '&expnum&'   -   '&expref&'    '&inidate&initime&' to '&verdate&vertime&nd_txt2
     end
   'snap':
-    plotfile= plotdir&'/zon.'&expres&'.'&expnum&    '.'&varplot&'.'&verdate&vertime&nd_txt1&'.L1' 
+    plotfile= plotdir&'/zon.'&expres&'.'&expnum&    '.'&varplot&'.'&verdate&vertime&nd_txt1&'.L1'
     title   = vartitle&'    '&expnum&'    '&verdate&vertime&nd_txt2
     end
   'ctr':
@@ -204,16 +207,21 @@ case varname of
  'Q3'      :  varfile = '0.1.82'      end    # prog
  'QR'      :  varfile = 'rwmr'        end    # prog
  'QS'      :  varfile = 'snmr'        end    # prog
- 'CC'      :  varfile = '0.6.22'      end
+ 'CC'      :  varfile = 'ccl'         end    # '0.6.22'
  'QTVAR'   :  varfile = '192.201.39'  end
  'ttendsw' :  varfile = '0.4.192'     end
  'ttendlw' :  varfile = '0.5.192'     end
- 'ttendcds':  varfile = '0.0.192'     end 
- 'qtendcds':  varfile = '0.1.197'     end 
- 'utendcds':  varfile = '0.2.192'     end 
- 'vtendcds':  varfile = '0.2.193'     end 
- 'utends'  :  varfile = '0.2.194'     end 
- 'vtends'  :  varfile = '0.2.195'     end 
+ 'ttendcds':  varfile = '0.0.192'     end
+ 'qtendcds':  varfile = '255.255.255' end
+ 'utendcds':  varfile = '0.2.192'     end
+ 'vtendcds':  varfile = '0.2.193'     end
+ 'utends'  :  varfile = '0.2.194'     end
+ 'vtends'  :  varfile = '0.2.195'     end
+ 'ddt_temp_gscp': varfile = '192.162.203' end
+ 'ddt_qv_gscp'  : varfile = '192.162.204' end
+ 'ddt_qc_gscp'  : varfile = '192.162.205' end
+ 'ddt_qi_gscp'  : varfile = '192.162.206' end
+ 'ddt_temp_dyn' : varfile = '0.3.197' end
  'T_G'     :  varfile = 't'           end
  'T_2M'    :  varfile = '2t'          end
  'U_10M'   :  varfile = '10u'         end
@@ -247,7 +255,7 @@ case varname of
 end case
 
 
-for nd=1 to ndays do 
+for nd=1 to ndays do
 
 
 # --- setup: data files
@@ -255,7 +263,7 @@ for nd=1 to ndays do
 # source_ini_icon = '/uwork1/mkoehler/icon/experiments/exp'&expnum&
 #   '/NWP_icon'&exphres&inidate&initime&'_DOM01_0001_'&varfile&'_'&levtype&'.grb'
 # source_ver_icon = '/uwork1/mkoehler/icon/experiments/exp'&expnum&
-#   '/NWP_icon'&exphres&verdate&vertime&'_DOM01_0001_'&varfile&'_'&levtype&'.grb' 
+#   '/NWP_icon'&exphres&verdate&vertime&'_DOM01_0001_'&varfile&'_'&levtype&'.grb'
 # source_pl_ifs ='/uwork1/mkoehler/ifs.data/oper/ifs_oper_2x2_20110101-20.pl.grb'
 # source_sfc_ifs='/uwork1/mkoehler/ifs.data/oper/ifs_oper_2x2_20110101-20.sfc.grb'
 
@@ -273,15 +281,15 @@ for nd=1 to ndays do
     source_ini_icon = datadir&'/'&expnum&'_'&inidate&initime&'_DOM01_0001_'&varfile&'_'&levtype&'.grb'
     source_ref_icon = dataref&'/'&expref&'_'&inidate&initime&'_DOM01_0001_'&varfile&'_'&levtype&'.grb'
     source_ver_icon = datadir&'/'&expnum&'_'&verdate&vertime&'_DOM01_0001_'&varfile2&'_'&levtype&'.grb'
-    source_pl_ifs   ='/scratch/ms/de/deia/ifs_data/ifs_oper_1x1_'&yyyymm&'.pl.grb'
-    source_sfc_ifs  ='/scratch/ms/de/deia/ifs_data/ifs_oper_1x1_'&yyyymm&'.sfc.grb'
+    source_pl_ifs   =ifsdir&'/ifs_oper_1x1_'&yyyymm&'.pl.grb'
+    source_sfc_ifs  =ifsdir&'/ifs_oper_1x1_'&yyyymm&'.sfc.grb'
     nfc = ndays
   else
     source_ini_icon = datadir&'/'&expnum&'_'&yyyymm&'_DOM01_0001_'&varfile&'_'&levtype&tailfile
     source_ref_icon = dataref&'/'&expref&'_'&yyyymm&'_DOM01_0001_'&varfile&'_'&levtype&tailfile
-    source_ver_icon = datadir&'/'&expnum&'_'&yyyymm&'_DOM01_0001_'&varfile2&'_'&levtype&tailfile 
-    source_pl_ifs   ='/scratch/ms/de/deia/ifs_data/ifs_oper_1x1_'&yyyymm&'.pl.' &mntxt[3]
-    source_sfc_ifs  ='/scratch/ms/de/deia/ifs_data/ifs_oper_1x1_'&yyyymm&'.sfc.'&mntxt[3]
+    source_ver_icon = datadir&'/'&expnum&'_'&yyyymm&'_DOM01_0001_'&varfile2&'_'&levtype&tailfile
+    source_pl_ifs   =ifsdir&'/ifs_oper_1x1_'&yyyymm&'.pl.' &mntxt[3]
+    source_sfc_ifs  =ifsdir&'/ifs_oper_1x1_'&yyyymm&'.sfc.'&mntxt[3]
     nfc = parse(mntxt[3], "-")
     nfc = parse(nfc[2],".")
     nfc = nfc[1]
@@ -311,7 +319,7 @@ for nd=1 to ndays do
       var_exp = var_exp & temp
     end if
   end if
-  
+
   if stat = 'diff_ref' then
     temp_ref = read(
                 SOURCE   : source_ref_icon,
@@ -330,7 +338,7 @@ for nd=1 to ndays do
 
 
 #--- read IFS data
-	
+
   if stat = 'ctr' or stat = 'diff' then
     case levtype of
       'pl':
@@ -341,7 +349,7 @@ for nd=1 to ndays do
           'Q2'  : param = 'QC' end
           'Q3'  : param = 'QI' end
         end case
-        temp = read(  
+        temp = read(
                 SOURCE   : source_pl_ifs,
                 grid     : grid,
                 param    : param,
@@ -350,8 +358,8 @@ for nd=1 to ndays do
         )
         end
       otherwise:
-        temp = read(  
-  		SOURCE   : source_ver_icon, 
+        temp = read(
+  		SOURCE   : source_ver_icon,
                 grid     : grid,
    		date     : verdate,
    		time     : vertime,
@@ -400,7 +408,7 @@ var_data = avgtime_met(var_data,nlev,ndays)
 #nlat    = grib_get_long(var_data[1],"Nj")
 #ntime   = count(var_data)/(nlev*nvar)
 #meanvar = avgtime(var_data,nlon,nlat,nvar,nlev,ntime)   #large files from mean
-	
+
 
 # --- variable specific plotting
 
@@ -437,17 +445,17 @@ if diff_level > 0.0 then
 end if
 
 statistic   = 'Min:  '&mini&'   Max:  '&maxi&'   Mean:  '&integrate(mean(var_data))
-if stat = 'diff' or stat = 'diff_ref' or stat = 'rms' then 
+if stat = 'diff' or stat = 'diff_ref' or stat = 'rms' then
   statistic = statistic & '   RMS:  ' & rms
 end if
 statistic = statistic & '   Mem:  '&nfc
 
-          
+
 #custom contouring:
 #diff_level = 50
 #
 # case varname of
-#   'QC' :      #level_count = 9 
+#   'QC' :      #level_count = 9
 #               mini   = 0.00001
 #               maxi   = 0.0001       # 20               0.03   40
 #   end
@@ -467,24 +475,24 @@ statistic = statistic & '   Mem:  '&nfc
 #-----------------------------------------------------------------------
 # --- Plot setup
 
-text = mtext(  
+text = mtext(
         text_line_count :   3,
-        TEXT_LINE_1     :   title, 
+        TEXT_LINE_1     :   title,
         text_line_2     :   statistic,
         text_line_3     :   ' ',
         text_font_size  :   0.6,
-        TEXT_COLOUR     :   'BLACK' 
+        TEXT_COLOUR     :   'BLACK'
     )
-all = mcont(  
+all = mcont(
                 LEGEND                         : 'ON',
-		CONTOUR                        : 'OFF', 
-		CONTOUR_LEVEL_SELECTION_TYPE   : 'COUNT', 
+		CONTOUR                        : 'OFF',
+		CONTOUR_LEVEL_SELECTION_TYPE   : 'COUNT',
 		CONTOUR_LEVEL_COUNT            : level_count,
-		CONTOUR_MAX_LEVEL              : maxi, 
- 		CONTOUR_MIN_LEVEL              : mini, 
+		CONTOUR_MAX_LEVEL              : maxi,
+ 		CONTOUR_MIN_LEVEL              : mini,
                 CONTOUR_LABEL                  : 'OFF',
-		CONTOUR_SHADE                  : 'ON', 
-		CONTOUR_SHADE_METHOD           : 'AREA_FILL', 
+		CONTOUR_SHADE                  : 'ON',
+		CONTOUR_SHADE_METHOD           : 'AREA_FILL',
 		contour_shade_colour_method    : "list",
                 contour_shade_colour_list      : [                         # 12 colors:
                                                  "RGB(0.0 , 0.2 , 0.6)",   # dark blue
@@ -494,29 +502,29 @@ all = mcont(
                                                  "RGB(0.9 , 0.95, 1.0)",   # light blue
                                                  "RGB(0.93, 0.9 , 0.85)",  #  i
                                                  "RGB(0.96, 0.85, 0.75)",  #  i
-                                                 "RGB(1.0 , 0.8 , 0.6)",   # light beige 
+                                                 "RGB(1.0 , 0.8 , 0.6)",   # light beige
                                                  "RGB(0.95, 0.6 , 0.45)",  #  i
-                                                 "RGB(0.9 , 0.4 , 0.3)",   #  i 
+                                                 "RGB(0.9 , 0.4 , 0.3)",   #  i
                                                  "RGB(0.8 , 0.2 , 0.15)",  #  i
                                                  "RGB(0.7 , 0.0 , 0.0)" ]  # dark red
     )
-cont = mcont(  
+cont = mcont(
                 LEGEND                         : 'ON',
 		CONTOUR                        : 'OFF',
-		CONTOUR_LEVEL_SELECTION_TYPE   : level_type, 
+		CONTOUR_LEVEL_SELECTION_TYPE   : level_type,
 		CONTOUR_LEVEL_COUNT            : level_count,
-		CONTOUR_MAX_LEVEL              : diff_level, 
-		CONTOUR_MIN_LEVEL              : -diff_level, 
+		CONTOUR_MAX_LEVEL              : diff_level,
+		CONTOUR_MIN_LEVEL              : -diff_level,
 		contour_level_list             : level_list,
                 CONTOUR_LABEL                  : 'OFF',
-		CONTOUR_SHADE                  : 'ON', 
-		CONTOUR_SHADE_METHOD           : 'AREA_FILL', 
+		CONTOUR_SHADE                  : 'ON',
+		CONTOUR_SHADE_METHOD           : 'AREA_FILL',
 		contour_shade_colour_method    : "list",
 #		contour_shade_colour_list      : ["red","orange","orange_yellow","yellow","white","white","green","blue_green","blue","blue_purple"]
 #		contour_shade_colour_list      : ["blue_purple", "blue", "blue_green", "green", "white", "yellow", "orange_yellow", "orange","red"]   # 9
 #		contour_shade_colour_list      : ["blue", "blue_green", "green", "white", "yellow", "orange","red"]                                   # 7
 #		contour_shade_colour_list      : ["red","orange","yellow","white","white","green","blue_green","blue"]
-                contour_shade_colour_list      : ["RGB(0.0,0.2,0.7)", "RGB(0.3,0.5,0.8)", "RGB(0.6,0.7,0.9)", "RGB(0.9,0.95,1.0)", "white", 
+                contour_shade_colour_list      : ["RGB(0.0,0.2,0.7)", "RGB(0.3,0.5,0.8)", "RGB(0.6,0.7,0.9)", "RGB(0.9,0.95,1.0)", "white",
                                                   "RGB(1.0,0.9,0.7)", "RGB(0.9,0.6,0.4)", "RGB(0.8,0.3,0.2)", "RGB(0.7,0.0 ,0.0)" ]                   # 9
     )
 legend = mlegend(
@@ -527,25 +535,25 @@ legend = mlegend(
 
 #-----------------------------------------------------------------------
 # --- Plot
- 	
+
 # Setup output format
 file_ps  = ps_output(  OUTPUT_NAME : plotfile )
 file_png = png_output( OUTPUT_NAME : plotfile )
 
-if mode = 'batch' or mode = 'execute' then  
+if mode = 'batch' or mode = 'execute' then
   shell('mkdir -p '&plotdir)
- #setoutput(file_ps, file_png)  
-  setoutput(file_png)  
- #setoutput(file_ps)  
-end if  
+ #setoutput(file_ps, file_png)
+  setoutput(file_png)
+ #setoutput(file_ps)
+end if
 
 case levtype of
-  'ml' : 
+  'ml' :
     p_scale = 'linear'
     p_min   = 1
     p_max   = nlev
     end
-  'pl' : 
+  'pl' :
     p_scale = 'logarithmic'
     p_min   = 1
     p_max   = 1000
@@ -588,7 +596,7 @@ function layout(lev_type,p_scale,p_min,p_max)
     else
         axis_title_text     = "Model Level"
     end if
-   
+
     if p_scale = "linear" then
         y_axis_type = "regular"
     else
@@ -619,25 +627,25 @@ function layout(lev_type,p_scale,p_min,p_max)
          bottom_level        :  p_max)
     end if
 
-    Page = plot_page(  
-        TOP                      :  5, 
-        BOTTOM                   :  98, 
-        LEFT                     :  0, 
-        RIGHT                    :  105, 
-        ROWS                     :  1, 
-        COLUMNS                  :  1, 
-        PAGE_X_GAP               :  0, 
-        PAGE_Y_GAP               :  0, 
+    Page = plot_page(
+        TOP                      :  5,
+        BOTTOM                   :  98,
+        LEFT                     :  0,
+        RIGHT                    :  105,
+        ROWS                     :  1,
+        COLUMNS                  :  1,
+        PAGE_X_GAP               :  0,
+        PAGE_Y_GAP               :  0,
         VIEW                     :  Cartesian_View )
 
-    Display_Window = plot_superpage(  
-        LAYOUT_SIZE              :  'A4', 
-        LAYOUT_ORIENTATION       :  'LANDSCAPE', 
-        CUSTOM_WIDTH             :  29.7, 
-        CUSTOM_HEIGHT            :  21.0, 
+    Display_Window = plot_superpage(
+        LAYOUT_SIZE              :  'A4',
+        LAYOUT_ORIENTATION       :  'LANDSCAPE',
+        CUSTOM_WIDTH             :  29.7,
+        CUSTOM_HEIGHT            :  21.0,
         PAGES                    :  Page )
 
-    return Display_Window 
+    return Display_Window
 end layout
 
 
@@ -653,7 +661,7 @@ function avgtime_met(fields,nfld,nsteps)
          meanall=meanfld
       else
          meanall=meanall & meanfld
-      end if		
+      end if
    end for
    return meanall
 

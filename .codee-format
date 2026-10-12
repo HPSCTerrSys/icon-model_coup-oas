@@ -1,0 +1,143 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+---
+# For docs, refer to:
+#   https://docs.codee.com/formatter/style-options/
+
+AlignAmpersandToColumnLimit: false
+
+AlignAssignmentOperators: true
+
+AlignUseItems:
+  Kind:            OneItemPerLine
+  FirstLineFit:    FitIfPossible
+
+BreakBeforeBinaryOperators: true
+
+Casing:
+  Identifiers:     Preserve
+  Keywords:        Uppercase
+  LogicalConstants: Uppercase
+  LogicalOperators: Uppercase
+  RelationalOperators: Uppercase
+  UserDefinedOperators: Lowercase
+
+ColumnLimit:     132
+
+CommentDirectivePrefixes: []
+
+DisabledDirectivePrefixes: [
+  "$OMP",
+  "$ACC",
+  "ICON_OMP_PARALLEL",
+  "ICON_OMP_END_PARALLEL",
+  "ICON_OMP_DO",
+  "ICON_OMP_END_DO",
+  "ICON_OMP_END_DO_NOWAIT",
+  "ICON_OMP",
+  "ICON_OMP_PARALLEL_DO",
+  "ICON_OMP_END_PARALLEL_DO",
+  "ICON_OMP_BARRIER",
+  "ICON_OMP_SINGLE",
+  "ICON_OMP_END_SINGLE",
+  "ICON_OMP_MASTER",
+  "ICON_OMP_END_MASTER",
+  "ICON_OMP_WORKSHARE",
+  "ICON_OMP_END_WORKSHARE"
+]
+
+IgnoredPreprocessorDirectives: []
+
+IndentSize:      2
+
+IndentExceptions:
+  Contains:  IndentBeforeAndAfter
+  Comments:        Indent
+
+FixedFormLabelAlignment: Preserve
+
+ContinuationIndentSize: DoubleIndentSize
+
+DoubleColonSeparator: AddAlways
+
+EndOfLineNormalization: Unix
+
+EndStatementFormat: EndStructureAndName
+
+EndStatementSeparation:
+  EndAssociate:    Separated
+  EndBlockConstruct: Separated
+  EndBlockData:    Separated
+  EndCritical:     Separated
+  EndTeam:         Separated
+  EndDoLoop:       Separated
+  EndEnum:         Separated
+  EndEnumerationType: Separated
+  EndForall:       Separated
+  EndFunction:     Separated
+  EndIf:           Separated
+  EndInterface:    Separated
+  EndModule:       Separated
+  EndModuleProcedure: Separated
+  EndProgram:      Separated
+  EndSelect:       Separated
+  EndSubmodule:    Separated
+  EndSubroutine:   Separated
+  EndType:         Separated
+  EndWhere:        Separated
+
+EnsureNewlineAtEOF: false
+
+ConsecutiveEmptyLines:
+  MaxToKeep:       2
+  BetweenProcedures: 2
+  RemoveAtStartOfFile: true
+  RemoveAtEndOfFile: true
+
+KindKeywordPrefix: RemoveAlways
+
+MacroIdentifiers: []
+
+RelationalOperators: UseSymbols
+
+SpacesAroundOperators:
+  LeftParenthesisExpression: NoTrailing
+  LeftParenthesisGeneric: NoSpaces
+  LeftParenthesisKeyword: OnlyLeading
+  RightParenthesisExpression: NoLeading
+  RightParenthesisGeneric: NoLeading
+  RightParenthesisKeyword: NoLeading
+  Assignment:      Preserve
+  Association:     Both
+  ControlFlowAssignment: Both
+  KeywordAssignment: NoSpaces
+  ParameterAssignment: Preserve
+  BinaryArithmetic: Both
+  Exponentiation:  NoSpaces
+  DefinedBinary:   Both
+  DefinedUnary:    NoTrailing
+  Relational:      Both
+  RelationalLegacy: Both
+  LogicalBinary:   Both
+  LogicalNot:      NoTrailing
+  UnaryPlusMinus:  NoTrailing
+  Comma:           NoLeading
+  Concat:          NoSpaces
+  DoubleColon:     Both
+
+RemoveConsecutiveWhitespace: false
+
+RemoveSemicolons: true
+
+RemoveTrailingWhitespace: true
+
+SeparateMultipleInlineStatements: true
+...

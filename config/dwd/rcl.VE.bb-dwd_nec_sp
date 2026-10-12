@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+#
+# configure wrapper which is used for buildbot builder dwd_nec_sp (VE)
+#
+
+# Workaround to disable ppm DBLOCK_GET - note the space is important :)
+export DBLOCK_GET=" "
+
+"$(dirname -- "${BASH_SOURCE[0]}")"/rcl.VE.nfort-5.3.0_mpi-3.5_oper \
+  --disable-art \
+  --disable-dace \
+  --disable-emvorado \
+  --disable-grib2 \
+  --disable-jsbach-hd \
+  --disable-rttov \
+  --enable-jsbach \
+  --enable-ecrad \
+  --enable-single-precision-ecrad \
+  --disable-mixed-precision \
+  --enable-single-precision \
+  "$@"

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -31,7 +31,7 @@ function one_or_more_are_files
     # Invocation: one_or_more_are_files foo*
 
     #        $# is the number of arguments passed to this function
-    while [ "$#" != "0" ]; do # loop as long as there is an argument left 
+    while [ "$#" != "0" ]; do # loop as long as there is an argument left
         if [ -f "$1" ]; then
             # at least one file was found
             return 0
@@ -77,6 +77,12 @@ function copy_experiment
         if one_or_more_are_files ${EXP_ORI}/${EXP_ORI}_restart_lnd_*${RESTART_DATE}.nc 1> /dev/null 2>&1; then
             COMPS=${COMPS}' lnd'
         fi
+        if one_or_more_are_files ${EXP_ORI}/${EXP_ORI}_restart_wave_*${RESTART_DATE}.nc 1> /dev/null 2>&1; then
+            COMPS=${COMPS}' wave'
+        fi
+        if one_or_more_are_files ${EXP_ORI}/${EXP_ORI}_restart_jsbach_*${RESTART_DATE}.nc 1> /dev/null 2>&1; then
+            COMPS=${COMPS}' jsbach'
+        fi
 
         cd ${EXP_NEW}
 
@@ -87,11 +93,17 @@ function copy_experiment
             while [ "${DOM}" -le "${NDOM}" ]; do
                 if [ ${#DOM} -lt 2 ]; then
                     DOM=0${DOM}
-                fi 
+                fi
                 if [ ${NDOM} -eq 1 ]; then
                     ln -sf ${EXP_ORI}_restart_${COMP}_${RESTART_DATE}.nc restart_${COMP}_DOM${DOM}.nc
                 else
-                    ln -sf ${EXP_ORI}_restart_${COMP}_DOM${DOM}_${RESTART_DATE}.nc restart_${COMP}_DOM${DOM}.nc
+                    # check for available restart files and applied naming convention
+                    #   - the restart files in the icon-land standalone sitelevel setup have a "SITE" instead of the "DOM" tag
+                    if [ -f ${EXP_ORI}_restart_${COMP}_DOM${DOM}_${RESTART_DATE}.nc ]; then
+                        ln -sf ${EXP_ORI}_restart_${COMP}_DOM${DOM}_${RESTART_DATE}.nc restart_${COMP}_DOM${DOM}.nc
+                    elif [ -f ${EXP_ORI}_restart_${COMP}_SITE${DOM}_${RESTART_DATE}.nc ]; then
+                        ln -sf ${EXP_ORI}_restart_${COMP}_SITE${DOM}_${RESTART_DATE}.nc restart_${COMP}_DOM${DOM}.nc
+                    fi
                 fi
                 DOM=$(( DOM + 1 ))
             done
@@ -110,6 +122,9 @@ function copy_experiment
             fi
             if [ -d ${EXP_ORI}/${EXP_ORI}_restart_lnd_*${RESTART_DATE}.nc ]; then
                 COMPS=${COMPS}' lnd'
+            fi
+            if [ -d ${EXP_ORI}/${EXP_ORI}_restart_wave_*${RESTART_DATE}.nc ]; then
+                COMPS=${COMPS}' wave'
             fi
 
             cd ${EXP_NEW}
@@ -133,6 +148,9 @@ function copy_experiment
             if [ -d ${EXP_ORI}/${EXP_ORI}_restart_lnd_*${RESTART_DATE}.mfr ]; then
                 COMPS=${COMPS}' lnd'
             fi
+            if [ -d ${EXP_ORI}/${EXP_ORI}_restart_wave_*${RESTART_DATE}.mfr ]; then
+                COMPS=${COMPS}' wave'
+            fi
 
 	    cd ${EXP_NEW}
 
@@ -155,11 +173,11 @@ function print_usage
 {
     typeset COMMAND
     COMMAND=$1
-    
+
     echo "usage: ${COMMAND} [-c] [-d <dates>] [-e <experiment>] [-f yes|no] [-h] [-m <modes>] [-o yes|no] [-r <reference model path>] [-s <restart_date>] [-t <files>] [-u]"
     echo '-c : colour output'
     echo '-d : string containing the dates of the output files of the respective '
-    echo '     experiment, default depends on experiment' 
+    echo '     experiment, default depends on experiment'
     echo '-e : name of the experiment to be checked, default = atm_ape_test'
     echo '-f : '"'yes'"': force make_runscripts even if base runscript exists (default)'
     echo '     '"'no'"': perform make_runscripts only if no runscripts are available'
@@ -191,8 +209,8 @@ function diff_results
     MODEL_DIR2=$3
     DEXP2=$4
     TEST=$5
-    #TYPES: defined in main script and used from main script 
-    #DATES: defined in main script and used from main script 
+    #TYPES: defined in main script and used from main script
+    #DATES: defined in main script and used from main script
 
     # status variable that is evaluated after the function call
     DIFF_STATUS=0
@@ -258,13 +276,13 @@ function diff_results
         echo "- ${MODEL_DIR1}/experiments/${DEXP1}"
         echo "- ${MODEL_DIR2}/experiments/${DEXP2}"
         echo " "
-    
+
         for DATE in $DIFF_DATES; do
-    
+
             echo "------------------------------------------------------------------"
             echo "Compare for DATE=$DATE"
             DIFFERENT_TYPES=''
-    
+
             for TYPE in $TYPES; do
 
                 TEMP_SUFFIX=$(cat /dev/urandom | env LC_ALL=C tr -cd 'a-f0-9' | head -c 16)
@@ -342,16 +360,16 @@ function diff_results
 		fi
 
             done
-    
+
             if [ "x$DIFFERENT_TYPES" != 'x' -a $CAT_CDO_DIFFN == 'yes' ]; then
                 DIFF_STATUS=1
                 DIFF_DATE=$DATE
                 DIFF_TYPES=$DIFFERENT_TYPES
                 CAT_CDO_DIFFN='no'
             fi
-    
+
         done
-    
+
         if [ $DIFF_STATUS == 0 ]; then
             echo " "
             echo "The experiments are equal"
@@ -375,7 +393,9 @@ function tolerance_check
 
     cd $MODEL_DIR
     builder=$(echo "${BB_NAME}" | tr '[:upper:]' '[:lower:]')
-    run/tolerance/check_tolerance "$EXPERIMENT" "${builder/_gpu/_cpu}" "$MODEL_DIR1" "$EXP_BASE" "$FACTOR"
+    reference_builder=${builder/_gpu/_cpu}
+
+    run/tolerance/check_tolerance "$EXPERIMENT" "$reference_builder" "$MODEL_DIR1" "$EXP_BASE" "$FACTOR"
     return $?
 }
 
@@ -414,7 +434,8 @@ function performance_check
         --i-table 0 \
         --measurement-uncertainty 2 \
         --tolerance-factor 1.04 \
-        --new-reference-threshold 0.96
+        --new-reference-threshold 0.96 \
+        --timer-sections "total,physics,nh_solve"
     TOL_STATUS=$?
 
     # get the relevant success check
@@ -454,7 +475,7 @@ make_sure_cdo_exists_and_runs() {
 }
 
 #------------------------------------------------------------------------
-# Functions to set or get namelist parameters assuming one parameter per line 
+# Functions to set or get namelist parameters assuming one parameter per line
 
 nml_replace(){
     PARAM=$1
@@ -478,21 +499,43 @@ nml_add(){
         sed -e '/\s*&'${NML}'/a\'$'\n'${PARAM}' = '${VALUE} < ${FILE} > ${FILE}.out
         mv ${FILE}.out ${FILE}
     else
-        echo "$0:${FUNCNAME}: ERROR namelist ${NML} not found in ${FILE}"
-        exit 1
+        # if the namelist is not present, add it before the parallel_nml namelist
+        echo "$0:${FUNCNAME}: WARNING namelist ${NML} not found in ${FILE}"
+
+        sed -e "s[&parallel_nml[\&${NML}\n${PARAM} = ${VALUE}\n/\n\&parallel_nml[" < ${FILE} > ${FILE}.out
+        mv ${FILE}.out ${FILE}
     fi
 }
 
 nml_replace_or_add(){
-    PARAM=$1
-    VALUE=$2
-    NML=$3
-    FILE=$4
+    local PARAM=$1
+    local VALUE=$2
+    local NML=$3
+    local FILE=$4
     if grep -q '^[[:space:]]*'${PARAM}'[[:space:]]*=' ${FILE}; then
         nml_replace ${PARAM} ${VALUE} ${FILE}
     else
         nml_add ${PARAM} ${VALUE} ${NML} ${FILE}
     fi
+}
+
+nml_replace_or_add_nested(){
+    PREFIX=$1
+    PARAM=$2
+    VALUE=$3
+    NML=$4
+    FILE=$5
+
+    no_of_domains=1
+    if grep -v '^#' $FILE | grep -q "atmo_dyn_grids="; then
+        eval "$(grep -v '^#' $FILE | grep "atmo_dyn_grids=")"
+        no_of_domains=$(echo $atmo_dyn_grids | wc -w)
+    fi
+
+    for dom in $(seq 1 $no_of_domains); do
+        FULL_PARAM="$PREFIX($dom)%$PARAM"
+        nml_replace_or_add $FULL_PARAM $VALUE $NML $FILE
+    done
 }
 
 #################### main script ########################################
@@ -516,7 +559,7 @@ while getopts ":cd:e:f:hm:o:r:s:t:u" OPT; do
         h  ) print_usage $0
             exit 1
             ;;
-        m  ) MODE=$OPTARG 
+        m  ) MODE=$OPTARG
             case $MODE in
                 'base')              MD='b';;
                 'update')            MD='u';;
@@ -540,7 +583,7 @@ while getopts ":cd:e:f:hm:o:r:s:t:u" OPT; do
                   b|u|r|n|m|o|t|p|c|g )
                      (( i += 1 ))
                      ;;
-                  *) 
+                  *)
                      print_usage $0
                      exit 1
                      ;;
@@ -583,7 +626,7 @@ COLOUR=${COLOUR='no'}
 # Experiment
 EXPERIMENT=${EXPERIMENT='atm_ape_test'}
 # Force to run "make_runscripts" for the specified experiment even
-# if the respective runscript is present 
+# if the respective runscript is present
 FORCE_MRS=${FORCE_MRS='yes'}
 # Test mode
 #
@@ -605,7 +648,7 @@ REFERENCE=${REFERENCE=''}
 # Do not calculate differences between differing files
 SUB_FILES=${SUB_FILES='no'}
 
-# Set defaults for file types, dates, and the restart date for the 
+# Set defaults for file types, dates, and the restart date for the
 # checks depending on the experiment.
 if [ "${EXPERIMENT}" == 'atm_amip_les_test' ]; then
     TYPES=${TYPES='atm_2d_ml atm_3d_ml lnd_basic_ml'}
@@ -652,16 +695,21 @@ if [ "${EXPERIMENT}" == 'atm_2mom_bubble_rceTorus_test' ]; then
     DATES=${DATES='20080801T000000Z 20080801T000200Z 20080801T000400Z'}
     RESTART_DATE=${RESTART_DATE='20080801T000200Z'}
 fi
+if [ "${EXPERIMENT}" == 'atm_qubicc_test_aero' ]; then
+    TYPES=${TYPES='wa_ml' 'va_ml' 'ua_ml' 'tend_va_vdf_ml' 'tend_ua_vdf_ml' 'tend_ta_vdf_ml' 'tend_ta_rsw_ml' 'tend_ta_rlw_ml' 'tend_ta_mig_ml' 'ta_ml' 'rho_ml' 'qs_ml' 'qr_ml' 'qg_ml' 'pfull_ml' 'hus_ml' 'flx2d_ml' 'aer_3d_ml'}
+    DATES=${DATES='19790101T000040Z 19790101T000120Z 19790101T000200Z 19790101T000240Z 19790101T000320Z 19790101T000400Z'}
+    RESTART_DATE=${RESTART_DATE='19790101T000200Z'}
+fi
 
 echo " "
 echo "=================================================================="
 echo " "
 echo "Run the checksuite for:"
-echo "- EXPERIMENT   = ${EXPERIMENT:?   is not defined --> ERROR}"
-echo "- TYPES        = ${TYPES:?        is not defined --> ERROR}"
-echo "- DATES        = ${DATES:?        is not defined --> ERROR}"
-echo "- RESTART_DATE = ${RESTART_DATE:? is not defined --> ERROR}"
-echo "- CHECK MODE   = ${MD:?           is not defined --> ERROR}"
+echo "- EXPERIMENT   = ${EXPERIMENT:?   is not defined --> ERROR}" # compulsory
+echo "- TYPES        = ${TYPES}"
+echo "- DATES        = ${DATES}"
+echo "- RESTART_DATE = ${RESTART_DATE}"
+echo "- CHECK MODE   = ${MD:?           is not defined --> ERROR}" # compulsory
 echo "------------------------------------------------------------------"
 echo " "
 
@@ -729,13 +777,13 @@ EXP_TEST=${EXPERIMENT}_${TEST}
 if [ "${OVERWRITE}" == 'yes' -o ! -d ${MODEL_DIR}/experiments/${EXP_BASE} ]; then
     cd ${SCRIPT_DIR}
     RUN_SCRIPT=${PREFIX}.${EXP_BASE}.run
-    sed    s/${SCRIPT}/${EXP_BASE}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT} # change experiment name
-    sed -i s/data.${EXP_BASE}/data.${SCRIPT}/g             ${RUN_SCRIPT} # except in the data package name
+    # change experiment name except in the data package name
+    sed "s/${SCRIPT}/${EXP_BASE}/g;s/data.${EXP_BASE}/data.${SCRIPT}/g" ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
 
     echo "Perform $TEST run"
     chmod 755 ${RUN_SCRIPT}
     ${SCRIPT_DIR}/${RUN_SCRIPT}
-    
+
 
     STATUS=$?
     if [ "$STATUS" -eq 0 ]; then
@@ -763,7 +811,7 @@ if [[ ${MD} =~ .*u.* ]]; then
     TEST='update'
     cd ${REFERENCE} || exit 1
     RUN_STATUS=-1
-    if [ ! -d experiments/${EXP_BASE} ] ;then 
+    if [ ! -d experiments/${EXP_BASE} ] ;then
         if [ ! -f run/${PREFIX}.${SCRIPT}.run -o "$FORCE_MRS" == 'yes' ]; then
             ${MODEL_DIR}/make_runscripts ${SCRIPT} ${MRS_SUBDIR:+-r ${MRS_SUBDIR}}
         fi
@@ -785,8 +833,8 @@ if [[ ${MD} =~ .*u.* ]]; then
         fi
 
         RUN_SCRIPT=${PREFIX}.${EXP_BASE}.run
-        sed    s/${SCRIPT}/${EXP_BASE}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT} # change experiment name
-        sed -i s/data.${EXP_BASE}/data.${SCRIPT}/g             ${RUN_SCRIPT} # except in the data package name
+        # change experiment name, except in the data package name
+	sed "s/${SCRIPT}/${EXP_BASE}/g;s/data.${EXP_BASE}/data.${SCRIPT}/g" ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
 
         echo "Perform $TEST run"
         chmod 755 ${RUN_SCRIPT}
@@ -841,8 +889,8 @@ if [[ ${MD} =~ .*r.* ]]; then
 
         RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
         cd ${SCRIPT_DIR}
-        sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
-        sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
+        # change experiment name, except in the data package name
+        sed "s/${SCRIPT}/${EXP_TEST}/g;s/data.${EXP_TEST}/data.${SCRIPT}/g" ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
 
         sed s/restart:=\".false.\"/restart:=\".true.\"/g < ${RUN_SCRIPT} > ${RUN_SCRIPT}.out
         mv ${RUN_SCRIPT}.out ${RUN_SCRIPT}
@@ -890,19 +938,30 @@ if [[ ${MD} =~ .*n.* ]]; then
 
         RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
         cd ${SCRIPT_DIR}
-        sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
-        sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
+        # change experiment name, except in the data package name
+        sed "s/${SCRIPT}/${EXP_TEST}/g;s/data.${EXP_TEST}/data.${SCRIPT}/g" ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
 
-        N_NPROMA=`grep "nproma=" ${RUN_SCRIPT}`
-        N_NPROMA=${N_NPROMA#nproma=}
-        ((N_NPROMA_NEW=N_NPROMA + 1))
-        sed s/nproma=$N_NPROMA/nproma=$N_NPROMA_NEW/g < ${RUN_SCRIPT} > ${RUN_SCRIPT}.out
-        mv ${RUN_SCRIPT}.out ${RUN_SCRIPT}
+	TEST_POSSIBLE=no
+        N_NPROMA_NEW=$nproma
+        N_NBLOCKS_C_NEW=$nblocks_c
 
-        echo "Perform $TEST run"
-        chmod 755 ${RUN_SCRIPT}
-        ${SCRIPT_DIR}/${RUN_SCRIPT}
-        RUN_STATUS=$?
+        if ((nproma > 0)); then
+            ((N_NPROMA_NEW=nproma + 1))
+            TEST_POSSIBLE=yes
+        elif ((nblocks_c > 0)); then
+            ((N_NBLOCKS_C_NEW=nblocks_c + 1))
+            TEST_POSSIBLE=yes
+        fi
+
+        if [[ $TEST_POSSIBLE == yes ]]; then
+            echo "Perform $TEST run"
+            chmod 755 ${RUN_SCRIPT}
+            nproma=$N_NPROMA_NEW nblocks_c=$N_NBLOCKS_C_NEW ${SCRIPT_DIR}/${RUN_SCRIPT}
+            RUN_STATUS=$?
+        else
+            echo "ERROR: Could not determine nproma-setting mechanism (neither nproma nor nblocks_c are valid)"
+            RUN_STATUS=1
+        fi
 
     else
         echo "Found $TEST run"
@@ -941,18 +1000,16 @@ if [[ ${MD} =~ .*m.* ]]; then
     EXP_TEST=${EXPERIMENT}_${TEST}
     if [ "${OVERWRITE}" == 'yes' -o ! -d ${MODEL_DIR}/experiments/${EXP_TEST} ]; then
         cd ${SCRIPT_DIR}
-        MPI=`grep with_mpi ${PREFIX}.${SCRIPT}.run`
+        MPI=`grep '# with_mpi=' ${PREFIX}.${SCRIPT}.run`
         MPIYES='# with_mpi=yes'
         if [ "$MPI" == "$MPIYES" ]; then
 
             # find out how many nodes and processes per node are in use
 
-            N_NODES=`grep "no_of_nodes=" ${PREFIX}.${SCRIPT}.run`
-            eval N_NODES=\""${N_NODES#'no_of_nodes='}"\"
             OMP_NUM_THREADS=`grep "export OMP_NUM_THREADS=" ${PREFIX}.${SCRIPT}.run`
             eval OMP_NUM_THREADS=\""${OMP_NUM_THREADS#'export OMP_NUM_THREADS='}"\"
-            N_PPNODE=`grep "mpi_procs_pernode=" ${PREFIX}.${SCRIPT}.run`
-            eval N_PPNODE=\""${N_PPNODE#'mpi_procs_pernode='}"\"
+            N_NODES=${no_of_nodes:?no_of_nodes not set}
+            N_PPNODE=${mpi_procs_pernode:?mpi_procs_pernode not set}
             N_PROCS=$(( N_NODES * N_PPNODE ))
 
             if [ $N_PROCS -gt 1 ]; then
@@ -961,43 +1018,28 @@ if [[ ${MD} =~ .*m.* ]]; then
 
                 RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
                 cd ${SCRIPT_DIR}
-                sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
-                sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
+                # change experiment name, except in the data package name
+                sed "s/${SCRIPT}/${EXP_TEST}/g;s/data.${EXP_TEST}/data.${SCRIPT}/g" ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
+
+                N_NODES_NEW=$N_NODES
+                N_PPNODE_NEW=$N_PPNODE
 
                 if [ $N_PPNODE -gt 1 ]; then
 
                     # keep number of nodes, and use one process less per node
-
-	            N_NODES_NEW=$N_NODES
                     N_PPNODE_NEW=$(( N_PPNODE - 1 ))
-
-                    # change script variables
-                    sed -i \
-                      's/\b\(mpi_procs_pernode\)=.*/\1='"$N_PPNODE_NEW"'/g' \
-                      ${RUN_SCRIPT}
 
 	        else
 
                     # use one node less and keep one process per node
 
 	            N_NODES_NEW=$(( N_NODES - 1 ))
-	            N_PPNODE_NEW=$N_PPNODE
-
-                    # change script variables
-	            sed -i \
-                      's/\b\(no_of_nodes\)=.*/\1='"$N_NODES_NEW"'/g' \
-                      ${RUN_SCRIPT}
 
 	        fi # N_PPNODE>1
 
-                N_PROCS_NEW=$(( N_NODES_NEW * N_PPNODE_NEW ))
-                sed -i \
-                  's/((\(mpi_total_procs=\).*/\1'"$N_PROCS_NEW"'/g' \
-                  ${RUN_SCRIPT}
-
                 echo "Perform $TEST run"
                 chmod 755 ${RUN_SCRIPT}
-                ${SCRIPT_DIR}/${RUN_SCRIPT}
+                no_of_nodes=$N_NODES_NEW mpi_procs_pernode=$N_PPNODE_NEW ${SCRIPT_DIR}/${RUN_SCRIPT}
                 RUN_STATUS=$?
 
             else
@@ -1056,7 +1098,7 @@ if [[ ${MD} =~ .*o.* ]]; then
     EXP_TEST=${EXPERIMENT}_${TEST}
     if [ "${OVERWRITE}" == 'yes' -o ! -d ${MODEL_DIR}/experiments/${EXP_TEST} ]; then
         cd ${SCRIPT_DIR}
-        OMP=`grep with_openmp ${PREFIX}.${SCRIPT}.run`
+        OMP=`grep '# with_openmp=' ${PREFIX}.${SCRIPT}.run`
         OMPYES='# with_openmp=yes'
         if [ "$OMP" == "$OMPYES" ]; then
 
@@ -1072,8 +1114,8 @@ if [[ ${MD} =~ .*o.* ]]; then
 	        TEST_POSSIBLE='yes'
 
                 RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
-                sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
-                sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
+                # change experiment name, except in the data package name
+                sed "s/${SCRIPT}/${EXP_TEST}/g;s/data.${EXP_TEST}/data.${SCRIPT}/g" ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
 
                 N_OMP_NUM_THREADS_NEW=$(( N_OMP_NUM_THREADS - 1 ))
 	        N_ICON_THREADS_NEW=$(( N_ICON_THREADS - 1 ))
@@ -1082,15 +1124,15 @@ if [[ ${MD} =~ .*o.* ]]; then
                 # number of tasks to the number of threads, these need
                 # to be fixed too
                 OMP_NUM_THREADS=$N_OMP_NUM_THREADS
-                N_PPNODE=`grep "mpi_procs_pernode=" ${PREFIX}.${SCRIPT}.run`
-                eval N_PPNODE=\""${N_PPNODE#'mpi_procs_pernode='}"\"
+                N_PPNODE=${mpi_procs_pernode:?mpi_procs_pernode not set}
 
                 # change script variables
-                sed -i \
+                sed \
                   -e 's/\b\(OMP_NUM_THREADS\)=.*/\1='"$N_OMP_NUM_THREADS_NEW"'/g' \
                   -e 's/\b\(ICON_THREADS\)=.*/\1='"$N_ICON_THREADS_NEW"'/g' \
                   -e 's/\b\(mpi_procs_pernode\)=.*/\1='"$N_PPNODE"'/g' \
-                      ${RUN_SCRIPT}
+                  ${RUN_SCRIPT} > ${RUN_SCRIPT}.out
+                mv ${RUN_SCRIPT}.out ${RUN_SCRIPT}
 
                 echo "Perform $TEST run"
                 chmod 755 ${RUN_SCRIPT}
@@ -1212,11 +1254,12 @@ if [[ ${MD} =~ .*g.* ]]; then
 
         RUN_SCRIPT=${PREFIX}.${EXP_TEST}.run
         cd ${SCRIPT_DIR}
-        sed    s/${SCRIPT}/${EXP_TEST}/g < ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
-        sed -i s/data.${EXP_TEST}/data.${SCRIPT}/g             ${RUN_SCRIPT}
+        # change experiment name, except in the data package name
+        sed "s/${SCRIPT}/${EXP_TEST}/g;s/data.${EXP_TEST}/data.${SCRIPT}/g" ${PREFIX}.${SCRIPT}.run > ${RUN_SCRIPT}
 
         nml_replace_or_add lcuda_graph_lnd .TRUE. lnd_nml ${RUN_SCRIPT}
         nml_replace_or_add lcuda_graph_turb_tran .TRUE. nwp_phy_nml ${RUN_SCRIPT}
+        nml_replace_or_add_nested "aes_vdf_config" "lcuda_graph_vdf" .TRUE. aes_vdf_nml ${RUN_SCRIPT}
 
         echo "Perform $TEST run"
         chmod 755 ${RUN_SCRIPT}

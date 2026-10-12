@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,8 +14,9 @@ MODULE mo_gme_turbdiff
   USE mo_kind,               ONLY : wp
   USE mo_physical_constants, ONLY: grav, cpd, rcpd, vtmpc1, p0ref, rd_o_cpd, &
                                    tmelt, alvdcp, alv, als, rd, rdv, O_m_rdv
-  USE mo_satad,              ONLY: sat_pres_water, sat_pres_ice, spec_humi, dqsatdT
-  USE data_turbulence,       ONLY: Rkarman => akt, tkhmin, tkmmin
+  USE mo_thdyn_functions,    ONLY: sat_pres_water, sat_pres_ice, spec_humi, dqsatdT
+  USE mo_turbdiff_config,    ONLY: t_turbdiff_config
+
   USE mo_lnd_nwp_config,     ONLY: lseaice
 
   USE mo_exception,          ONLY: message
@@ -31,27 +32,32 @@ MODULE mo_gme_turbdiff
 
   PUBLIC :: partura, parturs, progimp_turb, nearsfc
 
+  REAL(wp), POINTER :: Rkarman
+
   CONTAINS
 
-SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
-     &              qv  , qc , ph , pf ,        &
-     &              ie  , ke , ke1,             &
-     &              i_startidx, i_endidx,       &
+SUBROUTINE partura( tdc ,                      &
+                    zh  , zf , u  , v  , t  ,  &
+     &              qv  , qc , ph , pf ,       &
+     &              ie  , ke , ke1,            &
+     &              i_startidx, i_endidx,      &
      &              tkvm, tkvh)
 !
- 
+
 !**** *partura*  calculates atmospheric turbulent exchange coefficients
- 
+
 !     Purpose:   Calculation of turbulent atmospheric exchange
 !                coefficients for momentum and heat/moisture
 !     METHOD
 !     ------
 !     -  second order closure on level 2 following MELLOR and YAMADA
-!      
+!
 !==============================================================================
 
   IMPLICIT NONE
-!
+
+  TYPE(t_turbdiff_config), POINTER :: tdc ! 'turbdiff' configuration state for a single patch (domain)
+
 ! array dimensions
   INTEGER, INTENT(IN) :: ie, ke, ke1, &        ! horizontal, vertical
                          i_startidx, i_endidx  ! start and end indices of loops in horizontal
@@ -69,14 +75,14 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
 ! turbulent diffusion coefficients (m^2/s)
   REAL(KIND=wp), INTENT(INOUT) :: tkvm(ie,2:ke) ! for momentum
   REAL(KIND=wp), INTENT(INOUT) :: tkvh(ie,2:ke) ! for heat
- 
+
 ! Local arrays and variables
 
       REAL(KIND=wp) :: ztpm   (ie)
       REAL(KIND=wp) :: ztph   (ie)
       REAL(KIND=wp) :: zdzq   (ie)
       REAL(KIND=wp) :: zriza  (ie)
-      REAL(KIND=wp) :: ztetlu (ie) 
+      REAL(KIND=wp) :: ztetlu (ie)
       REAL(KIND=wp) :: ztetlo (ie)
       REAL(KIND=wp) :: zbetatu(ie)
       REAL(KIND=wp) :: zbetato(ie)
@@ -95,10 +101,10 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
       REAL(KIND=wp) :: zclwco (ie)
 
       INTEGER :: j1,j3 ! loop indices over spatial dimensions
-      INTEGER :: ms       ! 
-!    
+      INTEGER :: ms       !
+!
 !     local physical parameters
-!      
+!
 !     minimum diffusion coefficient (fraction of neutral value) for
 !     very stable conditions (RI >= RIK) in the free atmosphere
       REAL(KIND=wp) :: ztmmin_a  ! for momentum
@@ -133,12 +139,12 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
       REAL(KIND=wp), PARAMETER :: zac1(2) = (/ 0.8333_wp , 1.285_wp  /)
       REAL(KIND=wp), PARAMETER :: zac2(2) = (/ 0.2805_wp , 0.2305_wp /)
       REAL(KIND=wp), PARAMETER :: zac3(2) = (/ 0.1122_wp ,-0.1023_wp /)
- 
+
 !     minimum diffusion coefficient (fraction of neutral value) for
 !     very stable conditions (RI >= RIK) in the ABL
       REAL(KIND=wp), PARAMETER :: ztmmin = 0.010_wp   ! for momentum
       REAL(KIND=wp), PARAMETER :: zthmin = 0.007_wp   ! for heat
- 
+
 !     minimum diffusion coefficient (absolute value) for
 !     very stable conditions (RI >= RIK) in the ABL (specified via namelist now)
       REAL(KIND=wp) :: ztkmmin  ! old default 1.0_wp  ! for momentum
@@ -153,9 +159,11 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
 !
       IF ( msg_level >= 15) CALL message( 'mo_gme_turbdiff:', 'partura')
 
+      Rkarman => tdc%akt
+
       ! take minimum diffusion coefficients from namelist
-      ztkmmin   = tkmmin
-      ztkhmin   = tkhmin
+      ztkmmin   = tdc%tkmmin
+      ztkhmin   = tdc%tkhmin
 
 !     Presettings
       ztmmin_a  = ztmmin *0.1_wp
@@ -193,20 +201,20 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
 
 !       Store liquid water and water vapour content of lowest layer
         zclwcu(j1) = qc(j1,ke)
-        zclvcu(j1) = qv(j1,ke) 
+        zclvcu(j1) = qv(j1,ke)
 
       END DO     ! lowest layer calculations
 
       DO j3 = ke, 2, -1     ! Vertical loop
- 
+
 !       Calculation of non-convective partial cloud cover
         DO j1 = i_startidx, i_endidx
- 
-!         Critical relative humdity as function of p/ps     
+
+!         Critical relative humdity as function of p/ps
           zsigma = pf(j1,j3-1)/ph(j1,ke1)
           zuc    = 0.95_wp - Rh_cr1*zsigma*(1._wp-zsigma)    &
-           &                 *(1._wp+Rh_cr2*(zsigma-0.5_wp)) 
- 
+           &                 *(1._wp+Rh_cr2*(zsigma-0.5_wp))
+
 !         total water content (water vapour + liquid) of top layer
           zqdw   = qv(j1,j3-1) + qc(j1,j3-1)
 !         saturation specific humdity over water
@@ -214,16 +222,16 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
 
 !         cloud liquid water limit value: 0.5% of saturation humidity
           IF ( t(j1,j3-1) >= tmelt ) THEN
-            zclwcmn = zsw*zclwfak  
+            zclwcmn = zsw*zclwfak
           ELSE
 !           saturation specific humdity over ice
             zsi     = spec_humi ( sat_pres_ice  ( t(j1,j3-1)), pf(j1,j3-1))
             zclwcmn = zsi*zclwfak             !  for T<tmelt
           ENDIF
- 
-!         partial cloud cover as function of relative humidity   
+
+!         partial cloud cover as function of relative humidity
           zcs    = MAX( 0.0_wp, MIN( 1._wp,(zqdw/zsw-zuc)/(Rh_cr3-zuc)))**2
- 
+
 !         store top layer partial cloud cover and liquid water content
           zclco(j1) = zcs
           IF(zclco(j1) > 0.0_wp) THEN
@@ -234,15 +242,15 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
 
 !         grid-scale cloud existence has first priority
           IF ( qc(j1,j3-1) > 0.0_wp ) THEN
-            zclco(j1)= 1.0_wp         
-            zclwco(j1)= qc(j1,j3-1) 
+            zclco(j1)= 1.0_wp
+            zclwco(j1)= qc(j1,j3-1)
           ENDIF
- 
+
 !         total water content must not be affected by partial cloud cover
           zclvco(j1)= qv(j1,j3-1) + qc(j1,j3-1) - zclwco(j1)
- 
+
         END DO
- 
+
 !     compute source functions and Richardson number in cloud-free
 !     situation: Zu is below (unten), Zo is above (oben)
         DO j1 = i_startidx, i_endidx
@@ -261,14 +269,14 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
           zmzb        = zh(j1,j3) - zh(j1,ke1)
           zdzq(j1) = (Rkarman*zmzb/(1._wp+zmzb/zdze))**2
 
-!       utility variable for modified Richardson number 
+!       utility variable for modified Richardson number
           ztet(j1) = t(j1,j3-1) * EXP( rd_o_cpd*LOG(p0ref/pf(j1,j3-1)) )
         END DO
 
 !     modified Richardson number in the presence of clouds
         DO j1 = i_startidx, i_endidx
- 
-!         at cloud base, only upper layer values are computed 
+
+!         at cloud base, only upper layer values are computed
           IF( zclco(j1) > 0.0_wp .AND. zclcu(j1) <= 0.0_wp ) THEN
             ztetlo(j1) = ztet(j1)*( 1._wp-alvdcp*zclwco(j1)/t(j1,j3-1) )
             ztl        = t(j1,j3-1)-zclwco(j1)*alvdcp
@@ -281,7 +289,7 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
              &                  -(1._wp+vtmpc1)*ztet(j1)*zedtetv )
             zbetawo(j1)= ztet(j1)*zedtetv*(vtmpc1-(1._wp+vtmpc1)*za)  &
              &           + za*alvdcp/t(j1,j3-1)
-          ELSE 
+          ELSE
             ztetlo(j1) = 0._wp
             zbetato(j1)= 0._wp
             zbetawo(j1)= 0._wp
@@ -314,8 +322,8 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
           ELSE
             ztphww(j1) = 0._wp
           ENDIF
- 
-!     if cloud cover in top layer is greater equal lower layer  
+
+!     if cloud cover in top layer is greater equal lower layer
           IF( zclcu(j1) > 0._wp .AND. zclco(j1) >= zclcu(j1) ) THEN
             ztph(j1) = (1._wp-zclcu(j1))*ztph(j1) + zclcu(j1)*ztphww(j1)
           ENDIF
@@ -333,7 +341,7 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
             zdqdt      = dqsatdT (ztl,zgqd)
             za         = 1._wp/(1._wp+zdqdt*alvdcp)
             zb         = za*t(j1,j3-1)*zdqdt/ztet(j1)
-            zedtetv    = 1._wp/(ztet(j1)*(1._wp+vtmpc1*zclvco(j1))) 
+            zedtetv    = 1._wp/(ztet(j1)*(1._wp+vtmpc1*zclvco(j1)))
             zbetatog   = 1._wp/ztet(j1)
             zbetawog   = ztet(j1)*zedtetv*vtmpc1
             zbetatn    = (zgewo*zbetatog + zgewu*zbetatu(j1))/         &
@@ -353,21 +361,21 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
 
         DO j1 = i_startidx, i_endidx
           zriza(j1) = ztph(j1)/ztpm(j1)
- 
+
 !       swap values needed for next layer:
           ztetlu(j1) = ztetlo(j1)
           zbetatu(j1)= zbetato(j1)
           zbetawu(j1)= zbetawo(j1)
           zclcu(j1)  = zclco(j1)
-          zclwcu(j1) = zclwco(j1) 
+          zclwcu(j1) = zclwco(j1)
           zclvcu(j1) = zclvco(j1)
         END DO
 !
 !=======================================================================
-! 
+!
 !     compute vertical exchange coefficients
         DO j1 = i_startidx, i_endidx
-      
+
 !     very stable case   (Ri > Rik)
           IF(zriza(j1) >= zrik) THEN   ! very stable case
 
@@ -386,27 +394,27 @@ SUBROUTINE partura( zh  , zf , u  , v  , t   ,  &
             ELSE
               ms = 1
             END IF
- 
+
 !     flux Richardson number as function of gradient Richardson number
             zrf = zac1(ms)*( zriza(j1) + zac2(ms)         &
      &           -SQRT(zriza(j1)**2-zac3(ms)*zriza(j1)    &
      &                             +zac2(ms)**2) )
             zrf = MIN ( zrf, 0.99999_wp )
- 
+
             zgam = zrf/(1.0_wp-zrf)    ! stability parameter gamma
- 
-!         SM(zgam)**1.5 and ALH(zgam)    
+
+!         SM(zgam)**1.5 and ALH(zgam)
             zgs  = (1.0_wp-zab1(ms)*zgam)/(1.0_wp-zab2(ms)*zgam)
             zsm  = SQRT(((1._wp-zaa(ms)*zgam)/zgs)**3)
             zalh = zalhn*zgs
- 
+
 !         exchange coefficients for momentum and heat
 !         a) for actual time step
             ztkvmom   = zdzq(j1)*zsm* SQRT( ztpm(j1) - zalh*ztph(j1))
             ztkvhom   = ztkvmom*zalh
 !         b) weighted average using previous values
-            tkvm(j1,j3) = zalf*ztkvmom + z1malf*tkvm(j1,j3) 
-            tkvh(j1,j3) = zalf*ztkvhom + z1malf*tkvh(j1,j3) 
+            tkvm(j1,j3) = zalf*ztkvmom + z1malf*tkvm(j1,j3)
+            tkvh(j1,j3) = zalf*ztkvhom + z1malf*tkvh(j1,j3)
           ENDIF
 
 !       set lower limit for exchange coefficients
@@ -426,12 +434,13 @@ END SUBROUTINE partura
 
 !=======================================================================
 
-SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
+SUBROUTINE parturs( tdc  ,                                        &
+                    zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
                     t_g  , qv_s, ps   , fr_land, h_ice,           &
                     ie   , i_startidx , i_endidx,                 &
                     tcm  , tch , gz0  ,                           &
                     shfl_s, lhfl_s, qhfl_s, umfl_s, vmfl_s, lacc )
- 
+
 !**** *parturs*  calculates turbulent transfer coefficients
 !=======================================================================
 !
@@ -441,13 +450,16 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !     METHOD
 !     ------
 !     -  DYER-BUSINGER relations (modified by J.F.LOUIS)
-!      
+!
 !------------------------------------------------------------------------------
 
   IMPLICIT NONE
 !
 !     Input data
 !
+
+  TYPE(t_turbdiff_config), POINTER :: tdc   ! 'turbdiff' configuration state for a single patch (domain)
+
   INTEGER,       INTENT(IN) :: ie,      &   ! array dimensions
                                i_startidx, i_endidx  ! start and end indices of loops
 
@@ -465,8 +477,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 
 !     Output data
 
-  REAL(KIND=wp), INTENT(INOUT)   :: tcm (ie) ! transfer coefficient for momentum  
-  REAL(KIND=wp), INTENT(INOUT)   :: tch (ie) ! transfer coefficient for heat/moisture 
+  REAL(KIND=wp), INTENT(INOUT)   :: tcm (ie) ! transfer coefficient for momentum
+  REAL(KIND=wp), INTENT(INOUT)   :: tch (ie) ! transfer coefficient for heat/moisture
   REAL(KIND=wp), INTENT(INOUT)   :: gz0 (ie) ! roughness length * g (m2/s2)
 
   REAL(KIND=wp), INTENT(INOUT)   :: shfl_s(ie) ! sensible   heat flux at surface (W/m2)
@@ -474,7 +486,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
   REAL(KIND=wp), INTENT(INOUT)   :: qhfl_s(ie) ! moisture   flux at surface (kg/m2/s)
   REAL(KIND=wp), INTENT(INOUT)   :: umfl_s(ie) ! u-momentum flux at the surface (N/m2)
   REAL(KIND=wp), INTENT(INOUT)   :: vmfl_s(ie) ! v-momentum flux at the surface (N/m2)
- 
+
 !     Local arrays and variables
 
   REAL(KIND=wp) :: zvpb (ie) ! wind speed in Prandtl layer
@@ -486,8 +498,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
   REAL(KIND=wp) :: zgz0m(ie) ! roughness length for momentum
   REAL(KIND=wp) :: zgz0h(ie) ! roughness length for sensible and latent heat
   LOGICAL       :: lo_ice(ie) ! logical sea ice indicator
- 
- 
+
+
 !     local physical parameters
   REAL(KIND=wp), PARAMETER :: zah = 5.3_wp
   REAL(KIND=wp), PARAMETER :: zgz0hh = 0.98_wp     ! upper limit for roughness length for heat
@@ -495,7 +507,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
   REAL(KIND=wp), PARAMETER :: zalpha0 = 0.0150_wp  ! Charnock constant for roughness length computation
                                                    !  over sea for momentum (modifified by B.Ritter 29/3/2001)
                                                    ! In COSMO alpha0= 0.0123
-  REAL(KIND=wp), PARAMETER :: zalphah = 0.60_wp    !  constant for roughness length computation 
+  REAL(KIND=wp), PARAMETER :: zalphah = 0.60_wp    !  constant for roughness length computation
                                                    !  over sea for scalar quantities (latent and sensible heat)
                                                    ! modifified by B.Ritter 13/6/2001 (from 0.50)
   REAL(KIND=wp), PARAMETER :: zviscos = 1.5E-05_wp !  kinematic viscosity constant (m**2/s)
@@ -503,8 +515,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
   REAL(KIND=wp), PARAMETER :: z10 = 10._wp
   REAL(KIND=wp), PARAMETER :: zvmin = 0.01_wp      !  minimum wind velocity
 ! minimum value for transfer coefficients (as fractions of the neutral value for stable conditions)
-  REAL(KIND=wp), PARAMETER :: ztmmin = 0.140_wp    !  minimum transfer coefficient      
-  REAL(KIND=wp), PARAMETER :: zthmin = 0.010_wp    !  minimum transfer coefficient      
+  REAL(KIND=wp), PARAMETER :: ztmmin = 0.140_wp    !  minimum transfer coefficient
+  REAL(KIND=wp), PARAMETER :: zthmin = 0.010_wp    !  minimum transfer coefficient
   REAL(KIND=wp), PARAMETER :: z0tWMO = 3.0E-2_wp   ! "WMO rougness lengths" for temperature [m]
   REAL(KIND=wp) :: zustar   !
 
@@ -520,10 +532,12 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 
       CALL assert_acc_device_only("parturs", lacc)
 
+      Rkarman => tdc%akt
+
       !$ACC DATA CREATE(zvpb, zx, ztcm, ztch, zdfip, zris, zgz0m, zgz0h, lo_ice)
 
       IF ( msg_level >= 25) CALL message( 'mo_gme_turbdiff:', 'parturs')
- 
+
 !     wind velocity in Prandtl layer
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR
@@ -536,8 +550,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
         END IF
       END DO
       !$ACC END PARALLEL
- 
-!     calculation of new transfer coefficients   
+
+!     calculation of new transfer coefficients
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR PRIVATE(ztvg, ztvs, zgz0d, zgz0dd, zxi, zxih, zy, rho_s, zustar)
       DO j1 = i_startidx, i_endidx
@@ -547,18 +561,21 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
         zx   (j1)= ( ztvs - ztvg + rcpd*zdfip(j1) )*zdfip(j1)/t_g(j1)
         zris (j1)= zx(j1)/zvpb(j1)**2
         zx   (j1)= ABS(zx(j1))
- 
+
 !     for sea points compute initial value of roughness length, if
 !     necessary (e.g. model cold start)
 !     note, that sea roughness lengths for timestep 0 are generally
-!     defined via the first guess forecast in the data assimilation 
-        IF ( fr_land(j1) < 0.5_wp .AND. gz0(j1) <= 0.0_wp ) THEN
+!     defined via the first guess forecast in the data assimilation
+
+        IF ( fr_land(j1) <= 0.5_wp .AND. gz0(j1) <= 0.0_wp ) THEN
+            !Note: This definition of a non-land surface is now in line with the ICON-definition
+            !       using "frlnd_thrhld=z1d2"
 
 !         use constant value of 0.001 m for roughness length over sea ice
           IF ( lo_ice(j1) ) THEN
             gz0(j1) = 0.001_wp*grav
 
-!         define z0 over open water                        
+!         define z0 over open water
           ELSE
             zgz0d   = zalpha0*( zvpb(j1)/(1.0_wp/zbeta10                  &
                                +LOG( zdfip(j1)/(grav*z10) )/Rkarman) )**2
@@ -575,25 +592,25 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 
           ENDIF
         ENDIF     ! need to define z0 over water at initial time
- 
+
         zgz0m(j1)=MIN( gz0(j1),0.5*zdfip(j1)) ! limit z0 for momentum
 
-        IF ( ( fr_land(j1) < 0.5_wp) .AND.  &      ! derive z0 for heat
+        IF ( ( fr_land(j1) <= 0.5_wp) .AND.  &      ! derive z0 for heat
          &  .NOT. lo_ice(j1) ) THEN                ! over open sea
           zustar      = SQRT(zgz0m(j1)/zalpha0)    ! friction velocity derived
-                                                   ! from z0 for momentum (Charnock) 
+                                                   ! from z0 for momentum (Charnock)
           zgz0h(j1)= grav*zviscos*zalphah/MAX(1.E-8_wp,zustar)
-        ELSE 
+        ELSE
           zgz0h(j1)= zgz0m(j1)                  ! use z0m over land and sea ice
         ENDIF
         zgz0h(j1)=MIN( zgz0h(j1),zgz0hh)        ! limit z0 for heat
 
-!       IF ( lz0_snow .AND.( fr_land(j1) >= 0.5_wp) ) THEN
+!       IF ( lz0_snow .AND.( fr_land(j1) > 0.5_wp) ) THEN
 !          IF( gz0s(j1) > 0._wp)   zgz0h(j1) = MIN( gz0s(j1), zgz0hh)
 !       END IF
 
         zxi         = zdfip(j1)/zgz0m(j1)
-        zxih        = zdfip(j1)/zgz0h(j1) 
+        zxih        = zdfip(j1)/zgz0h(j1)
         zy          = (Rkarman/LOG(zxi))**2
 
         IF ( zris(j1) >= 0.0_wp ) THEN
@@ -601,33 +618,33 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 
           ztcm(j1) = zy*zvpb(j1)*MAX ( ztmmin, 1.0_wp/               &
                     (1.0_wp + 10.0_wp*zris(j1)/                      &
-                     SQRT( 1.0_wp + 5.0_wp*zris(j1) ) ) ) 
+                     SQRT( 1.0_wp + 5.0_wp*zris(j1) ) ) )
           ztch(j1) = Rkarman**2/(LOG(zxi)*LOG(zxih))*zvpb(j1)*          &
                      MAX ( zthmin, 1.0_wp/(1.0_wp + 15.0_wp*zris(j1)*   &
-                     SQRT( 1.0_wp + 5.0_wp*zris(j1) ) ) ) 
- 
+                     SQRT( 1.0_wp + 5.0_wp*zris(j1) ) ) )
+
 !         new z0 (for momentum) over sea
-          IF ( fr_land(j1) < 0.5_wp ) THEN
+          IF ( fr_land(j1) <= 0.5_wp ) THEN
             IF ( lo_ice(j1) ) THEN
-!             z0=0.001 m above sea ice              
+!             z0=0.001 m above sea ice
               gz0(j1) = 0.001_wp*grav
             ELSE
 !             Charnock formula over open water for z0
               gz0 (j1) = zalpha0*ztcm(j1)*zvpb(j1)
             ENDIF
           ENDIF
- 
+
         ELSE
 !         unstable case
- 
+
 !         Land points (only transfer coefficients)
-          IF ( fr_land(j1) >= 0.5_wp ) THEN
+          IF ( fr_land(j1) > 0.5_wp ) THEN
             ztcm(j1) = zy*zvpb(j1)*(1._wp - 10.0_wp*zris(j1)/                      &
              & (1._wp + 75.0_wp*zy*(zxi**z1d3-1.0_wp)**1.5_wp*SQRT( -zris(j1) ) ))
             ztch(j1) = Rkarman**2/(LOG(zxi)*LOG(zxih))*zvpb(j1)*                   &
              & (1._wp-15.0_wp*zris(j1)/(1._wp+75.0_wp*SQRT(zy)*Rkarman/LOG(zxih)*  &
              &  (zxih**z1d3-1.0_wp)**1.5_wp*SQRT( -zris(j1) ) ))
- 
+
 !       Sea points (transfer coefficients and z0)
           ELSE
             ztcm(j1) = zy*zvpb(j1)*(1._wp - 10.0_wp*zris(j1)/       &
@@ -636,7 +653,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
              & (1._wp - 15.0_wp*zris(j1)/(1._wp + 75.0_wp*SQRT(zy)*Rkarman/LOG(zxih)* &
              &   SQRT( -zris(j1)*zxih ) ))
 
-!         z0=0.001 m above sea ice              
+!         z0=0.001 m above sea ice
             IF ( lo_ice(j1) ) THEN
               gz0(j1) = 0.001_wp*grav
             ELSE
@@ -649,9 +666,9 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 
             ENDIF
           ENDIF
- 
+
         ENDIF
- 
+
 !     store final results in output arrays
 !     tcm and tch are dimensionless quantities
         tcm  (j1) =  ztcm(j1)/zvpb(j1)
@@ -674,8 +691,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 
         umfl_s(j1) = -ztcm(j1)*rho_s * u1(j1)
         vmfl_s(j1) = -ztcm(j1)*rho_s * v1(j1)
-        
- 
+
+
       END DO
       !$ACC END PARALLEL
 
@@ -729,7 +746,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 ! REAL(KIND=wp), INTENT(IN) :: qi   (ie,ke)   ! cloud ice at full levels
 ! REAL(KIND=wp), INTENT(IN) :: qr   (ie,ke)   ! specific rain content; optional (ntype_gsp==3)
 ! REAL(KIND=wp), INTENT(IN) :: qs   (ie,ke)   ! specific snow content; optional (ntype_gsp==3)
-! REAL(KIND=wp), INTENT(IN) :: o3   (ie,ke)   ! ozone mass mixing ratio at full levels; 
+! REAL(KIND=wp), INTENT(IN) :: o3   (ie,ke)   ! ozone mass mixing ratio at full levels;
   REAL(KIND=wp), INTENT(IN) :: zh   (ie,ke1)  ! height of half levels (m)
   REAL(KIND=wp), INTENT(IN) :: zf   (ie,ke)   ! height of full levels (m)
   REAL(KIND=wp), INTENT(IN) :: rho  (ie,ke)   ! air density at full levels (kg/m3)
@@ -769,7 +786,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
   REAL(KIND=wp) :: rdzrho          ! reciprocal of the layer thickness "zdp"
 !
 !     The following zag* arrays are used in the solution of the
-!     tri-diagonal equation system resulting from the implicit 
+!     tri-diagonal equation system resulting from the implicit
 !     treatment of diffusion
 !
   REAL(KIND=wp) :: zaga       ,  &  ! terms involving the layer above
@@ -807,7 +824,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
       a1t(ke-3) = 0.9_wp
       a1t(ke-4) = 0.8_wp
 !a1t(:) = 0._wp   ! explicit test
-!   
+!
 !=======================================================================
 !
       zagc(:,ke) = 0._wp
@@ -820,7 +837,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !        A(j3)*du(j3-1) + B(j3)*du(j3) + C(j3)*du(j3+1) = D(j3)
 !
 !     where j3 is the index of the layers.
-!     
+!
 !=======================================================================
 !
 ! 3.3 Compute the modified vertical transfer and diffusion coefficients
@@ -828,7 +845,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
       DO j1 = i_startidx, i_endidx
 !
 !     Wind speed at lowest model layer (j3 = ke)
-!  
+!
         zvm(j1) = SQRT( u(j1,ke)**2 + v(j1,ke)**2)
 !
 !     density at the surface
@@ -878,8 +895,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
       DO j3 = 2, ke-1
         DO j1 = i_startidx, i_endidx
           rdzrho      = 1._wp/( rho(j1,j3)*( zh(j1,j3+1)-zh(j1,j3)) )
-          zagat       = ztmkv (j1,j3)  *rdzrho          
-          zagct       = ztmkv (j1,j3+1)*rdzrho          
+          zagat       = ztmkv (j1,j3)  *rdzrho
+          zagct       = ztmkv (j1,j3+1)*rdzrho
           zaga        = -zagat*a1t(j3)
           zagc(j1,j3) = -zagct*a1t(j3+1)
           zagb        = rdt - zaga - zagc(j1,j3)
@@ -936,7 +953,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !       umfl_s(j1) = -ztmcm(j1) * ( du_turb(j1,ke) + u(j1,ke) )
 !       vmfl_s(j1) = -ztmcm(j1) * ( dv_turb(j1,ke) + v(j1,ke) )
 !     ENDDO
-! 
+!
 !     Calculate tendencies du_turb = du/dt, dv_turb = dv/dt
       du_turb(:,:) = rdt*du_turb(:,:)
       dv_turb(:,:) = rdt*dv_turb(:,:)
@@ -960,7 +977,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !        A(j3)*dT(j3-1) + B(j3)*dT(j3) + C(j3)*dT(j3+1) = D(j3)
 !
 !     where j3 is the index of the layers. Uses Thomas Algorithm
-!     
+!
 !=======================================================================
 !
 ! 4.7 Compute the modified vertical transfer and diffusion coefficients
@@ -1005,10 +1022,10 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !       zag4(j1,1) = zagct*( qi(j1,2) - qi(j1,1))
 !
         zagc(j1,1) = zagc(j1,1)/zagb
-        zag1(j1,1) = zag1(j1,1)/zagb         
-        zag2(j1,1) = zag2(j1,1)/zagb         
-        zag3(j1,1) = zag3(j1,1)/zagb         
-!       zag4(j1,1) = zag4(j1,1)/zagb         
+        zag1(j1,1) = zag1(j1,1)/zagb
+        zag2(j1,1) = zag2(j1,1)/zagb
+        zag3(j1,1) = zag3(j1,1)/zagb
+!       zag4(j1,1) = zag4(j1,1)/zagb
 !
       ENDDO
 !
@@ -1017,8 +1034,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
       DO j3 = 2, ke-1
         DO j1 = i_startidx, i_endidx
           rdzrho      = 1._wp/( rho(j1,j3)*( zh(j1,j3+1)-zh(j1,j3)) )
-          zagat       = ztmkv(j1,j3)  *rdzrho          
-          zagct       = ztmkv(j1,j3+1)*rdzrho          
+          zagat       = ztmkv(j1,j3)  *rdzrho
+          zagct       = ztmkv(j1,j3+1)*rdzrho
           zaga        = -zagat*a1t(j3)
           zagc(j1,j3) = -zagct*a1t(j3+1)
           zagb        = rdt - zaga - zagc(j1,j3)
@@ -1028,9 +1045,9 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
           zag2(j1,j3) =  zagat*( qv(j1,j3-1) - qv(j1,j3))  &
             &          + zagct*( qv(j1,j3+1) - qv(j1,j3))
           zag3(j1,j3) =  zagat*( qc(j1,j3-1) - qc(j1,j3))  &
-            &          + zagct*( qc(j1,j3+1) - qc(j1,j3)) 
+            &          + zagct*( qc(j1,j3+1) - qc(j1,j3))
 !         zag4(j1,j3) =  zagat*( qi(j1,j3-1) - qi(j1,j3))  &
-!           &          + zagct*( qi(j1,j3+1) - qi(j1,j3)) 
+!           &          + zagct*( qi(j1,j3+1) - qi(j1,j3))
 !
           zt3         = 1._wp/( zagb - zaga*zagc(j1,j3-1))
 !
@@ -1051,11 +1068,11 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
         zagat       = ztmkv(j1,ke)*rdzrho
         zagct       = ztmcm (j1)  *rdzrho
         zaga        = -zagat*a1t(ke)
-        zagb        = rdt - zaga - zagct*a1t(ke1)           
+        zagb        = rdt - zaga - zagct*a1t(ke1)
         zag1(j1,ke) =  zagat*( t (j1,ke-1) - t(j1,ke) + g_o_cp*( zf(j1,ke-1)-zf(j1,ke)) ) &
           &          - zagct*( t_g(j1    ) - t(j1,ke) + g_o_cp*( zh(j1,ke1 )-zf(j1,ke)) )
         zag2(j1,ke) =  zagat*( qv(j1,ke-1) - qv(j1,ke)) &
-          &          - zagct*( qv_s(j1   ) - qv(j1,ke)) 
+          &          - zagct*( qv_s(j1   ) - qv(j1,ke))
         zag3(j1,ke) =  zagat*( qc(j1,ke-1) - qc(j1,ke)) &
           &          + zagct*  qc(j1,ke)
 !       zag4(j1,ke) =  zagat*( qi(j1,ke-1) - qi(j1,ke)) &
@@ -1118,8 +1135,9 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 
 !==============================================================================
 
-  SUBROUTINE nearsfc( t     , qv    , u     , v     , zf   ,  &
-               &      ps    , t_g   , tcm   , tch   , gz0  ,  &  ! gz0s, 
+  SUBROUTINE nearsfc( tdc   ,                                 &
+                      t     , qv    , u     , v     , zf   ,  &
+               &      ps    , t_g   , tcm   , tch   , gz0  ,  &  ! gz0s,
                &      shfl_s, lhfl_s, umfl_s, vmfl_s, zsurf,  &
                &      fr_land,pf1   , qv_s  , ie    , ke   ,  &
                &      i_startidx, i_endidx,                   &
@@ -1135,7 +1153,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !     rh_2m:     relative humidity         at  2 m above ground
 !     u_10m:     zonal wind component      at 10 m above ground
 !     v_10m:     meridional wind component at 10 m above ground
-!     
+!
 !==============================================================================
 
   USE mo_lookup_tables_constants, ONLY:  &
@@ -1147,8 +1165,11 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !
 !=======================================================================
 !
+
+  TYPE(t_turbdiff_config), POINTER :: tdc      ! 'turbdiff' configuration state for a single patch (domain)
+
 ! array dimensions
-  INTEGER, INTENT(IN) :: ie, ke,   &         ! horizontal, vertical
+  INTEGER, INTENT(IN) :: ie, ke,   &           ! horizontal, vertical
                          i_startidx, i_endidx  ! start and end indices of loops in horizontal
 
 !=======================================================================
@@ -1221,9 +1242,9 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
                zh_2m,      & ! dry static energy at 2 m
                zp_2m,      & ! pressure at 2 m
                zp_p,       & ! pressure at the top of the Prandtl layer
-               zpsat_2m,   & ! saturation pressure with respect to water 
+               zpsat_2m,   & ! saturation pressure with respect to water
 !                              at a height of 2 m above ground
-               zpsat_p,    & ! saturation pressure with respect to water 
+               zpsat_p,    & ! saturation pressure with respect to water
 !                              at the height of the Prandtl layer
                zqvs_2m,    & ! specific humidity  at a height of 2 m at
 !                              saturation
@@ -1240,9 +1261,9 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
       REAL(KIND=wp) :: &
                rho_s     , & ! Surface density [kg m^(-3)]
                ufr_s     , & ! Surface firction velocity [m s^(-1)]
-               psiMO_tp  , & ! The Monin-Obukhov (MO) stability function for temperature profile 
+               psiMO_tp  , & ! The Monin-Obukhov (MO) stability function for temperature profile
                              ! relative to the first model layer above the surface [-]
-               psiMO_t2  , & ! The MO stability function for temperature profile 
+               psiMO_t2  , & ! The MO stability function for temperature profile
                              ! relative to the 2m above the surface [-]
                lOburecip , & ! Reciprocal of the Obukhov length [m^(-1)]
                z0tWMO_g  , & ! "WMO rougness lengths" for temperature times G [m^2 s^(-2)]
@@ -1276,6 +1297,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 
       CALL set_acc_host_or_device(lzacc, lacc)
 
+      Rkarman => tdc%akt
+
       !$ACC DATA CREATE(zv, zcm, zch, zgz0) IF(lzacc)
 
 !_dm<
@@ -1283,7 +1306,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !=======================================================================
 !
 ! 1.  Preliminary settings
-!   
+!
 !     Minimum wind speed
       zvmin   = 0.01_wp
 !
@@ -1342,7 +1365,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
         IF ( zfi_p > z10g ) THEN
 !
 !     Derive the 10 m wind by inverting the flux-
-!     gradient relation in the Prandtl layer (assuming constant fluxes 
+!     gradient relation in the Prandtl layer (assuming constant fluxes
 !     of momentum and heat)
 !
 !     Stable stratification
@@ -1389,7 +1412,7 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
         IF ( zfi_p > z2g ) THEN
 !
 !     Derive the 2 m temperature by inverting the flux-
-!     gradient relation in the Prandtl layer (assuming constant fluxes 
+!     gradient relation in the Prandtl layer (assuming constant fluxes
 !     of momentum and heat)
 !
 
@@ -1409,8 +1432,8 @@ SUBROUTINE parturs( zsurf, z1  , u1   , v1     , t1   , qv1  ,    &
 !  perhaps with due regard for the water loading effect.
 !
 !  Over water, an old procedure to diagnose T2m is used.
-!Water_or_Land: IF( .NOT. lolp(j1) ) THEN 
-Water_or_Land: IF( fr_land(j1) < 0.5_wp ) THEN 
+!Water_or_Land: IF( .NOT. lolp(j1) ) THEN
+Water_or_Land: IF( fr_land(j1) <= 0.5_wp ) THEN
 !_dm<
 
 !     Stable stratification
@@ -1476,7 +1499,7 @@ Water_or_Land: IF( fr_land(j1) < 0.5_wp ) THEN
 !  The Moni-Obukhov stability functions
               IF(lOburecip <= 0._wp) THEN
 !  The Obukhov length proves to be negative, indicating unstable stratification
-!  (this is unlikely but it may happen as the stability criterium used above is based upon 
+!  (this is unlikely but it may happen as the stability criterium used above is based upon
 !  the dry static energy difference between the surface and the first model layer,
 !  not upon the sign of the surface buoyancy flux).
 !  Set the MO stability functions to zero and interpolate along the logarithmic curve.
@@ -1492,7 +1515,7 @@ Water_or_Land: IF( fr_land(j1) < 0.5_wp ) THEN
 !  The Moni-Obukhov stability functions
               IF(lOburecip .GE. 0._wp) THEN
 !  The Obukhov length proves to be positive, indicating stable stratification
-!  (this is unlikely but it may happen as the stability criterium used above is based upon 
+!  (this is unlikely but it may happen as the stability criterium used above is based upon
 !  the dry static energy difference between the surface and the first model layer,
 !  not upon the sign of the surface buoyancy flux).
 !  Set the MO stability functions to zero and interpolate along the logarithmic curve.
@@ -1561,7 +1584,7 @@ Water_or_Land: IF( fr_land(j1) < 0.5_wp ) THEN
 !     Specific humidity at 2 m above ground under the assumption of
 !     constant relative humidity in the Prandtl layer
 !
-        zqv_2m_min = 0.05_wp*zqvs_2m ! set the minimum specific humidity in 2 m 
+        zqv_2m_min = 0.05_wp*zqvs_2m ! set the minimum specific humidity in 2 m
                                      ! according to a minimum relative humidity of 5%
         zqv_2m     = MAX ( zqv_2m_min, qv(j1,ke)*zqvs_2m/zqvs_p )
         qv_2m(j1) = zqv_2m

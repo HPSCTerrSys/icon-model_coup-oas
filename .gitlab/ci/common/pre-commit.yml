@@ -1,0 +1,71 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/utils/git.yml
+  - local: .gitlab/ci/common/any-image.yml
+
+# Implements the common template for jobs that require the pre-commit package.
+# Enables the pre-commit command in the environment and installs all hooks
+# listed in .pre-commit-config.yaml.
+#
+.common:pre-commit:
+  extends:
+    - .common:any-image
+    - .utils:git:ignore
+  variables:
+    # Internal variables:
+    ICON_CI_COMMON_PRE_COMMIT_CACHE_PATH: ${ICON_CI_UTILS_GIT_IGNORE_PATH}/pre-commit
+    PRE_COMMIT_HOME: ${ICON_CI_COMMON_PRE_COMMIT_CACHE_PATH}/cache
+    PRE_COMMIT_COLOR: always
+  image: registry.gitlab.dkrz.de/icon/containers/icon-ci-pre-commit:ec72b697
+  before_script:
+    - !reference [.common:any-image, before_script]
+    - |
+      # !reference [.common:pre-commit, before_script]
+      icon_ci_log_section_start 'Installing pre-commit hooks'
+      (
+        set -u
+
+        python3 --version
+        pre-commit --version
+
+        cache_path=${PRE_COMMIT_HOME}
+
+        # Invalidate the cache if the versions of Python and pre-commit have
+        # changed:
+        cache_key="$(python3 -c 'import sys; print("python", sys.version)')
+        $(pre-commit --version)"
+        cache_key_path="${ICON_CI_COMMON_PRE_COMMIT_CACHE_PATH}/key"
+
+        echo "${cache_key}" | diff - "${cache_key_path}" >/dev/null 2>&1 && {
+          icon_ci_log_info_msg "Using cache from '${cache_path}'..."
+        } || (
+          icon_ci_log_info_msg "Initializing cache in '${cache_path}'..."
+          set -x
+          # Fully reset the cache:
+          rm -rf "${cache_path}"
+          mkdir -p "${cache_path}"
+          echo "${cache_key}" > "${cache_key_path}"
+        )
+
+        set -x
+        # Install pre-commit hooks:
+        pre-commit install-hooks
+      ) 2>&1
+      icon_ci_log_section_end
+  cache:
+    - key:
+        prefix: pre-commit-hooks-${CI_JOB_IMAGE}
+        files:
+          - .pre-commit-config.yaml
+      paths:
+        - ${ICON_CI_COMMON_PRE_COMMIT_CACHE_PATH}

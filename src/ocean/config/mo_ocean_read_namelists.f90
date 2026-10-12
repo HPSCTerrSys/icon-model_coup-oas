@@ -1,17 +1,16 @@
-! Read namelists, make sanity checks specific to each namelist and make
-! a cross check once all namelists of a component are available.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Read namelists, make sanity checks specific to each namelist and make
+! a cross check once all namelists of a component are available.
 
 MODULE mo_ocean_read_namelists
 
@@ -38,7 +37,7 @@ MODULE mo_ocean_read_namelists
   USE mo_hamocc_nml          ,ONLY: read_hamocc_namelist
 
   USE mo_name_list_output_init,ONLY: read_name_list_output_namelists
-#ifndef __NO_ICON_ATMO__
+#ifdef YAC_coupling
   USE mo_coupling_nml        ,ONLY: read_coupling_namelist
 #endif
 
@@ -110,7 +109,7 @@ CONTAINS
 
     ! Coupling
     !
-#ifndef __NO_ICON_ATMO__
+#ifdef YAC_coupling
     CALL read_coupling_namelist       (TRIM(oce_namelist_filename))
 #endif
 
@@ -135,7 +134,7 @@ CONTAINS
 
     ! write an annotate table of all namelist settings to a text file
     IF (my_process_is_stdio()) CALL log_nml_settings(TRIM(oce_namelist_filename)//".log")
-    
+
   END SUBROUTINE read_ocean_namelists
   !-------------------------------------------------------------------------
 

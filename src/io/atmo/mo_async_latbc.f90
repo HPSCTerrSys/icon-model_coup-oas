@@ -1,18 +1,16 @@
-! This module contains the I/O routines for lateral boundary nudging
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
-!
+
+! This module contains the I/O routines for lateral boundary nudging
+
 ! ------------------------------------------------------------------------
 ! Which fields are read from the lateral boundary conditions file?
 ! ------------------------------------------------------------------------
@@ -23,8 +21,8 @@
 ! - "W" is optional and read if available in the input data (note that "W" may in fact contain OMEGA).
 ! - "QV", "QC", "QI" are always read
 ! - "QR", "QS" are read if available
-! - Other tracer fields (such as ART tracers) are read, if available AND contained in the variable group 
-!   LATBC_PREFETCH_VARS. This allows to skip the read-in of individual fields, if their latbc entry in tracers.xml is 
+! - Other tracer fields (such as ART tracers) are read, if available AND contained in the variable group
+!   LATBC_PREFETCH_VARS. This allows to skip the read-in of individual fields, if their latbc entry in tracers.xml is
 !   empty.
 !
 ! The other fields for the lateral boundary conditions are read
@@ -203,7 +201,7 @@ MODULE mo_async_latbc
   USE mo_async_latbc_utils,         ONLY: read_init_latbc_data
   USE mo_async_latbc_utils,         ONLY: reopen_latbc_file
 #endif
-  USE mo_impl_constants,            ONLY: SUCCESS, TIMELEVEL_SUFFIX, vname_len
+  USE mo_impl_constants,            ONLY: SUCCESS, TIMELEVEL_SUFFIX, vname_len, nintv_latbc
   USE mo_cdi_constants,             ONLY: GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_EDGE
   USE mo_communication,             ONLY: idx_no, blk_no
   USE mo_nonhydro_state,            ONLY: p_nh_state, p_nh_state_lists
@@ -221,7 +219,7 @@ MODULE mo_async_latbc
   USE mo_run_config,                ONLY: iqs
   USE mo_util_sort,                 ONLY: quicksort
   USE mo_time_config,               ONLY: time_config
-  USE mtime,                        ONLY: datetime, OPERATOR(+)
+  USE mtime,                        ONLY: datetime, OPERATOR(+), OPERATOR(>=)
   USE mo_cdi,                       ONLY: vlistInqVarZaxis, streamInqVlist, &
        &                                  vlistNvars, zaxisInqSize, vlistInqVarName,         &
        &                                  streamInqFiletype,                                 &
@@ -240,8 +238,6 @@ MODULE mo_async_latbc
 
   IMPLICIT NONE
   PRIVATE
-
-  INCLUDE 'netcdf.inc'
 
 #ifndef NOMPI
     PUBLIC :: prefetch_main_proc
@@ -293,6 +289,7 @@ CONTAINS
     LOGICAL                 :: done
     TYPE(t_latbc_data)      :: latbc
     TYPE(datetime)          :: latbc_read_datetime
+    INTEGER                 :: i, ji
 #ifdef COUP_OAS_ECLM
     INTEGER :: oas_error
 #endif
@@ -322,7 +319,11 @@ CONTAINS
       CALL async_pref_wait_for_start(done)
       IF(done) CYCLE ! leave loop, we are done
       ! perform input prefetching
-      latbc_read_datetime = latbc%mtime_last_read + latbc%delta_dtime
+      ji = 1
+      DO i = 1, nintv_latbc-1
+        IF (latbc%mtime_last_read >= latbc%intv(i)%bcintv_enddate) ji = i+1
+      ENDDO
+      latbc_read_datetime = latbc%mtime_last_read + latbc%intv(ji)%delta_dtime
       CALL prefetch_latbc_data(latbc, latbc_read_datetime)
       ! Inform compute PEs that we are done
       CALL async_pref_send_handshake()
@@ -711,7 +712,7 @@ CONTAINS
     ! allocate input data for lateral boundary nudging
     IF (is_work) THEN
       CALL read_init_latbc_data(latbc, p_patch(1:), p_int_state(1), p_nh_state(1), &
-        &                       latbc%new_latbc_tlev, latbc_varnames_dict)
+        &                       latbc%new_latbc_tlev, latbc_varnames_dict, lacc=.TRUE.)
     ELSE IF (is_pref) THEN
       CALL async_init_latbc_data(latbc)
     ENDIF
@@ -939,8 +940,8 @@ CONTAINS
            numlbc_tracer = numlbc_tracer + 1
            ! Check if additional tracer variables are provided as input
            IF (.NOT. cur_var%info%in_group(latbc_prefetch_vars_grp_id)) THEN
-             ! Force lread_tracer to .FALSE. for additional (mainly for ART pollen) tracers that are not part of 
-             ! LATBC_PREFETCH_VARS, i.e. their latbc entry in tracers.xml is empty. Also see variable c_latbc in 
+             ! Force lread_tracer to .FALSE. for additional (mainly for ART pollen) tracers that are not part of
+             ! LATBC_PREFETCH_VARS, i.e. their latbc entry in tracers.xml is empty. Also see variable c_latbc in
              ! art_tracer_def_wrapper in mo_art_tracer_def_wrapper.f90.
              buffer%lread_tracer(numlbc_tracer) = .FALSE.
            ELSE

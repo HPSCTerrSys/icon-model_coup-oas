@@ -1,13 +1,7 @@
-! Contains the interpolation routines needed for grid refinement.
-!
-! These had originally been included in mo_grf_interpolation but then were
-! packed into a separate module to clean up the code
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -15,13 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the interpolation routines needed for grid refinement.
+!
+! These had originally been included in mo_grf_interpolation but then were
+! packed into a separate module to clean up the code
+
 ! #ifdef __xlC__
 ! @PROCESS HOT
 ! #endif
-#ifdef __PGI
-!pgi$g opt=1
-#endif
-
 !----------------------------
 #include "omp_definitions.inc"
 !----------------------------
@@ -621,32 +616,32 @@ END SUBROUTINE init_fbk_wgt
 !! Detailed illustration of the idx_2a/idx_2b stencils:
 !!
 !!   The dotted edges "..." denote
-!!   
-!!             idx_2a for edge "_____"                          idx_2b for edge "_____"       
-!!                              ^^^^^                                            ^^^^^        
-!!                                                                                      
-!!     /    \    /   \    /    \    /    \                /    \    /   \    /    \    /    \  ! 
-!!    /      \  /     \  /      \  /      \              /      \  /     \  /      \  /      \ ! 
-!!   /________\/...5...\/....4...\/________\            /________\/_______\/________\/________\! 
-!!   \        /\       ::        /\        /            \        /\       /\        /\        /! 
-!!    \      /  \     :  :      /  \      /              \      /  \     /  \      /  \      / ! 
-!!     \    /    \   3    2    /    \    /                \    /    \   /    \    /    \    /  ! 
-!!      \  /      \ :      :  /      \  /                  \  /      \ /      \  /      \  /   ! 
-!!       \/________:____1___:/________\/                    \/________/________\/________\/    ! 
-!!       /\       /\^^^^^^^^/\        /\                    /\       /:^^^^^^^^:\        /\    ! 
-!!      /  \     /  \      /  \      /  \                  /  \     /  :      :  \      /  \   ! 
-!!     /    \   /    \    /    \    /    \                /    \   /    :    :    \    /    \  ! 
-!!    /      \ /      \  /      \  /      \              /      \ /      :  :      \  /      \ ! 
-!!   /________/________\/________\/________\            /________/........::........\/________\! 
-!!   \        /\       /\        /\        /            \        /\       /\        /\        /! 
-!!    \      /  \     /  \      /  \      /              \      /  \     /  \      /  \      / ! 
-!!   
+!!
+!!             idx_2a for edge "_____"                          idx_2b for edge "_____"
+!!                              ^^^^^                                            ^^^^^
+!!
+!!     /    \    /   \    /    \    /    \                /    \    /   \    /    \    /    \  !
+!!    /      \  /     \  /      \  /      \              /      \  /     \  /      \  /      \ !
+!!   /________\/...5...\/....4...\/________\            /________\/_______\/________\/________\!
+!!   \        /\       ::        /\        /            \        /\       /\        /\        /!
+!!    \      /  \     :  :      /  \      /              \      /  \     /  \      /  \      / !
+!!     \    /    \   3    2    /    \    /                \    /    \   /    \    /    \    /  !
+!!      \  /      \ :      :  /      \  /                  \  /      \ /      \  /      \  /   !
+!!       \/________:____1___:/________\/                    \/________/________\/________\/    !
+!!       /\       /\^^^^^^^^/\        /\                    /\       /:^^^^^^^^:\        /\    !
+!!      /  \     /  \      /  \      /  \                  /  \     /  :      :  \      /  \   !
+!!     /    \   /    \    /    \    /    \                /    \   /    :    :    \    /    \  !
+!!    /      \ /      \  /      \  /      \              /      \ /      :  :      \  /      \ !
+!!   /________/________\/________\/________\            /________/........::........\/________\!
+!!   \        /\       /\        /\        /            \        /\       /\        /\        /!
+!!    \      /  \     /  \      /  \      /              \      /  \     /  \      /  \      / !
+!!
 !!   These stencils are calculated as follows:
-!!   
+!!
 !!   1   : parent edge
 !!   2,3 : edges of parent cell in which inner child edge of 1 is located
 !!   4,5 : calculated via "quad indices".
-!!   
+!!
 SUBROUTINE grf_index(p_patch, p_patch_local_parent, p_grf_state_local_parent)
 
 TYPE(t_patch),         TARGET, INTENT(IN)    :: p_patch(n_dom_start:)
@@ -788,7 +783,7 @@ LEV_LOOP: DO jg = n_dom_start, n_dom-1
         ! of the parent cell in which the child cell is located, plus the 2
         ! edges of the neighbor cells of the parent cell that have (approximately)
         ! the same orientation as the child edge
-        
+
         ! Skip outer boundary points for limited-area radiation grids. They cannot be
         ! computed correctly but are not needed anyway
         IF (jg == 0 .AND. ptr_ep%refin_ctrl(je,jb) >= -3) THEN

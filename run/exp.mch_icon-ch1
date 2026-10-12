@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -11,17 +11,17 @@
 # ------------------------------------------
 
 # ===========================================================================
-# 
+#
 # Name: exp.mch_icon-ch1.run
 #
-# Purpose: Run script for ICON on the R19B08 grid (ICON-1) on 
+# Purpose: Run script for ICON on the R19B08 grid (ICON-1) on
 #          the full ICON-1 domain covering Switzerland and a large surrounding
 #          area. This setup is identical to the one used operationally.
 #          It is used for the full operational benchmark tests at MeteoSwiss.
 #
 # Created by: Daniel Hupp (MeteoSwiss), Fabian Gessler (MeteoSwiss)
 #
-# =========================================================================== 
+# ===========================================================================
 
 set -x
 
@@ -34,7 +34,7 @@ set -x
 # icon_data_poolFolder          = base directory, where grids/, input/ and setup/ exist
 # nproma                        = blocking length for array dimensioning and inner loop lengths
 
-icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/mch"
+input_folder="${testingFolder_prefix}/testing-input-data/c2sm/icon-1"
 
 # =======================================================================
 # Setup - experiment
@@ -42,7 +42,7 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/mch"
 
 # ===========================================================================
 # This experiment describes a ICON-LAM experiment using the physics packages that are
-# used at MeteoSwiss for production. This simulation computes a few time steps on 
+# used at MeteoSwiss for production. This simulation computes a few time steps on
 # a low-resolution grid over Switzerland. The setup is for development purposes.
 # ==========================================================================
 
@@ -51,11 +51,7 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/mch"
 # =======================
 
 # Folder containing required grid information
-grids_folder=${icon_data_poolFolder}/grids/icon-1
-
-# Folder containing lateral boundary conditions
-lat_grid=${icon_data_poolFolder}/input/icon-1
-latbc_path=${icon_data_poolFolder}/input/icon-1/icon-ch1/input/
+grids_folder=${input_folder}
 
 dynamics_grid_filename=icon_grid_0001_R19B08_mch.nc
 atmo_dyn_grids="'${dynamics_grid_filename}',"
@@ -80,7 +76,7 @@ atmo_namelist=NAMELIST_${EXPNAME}_atm
 # ========================
 
 extpar_filename="external_parameter_icon_grid_0001_R19B08_mch.nc"
-add_required_file "${grids_folder}/${extpar_filename}" ./
+add_required_file "${input_folder}/${extpar_filename}" ./
 
 # files needed for radiation
 add_link_file ${basedir}/externals/ecrad/data ecrad_data
@@ -89,57 +85,57 @@ add_link_file ${basedir}/externals/ecrad/data ecrad_data
 add_required_file ${basedir}/run/ana_varnames_map_file.txt map_file.ana
 
 # Dictionary for the mapping: GRIB2/Netcdf input names <-> ICON internal names
-add_required_file ${lat_grid}/map_file.latbc map_file.latbc
+add_required_file ${input_folder}/map_file.latbc map_file.latbc
 
 # initial data
-laf_file_name=iff2023091300
-add_link_file ${latbc_path}/${laf_file_name} .
+laf_file_name=iff2023091300.grb
+add_link_file ${input_folder}/${laf_file_name} .
 
 # lateral boundary grid
-add_required_file ${lat_grid}/lateral_boundary.grid.nc lateral_boundary.grid.nc
+add_required_file ${input_folder}/lateral_boundary.grid.nc lateral_boundary.grid.nc
 
 # lateral boundary data
-add_link_file ${latbc_path}/lbff00000000.nc .
-add_link_file ${latbc_path}/lbff00030000.nc .
-add_link_file ${latbc_path}/lbff00060000.nc .
-add_link_file ${latbc_path}/lbff00090000.nc .
-add_link_file ${latbc_path}/lbff00120000.nc .
-add_link_file ${latbc_path}/lbff00150000.nc .
-add_link_file ${latbc_path}/lbff00180000.nc .
-add_link_file ${latbc_path}/lbff00210000.nc .
-add_link_file ${latbc_path}/lbff01000000.nc .
-add_link_file ${latbc_path}/lbff01030000.nc .
-add_link_file ${latbc_path}/lbff01060000.nc .
-add_link_file ${latbc_path}/lbff01090000.nc .
-add_link_file ${latbc_path}/lbff01120000.nc .
-add_link_file ${latbc_path}/lbff01150000.nc .
-add_link_file ${latbc_path}/lbff01180000.nc .
-add_link_file ${latbc_path}/lbff01210000.nc .
-add_link_file ${latbc_path}/lbff02000000.nc .
-add_link_file ${latbc_path}/lbff02030000.nc .
-add_link_file ${latbc_path}/lbff02060000.nc .
-add_link_file ${latbc_path}/lbff02090000.nc .
-add_link_file ${latbc_path}/lbff02120000.nc .
-add_link_file ${latbc_path}/lbff02150000.nc .
-add_link_file ${latbc_path}/lbff02180000.nc .
-add_link_file ${latbc_path}/lbff02210000.nc .
-add_link_file ${latbc_path}/lbff03000000.nc .
-add_link_file ${latbc_path}/lbff03030000.nc .
-add_link_file ${latbc_path}/lbff03060000.nc .
-add_link_file ${latbc_path}/lbff03090000.nc .
-add_link_file ${latbc_path}/lbff03120000.nc .
-add_link_file ${latbc_path}/lbff03150000.nc .
-add_link_file ${latbc_path}/lbff03180000.nc .
-add_link_file ${latbc_path}/lbff03210000.nc .
-add_link_file ${latbc_path}/lbff04000000.nc .
-add_link_file ${latbc_path}/lbff04030000.nc .
-add_link_file ${latbc_path}/lbff04060000.nc .
-add_link_file ${latbc_path}/lbff04090000.nc .
-add_link_file ${latbc_path}/lbff04120000.nc .
-add_link_file ${latbc_path}/lbff04150000.nc .
-add_link_file ${latbc_path}/lbff04180000.nc .
-add_link_file ${latbc_path}/lbff04210000.nc .
-add_link_file ${latbc_path}/lbff05000000.nc .
+add_link_file ${input_folder}/lbff00000000.nc .
+add_link_file ${input_folder}/lbff00030000.nc .
+add_link_file ${input_folder}/lbff00060000.nc .
+add_link_file ${input_folder}/lbff00090000.nc .
+add_link_file ${input_folder}/lbff00120000.nc .
+add_link_file ${input_folder}/lbff00150000.nc .
+add_link_file ${input_folder}/lbff00180000.nc .
+add_link_file ${input_folder}/lbff00210000.nc .
+add_link_file ${input_folder}/lbff01000000.nc .
+add_link_file ${input_folder}/lbff01030000.nc .
+add_link_file ${input_folder}/lbff01060000.nc .
+add_link_file ${input_folder}/lbff01090000.nc .
+add_link_file ${input_folder}/lbff01120000.nc .
+add_link_file ${input_folder}/lbff01150000.nc .
+add_link_file ${input_folder}/lbff01180000.nc .
+add_link_file ${input_folder}/lbff01210000.nc .
+add_link_file ${input_folder}/lbff02000000.nc .
+add_link_file ${input_folder}/lbff02030000.nc .
+add_link_file ${input_folder}/lbff02060000.nc .
+add_link_file ${input_folder}/lbff02090000.nc .
+add_link_file ${input_folder}/lbff02120000.nc .
+add_link_file ${input_folder}/lbff02150000.nc .
+add_link_file ${input_folder}/lbff02180000.nc .
+add_link_file ${input_folder}/lbff02210000.nc .
+add_link_file ${input_folder}/lbff03000000.nc .
+add_link_file ${input_folder}/lbff03030000.nc .
+add_link_file ${input_folder}/lbff03060000.nc .
+add_link_file ${input_folder}/lbff03090000.nc .
+add_link_file ${input_folder}/lbff03120000.nc .
+add_link_file ${input_folder}/lbff03150000.nc .
+add_link_file ${input_folder}/lbff03180000.nc .
+add_link_file ${input_folder}/lbff03210000.nc .
+add_link_file ${input_folder}/lbff04000000.nc .
+add_link_file ${input_folder}/lbff04030000.nc .
+add_link_file ${input_folder}/lbff04060000.nc .
+add_link_file ${input_folder}/lbff04090000.nc .
+add_link_file ${input_folder}/lbff04120000.nc .
+add_link_file ${input_folder}/lbff04150000.nc .
+add_link_file ${input_folder}/lbff04180000.nc .
+add_link_file ${input_folder}/lbff04210000.nc .
+add_link_file ${input_folder}/lbff05000000.nc .
 
 
 # dictionary file for output variable names
@@ -205,7 +201,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  iforcing                    =                          3         ! forcing of dynamics and transport by parameterized processes
  msg_level                   =                         12         ! detailed report during integration
  ltimer                      =                      .TRUE.        ! timer for monitoring the runtime of specific routines
- timers_level                =                         10         ! performance timer granularity
+ timers_level                =                          1         ! performance timer granularity
  check_uuid_gracefully       =                      .FALSE.        ! give only warnings for non-matching uuids
  output                      =                        "nml"       ! main switch for enabling/disabling components of the model output
  ldass_lhn                   =                      .TRUE.
@@ -219,7 +215,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  hdiff_order                 =                          5         ! order of nabla operator for diffusion
  itype_vn_diffu              =                          1         ! reconstruction method used for Smagorinsky diffusion
  itype_t_diffu               =                          2         ! discretization of temperature diffusion
- hdiff_efdt_ratio            =                         24.0       ! ratio of e-folding time to time step 
+ hdiff_efdt_ratio            =                         24.0       ! ratio of e-folding time to time step
  hdiff_smag_fac              =                          0.025     ! scaling factor for Smagorinsky diffusion
 /
 
@@ -252,15 +248,15 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  lp2cintp_sfcana              = .FALSE.
  check_ana(1)%list            = 'P','QV','T','U','V'
  use_lakeiceana               = .TRUE.
- qcana_mode                   = 2           ! (0) no QC-increments, 
-                                            ! (1) QC+QV-increments added to QV, 
+ qcana_mode                   = 2           ! (0) no QC-increments,
+                                            ! (1) QC+QV-increments added to QV,
                                             ! (2) QC-increments added to QC if already present at gridpoint
                                             !     and added to QV if not
- qiana_mode                   = 0           ! 0/1: ignore/use QI increments 
- qrsgana_mode                 = 0           ! 0/1: ignore/use QR,QS,QG 
- dwdfg_filename               = "${icon_data_poolFolder}/input/icon-1/icon-ch1/input/${laf_file_name}"
- dwdana_filename              = "${icon_data_poolFolder}/input/icon-1/icon-ch1/input/inc2023091300"
- filetype                     = -1        
+ qiana_mode                   = 0           ! 0/1: ignore/use QI increments
+ qrsgana_mode                 = 0           ! 0/1: ignore/use QR,QS,QG
+ dwdfg_filename               = "${input_folder}/${laf_file_name}"
+ dwdana_filename              = "${input_folder}/inc2023091300.grb"
+ filetype                     = -1
  ana_varnames_map_file        = "map_file.ana"        ! Dictionary for initial data file
  ltile_coldstart              = .FALSE.  ! coldstart for surface tiles
  ltile_init                   = .FALSE.  ! gdm origin .F. set it to .TRUE. if FG data originate from run without tiles
@@ -312,7 +308,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  itype_latbc                 =                          1         ! 1: time-dependent lateral boundary conditions
  dtime_latbc                 =                       3600.        ! time difference between 2 consecutive boundary data
  latbc_boundary_grid         =   "lateral_boundary.grid.nc"       ! Grid file defining the lateral boundary
- latbc_path                  =              "${latbc_path}"       ! Absolute path to boundary data
+ latbc_path                  =              "${input_folder}"     ! Absolute path to boundary data
  latbc_varnames_map_file     =            'map_file.latbc'
  latbc_filename              =         'lbff<ddhhmmss>.nc'        ! boundary data input filename
  init_latbc_from_fg          =                     .TRUE.         ! .TRUE.: take lbc for initial time from first guess
@@ -339,6 +335,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  itype_snowevap              =                          3         ! gdm: orig.: 2 Snow evap. in vegetated areas with add. variables for snow age and max. snow height
  itype_trvg                  =                          3         ! BATS scheme with add. prog. var. for integrated plant transpiration since sunrise
  sstice_mode                 =                          2         ! 2: SST is updated on a daily basis by climatological increments
+ lcuda_graph_lnd             =                     .TRUE.
 /
 
 ! nonhydrostatic_nml: nonhydrostatic model -----------------------------------
@@ -351,7 +348,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  vwind_offctr                =                          0.2       ! off-centering in vertical wind solver
  damp_height                 =                      12250.0       ! height at which Rayleigh damping of vertical wind starts
  rayleigh_coeff              =                          5.0       ! Rayleigh damping coefficient
- divdamp_order               =                         24         ! order of divergence damping 
+ divdamp_order               =                         24         ! order of divergence damping
  divdamp_type                =                         32         ! gdm default: 3 type of divergence damping
  divdamp_fac                 =                          0.004     ! scaling factor for divergence damping
  igradp_method               =                          3         ! discretization of horizontal pressure gradient
@@ -388,6 +385,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  dt_conv                     =                 120.,90.,90.       ! time step for convection in s (domain specific)
  dt_sso                      =               120.,360.,360.       ! time step for SSO parameterization
  dt_gwd                      =               120.,120.,120.       ! gdm : 360 in guenther
+ lcuda_graph_turb_tran       =                       .TRUE.
 /
 
 ! nwp_tuning_nml: additional tuning parameters ----------------------------------
@@ -425,7 +423,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
 !gribout_nml: defined and used in: src/namelists/mo_initicon_nml.f90 ------------
 
 &gribout_nml
-    preset                      = 'ensemble' 
+    preset                      = 'ensemble'
     localdefinitionnumber       = 253
     typeofensembleforecast      = 192
     localtypeofensembleforecast = 1
@@ -434,7 +432,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
     generatingProcessIdentifier = 141          ! waa set 141 with center 215 defined by external parameter file
 /
 
-! output_nml: control the output ------------------------------------------------ 
+! output_nml: control the output ------------------------------------------------
 
 EOF
 
@@ -665,8 +663,8 @@ cat >> ${basedir}/run/${atmo_namelist} << EOF
  ser_output_diag             =                            0,12,12
  ser_latbc_data              =                            0,12,12
  ser_dynamics                =                            0,12,12
- ser_diffusion               =                            0,12,12 
- ser_step_advection          =                            0,12,12 
+ ser_diffusion               =                            0,12,12
+ ser_step_advection          =                            0,12,12
  ser_physics                 =                            0,12,12
  ser_surface                 =                            0,12,12
  ser_microphysics            =                            0,12,12
@@ -678,10 +676,10 @@ cat >> ${basedir}/run/${atmo_namelist} << EOF
  ser_radheat                 =                            0,12,12
  ser_gwdrag                  =                            0,12,12
  ser_convection              =                            0,12,12
- ser_nudging                 =                            0,12,12 
+ ser_nudging                 =                            0,12,12
  ser_nfail                   =                            1
  ser_nreport                 =                            10
- ser_all_debug               =                            0 
+ ser_all_debug               =                            0
  ser_debug                   =                        .FALSE.      ! serialize the debug statements from mo_ser_debug
 /
 

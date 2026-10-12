@@ -1,17 +1,16 @@
-! This module contains debugging utilities, especially subroutines
-! for writing REAL arrays to NetCDF files (for debugging purposes).
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains debugging utilities, especially subroutines
+! for writing REAL arrays to NetCDF files (for debugging purposes).
 
 MODULE mo_util_debug
 
@@ -36,7 +35,7 @@ MODULE mo_util_debug
   PUBLIC :: ldebug_enable
 
   ! The global variables "debug_step", "ldebug_enable" are useful when debugging output is
-  ! desired only for certain steps inside a loop. For example, one may set "debug_step" to 
+  ! desired only for certain steps inside a loop. For example, one may set "debug_step" to
   ! the current iteration and use this value at some other place (where the
   ! original counter is not available).
 
@@ -70,7 +69,7 @@ CONTAINS
     IF (.NOT. ldebug_enable) RETURN
 
 #ifndef DISABLE_DUMP
-    WRITE (*,*) "Dumping ", zfilename   
+    WRITE (*,*) "Dumping ", zfilename
     ! create NetCDF file:
     CALL nf(nf90_create("00_"//TRIM(zfilename)//"_"//TRIM(int2string(debug_step))//".nc", &
       &               nf90_clobber, ncfile), routine)
@@ -159,7 +158,7 @@ CONTAINS
     IF (.NOT. ldebug_enable) RETURN
 
 #ifndef DISABLE_DUMP
-    WRITE (*,*) "Dumping ", zfilename   
+    WRITE (*,*) "Dumping ", zfilename
     ! create NetCDF file:
     CALL nf(nf90_create("00_"//TRIM(zfilename)//"_"//TRIM(int2string(debug_step))//".nc", &
       &               nf90_clobber, ncfile), routine)

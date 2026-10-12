@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -16,13 +16,13 @@
 #
 #-----------------------------------------------------------------------------
 #PBS -q sx_norm
-#PBS -v NE=1,CPE=1,NMPI_ROOT=/opt/nec/ve/mpi/2.3.1 
+#PBS -v NE=1,CPE=1,NMPI_ROOT=/opt/nec/ve/mpi/2.3.1
 #PBS -l elapstim_req=00:20:00
 #PBS --venode=${NE}
 #PBS --venum-lhost=1     # Number of VE per logical host
 #PBS --cpunum-lhost=2    # Number of VH-x86-Cores per log. host
 #PBS -T necmpi           # necessary for parallel jobs with NEC-MPI
-##PBS -N icon-scm-real 
+##PBS -N icon-scm-real
 #PBS -o /hpc/uwork/${USER}/wq/iconSCM.%s
 #PBS -j o
 #-----------------------------------------------------------------------------
@@ -77,7 +77,7 @@ export ATP_ENABLED=1
  module load nco
  module load cdo
 
-#Loop over test columns in CKDMIP evaluation 1 dataset - starts with 0 
+#Loop over test columns in CKDMIP evaluation 1 dataset - starts with 0
 for icol in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49; do
 EXPFILE=scm_out_ecrad_col${icol}
 #EXPFILE=scm_out_rrtm_col${icol}
@@ -145,8 +145,8 @@ end_date="2014-03-23T21:00:00Z"     # official end time
 #-----------------------------------------------------------------------------
 DT_DATA=`expr 1 \* 3600`      # output each n hours
 DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000              # number of time steps per output file 
+#n_in_ofile=60                # number of time steps per output file
+n_in_ofile=10000              # number of time steps per output file
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -202,7 +202,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
@@ -248,7 +248,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12           ! detailed report during integration
  output         = 'nml','totint'
 /
@@ -304,7 +304,8 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing       = .FALSE.
  is_nudging           = .TRUE.
  is_nudging_uv        = .TRUE.
- is_nudging_tq        = .FALSE.
+ is_nudging_t         = .FALSE.
+ is_nudging_q         = .FALSE.
 /
 
 ! &ls_forcing_nml
@@ -331,7 +332,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 
 &turbdiff_nml
  tkhmin        = 0.75   ! new default since rev. 16527
- tkmmin        = 0.75   !           " 
+ tkmmin        = 0.75   !           "
  pat_len       = 750.
  c_diff        = 0.2
  rat_sea       = 8.5    ! new value since rev. 25646 (reduced saturation vapor pressure over salt water)
@@ -339,7 +340,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  frcsmot       = 0.2    ! these 2 switches together apply vertical smoothing of the TKE source terms
  imode_frcsmot = 2      ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 3    
+ itype_sher    = 3
  ltkeshs       = .true.
  a_hshr        = 2.0
  !lconst_z0    = .TRUE.
@@ -357,7 +358,6 @@ cat > NAMELIST_${EXPNAME} << EOF
  ivctype        = 2         ! sleve vertical coordinate
  damp_height    = 20000.    ! top_height-damp_height should be about 15km
  ndyn_substeps  = ${ndyn_substeps}
- l_open_ubc     = .false.   ! top open upper boundary condition. might help to go higher
  rayleigh_coeff = 0.0
  htop_moist_proc= 22500.
  hbot_qvsubstep	= 22500.    ! Default: 22500  ! M. Koehler: 19000; at least as large as htop_moist_proc
@@ -366,7 +366,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 &sleve_nml
  min_lay_thckn	= 20.       ! Default: 50     ! M. Koehler: 20
  max_lay_thckn	= 400.      ! maximum layer thickness below htop_thcknlimit
- htop_thcknlimit= 14000.    ! 
+ htop_thcknlimit= 14000.    !
  top_height     = 75000.
  stretch_fac	= 0.9       ! Default: 1      ! M. Koehler: 0.9
  decay_scale_1	= 4000.
@@ -380,8 +380,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &dynamics_nml
- iequations     = 3       ! equation system
- idiv_method    = 1
  divavg_cntrwgt = 0.50
  lcoriolis      = .TRUE.
 /
@@ -400,7 +398,7 @@ cat > NAMELIST_${EXPNAME} << EOF
                     !'ddt_qv_turb'
                     !'group:all','z_ifc','z_mc','u','v','w','temp','pres','rho','theta_v','pres_sfc','div',
                     !'qv','qc','qi','qs','qr','rh',
-                    !'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t', 
+                    !'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t',
                     !'ddt_temp_radsw', 'ddt_temp_radlw', 'ddt_temp_turb', 'ddt_temp_drag', 'ddt_temp_pconv',
                     !'ddt_qv_turb','ddt_qc_turb','ddt_qv_conv','ddt_qc_conv','u_10m', 'v_10m', 't_2m', 't_g',
                     !'qv_s','z_mc','lhfl_s','shfl_s','umfl_s','vmfl_s','tcm','tch','clc','tke','rcld','qhfl_s',

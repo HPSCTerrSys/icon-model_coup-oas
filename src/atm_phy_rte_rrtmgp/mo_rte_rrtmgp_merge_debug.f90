@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -19,7 +19,7 @@ MODULE mo_rte_rrtmgp_merge_debug
   PRIVATE
 
   INTEGER, PARAMETER :: ndim = 5, nvar_all = 47
-  
+
   PUBLIC :: ndim, nvar_all
 
   TYPE :: Tdimension
@@ -181,12 +181,12 @@ CONTAINS
     IMPLICIT NONE
 
     INTEGER, INTENT(IN) :: kbdim, klev
-    
+
     INTEGER :: p_pe
     CHARACTER(len=256) :: filename
 
     IF (writing == 1 .or. dump_finished) THEN
-      RETURN 
+      RETURN
     END IF
     writing = 1
 
@@ -206,7 +206,7 @@ CONTAINS
 
     CHARACTER(len=*), INTENT(IN) :: name
     INTEGER, INTENT(IN) :: kbdim, klev
-    
+
     INTEGER :: i, ret, dim_val(ndim), idummy
 
     ret = nf90_create(TRIM(name), nf90_clobber, nf_write_id)
@@ -301,7 +301,7 @@ CONTAINS
     REAL(wp), DIMENSION(:), INTENT(IN) :: cosmu0, day_frc, &
       a_vdir, a_ndir, a_vdif, a_ndif, tk_sfc, &
       vds_dir, pds_dir, nds_dir, vds_dif, pds_dif, nds_dif, vus, pus, nus
-    
+
     REAL(wp), DIMENSION(:,:), INTENT(IN) :: &
       zf, zh, dz, pp_fl_in, pp_hl_in, tk_fl_in, tk_hl_in, &
       pp_fl, pp_hl, tk_fl, tk_hl, &

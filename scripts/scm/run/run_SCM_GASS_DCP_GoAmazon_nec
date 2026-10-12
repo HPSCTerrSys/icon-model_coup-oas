@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -16,13 +16,13 @@
 #
 # ----------------------------------------------------------------------------
 #PBS -q sx_norm
-#PBS -v NE=1,CPE=1,NMPI_ROOT=/opt/nec/ve/mpi/2.3.1 
+#PBS -v NE=1,CPE=1,NMPI_ROOT=/opt/nec/ve/mpi/2.3.1
 #PBS -l elapstim_req=00:20:00
 #PBS --venode=${NE}
 #PBS --venum-lhost=1     # Number of VE per logical host
 #PBS --cpunum-lhost=2    # Number of VH-x86-Cores per log. host
 #PBS -T necmpi           # necessary for parallel jobs with NEC-MPI
-##PBS -N icon-scm-real 
+##PBS -N icon-scm-real
 #PBS -o /hpc/uwork/${USER}/wq/iconSCM.%s
 #PBS -j o
 # ----------------------------------------------------------------------------
@@ -133,8 +133,8 @@ end_date=`cat end_date`
 # ----------------------------------------------------------------------------
 DT_DATA=`expr 1 \* 3600`      # output each n hours
 DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000              # number of time steps per output file 
+#n_in_ofile=60                # number of time steps per output file
+n_in_ofile=10000              # number of time steps per output file
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -168,7 +168,7 @@ ln -sf ${GRIDDIR}/${atmo_dyn_grids} .
 #  $ncodir/ncks -v longitude,latitude,FR_LAND,PLCOV_MX,LAI_MX,ROOTDP,RSMIN,SOILTYP,Z0,EMIS_RAD,TOPO \
 #    ${INITDIR}/init_SCM_GASS_DCP_GoAmazon_IOP1.nc init_SCM_2.nc
 #  $ncodir/ncks -A init_SCM_2.nc init_SCM.nc
-#  $ncodir/ncks -d time,0,360 init_SCM.nc init_SCM.nc 
+#  $ncodir/ncks -d time,0,360 init_SCM.nc init_SCM.nc
 #  $ncodir/ncks -3 init_SCM.nc out.nc
 #  $ncodir/ncrename -d time,nt out.nc
 #  $ncodir/ncks -4 out.nc init_SCM.nc
@@ -203,7 +203,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
@@ -228,7 +228,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  lscm_read_tke = .FALSE.    ! read initial tke from netcdf
  lscm_read_z0  = .TRUE.     ! read initial z0 from netcdf
  scm_sfc_mom   = 2          ! 2: prescribed u*
- scm_sfc_temp  = 2          ! 2: prescribed sensible heat flux at surface 
+ scm_sfc_temp  = 2          ! 2: prescribed sensible heat flux at surface
  scm_sfc_qv    = 2          ! 2: prescribed latent heat flux at surface
 !scm_sfc_mom   = 0          ! 0: TURBTRANS: no prescribed u*
 !scm_sfc_temp  = 0          ! 0: TERRA:     no prescribed sensible heat flux at surface
@@ -250,7 +250,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12           ! detailed report during integration
  output         = 'nml','totint'
 /
@@ -279,7 +279,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 &nwp_tuning_nml
  itune_albedo                 = 0       ! somewhat reduced albedo (w.r.t. MODIS data) over Sahara in order to reduce cold bias
  tune_zceff_min               = 0.01    ! ** default value to be used for R3B7; use 0.025 for R2B6 in order to get similar temperature biases in upper troposphere **
- tune_gkdrag                  = 0.075   ! R2B6: 0.075  
+ tune_gkdrag                  = 0.075   ! R2B6: 0.075
  tune_gkwake                  = 1.5     ! R2B6: 1.5
  tune_gfrcrit                 = 0.425   ! R2B6: 0.425
  tune_dust_abs                = 0.
@@ -337,7 +337,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &radiation_nml
- irad_o3                      = 79
+ irad_o3                      = 9
 ! izenith                      = 4           ! 4: NWP default, 3: no annual cycle
 ! albedo_type                  = 2 ! Modis albedo
 ! vmr_co2                      = 390.e-06 ! values representative for 2012
@@ -350,7 +350,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 ! direct_albedo_water          = 3
 ! albedo_whitecap              = 1
  llw_cloud_scat               = .true.
- ecRad_data_path              = '${ecRad_data_path}' 
+ ecRad_data_path              = '${ecRad_data_path}'
 /
 
 &ls_forcing_nml
@@ -365,10 +365,8 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing               = .FALSE.
  is_nudging                   = .TRUE.
  is_nudging_uv                = .TRUE.
- is_nudging_tq                = .FALSE.
- nudge_start_height           = 0.0            ! 1000.0
- nudge_full_height            = 0.0            ! 2000.0
- dt_relax                     = 3600.0         ! 10800.0
+ is_nudging_t                 = .FALSE.
+ is_nudging_q                 = .FALSE.
 /
 
 &nonhydrostatic_nml
@@ -379,13 +377,11 @@ cat > NAMELIST_${EXPNAME} << EOF
  vwind_offctr                 = 0.2         ! 0.2 for R2B6 and higher resolution, 0.3 for lower resolution
  damp_height                  = 44000.
  rayleigh_coeff               = 0.5
- lhdiff_rcf                   = .true.
  divdamp_order                = 24          ! 2 ass, 24 fc
  divdamp_type                 = 32          ! optional: 2 assimilation cycle, 32 forecast
  divdamp_fac                  = 0.004       ! 0.004 for R2B6; recommendation for R3B7: 0.003
  divdamp_trans_start          = 12500
  divdamp_trans_end            = 17500
- l_open_ubc                   = .false.
  igradp_method                = 3
  l_zdiffu_t                   = .true.
  thslp_zdiffu                 = 0.02
@@ -408,8 +404,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &dynamics_nml
- iequations                   = 3
- idiv_method                  = 1
  divavg_cntrwgt               = 0.50
  lcoriolis                    = .false.   ! SCM attention: .TRUE. distroys U-profile!!
 /
@@ -459,13 +453,13 @@ cat > NAMELIST_${EXPNAME} << EOF
  output_filename  = 'scm_GASS_out'
  filename_format  = "<output_filename>_<levtype>_<datetime2>"
 !ml_varlist       = 'group:all'
- ml_varlist       = 'pres_sfc','accshfl_s','acclhfl_s','accthb_s','accthb_t','accsob_s','accsob_t', 
+ ml_varlist       = 'pres_sfc','accshfl_s','acclhfl_s','accthb_s','accthb_t','accsob_s','accsob_t',
                     'accthd_s', 'accthu_s', 'accsod_s', 'accsod_t', 'accsou_t', 'accsou_t',
-                    'accumfl_s','accvmfl_s','cape','rain_gsp','rain_con','snow_gsp','snow_con', 
+                    'accumfl_s','accvmfl_s','cape','rain_gsp','rain_con','snow_gsp','snow_con',
                     'u_10m','v_10m','t_2m','td_2m','t_g','qv_s','tot_prec',
                     'clct','clch','clcm','clcl','tqv_dia','tqc_dia','tqi_dia','tqr','tqs'
  pl_varlist       = 'u','v','w','temp','rho','geopot','rh','clc','tot_qv_dia','tot_qc_dia','tot_qi_dia',
-                    'ddt_temp_dyn', 'ddt_temp_radsw', 'ddt_temp_radlw', 'ddt_temp_turb', 'ddt_temp_drag', 
+                    'ddt_temp_dyn', 'ddt_temp_radsw', 'ddt_temp_radlw', 'ddt_temp_turb', 'ddt_temp_drag',
                     'ddt_temp_pconv','ddt_qv_turb', 'ddt_qc_turb', 'ddt_qi_turb', 'ddt_qv_conv',
                     'ddt_temp_gscp','ddt_qv_gscp','ddt_qc_gscp','ddt_qi_gscp'
  p_levels         =  2500, 5000, 7500,10000,12500,15000,17500,20000,22500,25000,27500,30000,
@@ -484,7 +478,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  include_last     = .TRUE.
  output_filename  = 'scm_GASS_flx'
  filename_format  = "<output_filename>_<levtype>_<datetime2>"
- ml_varlist       = 'accshfl_s','acclhfl_s','accthb_s','accthb_t','accsob_s','accsob_t', 
+ ml_varlist       = 'accshfl_s','acclhfl_s','accthb_s','accthb_t','accsob_s','accsob_t',
                     'accthd_s', 'accthu_s', 'accsod_t', 'accsou_t', 'accsou_t','accsod_s'
                     'accumfl_s','accvmfl_s','rain_gsp','rain_con','snow_gsp','snow_con','tot_prec'
  output_grid      = .TRUE.
@@ -494,7 +488,7 @@ EOF
 
 #                   !'z_ifc','z_mc','u','v','w','temp','pres','rho','theta_v','pres_sfc','div',
 #                   !'qv','qc','qi','qs','qr','rh',
-#                   !'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t', 
+#                   !'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t',
 #                   !'ddt_temp_radsw', 'ddt_temp_radlw', 'ddt_temp_turb', 'ddt_temp_drag', 'ddt_temp_pconv',
 #                   !'ddt_qv_turb','ddt_qc_turb','ddt_qv_conv','ddt_qc_conv','u_10m', 'v_10m', 't_2m', 't_g',
 #                   !'qv_s','z_mc','lhfl_s','shfl_s','umfl_s','vmfl_s','tcm','tch','clc','tke','rcld','qhfl_s',

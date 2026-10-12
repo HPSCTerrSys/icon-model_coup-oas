@@ -1,19 +1,17 @@
-! This module provides the communication routines
-! for parallel runs
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
-!
+
+! This module provides the communication routines
+! for parallel runs
+
 ! (GZ, 2013-08-30): So far, the Cray compiler is the only one for which an OpenMP parallelization
 ! of copying data into / back from the MPI-buffer seems to give a benefit. Further compilers may
 ! be added here once the OpenMP implementation is sufficiently efficient
@@ -50,7 +48,7 @@ USE mo_util_sort,            ONLY: quicksort
 USE mo_util_sort,            ONLY: radixsort
 #endif
 USE mo_util_string,          ONLY: int2string
-USE mo_fortran_tools,        ONLY: t_ptr_3d, t_ptr_3d_sp
+USE fortran_support,         ONLY: t_ptr_3d_dp, t_ptr_3d_sp
 USE mo_communication_types,  ONLY: t_comm_pattern, t_comm_pattern_collection, &
   &                                t_p_comm_pattern
 USE mo_communication_types,  ONLY: t_comm_pattern, t_comm_pattern_collection, &
@@ -145,11 +143,13 @@ INTERFACE exchange_data
    MODULE PROCEDURE exchange_data_l2d
    MODULE PROCEDURE exchange_data_l3d
    MODULE PROCEDURE gather_r_2d_deblock
+   MODULE PROCEDURE gather_s_2d_deblock
    MODULE PROCEDURE gather_r_1d_deblock
    MODULE PROCEDURE gather_s_1d_deblock
    MODULE PROCEDURE gather_i_2d_deblock
    MODULE PROCEDURE gather_i_1d_deblock
    MODULE PROCEDURE allgather_r_1d_deblock
+   MODULE PROCEDURE allgather_s_1d_deblock
    MODULE PROCEDURE allgather_i_1d_deblock
 END INTERFACE
 
@@ -163,6 +163,27 @@ INTERFACE two_phase_gather_second
   MODULE PROCEDURE two_phase_gather_second_r
   MODULE PROCEDURE two_phase_gather_second_s
   MODULE PROCEDURE two_phase_gather_second_i
+END INTERFACE
+
+INTERFACE exchange_data_4de1
+  MODULE PROCEDURE exchange_data_4de1_dp
+  MODULE PROCEDURE exchange_data_4de1_sp
+END INTERFACE
+
+INTERFACE exchange_data_grf
+  MODULE PROCEDURE exchange_data_grf_3d_dp
+  MODULE PROCEDURE exchange_data_grf_3d_sp
+  MODULE PROCEDURE exchange_data_grf_4d_dp
+  MODULE PROCEDURE exchange_data_grf_4d_sp
+END INTERFACE
+
+INTERFACE exchange_data_mult
+  MODULE PROCEDURE exchange_data_mult_3d_dp
+  MODULE PROCEDURE exchange_data_mult_4d_dp
+  MODULE PROCEDURE exchange_data_mult_3d4d_dp
+  MODULE PROCEDURE exchange_data_mult_3d_sp
+  MODULE PROCEDURE exchange_data_mult_4d_sp
+  MODULE PROCEDURE exchange_data_mult_3d4d_sp
 END INTERFACE
 
 CHARACTER(*), PARAMETER :: modname = "mo_communication"
@@ -556,7 +577,7 @@ CONTAINS
 
   !! Does data exchange according to a communication pattern (in p_pat).
   !!
-  SUBROUTINE exchange_data_4de1(p_pat, lacc, nfields, ndim2tot, recv, send)
+  SUBROUTINE exchange_data_4de1_dp(p_pat, lacc, nfields, ndim2tot, recv, send)
 
     CLASS(t_comm_pattern), POINTER :: p_pat
 
@@ -567,42 +588,155 @@ CONTAINS
 
     CALL p_pat%exchange_data_4de1(lacc, nfields, ndim2tot, recv, send)
 
-  END SUBROUTINE exchange_data_4de1
+  END SUBROUTINE exchange_data_4de1_dp
+
+  SUBROUTINE exchange_data_4de1_sp(p_pat, lacc, nfields, ndim2tot, recv, send)
+
+    CLASS(t_comm_pattern), POINTER :: p_pat
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(sp), INTENT(INOUT)           :: recv(:,:,:,:)
+    REAL(sp), INTENT(IN   ), OPTIONAL :: send(:,:,:,:)
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+
+    CALL p_pat%exchange_data_4de1(lacc, nfields, ndim2tot, recv, send)
+
+  END SUBROUTINE exchange_data_4de1_sp
 
 
   !! Does data exchange according to a communication pattern (in p_pat).
   !!
-  SUBROUTINE exchange_data_grf(p_pat_coll, lacc, nfields, ndim2tot, recv1, send1, &
-    recv2, send2, recv3, send3, recv4, send4, &
-    recv5, send5, recv6, send6, recv4d1, send4d1, &
-    recv4d2, send4d2)
+  SUBROUTINE exchange_data_grf_3d_dp(p_pat_coll, lacc, nfields, ndim2tot, recv1, send1, &
+    recv2, send2, recv3, send3, recv4, send4, recv5, send5, recv6, send6)
 
     CLASS(t_comm_pattern_collection), POINTER :: p_pat_coll
 
     LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(dp), INTENT(INOUT), TARGET           :: recv1(:,:,:)
     REAL(dp), INTENT(INOUT), TARGET, OPTIONAL ::  &
-      recv1(:,:,:), recv2(:,:,:), recv3(:,:,:), recv4d1(:,:,:,:), &
-      recv4(:,:,:), recv5(:,:,:), recv6(:,:,:), recv4d2(:,:,:,:)
+      recv2(:,:,:), recv3(:,:,:),                 &
+      recv4(:,:,:), recv5(:,:,:), recv6(:,:,:)
     ! Note: the last index of the send fields corresponds to the dimension of p_pat
     ! On the other hand, they are not blocked and have the vertical index first
+    REAL(dp), INTENT(IN   ), TARGET           :: send1(:,:,:)
     REAL(dp), INTENT(IN   ), TARGET, OPTIONAL ::  &
-      send1(:,:,:), send2(:,:,:), send3(:,:,:), send4d1(:,:,:,:), &
-      send4(:,:,:), send5(:,:,:), send6(:,:,:), send4d2(:,:,:,:)
+      send2(:,:,:), send3(:,:,:),                 &
+      send4(:,:,:), send5(:,:,:), send6(:,:,:)
 
     INTEGER, INTENT(IN)           :: nfields  ! total number of input fields
     INTEGER, INTENT(IN)           :: ndim2tot ! sum of vertical levels of input fields
 
-    TYPE(t_ptr_3d) :: recv(nfields), send(nfields)
+    TYPE(t_ptr_3d_dp) :: recv(nfields), send(nfields)
 
     INTEGER :: n, n4d
 
     ! Set pointers to input fields
-    IF (PRESENT(recv4d1) .AND. .NOT. PRESENT(recv4d2)) THEN
+    recv(1)%p => recv1
+    send(1)%p => send1
+    IF (PRESENT(recv2)) THEN
+      recv(2)%p => recv2
+      send(2)%p => send2
+    ENDIF
+    IF (PRESENT(recv3)) THEN
+      recv(3)%p => recv3
+      send(3)%p => send3
+    ENDIF
+    IF (PRESENT(recv4)) THEN
+      recv(4)%p => recv4
+      send(4)%p => send4
+    ENDIF
+    IF (PRESENT(recv5)) THEN
+      recv(5)%p => recv5
+      send(5)%p => send5
+    ENDIF
+    IF (PRESENT(recv6)) THEN
+      recv(6)%p => recv6
+      send(6)%p => send6
+    ENDIF
+
+    CALL p_pat_coll%exchange_data_grf(lacc, nfields, ndim2tot, recv, send)
+
+  END SUBROUTINE exchange_data_grf_3d_dp
+
+  SUBROUTINE exchange_data_grf_3d_sp(p_pat_coll, lacc, nfields, ndim2tot, recv1, send1, &
+    recv2, send2, recv3, send3, recv4, send4, recv5, send5, recv6, send6)
+
+    CLASS(t_comm_pattern_collection), POINTER :: p_pat_coll
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(sp), INTENT(INOUT), TARGET           :: recv1(:,:,:)
+    REAL(sp), INTENT(INOUT), TARGET, OPTIONAL ::  &
+      recv2(:,:,:), recv3(:,:,:),                 &
+      recv4(:,:,:), recv5(:,:,:), recv6(:,:,:)
+    ! Note: the last index of the send fields corresponds to the dimension of p_pat
+    ! On the other hand, they are not blocked and have the vertical index first
+    REAL(sp), INTENT(IN   ), TARGET           :: send1(:,:,:)
+    REAL(sp), INTENT(IN   ), TARGET, OPTIONAL ::  &
+      send2(:,:,:), send3(:,:,:),                 &
+      send4(:,:,:), send5(:,:,:), send6(:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields  ! total number of input fields
+    INTEGER, INTENT(IN)           :: ndim2tot ! sum of vertical levels of input fields
+
+    TYPE(t_ptr_3d_sp) :: recv(nfields), send(nfields)
+
+    INTEGER :: n, n4d
+
+    ! Set pointers to input fields
+    recv(1)%p => recv1
+    send(1)%p => send1
+    IF (PRESENT(recv2)) THEN
+      recv(2)%p => recv2
+      send(2)%p => send2
+    ENDIF
+    IF (PRESENT(recv3)) THEN
+      recv(3)%p => recv3
+      send(3)%p => send3
+    ENDIF
+    IF (PRESENT(recv4)) THEN
+      recv(4)%p => recv4
+      send(4)%p => send4
+    ENDIF
+    IF (PRESENT(recv5)) THEN
+      recv(5)%p => recv5
+      send(5)%p => send5
+    ENDIF
+    IF (PRESENT(recv6)) THEN
+      recv(6)%p => recv6
+      send(6)%p => send6
+    ENDIF
+
+    CALL p_pat_coll%exchange_data_grf(lacc, nfields, ndim2tot, recv, send)
+
+  END SUBROUTINE exchange_data_grf_3d_sp
+
+  SUBROUTINE exchange_data_grf_4d_dp(p_pat_coll, lacc, nfields, ndim2tot, &
+    recv4d1, send4d1, recv4d2, send4d2)
+
+    CLASS(t_comm_pattern_collection), POINTER :: p_pat_coll
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(dp), INTENT(INOUT), TARGET           :: recv4d1(:,:,:,:)
+    REAL(dp), INTENT(INOUT), TARGET, OPTIONAL :: recv4d2(:,:,:,:)
+    ! Note: the last index of the send fields corresponds to the dimension of p_pat
+    ! On the other hand, they are not blocked and have the vertical index first
+    REAL(dp), INTENT(IN   ), TARGET           :: send4d1(:,:,:,:)
+    REAL(dp), INTENT(IN   ), TARGET, OPTIONAL :: send4d2(:,:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields  ! total number of input fields
+    INTEGER, INTENT(IN)           :: ndim2tot ! sum of vertical levels of input fields
+
+    TYPE(t_ptr_3d_dp) :: recv(nfields), send(nfields)
+
+    INTEGER :: n, n4d
+
+    ! Set pointers to input fields
+    IF (.NOT. PRESENT(recv4d2)) THEN
       DO n = 1, nfields
         recv(n)%p => recv4d1(:,:,:,n)
         send(n)%p => send4d1(:,:,:,n)
       ENDDO
-    ELSE IF (PRESENT(recv4d1) .AND. PRESENT(recv4d2)) THEN
+    ELSE
       n4d = nfields/2
       DO n = 1, n4d
         recv(n)%p => recv4d1(:,:,:,n)
@@ -612,36 +746,53 @@ CONTAINS
         recv(n4d+n)%p => recv4d2(:,:,:,n)
         send(n4d+n)%p => send4d2(:,:,:,n)
       ENDDO
-    ELSE
-      IF (PRESENT(recv1)) THEN
-        recv(1)%p => recv1
-        send(1)%p => send1
-      ENDIF
-      IF (PRESENT(recv2)) THEN
-        recv(2)%p => recv2
-        send(2)%p => send2
-      ENDIF
-      IF (PRESENT(recv3)) THEN
-        recv(3)%p => recv3
-        send(3)%p => send3
-      ENDIF
-      IF (PRESENT(recv4)) THEN
-        recv(4)%p => recv4
-        send(4)%p => send4
-      ENDIF
-      IF (PRESENT(recv5)) THEN
-        recv(5)%p => recv5
-        send(5)%p => send5
-      ENDIF
-      IF (PRESENT(recv6)) THEN
-        recv(6)%p => recv6
-        send(6)%p => send6
-      ENDIF
-    ENDIF
+    END IF
 
     CALL p_pat_coll%exchange_data_grf(lacc, nfields, ndim2tot, recv, send)
 
-  END SUBROUTINE exchange_data_grf
+  END SUBROUTINE exchange_data_grf_4d_dp
+
+  SUBROUTINE exchange_data_grf_4d_sp(p_pat_coll, lacc, nfields, ndim2tot, &
+    recv4d1, send4d1, recv4d2, send4d2)
+
+    CLASS(t_comm_pattern_collection), POINTER :: p_pat_coll
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(sp), INTENT(INOUT), TARGET           :: recv4d1(:,:,:,:)
+    REAL(sp), INTENT(INOUT), TARGET, OPTIONAL :: recv4d2(:,:,:,:)
+    ! Note: the last index of the send fields corresponds to the dimension of p_pat
+    ! On the other hand, they are not blocked and have the vertical index first
+    REAL(sp), INTENT(IN   ), TARGET           :: send4d1(:,:,:,:)
+    REAL(sp), INTENT(IN   ), TARGET, OPTIONAL :: send4d2(:,:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields  ! total number of input fields
+    INTEGER, INTENT(IN)           :: ndim2tot ! sum of vertical levels of input fields
+
+    TYPE(t_ptr_3d_sp) :: recv(nfields), send(nfields)
+
+    INTEGER :: n, n4d
+
+    ! Set pointers to input fields
+    IF (.NOT. PRESENT(recv4d2)) THEN
+      DO n = 1, nfields
+        recv(n)%p => recv4d1(:,:,:,n)
+        send(n)%p => send4d1(:,:,:,n)
+      ENDDO
+    ELSE
+      n4d = nfields/2
+      DO n = 1, n4d
+        recv(n)%p => recv4d1(:,:,:,n)
+        send(n)%p => send4d1(:,:,:,n)
+      ENDDO
+      DO n = 1, n4d
+        recv(n4d+n)%p => recv4d2(:,:,:,n)
+        send(n4d+n)%p => send4d2(:,:,:,n)
+      ENDDO
+    END IF
+
+    CALL p_pat_coll%exchange_data_grf(lacc, nfields, ndim2tot, recv, send)
+
+  END SUBROUTINE exchange_data_grf_4d_sp
 
 
   !-------------------------------------------------------------------------
@@ -712,8 +863,91 @@ CONTAINS
 
   !! Does data exchange according to a communication pattern (in p_pat).
   !!
-  SUBROUTINE exchange_data_mult(p_pat, lacc, nfields, ndim2tot, recv1, send1, recv2, send2,   &
+  SUBROUTINE exchange_data_mult_3d_dp(p_pat, lacc, nfields, ndim2tot, recv1, send1, recv2, send2,   &
     recv3, send3, recv4, send4,  recv5, send5, recv6, send6, recv7, send7,              &
+    nshift, recv3d_arr, send3d_arr)
+
+    CLASS(t_comm_pattern), POINTER, INTENT(in) :: p_pat
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(dp), INTENT(INOUT), TARGET ::  &
+      recv1(:,:,:)
+    REAL(dp), INTENT(INOUT), TARGET, OPTIONAL ::  &
+      recv2(:,:,:), recv3(:,:,:), recv4(:,:,:), recv5(:,:,:), recv6(:,:,:), recv7(:,:,:)
+    REAL(dp), INTENT(IN   ), TARGET, OPTIONAL ::  &
+      send1(:,:,:), send2(:,:,:), send3(:,:,:), send4(:,:,:), send5(:,:,:), send6(:,:,:), &
+      send7(:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+    TYPE(t_ptr_3d_dp), INTENT(   IN), TARGET, OPTIONAL :: recv3d_arr(:)
+    TYPE(t_ptr_3d_dp), INTENT(INOUT), TARGET, OPTIONAL :: send3d_arr(:)
+    INTEGER, OPTIONAL, INTENT(IN) :: nshift
+
+    CALL exchange_data_mult_dp_(p_pat, lacc, nfields, ndim2tot, &
+      &                         recv1=recv1, send1=send1, &
+      &                         recv2=recv2, send2=send2, &
+      &                         recv3=recv3, send3=send3, &
+      &                         recv4=recv4, send4=send4, &
+      &                         recv5=recv5, send5=send5, &
+      &                         recv6=recv6, send6=send6, &
+      &                         recv7=recv7, send7=send7, &
+      &                         nshift=nshift, &
+      &                         recv3d_arr=recv3d_arr, send3d_arr=send3d_arr)
+
+  END SUBROUTINE exchange_data_mult_3d_dp
+
+  SUBROUTINE exchange_data_mult_4d_dp(p_pat, lacc, nfields, ndim2tot, recv4d, send4d, nshift)
+
+    CLASS(t_comm_pattern), POINTER, INTENT(in) :: p_pat
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(dp), INTENT(INOUT), TARGET :: recv4d(:,:,:,:)
+    REAL(dp), INTENT(IN   ), TARGET, OPTIONAL :: send4d(:,:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+    INTEGER, OPTIONAL, INTENT(IN) :: nshift
+
+    CALL exchange_data_mult_dp_(p_pat, lacc, nfields, ndim2tot, &
+      &                         recv4d=recv4d, send4d=send4d, &
+      &                         nshift=nshift)
+
+  END SUBROUTINE exchange_data_mult_4d_dp
+
+  SUBROUTINE exchange_data_mult_3d4d_dp(p_pat, lacc, nfields, ndim2tot, recv1, send1, recv2, send2,   &
+    recv3, send3, recv4, send4,  recv5, send5, recv6, send6, recv7, send7,              &
+    recv4d, send4d, nshift, recv3d_arr, send3d_arr)
+
+    CLASS(t_comm_pattern), POINTER, INTENT(in) :: p_pat
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(dp), INTENT(INOUT), TARGET :: recv1(:,:,:), recv4d(:,:,:,:)
+    REAL(dp), INTENT(INOUT), TARGET, OPTIONAL ::  &
+      recv2(:,:,:), recv3(:,:,:), recv4(:,:,:), recv5(:,:,:), recv6(:,:,:), recv7(:,:,:)
+    REAL(dp), INTENT(IN   ), TARGET, OPTIONAL ::  &
+      send1(:,:,:), send2(:,:,:), send3(:,:,:), send4(:,:,:), send5(:,:,:), send6(:,:,:), &
+      send7(:,:,:), send4d(:,:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+    TYPE(t_ptr_3d_dp), INTENT(   IN), TARGET, OPTIONAL :: recv3d_arr(:)
+    TYPE(t_ptr_3d_dp), INTENT(INOUT), TARGET, OPTIONAL :: send3d_arr(:)
+    INTEGER, OPTIONAL, INTENT(IN) :: nshift
+
+    CALL exchange_data_mult_dp_(p_pat, lacc, nfields, ndim2tot, &
+      &                         recv1=recv1, send1=send1, &
+      &                         recv2=recv2, send2=send2, &
+      &                         recv3=recv3, send3=send3, &
+      &                         recv4=recv4, send4=send4, &
+      &                         recv5=recv5, send5=send5, &
+      &                         recv6=recv6, send6=send6, &
+      &                         recv7=recv7, send7=send7, &
+      &                         recv4d=recv4d, send4d=send4d, &
+      &                         nshift=nshift, &
+      &                         recv3d_arr=recv3d_arr, send3d_arr=send3d_arr)
+
+  END SUBROUTINE exchange_data_mult_3d4d_dp
+
+  SUBROUTINE exchange_data_mult_dp_(p_pat, lacc, nfields, ndim2tot, recv1, send1, recv2, send2,   &
+    recv3, send3, recv4, send4, recv5, send5, recv6, send6, recv7, send7,              &
     recv4d, send4d, nshift, recv3d_arr, send3d_arr)
 
     CLASS(t_comm_pattern), POINTER, INTENT(in) :: p_pat
@@ -727,12 +961,12 @@ CONTAINS
       send7(:,:,:), send4d(:,:,:,:)
 
     INTEGER, INTENT(IN)           :: nfields, ndim2tot
-    TYPE(t_ptr_3d), INTENT(   IN), TARGET, OPTIONAL :: recv3d_arr(:)
-    TYPE(t_ptr_3d), INTENT(INOUT), TARGET, OPTIONAL :: send3d_arr(:)
+    TYPE(t_ptr_3d_dp), INTENT(   IN), TARGET, OPTIONAL :: recv3d_arr(:)
+    TYPE(t_ptr_3d_dp), INTENT(INOUT), TARGET, OPTIONAL :: send3d_arr(:)
     INTEGER, OPTIONAL, INTENT(IN) :: nshift
 
-    CHARACTER(len=*), PARAMETER :: routine = modname//"::exchange_data_mult"
-    TYPE(t_ptr_3d) :: recv(nfields), send(nfields)
+    CHARACTER(len=*), PARAMETER :: routine = modname//"::exchange_data_mult_dp_"
+    TYPE(t_ptr_3d_dp) :: recv(nfields), send(nfields)
 
     INTEGER :: i, nf4d
     LOGICAL :: lsend
@@ -810,8 +1044,192 @@ CONTAINS
       CALL p_pat%exchange_data_mult(lacc, ndim2tot, recv, nshift=nshift)
     END IF
 
-  END SUBROUTINE exchange_data_mult
+  END SUBROUTINE exchange_data_mult_dp_
 
+  !! Does data exchange according to a communication pattern (in p_pat).
+  !!
+  SUBROUTINE exchange_data_mult_3d_sp(p_pat, lacc, nfields, ndim2tot, recv1, send1, recv2, send2,   &
+    recv3, send3, recv4, send4,  recv5, send5, recv6, send6, recv7, send7,              &
+    nshift, recv3d_arr, send3d_arr)
+
+    CLASS(t_comm_pattern), POINTER, INTENT(in) :: p_pat
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(sp), INTENT(INOUT), TARGET ::  &
+      recv1(:,:,:)
+    REAL(sp), INTENT(INOUT), TARGET, OPTIONAL ::  &
+      recv2(:,:,:), recv3(:,:,:), recv4(:,:,:), recv5(:,:,:), recv6(:,:,:), recv7(:,:,:)
+    REAL(sp), INTENT(IN   ), TARGET, OPTIONAL ::  &
+      send1(:,:,:), send2(:,:,:), send3(:,:,:), send4(:,:,:), send5(:,:,:), send6(:,:,:), &
+      send7(:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+    TYPE(t_ptr_3d_sp), INTENT(   IN), TARGET, OPTIONAL :: recv3d_arr(:)
+    TYPE(t_ptr_3d_sp), INTENT(INOUT), TARGET, OPTIONAL :: send3d_arr(:)
+    INTEGER, OPTIONAL, INTENT(IN) :: nshift
+
+    CALL exchange_data_mult_sp_(p_pat, lacc, nfields, ndim2tot, &
+      &                         recv1=recv1, send1=send1, &
+      &                         recv2=recv2, send2=send2, &
+      &                         recv3=recv3, send3=send3, &
+      &                         recv4=recv4, send4=send4, &
+      &                         recv5=recv5, send5=send5, &
+      &                         recv6=recv6, send6=send6, &
+      &                         recv7=recv7, send7=send7, &
+      &                         nshift=nshift, &
+      &                         recv3d_arr=recv3d_arr, send3d_arr=send3d_arr)
+
+  END SUBROUTINE exchange_data_mult_3d_sp
+
+  SUBROUTINE exchange_data_mult_4d_sp(p_pat, lacc, nfields, ndim2tot, recv4d, send4d, nshift)
+
+    CLASS(t_comm_pattern), POINTER, INTENT(in) :: p_pat
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(sp), INTENT(INOUT), TARGET :: recv4d(:,:,:,:)
+    REAL(sp), INTENT(IN   ), TARGET, OPTIONAL :: send4d(:,:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+    INTEGER, OPTIONAL, INTENT(IN) :: nshift
+
+    CALL exchange_data_mult_sp_(p_pat, lacc, nfields, ndim2tot, &
+      &                         recv4d=recv4d, send4d=send4d, &
+      &                         nshift=nshift)
+
+  END SUBROUTINE exchange_data_mult_4d_sp
+
+  SUBROUTINE exchange_data_mult_3d4d_sp(p_pat, lacc, nfields, ndim2tot, recv1, send1, recv2, send2,   &
+    recv3, send3, recv4, send4,  recv5, send5, recv6, send6, recv7, send7,              &
+    recv4d, send4d, nshift, recv3d_arr, send3d_arr)
+
+    CLASS(t_comm_pattern), POINTER, INTENT(in) :: p_pat
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(sp), INTENT(INOUT), TARGET :: recv1(:,:,:), recv4d(:,:,:,:)
+    REAL(sp), INTENT(INOUT), TARGET, OPTIONAL ::  &
+      recv2(:,:,:), recv3(:,:,:), recv4(:,:,:), recv5(:,:,:), recv6(:,:,:), recv7(:,:,:)
+    REAL(sp), INTENT(IN   ), TARGET, OPTIONAL ::  &
+      send1(:,:,:), send2(:,:,:), send3(:,:,:), send4(:,:,:), send5(:,:,:), send6(:,:,:), &
+      send7(:,:,:), send4d(:,:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+    TYPE(t_ptr_3d_sp), INTENT(   IN), TARGET, OPTIONAL :: recv3d_arr(:)
+    TYPE(t_ptr_3d_sp), INTENT(INOUT), TARGET, OPTIONAL :: send3d_arr(:)
+    INTEGER, OPTIONAL, INTENT(IN) :: nshift
+
+    CALL exchange_data_mult_sp_(p_pat, lacc, nfields, ndim2tot, &
+      &                         recv1=recv1, send1=send1, &
+      &                         recv2=recv2, send2=send2, &
+      &                         recv3=recv3, send3=send3, &
+      &                         recv4=recv4, send4=send4, &
+      &                         recv5=recv5, send5=send5, &
+      &                         recv6=recv6, send6=send6, &
+      &                         recv7=recv7, send7=send7, &
+      &                         recv4d=recv4d, send4d=send4d, &
+      &                         nshift=nshift, &
+      &                         recv3d_arr=recv3d_arr, send3d_arr=send3d_arr)
+
+  END SUBROUTINE exchange_data_mult_3d4d_sp
+
+  SUBROUTINE exchange_data_mult_sp_(p_pat, lacc, nfields, ndim2tot, recv1, send1, recv2, send2,   &
+    recv3, send3, recv4, send4,  recv5, send5, recv6, send6, recv7, send7,              &
+    recv4d, send4d, nshift, recv3d_arr, send3d_arr)
+
+    CLASS(t_comm_pattern), POINTER, INTENT(in) :: p_pat
+
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(sp), INTENT(INOUT), TARGET, OPTIONAL ::  &
+      recv1(:,:,:), recv2(:,:,:), recv3(:,:,:), recv4(:,:,:), recv5(:,:,:), recv6(:,:,:), &
+      recv7(:,:,:), recv4d(:,:,:,:)
+    REAL(sp), INTENT(IN   ), TARGET, OPTIONAL ::  &
+      send1(:,:,:), send2(:,:,:), send3(:,:,:), send4(:,:,:), send5(:,:,:), send6(:,:,:), &
+      send7(:,:,:), send4d(:,:,:,:)
+
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+    TYPE(t_ptr_3d_sp), INTENT(   IN), TARGET, OPTIONAL :: recv3d_arr(:)
+    TYPE(t_ptr_3d_sp), INTENT(INOUT), TARGET, OPTIONAL :: send3d_arr(:)
+    INTEGER, OPTIONAL, INTENT(IN) :: nshift
+
+    CHARACTER(len=*), PARAMETER :: routine = modname//"::exchange_data_mult_sp_"
+    TYPE(t_ptr_3d_sp) :: recv(nfields), send(nfields)
+
+    INTEGER :: i, nf4d
+    LOGICAL :: lsend
+
+    !-----------------------------------------------------------------------
+    lsend     = .FALSE.
+
+    ! Set pointers to input fields
+    IF (PRESENT(recv4d)) THEN
+      nf4d = SIZE(recv4d,4)
+      DO i = 1, nf4d
+        recv(i)%p => recv4d(:,:,:,i)
+      ENDDO
+      IF (PRESENT(send4d)) THEN ! all 4D fields must have the same dimensions
+        DO i = 1, nf4d
+          send(i)%p => send4d(:,:,:,i)
+        ENDDO
+        lsend = .TRUE.
+      ENDIF
+    ELSE
+      nf4d = 0
+    ENDIF
+
+
+    ! Set pointers to input fields
+    IF (PRESENT(recv3d_arr)) THEN
+      DO i = 1, SIZE(recv3d_arr)
+        recv(i+nf4d)%p => recv3d_arr(i)%p
+      ENDDO
+      IF (PRESENT(send3d_arr)) THEN
+        DO i = 1, SIZE(recv3d_arr)
+          send(i+nf4d)%p => send3d_arr(i)%p
+        ENDDO
+        lsend = .TRUE.
+      ENDIF
+      nf4d = nf4d + SIZE(recv3d_arr)
+    ENDIF
+
+
+    IF (PRESENT(recv1)) THEN
+      recv(nf4d+1)%p => recv1
+      IF (PRESENT(send1)) THEN
+        send(nf4d+1)%p => send1
+        lsend = .TRUE.
+      ENDIF
+      IF (PRESENT(recv2)) THEN
+        recv(nf4d+2)%p => recv2
+        IF (lsend) send(nf4d+2)%p => send2
+        IF (PRESENT(recv3)) THEN
+          recv(nf4d+3)%p => recv3
+          IF (lsend) send(nf4d+3)%p => send3
+          IF (PRESENT(recv4)) THEN
+            recv(nf4d+4)%p => recv4
+            IF (lsend) send(nf4d+4)%p => send4
+            IF (PRESENT(recv5)) THEN
+              recv(nf4d+5)%p => recv5
+              IF (lsend) send(nf4d+5)%p => send5
+              IF (PRESENT(recv6)) THEN
+                recv(nf4d+6)%p => recv6
+                IF (lsend) send(nf4d+6)%p => send6
+                IF (PRESENT(recv7)) THEN
+                  recv(nf4d+7)%p => recv7
+                  IF (lsend) send(nf4d+7)%p => send7
+                ENDIF
+              ENDIF
+            ENDIF
+          ENDIF
+        ENDIF
+      ENDIF
+    ENDIF
+
+    IF (lsend) THEN
+      CALL p_pat%exchange_data_mult(lacc, ndim2tot, recv, send, nshift)
+    ELSE
+      CALL p_pat%exchange_data_mult(lacc, ndim2tot, recv, nshift=nshift)
+    END IF
+
+  END SUBROUTINE exchange_data_mult_sp_
 
 
   !! Does data exchange according to a communication pattern (in p_pat).
@@ -819,7 +1237,7 @@ CONTAINS
   SUBROUTINE exchange_data_mult_mixprec(p_pat, lacc, nfields_dp, ndim2tot_dp, nfields_sp, ndim2tot_sp,        &
     recv1_dp, send1_dp, recv2_dp, send2_dp, recv3_dp, send3_dp, recv4_dp, send4_dp, recv5_dp, send5_dp, &
     recv1_sp, send1_sp, recv2_sp, send2_sp, recv3_sp, send3_sp, recv4_sp, send4_sp, recv5_sp, send5_sp, &
-    recv4d_dp, send4d_dp, recv4d_sp, send4d_sp, nshift)
+    recv4d_dp, send4d_dp, recv4d_sp, send4d_sp, recv3d_arr_dp, recv3d_arr_sp, nshift)
 
     CLASS(t_comm_pattern), INTENT(INOUT) :: p_pat
 
@@ -834,96 +1252,127 @@ CONTAINS
     REAL(sp), INTENT(IN   ), TARGET, OPTIONAL ::  &
       send1_sp(:,:,:), send2_sp(:,:,:), send3_sp(:,:,:), send4_sp(:,:,:), send5_sp(:,:,:), send4d_sp(:,:,:,:)
 
+    TYPE(t_ptr_3d_dp), INTENT(INOUT), OPTIONAL :: recv3d_arr_dp(:)
+    TYPE(t_ptr_3d_sp), INTENT(INOUT), OPTIONAL :: recv3d_arr_sp(:)
+
     INTEGER, INTENT(IN)           :: nfields_dp, ndim2tot_dp, nfields_sp, ndim2tot_sp
     INTEGER, OPTIONAL, INTENT(IN) :: nshift
 
 
-    TYPE(t_ptr_3d) :: recv_dp(nfields_dp), send_dp(nfields_dp)
+    TYPE(t_ptr_3d_dp) :: recv_dp(nfields_dp), send_dp(nfields_dp)
     TYPE(t_ptr_3d_sp) :: recv_sp(nfields_sp), send_sp(nfields_sp)
 
-    INTEGER :: i, nf4d_dp, nf4d_sp
+    INTEGER :: i, i_dp, i_sp
     LOGICAL :: lsend
+
+   CHARACTER(len=*), PARAMETER :: routine = modname//"::exchange_data_mult_mixprec"
 
     !-----------------------------------------------------------------------
 
     lsend     = .FALSE.
 
+    i_dp = 0
+    i_sp = 0
+
     ! Set pointers to input fields
     IF (PRESENT(recv4d_dp)) THEN
-      nf4d_dp = SIZE(recv4d_dp,4)
-      DO i = 1, nf4d_dp
-        recv_dp(i)%p => recv4d_dp(:,:,:,i)
+      DO i = 1, SIZE(recv4d_dp,4)
+        i_dp = i_dp + 1
+        recv_dp(i_dp)%p => recv4d_dp(:,:,:,i)
+        IF (PRESENT(send4d_dp)) THEN ! all 4D fields must have the same dimensions
+          send_dp(i_dp)%p => send4d_dp(:,:,:,i)
+          lsend = .TRUE.
+        ENDIF
       ENDDO
-      IF (PRESENT(send4d_dp)) THEN ! all 4D fields must have the same dimensions
-        DO i = 1, nf4d_dp
-          send_dp(i)%p => send4d_dp(:,:,:,i)
-        ENDDO
-        lsend = .TRUE.
-      ENDIF
-    ELSE
-      nf4d_dp = 0
-    ENDIF
-    IF (PRESENT(recv4d_sp)) THEN
-      nf4d_sp = SIZE(recv4d_sp,4)
-      DO i = 1, nf4d_sp
-        recv_sp(i)%p => recv4d_sp(:,:,:,i)
-      ENDDO
-      IF (PRESENT(send4d_sp)) THEN ! all 4D fields must have the same dimensions
-        DO i = 1, nf4d_sp
-          send_sp(i)%p => send4d_sp(:,:,:,i)
-        ENDDO
-        lsend = .TRUE.
-      ENDIF
-    ELSE
-      nf4d_sp = 0
     ENDIF
 
     IF (PRESENT(recv1_dp)) THEN
-      recv_dp(nf4d_dp+1)%p => recv1_dp
+      i_dp = i_dp + 1
+      recv_dp(i_dp)%p => recv1_dp
       IF (PRESENT(send1_dp)) THEN
-        send_dp(nf4d_dp+1)%p => send1_dp
+        send_dp(i_dp)%p => send1_dp
         lsend = .TRUE.
       ENDIF
       IF (PRESENT(recv2_dp)) THEN
-        recv_dp(nf4d_dp+2)%p => recv2_dp
-        IF (lsend) send_dp(nf4d_dp+2)%p => send2_dp
+        i_dp = i_dp + 1
+        recv_dp(i_dp)%p => recv2_dp
+        IF (lsend) send_dp(i_dp)%p => send2_dp
         IF (PRESENT(recv3_dp)) THEN
-          recv_dp(nf4d_dp+3)%p => recv3_dp
-          IF (lsend) send_dp(nf4d_dp+3)%p => send3_dp
+          i_dp = i_dp + 1
+          recv_dp(i_dp)%p => recv3_dp
+          IF (lsend) send_dp(i_dp)%p => send3_dp
           IF (PRESENT(recv4_dp)) THEN
-            recv_dp(nf4d_dp+4)%p => recv4_dp
-            IF (lsend) send_dp(nf4d_dp+4)%p => send4_dp
+            i_dp = i_dp + 1
+            recv_dp(i_dp)%p => recv4_dp
+            IF (lsend) send_dp(i_dp)%p => send4_dp
             IF (PRESENT(recv5_dp)) THEN
-              recv_dp(nf4d_dp+5)%p => recv5_dp
-              IF (lsend) send_dp(nf4d_dp+5)%p => send5_dp
+              i_dp = i_dp + 1
+              recv_dp(i_dp)%p => recv5_dp
+              IF (lsend) send_dp(i_dp)%p => send5_dp
             ENDIF
           ENDIF
         ENDIF
       ENDIF
     ENDIF
+
+    IF (PRESENT(recv3d_arr_dp)) THEN
+      DO i = 1, SIZE(recv3d_arr_dp)
+        i_dp = i_dp + 1
+        recv_dp(i_dp)%p => recv3d_arr_dp(i)%p
+      ENDDO
+    ENDIF
+
+
+    ! Set pointers to input fields sp
+    IF (PRESENT(recv4d_sp)) THEN
+      DO i = 1, SIZE(recv4d_sp,4)
+        i_sp = i_sp + 1
+        recv_sp(i_sp)%p => recv4d_sp(:,:,:,i)
+        IF (PRESENT(send4d_sp)) THEN ! all 4D fields must have the same dimensions
+          send_sp(i_sp)%p => send4d_sp(:,:,:,i)
+          lsend = .TRUE.
+        ENDIF
+      ENDDO
+    ENDIF
+
     IF (PRESENT(recv1_sp)) THEN
-      recv_sp(nf4d_sp+1)%p => recv1_sp
+      i_sp = i_sp + 1
+      recv_sp(i_sp)%p => recv1_sp
       IF (PRESENT(send1_sp)) THEN
-        send_sp(nf4d_sp+1)%p => send1_sp
+        send_sp(i_sp)%p => send1_sp
         lsend = .TRUE.
       ENDIF
       IF (PRESENT(recv2_sp)) THEN
-        recv_sp(nf4d_sp+2)%p => recv2_sp
-        IF (lsend) send_sp(nf4d_sp+2)%p => send2_sp
+        i_sp = i_sp + 1
+        recv_sp(i_sp)%p => recv2_sp
+        IF (lsend) send_sp(i_sp)%p => send2_sp
         IF (PRESENT(recv3_sp)) THEN
-          recv_sp(nf4d_sp+3)%p => recv3_sp
-          IF (lsend) send_sp(nf4d_sp+3)%p => send3_sp
+          i_sp = i_sp + 1
+          recv_sp(i_sp)%p => recv3_sp
+          IF (lsend) send_sp(i_sp)%p => send3_sp
           IF (PRESENT(recv4_sp)) THEN
-            recv_sp(nf4d_sp+4)%p => recv4_sp
-            IF (lsend) send_sp(nf4d_sp+4)%p => send4_sp
+            i_sp = i_sp + 1
+            recv_sp(i_sp)%p => recv4_sp
+            IF (lsend) send_sp(i_sp)%p => send4_sp
             IF (PRESENT(recv5_sp)) THEN
-              recv_sp(nf4d_sp+5)%p => recv5_sp
-              IF (lsend) send_sp(nf4d_sp+5)%p => send5_sp
+              i_sp = i_sp + 1
+              recv_sp(i_sp)%p => recv5_sp
+              IF (lsend) send_sp(i_sp)%p => send5_sp
             ENDIF
           ENDIF
         ENDIF
       ENDIF
     ENDIF
+
+    IF (PRESENT(recv3d_arr_sp)) THEN
+      DO i = 1, SIZE(recv3d_arr_sp)
+        i_sp = i_sp + 1
+        recv_sp(i_sp)%p => recv3d_arr_sp(i)%p
+      ENDDO
+    ENDIF
+
+    IF (i_dp /= nfields_dp) CALL finish(routine, "internal error nfields_dp")
+    IF (i_sp /= nfields_sp) CALL finish(routine, "internal error nfields_sp")
 
     IF (lsend) THEN
       CALL p_pat%exchange_data_mult_mixprec(lacc, nfields_dp, ndim2tot_dp, &
@@ -1202,6 +1651,71 @@ CONTAINS
   END SUBROUTINE gather_r_2d_deblock
 
 
+  SUBROUTINE gather_s_2d_deblock(in_array, out_array, fill_value, gather_pattern)
+    ! dimension (nproma, nlev, nblk)
+    REAL(sp), INTENT(IN) :: in_array(:,:,:)
+    ! dimension (global length, nlev); only required on root
+    REAL(sp), INTENT(INOUT) :: out_array(:,:)
+    REAL(sp), INTENT(IN), OPTIONAL :: fill_value ! if provided missing values will
+    ! be replaced with this value
+    ! if not provided all valid
+    ! points will be packed to the
+    ! front of the array
+    TYPE(t_comm_gather_pattern), INTENT(IN) :: gather_pattern
+
+    REAL(sp), ALLOCATABLE :: send_buffer(:,:), recv_buffer(:,:)
+    REAL(sp), POINTER :: collector_buffer(:,:)
+    INTEGER :: i, num_send_points, nlev, idx, blk
+
+    !
+    ! OPENACC:  GPU execution assumes that all information is now on the host
+    !
+
+    nlev = SIZE(in_array, 2)
+
+    IF (SIZE(in_array, 1) /= nproma) &
+      CALL finish("gather_s_2d_deblock", &
+      &         "size of first dimension of in_array is not nproma")
+
+    IF (nlev /= SIZE(out_array, 2) .AND. p_pe_work == process_mpi_root_id) &
+      CALL finish("gather_s_2d_deblock", &
+      &         "second size of in_array and out_array are not the same")
+
+    num_send_points = SUM(gather_pattern%collector_send_size(:))
+    IF (SIZE(in_array, 1) * SIZE(in_array, 3) < num_send_points) &
+      CALL finish("gather_s_2d_deblock", "in_array is too small")
+
+    ALLOCATE(send_buffer(nlev, num_send_points))
+    IF (p_pe_work == process_mpi_root_id) THEN
+      ALLOCATE(recv_buffer(nlev, MERGE(gather_pattern%global_size, &
+        &                              SUM(gather_pattern%collector_size(:)), &
+        &                              PRESENT(fill_value))))
+    ELSE
+      ALLOCATE(recv_buffer(0,0))
+    END IF
+
+    DO i = 1, SIZE(gather_pattern%loc_index(:))
+      idx = idx_no(gather_pattern%loc_index(i))
+      blk = blk_no(gather_pattern%loc_index(i))
+      send_buffer(:,i) = in_array(idx, :, blk)
+    END DO
+
+    CALL two_phase_gather_first(send_buffer_r=send_buffer, fill_value=fill_value,&
+      gather_pattern=gather_pattern, &
+      collector_buffer_r=collector_buffer)
+    CALL two_phase_gather_second(recv_buffer_r=recv_buffer, fill_value=fill_value,&
+      gather_pattern=gather_pattern, &
+      collector_buffer_r=collector_buffer)
+
+    IF (p_pe_work == process_mpi_root_id) &
+      out_array(1:SIZE(recv_buffer, 2),1:SIZE(recv_buffer, 1)) = &
+      TRANSPOSE(recv_buffer(:,:))
+
+    DEALLOCATE(send_buffer,recv_buffer)
+
+  END SUBROUTINE gather_s_2d_deblock
+
+
   !-------------------------------------------------------------------------
 
 
@@ -1329,6 +1843,63 @@ CONTAINS
 
     DEALLOCATE(collector_buffer_sizes, collector_buffer)
   END SUBROUTINE allgather_r_1d_deblock
+
+  SUBROUTINE allgather_s_1d_deblock(in_array, out_array, fill_value, &
+    &                               allgather_pattern)
+    ! dimension (nproma, nblk)
+    REAL(sp), INTENT(IN) :: in_array(:,:)
+    ! dimension (global length); only required on root
+    REAL(sp), INTENT(INOUT) :: out_array(:)
+    REAL(sp), INTENT(IN), OPTIONAL :: fill_value ! if provided missing values will
+    ! be replaced with this value
+    ! if not provided all valid
+    ! points will be packed to the
+    ! front of the array
+    TYPE(t_comm_allgather_pattern), INTENT(IN) :: allgather_pattern
+
+    REAL(sp), ALLOCATABLE :: send_buffer(:,:)
+    REAL(sp), POINTER :: collector_buffer(:,:)
+    INTEGER :: i, num_send_points, idx, blk, n_procs, comm
+    INTEGER, ALLOCATABLE :: collector_buffer_sizes(:)
+
+    !
+    ! OPENACC:  GPU execution assumes that all information is now on the host
+    !
+
+    num_send_points = SUM(allgather_pattern%gather_pattern%collector_send_size(:))
+    ALLOCATE(send_buffer(1, num_send_points))
+
+    DO i = 1, SIZE(allgather_pattern%gather_pattern%loc_index(:))
+      idx = idx_no(allgather_pattern%gather_pattern%loc_index(i))
+      blk = blk_no(allgather_pattern%gather_pattern%loc_index(i))
+      send_buffer(1,i) = in_array(idx, blk)
+    END DO
+
+    CALL two_phase_gather_first(send_buffer_r=send_buffer, fill_value=fill_value,&
+      gather_pattern=allgather_pattern%gather_pattern, &
+      collector_buffer_r=collector_buffer)
+    DEALLOCATE(send_buffer)
+    IF (allgather_pattern%intercomm /= MPI_COMM_NULL) THEN
+      n_procs = p_comm_remote_size(allgather_pattern%intercomm)
+      comm = allgather_pattern%intercomm
+    ELSE
+      n_procs = p_n_work
+      comm = p_comm_work
+    END IF
+    ALLOCATE(collector_buffer_sizes(n_procs))
+    CALL p_allgather(SIZE(collector_buffer, 2), collector_buffer_sizes, &
+         comm=comm)
+    IF (SIZE(out_array, 1) < SUM(collector_buffer_sizes)) &
+      CALL finish("allgather_s_1d_deblock", "invalid out_array size")
+#if defined (__SX__) || defined (__NEC_VH__)
+    ! Workaround for occasional segfaults
+    CALL p_barrier(comm)
+#endif
+    CALL p_allgatherv(collector_buffer(1,:), out_array, collector_buffer_sizes,&
+      &               comm=comm)
+
+    DEALLOCATE(collector_buffer_sizes, collector_buffer)
+  END SUBROUTINE allgather_s_1d_deblock
 
 
   !-------------------------------------------------------------------------
@@ -1770,21 +2341,20 @@ CONTAINS
   !-----------------------------------------------------------------------------
   !> Factory method for t_ScatterPattern. Destroy with deleteScatterPattern().
   !-----------------------------------------------------------------------------
-  FUNCTION makeScatterPattern(jg, loc_arr_len, glb_index, communicator)
-    USE mo_scatter_pattern_scatter
+  FUNCTION makeScatterPattern(jg, loc_arr_len, glb_index, communicator, all_workers)
+    USE mo_scatter_pattern_scatter, ONLY: t_ScatterPatternScatter
     IMPLICIT NONE
     CLASS(t_ScatterPattern), POINTER :: makeScatterPattern
     INTEGER, VALUE :: jg, loc_arr_len, communicator
     INTEGER, INTENT(IN) :: glb_index(:)
+    LOGICAL, INTENT(IN) :: all_workers
 
     CHARACTER(*), PARAMETER :: routine = modname//":makeScatterPattern"
     INTEGER :: ierr
 
     ALLOCATE(t_ScatterPatternScatter::makeScatterPattern, stat = ierr)
     IF(ierr /= SUCCESS) CALL finish(routine, "error allocating memory")
-    CALL makeScatterPattern%construct(jg, loc_arr_len, glb_index, communicator)
+    CALL makeScatterPattern%construct(jg, loc_arr_len, glb_index, communicator, all_workers)
   END FUNCTION makeScatterPattern
 
 END MODULE mo_communication
-
-

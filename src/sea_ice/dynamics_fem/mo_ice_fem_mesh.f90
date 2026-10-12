@@ -3,7 +3,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, AWI
+! Copyright (C) 2004-2026, AWI
 !
 ! Authors: Sergey Danilov, Qiang Wang
 ! See LICENSES/ for license information
@@ -81,11 +81,17 @@ subroutine mesh_scaling
 
   INTEGER         :: i
 
-  coord_nod2D(1,:)=coord_nod2D(1,:)*deg2rad
-  coord_nod2D(2,:)=coord_nod2D(2,:)*deg2rad
+  !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1)
+  DO i = 1, SIZE(coord_nod2D, 2)
+    coord_nod2D(1,i)=coord_nod2D(1,i)*deg2rad
+    coord_nod2D(2,i)=coord_nod2D(2,i)*deg2rad
+  END DO
+  !$ACC END PARALLEL LOOP
+  !$ACC WAIT(1)
 
   allocate(cos_elem2D(elem2D), sin_elem2D(elem2D), metrics_elem2D(elem2D))
 
+  !$ACC UPDATE SELF(coord_nod2D)
   do i=1, elem2D
      cos_elem2D(i)=sum(cos(coord_nod2D(2,elem2D_nodes(:,i))))/3.0_wp
      sin_elem2D(i)=sum(sin(coord_nod2D(2,elem2D_nodes(:,i))))/3.0_wp
@@ -133,7 +139,7 @@ subroutine basisfunctions
      enddo
      voltriangle(elem) = abs(DET2D) * Vol2D
   enddo
-
+  !$ACC ENTER DATA COPYIN(bafux, bafuy, voltriangle)
 end subroutine basisfunctions
 !
 !----------------------------------------------------------------------------

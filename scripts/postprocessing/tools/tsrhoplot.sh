@@ -2,20 +2,21 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #
 
 # plot T,S and potential density variation to initial values from a list of ICON input files
 
 #  Usage: script expPath - where expPath is output path of experiment to be plotted
-#         scrip  
+#         scrip
 
 #  Updates Ralf
 #   - ncl (icon_plot) with dozens of errors on blizzard, but okay on workstation
@@ -49,7 +50,7 @@ ICONPLOT=/pool/data/ICON/tools/icon_plot.ncl     #  NCL-script
      fileListPath="$expPath/Output"                                                  # output data path
      fileListPath="$expPath"                                                         # output data path
 # these lines must not be used if standards are matched; edit if plotOnly==y or other needs
-if [[ "$plotOnly" == "y" ]]; then 
+if [[ "$plotOnly" == "y" ]]; then
       outputIdent='r15085.qio1'                                                      # output file name appendix
 fi
 # fileListPattern="${expIdent}_iconR2B04-ocean_etopo40_planet_000[1-5].nc"           # 'nml' naming convention
@@ -71,7 +72,7 @@ fi
           ScrDatN='scr_tsrho'
 # ==============================================================================
 #declare a fileListArray
-if [[ "$plotOnly" == "y" ]]; then 
+if [[ "$plotOnly" == "y" ]]; then
   echo " generate plot tsrho - file ano.TSrho.$outputIdent.nc must be available"
 else
 fileList=$(ls $fileListPath/$fileListPattern)
@@ -110,7 +111,7 @@ for file in $fileList; do
     if [[ -f ${ScrDatN}_${pattern_num} ]]; then
       echo  "${ScrDatN}_${pattern_num} already exists!"
     else
-      if [[ ! -f "$maskFile" ]]; then 
+      if [[ ! -f "$maskFile" ]]; then
         # create maskFile
         $CDO selvar,$MaskVarName $file $maskFile
       fi
@@ -122,8 +123,8 @@ for file in $fileList; do
 
     # special treatment of first file "*0001.nc": contains zero!
     #  - for _acc accumulated variables only
- #  if [[ $Tempvar == "t_acc" ]]; then 
- #    if [[ $fnum == "0001.nc" ]]; then 
+ #  if [[ $Tempvar == "t_acc" ]]; then
+ #    if [[ $fnum == "0001.nc" ]]; then
  #      # no deldate available?
  #      # seldate,2001-01-11,2010-12-30 for 10-days output only!
  #      $CDO seldate,2001-01-11,2010-12-30 fldmean_${pattern_num} fldmean.noinit.nc
@@ -131,7 +132,7 @@ for file in $fileList; do
  #    fi  # file no=1
  #  fi  # tempvar=t_acc
   fi  # create fldmean_${pattern_num}
-  if [[ $fnum == "0001.nc" ]]; then 
+  if [[ $fnum == "0001.nc" ]]; then
     if [[ -f $initFile ]]; then
       echo  "$initFile already exists!"
     else
@@ -149,13 +150,13 @@ $CDO -r cat fldmean_${outputIdent}_* fldmean_$outputIdent.nc
 # ==============================================================================
 # Subtract initial values
 [[ -f $outputDataFile ]] || $CDO yearmean -sub fldmean_$outputIdent.nc $initFile $outputDataFile
-  
+
 fi  #  plotOnly
 # ==============================================================================
 # Plot a hovmoeller type graph using icon_plot.ncl
 #  reports lots of errors, difficult to put on one page (psnup -3 if.ps of.ps)
-if [[ $PlotScript == "icon" ]]; then 
-  for varname in $Tempvar $Salvar $Rhovar; do 
+if [[ $PlotScript == "icon" ]]; then
+  for varname in $Tempvar $Salvar $Rhovar; do
     nclsh $ICONPLOT  -altLibDir=$ICONLIB -varName=$varname -iFile=$outputDataFile \
     -oFile=hov.ano.${outputIdent}_$varname -oType=ps -isIcon -hov=true
   done
@@ -163,7 +164,7 @@ fi
 
 # ==============================================================================
 # Plot a hovmoeller type graph using ncl-script
-if [[ $PlotScript == "ncl" ]]; then 
+if [[ $PlotScript == "ncl" ]]; then
 
 cat >scr_plot_tsrho.ncl << EOF
 ;-----------------------------------------------------------------------------
@@ -342,9 +343,9 @@ begin
    res@gsnSpreadColors      =  True               ;-- subset of the whole colormap
 
 ;  res@vpWidthF             =  0.98               ;-- set view port width of each plot in panel
-;  res@vpHeightF            =  0.40               ;-- set view port height of each plot in panel 
+;  res@vpHeightF            =  0.40               ;-- set view port height of each plot in panel
    res@vpWidthF             =  0.6                ;-- set view port width of each plot in panel
-   res@vpHeightF            =  0.31               ;-- set view port height of each plot in panel 
+   res@vpHeightF            =  0.31               ;-- set view port height of each plot in panel
                                                   ;--          (optimized value for "ps" output)
 ;  res@vpXF                 =  1.0
 ;  res@vpYF                 =  1.0
@@ -378,7 +379,7 @@ begin
    res@tmXBOn               =  False              ;-- don't draw tickmarks on bottom of x-axis
    res@tmXTLabelsOn         =  False              ;-- don't draw labels on top of x-axis
    res@tmXBLabelsOn         =  False              ;-- don't draw labels on bottom of x-axis
-   res@tiXAxisOn            =  False              ;-- don't draw x-axis title        
+   res@tiXAxisOn            =  False              ;-- don't draw x-axis title
 
 ;-- common y-axis labeling settings
 ;  res@tmYLMode             = "Explicit"          ;-- set y-axis labeling to explicit
@@ -450,7 +451,7 @@ begin
    res2@tmXBLabelAngleF      =  45                ;-- rotate the x-axis labels counter clockwise
    res2@tmXBLabelDeltaF      =  0.5               ;-- move the x-axis labels downward
    res2@tmXBLabelsOn         =  True              ;-- draw the x-axis tickmark labels
-   res2@tiXAxisOn            =  True              ;-- draw the x-axis title    
+   res2@tiXAxisOn            =  True              ;-- draw the x-axis title
    res2@tiXAxisString        = "Time"             ;-- draw x-axis title string
 ;  res2@tiXAxisOffsetYF      =  0.00              ;-- move x-axis title string upward
    res2@tiXAxisFontHeightF   =  0.016             ;-- x-axis font size
@@ -494,5 +495,3 @@ EOF
 
 
 fi
-
-

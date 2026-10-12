@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -29,11 +29,11 @@
 #define ICON_OMP_END_WORKSHARE $omp end workshare
 !-----------------------------------------------
 
-#if ( defined(_CRAYFTN) || defined(__INTEL_COMPILER) )
+#if ( defined(_CRAYFTN) || defined(__INTEL_COMPILER) || defined(__NVCOMPILER))
 #define ICON_OMP_DEFAULT_SCHEDULE SCHEDULE(guided)
 #define ICON_OMP_RUNTIME_SCHEDULE SCHEDULE(runtime)
 #define ICON_OMP_GUIDED_SCHEDULE  SCHEDULE(guided)
-#else 
+#else
 ! #define ICON_OMP_DEFAULT_SCHEDULE SCHEDULE(runtime)
 #define ICON_OMP_DEFAULT_SCHEDULE SCHEDULE(dynamic,1)
 #define ICON_OMP_RUNTIME_SCHEDULE SCHEDULE(runtime)

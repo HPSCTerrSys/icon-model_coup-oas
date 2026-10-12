@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Stochastic differential equation (SDE) shallow convection subroutine.
 !
 ! Description:
@@ -32,24 +42,11 @@
 ! Compile with FFLAG -fall-intrinsics
 !
 !-----------------------------------------------------------------------------
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_stoch_sde
 
   USE netcdf
-#ifdef HAVE_ACM_LICENSE  
-  USE random_rewrite,        ONLY: random_Poisson
-#endif
+  USE mo_random_util,        ONLY: poisson_distr
   USE mo_kind,               ONLY: wp, i4
   USE mo_physical_constants, ONLY: alv, cpd
   USE mo_cuparameters,       ONLY: k_wei, alpha_mf, beta_mf, m0, C1, kinv, active_fraction, &
@@ -65,18 +62,18 @@ MODULE mo_stoch_sde
 
   !! Main subroutine calculating mass flux (MF) distribution, birth and death rates, determining
   !! the number of newborn/dying clouds, assigning each cloud a mass flux and incrementing the
-  !! prognostic variables for grid box mass flux and cloud numbers.  
-  !! This routine is called when the SDE scheme is run interactively. A second version of the 
+  !! prognostic variables for grid box mass flux and cloud numbers.
+  !! This routine is called when the SDE scheme is run interactively. A second version of the
   !! routine follows below for running passively (in piggy-backing mode) for comparison with the
-  !! explicit stochastic scheme.  
+  !! explicit stochastic scheme.
   SUBROUTINE shallow_stoch_sde(i_startidx,i_endidx,klon,klev,ptsphy,pgeoh,mbas_con,&
-                           & mfb, shfl, lhfl, temp_s, mfp, dh, ktype,clnum, &       
+                           & mfb, shfl, lhfl, temp_s, mfp, dh, ktype,clnum, &
                            & pclnum_a, pclmf_a, &
                            & pclnum_p, pclmf_p, &
                            & lseed,extra_3d,luse3d,cell_area,lspinup,lgrayzone)
 
   !! Interface variables
-  INTEGER(i4),INTENT(IN)    :: i_startidx         ! block index start            
+  INTEGER(i4),INTENT(IN)    :: i_startidx         ! block index start
   INTEGER(i4),INTENT(IN)    :: i_endidx           ! block index end
   INTEGER(i4),INTENT(IN)    :: klon               ! number of grid points in block
   INTEGER(i4),INTENT(IN)    :: klev               ! number of model layers
@@ -85,7 +82,7 @@ MODULE mo_stoch_sde
   REAL(wp)   ,INTENT(IN)    :: pgeoh(klon,klev+1) ! geopotential height (above ground level) at model layer interfaces
   REAL(wp)   ,INTENT(IN)    :: mfb(klon)          ! bulk/first-guess mass flux derived from T-B scheme (normalised by grid cell area)
   REAL(wp)   ,INTENT(IN)    :: shfl(klon)         ! surface sensible heat flux
-  REAL(wp)   ,INTENT(IN)    :: lhfl(klon)         ! surface latent heat flux 
+  REAL(wp)   ,INTENT(IN)    :: lhfl(klon)         ! surface latent heat flux
   REAL(wp)   ,INTENT(IN)    :: temp_s(klon)       ! temperature on lowest model level
   REAL(wp)   ,INTENT(OUT)   :: mfp(klon)          ! stochastic perturbed mass flux, all clouds (diagnostic)
   REAL(wp)   ,INTENT(IN)    :: dh(klon)           ! moist static energy difference updraft/environment at cloud base
@@ -120,7 +117,7 @@ MODULE mo_stoch_sde
   REAL(wp), DIMENSION(klon) :: mean_m_a, mean_m_p ! average MF of active/passive clouds currently occupying grid cell
   REAL(wp), DIMENSION(klon) :: pclnum_now_a, pclnum_now_p  ! cloud ensemble state at beginning of time step
   REAL(wp), DIMENSION(klon) :: pclmf_now_a, pclmf_now_p    ! cloud ensemble state at beginning of time step
-  
+
   REAL(wp) :: bowen                               ! Bowen ratio
   REAL(wp) :: lambda1                             ! distribution parameter for passive Weibull distribution
   REAL(wp) :: maxdeathrate                        ! max limit on death rate
@@ -128,22 +125,22 @@ MODULE mo_stoch_sde
   REAL(wp) :: rdxy                                ! inverse of grid cell area
   REAL(wp) :: eps                                 ! equivalent of 0.9 clouds in units of "clouds per grid cell area"
   REAL(wp) :: excess                              ! number of clouds exceeding upper limit (5000)
-  REAL(wp) :: z0                              
+  REAL(wp) :: z0
 
   INTEGER(i4) :: i, k, kstart,kstop,idx           ! (loop) indices
   INTEGER(i4) :: rn_poisson1, rn_poisson2         ! result (integer) of draw from Poisson distribution
   INTEGER(i4) :: rn_poisson3, rn_poisson4,rn1,rn2 ! result (integer) of draw from Poisson distribution
   INTEGER(i4) :: iseed                            ! local copy of seed for random number generator
   INTEGER(i4) :: streammax                        ! length of random number sequence to be generated at once
-  
+
   ! This is a hold-over from the explicit scheme, where clouds are kept explicitly in memory. In the SDE, this limit
   ! is not strictly necessary. However, the number of possible clouds also gives the upper limit on how many random
   ! numbers are generated at once, and here a limit must be defined. For consistency, the same value of possible
   ! clouds is chosen here as in the explicity scheme.
-  
+
   REAL(wp), DIMENSION(5120) :: rn_u              ! sequence of random numbers generated by call to generator
   ! The max number of random numbers that can be retrieved from the generator is hardcoded, currently to 5120
- 
+
   ! Type for random number generator and stream for producing random
   ! numbers
   TYPE(rng_type) :: random_number_generator
@@ -161,7 +158,7 @@ MODULE mo_stoch_sde
      pclnum_now_p(i)=pclnum_p(i)
      pclmf_now_a(i) =pclmf_a(i)
      pclmf_now_p(i) =pclmf_p(i)
-     
+
      !Initialize
      birth_rate_a(i)=0._WP
      birth_rate_p(i)=0._WP
@@ -183,12 +180,12 @@ MODULE mo_stoch_sde
 
         ! CALCULATION OF WEIBULL DISTRIBUTION PARAMETERS FOR ACTIVE/PASSIVE CLOUD POPULATIONS
         ! AND CALCULATION OF BIRTH RATES BASED ON Sakradzija and Hohenegger 2017
-        
+
         ! Bulk mass flux from traditional T-B closure, convert into units of kg/s
         ! by multiplying with grid box area
         M(i)  = mfb(i)*dxy ! in kg/s; rho =1 kg/m3
         ! calculate Bowen ratio. Make sure bowen cannot become zero!
-        IF (shfl(i)>=0._WP.OR.lhfl(i)>=0._WP) THEN 
+        IF (shfl(i)>=0._WP.OR.lhfl(i)>=0._WP) THEN
            bowen = 0._WP
         ELSE
            bowen = shfl(i)/lhfl(i)+1e-13_WP ! 1.e-13 added as safety against zero value
@@ -199,19 +196,19 @@ MODULE mo_stoch_sde
         ! Calculate distribution avgerage mass flux mavg2 for active clouds
         ! based on Eqn 12 Sakradzija and Hohenegger 2017
         mavg2(i)  = m0 + C1 * ( bowen/(1+bowen) + 0.608_WP*cpd*temp_s(i)/(alv+bowen*alv) ) * &
-                      hbas_con(i)*0.5_WP/(cpd*temp_s(i)) * & 
+                      hbas_con(i)*0.5_WP/(cpd*temp_s(i)) * &
                       (-shfl(i)-lhfl(i))/dh(i)
 
         ! Check: use Bowen ratio to calculate mavg2 only if surface fluxes are into the atmosphere
         ! otherwise reduce expression for mavg2 to intercept parameter m0
         ! Rescaling is then necessary (since fixed parameters were derived for LES resolution)
-        IF (shfl(i)>=0._WP.OR.lhfl(i)>=0._WP) THEN 
+        IF (shfl(i)>=0._WP.OR.lhfl(i)>=0._WP) THEN
           mavg2(i)  = m0 * 51200._WP * 51200._WP
         ELSE
           mavg2(i)  = mavg2(i) * 51200._WP * 51200._WP
           mavg2(i)  = MAX(mavg2(i),10000._WP)
         ENDIF
-        
+
         ! heat-cycle dependent Weibull parameter for active clouds
         lambda2(i) = mavg2(i) / GAMMA(1.+kinv)
 
@@ -224,7 +221,7 @@ MODULE mo_stoch_sde
              & gamma(1._WP+(beta_mf+1)*kinv))
 
         !! CALCULATION OF DEATH RATES BASED ON Machulskaya and Seifert 2019
-        
+
         ! Calculate death rates only if non-zero clouds and mass flux exist
         IF(pclnum_now_a(i) > eps .AND. pclmf_now_a(i) > 0._WP) THEN
            ! mean_m_a is the distribution parameter m'_b in Eqn 26 of Machulskaya and Seifert 2019, for active clouds
@@ -241,7 +238,7 @@ MODULE mo_stoch_sde
         ELSE
            ! If no active clouds exist, death rate is zero.
            mean_m_a(i) = 0.0
-           death_rate_a(i) = 0.0 
+           death_rate_a(i) = 0.0
         END IF
         IF(pclnum_now_p(i) > eps .AND. pclmf_now_p(i) >0._WP ) THEN
            ! mean_m_p is the distribution parameter m'_b in Eqn 26 of Machulskaya and Seifert 2019, for passive clouds
@@ -258,7 +255,7 @@ MODULE mo_stoch_sde
         ELSE
            ! If no passive clouds exist, death rate is zero.
            mean_m_p(i) = 0.0
-           death_rate_p(i) = 0.0 
+           death_rate_p(i) = 0.0
         END IF
       ELSE !ktype!=2
         ! If grid cell has no active shallow convection, continue decaying number and massflux according to death rate.
@@ -278,7 +275,7 @@ MODULE mo_stoch_sde
         ELSE
            ! If no active clouds exist, death rate is zero.
            mean_m_a(i) = 0.0
-           death_rate_a(i) = 0.0 
+           death_rate_a(i) = 0.0
         END IF
         IF(pclnum_now_p(i) > eps .AND. pclmf_now_p(i) > 0._WP) THEN
            ! mean_m_p is the distribution parameter m'_b in Eqn 26 of Machulskaya and Seifert 2019, for passive clouds
@@ -293,7 +290,7 @@ MODULE mo_stoch_sde
         ELSE
            ! If no passive clouds exist, death rate is zero.
            mean_m_p(i) = 0.0
-           death_rate_p(i) = 0.0 
+           death_rate_p(i) = 0.0
         END IF
 
         ! Update prognostic mass flux
@@ -322,66 +319,23 @@ MODULE mo_stoch_sde
       ! Retrieve streammax new random numbers to use in draw from Poisson distributions
       CALL random_number_generator%uniform_distribution(rn_u(1:streammax))
 
-#ifdef HAVE_ACM_LICENSE         
       ! Determine number of newborn active clouds by drawing from Poisson distribution with given birth rate.
       idx=1 ! This index keeps track of which random numbers out of the 200 have already been used
-      rn_poisson1 = random_Poisson(birth_rate_a(i)*ptsphy,idx,streammax,rn_u(1:streammax))
-      ! Safety check in case random_Poisson routine does not converge and runs out of random numbers to use
-      IF (idx > streammax) THEN
-         WRITE(6,*) 'idx1 out of range',idx,birth_rate_a(i)*ptsphy,rn_u(1),rn_u(idx),MINVAL(rn_u(1:streammax)),MAXVAL(rn_u(1:streammax))
-      ENDIF
-      
+      CALL poisson_distr(birth_rate_a(i)*ptsphy,rn_u(idx),rn_poisson1)
+
+
       ! Determine number of dying active clouds by drawing from Poisson distribution with given death rate.
       idx=50 ! Start at index 50, to make sure to use "fresh" random numbers
-      rn_poisson2 = random_Poisson(death_rate_a(i)*ptsphy,idx,streammax,rn_u(1:streammax))
-      ! Safety check in case random_Poisson routine does not converge and runs out of random numbers to use
-      IF (idx > streammax) THEN
-         WRITE(6,*) 'idx2 out of range',idx,death_rate_a(i)*ptsphy,rn_u(1),rn_u(idx),MINVAL(rn_u(1:streammax)),MAXVAL(rn_u(1:streammax))
-      ENDIF
+      CALL poisson_distr(death_rate_a(i)*ptsphy,rn_u(idx), rn_poisson2)
 
       ! Determine number of newborn passive clouds by drawing from Poisson distribution with given birth rate.
       idx=100 ! Start at index 100, to make sure to use "fresh" random numbers
-      rn_poisson3 = random_Poisson(birth_rate_p(i)*ptsphy,idx,streammax,rn_u(1:streammax))
-      ! Safety check in case random_Poisson routine does not converge and runs out of random numbers to use
-      IF (idx > streammax) THEN
-         write(6,*) 'idx3 out of range',idx,birth_rate_p(i)*ptsphy,rn_u(1),rn_u(idx),MINVAL(rn_u(1:streammax)),MAXVAL(rn_u(1:streammax))
-      ENDIF
-      
+      CALL poisson_distr(birth_rate_p(i)*ptsphy,rn_u(idx),rn_poisson3)
+
       ! Determine number of dying passive clouds by drawing from Poisson distribution with given death rate.
       idx=150 ! Start at index 150, to make sure to use "fresh" random numbers
-      rn_poisson4 = random_Poisson(death_rate_p(i)*ptsphy,idx,streammax,rn_u(1:streammax))
-      ! Safety check in case random_Poisson routine does not converge and runs out of random numbers to use
-      IF (idx > streammax) THEN
-         WRITE(6,*) 'idx4 out of range',idx,death_rate_p(i)*ptsphy,rn_u(1),rn_u(idx),MINVAL(rn_u(1:streammax)),MAXVAL(rn_u(1:streammax))
-      ENDIF
+      CALL poisson_distr(death_rate_p(i)*ptsphy,rn_u(idx),rn_poisson4)
       idx=200
-#else
-      ! Determine number of newborn active clouds by sampling a normal distribution
-      ! (instead of Poisson) using the Box-Muller method, with given birth rate.
-      idx=1 ! This index keeps track of which random numbers out of the 200 have already been used
-      z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-      rn_poisson1 = MAX(0,INT(z0 * SQRT(birth_rate_a(i)*ptsphy) + birth_rate_a(i)*ptsphy))
-      
-      ! Determine number of dying active clouds by sampling a normal distribution
-      ! (instead of Poisson) using the Box-Muller method, with given death rate.
-      idx=50 
-      z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-      rn_poisson2 = MAX(0,INT(z0 * SQRT(death_rate_a(i)*ptsphy) + death_rate_a(i)*ptsphy))
-      
-      ! Determine number of newborn passive clouds by sampling a normal distribution
-      ! (instead of Poisson) using the Box-Muller method, with given birth rate.
-      idx=100 ! This index keeps track of which random numbers out of the 200 have already been used
-      z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-      rn_poisson3 = MAX(0,INT(z0 * SQRT(birth_rate_p(i)*ptsphy) + birth_rate_p(i)*ptsphy))
-      
-      ! Determine number of dying passive clouds by sampling a normal distribution
-      ! (instead of Poisson) using the Box-Muller method, with given death rate.
-      idx=150 
-      z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-      rn_poisson4 = MAX(0, INT(z0 * SQRT(death_rate_p(i)*ptsphy) + death_rate_p(i)*ptsphy))
-      idx=200
-
-#endif
 
       ! Initialise diagnostic fields that keep track of how much mass flux is added by newborn clouds,
       ! and how much is removed by dying clouds
@@ -425,16 +379,11 @@ MODULE mo_stoch_sde
            ! Use the fractional first guess cloud number as expected value for a Poisson draw
            ! to generate a stochastic estimate of the actual active/passive cloud number (integer)
            ! in the grid box
-#ifdef HAVE_ACM_LICENSE           
-           rn1 = random_Poisson(pclnum_a(i)*dxy,idx,streammax,rn_u(1:streammax))
-           rn2 = random_Poisson(pclnum_p(i)*dxy,idx,streammax,rn_u(1:streammax))
-#else
-           z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+1))
-           rn1 = MAX(0, INT(z0 * SQRT(pclnum_a(i)*dxy) + pclnum_a(i)*dxy))
-           z0 = SQRT(-2._wp * LOG(rn_u(idx+2))) * COS(pi * rn_u(idx+3))
-           rn2 = MAX(0, INT(z0 * SQRT(pclnum_p(i)*dxy) + pclnum_p(i)*dxy))
-           idx=idx+4
-#endif
+
+           CALL poisson_distr(pclnum_a(i)*dxy,rn_u(idx),rn1)
+           idx=idx+1
+           CALL poisson_distr(pclnum_p(i)*dxy,rn_u(idx),rn2)
+
            ! To calculate the final estimate of the grid box mass flux, multiply the
            ! number of active/passive clouds again with the average mass flux of the
            ! Weibull distribution (mavg1, mavg2)
@@ -451,10 +400,10 @@ MODULE mo_stoch_sde
         ! Get a random number for each newly born/dying cloud, plus 200 extra
         ! so we can throw out the first 200 that were already used for the Poisson draws.
         streammax=rn_poisson1+rn_poisson2+rn_poisson3+rn_poisson4+idx
-        
+
         ! Safety check - we can draw only 5120 random numbers at a time. This
         ! limit is hard-coded into the random number generator.
-        ! For resolutions up to 5km, this limit should never be reached, but in 
+        ! For resolutions up to 5km, this limit should never be reached, but in
         ! case this code is run at very coarse resolutions, this will make sure
         ! the number is capped at the limit. Note: As an added safety feature,
         ! lstoch_sde is set to .false. for resolutions above 20km in the physics
@@ -468,7 +417,7 @@ MODULE mo_stoch_sde
            rn_poisson2=rn_poisson2-CEILING(excess*(rn_poisson2+idx*.25))
            streammax=rn_poisson1+rn_poisson2+rn_poisson3+rn_poisson4+idx
         ENDIF
-        
+
         ! Initialize and retrieve only as many random numbers as will be needed - speeds up code
         CALL random_number_generator%initialize(IRngMinstdVector, iseed=iseed, &
              &                                  nmaxstreams=streammax)
@@ -484,7 +433,7 @@ MODULE mo_stoch_sde
            mf_new_a(i)=mf_new_a(i)+(-LOG(1.-rn_u(k))*(lambda2(i)**k_wei))**kinv*rdxy
         END DO
 
-        
+
         kstart=kstop+1
         kstop=kstop+rn_poisson2
         DO k = kstart,kstop
@@ -543,15 +492,15 @@ MODULE mo_stoch_sde
            mf_die_p(i)=mf_die_p(i)+pclmf_p(i)
            pclmf_p (i) = 0._wp
         ENDIF
-        
+
         ! update diagnostic variables for total (active+passive) MF and cloud numbers
         mfp(i)=pclmf_a(i)+pclmf_p(i)
         ! Diagnostic uses absolute cloud number, not number per unit area
         clnum(i)=(pclnum_a(i)+pclnum_p(i))*dxy
         ! get rid of very small values 1e-16 left by unit conversion
-        IF (clnum(i) < .1_WP) clnum(i)= 0.0_WP 
+        IF (clnum(i) < .1_WP) clnum(i)= 0.0_WP
 
-        IF (luse3d) THEN 
+        IF (luse3d) THEN
           ! write diagnostics
           extra_3d(i,1,2)=birth_rate_p(i)*ptsphy        ! passive birth rate (in units of clouds per time step)
           extra_3d(i,2,2)=birth_rate_a(i)*ptsphy        ! active birth rate (in units of clouds per time step)
@@ -573,14 +522,14 @@ MODULE mo_stoch_sde
           extra_3d(i,18,2)=mean_m_a(i)                  ! Expected value of Weibull dist. of current active  cloud ensemble
           extra_3d(i,19,2)=death_rate_p(i)*ptsphy       ! passive death rate (in units of clouds per time step)
           extra_3d(i,20,2)=death_rate_a(i)*ptsphy       ! active death rate (in units of clouds per time step)
-        ENDIF 
+        ENDIF
       ELSE !not ktype=2
         ! If grid cell has no active shallow convection, continue decaying number and massflux according to death rate.
         ! While the mass flux calculated for this time step is not actively used by the convection scheme,
         ! the state of the decaying cloud ensemble may be picked up again if convection switches back on during
         ! subsequent time steps.
 
-        ! We only need to generate random numbers for dying clouds +200 used for prior Poisson draw 
+        ! We only need to generate random numbers for dying clouds +200 used for prior Poisson draw
         streammax=rn_poisson2+rn_poisson4+idx
         ! Safety check again that random numbers to be drawn don't exceed the hard-coded max limit,
         ! and reduce numbers if necessary.
@@ -630,7 +579,7 @@ MODULE mo_stoch_sde
         pclnum_p(i) = MAX(pclnum_p(i),0._wp)
         pclmf_p (i) = MAX(pclmf_p (i),0._wp)
         pclmf_a (i) = MAX(pclmf_a (i),0._wp)
-        
+
         ! Enforce consistency between MF and cloud numbers
         ! Check if cloud numbers have dropped below 0.9, and
         ! remove any remaining MF if that is the case
@@ -654,7 +603,7 @@ MODULE mo_stoch_sde
         ! get rid of very small values 1e-16 left by unit conversion
         IF (clnum(i) < .1_WP) clnum(i)= 0.0_WP
 
-        IF (luse3d) THEN 
+        IF (luse3d) THEN
           ! write extra diagnostics
           extra_3d(i,1,2)=0.                            ! passive birth rate (in units of clouds per time step)
           extra_3d(i,2,2)=0.                            ! active birth rate (in units of clouds per time step)
@@ -691,12 +640,12 @@ MODULE mo_stoch_sde
   ! the same variables - the four prognostic variables describing the SDE system are only
   ! defined if the SDE scheme is run interactively. The only output from this routine
   ! is the 3D extra variable containing extra diagnostics.
-  
+
   SUBROUTINE shallow_stoch_sde_passive(i_startidx,i_endidx,klon,klev,ptsphy,pgeoh,mbas_con,&
                            & mfb, shfl, lhfl, temp_s,dh, ktype, &
                            & extra_3d,mfp,mfa,clnum_p,clnum_a,lseed,luse3d,cell_area,lgrayzone)
 
-  !run stochastic scheme globaly 
+  !run stochastic scheme globaly
 
 
   INTEGER(i4),INTENT(IN)    :: i_startidx         ! block index start
@@ -717,7 +666,7 @@ MODULE mo_stoch_sde
   REAL(wp)   ,INTENT(IN)    :: mfa(klon)          ! active  clouds mass flux from previous time step (diagnostic)
   REAL(wp)   ,INTENT(IN)    :: clnum_p(klon)      ! number passive clouds from previous time step (diagnostic)
   REAL(wp)   ,INTENT(IN)    :: clnum_a(klon)      ! number active clouds from previous time step (diagnostic)
-  INTEGER(i4),INTENT(IN)    :: lseed(klon)        ! seed for random number generator 
+  INTEGER(i4),INTENT(IN)    :: lseed(klon)        ! seed for random number generator
   LOGICAL    ,INTENT(IN)    :: luse3d             ! logical to switch on output of extra 3D diagnostics
   REAL(wp)   ,INTENT(in)    :: cell_area(klon)    ! grid cell area
   LOGICAL    ,INTENT(in)    :: lgrayzone          ! switches on grayzone tuning
@@ -739,21 +688,21 @@ MODULE mo_stoch_sde
   REAL(wp) :: rdxy                                ! inverse of grid cell area
   REAL(wp) :: tempmf                              ! active+passive grid cell mass flux at previous time step
   REAL(wp) :: excess                              ! number of clouds exceeding upper limit (5000)
-  REAL(wp) :: z0  
+  REAL(wp) :: z0
 
   INTEGER(i4) :: i, k, kstart,kstop,idx           ! (loop) indices
   INTEGER(i4) :: rn_poisson1, rn_poisson2         ! result (integer) of draw from Poisson distribution
   INTEGER(i4) :: rn_poisson3, rn_poisson4,rn1,rn2 ! result (integer) of draw from Poisson distribution
   INTEGER(i4) :: iseed                            ! local copy of seed for random number generator
   INTEGER(i4) :: streammax                        ! length of random number sequence to be generated at once
-  
+
   REAL(wp), DIMENSION(5120) :: rn_u               ! sequence of random numbers generated by call to generator
   ! The max number of random numbers that can be retrieved from the generator is hardcoded, currently to 5120
-  
+
   ! Type for random number generator and stream for producing random
   ! numbers
   TYPE(rng_type) :: random_number_generator
-  
+
   REAL(wp), PARAMETER :: pi = 3.14159265358
 
   !------------------------------------------------------------
@@ -768,7 +717,7 @@ MODULE mo_stoch_sde
      birth_rate_p(i)=0._WP
      death_rate_a(i)=0._WP
      death_rate_p(i)=0._WP
-     
+
      ! specify grid cell area
      dxy     = cell_area(i)
      ! inverse of grid cell area
@@ -794,19 +743,19 @@ MODULE mo_stoch_sde
         ! Calculate distribution avgerage mass flux mavg2 for active clouds
         ! based on Eqn 12 Sakradzija and Hohenegger 2017
         mavg2(i)  = m0 + C1 * ( bowen/(1+bowen) + 0.608_WP*cpd*temp_s(i)/(alv+bowen*alv) ) * &
-                      hbas_con(i)*0.5_WP/(cpd*temp_s(i)) * & 
+                      hbas_con(i)*0.5_WP/(cpd*temp_s(i)) * &
                       (-shfl(i)-lhfl(i))/dh(i)
-        
+
         ! Check: use Bowen ratio to calculate mavg2 only if surface fluxes are into the atmosphere
         ! otherwise reduce expression for mavg2 to intercept parameter m0
         ! Rescaling is then necessary (since fixed parameters were derived for LES resolution)
-        if (shfl(i)>=0._WP.OR.lhfl(i)>=0._WP) then 
+        if (shfl(i)>=0._WP.OR.lhfl(i)>=0._WP) then
           mavg2(i)  = m0 * 51200._WP * 51200._WP
         else
           mavg2(i)  = mavg2(i) * 51200._WP * 51200._WP
           mavg2(i)  = MAX(mavg2(i),10000._WP)
         endif
-        
+
         ! heat-cycle dependent Weibull parameter for active clouds
         lambda2(i) = mavg2(i) / GAMMA(1.+kinv)
 
@@ -819,7 +768,7 @@ MODULE mo_stoch_sde
              & gamma(1.+(beta_mf+1)*kinv))
 
         !! CALCULATION OF DEATH RATES BASED ON Machulskaya and Seifert 2019
-        
+
         ! Calculate death rates only if non-zero clouds and mass flux exist
         IF(clnum_a(i) >0. .AND. mfa(i) > 0._WP) THEN
            ! mean_m_a is the distribution parameter m'_b in Eqn 26 of Machulskaya and Seifert 2019, for active clouds
@@ -836,7 +785,7 @@ MODULE mo_stoch_sde
         ELSE
            ! If no active clouds exist, death rate is zero.
           mean_m_a(i) = 0.0
-          death_rate_a(i) = 0.0 
+          death_rate_a(i) = 0.0
         END IF
         IF(clnum_p(i) >0. .and. mfp(i) > 0._WP) THEN
            ! mean_m_p is the distribution parameter m'_b in Eqn 26 of Machulskaya and Seifert 2019, for passive clouds
@@ -861,7 +810,7 @@ MODULE mo_stoch_sde
    ! RANDOM NUMBER GENERATION AND DETERMINATION OF NUMBER OF NEWBORN CLOUDS BY DRAW FROM
    ! POISSON DISTRIBUTION
    ! Separate loop for random_Poisson call because it doesn't vectorise on NEC
-   
+
    ! Loop over grid points
    DO i = i_startidx, i_endidx
 
@@ -881,7 +830,7 @@ MODULE mo_stoch_sde
       ! Only consider grid cells with active shallow convection
       ! If the grayzone tuning is used (not recommended with stochastic scheme)
       ! ktype=1 (deep) will also be used.
-      IF (ktype(i) == 2 .or. (lgrayzone .and. ktype(i) == 1)) THEN  
+      IF (ktype(i) == 2 .or. (lgrayzone .and. ktype(i) == 1)) THEN
 
         ! The random seed for each grid point is calculated based on lat, lon, forecast time and ensemble number,
         ! such that the seed is reproducable for subsequent runs. NOTE: the seed is not updated in this routine!
@@ -899,60 +848,33 @@ MODULE mo_stoch_sde
         ! Initial total grid cell mass flux is sum of active/passive MF at previous time step
         tempmf=mfp(i)+mfa(i)
 
-#ifdef HAVE_ACM_LICENSE           
         ! Determine number of newborn active clouds by drawing from Poisson distribution with given birth rate.
         idx=1 ! This index keeps track of which random numbers out of the 200 have already been used
-        rn_poisson1 = random_Poisson(birth_rate_a(i)*ptsphy,idx,streammax,rn_u(1:streammax))
-        
+        CALL poisson_distr(birth_rate_a(i)*ptsphy,rn_u(idx),rn_poisson1)
+
         ! Determine number of dying active clouds by drawing from Poisson distribution with given death rate.
         idx=50 ! Start at index 50, to make sure to use "fresh" random numbers
-        rn_poisson2 = random_Poisson(death_rate_a(i)*ptsphy,idx,streammax,rn_u(1:streammax))
-        
+        CALL poisson_distr(death_rate_a(i)*ptsphy,rn_u(idx),rn_poisson2)
+
         ! Determine number of newborn active clouds by drawing from Poisson distribution with given birth rate.
         idx=100 ! Start at index 100, to make sure to use "fresh" random numbers
-        rn_poisson3 = random_Poisson(birth_rate_p(i)*ptsphy,idx,streammax,rn_u(1:streammax))
-        
+        CALL poisson_distr(birth_rate_p(i)*ptsphy,rn_u(idx),rn_poisson3)
+
         ! Determine number of dying passive clouds by drawing from Poisson distribution with given death rate.
         idx=150 ! Start at index 150, to make sure to use "fresh" random numbers
-        rn_poisson4 = random_Poisson(death_rate_p(i)*ptsphy,idx,streammax,rn_u(1:streammax))
+        CALL poisson_distr(death_rate_p(i)*ptsphy,rn_u(idx),rn_poisson4)
         idx=200
-#else
-        ! Determine number of newborn active clouds by sampling a normal distribution
-        ! (instead of Poisson) using the Box-Muller method, with given birth rate.
-        idx=1 ! This index keeps track of which random numbers out of the 200 have already been used
-        z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-        rn_poisson1 = MAX(0, INT(z0 * SQRT(birth_rate_a(i)*ptsphy) + birth_rate_a(i)*ptsphy))
-        
-        ! Determine number of dying active clouds by sampling a normal distribution
-        ! (instead of Poisson) using the Box-Muller method, with given death rate.
-        idx=50 
-        z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-        rn_poisson2 = MAX(0, INT(z0 * SQRT(death_rate_a(i)*ptsphy) + death_rate_a(i)*ptsphy))
-        
-        ! Determine number of newborn passive clouds by sampling a normal distribution
-        ! (instead of Poisson) using the Box-Muller method, with given birth rate.
-        idx=100 ! This index keeps track of which random numbers out of the 200 have already been used
-        z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-        rn_poisson3 = MAX(0, INT(z0 * SQRT(birth_rate_p(i)*ptsphy) + birth_rate_p(i)*ptsphy))
-        
-        ! Determine number of dying passive clouds by sampling a normal distribution
-        ! (instead of Poisson) using the Box-Muller method, with given death rate.
-        idx=150 
-        z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-        rn_poisson4 = MAX(0, INT(z0 * SQRT(death_rate_p(i)*ptsphy) + death_rate_p(i)*ptsphy))
-        idx=200
-#endif        
-        
+
         ! GENERATE RANDOM NUMBERS, AND DRAW EACH NEW CLOUD'S MASS FLUX FROM
         ! WEIBULL DISTRIBUTION
 
         ! Get a random number for each newly born/dying cloud, plus 200 extra
         ! so we can throw out the first 200 that were already used for the Poisson draws.
         streammax=rn_poisson1+rn_poisson2+rn_poisson3+rn_poisson4+idx
-        
+
         ! Safety check - we can draw only 5120 random numbers at a time. This
         ! limit is hard-coded into the random number generator.
-        ! For resolutions up to 5km, this limit should never be reached, but in 
+        ! For resolutions up to 5km, this limit should never be reached, but in
         ! case this code is run at very coarse resolutions, this will make sure
         ! the number is capped at the limit. Note: As an added safety feature,
         ! lstoch_sde is set to .false. for resolutions above 20km in the physics
@@ -990,7 +912,7 @@ MODULE mo_stoch_sde
            ! Keep track of active mass flux added in diagnostic
            mf_die_a(i)=mf_die_a(i)+(-LOG(1.-rn_u(k))*(mean_m_a(i)**k_wei))**kinv*rdxy
         END DO
-        
+
         ! Repeat for passive clouds
         kstart=kstop+1
         kstop=kstop+rn_poisson3
@@ -1012,7 +934,7 @@ MODULE mo_stoch_sde
            mf_die_p(i)=mf_die_p(i)+(-LOG(1.-rn_u(k))*(mean_m_p(i)**k_wei))**kinv*rdxy
         END DO
 
-        IF (luse3d) THEN 
+        IF (luse3d) THEN
           ! write diagnostics
           extra_3d(i,1,2)=birth_rate_p(i)*ptsphy        ! passive birth rate (in units of clouds per time step)
           extra_3d(i,2,2)=birth_rate_a(i)*ptsphy        ! active birth rate (in units of clouds per time step)
@@ -1034,10 +956,10 @@ MODULE mo_stoch_sde
           extra_3d(i,18,2)=mean_m_a(i)                  ! Expected value of Weibull dist. of current active  cloud ensemble
           extra_3d(i,19,2)=death_rate_p(i)*ptsphy       ! passive death rate (in units of clouds per time step)
           extra_3d(i,20,2)=death_rate_a(i)*ptsphy       ! active death rate (in units of clouds per time step)
-        ENDIF 
+        ENDIF
       ELSE !ktype!=2
         ! If shallow convection is not active, the cloud ensemble still continues to decay in the background.
-         
+
         ! The random seed for each grid point is calculated based on lat, lon, forecast time and ensemble number,
         ! such that the seed is reproducable for subsequent runs. NOTE: the seed is not updated in this routine!
         iseed=lseed(i)
@@ -1054,28 +976,13 @@ MODULE mo_stoch_sde
         ! Initial grid cell mass flux is sum of active/passive MF at previous time step
         tempmf=mfp(i)+mfa(i)
 
-#ifdef HAVE_ACM_LICENSE
         ! Determine number of dying active clouds by drawing from Poisson distribution with given death rate.
         idx=1! This index keeps track of which random numbers out of the 200 have already been used
-        rn_poisson2 = random_Poisson(death_rate_a(i)*ptsphy,idx,streammax,rn_u(1:streammax))
+        CALL poisson_distr(death_rate_a(i)*ptsphy,rn_u(idx),rn_poisson2)
         ! Determine number of dying passive clouds by drawing from Poisson distribution with given death rate.
         idx=50! Start at index 50, to make sure to use "fresh" random numbers
-        rn_poisson4 = random_Poisson(death_rate_p(i)*ptsphy,idx,streammax,rn_u(1:streammax))
+        CALL poisson_distr(death_rate_p(i)*ptsphy,rn_u(idx),rn_poisson4)
         idx=200
-#else
-        ! Determine number of dying active clouds by sampling a normal distribution
-        ! (instead of Poisson) using the Box-Muller method, with given death rate.
-        idx=0 
-        z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-        rn_poisson2 = MAX(0, INT(z0 * SQRT(death_rate_a(i)*ptsphy) + death_rate_a(i)*ptsphy))
-        
-        ! Determine number of dying passive clouds by sampling a normal distribution
-        ! (instead of Poisson) using the Box-Muller method, with given death rate.
-        idx=50 
-        z0 = SQRT(-2._wp * LOG(rn_u(idx))) * COS(pi * rn_u(idx+25))
-        rn_poisson4 = MAX(0, INT(z0 * SQRT(death_rate_p(i)*ptsphy) + death_rate_p(i)*ptsphy))
-        idx=200
-#endif
 
         ! Get a random number for each newly born/dying cloud, plus 200 extra
         ! so we can throw out the first 200 that were already used for the Poisson draws.
@@ -1083,7 +990,7 @@ MODULE mo_stoch_sde
 
         ! Safety check - we can draw only 5120 random numbers at a time. This
         ! limit is hard-coded into the random number generator.
-        ! For resolutions up to 5km, this limit should never be reached, but in 
+        ! For resolutions up to 5km, this limit should never be reached, but in
         ! case this code is run at very coarse resolutions, this will make sure
         ! the number is capped at the limit. Note: As an added safety feature,
         ! lstoch_sde is set to .false. for resolutions above 20km in the physics
@@ -1122,7 +1029,7 @@ MODULE mo_stoch_sde
            mf_die_p(i)=mf_die_p(i)+(-LOG(1.-rn_u(k))*(mean_m_p(i)**k_wei))**kinv*rdxy
         END DO
 
-        IF (luse3d) THEN 
+        IF (luse3d) THEN
           ! Write diagnostics into extra variables
           extra_3d(i,1,2)=0.                            ! passive birth rate (in units of clouds per time step)
           extra_3d(i,2,2)=0.                            ! active birth rate (in units of clouds per time step)
@@ -1144,7 +1051,7 @@ MODULE mo_stoch_sde
           extra_3d(i,18,2)=mean_m_a(i)                  ! Expected value of Weibull dist. of current active  cloud ensemble
           extra_3d(i,19,2)=death_rate_p(i)*ptsphy       ! passive death rate (in units of clouds per time step)
           extra_3d(i,20,2)=death_rate_a(i)*ptsphy       ! active death rate (in units of clouds per time step)
-        ENDIF 
+        ENDIF
       ENDIF
     ENDDO
 

@@ -1,17 +1,17 @@
-! @brief namelist setup for HAMOCC
-!
-! Namelist setup for HAMOCC, the HAMburg Ocean Carbon Cycle model
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief namelist setup for HAMOCC
+!
+! Namelist setup for HAMOCC, the HAMburg Ocean Carbon Cycle model
 
 MODULE mo_hamocc_nml
 
@@ -40,8 +40,8 @@ MODULE mo_hamocc_nml
                                                 !< 0 standard solver
                                                 !< 1 solver from mocsy package
   !$ACC DECLARE CREATE(hion_solver)
-  INTEGER, PUBLIC :: isac 
-  REAL(wp), PUBLIC :: sinkspeed_opal 
+  INTEGER, PUBLIC :: isac
+  REAL(wp), PUBLIC :: sinkspeed_opal
   REAL(wp), PUBLIC :: sinkspeed_calc
   REAL(wp), PUBLIC :: sinkspeed_poc
   REAL(wp), PUBLIC :: sinkspeed_martin_ez
@@ -53,10 +53,10 @@ MODULE mo_hamocc_nml
   REAL(wp), PUBLIC :: deltacalc
   REAL(wp), PUBLIC :: deltaorg
   REAL(wp), PUBLIC :: deltasil
- 
+
   INTEGER, PUBLIC  :: io_stdo_bgc        !<  io unit for HAMOCC LOG file
   INTEGER, PUBLIC  :: ks,ksp
-  
+
   ! M4AGO
   LOGICAL,  PUBLIC :: l_virtual_tep
   LOGICAL,  PUBLIC :: l_re
@@ -86,10 +86,11 @@ MODULE mo_hamocc_nml
   LOGICAL, PUBLIC :: l_bgc_check      = .FALSE.   ! MASS check at every time step?
   LOGICAL, PUBLIC :: l_up_sedshi      = .FALSE.   ! Upward sediment shifting
   LOGICAL, PUBLIC :: l_implsed        = .FALSE.   ! Implicit sediment formulation
-  LOGICAL, PUBLIC :: l_dynamic_pi     = .TRUE.    ! Depth dependent pi_alpha 
+  LOGICAL, PUBLIC :: l_dynamic_pi     = .TRUE.    ! Depth dependent pi_alpha
   LOGICAL, PUBLIC :: l_PDM_settling   = .FALSE.   ! PDM scheme for particle settling
   LOGICAL, PUBLIC :: l_init_bgc       = .FALSE.   ! initialise state variables with cold start values
   LOGICAL, PUBLIC :: l_limit_sal      = .TRUE.    ! limit salinity to min. 25 psu?
+  LOGICAL, PUBLIC :: l_hamocc_vertint = .FALSE.   ! compute vertically-integrated output
 
   REAL(wp), PUBLIC :: denit_sed, disso_po
   REAL(wp), PUBLIC :: cycdec, cya_growth_max
@@ -100,13 +101,17 @@ MODULE mo_hamocc_nml
   REAL(wp), PUBLIC :: bkcya_P, bkcya_Fe
   !LOGICAL, PUBLIC :: l_avflux         = .TRUE.   ! flux redistribution
 
+  REAL(wp), PUBLIC :: sulfate_reduction,prodn2o,dremn2o
+  REAL(wp), PUBLIC :: bkpo4,riron,perc_diron
+
   ! extended N-cycle
   LOGICAL, PUBLIC :: l_N_cycle = .FALSE.
   REAL(wp), PUBLIC :: no3nh4red, no3no2red
-  
+  REAL(wp), PUBLIC :: bkno3, bknh4, bkno2
+  REAL(wp), PUBLIC :: no2denit,anamoxra,nitriox, nitrira
   REAL(wp), PUBLIC :: atm_co2, atm_o2, atm_n2
   INTEGER         :: iunit
- 
+
 
   NAMELIST /hamocc_nml/ &
     &  i_settling, &
@@ -146,7 +151,7 @@ MODULE mo_hamocc_nml
     &  l_N_cycle, &
     &  no3nh4red, &
     &  no3no2red, &
-    &  l_virtual_tep, &  
+    &  l_virtual_tep, &
     &  l_re,&
     &  l_opal_q10,&
     &  opal_remin_tref,&
@@ -159,7 +164,17 @@ MODULE mo_hamocc_nml
     &  doc_remin_q10,&
     &  l_poc_q10,&
     &  poc_remin_tref,&
-    &  poc_remin_q10
+    &  l_hamocc_vertint, &
+    &  poc_remin_q10, &
+    &  bkno3, &
+    &  bknh4, &
+    &  bkno2, &
+    &  bkpo4, &
+    &  perc_diron, &
+    &  riron, &
+    &  no2denit,anamoxra,nitriox, nitrira, &
+    &  sulfate_reduction,prodn2o,dremn2o
+
 
 CONTAINS
   !>
@@ -177,24 +192,24 @@ CONTAINS
     !------------------------------------------------------------------
     i_settling        = 1             ! constant sinking
 
-    hion_solver       = 1             
+    hion_solver       = 1
     !$ACC UPDATE DEVICE(hion_solver) ASYNC(1)
-   
+
     isac = 1       ! no sediment acceleration
     l_cyadyn = .TRUE.
 
     sinkspeed_opal =30._wp             ! m/d
     sinkspeed_calc = 30._wp            ! m/d
     sinkspeed_poc = 5._wp            ! m/d
-    sinkspeed_martin_ez = 3.5_wp       ! m/d 
-  
+    sinkspeed_martin_ez = 3.5_wp       ! m/d
+
   ! sediment nml parameters
-    denit_sed = 0.01_wp  
+    denit_sed = 0.01_wp
     disso_po = 0.01_wp
 
 
   ! Martin curve sinking
-    mc_fac = 2.0_wp       !0.858_wp default value from Martin ea 1987 
+    mc_fac = 2.0_wp       !0.858_wp default value from Martin ea 1987
     mc_depth = 100._wp
 
   ! Weathering fluxes
@@ -236,18 +251,22 @@ CONTAINS
    inpw(11) = 0.64_wp
    inpw(12) = 0.62_wp
 
-   cycdec = 0.1_wp 
+   cycdec = 0.1_wp
    cya_growth_max= 0.2_wp      ! d-1
    grazra=1.0_wp
 
    drempoc = 0.026_wp
    dremopal = 0.01_wp
    dremcalc = 0.075_wp
+   dremn2o  = 0.01_wp      ! 1/d
+   sulfate_reduction = 0.005_wp
+
+
    !$ACC UPDATE DEVICE(dremcalc) ASYNC(1)
 
    ! total denitrification rate is a fraction of aerob remineralisation rate drempoc
    denitrification =  1.82e-3_wp   ! 1/d
- 
+
    calmax = 0.15_wp            ! maximum fraction (of "export") for calc production
 
    bkcya_P = 5.e-8_wp
@@ -266,7 +285,31 @@ CONTAINS
    doc_remin_tref= 10._wp
    poc_remin_q10 = 2.1_wp
    poc_remin_tref= 10._wp
-   
+
+   ! weight percent iron in dust deposition (0.035) times Fe solubility (0.01) /55.85 g--> mol
+   perc_diron = 0.035_wp * 0.01_wp / 55.85_wp
+
+   ! the three values below are from Johnson et al., 1997 Mar. Chemistry 57, 137-161
+   ! riron   = 5.*rcar*1.e-6       ! 'Q'=5.*122.*1.e-6 = 6.1e-4   (iron to phosphate stoichiometric ratio * umol->mol)
+   ! riron   = 2.*rcar*1.e-6       ! 14.2.06: 5.->2. (2.5umol P/nmol Fe) emr: 3.*rcar*1.e-6
+   riron   = 3._wp * 122._wp*1.e-6_wp ! 06.3.06: 2.->3. coex90=12.2GTC/a before change
+
+   bkpo4 = 0.01_wp*1.E-6_wp   ! in kmolP/m3 half satur. const. for PO4
+   bkno3 = 0.16_wp*1.e-6_wp
+   bknh4 = 0.1_wp *1.e-6_wp
+   bkno2 = 0.5_wp*1.E-6_wp    ! Half saturation constant for Nitrite in kmolN/m3
+
+   ! Nitrogen cycle
+   prodn2o=1.e-3_wp
+   anamoxra = 0.05_wp         ! anammox rate  1/day
+   !NITOX : oxidation of NO2 to NO3 ; light dependent
+    nitriox = 0.25_wp          !   nitrite oxidation rate 1/day
+   ! AMMOX : oxidation of NH4 to NO2 ; light dependend
+    nitrira= 0.1_wp    ! nitrification rate per day, after Yool about 0.162 per day
+!             light dependency (coupled to abs_bgc, max at no light, in surface layer 0.
+
+    no2denit = 0.008_wp ! NRN2: NO2 to N2 (1/day)
+
 
     !------------------------------------------------------------------
     ! If this is a resumed integration, overwrite the defaults above
@@ -297,12 +340,12 @@ CONTAINS
     END SELECT
     CALL close_nml
 
-    
+
 
     !------------------------------------------------------------------
     ! Sanity Check
     !------------------------------------------------------------------
-   
+
 
     if (l_N_cycle .and. l_implsed) THEN
       CALL finish(TRIM(routine), 'Extended N-cycle only works with explicit sediment!')
@@ -349,7 +392,7 @@ CONTAINS
     IF ( my_process_is_stdio() ) WRITE(nnml_output,nml=hamocc_nml)
 
    ! OPEN bgcout
-   IF ( my_process_is_stdio() ) CALL open_bgcout 
+   IF ( my_process_is_stdio() ) CALL open_bgcout
     !------------------------------------------------------------------
     ! Fill the configuration state
     !------------------------------------------------------------------
@@ -359,7 +402,7 @@ CONTAINS
   !>
   !!  opens an ASCII file with HAMOCC debug messages
 
-  SUBROUTINE open_bgcout 
+  SUBROUTINE open_bgcout
 
 
 
@@ -375,9 +418,9 @@ CONTAINS
       CALL finish ('open_bgcout','Could not open bgcout')
     END IF
 
-  END SUBROUTINE 
+  END SUBROUTINE
 
 
 
-  
+
 END MODULE mo_hamocc_nml

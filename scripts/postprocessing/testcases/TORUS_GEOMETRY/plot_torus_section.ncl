@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -9,8 +9,8 @@
 ; ------------------------------------------
 
 ;------------------------------------
-; NCL script for plotting a single scalar variable. 
-; 
+; NCL script for plotting a single scalar variable.
+;
 ; WARNING: this script should be called through the driver
 ; "plot_scalar_and_vector", it should not be launched directly from
 ; the user. See plot_scalar_and_vector -h for details.
@@ -24,7 +24,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 ;---------------------------------------------------------------
 ; Get environment variables
 ;---------------------------------------------------------------
-   
+
   varname     = getenv("varname")
 
   input_file  = getenv("input_file")
@@ -37,7 +37,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
   ; fixed level (lat/lon/vertical)
   fix_dim     = getenv("fix_dimension")
   ilev        = stringtointeger( getenv("fix_level") )
- 
+
   colormap    = getenv("colormap")
 
   ncontours   = stringtointeger( getenv("contour_levels_ncont") )
@@ -54,14 +54,14 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 ;---------------------------------------------------------------
 
   File = addfile( input_file, "r" )
-  
+
   ; read the coordinates
   x         = File->lon            ; longitude [deg]
   y         = File->lat            ; latitude  [deg]
 
   if(varname.eq."W")then
     z       = File->lev_2
-  else   
+  else
     z       = File->lev
   end if
 
@@ -104,7 +104,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
     res@sfYArray = z
     res@tiYAxisString    = "Vertical levels"
     res@trYReverse       = True
-  else 
+  else
     res@sfXArray = y
     res@sfYArray = z
     res@tiYAxisString    = "Vertical levels"
@@ -128,7 +128,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
     end if
     ; make sure the last element is exact
     contour_levs(ncontours-1) = contour_end
-    res@cnLevelSelectionMode = "ExplicitLevels" 
+    res@cnLevelSelectionMode = "ExplicitLevels"
     res@cnLevels = contour_levs
   end if
 
@@ -137,7 +137,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
   res@gsnStringFontHeightF   = 0.018
   res@tmXBLabelFontHeightF   = 0.016
   res@tmYLLabelFontHeightF   = 0.016
- 
+
  ;dashed negative contours
  res@gsnContourPosLineDashPattern = 2
  res@gsnContourZeroLineThicknessF = 0 	    ; eliminates zero contour
@@ -146,7 +146,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 ; Make the plot
 ;---------------------------------------------------------------
 
-  ; create the workspace and 
+  ; create the workspace and
   wks  = gsn_open_wks(output_terminal,output_file)
 
   ; make the plot
@@ -169,7 +169,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
       ;res@gsnCenterString = ;+" step "+isteps(i)
       plot = gsn_csm_contour(wks,var(isteps(i),:,ilev-1,:),res)
     end do
-  else 
+  else
     print("Plotting a vertical section at fix lat:")
     do i = 0, nsteps-1
       ;res@gsnCenterString = ;+" step "+isteps(i)

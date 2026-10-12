@@ -1,16 +1,15 @@
-! Provide an implementation of the ocean tracer nuding functionality.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of the ocean tracer nuding functionality.
 
 !----------------------------
 #include "iconfor_dsl_definitions.inc"
@@ -49,7 +48,19 @@ MODULE mo_ocean_nudging_types
       & forc_3dimRelax_Temp, & ! 3-dim temperature relaxation forcing (1/tau*(T-T*))
       & data_3dimRelax_Salt, & ! 3-dim salinity relaxation data (T*)
       & forc_3dimRelax_Salt, &    ! 3-dim salinity relaxation forcing (1/tau*(T-T*))
-      & relax_3dim_coefficient ! 3-dim relaxation coefficient when the relaxation varies
+      & relax_3dim_coefficient, & ! 3-dim relaxation coefficient when the relaxation varies
+      & temp_incr, &
+      & sal_incr, &
+      & u_incr, &
+      & v_incr, &
+      & hi_incr, &
+      & hs_incr, &
+      & conc_incr
+
+    onEdges :: vn_incr
+
+    onEdges_2D :: zos_incr, &
+                & stretch_incr
 
   END TYPE t_ocean_nudge
 
@@ -58,5 +69,3 @@ MODULE mo_ocean_nudging_types
   PUBLIC :: t_ocean_nudge
 
 END MODULE mo_ocean_nudging_types
-
-

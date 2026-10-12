@@ -1,15 +1,15 @@
-! The base CLASS for the PUBLIC INTERFACE for restart writing.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! The base CLASS for the PUBLIC INTERFACE for restart writing.
 
 MODULE mo_restart_descriptor
   USE mtime,                        ONLY: datetime, datetimeToString, MAX_DATETIME_STR_LEN
@@ -30,7 +30,7 @@ MODULE mo_restart_descriptor
   USE mo_restart_var_data,          ONLY: has_valid_time_level
   USE mo_var_list_register_utils,   ONLY: vlr_replicate
 #ifndef __NO_ICON_UPATMO__
-  USE mo_upatmo_flowevent_utils,    ONLY: t_upatmoRestartAttributes, upatmoRestartAttributesSet
+  USE mo_upatmo_interface,          ONLY: t_upatmoRestartAttributes, upatmoRestartAttributesSet
 #endif
   USE mo_cdi,                       ONLY: FILETYPE_NC2, FILETYPE_NC4
   USE mo_restart_patch_data, ONLY: t_restartPatchData
@@ -312,7 +312,7 @@ CONTAINS
       ENDDO
       CALL nf(nf90_set_fill(ncid, NF90_NOFILL, i), routine)
       CALL nf(nf90_enddef(ncid), routine)
-      CALL nf(nf90_put_var(ncid, tvid, REAL(date_dayas), [1]), routine)
+      CALL nf(nf90_put_var(ncid, tvid, date_dayas, [1]), routine)
     END SUBROUTINE restartfile_open
   END SUBROUTINE restartDescriptor_writeFiles
 

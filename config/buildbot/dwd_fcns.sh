@@ -1,12 +1,13 @@
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 # Generalized builder for DWD NEC
 # Usage: build_dwd <dwd_builder>
@@ -41,21 +42,33 @@ build_dwd() {
     )
   fi
 
+  unset MAKEFLAGS
+
   # create vector and host binaries in parallel using make
-  make --no-print-directory --output-sync=line --jobs="${MAKE_PROCS}" -f - <<_EOF
+  make --jobs="${MAKE_PROCS}" V=1 -f - <<_EOF
+GNUMAKEFLAGS= --no-print-directory --output-sync=line
+SHELL= /bin/bash
 .PHONY: all host vector
 all: host vector
 host:
 	@mkdir -p ${BUILD_DIR_VH}
 	# configuring host
 	cd ${BUILD_DIR_VH} && ${ICON_DIR}/config/dwd/rcl.VH.bb-${DWD_BUILDER}
-	\$(MAKE) -C ${BUILD_DIR_VH}
+	set -o pipefail; cd ${BUILD_DIR_VH} && \$(MAKE) |& tee make.log
 vector:
 	@mkdir -p ${BUILD_DIR_VE}
 	# configuring vector
 	cd ${BUILD_DIR_VE} && ${ICON_DIR}/config/dwd/rcl.VE.bb-${DWD_BUILDER}
-	\$(MAKE) -C ${BUILD_DIR_VE}
+	set -o pipefail; cd ${BUILD_DIR_VE} && \$(MAKE) |& tee make.log
 _EOF
+
+  # Debug info
+
+  (
+    set -x
+    readelf -d "${BUILD_DIR_VH}/bin/icon"
+    readelf -d "${BUILD_DIR_VE}/bin/icon"
+  )
 
   # Post-processing
 
@@ -78,4 +91,3 @@ _EOF
 
   ls -l "${BUILD_DIR_VE}/experiments" "${ICON_DIR}/experiments"
 }
-

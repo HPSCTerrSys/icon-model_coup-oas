@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -59,9 +59,9 @@ cat > ${ocean_namelist} << EOF
 !
 &parallel_nml
  nproma         = ${nproma}
- p_test_run     = .false.     
+ p_test_run     = .false.
  l_fast_sum     = .true.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -120,14 +120,14 @@ cat > ${ocean_namelist} << EOF
   l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
   l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-13 ! this may further be reduced
 
   select_lhs                      = 1       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
   fast_performance_level          = 200       ! performance level 12: for cell-based; 5: default
   use_continuity_correction       = .TRUE.    ! height adjustment according to vertical velocity in dynamics
@@ -171,7 +171,7 @@ cat > ${ocean_namelist} << EOF
   physics_parameters_type         =   1       ! type of pp-scheme: 1=ICON-optimized; 2=MPIOM-type
   use_wind_mixing                 = .FALSE.   ! true: use wind mixing scheme in MPIOM-type pp-scheme
   GMRedi_configuration            =   0       ! 0=cartesian diffusion 1=GM-Redi: bolus advection + isopycnal diffusion
-/                                           
+/
 &sea_ice_nml
   i_ice_therm   = 1              !  0: not allowed, 1=zero-layer, 2=Winton
   i_ice_dyn     = 0              !  1/0=switch on/off AWI ice dynamics
@@ -195,13 +195,13 @@ cat > ${ocean_namelist} << EOF
   forcing_set_runoff_to_zero      = .FALSE.   ! set runoff to zero for comparison to MPIOM
   seaice_limit                    =   0.4     ! maximum of 8m (0.4*dz) for both, ice and snow
   limit_elevation                 = .FALSE.
-/                                    
+/
 &ocean_initialConditions_nml
   !use_file_initialConditions = ${use_file_initialConditions}    ! read ocean initialization file, see above
   ! itestcase_oce      =   50      ! 50=zonally homogen temperature for APE SST (Williamson)
   initial_salinity_type      = 1
   initial_temperature_type   = 1
-  !initial_temperature_top    = 30.0 
+  !initial_temperature_top    = 30.0
   !initial_temperature_bottom = 30.0
 /
 &ocean_diagnostics_nml

@@ -1,20 +1,16 @@
-#ifdef __PGI
-!pgi$g opt=1
-#endif
-! This module provides all routines for dividing patches
-! (including interpolation state) and setting up communication.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides all routines for dividing patches
+! (including interpolation state) and setting up communication.
 !
 ! Much of the code in this module is duplicated due to different
 ! synchronization MPI RMA methods, which perform differently on
@@ -29,6 +25,7 @@
 ! active target synchronization and extra dist_mult_array_rma_sync
 ! calls need to be executed before requested remote data can be
 ! accessed.
+
 MODULE mo_setup_subdivision
   !
   !-------------------------------------------------------------------------
@@ -48,24 +45,22 @@ MODULE mo_setup_subdivision
 
   USE mo_run_config,         ONLY: msg_level
   USE mo_io_units,           ONLY: filename_max
-  USE mo_model_domain,       ONLY: t_patch, p_patch_local_parent, t_pre_patch, &
+  USE mo_pre_model_domain,   ONLY: t_pre_patch, &
        c_num_edges, c_parent, c_phys_id, c_neighbor, c_edge, &
        c_vertex, c_center, c_refin_ctrl, e_parent, e_cell, &
        e_refin_ctrl, v_cell, v_num_edges, v_vertex, v_refin_ctrl
+  USE mo_model_domain,       ONLY: t_patch, p_patch_local_parent
   USE mo_decomposition_tools,ONLY: t_grid_domain_decomp_info, &
     &                              get_local_index, get_valid_local_index, &
     &                              set_inner_glb_index, set_outer_glb_index, &
     &                              uniform_partition
   USE mo_mpi,                ONLY: proc_split, p_max, num_work_procs, my_process_is_work
 #ifndef NOMPI
-  USE mo_mpi,                ONLY: MPI_COMM_NULL, p_int, &
-       mpi_in_place, mpi_success, mpi_sum, mpi_lor, p_bool
-# ifndef NO_MPI_CHOICE_ARG
-  USE mpi,                   ONLY: MPI_Allreduce
-# endif
+  USE mo_mpi,                ONLY: MPI_COMM_NULL, p_int, mpi_sum, mpi_lor, p_bool
 #endif
   USE mo_mpi,                ONLY: p_comm_work, p_int, &
-    & p_pe_work, p_n_work, my_process_is_mpi_parallel, p_alltoall, p_alltoallv
+    & p_pe_work, p_n_work, my_process_is_mpi_parallel, p_alltoall, p_alltoallv, p_sum, &
+    & p_allreduce_in_place
 
   USE mo_parallel_config,       ONLY:  nproma, ldiv_phys_dom, set_nproma, &
     & division_method, division_file_name, n_ghost_rows, ignore_nproma_use_nblocks_c, nblocks_c, &
@@ -1014,7 +1009,7 @@ CONTAINS
 
     CALL prepare_patch(wrk_p_patch_pre, wrk_p_patch, &
          SUM(n2_ilev_c(:)), SUM(n2_ilev_e(:)), SUM(n2_ilev_v(:)))
-    
+
 
     !-----------------------------------------------------------------------------------------------
     ! Set the global ownership for cells, edges and verts (needed for boundary exchange).
@@ -1721,14 +1716,24 @@ CONTAINS
       wrk_p_patch%n_patch_cells = n_patch_cells
       IF ((ignore_nproma_use_nblocks_c .OR. ignore_nproma_use_nblocks_e) .AND. wrk_p_patch_pre%id == 1 ) THEN
         ! set nproma for work procs with gridpoints
-        IF (my_process_is_work()) THEN      
+        IF (my_process_is_work()) THEN
           IF(ignore_nproma_use_nblocks_c .AND. n_patch_cells > 0) THEN
             new_nproma = (n_patch_cells-1) / nblocks_c + 1
+            ! In AMD GPUs there is significant performance loss if nproma is not aligned
+            ! to 256 bytes. Here double precision, i.e. 8 bytes / 32 elements is assumed
+            ! As it may improve the performance slightly also in NVIDIA systems, the
+            ! the alignemtn is doen always for GPU code
+#ifdef _OPENACC
+            new_nproma = ((new_nproma  + 32 - 1) / 32) * 32
+#endif
             CALL set_nproma(new_nproma)
           ELSEIF(ignore_nproma_use_nblocks_e .AND. n_patch_edges > 0) THEN
             new_nproma = (n_patch_edges-1) / nblocks_e + 1
+#ifdef _OPENACC
+            new_nproma = ((new_nproma  + 32 - 1) / 32) * 32
+#endif
             CALL set_nproma(new_nproma)
-          ENDIF          
+          ENDIF
 
           IF(num_work_procs > 1) THEN
             nproma_max = global_max(new_nproma)
@@ -1746,7 +1751,7 @@ CONTAINS
             write(message_text,'(i7)') new_nproma
             CALL message('New nproma: ', message_text)
           ENDIF
-          
+
         ENDIF
 
       ENDIF
@@ -1754,6 +1759,11 @@ CONTAINS
       !! Also set the secondary nproma_sub and the number of subblocks nblocks_sub
       IF( ignore_nproma_sub_use_nblocks_sub ) THEN
         nproma_sub = (nproma-1)/nblocks_sub+1
+        ! In AMD GPUs there is significant performance loss if nproma_sub is not aligned
+        ! to 256 bytes. Here double precision, i.e. 8 bytes / 32 elements is assumed
+#if defined (_OPENACC) && defined (_CRAYFTN)
+        nproma_sub = ((nproma_sub  + 32 - 1) / 32) * 32
+#endif
       ELSE
         IF (nproma_sub > nproma) THEN
           CALL warning(routine, 'secondary nproma: nproma_sub cannot be bigger than nproma, adjusted')
@@ -4015,7 +4025,6 @@ CONTAINS
     LOGICAL  :: lsplit_merged_domains, locean
     INTEGER :: my_cell_start, my_cell_end
     INTEGER, POINTER :: owner_chunk_ptr(:)
-    INTEGER :: ierror
     CHARACTER(*), PARAMETER :: routine = 'divide_subset_geometric'
 
     !-----------------------------------------------------------------------
@@ -4064,9 +4073,7 @@ CONTAINS
       IF (p_n_work > 1) THEN
 #ifndef NOMPI
         count_physdom(0) = count_total
-        CALL mpi_allreduce(mpi_in_place, count_physdom, SIZE(count_physdom), &
-             p_int, mpi_sum, p_comm_work, ierror)
-        IF (ierror /= mpi_success) CALL finish(routine, 'error in allreduce')
+        CALL p_allreduce_in_place(count_physdom, mpi_sum, p_comm_work)
         count_total = count_physdom(0)
 #endif
       END IF
@@ -4145,11 +4152,7 @@ CONTAINS
          subset_flag, lsplit_merged_domains, lparent_level, locean, &
          id_physdom, ncell_offset, n_onb_points)
     IF (p_n_work > 1) THEN
-#ifndef NOMPI
-      CALL mpi_allreduce(ncell_offset, ncell_offset_g, SIZE(ncell_offset), &
-           p_int, mpi_sum, wrk_p_patch_pre%dist_array_comm, ierror)
-      IF (ierror /= mpi_success) CALL finish(routine, 'error in allreduce')
-#endif
+      ncell_offset_g = p_sum(ncell_offset, wrk_p_patch_pre%dist_array_comm)
     END IF
 
 
@@ -4848,9 +4851,10 @@ CONTAINS
   ! Set owner list (of complete patch)
   SUBROUTINE set_owners_mpi(range_start, range_end, dist_cell_owner, &
        wrk_p_patch_pre, cell_desc, ncell_offset, num_physdom, n_onb_points)
-    USE mpi
-    USE ppm_extents
-    USE ppm_distributed_array
+    USE ppm_distributed_array, ONLY: dist_mult_array, dist_mult_array_local_ptr, &
+                                     dist_mult_array_expose, dist_mult_array_get,&
+                                     dist_mult_array_unexpose
+
     INTEGER, INTENT(in) :: range_start, range_end
      !> receives the owner PE for every cell
     TYPE(dist_mult_array), INTENT(inout) :: dist_cell_owner
@@ -4861,7 +4865,7 @@ CONTAINS
     INTEGER, INTENT(in) :: num_physdom, n_onb_points
 
     INTEGER :: i, ii, j, jd, jj, jn, first_unassigned_onb, &
-      &        last_unassigned_onb, ncs, nce, owner_idx(1), ierror
+      &        last_unassigned_onb, ncs, nce, owner_idx(1)
     TYPE(t_cell_info) :: temp
     INTEGER, POINTER :: owners_local_ptr(:), cells_num_edges_local_ptr(:), &
       &                 cells_neighbor_local_ptr(:,:)
@@ -4893,8 +4897,8 @@ CONTAINS
 
     ! Add outer nest boundary points that have been disregarded so far
     any_onb_points = n_onb_points > 0
-    CALL mpi_allreduce(mpi_in_place, any_onb_points, 1, p_bool, &
-         mpi_lor, wrk_p_patch_pre%dist_array_comm, ierror)
+    CALL p_allreduce_in_place(any_onb_points, mpi_lor, &
+      & wrk_p_patch_pre%dist_array_comm)
     IF (any_onb_points) THEN
 
       first_unassigned_onb = range_end - n_onb_points + 1
@@ -4906,10 +4910,9 @@ CONTAINS
       ! Iterations are needed because outer nest boundary row contains
       ! indirect neighbors
       owner_missing = first_unassigned_onb <= last_unassigned_onb
-      CALL mpi_allreduce(mpi_in_place, owner_missing, 1, p_bool, &
-           mpi_lor, wrk_p_patch_pre%dist_array_comm, ierror)
+      CALL p_allreduce_in_place(owner_missing, mpi_lor, &
+        & wrk_p_patch_pre%dist_array_comm)
       DO WHILE (owner_missing)
-        IF (ierror /= mpi_success) CALL finish(routine, 'error in allreduce')
         CALL dist_mult_array_expose(dist_cell_owner)
         DO i = last_unassigned_onb, first_unassigned_onb, -1
           j = cell_desc(i)%cell_number
@@ -4945,8 +4948,8 @@ CONTAINS
         CALL dist_mult_array_unexpose(dist_cell_owner)
         owners_local_ptr = tmp_owners_local
         owner_missing = first_unassigned_onb <= last_unassigned_onb
-        CALL mpi_allreduce(mpi_in_place, owner_missing, 1, p_bool, &
-             mpi_lor, wrk_p_patch_pre%dist_array_comm, ierror)
+        CALL p_allreduce_in_place(owner_missing, mpi_lor, &
+          & wrk_p_patch_pre%dist_array_comm)
       ENDDO
       DEALLOCATE(owner_value)
 #else
@@ -4954,10 +4957,9 @@ CONTAINS
       ! Iterations are needed because outer nest boundary row contains
       ! indirect neighbours
       owner_missing = first_unassigned_onb <= last_unassigned_onb
-      CALL mpi_allreduce(mpi_in_place, owner_missing, 1, p_bool, &
-           mpi_lor, wrk_p_patch_pre%dist_array_comm, ierror)
+      CALL p_allreduce_in_place(owner_missing, mpi_lor, &
+        & wrk_p_patch_pre%dist_array_comm)
       DO WHILE (owner_missing)
-        IF (ierror /= mpi_success) CALL finish(routine, 'error in allreduce')
         CALL dist_mult_array_expose(dist_cell_owner)
         DO i = last_unassigned_onb, first_unassigned_onb, -1
           j = cell_desc(i)%cell_number
@@ -4984,8 +4986,8 @@ CONTAINS
         CALL dist_mult_array_unexpose(dist_cell_owner)
         owners_local_ptr = tmp_owners_local
         owner_missing = first_unassigned_onb <= last_unassigned_onb
-        CALL mpi_allreduce(mpi_in_place, owner_missing, 1, p_bool, &
-             mpi_lor, wrk_p_patch_pre%dist_array_comm, ierror)
+        CALL p_allreduce_in_place(owner_missing, mpi_lor, &
+          & wrk_p_patch_pre%dist_array_comm)
       ENDDO
 
 #endif
@@ -5049,7 +5051,7 @@ CONTAINS
     ! setup io data
     ALLOCATE(decomp_info%glb_index(SIZE(local_ptr)))
     decomp_info%glb_index = (/(i, i=LBOUND(local_ptr,1), UBOUND(local_ptr,1))/)
-    CALL setup_distrib_read(no_of_cells, decomp_info, io_data)
+    CALL setup_distrib_read(no_of_cells, decomp_info%glb_index, io_data)
 
     ! read cell owner
     IF (p_pe_work == 0) &

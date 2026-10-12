@@ -1,0 +1,116 @@
+#!/bin/ksh
+
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+
+%manual
+  -------------------------------------------------
+  CHECK_PROGRESS
+  -------------------------------------------------
+
+  This script is part of the ICON SMS suite
+  Initial implementation: F. Prill,   DWD (2012-05-07)
+  Conversion to ecFlow:   M. Koehler, DWD (2022-11)
+
+  Corresponding author:
+    Martin Koehler, DWD, mailto:martin.koehler@dwd.de
+
+  Task objectives:
+  - check for available output files
+%end
+
+# include the header file for remote jobs
+%include <head_hpc.h>
+
+
+# -------------------------------------------------
+
+echo "CHECK_PROGRESS"
+
+
+date
+
+if [[ %NENS% -gt 0 ]]
+  then DIRENS=/%NMEM%
+  else DIRENS=''
+fi
+
+if [[ %SIMMODE% -eq 3 ]]
+  then DATETXT=/%YMD%%INIHOUR%
+  else DATETXT=''
+fi
+
+sleep 20
+
+# check progress: stdout time step -- -------------
+
+modeloutput=%ECF_HOME%/%SUITE%/%USER%_%EXPNUM%/forecast_all/%FC_NAME%/model.1
+
+flag=0
+timestep=0
+while [[ $timestep -lt %NSTEPS% && $flag -eq 0 ]]
+do
+
+  timestep2=`grep --text 'Time[[:blank:]]step' $modeloutput | tail -n1 | awk '{print $3}' | sed 's/,//'` || true
+
+#  timestep2=`grep --text 'Time[[:blank:]]step' %ECF_HOME%/%SUITE%/%USER%_%EXPNUM%/forecast${DIRENS}${DATETXT}/model.1             | tail -n1 | awk '{print $3}' | sed 's/,//'` || true
+#  timestep1=`grep 'Time[[:blank:]]step' %ECF_HOME%/%SUITE%/%EXPNUM%/forecast${DIRENS}${DATETXT}/model.1.running                  | tail -n1 | awk '{print $3}' | sed 's/,//'`
+#  timestep3=`grep 'Time[[:blank:]]step' %ECF_HOME%/%SUITE%/%EXPNUM%/forecast_all/NFC/forecast${DIRENS}${DATETXT}/model.1.running | tail -n1 | awk '{print $3}' | sed 's/,//'`
+#  timestep4=`grep 'Time[[:blank:]]step' %ECF_HOME%/%SUITE%/%EXPNUM%/forecast_all/NFC/forecast${DIRENS}${DATETXT}/model.1         | tail -n1 | awk '{print $3}' | sed 's/,//'`
+
+
+  if [[ "$timestep2" =~ ^[0-9]+$ ]] ; then
+    timestep=$timestep2
+  else
+##   if [[ "$timestep2" =~ ^[0-9]+$ ]] ; then
+##     timestep=$timestep2
+##   else
+##    if [[ "$timestep3" =~ ^[0-9]+$ ]] ; then
+##      timestep=$timestep3
+##    else
+##     if [[ "$timestep4" =~ ^[0-9]+$ ]] ; then
+##       timestep=$timestep4
+##     else
+       timestep=0
+##     fi
+##    fi
+##   fi
+  fi
+
+  #if [ "$timestep1" -eq "$timestep1" 2>/dev/null && "$timestep1" -ne "" ]
+  #if [[ ! -n "$timestep1" ]]
+  #if [[ "$timestep" = "initial" ]]
+
+  # If new output available: Increment progress meter
+  if [[ $timestep -le %NSTEPS% ]] ; then
+    ecflow_client --meter=timesteps $timestep
+  else
+    ecflow_client --meter=timesteps %NSTEPS%
+  fi
+
+  # wait some time before checking for output
+  sleep 10
+
+  if [[ -f "%ECF_HOME%/model_complete.flag" ]]
+  then
+    flag=1
+  fi
+
+done
+
+# copy model standard output to run directory, post_prepare will copy it ot ecfs.
+
+#cp %ECF_HOME%/%SUITE%/%EXPNUM%/forecast${DIRENS}${DATETXT}/model.1                     %SCTEMP%/%SUITE%/%EXPNUM%/output/%YMD%%INIHOUR% || true
+#cp %ECF_HOME%/%SUITE%/%EXPNUM%/forecast_all/NFC/forecast/${DIRENS}${DATETXT}/model.1 %SCTEMP%/%SUITE%/%EXPNUM%/output/%YMD%%INIHOUR% || true
+cp $modeloutput %SCTEMP%/%SUITE%/%EXPNUM%/output/%YMD%%INIHOUR% || true
+
+
+
+# -------------------------------------------------
+
+# include the "tail" file for remote jobs
+%include <tail.h>

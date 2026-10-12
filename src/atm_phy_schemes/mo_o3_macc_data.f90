@@ -27,20 +27,20 @@ MODULE mo_o3_macc_data
 
 
   REAL(JPRB) :: rghg7_macc(64,91,12) !dimensions: latitudes, vertical levels, months
-  
+
   ! rghg7 taken from su_Mozoclim.F90 of ECMWF's IFS (41r1).
 
   !-----------------------------------------------------------
-  !**   OZONE FROM MACC climatology 2003-2011*                       
+  !**   OZONE FROM MACC climatology 2003-2011*
 
-  !     AUTHOR.                                               
-  !     -------                                               
+  !     AUTHOR.
+  !     -------
   !     original
-  !     J.-J. MORCRETTE  E.C.M.W.F.    20080423               
-                                                              
-  !     MODIFICATIONS.                                        
-  !     --------------                                        
-  !     M.Hamrud      01-Oct-2003 CY28 Cleaning            
+  !     J.-J. MORCRETTE  E.C.M.W.F.    20080423
+
+  !     MODIFICATIONS.
+  !     --------------
+  !     M.Hamrud      01-Oct-2003 CY28 Cleaning
   !     R. Elkhatib 12-10-2005 Split for faster and more robus
   !     ABozzo new values from MACC reanalysis
   !-----------------------------------------------------------
@@ -14265,8 +14265,7 @@ DATA rghg7_macc(:,91,12) / &
   & 0.27512794E-07_JPRB, 0.27564092E-07_JPRB, 0.26355819E-07_JPRB, 0.25959803E-07_JPRB, 0.25623666E-07_JPRB, 0.23962689E-07_JPRB, &
   & 0.21449380E-07_JPRB, 0.19926316E-07_JPRB, 0.19256972E-07_JPRB, 0.19199708E-07_JPRB, 0.19471619E-07_JPRB, 0.19372445E-07_JPRB, &
   & 0.17989265E-07_JPRB, 0.15612500E-07_JPRB, 0.16301478E-07_JPRB, 0.16054312E-07_JPRB  /
-  
+
 !$ACC DECLARE COPYIN(rghg7_macc)
 
 END MODULE mo_o3_macc_data
-

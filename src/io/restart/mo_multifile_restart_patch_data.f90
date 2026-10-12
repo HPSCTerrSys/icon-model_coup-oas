@@ -1,15 +1,16 @@
-! The multifile version of t_RestartPatchData.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! The multifile version of t_RestartPatchData.
+
 #include "omp_definitions.inc"
 
 MODULE mo_multifile_restart_patch_data
@@ -36,7 +37,7 @@ MODULE mo_multifile_restart_patch_data
 
   IMPLICIT NONE
   PRIVATE
-  
+
   TYPE, EXTENDS(t_RestartPatchData), PUBLIC :: t_MultifilePatchData
     INTEGER :: cnkLvs
     LOGICAL :: shortcut
@@ -46,12 +47,12 @@ MODULE mo_multifile_restart_patch_data
     PROCEDURE :: createCollectors => multifilePatchData_createCollectors
     PROCEDURE :: start_local_access  => multifilePatchData_local_access
     PROCEDURE :: start_remote_access => multifilePatchData_remote_access
-    PROCEDURE :: exposeData  => multifilePatchData_exposeData    
+    PROCEDURE :: exposeData  => multifilePatchData_exposeData
     PROCEDURE :: destruct => multifilePatchData_destruct    ! override
     PROCEDURE :: writeData => multifilePatchData_writeData
     PROCEDURE :: fileStuff => multifilePatchData_fileStuff
   END TYPE t_MultifilePatchData
-  
+
   CHARACTER(*), PARAMETER :: modname = "mo_multifile_restart_patch_data"
 
 CONTAINS
@@ -329,13 +330,13 @@ CONTAINS
         END IF
         SELECT CASE (ci%data_type)
         CASE(REAL_T)
-          CALL get_var_3d_ptr(me%varData(cv)%p, r_ptr_3d)
+          CALL get_var_3d_ptr(me%varData(cv)%p, r_ptr_3d, lacc=.TRUE.)
           CALL me%coll%sendField(cv, r_ptr_3d, offset(1))
         CASE(SINGLE_T)
-          CALL get_var_3d_ptr(me%varData(cv)%p, s_ptr_3d)
+          CALL get_var_3d_ptr(me%varData(cv)%p, s_ptr_3d, lacc=.TRUE.)
           CALL me%coll%sendField(cv, s_ptr_3d, offset(2))
         CASE(INT_T)
-          CALL get_var_3d_ptr(me%varData(cv)%p, i_ptr_3d)
+          CALL get_var_3d_ptr(me%varData(cv)%p, i_ptr_3d, lacc=.TRUE.)
           CALL me%coll%sendField(cv, i_ptr_3d, offset(3))
         END SELECT
       END DO

@@ -1,10 +1,7 @@
-! Contains the setup of variables related to large eddy simulation setup
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,11 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the setup of variables related to large eddy simulation setup
+
 MODULE mo_les_nml
 
   USE mo_les_config,          ONLY: les_config
   USE mo_kind,                ONLY: wp
-  USE mo_mpi,                 ONLY: my_process_is_stdio 
+  USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_io_units,            ONLY: nnml, nnml_output
   USE mo_namelist,            ONLY: position_nml, positioned, open_nml, close_nml
   USE mo_master_control,      ONLY: use_restart_namelists
@@ -30,25 +29,25 @@ MODULE mo_les_nml
   PUBLIC :: read_les_namelist
   PUBLIC :: turb_profile_list, turb_tseries_list
 
-  CHARACTER(LEN=7) :: turb_tseries_list(19), turb_profile_list(52) !list of variables
+  CHARACTER(LEN=7) :: turb_tseries_list(21), turb_profile_list(55) !list of variables
                                 !added profiles of LS forcing tendencies (45-51)
 
 CONTAINS
   !-------------------------------------------------------------------------
   !! Read Namelist for LES
   !!
-  !! This subroutine 
-  !! - reads the Namelist 
+  !! This subroutine
+  !! - reads the Namelist
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state 
+  !! - fills the configuration state
   !!
   SUBROUTINE read_les_namelist( filename )
 
-    CHARACTER(LEN=*), INTENT(IN) :: filename 
+    CHARACTER(LEN=*), INTENT(IN) :: filename
     INTEGER :: istat, funit, jg
     INTEGER :: iunit
 
@@ -99,10 +98,10 @@ CONTAINS
     !-----------------------
     sst          = 300._wp
     psfc         = -999._wp
-    shflx        = 0.1_wp 
-    lhflx        = 0._wp 
-    isrfc_type   = 1 
-    ufric        = -999._wp 
+    shflx        = 0.1_wp
+    lhflx        = 0._wp
+    isrfc_type   = 1
+    ufric        = -999._wp
 
     is_dry_cbl   = .FALSE.
 
@@ -122,7 +121,7 @@ CONTAINS
     vert_scheme_type = 2 !implicit
 
     !output parameters
-    ldiag_les_out = .FALSE. 
+    ldiag_les_out = .FALSE.
     expname  = 'ICOLES'
     avg_interval_sec = 900._wp
     sampl_freq_sec   = 60._wp
@@ -134,21 +133,21 @@ CONTAINS
       'thv    ','wthv   ','wqvd   ','wthd   ','wqcd   ','bruvais','mechprd',   & !22-28
       'wud    ','wvd    ','wthsfs ','rh     ','clc    ','qi     ','qs     ',   & !29-35
       'qr     ','qg     ','qh     ','lwf    ','swf    ','dt_t_sw','dt_t_lw',   & !36-42
-      'dt_t_tb','dt_t_mc','dthls_w','dqls_w ','dthls_h','dqls_h ','nt_thl ',   & !43-49 
-      'nt_qt  ','wfls   ','tke    ' /)                                           !50-52
+      'dt_t_tb','dt_t_mc','dthls_w','dqls_w ','dthls_h','dqls_h ','nt_thl ',   & !43-49
+      'nt_qt  ','wfls   ','tke    ','gstke  ','www    ','ta     '/)              !50-55
 
     turb_tseries_list = (/                                          &
       'ccover ','shflx  ','lhflx  ','ustress','vstress','tsfc   ',  & !1-6
       'qsfc   ','hbl    ','psfc   ','swf_tom','lwf_tom','swf_sfc',  & !7-12
       'lwf_sfc','precp_t','precp_r','precp_s','precp_g','precp_h',  & !13-18
-      'precp_i' /)                                                    !19
+      'precp_i','tqc    ','tqr    ' /)                               !19-21
 
     ! grid metric terms in the les diffusion
     les_metric = .FALSE.
 
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -211,8 +210,8 @@ CONTAINS
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=les_nml)                    
-      CALL store_and_close_namelist(funit,'les_nml') 
+      WRITE(funit,NML=les_nml)
+      CALL store_and_close_namelist(funit,'les_nml')
     ENDIF
     ! 7. write the contents of the namelist to an ASCII file
     IF(my_process_is_stdio()) WRITE(nnml_output,nml=les_nml)

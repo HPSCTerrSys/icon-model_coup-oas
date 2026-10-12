@@ -3,16 +3,16 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ------------------------------------------
 
-set -e
+set -eu
 MY_DIR=$(cd "$(dirname "$0")"; pwd)
 
 source "${MY_DIR}/dwd_fcns.sh"
 
-build_dwd dwd_nec_hybrid
+build_dwd "$(basename ${BASH_SOURCE[0]})"

@@ -1,17 +1,16 @@
-! Set of methods for grid decomposition.
-! It runs only on a single process
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Set of methods for grid decomposition.
+! It runs only on a single process
 
 !-------------------------------------------------------------------------------------
 #define d_norma_3d(v) SQRT(DOT_PRODUCT(v%x,v%x))
@@ -983,4 +982,3 @@ CONTAINS
   END FUNCTION partidx_of_elem_uniform_deco
 
 END MODULE mo_decomposition_tools
-

@@ -1,16 +1,15 @@
-! This module provides parameters controlling online emission module.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides parameters controlling online emission module.
 
 MODULE mo_oem_nml
 
@@ -20,9 +19,14 @@ MODULE mo_oem_nml
                            & config_month_of_year_nc      => month_of_year_nc,      &
                            & config_hour_of_year_nc       => hour_of_year_nc,       &
                            & config_gridded_emissions_nc  => gridded_emissions_nc,  &
-                           & config_ens_reg_nc            => ens_reg_nc,            & 
+                           & config_chem_init_nc          => chem_init_nc,          &
+                           & config_chem_restart_nc       => chem_restart_nc,       &
+                           & config_ens_reg_nc            => ens_reg_nc,            &
                            & config_ens_lambda_nc         => ens_lambda_nc,         &
-                           & config_vegetation_indices_nc => vegetation_indices_nc, &  
+                           & config_boundary_lambda_nc    => boundary_lambda_nc,    &
+                           & config_boundary_regions_nc   => boundary_regions_nc,   &
+                           & config_restart_init_time     => restart_init_time,     &
+                           & config_vegetation_indices_nc => vegetation_indices_nc, &
                            & config_vprm_par              => vprm_par,              &
                            & config_vprm_lambda           => vprm_lambda,           &
                            & config_vprm_alpha            => vprm_alpha,            &
@@ -31,7 +35,7 @@ MODULE mo_oem_nml
                            & config_vprm_tmax             => vprm_tmax,             &
                            & config_vprm_topt             => vprm_topt,             &
                            & config_vprm_tlow             => vprm_tlow,             &
-                           & config_lcut_area             => lcut_area,             &  
+                           & config_lcut_area             => lcut_area,             &
                            & config_lon_cut_start         => lon_cut_start,         &
                            & config_lon_cut_end           => lon_cut_end,           &
                            & config_lat_cut_start         => lat_cut_start,         &
@@ -60,9 +64,13 @@ MODULE mo_oem_nml
     &                            month_of_year_nc,      & !< name of the oae month of year file
     &                            hour_of_year_nc,       & !< name of the oae hour of year file
     &                            gridded_emissions_nc,  & !< name of the oae gridded emission file
+    &                            chem_init_nc,          & !< name of ic-file for chemical species
+    &                            chem_restart_nc,       & !< name of restart-file for chemical species
     &                            ens_reg_nc,            & !< name of file with ensemble-regions
     &                            ens_lambda_nc,         & !< name of file with ensemble-lambdas
-    &                            vegetation_indices_nc    !< name of file with MODIS reflectances 
+    &                            boundary_lambda_nc,    & !< name of file with bg-lambdas
+    &                            boundary_regions_nc,   & !< name of file with boundary region mask
+    &                            vegetation_indices_nc    !< name of file with MODIS reflectances
   REAL(wp), DIMENSION(8) ::      vprm_par,              & !< VPRM parameter values for PAR_0
     &                            vprm_lambda,           & !< VPRM parameter values for lambda
     &                            vprm_alpha,            & !< VPRM parameter values for alpha
@@ -73,7 +81,7 @@ MODULE mo_oem_nml
     &                            vprm_tlow                !< VPRM parameter values for T_low
   LOGICAL ::                     lcut_area                !< Switch to turn on/off to select an
                                                           !< area where no fluxes are applied
-  REAL(wp) ::                    lon_cut_start,         & !< longitude start coordinate 
+  REAL(wp) ::                    lon_cut_start,         & !< longitude start coordinate
     &                            lon_cut_end,           & !< longitude end coordinate
     &                            lat_cut_start,         & !< latitude start coordinate
     &                            lat_cut_end              !< latitude end coordinate
@@ -87,8 +95,13 @@ MODULE mo_oem_nml
     &                    month_of_year_nc,      &
     &                    hour_of_year_nc,       &
     &                    gridded_emissions_nc,  &
+    &                    chem_init_nc,          &
+    &                    chem_restart_nc,       &
     &                    ens_reg_nc,            &
     &                    ens_lambda_nc,         &
+    &                    boundary_lambda_nc,    &
+    &                    boundary_regions_nc,   &
+    &                    restart_init_time,     &
     &                    vegetation_indices_nc, &
     &                    vprm_par,              &
     &                    vprm_lambda,           &
@@ -97,12 +110,12 @@ MODULE mo_oem_nml
     &                    vprm_tmin,             &
     &                    vprm_tmax,             &
     &                    vprm_topt,             &
-    &                    vprm_tlow,             & 
+    &                    vprm_tlow,             &
     &                    lcut_area,             &
-    &                    lon_cut_start,         & 
-    &                    lon_cut_end,           & 
-    &                    lat_cut_start,         & 
-    &                    lat_cut_end              
+    &                    lon_cut_start,         &
+    &                    lon_cut_end,           &
+    &                    lat_cut_start,         &
+    &                    lat_cut_end
 
 !==============================================================================
 ! Module procedure in "mo_oem_nml"
@@ -123,7 +136,7 @@ CONTAINS
     !0!  &  routine = 'mo_oem_nml:read_oemctrl_namelist'
 
     !-----------------------
-    ! 1. default settings   
+    ! 1. default settings
     !-----------------------
 
     vertical_profile_nc   = ''
@@ -132,8 +145,13 @@ CONTAINS
     month_of_year_nc      = ''
     hour_of_year_nc       = ''
     gridded_emissions_nc  = ''
+    chem_init_nc          = ''
+    chem_restart_nc       = ''
     ens_reg_nc            = ''
     ens_lambda_nc         = ''
+    boundary_lambda_nc    = ''
+    boundary_regions_nc   = ''
+    restart_init_time     = 0
     vegetation_indices_nc = ''
     vprm_par              = (/  3.139508E+02,  3.132859E+02, &
                           &     5.149856E+02,  1.009878E+02, &
@@ -195,8 +213,13 @@ CONTAINS
     config_month_of_year_nc      = month_of_year_nc
     config_hour_of_year_nc       = hour_of_year_nc
     config_gridded_emissions_nc  = gridded_emissions_nc
+    config_chem_init_nc          = chem_init_nc
+    config_chem_restart_nc       = chem_restart_nc
     config_ens_reg_nc            = ens_reg_nc
     config_ens_lambda_nc         = ens_lambda_nc
+    config_boundary_lambda_nc    = boundary_lambda_nc
+    config_boundary_regions_nc   = boundary_regions_nc
+    config_restart_init_time     = restart_init_time
     config_vegetation_indices_nc = vegetation_indices_nc
     config_vprm_par              = vprm_par
     config_vprm_lambda           = vprm_lambda
@@ -211,7 +234,7 @@ CONTAINS
     config_lon_cut_end           = lon_cut_end
     config_lat_cut_start         = lat_cut_start
     config_lat_cut_end           = lat_cut_end
-    
+
     !-----------------------------------------------------
     ! 4. write the contents of the namelist to an ASCII file
     !-----------------------------------------------------
@@ -227,5 +250,3 @@ CONTAINS
 !------------------------------------------------------------------------------
 
 END MODULE mo_oem_nml
-
-

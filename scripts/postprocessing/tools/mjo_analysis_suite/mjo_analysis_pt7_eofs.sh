@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #########################################################
 # Part 7 in MJO-Analysis Suite
@@ -24,10 +25,10 @@
 ########################################################
 
 
-for variable in  OLR TOT_PREC U200 U850 V850 
+for variable in  OLR TOT_PREC U200 U850 V850
 do
   fileinpart=${variable}"_"${dataext}"anom"
-  echo "Process "${variable} 
+  echo "Process "${variable}
   ncl 'var="'${variable}'"' \
       'infile="'${filepath}${dataset}'_'${fileinpart}'.nc"' \
       'plotdir="'${plotpath}'"' \
@@ -43,5 +44,3 @@ do
       neof=3                \
       mjo_analysis_clivar_eofs.ncl
 done
-
-

@@ -1,19 +1,19 @@
-! Contains routines for asynchronous restart output
-!
-! Note: The synchronous implementation of the restart output can be
-!       found in the module "mo_sync_restart". See module header for
-!       more details on generated files.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains routines for asynchronous restart output
+!
+! Note: The synchronous implementation of the restart output can be
+!       found in the module "mo_sync_restart". See module header for
+!       more details on generated files.
 
 MODULE mo_async_restart
 #ifndef NOMPI
@@ -106,7 +106,7 @@ CONTAINS
       IF (.NOT. ASSOCIATED(patchData)) CALL finish(routine, "wrong type of patchData")
       IF (patchData%description%l_dom_active .AND. SIZE(patchData%varData) > 0) &
         & CALL compute_write_var_list(patchData%commData, patchData%description, &
-        &                           patchData%varData)
+        &                           patchData%varData, lacc=.TRUE.)
     END DO
     CALL p_barrier(comm=p_comm_work)
     IF (p_pe_work == 0) & ! actual trigger for restart writing
@@ -151,10 +151,11 @@ CONTAINS
     IF(timers_level >= 7) CALL timer_stop(timer_write_restart_communication)
   END SUBROUTINE compute_prepare_restart
 
-  SUBROUTINE compute_write_var_list(commData, desc, vars)
+  SUBROUTINE compute_write_var_list(commData, desc, vars, lacc)
     TYPE(t_AsyncRestartCommData), INTENT(inout) :: commData
     TYPE(t_restart_patch_description), INTENT(in) :: desc
     TYPE(t_var_ptr), INTENT(in) :: vars(:)
+    LOGICAL, INTENT(in) :: lacc
     REAL(dp), POINTER               :: r_ptr_3d(:,:,:)
     REAL(sp), POINTER               :: s_ptr_3d(:,:,:)
     INTEGER, POINTER                :: i_ptr_3d(:,:,:)
@@ -168,13 +169,13 @@ CONTAINS
         hgi = desc%hmap(vars(iv)%p%info%hgrid)
         SELECT CASE(vars(iv)%p%info%data_type)
         CASE(REAL_T)
-          CALL get_var_3d_ptr(vars(iv)%p, r_ptr_3d)
+          CALL get_var_3d_ptr(vars(iv)%p, r_ptr_3d, lacc=lacc)
           CALL commData%postData(hgi, r_ptr_3d, offset)
         CASE(SINGLE_T)
-          CALL get_var_3d_ptr(vars(iv)%p, s_ptr_3d)
+          CALL get_var_3d_ptr(vars(iv)%p, s_ptr_3d, lacc=lacc)
           CALL commData%postData(hgi, s_ptr_3d, offset)
         CASE(INT_T)
-          CALL get_var_3d_ptr(vars(iv)%p, i_ptr_3d)
+          CALL get_var_3d_ptr(vars(iv)%p, i_ptr_3d, lacc=lacc)
           CALL commData%postData(hgi, i_ptr_3d, offset)
         CASE DEFAULT
           CALL finish(routine, "Internal error! Variable "//TRIM(vars(iv)%p%info%name))

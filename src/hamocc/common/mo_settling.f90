@@ -1,21 +1,21 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
 MODULE mo_settling
 
 
       USE mo_kind,    ONLY        : wp
       USE mo_bgc_memory_types, ONLY  : t_bgc_memory, t_sediment_memory
       USE mo_fortran_tools, ONLY  : set_acc_host_or_device
-
+      USE mo_exception, ONLY      : finish
 
       IMPLICIT NONE
 
@@ -44,7 +44,7 @@ CONTAINS
       USE mo_memory_bgc,  ONLY    : n90depth,&
       &                             n1000depth,n2000depth
 
-      USE mo_control_bgc, ONLY    : bgc_nproma, bgc_zlevs, dtbgc, inv_dtbgc
+      USE mo_control_bgc, ONLY    : bgc_nproma, bgc_zlevs, inv_dtbgc
 
       IMPLICIT NONE
 
@@ -54,8 +54,8 @@ CONTAINS
       TYPE(t_sediment_memory), POINTER :: local_sediment_mem
 
       INTEGER, INTENT(in), TARGET    :: klev(bgc_nproma)       !<  vertical levels
-      INTEGER, INTENT(in)            :: start_idx              !< start index for j loop (ICON cells, MPIOM lat dir)  
-      INTEGER, INTENT(in)            :: end_idx                !< end index  for j loop  (ICON cells, MPIOM lat dir) 
+      INTEGER, INTENT(in)            :: start_idx              !< start index for j loop (ICON cells, MPIOM lat dir)
+      INTEGER, INTENT(in)            :: end_idx                !< end index  for j loop  (ICON cells, MPIOM lat dir)
 
       REAL(wp), INTENT(in), TARGET   :: pddpo(bgc_nproma,bgc_zlevs)      !< size of scalar grid cell (3rd dimension) [m]
       REAL(wp), INTENT(in), TARGET   :: za(bgc_nproma)      !< surface height
@@ -67,8 +67,20 @@ CONTAINS
       INTEGER :: k, kpke,j
       LOGICAL :: lzacc
 
+#ifdef __LVECTOR__
+      ! Comment on code vectorization:
+      ! *** change of loop order
+      ! *** splitting the main loop into parts
+      ! *** replacing the pointer with direct access to structure members
+      INTEGER :: max_klevs
+      max_klevs = MAXVAL(klev(start_idx:end_idx))
+#endif
+
       CALL set_acc_host_or_device(lzacc, lacc)
 
+#if defined(__LVECTOR__) && defined(_OPENACC)
+      IF (lzacc) CALL finish("", "LVECTOR variant after reworking not properly ported/tested on GPUs")
+#endif
 
      ! implicit method:
      ! C(k,T+dt)=C(k,T) + (w*dt/ddpo(k))*(C(k-1,T+1)-C(k,T+1))
@@ -76,17 +88,46 @@ CONTAINS
      ! C(k,T+dt)=(ddpo(k)*C(k,T)+w*dt*C(k-1,T+dt))/(ddpo(k)+w*dt)
      ! sedimentation=w*dt*C(ks,T+dt)
      !
+#ifndef __LVECTOR__
      kbo => local_bgc_mem%kbo
-     
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      !$ACC LOOP GANG VECTOR
+
+!       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+!       !$ACC LOOP GANG VECTOR
       DO j=start_idx,end_idx
-        kpke=klev(j)        
+        kpke=klev(j)
+
+        local_bgc_mem%bgcflux(j,kcoex90) = 0._wp
+        local_bgc_mem%bgcflux(j,kcalex90) = 0._wp
+        local_bgc_mem%bgcflux(j,kopex90) = 0._wp
+        local_bgc_mem%bgcflux(j,kcoex1000) = 0._wp
+        local_bgc_mem%bgcflux(j,kcalex1000) = 0._wp
+        local_bgc_mem%bgcflux(j,kopex1000) = 0._wp
+        local_bgc_mem%bgcflux(j,kcoex2000) = 0._wp
+        local_bgc_mem%bgcflux(j,kcalex2000) = 0._wp
+        local_bgc_mem%bgcflux(j,kopex2000) = 0._wp
 
         IF(kpke > 0)THEN
         IF(pddpo(j,1) > EPSILON(0.5_wp))THEN
+#else
+      DO j = start_idx, end_idx
+        local_bgc_mem%bgcflux(j,kcoex90) = 0._wp
+        local_bgc_mem%bgcflux(j,kcalex90) = 0._wp
+        local_bgc_mem%bgcflux(j,kopex90) = 0._wp
+        local_bgc_mem%bgcflux(j,kcoex1000) = 0._wp
+        local_bgc_mem%bgcflux(j,kcalex1000) = 0._wp
+        local_bgc_mem%bgcflux(j,kopex1000) = 0._wp
+        local_bgc_mem%bgcflux(j,kcoex2000) = 0._wp
+        local_bgc_mem%bgcflux(j,kcalex2000) = 0._wp
+        local_bgc_mem%bgcflux(j,kopex2000) = 0._wp
+        IF(klev(j) > 0) THEN
+            IF(pddpo(j,1) > EPSILON(0.5_wp)) THEN
+#endif
 
-         if(kpke>=n90depth)then
+#ifndef __LVECTOR__
+         if(kpke    >= n90depth)then
+#else
+         if(klev(j) >= n90depth)then
+#endif
            local_bgc_mem%bgcflux(j,kcoex90)  = local_bgc_mem%bgctra(j,n90depth,idet)* &
              & local_bgc_mem%wpoc(j,n90depth)*inv_dtbgc
            local_bgc_mem%bgcflux(j,kcalex90) = local_bgc_mem%bgctra(j,n90depth,icalc)* &
@@ -95,7 +136,11 @@ CONTAINS
              & local_bgc_mem%wopal(j,n90depth)*inv_dtbgc
          endif
 
-         if(kpke>=n1000depth)then
+#ifndef __LVECTOR__
+         if(kpke    >= n1000depth)then
+#else
+         if(klev(j) >= n1000depth)then
+#endif
            local_bgc_mem%bgcflux(j,kcoex1000)  = local_bgc_mem%bgctra(j,n1000depth,idet)* &
              & local_bgc_mem%wpoc(j,n1000depth)*inv_dtbgc
            local_bgc_mem%bgcflux(j,kcalex1000) = local_bgc_mem%bgctra(j,n1000depth,icalc)* &
@@ -104,17 +149,21 @@ CONTAINS
              & local_bgc_mem%wopal(j,n1000depth)*inv_dtbgc
          endif
 
-         if(kpke>=n2000depth)then
+#ifndef __LVECTOR__
+         if(kpke    >= n2000depth)then
+#else
+         if(klev(j) >= n2000depth)then
+#endif
            local_bgc_mem%bgcflux(j,kcoex2000)  = local_bgc_mem%bgctra(j,n2000depth,idet)* &
              & local_bgc_mem%wpoc(j,n2000depth)*inv_dtbgc
-           local_bgc_mem%bgcflux(j,kcalex2000) = local_bgc_mem%bgctra(j,n2000depth,icalc)* & 
+           local_bgc_mem%bgcflux(j,kcalex2000) = local_bgc_mem%bgctra(j,n2000depth,icalc)* &
              & local_bgc_mem%wcal(j,n2000depth)*inv_dtbgc
            local_bgc_mem%bgcflux(j,kopex2000)  = local_bgc_mem%bgctra(j,n2000depth,iopal)* &
              & local_bgc_mem%wopal(j,n2000depth)*inv_dtbgc
          endif
 
                   ! -----------surface layer
-         k=1 
+         k=1
            local_bgc_mem%bgctra(j,k,idet)  = (local_bgc_mem%bgctra(j,k,idet)*(pddpo(j,k)+za(j)))      &
                 &              / (pddpo(j,k)+ za(j) +local_bgc_mem%wpoc(j,k))
 
@@ -131,11 +180,23 @@ CONTAINS
            local_bgc_mem%bgctend(j,k,kwpoc)  = local_bgc_mem%wpoc(j,k)*inv_dtbgc
            local_bgc_mem%bgctend(j,k,kwopal) = local_bgc_mem%wopal(j,k)*inv_dtbgc
            local_bgc_mem%bgctend(j,k,kwcal)  = local_bgc_mem%wcal(j,k)*inv_dtbgc
+#ifndef __LVECTOR__
           ENDIF
+#else
+            END IF
+        END IF
+      END DO
+#endif
 
-         !$ACC LOOP SEQ
+#ifndef __LVECTOR__
+!          !$ACC LOOP SEQ
          DO k=2,kpke
           IF(pddpo(j,k) > EPSILON(0.5_wp))THEN
+#else
+      DO k = 2, max_klevs
+        DO j = start_idx, end_idx
+            IF( (k <= klev(j)) .AND. (pddpo(j,k) > EPSILON(0.5_wp)) ) THEN
+#endif
           ! water column
               local_bgc_mem%bgctra(j,k,idet)  = (local_bgc_mem%bgctra(j,k  ,idet)*pddpo(j,k)    &
                    &        +  local_bgc_mem%bgctra(j,k-1,idet)*local_bgc_mem%wpoc(j,k-1))/  &
@@ -156,16 +217,35 @@ CONTAINS
            local_bgc_mem%bgctend(j,k,kwpoc)  = local_bgc_mem%wpoc(j,k)*inv_dtbgc
            local_bgc_mem%bgctend(j,k,kwopal) = local_bgc_mem%wopal(j,k)*inv_dtbgc
            local_bgc_mem%bgctend(j,k,kwcal)  = local_bgc_mem%wcal(j,k)*inv_dtbgc
+#ifndef __LVECTOR__
           ENDIF
          ENDDO
+#else
+            END IF
+        END DO
+      END DO
+#endif
 
+#ifndef __LVECTOR__
         IF(pddpo(j,kbo(j)) > EPSILON(0.5_wp))THEN
- 
+#else
+      DO j = start_idx, end_idx
+        IF(klev(j) > 0) THEN
+            IF(pddpo(j,local_bgc_mem%kbo(j)) > EPSILON(0.5_wp)) THEN
+#endif
+
            ! sediment fluxes at the bottom
+#ifndef __LVECTOR__
             local_sediment_mem%prorca(j) = local_bgc_mem%bgctra(j,kbo(j),idet )*local_bgc_mem%wpoc(j,kbo(j))
             local_sediment_mem%prcaca(j) = local_bgc_mem%bgctra(j,kbo(j),icalc)*local_bgc_mem%wcal(j,kbo(j))
             local_sediment_mem%silpro(j) = local_bgc_mem%bgctra(j,kbo(j),iopal)*local_bgc_mem%wopal(j,kbo(j))
             local_sediment_mem%produs(j) = local_bgc_mem%bgctra(j,kbo(j),idust)*local_bgc_mem%wdust(j,kbo(j))
+#else
+            local_sediment_mem%prorca(j) = local_bgc_mem%bgctra(j,local_bgc_mem%kbo(j),idet )*local_bgc_mem%wpoc(j,local_bgc_mem%kbo(j))
+            local_sediment_mem%prcaca(j) = local_bgc_mem%bgctra(j,local_bgc_mem%kbo(j),icalc)*local_bgc_mem%wcal(j,local_bgc_mem%kbo(j))
+            local_sediment_mem%silpro(j) = local_bgc_mem%bgctra(j,local_bgc_mem%kbo(j),iopal)*local_bgc_mem%wopal(j,local_bgc_mem%kbo(j))
+            local_sediment_mem%produs(j) = local_bgc_mem%bgctra(j,local_bgc_mem%kbo(j),idust)*local_bgc_mem%wdust(j,local_bgc_mem%kbo(j))
+#endif
             local_bgc_mem%bgcflux(j,kprorca) = local_sediment_mem%prorca(j)*inv_dtbgc
             local_bgc_mem%bgcflux(j,kprcaca) = local_sediment_mem%prcaca(j)*inv_dtbgc
             local_bgc_mem%bgcflux(j,ksilpro) = local_sediment_mem%silpro(j)*inv_dtbgc
@@ -174,9 +254,9 @@ CONTAINS
           ENDIF
          ENDIF
       END DO
-      !$ACC END PARALLEL
+!       !$ACC END PARALLEL
 
-      END SUBROUTINE settling 
+      END SUBROUTINE settling
 
 
 !>
@@ -203,7 +283,7 @@ CONTAINS
       USE mo_memory_bgc,  ONLY    : n90depth, n1000depth,n2000depth
 
       USE mo_control_bgc, ONLY    : bgc_nproma, bgc_zlevs, inv_dtbgc
-  
+
 
       IMPLICIT NONE
 
@@ -213,8 +293,8 @@ CONTAINS
       TYPE(t_sediment_memory), POINTER :: local_sediment_mem
 
       INTEGER, INTENT(in), TARGET    :: klev(bgc_nproma)       !<  vertical levels
-      INTEGER, INTENT(in)            :: start_idx              !< start index for j loop (ICON cells, MPIOM lat dir)  
-      INTEGER, INTENT(in)            :: end_idx                !< end index  for j loop  (ICON cells, MPIOM lat dir) 
+      INTEGER, INTENT(in)            :: start_idx              !< start index for j loop (ICON cells, MPIOM lat dir)
+      INTEGER, INTENT(in)            :: end_idx                !< end index  for j loop  (ICON cells, MPIOM lat dir)
 
       REAL(wp), INTENT(in), TARGET   :: pddpo(bgc_nproma,bgc_zlevs)      !< size of scalar grid cell (3rd dimension) [m]
 
@@ -225,18 +305,18 @@ CONTAINS
 
       REAL(wp) :: det_flux(bgc_zlevs+1), calc_flux(bgc_zlevs+1)
       REAL(wp) :: opal_flux(bgc_zlevs+1), dust_flux(bgc_zlevs+1)
-      REAL(wp) :: cn_det, cn_calc, cn_opal, cn_dust, maxflux 
+      REAL(wp) :: cn_det, cn_calc, cn_opal, cn_dust, maxflux
       REAL(wp) :: det_plim, calc_plim, opal_plim, dust_plim
 
       kbo => local_bgc_mem%kbo
 
- 
+
        DO j=start_idx,end_idx
-        kpke=klev(j)        
+        kpke=klev(j)
 
         IF(kpke > 0)THEN
         IF(pddpo(j,1) > EPSILON(0.5_wp))THEN
-        
+
          DO k = 1,kpke + 1
 
            det_flux(k)  = 0._wp
@@ -255,8 +335,8 @@ CONTAINS
         ! flux from atmosphere to surface layer euqals zero (here)
         ! hence, starting calculation of flux with k=2
 
-         IF( kbo(j) > 1 ) THEN ! only, when water column is larger than one box 
-                             ! otherwise go immediately to the calculation 
+         IF( kbo(j) > 1 ) THEN ! only, when water column is larger than one box
+                             ! otherwise go immediately to the calculation
                              ! for flux to sediment
 
             k = 2 ! flux at the bottom of first level
@@ -277,14 +357,14 @@ CONTAINS
 
             det_flux(k)  = local_bgc_mem%wpoc(j,k-1) * (local_bgc_mem%bgctra(j,k-1,idet)                    &
                               & + 0.5_wp * det_plim * (1._wp-cn_det)            &
-                              & * (local_bgc_mem%bgctra(j,k,idet) - local_bgc_mem%bgctra(j,k-1,idet))) 
-            maxflux      = max(local_bgc_mem%bgctra(j,k-1,idet) - EPSILON(1._wp),0._wp) * pddpo(j,k-1)  
+                              & * (local_bgc_mem%bgctra(j,k,idet) - local_bgc_mem%bgctra(j,k-1,idet)))
+            maxflux      = max(local_bgc_mem%bgctra(j,k-1,idet) - EPSILON(1._wp),0._wp) * pddpo(j,k-1)
             det_flux(k)  = min(det_flux(k), maxflux)
 
             calc_flux(k) = local_bgc_mem%wcal(j,k-1) * (local_bgc_mem%bgctra(j,k-1,icalc)                   &
                               & + 0.5_wp * calc_plim * (1._wp-cn_calc)          &
                               & * (local_bgc_mem%bgctra(j,k,icalc) - local_bgc_mem%bgctra(j,k-1,icalc)))
-            maxflux      = max(local_bgc_mem%bgctra(j,k-1,icalc) - EPSILON(1._wp),0._wp) * pddpo(j,k-1)  
+            maxflux      = max(local_bgc_mem%bgctra(j,k-1,icalc) - EPSILON(1._wp),0._wp) * pddpo(j,k-1)
             calc_flux(k) = min(calc_flux(k), maxflux)
 
             opal_flux(k) = local_bgc_mem%wopal(j,k-1) * (local_bgc_mem%bgctra(j,k-1,iopal)                &
@@ -292,15 +372,15 @@ CONTAINS
                               & * (local_bgc_mem%bgctra(j,k,iopal) - local_bgc_mem%bgctra(j,k-1,iopal)))
             maxflux      = max(local_bgc_mem%bgctra(j,k-1,iopal) - EPSILON(1._wp),0._wp) * pddpo(j,k-1)
             opal_flux(k) = min(opal_flux(k), maxflux)
-            
+
 
             dust_flux(k) = local_bgc_mem%wdust(j,k-1) * (local_bgc_mem%bgctra(j,k-1,idust)               &
                             & + 0.5_wp * dust_plim * (1._wp-cn_dust)          &
                             & * (local_bgc_mem%bgctra(j,k,idust) - local_bgc_mem%bgctra(j,k-1,idust)))
-            maxflux      = max(local_bgc_mem%bgctra(j,k-1,idust) - EPSILON(1._wp),0._wp) * pddpo(j,k-1) 
+            maxflux      = max(local_bgc_mem%bgctra(j,k-1,idust) - EPSILON(1._wp),0._wp) * pddpo(j,k-1)
             dust_flux(k) = min(dust_flux(k), maxflux)
-            
-        
+
+
             DO k = 3, kbo(j) ! water column
 
               cn_det  = local_bgc_mem%wpoc(j,k-1)/pddpo(j,k-1)    ! assuming both positive
@@ -320,8 +400,8 @@ CONTAINS
 
               det_flux(k)  = local_bgc_mem%wpoc(j,k-1) * (local_bgc_mem%bgctra(j,k-1,idet)                 &
                                & + 0.5_wp * det_plim  * (1._wp-cn_det)          &
-                               & * (local_bgc_mem%bgctra(j,k,idet) - local_bgc_mem%bgctra(j,k-1,idet))) 
-              maxflux      = max(local_bgc_mem%bgctra(j,k-1,idet) - EPSILON(1._wp),0._wp) * pddpo(j,k-1) ! 
+                               & * (local_bgc_mem%bgctra(j,k,idet) - local_bgc_mem%bgctra(j,k-1,idet)))
+              maxflux      = max(local_bgc_mem%bgctra(j,k-1,idet) - EPSILON(1._wp),0._wp) * pddpo(j,k-1) !
               det_flux(k)  = min(det_flux(k), maxflux)
 
               calc_flux(k) = local_bgc_mem%wcal(j,k-1) * (local_bgc_mem%bgctra(j,k-1,icalc)                &
@@ -333,13 +413,13 @@ CONTAINS
               opal_flux(k) = local_bgc_mem%wopal(j,k-1) * (local_bgc_mem%bgctra(j,k-1,iopal)                 &
                               & + 0.5_wp * opal_plim * (1._wp-cn_opal)         &
                               & * (local_bgc_mem%bgctra(j,k,iopal) - local_bgc_mem%bgctra(j,k-1,iopal)))
-              maxflux      = max(local_bgc_mem%bgctra(j,k-1,iopal) - EPSILON(1._wp),0._wp) * pddpo(j,k-1) 
+              maxflux      = max(local_bgc_mem%bgctra(j,k-1,iopal) - EPSILON(1._wp),0._wp) * pddpo(j,k-1)
               opal_flux(k) = min(opal_flux(k), maxflux)
 
               dust_flux(k) = local_bgc_mem%wdust(j,k-1) * (local_bgc_mem%bgctra(j,k-1,idust)              &
                              & + 0.5_wp * dust_plim * (1._wp-cn_dust)          &
                              & * (local_bgc_mem%bgctra(j,k,idust) - local_bgc_mem%bgctra(j,k-1,idust)))
-              maxflux      = max(local_bgc_mem%bgctra(j,k-1,idust) - EPSILON(1._wp),0._wp) * pddpo(j,k-1) 
+              maxflux      = max(local_bgc_mem%bgctra(j,k-1,idust) - EPSILON(1._wp),0._wp) * pddpo(j,k-1)
               dust_flux(k) = min(dust_flux(k), maxflux)
 
             ENDDO
@@ -362,23 +442,23 @@ CONTAINS
          ! here n90depth+1, since the interface from box k to k+1 is w-level k+1
          ! in the previous implicit scheme, it's defined as k-flux
          IF (kbo(j) > n90depth) THEN
-           local_bgc_mem%bgcflux(j,kcoex90) = det_flux(n90depth+1)*inv_dtbgc   
-           local_bgc_mem%bgcflux(j,kopex90) = opal_flux(n90depth+1)*inv_dtbgc 
-           local_bgc_mem%bgcflux(j,kcalex90) = calc_flux(n90depth+1)*inv_dtbgc 
+           local_bgc_mem%bgcflux(j,kcoex90) = det_flux(n90depth+1)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,kopex90) = opal_flux(n90depth+1)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,kcalex90) = calc_flux(n90depth+1)*inv_dtbgc
          ENDIF
 
          ! write out fluxes at about 1000 m
          IF (kbo(j) > n1000depth) THEN
-           local_bgc_mem%bgcflux(j,kcoex1000) = det_flux(n1000depth+1)*inv_dtbgc     
-           local_bgc_mem%bgcflux(j,kopex1000) = opal_flux(n1000depth+1)*inv_dtbgc    
-           local_bgc_mem%bgcflux(j,kcalex1000) = calc_flux(n1000depth+1)*inv_dtbgc    
+           local_bgc_mem%bgcflux(j,kcoex1000) = det_flux(n1000depth+1)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,kopex1000) = opal_flux(n1000depth+1)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,kcalex1000) = calc_flux(n1000depth+1)*inv_dtbgc
          ENDIF
 
          ! write out fluxes at about 1950 m
          IF (kbo(j) > n2000depth) THEN
-           local_bgc_mem%bgcflux(j,kcoex2000) = det_flux(n2000depth+1)*inv_dtbgc     
-           local_bgc_mem%bgcflux(j,kopex2000) = opal_flux(n2000depth+1)*inv_dtbgc    
-           local_bgc_mem%bgcflux(j,kcalex2000) = calc_flux(n2000depth+1)*inv_dtbgc    
+           local_bgc_mem%bgcflux(j,kcoex2000) = det_flux(n2000depth+1)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,kopex2000) = opal_flux(n2000depth+1)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,kcalex2000) = calc_flux(n2000depth+1)*inv_dtbgc
          ENDIF
 
          IF (pddpo(j,1) > EPSILON(0.5_wp)) THEN
@@ -387,25 +467,25 @@ CONTAINS
            local_sediment_mem%prcaca(j) = calc_flux(kbo(j)+1)
            local_sediment_mem%silpro(j) = opal_flux(kbo(j)+1)
            local_sediment_mem%produs(j) = dust_flux(kbo(j)+1)
-           
+
            !
            !  write output
            !
-           local_bgc_mem%bgcflux(j,kprorca) = local_sediment_mem%prorca(j)*inv_dtbgc     
-           local_bgc_mem%bgcflux(j,kprcaca) = local_sediment_mem%prcaca(j)*inv_dtbgc     
-           local_bgc_mem%bgcflux(j,ksilpro) = local_sediment_mem%silpro(j)*inv_dtbgc     
-           local_bgc_mem%bgcflux(j,kprodus) = local_sediment_mem%produs(j)*inv_dtbgc     
+           local_bgc_mem%bgcflux(j,kprorca) = local_sediment_mem%prorca(j)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,kprcaca) = local_sediment_mem%prcaca(j)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,ksilpro) = local_sediment_mem%silpro(j)*inv_dtbgc
+           local_bgc_mem%bgcflux(j,kprodus) = local_sediment_mem%produs(j)*inv_dtbgc
 
-         ENDIF 
+         ENDIF
 
-        ENDIF ! ddpo > 0.5   
-        ENDIF !    
+        ENDIF ! ddpo > 0.5
+        ENDIF !
        ENDDO ! j
 
- 
- 
 
-      END SUBROUTINE settling_pdm 
+
+
+      END SUBROUTINE settling_pdm
 
 
       SUBROUTINE plimiter(p_lim, cnnr, conc_p1, conc_m, conc_m1)
@@ -423,16 +503,16 @@ CONTAINS
       delta_conc = conc_p1 - conc_m
       IF(ABS(delta_conc) > 0._wp) THEN ! unfortunately required, as it can rarely happen that it's equal 0
          ratio_p    = (conc_m - conc_m1) / delta_conc
-      ELSE 
+      ELSE
          ! range, where limiter 2._wp/(1._wp-cnnr)) should jump in
-         ! don't have to care about (1-cn), since model is close to unstable anyway, when cn=1 
+         ! don't have to care about (1-cn), since model is close to unstable anyway, when cn=1
          ratio_p    = 1.e37_wp ! fix me - is there a value for the largest real value defined?
       ENDIF
-      
+
 
       limiter   = 0.5_wp+1._wp/6._wp*(1._wp-2._wp*cnnr)  &
                    & +  (0.5_wp-1._wp/6._wp*(1._wp-2._wp*cnnr)) * ratio_p
       p_lim  = MAX(0._wp,MIN(MIN(limiter,2._wp/(1._wp-cnnr)),2._wp * ratio_p / cnnr))
-     
+
       END SUBROUTINE plimiter
 END MODULE

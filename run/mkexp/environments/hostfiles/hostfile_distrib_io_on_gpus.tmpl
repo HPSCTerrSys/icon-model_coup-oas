@@ -1,0 +1,40 @@
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#%#-
+#-----------------------------------------------------------------------------
+# Hostfile generation to distributed processes on Levante gpu partition
+#
+# $Id: run/mkexp/environments/hostfiles/hostfile_distrib_io_on_gpus.tmpl 3 2025-08-01 12:22:04Z k202204 $
+#
+export SLURM_HOSTFILE=$EXPDIR/hst_file
+rm -f $SLURM_HOSTFILE
+
+hosts=$(%{JOB.hostnames_command})
+
+# Distribute compute procs on GPUs
+for host in $hosts
+do
+    for i in $(seq $SLURM_GPUS_ON_NODE)
+    do
+        echo $host >> $SLURM_HOSTFILE
+    done
+done
+
+# Distribute IO procs on CPU of the gpu nodes
+for host in $hosts
+do
+    for i in $(seq $io_procs_pernode)
+    do
+        echo $host >> $SLURM_HOSTFILE
+    done
+done
+
+#-----------------------------------------------------------------------------

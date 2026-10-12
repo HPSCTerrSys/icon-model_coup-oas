@@ -1,0 +1,28 @@
+#! /bin/sh -eu
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# Check run log file for job information and update
+#
+# %{mkexp_input}
+# $Id: run/mkexp/defaults/DEFAULT.update.tmpl 1 2025-10-27 22:05:34Z m221078 $
+# %{VERSIONS_|join('\n# ')}
+#
+
+tail -F %{SCRIPT_DIR}/%{EXP_ID}.run.log |
+awk -v COMMAND='%{JOB.progress_command|replace("'", "'\\''")}' '
+    /Time step/ {
+        gsub("^.*model time ", "");
+        gsub(":.*$", "");
+        CURRENT=$1 "T" $2
+    };
+    CURRENT!=LAST {system(COMMAND " " CURRENT); LAST=CURRENT}
+'

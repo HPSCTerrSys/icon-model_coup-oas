@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -27,7 +27,7 @@ listname=${1:-coverage}
 
 #-----------------------------------------------------------
 runTests="checksuite.icon-dev/check.atm_bubble_test exp.test_nwp_R02B04N06multi"
-compCoverage="checksuite.infrastructure/coverage/exp.compute_coverage" 
+compCoverage="checksuite.infrastructure/coverage/exp.compute_coverage"
 
 $addexp "${compCoverage}" --builders "levante_coverage" --list $listname --runflags "queue=shared"
 

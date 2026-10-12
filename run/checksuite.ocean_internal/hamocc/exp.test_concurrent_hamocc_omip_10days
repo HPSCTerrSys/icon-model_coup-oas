@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -141,6 +141,7 @@ cat > ${ocean_namelist} << EOF0
   fct_high_order_flux   = 5      ! horizontal high order method: 1=upwind, 2=central, 3=lax_friedrichs, 4=miura_order1
   fct_limiter_horz      = 100    ! zalesak
   threshold_min_T       = -4.0   ! to avoid abort
+  no_tracer             = 4      ! 2 normal setup; 3 with age tracer; 4 with age tracer squared
 /
 &ocean_horizontal_diffusion_nml
   laplacian_form = 1                   ! 1=curlcurl-graddiv
@@ -148,7 +149,7 @@ cat > ${ocean_namelist} << EOF0
 
   HarmonicViscosity_scaling     =  1
   HarmonicViscosity_reference   =  3.0E+4  !  [m2/s] constant horizontal viscosity coefficient for velocity
-  HarmonicViscosity_background  =  0.0  
+  HarmonicViscosity_background  =  0.0
 
   TracerHorizontalDiffusion_scaling          = 1
   Temperature_HorizontalDiffusion_Background = 0.0
@@ -179,7 +180,7 @@ cat > ${ocean_namelist} << EOF0
   i_sea_ice                       =   1       ! 0 = no sea ice; 1 = sea ice model on; default=1
   lhamocc                         = ${lhamocc}
   lbgcadv                         = ${lbgcadv}
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                     =   1       ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
   i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics
@@ -199,7 +200,7 @@ cat >> ${ocean_namelist} << EOF3
 l_cyadyn                          = .TRUE.    ! dynamic cyanobacteria
 l_cpl_co2                         = .FALSE.   ! CO2 coupled to land carbon cycle
 l_bgc_check                       = .FALSE.   ! mass check at every time step
-deltacalc                         = 0.        ! CaCO3 weathering rate [kmol/yr] 
+deltacalc                         = 0.        ! CaCO3 weathering rate [kmol/yr]
 deltaorg                          = 0.        ! OC weathering rate [kmol/yr]
 deltasil                          = 0.        ! Si(OH)4 weathering rate [kmol/yr]
 atm_co2                           = 278.      ! atmospheric CO2 (default 278)
@@ -214,6 +215,7 @@ mc_depth                          = 100.      ! depth where linear increase of s
 mc_fac                            = 2.0       ! slope of sinking speed increase relative to remin rate (default 2.0)
 l_implsed                         =.FALSE.    ! implicit sediment formulation
 l_init_bgc                        =.TRUE.
+l_hamocc_vertint		  =.TRUE.
 /
 EOF3
 fi
@@ -233,7 +235,7 @@ cat >> ${ocean_namelist} << EOF4
   forcing_fluxes_type             =   1       ! read from file
 ! forcing_enable_freshwater       = .TRUE.    ! apply freshwater forcing boundary condition (OMIP only)
 ! forcing_set_runoff_to_zero      = .FALSE.   ! set runoff to zero for comparison to MPIOM; default: false
-! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false 
+! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false
                                               ! salt-change due to internal fluxes only
 ! limit_seaice                    = .TRUE.    ! default: true
   seaice_limit                    =   0.8     ! hard limit set to 80% of upper layer for sea ice
@@ -243,7 +245,7 @@ cat >> ${ocean_namelist} << EOF4
 &ocean_initialConditions_nml
   initial_salinity_type           = 1         ! read from file
   initial_temperature_type        = 1         ! read from file
-/                                    
+/
 &ocean_diagnostics_nml
    diagnostics_level            = 1
    gibraltar(1:10)              = 1367,1369
@@ -258,6 +260,11 @@ cat >> ${ocean_namelist} << EOF4
    agulhas(1:10)                = 8024,8022
    agulhas_long(1:10)           = 8024,8022,6036
    agulhas_longer(1:10)         = 8024,8022,6036,6025
+   do_ts_budget = .true.
+   diagnose_age = .true.
+   diagnose_green = .true.
+   greenStartDate = '2000-01-01'
+   greenStopDate = '2000-01-10'
 /
 &io_nml
    lkeep_in_sync = .true.          ! sync after each timestep
@@ -282,7 +289,7 @@ cat >> ${ocean_namelist} << OEOF1
   operation       = 'mean'
   output_grid      = .TRUE.
   filename_format  = "<output_filename>_<datetime2>"
-  ml_varlist       = 'group:oce_essentials', 'group:ice_default'
+  ml_varlist       = 'group:oce_essentials', 'group:ice_default', 'group:oce_ts_budget'
 /
 &output_nml
   output_start     = "${start_date}"
@@ -360,6 +367,18 @@ cat >> ${hamocc_namelist} << HEOF1
   operation       = 'mean'
   ml_varlist       =  'HAMOCC_NPP','HAMOCC_nfix','HAMOCC_dms_prod','HAMOCC_dms_bac','HAMOCC_dms_uv','HAMOCC_eu_export','HAMOCC_pho_cya','HAMOCC_cya_loss','HAMOCC_grazing','HAMOCC_remin_via_grazer','HAMOCC_exudation_phy','HAMOCC_exudation_zoo','HAMOCC_zoomor','HAMOCC_phymor','HAMOCC_plim','HAMOCC_flim','HAMOCC_nlim','HAMOCC_cTlim','HAMOCC_cLlim','HAMOCC_cPlim','HAMOCC_cFlim'
   m_levels          ='1...${nlev_eu}'  ! ~500m: 19 for L40, 16 for L20, 26 for L64
+/
+&output_nml
+  filetype         =  4                       ! output format: 2=GRIB2, 4=NETCDFv2
+  filename_format  = "<output_filename>_<datetime2>"
+  output_filename  = "${EXPNAME}_hamocc_vertint"
+  output_start     = "${start_date}"                  ! start in ISO-format
+  output_end       = "${end_date}"                    ! end in ISO-format
+  output_interval  = "${daily}"
+  file_interval="P1Y"
+  output_grid      = .TRUE.
+  operation        = 'mean'
+  ml_varlist       = 'dic_i','alk_i','phy_i','HAMOCC_npp_i','HAMOCC_pho_cya_i','HAMOCC_grazing_i','HAMOCC_zoomor_i','HAMOCC_bacfra_i','HAMOCC_remina_i','HAMOCC_delcar_i'
 /
 &output_nml
   filetype         =  4                       ! output format: 2=GRIB2, 4=NETCDFv2

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ---------------------------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -161,17 +161,17 @@ begin
   split_list = "/\_.:"
 
   file_max = dimsizes(files)-1
-  
+
   ; Singleton list is just passed back
   if(file_max .eq. 0) then
     files(file_max) = str_strip(str_join(str_split(files(file_max), split_list), " "))
     return(files)
   end if
-  
+
   ; Split names at some of the usual separators, get size
   parts_num = 0
   do file_idx = 0, file_max
-    parts_num = max((/parts_num, dimsizes(str_split(files(file_idx), split_list))/)) 
+    parts_num = max((/parts_num, dimsizes(str_split(files(file_idx), split_list))/))
   end do
   ; ; Assume last part to be file extension
   ; parts_num = parts_num - 1
@@ -214,7 +214,7 @@ begin
         labels(file_idx) = "[baseline]"
     end if
   end do
-  
+
   return(labels)
 
 end ; get_labels_from_file_names
@@ -477,7 +477,7 @@ begin
   end if
 
   ; Traverse files back to front as list only provides 'push' operation
-  
+
   debug_print("scan time axes")
   debug_print("file '" + files(file_max) + "'")
   time = datafiles[file_max]->$time_name$
@@ -509,21 +509,21 @@ begin
     format@wkPaperSize = "A4"
   end if
   format@wkFullBackground = True
-  
+
   ; Setup resources for every plot
 
   res = True
 
   res@gsnFrame = False
   res@gsnDraw = False
-  
+
   if(panel_rows .eq. 1) then
     res@vpHeightF = 0.6
     res@vpWidthF = 0.8
   else
     res@vpHeightF = 0.8
     res@vpWidthF = 0.6
-  end if    
+  end if
   res@vpHeightF = res@vpHeightF / panel_rows
   res@gsnStringFontHeightF = 0.012 * text_scale
 
@@ -669,7 +669,7 @@ begin
                 res@trYMinF = y_min - 0.01*abs(y_min)
                 res@trYMaxF = y_max + 0.01*abs(y_max)
             end if
-        else    
+        else
             debug_print("y range spans " + (y_max-y_min))
             if((y_max-y_min) < 0.0001*abs(y_min) .or. \
                (y_max-y_min) < 0.0001*abs(y_max)) \
@@ -750,7 +750,7 @@ begin
         ; end if
         ; res@gsnYRefLine = avg(y[file_max])
         ; res@gsnYRefLineColor = res@xyLineColor
- 
+
         ; Set up new page
         if(plot_row .eq. 0) then
 
@@ -782,9 +782,9 @@ begin
                      names(var_idx)+":"+attribute+":"+res@gsnLeftString)
 
         end if; first plot on page
-  
+
         plots(plot_row) = gsn_csm_xy(wks, x[0], y[0], res)
-        
+
         do file_idx = 1, file_max
             if(.not. ismissing(y[file_idx](0))) then
 
@@ -811,7 +811,7 @@ begin
 
             end if
         end do
-        
+
         delete(y)
 
         plot_row = plot_row + 1
@@ -856,6 +856,6 @@ begin
     count = ListCount(manifest_list)
     asciiwrite(manifest, manifest_list[count-1:0])
   end if
-      
-  
+
+
 end

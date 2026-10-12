@@ -1,21 +1,20 @@
-! The module <i>mo_scalar_product</i>
-! implements discrete scalar products which depend on the grid geometry only
-! are used to formulate the primitive equations in weak form.
-! The coefficients used for projections from triangular edges to cell centers
-! and vice versa are contained in the ocean part of the model domain and
-! are calculated in <i>mo_ocean_topo</i>.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! The module <i>mo_scalar_product</i>
+! implements discrete scalar products which depend on the grid geometry only
+! are used to formulate the primitive equations in weak form.
+! The coefficients used for projections from triangular edges to cell centers
+! and vice versa are contained in the ocean part of the model domain and
+! are calculated in <i>mo_ocean_topo</i>.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -37,7 +36,7 @@ MODULE mo_scalar_product
     & Get3DVectorTo2DLocal_array3D
   USE mo_ocean_math_operators,ONLY: rot_vertex_ocean_3d, map_edges2vert_3d
   USE mo_grid_subset,         ONLY: t_subset_range, get_index_range
-  USE mo_sync,                ONLY: sync_e, sync_v,sync_patch_array,sync_c, sync_patch_array_mult!,  & sync_idx, global_max
+  USE mo_sync,                ONLY: sync_e, sync_v,sync_patch_array,sync_c!,  & sync_idx, global_max
   USE mo_util_dbg_prnt,       ONLY: dbg_print
   USE mo_timer,               ONLY: timers_level, timer_start, timer_stop, timer_extra25, timer_extra26, timer_extra27, &
     & timer_extra28, timer_extra29
@@ -81,7 +80,7 @@ MODULE mo_scalar_product
 !   END INTERFACE
 
   INTERFACE nonlinear_coriolis_3d_fast
-#if defined(__LVECTOR__) && !defined(__LVEC_BITID__)
+#if defined(__LVECTOR__) || defined(_OPENACC)
     MODULE PROCEDURE nonlinear_coriolis_3d_fast_vector
 #else
     MODULE PROCEDURE nonlinear_coriolis_3d_fast_scalar
@@ -164,7 +163,7 @@ CONTAINS
                                     & lacc = lzacc )
     stop_detail_timer(timer_extra27,5)
 
-    CALL sync_patch_array(sync_e, patch_2d, p_diag%ptp_vn)
+    CALL sync_patch_array(sync_e, patch_2d, p_diag%ptp_vn, lacc=lzacc)
 
     start_detail_timer(timer_extra28,5)
     !--------------------------------------------------------------
@@ -299,7 +298,7 @@ CONTAINS
     END SELECT
 
     stop_detail_timer(timer_extra28,5)
-!       CALL sync_patch_array(sync_c, patch_2d,p_diag%kin)
+!       CALL sync_patch_array(sync_c, patch_2d,p_diag%kin, lacc=lzacc)
 
       !convert cartesian velocity vector p_diag%p_vn(cell_index,level,blockNo)%x to geographical coordinate system
       !for output, sea-ice and coupling
@@ -329,9 +328,9 @@ CONTAINS
 !     CALL dbg_print('veloc_3d: w', p_diag%w,module_name,1, &
 !           patch_2D%cells%owned )
 
-   CALL dbg_print('veloc_3d: East-West  :u',p_diag%u,  module_name,1, &
+   CALL dbg_print('veloc_3d: East-West  :u',p_diag%u,  module_name,3, &
          patch_2D%cells%owned )
-   CALL dbg_print('veloc_3d: North-South :v',p_diag%v, module_name,1, &
+   CALL dbg_print('veloc_3d: North-South :v',p_diag%v, module_name,3, &
          patch_2D%cells%owned )
 
 
@@ -361,7 +360,7 @@ CONTAINS
     !Local variables
     !TYPE(t_patch), POINTER         :: patch_2D
     INTEGER :: startLevel! , endLevel     ! vertical start and end level
-    INTEGER :: je, level, blockNo
+    INTEGER :: je, level, blockNo, jv
     INTEGER :: start_edge_index, end_edge_index
     INTEGER :: ictr, vertex_edge
     INTEGER :: vertex1_idx, vertex1_blk, vertex2_idx, vertex2_blk
@@ -386,7 +385,7 @@ CONTAINS
 
     CALL rot_vertex_ocean_3d( patch_3d, vn, p_vn_dual, operators_coefficients, vort_v, lacc=lzacc)
     ! sync not needed here, but used for example for the Leith
-    CALL sync_patch_array(SYNC_V, patch_2D, vort_v)
+    CALL sync_patch_array(SYNC_V, patch_2D, vort_v, lacc=lzacc)
 
     IF(.NOT.l_ANTICIPATED_VORTICITY)THEN
 !ICON_OMP_PARALLEL_DO PRIVATE(blockNo,level,je,start_edge_index,end_edge_index, this_vort_flux, &
@@ -400,9 +399,6 @@ CONTAINS
 
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(numOfEdges, this_vort_flux) ASYNC(1) IF(lzacc)
       DO je =  start_edge_index, end_edge_index
-
-        this_vort_flux(:,:) = 0.0_wp
-
         vertex1_idx = patch_2d%edges%vertex_idx(je,blockNo,1)
         vertex1_blk = patch_2d%edges%vertex_blk(je,blockNo,1)
         vertex2_idx = patch_2d%edges%vertex_idx(je,blockNo,2)
@@ -410,17 +406,20 @@ CONTAINS
 
 !         this_edge_length  = patch_2d%edges%dual_edge_length(je,blockNo)
         ! vertex 1
-        ictr = 0
 
 !         thick_vert(1:n_zlev,1)=0.0_wp
 !         thick_vert(1:n_zlev,2)=0.0_wp
-        numOfEdges(1:n_zlev,1)=0.0_wp
-        numOfEdges(1:n_zlev,2)=0.0_wp
 
-        !$ACC LOOP SEQ
+        !$ACC LOOP COLLAPSE(2)
+        DO jv = 1, 2
+          DO level = 1, n_zlev
+            this_vort_flux(level,jv) = 0.0_wp
+            numOfEdges(level,jv) = 0.0_wp
+          END DO
+        END DO
+
         DO vertex_edge=1, patch_2d%verts%num_edges(vertex1_idx,vertex1_blk)
 
-          ictr =ictr+1
           edgeOfVertex_index = patch_2d%verts%edge_idx(vertex1_idx,vertex1_blk,vertex_edge)
           edgeOfVertex_block = patch_2d%verts%edge_blk(vertex1_idx,vertex1_blk,vertex_edge)
 
@@ -436,7 +435,7 @@ CONTAINS
 
             this_vort_flux(level, 1) =  this_vort_flux(level, 1) +                        &
               & vn( edgeOfVertex_index, level, edgeOfVertex_block)                        &
-              & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,ictr) !  &
+              & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,vertex_edge) !  &
 !               & * thick_edge(level,1) !* &
 !               & patch_2d%edges%inv_dual_edge_length(edgeOfVertex_index, edgeOfVertex_block) &
 !               & * this_edge_length
@@ -446,11 +445,8 @@ CONTAINS
         END DO ! edges of this vertex
 
         ! vertex 2
-        ictr = no_dual_edges
-        !$ACC LOOP SEQ
         DO vertex_edge=1, patch_2d%verts%num_edges(vertex2_idx,vertex2_blk)!no_dual_cell_edges
 
-          ictr =ictr+1
           edgeOfVertex_index = patch_2d%verts%edge_idx(vertex2_idx,vertex2_blk,vertex_edge)
           edgeOfVertex_block = patch_2d%verts%edge_blk(vertex2_idx,vertex2_blk,vertex_edge)
 
@@ -467,7 +463,7 @@ CONTAINS
 
             this_vort_flux(level, 2) =  this_vort_flux(level, 2) +                        &
               & vn( edgeOfVertex_index, level, edgeOfVertex_block)                        &
-              & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,ictr) !  &
+              & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,no_dual_edges+vertex_edge) !  &
 !               & * thick_edge(level,2) !* &
 !               & patch_2d%edges%inv_dual_edge_length(edgeOfVertex_index, edgeOfVertex_block) &
 !               & * this_edge_length
@@ -651,7 +647,7 @@ CONTAINS
     INTEGER :: startLevel! , endLevel     ! vertical start and end level
     INTEGER :: je, level, blockNo
     INTEGER :: jv
-    INTEGER :: start_index, end_index
+    INTEGER :: start_edge_index, end_edge_index
     INTEGER :: vertex_edge
     INTEGER :: vertex1_idx, vertex1_blk, vertex2_idx, vertex2_blk
     INTEGER :: edgeOfVertex_index, edgeOfVertex_block
@@ -662,9 +658,10 @@ CONTAINS
     TYPE(t_patch), POINTER :: patch_2d
     INTEGER, POINTER :: dolic_e(:,:)
 
-    INTEGER, PARAMETER :: MAX_DUAL_EDGES = 6
-
-    REAL(wp) :: vert_vort(MAX_DUAL_EDGES, nproma, patch_3d%p_patch_2D(1)%nblks_v)
+    REAL(wp) :: vort_flux_tmp1(nproma,n_zlev,patch_3d%p_patch_2d(1)%nblks_e)
+    REAL(wp) :: vort_flux_tmp2(nproma,n_zlev,patch_3d%p_patch_2d(1)%nblks_e)
+    REAL(wp) :: tmp1, tmp2
+    INTEGER :: MAX_VERTEX_EDGES
 
     !-----------------------------------------------------------------------
     patch_2d   => patch_3d%p_patch_2d(1)
@@ -677,73 +674,173 @@ CONTAINS
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
-    !$ACC DATA CREATE(vert_vort) IF(lzacc)
-
     CALL rot_vertex_ocean_3d(patch_3d, vn, p_vn_dual, operators_coefficients, vort_v, lacc=lzacc)
     ! sync not needed here, but used for example for the Leith
-    CALL sync_patch_array(SYNC_V, patch_2D, vort_v)
+    CALL sync_patch_array(SYNC_V, patch_2D, vort_v, lacc=lzacc)
 
     IF (.NOT. l_ANTICIPATED_VORTICITY) THEN
-      DO level = startLevel, n_zlev
-        DO blockNo = verts_in_domain%start_block, verts_in_domain%end_block
-          CALL get_index_range (verts_in_domain, blockNo, start_index, end_index)
 
-          !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-          DO jv = start_index, end_index
-            !NEC$ unroll_complete
-            DO vertex_edge = 1, MAX_DUAL_EDGES
-              edgeOfVertex_index = patch_2d%verts%edge_idx(jv,blockNo,vertex_edge)
-              edgeOfVertex_block = patch_2d%verts%edge_blk(jv,blockNo,vertex_edge)
+      !$ACC DATA CREATE(vort_flux_tmp1, vort_flux_tmp2) IF(lzacc)
 
-              IF (level <= dolic_e(edgeOfVertex_index, edgeOfVertex_block) .AND. &
-                  & vertex_edge <= patch_2d%verts%num_edges(jv, blockNo)) THEN
-                vert_vort(vertex_edge, jv, blockNo) = &
-                    & vn(edgeOfVertex_index, level, edgeOfVertex_block) &
-                    & * (vort_v(jv, level, blockNo) + patch_2d%verts%f_v(jv, blockNo))
-              ELSE
-                vert_vort(vertex_edge, jv, blockNo) = 0._wp
-              END IF
-            END DO
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(3) ASYNC(1) IF(lzacc)
+      DO blockNo = 1, patch_3d%p_patch_2d(1)%nblks_e
+        DO level = 1, n_zlev
+          DO je = 1, nproma
+            vort_flux_tmp1(je,level,blockNo) = 0.0_wp
+            vort_flux_tmp2(je,level,blockNo) = 0.0_wp
           END DO
-          !$ACC END PARALLEL LOOP
         END DO
+      END DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
 
-        DO blockNo = edges_in_domain%start_block, edges_in_domain%end_block
-          CALL get_index_range(edges_in_domain, blockNo, start_index, end_index)
+!ICON_OMP_PARALLEL_DO PRIVATE(blockNo,level,je,start_edge_index,end_edge_index, &
+!ICON_OMP  vertex1_idx, vertex1_blk, vertex2_idx, vertex2_blk, &
+!ICON_OMP vertex_edge, edgeOfVertex_index, edgeOfVertex_block, &
+!ICON_OMP MAX_VERTEX_EDGES) REDUCTION(+:tmp1, tmp2) ICON_OMP_DEFAULT_SCHEDULE
+      DO blockNo = edges_in_domain%start_block, edges_in_domain%end_block
+        CALL get_index_range(edges_in_domain, blockNo, start_edge_index, end_edge_index)
 
-          !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-          vort_flux(start_index:end_index,level,blockNo) = 0.0_wp
-          !$ACC END KERNELS
+        ! vertex 1
+#ifdef _OPENACC
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+        DO level = startLevel, n_zlev
+          DO je =  start_edge_index, end_edge_index
+            If (level > patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)) CYCLE
 
-          !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-          DO je = start_index, end_index
-            IF (level > dolic_e(je,blockNo)) CYCLE
+            vertex1_idx = patch_2d%edges%vertex_idx(je,blockNo,1)
+            vertex1_blk = patch_2d%edges%vertex_blk(je,blockNo,1)
+
+            tmp1 = 0.0_wp
+            !$ACC LOOP REDUCTION(+: tmp1)
+            DO vertex_edge=1, patch_2d%verts%num_edges(vertex1_idx,vertex1_blk)
+
+              edgeOfVertex_index = patch_2d%verts%edge_idx(vertex1_idx,vertex1_blk,vertex_edge)
+              edgeOfVertex_block = patch_2d%verts%edge_blk(vertex1_idx,vertex1_blk,vertex_edge)
+              IF (level > patch_3d%p_patch_1d(1)%dolic_e(edgeOfVertex_index, edgeOfVertex_block)) CYCLE
+
+              tmp1 = tmp1 +  &
+                & vn( edgeOfVertex_index, level, edgeOfVertex_block)                        &
+                & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,vertex_edge)
+            ENDDO
+            vort_flux_tmp1(je,level,blockNo) = tmp1
+          END DO ! edges of this vertex
+        END DO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#else
+        MAX_VERTEX_EDGES = MAXVAL( &
+               patch_2d%verts%num_edges(patch_2d%edges%vertex_idx(start_edge_index:end_edge_index,blockNo,1), &
+                                        patch_2d%edges%vertex_blk(start_edge_index:end_edge_index,blockNo,1)))
+
+        DO level = startLevel, n_zlev
+          DO vertex_edge=1, MAX_VERTEX_EDGES
+            DO je =  start_edge_index, end_edge_index
+              IF (level > patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)) CYCLE
+
+              vertex1_idx = patch_2d%edges%vertex_idx(je,blockNo,1)
+              vertex1_blk = patch_2d%edges%vertex_blk(je,blockNo,1)
+
+              ! Skip if this edge has fewer vertex_edge entries than current
+              IF (vertex_edge > patch_2d%verts%num_edges(vertex1_idx,vertex1_blk)) CYCLE
+
+              edgeOfVertex_index = patch_2d%verts%edge_idx(vertex1_idx,vertex1_blk,vertex_edge)
+              edgeOfVertex_block = patch_2d%verts%edge_blk(vertex1_idx,vertex1_blk,vertex_edge)
+              IF (level > patch_3d%p_patch_1d(1)%dolic_e(edgeOfVertex_index, edgeOfVertex_block)) CYCLE
+
+              vort_flux_tmp1(je,level,blockNo) = vort_flux_tmp1(je,level,blockNo) + &
+                & vn( edgeOfVertex_index, level, edgeOfVertex_block)                        &
+                & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,vertex_edge)
+            END DO
+          END DO ! edges of this vertex
+        END DO
+#endif
+
+        ! vertex 2
+#ifdef _OPENACC
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+        DO level = startLevel, n_zlev
+          DO je =  start_edge_index, end_edge_index
+            If (level > patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)) CYCLE
+
+            vertex2_idx = patch_2d%edges%vertex_idx(je,blockNo,2)
+            vertex2_blk = patch_2d%edges%vertex_blk(je,blockNo,2)
+
+            tmp2 = 0.0_wp
+            !$ACC LOOP REDUCTION(+: tmp2)
+            DO vertex_edge=1, patch_2d%verts%num_edges(vertex2_idx,vertex2_blk)!no_dual_cell_edges
+
+              edgeOfVertex_index = patch_2d%verts%edge_idx(vertex2_idx,vertex2_blk,vertex_edge)
+              edgeOfVertex_block = patch_2d%verts%edge_blk(vertex2_idx,vertex2_blk,vertex_edge)
+              IF (level > patch_3d%p_patch_1d(1)%dolic_e(edgeOfVertex_index, edgeOfVertex_block)) CYCLE
+
+              tmp2 = tmp2 + &
+                & vn( edgeOfVertex_index, level, edgeOfVertex_block)                        &
+                & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,no_dual_edges+vertex_edge) !  &
+            ENDDO
+            vort_flux_tmp2(je,level,blockNo) = tmp2
+          END DO ! edges of this vertex
+        END DO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#else
+        MAX_VERTEX_EDGES = MAXVAL( &
+               patch_2d%verts%num_edges(patch_2d%edges%vertex_idx(start_edge_index:end_edge_index,blockNo,2), &
+                                        patch_2d%edges%vertex_blk(start_edge_index:end_edge_index,blockNo,2)))
+
+        DO level = startLevel, n_zlev
+          DO vertex_edge=1, MAX_VERTEX_EDGES
+            DO je =  start_edge_index, end_edge_index
+              IF (level > patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)) CYCLE
+
+              vertex2_idx = patch_2d%edges%vertex_idx(je,blockNo,2)
+              vertex2_blk = patch_2d%edges%vertex_blk(je,blockNo,2)
+
+              ! Skip if this edge has fewer vertex_edge entries than current
+              IF (vertex_edge > patch_2d%verts%num_edges(vertex2_idx,vertex2_blk)) CYCLE
+
+              edgeOfVertex_index = patch_2d%verts%edge_idx(vertex2_idx,vertex2_blk,vertex_edge)
+              edgeOfVertex_block = patch_2d%verts%edge_blk(vertex2_idx,vertex2_blk,vertex_edge)
+              IF (level > patch_3d%p_patch_1d(1)%dolic_e(edgeOfVertex_index, edgeOfVertex_block)) CYCLE
+
+              vort_flux_tmp2(je,level,blockNo) = vort_flux_tmp2(je,level,blockNo) + &
+                & vn( edgeOfVertex_index, level, edgeOfVertex_block)                        &
+                & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,no_dual_edges+vertex_edge) !  &
+            END DO
+          END DO ! edges of this vertex
+        END DO
+#endif
+
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+        DO level = startLevel, n_zlev
+          DO je =  start_edge_index, end_edge_index
+            If (level > patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)) CYCLE
 
             vertex1_idx = patch_2d%edges%vertex_idx(je,blockNo,1)
             vertex1_blk = patch_2d%edges%vertex_blk(je,blockNo,1)
             vertex2_idx = patch_2d%edges%vertex_idx(je,blockNo,2)
             vertex2_blk = patch_2d%edges%vertex_blk(je,blockNo,2)
 
-            !NEC$ unroll_complete
-            DO vertex_edge = 1, MAX_DUAL_EDGES
-              ! Trust that indices > patch_2d%verts%num_edges(vertex1_idx,vertex1_blk) are zero in edge2edge
-              vort_flux(je, level, blockNo) = vort_flux(je, level, blockNo) + &
-                  & vert_vort(vertex_edge, vertex1_idx, vertex1_blk) &
-                  & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,vertex_edge) &
-                  & + vert_vort(vertex_edge, vertex2_idx, vertex2_blk) &
-                  & * operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,no_dual_edges + vertex_edge)
-            END DO
-          END DO
-          !$ACC END PARALLEL LOOP
+            vort_flux(je,level,blockNo) =  &
+              & vort_flux_tmp1(je,level,blockNo) &
+              &  * (vort_v(vertex1_idx, level, vertex1_blk) + patch_2d%verts%f_v(vertex1_idx, vertex1_blk))  &
+              & + vort_flux_tmp2(je,level,blockNo)  &
+              &  * (vort_v(vertex2_idx, level, vertex2_blk) + patch_2d%verts%f_v(vertex2_idx, vertex2_blk))
+
+          ENDDO
+
         END DO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
       END DO
-      !$ACC WAIT(1)
+
+      !$ACC END DATA
+!ICON_OMP_END_PARALLEL_DO
 
     ELSEIF(l_ANTICIPATED_VORTICITY)THEN
       CALL finish('nonlinear_coriolis_3d_fast_vector', 'l_ANTICIPATED_VORTICITY=.TRUE. not vectorized.')
     ENDIF
 
-    !$ACC END DATA
   END SUBROUTINE nonlinear_coriolis_3d_fast_vector
   !-------------------------------------------------------------------------
 
@@ -804,7 +901,7 @@ CONTAINS
 
     CALL rot_vertex_ocean_3d( patch_3d, vn, p_vn_dual, operators_coefficients, vort_v)
     ! sync not needed here, but used for example for the Leith
-    CALL sync_patch_array(SYNC_V, patch_2D, vort_v)
+    CALL sync_patch_array(SYNC_V, patch_2D, vort_v, lacc=lzacc)
 
 
     ! !$OMP PARALLEL
@@ -1121,7 +1218,6 @@ CONTAINS
 
 #if defined(__LVECTOR__) && !defined(__LVEC_BITID__)
 #else
-        !$ACC LOOP SEQ
         DO level = startLevel, MIN(dolic_c(cell_index,blockNo), endLevel)
 #endif
 
@@ -1512,12 +1608,40 @@ CONTAINS
     DO blockNo = start_block, end_block
       CALL get_index_range(edges_in_domain, blockNo, start_edge_index, end_edge_index)
 
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      out_vn_e(:, :, blockNo) = 0.0_wp
-      !$ACC END KERNELS
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO level = 1, n_zlev
+        DO je = 1, nproma
+          out_vn_e(je, level, blockNo) = 0.0_wp
+        END DO
+      END DO
+      !$ACC END PARALLEL LOOP
 
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      !$ACC LOOP GANG VECTOR
+#ifdef _OPENACC
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO level = startLevel, n_zlev
+        DO je =  start_edge_index, end_edge_index
+          IF ((dolic_e(je,blockNo) < 1) .OR. (level > dolic_e(je,blockNo))) CYCLE
+
+          cell_1_index = cell_idx(je,blockNo,1)
+          cell_1_block = cell_blk(je,blockNo,1)
+          cell_2_index = cell_idx(je,blockNo,2)
+          cell_2_block = cell_blk(je,blockNo,2)
+
+          edge_11_index = edge_idx(cell_1_index, cell_1_block, 1)
+          edge_12_index = edge_idx(cell_1_index, cell_1_block, 2)
+          edge_13_index = edge_idx(cell_1_index, cell_1_block, 3)
+          edge_11_block = edge_blk(cell_1_index, cell_1_block, 1)
+          edge_12_block = edge_blk(cell_1_index, cell_1_block, 2)
+          edge_13_block = edge_blk(cell_1_index, cell_1_block, 3)
+
+          edge_21_index = edge_idx(cell_2_index, cell_2_block, 1)
+          edge_22_index = edge_idx(cell_2_index, cell_2_block, 2)
+          edge_23_index = edge_idx(cell_2_index, cell_2_block, 3)
+          edge_21_block = edge_blk(cell_2_index, cell_2_block, 1)
+          edge_22_block = edge_blk(cell_2_index, cell_2_block, 2)
+          edge_23_block = edge_blk(cell_2_index, cell_2_block, 3)
+#else
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je =  start_edge_index, end_edge_index
 
         IF (dolic_e(je,blockNo) < 1) CYCLE
@@ -1543,6 +1667,7 @@ CONTAINS
 
         ! levels
         DO level = startLevel, dolic_e(je,blockNo)
+#endif
 
           out_vn_e(je, level, blockNo) =  &
             & (  vn_e(edge_11_index, level, edge_11_block) * coeffs(je, level, blockNo, 1)               &
@@ -1564,7 +1689,7 @@ CONTAINS
         END DO ! levels
 
       END DO
-      !$ACC END PARALLEL
+      !$ACC END PARALLEL LOOP
 
     END DO ! blockNo = edges_in_domain%start_block, edges_in_domain%end_block
     !$ACC WAIT(1)
@@ -1625,12 +1750,41 @@ CONTAINS
     DO blockNo = edges_in_domain%start_block, edges_in_domain%end_block
       CALL get_index_range(edges_in_domain, blockNo, start_edge_index, end_edge_index)
 
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      out_vn_e(:, :, blockNo) = 0.0_wp
-      !$ACC END KERNELS
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO level = 1, n_zlev
+        DO je = 1, nproma
+          out_vn_e(je, level, blockNo) = 0.0_wp
+        END DO
+      END DO
+      !$ACC END PARALLEL LOOP
 
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      !$ACC LOOP GANG VECTOR
+#ifdef _OPENACC
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO level = startLevel, n_zlev
+        DO je =  start_edge_index, end_edge_index
+          IF ((patch_3d%p_patch_1d(1)%dolic_e(je,blockNo) < 1) &
+            & .OR. (level > patch_3d%p_patch_1d(1)%dolic_e(je,blockNo))) CYCLE
+
+          cell_1_index = patch_2d%edges%cell_idx(je,blockNo,1)
+          cell_1_block = patch_2d%edges%cell_blk(je,blockNo,1)
+          cell_2_index = patch_2d%edges%cell_idx(je,blockNo,2)
+          cell_2_block = patch_2d%edges%cell_blk(je,blockNo,2)
+
+          edge_11_index = patch_2d%cells%edge_idx(cell_1_index, cell_1_block, 1)
+          edge_12_index = patch_2d%cells%edge_idx(cell_1_index, cell_1_block, 2)
+          edge_13_index = patch_2d%cells%edge_idx(cell_1_index, cell_1_block, 3)
+          edge_11_block = patch_2d%cells%edge_blk(cell_1_index, cell_1_block, 1)
+          edge_12_block = patch_2d%cells%edge_blk(cell_1_index, cell_1_block, 2)
+          edge_13_block = patch_2d%cells%edge_blk(cell_1_index, cell_1_block, 3)
+
+          edge_21_index = patch_2d%cells%edge_idx(cell_2_index, cell_2_block, 1)
+          edge_22_index = patch_2d%cells%edge_idx(cell_2_index, cell_2_block, 2)
+          edge_23_index = patch_2d%cells%edge_idx(cell_2_index, cell_2_block, 3)
+          edge_21_block = patch_2d%cells%edge_blk(cell_2_index, cell_2_block, 1)
+          edge_22_block = patch_2d%cells%edge_blk(cell_2_index, cell_2_block, 2)
+          edge_23_block = patch_2d%cells%edge_blk(cell_2_index, cell_2_block, 3)
+#else
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je =  start_edge_index, end_edge_index
 
         IF (patch_3d%p_patch_1d(1)%dolic_e(je,blockNo) < 1) CYCLE
@@ -1656,6 +1810,7 @@ CONTAINS
 
         ! levels
         DO level = startLevel, patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)
+#endif
 
           out_vn_e(je, level, blockNo) =  &
             & (  vn_e(edge_11_index, level, edge_11_block) * coeffs(je, level, blockNo, 1)    &
@@ -1683,7 +1838,7 @@ CONTAINS
         END DO ! levels
 
       END DO
-      !$ACC END PARALLEL
+      !$ACC END PARALLEL LOOP
 
     END DO ! blockNo = edges_in_domain%start_block, edges_in_domain%end_block
     !$ACC WAIT(1)
@@ -1766,7 +1921,7 @@ CONTAINS
       !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       out_vn_e(:,:,blockNo) = 0.0_wp
       !$ACC END KERNELS
-      
+
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP GANG VECTOR
       level_loop_e2: DO level = startLevel, endLevel
@@ -1904,7 +2059,7 @@ CONTAINS
 
 #ifdef __LVECTOR__
       max_dolic_e = -1
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) REDUCTION(MAX: max_dolic_e) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) REDUCTION(MAX: max_dolic_e) COPY(max_dolic_e) IF(lzacc)
       DO je = start_edge_index, end_edge_index
         max_dolic_e = MAX(max_dolic_e, dolic_e(je,blockNo))
       END DO
@@ -1916,7 +2071,7 @@ CONTAINS
       DO level = startLevel, max_dolic_e
         DO je = start_edge_index, end_edge_index
           IF (dolic_e(je,blockNo) < level) CYCLE
-#else           
+#else
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP GANG VECTOR
       DO je =  start_edge_index, end_edge_index
@@ -2294,7 +2449,7 @@ CONTAINS
 
     DO blockNo = start_block, end_block
       CALL get_index_range(edges_indomain, blockNo, start_edge_index, end_edge_index)
-      
+
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP GANG VECTOR
       DO je = start_edge_index, end_edge_index
@@ -2436,7 +2591,7 @@ CONTAINS
     INTEGER :: edge_2_1_block, edge_2_2_block, edge_2_3_block
     INTEGER :: je, blockNo, start_edge_index, end_edge_index
     LOGICAL :: lzacc
-    
+
     REAL(wp), POINTER :: all_coeffs(:,:,:)
 
     TYPE(t_subset_range), POINTER :: edges_indomain
@@ -2466,9 +2621,8 @@ CONTAINS
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je = start_edge_index, end_edge_index
 
-        IF (patch_3d%p_patch_1d(1)%dolic_e(je,blockNo) < 1) CYCLE
-
         out_vn_e(je,blockNo) = 0.0_wp
+        IF (patch_3d%p_patch_1d(1)%dolic_e(je,blockNo) < 1) CYCLE
 
         ! get the two cells of the edge
         cell_1_index = patch_2d%edges%cell_idx(je,blockNo,1)
@@ -2900,9 +3054,13 @@ CONTAINS
     DO blockNo = edges_in_domain%start_block, edges_in_domain%end_block
       CALL get_index_range(edges_in_domain, blockNo, start_edge_index, end_edge_index)
 
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      ptp_vn(:,:,blockNo) = 0.0_wp
-      !$ACC END KERNELS
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO level = 1, n_zlev
+        DO je = 1, nproma
+          ptp_vn(je,level,blockNo) = 0.0_wp
+        END DO
+      END DO
+      !$ACC END PARALLEL LOOP
 
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je = start_edge_index, end_edge_index
@@ -2930,7 +3088,7 @@ CONTAINS
     ! sync the result if necessary
     IF (PRESENT(subset_range)) THEN
       IF (.NOT. subset_range%is_in_domain) &
-        & CALL sync_patch_array(sync_e, patch_2d, ptp_vn)
+        & CALL sync_patch_array(sync_e, patch_2d, ptp_vn, lacc=lzacc)
     ENDIF
 
   END SUBROUTINE map_cell2edges_3d_mlevels
@@ -3000,7 +3158,7 @@ CONTAINS
     ! sync the result if necessary
     IF (PRESENT(subset_range)) THEN
       IF (.NOT. subset_range%is_in_domain) &
-        & CALL sync_patch_array(sync_e, patch_2d, ptp_vn)
+        & CALL sync_patch_array(sync_e, patch_2d, ptp_vn, lacc=lzacc)
     ENDIF
 
   END SUBROUTINE map_cell2edges_3d_1level
@@ -3011,6 +3169,7 @@ CONTAINS
   !! !  SUBROUTINE maps for a fluid column a scalar value from the top/bottom of a 3D prism to the central level of the prism.
   !!
   !!
+  !pgi$r opt 1
   SUBROUTINE map_vec_prismtop2center_on_block(patch_3d, vec_top, vec_center, &
     & blockNo, start_cell_index, end_cell_index, lacc)
     TYPE(t_patch_3d ),TARGET, INTENT(in)            :: patch_3d
@@ -3041,7 +3200,6 @@ CONTAINS
     DO jc = start_cell_index, end_cell_index
       end_level  = patch_3D%p_patch_1d(1)%dolic_c(jc,blockNo)
 !       IF ( end_level >=min_dolic ) THEN
-        !$ACC LOOP SEQ
         DO level = start_level, end_level
           vec_center(jc,level)%x &
           & = (prism_center_distance(jc,level)   * vec_top(jc,level)%x    &
@@ -3053,9 +3211,9 @@ CONTAINS
     END DO
     !$ACC END PARALLEL LOOP
     !$ACC WAIT(1)
-!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(1))
-!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(2))
-!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(3))
+!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(1), lacc=lzacc)
+!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(2), lacc=lzacc)
+!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(3), lacc=lzacc)
   END SUBROUTINE map_vec_prismtop2center_on_block
   !-------------------------------------------------------------------------
 
@@ -3112,7 +3270,7 @@ CONTAINS
     END DO
 
 !ICON_OMP_END_PARALLEL_DO
-   !CALL sync_patch_array(sync_c, patch_2D, scalar_center)
+   !CALL sync_patch_array(sync_c, patch_2D, scalar_center, lacc=.FALSE.)
   END SUBROUTINE map_scalar_prismtop2center
   !-------------------------------------------------------------------------
 
@@ -3158,7 +3316,7 @@ CONTAINS
     TYPE(t_patch_3d ),TARGET, INTENT(in   )          :: patch_3d
     REAL(wp), INTENT(in)                             :: scalar_center(:,:,:)
     TYPE(t_operator_coeff),INTENT(in)                :: p_op_coeff
-    REAL(wp), INTENT(out)                            :: scalar_top(:,:,:)
+    REAL(wp), INTENT(inout)                          :: scalar_top(:,:,:)
 
     !Local variables
     INTEGER :: blockNo
@@ -3235,9 +3393,9 @@ CONTAINS
         END DO
 
     END DO
-!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(1))
-!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(2))
-!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(3))
+!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(1), lacc=.FALSE.)
+!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(2), lacc=.FALSE.)
+!     CALL sync_patch_array(sync_c, patch_3D%p_patch_2D(1), vec_center(:,:,:)%x(3), lacc=.FALSE.)
   END SUBROUTINE map_vec_prismtop2center_on_block_GM
   !-------------------------------------------------------------------------
 
@@ -3290,7 +3448,7 @@ CONTAINS
     END DO
 
 !ICON_OMP_END_PARALLEL_DO
-   !CALL sync_patch_array(sync_c, patch_2D, scalar_center)
+   !CALL sync_patch_array(sync_c, patch_2D, scalar_center, lacc=.FALSE.)
   END SUBROUTINE map_scalar_prismtop2center_GM
   !------------------------------------------------------------------------
 
@@ -3305,7 +3463,7 @@ CONTAINS
     TYPE(t_patch_3d ),TARGET, INTENT(in   )          :: patch_3d
     REAL(wp), INTENT(inout)                          :: scalar_center(:,:,:)
     TYPE(t_operator_coeff),INTENT(in)                :: p_op_coeff
-    REAL(wp), INTENT(out)                            :: scalar_top(:,:,:)
+    REAL(wp), INTENT(inout)                          :: scalar_top(:,:,:)
 
     !Local variables
     INTEGER :: blockNo
@@ -3847,7 +4005,7 @@ CONTAINS
   ! !       END DO edge_idx_loop
   ! !     END DO ! blockNo = edges_in_domain%start_block, edges_in_domain%end_block
   ! !
-  ! ! !     CALL sync_patch_array(SYNC_E, patch_2D, ptp_vn)
+  ! ! !     CALL sync_patch_array(SYNC_E, patch_2D, ptp_vn, lacc=.FALSE.)
   ! !
   ! !   END SUBROUTINE map_cell2edges_2d
   !-----------------------------------------------------------------------------

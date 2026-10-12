@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,68 +14,93 @@ set -euo pipefail
 
 # This is the generic file that is used to generate probtest tolerances
 
-# This file will be copied on the fly by list_part_tolerance before adding it with addexp.
+# This file will be copied on the fly by scripts/experiments/yaml_experiment_test_processor.py
+# before adding it with addexp.
 
 # set basic name
 probtest_exp=${EXPNAME#generate_tolerance_}
 
 echo "Generate new tolerance data for '$probtest_exp' (using job $EXPNAME)"
 
-base_exp="${base_exp:-${probtest_exp}}"
-
-builder=$(echo "${BB_NAME}" | tr '[:upper:]' '[:lower:]')
-model_output_dir="${basedir}/experiments/${base_exp}"
+export TEST_FILE_TYPES=$("${basedir}/scripts/experiments/get_param_for_exp_by_machine" --experiment "$probtest_exp" --param test_file_types)
+TEST_FILE_TYPES="${TEST_FILE_TYPES:-STATS}"
+export TEST_FILE_TYPES
 
 # make sure the resulting data and directories are global readable
 umask 0022
 
 # path to probtest script
 PROBTEST="${basedir}/externals/probtest/probtest.py"
-
-stats_file_name="stats_${probtest_exp}_{member_id}.csv"
-default_reference_stats_file_name="stats_${probtest_exp}_ref.csv"
-reference_file_name="${model_output_dir}/${probtest_exp}_reference.csv"
+# Set PROBTEST_CONFIG according to initialized json file in yaml_experiment_test_processor.py
+export PROBTEST_CONFIG="${basedir}/${probtest_exp}-config.json"
 
 if [[ -z "$probtest_exp" ]]; then
-    echo "ERROR: \$probtest_exp not set"
-    echo "probtest_exp is required for pp.generate_tolerance"
-    exit 1
+        echo "ERROR: \$probtest_exp not set"
+        echo "probtest_exp is required for pp.generate_tolerance"
+        exit 1
 fi
-source tolerance/set_probtest_file_id "$probtest_exp"
-if (( ${#probtest_file_id[@]} < 3 )) ; then
-    echo "ERROR: \$probtest_file_id has not been set or has less then 3 entries. Current value:"
-    echo "    ${probtest_file_id[*]}"
-    exit 2
-fi
-source tolerance/set_probtest_ensemble_num "$probtest_exp"
 
-# set up probtest config file
-export PROBTEST_CONFIG="${probtest_exp}-config.json"
-# set global arguments for reference generation (must be in sync with list_part_tolerance)
-if [[ "$builder" == *"mixed"* ]];
-then
-  member_type="mixed"
+if [[ " ${TEST_FILE_TYPES[@]} " =~ "stats" ]]; then
+    stats_file_name="stats_${probtest_exp}_{member_id}.csv"
+    default_reference_stats_file_name="stats_${probtest_exp}_ref.csv"
+    reference_file_name="${basedir}/${probtest_exp}_reference.csv"
+
+    # create stats file for each seed (layer-wise max/min/mean)
+    "$PROBTEST" stats --ensemble --stats-file-name "$stats_file_name" || exit 3
+
+    # store the reference stats file
+    echo "storing reference ${default_reference_stats_file_name} to ${reference_file_name}"
+    cp "$default_reference_stats_file_name" "$reference_file_name" || exit 4
+
+    ensemble_files="stats_${probtest_exp}_{member_id}.csv"
+
+    tolerance_files="${basedir}/${probtest_exp}_tolerance.csv"
+fi
+
+
+if [[ " ${TEST_FILE_TYPES[@]} " =~ "fof" ]]; then
+    export FOF_TYPES=$("${basedir}/scripts/experiments/get_param_for_exp_by_machine" --experiment "$probtest_exp" --param fof_types)
+    IFS=',' read -r -a FOF_TYPES_ARRAY <<< "$FOF_TYPES"
+
+    for fof_type in "${FOF_TYPES_ARRAY[@]}"; do
+        default_reference_fof_file_name="${basedir}/experiments/${probtest_exp}/fof${fof_type}.nc"
+        reference_fof_name="${basedir}/${probtest_exp}_fof${fof_type}_reference.nc"
+
+        echo "storing reference ${default_reference_fof_file_name} to ${reference_fof_name}"
+
+        cp "$default_reference_fof_file_name" "$reference_fof_name" || exit 5
+
+    done
+
+    if [[ $BB_NAME == *mixed* ]]; then
+        member_type="mixed"
+    else
+        member_type="double"
+    fi
+    fof_types_csv=$(IFS=,; echo "${FOF_TYPES_ARRAY[*]}")
+
 else
-  member_type="double"
+    member_type=""
+    fof_types_csv=""
 fi
-"$PROBTEST" init \
-    --codebase-install "${basedir}" \
-    "${probtest_file_id[@]}" \
-    --experiment-name "${base_exp}" \
-    --config "${PROBTEST_CONFIG}" \
-    --reference "${model_output_dir}" \
-    --member-type "${member_type}" \
-    --member-num "${probtest_ensemble_num}"
 
-# create stats file for each seed (layer-wise max/min/mean)
-"$PROBTEST" stats --ensemble --stats-file-name "$stats_file_name" || exit 3
 
-# store the reference stats file
-echo "storing reference ${default_reference_stats_file_name} to ${reference_file_name}"
-cp "$default_reference_stats_file_name" "$reference_file_name" || exit 4
 
-# compute tolerance range from above stats files (maximum spread across all pairs of stats files and maximum across all layers)
-"$PROBTEST" tolerance --stats-file-name "$stats_file_name" || exit 5
+if [[ " ${TEST_FILE_TYPES[@]} " =~ "fof" ]]; then
+    if [[ "${TEST_FILE_TYPES[*]}" == "fof" ]]; then
+        ensemble_files="${basedir}/experiments/${probtest_exp}{member_type}{member_id}/fof{fof_type}.nc"
+        tolerance_files="${basedir}/${probtest_exp}_tolerance_fof{fof_type}.csv"
+    else
+        ensemble_files+=",${basedir}/experiments/${probtest_exp}{member_type}{member_id}/fof{fof_type}.nc"
+        tolerance_files+=",${basedir}/${probtest_exp}_tolerance_fof{fof_type}.csv"
+    fi
+fi
 
-# exit 0 on success (and don't execute any appended scripts)
+"$PROBTEST" tolerance \
+    --ensemble-files "$ensemble_files" \
+    --tolerance-files "$tolerance_files" \
+    ${fof_types_csv:+--fof-types "$fof_types_csv"}\
+    ${member_type:+--member-type "$member_type"} \
+    || exit 6
+
 exit 0

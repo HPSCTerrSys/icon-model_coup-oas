@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -45,12 +45,12 @@ ocean_grids="${grid_name}.nc"
 ocean_data_InputFolder="/pool/data/ICON/oes/input/r0003/${grid_name}"
 grids_folder=${ocean_data_InputFolder}
 ocean_vertical_levels=64
-vertical_levels="12,  10,  10,  10,  10,  10,  10,  10,  10,  10, 
-                 11,  12,  13,  14,  15,  16,  17,  18,  20,  22, 
-                 24,  26,  28,  30,  32,  35,  38,  41,  45,  49, 
-                 53,  58,  62,  66,  71,  75,  80,  85,  91,  97, 
-                104, 111, 118, 125, 132, 138, 145, 152, 160, 167, 
-                175, 182, 188, 195, 201, 208, 213, 219, 224, 230, 
+vertical_levels="12,  10,  10,  10,  10,  10,  10,  10,  10,  10,
+                 11,  12,  13,  14,  15,  16,  17,  18,  20,  22,
+                 24,  26,  28,  30,  32,  35,  38,  41,  45,  49,
+                 53,  58,  62,  66,  71,  75,  80,  85,  91,  97,
+                104, 111, 118, 125, 132, 138, 145, 152, 160, 167,
+                175, 182, 188, 195, 201, 208, 213, 219, 224, 230,
                 235, 241, 250, 260"
 
 #-----------------------------------------------------------------------------
@@ -64,7 +64,7 @@ cat > ${ocean_namelist} << EOF
  nproma         = $nproma
  p_test_run     = .false.
  l_fast_sum     = .true.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -101,15 +101,15 @@ cat > ${ocean_namelist} << EOF
   l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
   l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-10 ! this may further be reduced
   select_lhs                      = 2       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
-  solver_max_iter_per_restart     =  14   
+  solver_max_iter_per_restart     =  14
   solver_max_restart_iterations   = 100       ! outer (restart solver)
 
   fast_performance_level          = 200       ! performance level 12: for cell-based; 5: default
@@ -165,7 +165,7 @@ cat > ${ocean_namelist} << EOF
 /
 &ocean_physics_nml
   i_sea_ice                       =   1       ! 0 = no sea ice; 1 = sea ice model on; default=1
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                     =   1       ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
   i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics
@@ -195,7 +195,7 @@ cat > ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type           = 1         ! read from file
   initial_temperature_type        = 1         ! read from file
-/                                    
+/
 &ocean_diagnostics_nml
   diagnostics_level            = 1
   diagnose_for_horizontalVelocity = .false.
@@ -223,7 +223,7 @@ cat > ${output_1_namelist} << EOF
  nproma         = $nproma
  p_test_run     = .false.
  l_fast_sum     = .true.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -278,7 +278,7 @@ cat > ${output_2_namelist} << EOF
  nproma         = $nproma
  p_test_run     = .false.
  l_fast_sum     = .true.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -384,5 +384,3 @@ add_link_file $ocean_data_InputFolder/ts_phc3.0_annual_icon_OceanOnly_Global_Ico
 . ./exec.iconrun
 exit
 #=============================================================================
-
-

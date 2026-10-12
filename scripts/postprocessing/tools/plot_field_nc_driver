@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -12,8 +12,8 @@
 
 #
 #==========================================================================
-#      Driver script for  plot_field_nc.ncl that plots 
-#      a field from a file in (lon lat field_variable) 
+#      Driver script for  plot_field_nc.ncl that plots
+#      a field from a file in (lon lat field_variable)
 #      ascii format.
 #==========================================================================
 #
@@ -112,8 +112,8 @@ fi
 #echo $BIntV
 
 
-export FileD 
-export FileN 
+export FileD
+export FileN
 export PlotFileName
 export VarN
 export Plotvertlev

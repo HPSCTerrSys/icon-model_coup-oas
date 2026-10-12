@@ -1,16 +1,15 @@
-! Meta-data type definitions for ICON variables.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Meta-data type definitions for ICON variables.
 
 MODULE mo_var_metadata_types
   USE ISO_C_BINDING,            ONLY: C_SIZE_T, C_LOC, c_ptr
@@ -37,7 +36,7 @@ MODULE mo_var_metadata_types
   ! CONSTANTS
 
   ! list of vertical interpolation types
-  ! 
+  !
   ! A variable can have any combination of this which means that it
   ! can be interpolated vertically in these different ways.
   CHARACTER(len=1), PARAMETER :: VINTP_TYPE_LIST(3) = &
@@ -49,8 +48,8 @@ MODULE mo_var_metadata_types
   INTEGER, PARAMETER, PUBLIC   :: POST_OP_NONE      = -1  !< trivial post-op ("do nothing")
   INTEGER, PARAMETER, PUBLIC   :: POST_OP_SCALE     =  1  !< multiply by scalar factor "arg1"
   INTEGER, PARAMETER, PUBLIC   :: POST_OP_RHO       =  2  !< multiply by rho to get densities instead
-  INTEGER, PARAMETER, PUBLIC   :: POST_OP_LUC       =  3  !< convert landuse classes from internal values 
-                                                          !< to GRIB2 values (table 4.243) and vice versa. 
+  INTEGER, PARAMETER, PUBLIC   :: POST_OP_LUC       =  3  !< convert landuse classes from internal values
+                                                          !< to GRIB2 values (table 4.243) and vice versa.
   INTEGER, PARAMETER, PUBLIC   :: POST_OP_LIN2DBZ   =  4  !< convert linear values to dbz: dbzval = 10*log10(val)
   INTEGER, PARAMETER, PUBLIC   :: POST_OP_OFFSET    =  5  !< add offset value arg1
 
@@ -68,6 +67,7 @@ MODULE mo_var_metadata_types
   INTEGER, PARAMETER, PUBLIC :: CLASS_DISTR         = 7   !< variable based on a distribuition function (PDT 57)
   INTEGER, PARAMETER, PUBLIC :: CLASS_DISTR_STAT    = 8   !< variable based on a distribuition function (PDT 67)
                                                           !< statistical process
+  INTEGER, PARAMETER, PUBLIC :: CLASS_WAVE_SPECTRUM = 9   !< sprectral wave energy density informtion (PDT 101/102)
 
   ! ---------------------------------------------------------------
   ! META-DATA TYPE DEFINITIONS
@@ -128,7 +128,7 @@ MODULE mo_var_metadata_types
     CHARACTER(len=vname_len)   :: name        = ''             ! variable name
     INTEGER                    :: var_class   = CLASS_DEFAULT  ! variable type
     INTEGER                    :: data_type   = -1             ! variable data type: REAL_T, SINGLE_T, INT_T, BOOL_T
-    TYPE(t_cf_var)             :: cf          = t_cf_var('', '', '', -1)  ! CF convention information 
+    TYPE(t_cf_var)             :: cf          = t_cf_var('', '', '', -1)  ! CF convention information
     TYPE(t_grib2_var)          :: grib2  ! GRIB2 related information
     LOGICAL                    :: allocated   = .FALSE.        ! allocation status
     INTEGER                    :: ndims       = 0              ! number of dimensions used
@@ -137,20 +137,20 @@ MODULE mo_var_metadata_types
     LOGICAL                    :: loutput     = .TRUE.         ! write field to output
     INTEGER                    :: isteptype   = TSTEP_INSTANT  ! Type of statistical processing
     TYPE(t_union_vals)         :: resetval                     ! reset value for accumulated fields
-    LOGICAL                    :: lrestart_cont = .FALSE.      ! continue if not in restart file     
+    LOGICAL                    :: lrestart_cont = .FALSE.      ! continue if not in restart file
     LOGICAL                    :: lrestart_read = .FALSE.      ! field has been set from restart file
     TYPE(t_union_vals)         :: initval                      ! value if not in restart file
     LOGICAL                    :: lcontainer   = .FALSE.       ! true, if this is a container
     LOGICAL                    :: lcontained   = .FALSE.       ! true, if this is in a container
     INTEGER                    :: ncontained   = 0             ! index in container
-    INTEGER                    :: maxcontained = 0             ! container size   
+    INTEGER                    :: maxcontained = 0             ! container size
     INTEGER                    :: var_ref_pos  = -1            ! for containers: dimension index for references
     INTEGER                    :: hgrid        = -1            ! CDI horizontal grid type
     INTEGER                    :: vgrid        = -1            ! CDI vertical grid type
     TYPE(t_subset_range)       :: subset                       ! subset for latter field access
-    INTEGER                    :: dom          = -1            ! domain (used to be pointer to varlist%patch_id 
+    INTEGER                    :: dom          = -1            ! domain (used to be pointer to varlist%patch_id
     INTEGER                    :: tlev_source  = TLEV_NNOW     ! Information where to find the actual
-    !                                                     timelevel for timelevel dependent variables:        
+    !                                                     timelevel for timelevel dependent variables:
     !                                                      = 0 : nnow
     !                                                      = 1 : nnow_rcf
     !                                                      ... more may follow
@@ -164,8 +164,8 @@ MODULE mo_var_metadata_types
     ! not mean that interpolation is actually performed for this
     ! variables (this is controlled by namelist settings) but only
     ! that this is possible!
-    TYPE(t_vert_interp_meta)   :: vert_interp 
-    TYPE(t_hor_interp_meta)    :: hor_interp 
+    TYPE(t_vert_interp_meta)   :: vert_interp
+    TYPE(t_hor_interp_meta)    :: hor_interp
     ! meta data containing the groups to which a variable belongs
     LOGICAL :: in_group(MAX_GROUPS)
 
@@ -176,6 +176,7 @@ MODULE mo_var_metadata_types
     ! Metadata for missing value masking
 
     LOGICAL                    :: lmiss = .FALSE.           ! flag: true, if variable should be initialized with missval
+    LOGICAL                    :: lmemman = .FALSE.         ! flag: true, if variable is allocated to the memory using memory-manager
     TYPE(t_union_vals)         :: missval                   ! missing value
     LOGICAL                    :: lmask_boundary = .FALSE.  ! flag: true, if interpolation zone should be masked *in output*
     ! Index of tracer in tracer and in diagnostics container

@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -171,7 +171,7 @@ SUBROUTINE solve_tridiag_block_wp (a, b, c, d, x, n, eliminate_upper, lacc)
     REAL(wp), DIMENSION(n) :: cp, dp
     REAL(wp) :: m, fxa
     INTEGER :: i
-  
+
     ! initialize c-prime and d-prime
     cp(1) = c(1)/b(1)
     dp(1) = d(1)/b(1)
@@ -193,4 +193,4 @@ SUBROUTINE solve_tridiag_block_wp (a, b, c, d, x, n, eliminate_upper, lacc)
     END DO
   END SUBROUTINE solve_tridiag
 
-END MODULE mo_ocean_math_utils 
+END MODULE mo_ocean_math_utils

@@ -1,0 +1,915 @@
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2025, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+#--------------------------------------------------------------------------------------------------
+#
+# ICON-Land standalone sitelevel test in QUINCY configuration with jsbach physics
+#
+author_list="MPI-BGC, Jena"
+#
+#--------------------------------------------------------------------------------------------------
+#
+# This file describes an ICON-Land offline experiment (in QUINCY configuration with jsbach physics) on site-level for testing.
+# - The simulation runs for two years, enough for anthropogenic land cover changes
+# - Runs on one MPI proc and one OpenMP thread only
+#
+# This file requires to be run in the bash shell (see create_target_header)
+#--------------------------------------------------------------------------------------------------
+#  ==> to manually restart a simulation after spinup add the file `isRestartRun.sem` to the experiment dir
+#      `touch isRestartRun.sem`#
+
+##############################################################################
+# Switches that can be defined
+forcing_tag="GSWP3"
+thermodynamicFunc=NWP   # [NWP,AES]           NOTE: default is NWP atmospheric physics; AES physics may be used with high resolution simulations (e.g., r2b8)
+nutrient_dynamic=CN     # C or CN
+quincyModel=land        # canopy, plant, land
+simulation_type=S3      # S0, S1, S2, S3, spin_up (for spin_up testrun time ONLY 2 days)
+testrun_time=2Y         # 2H, 3H, 1D, 2D, 2M, 13M, 2Y, 10Y, 50Y
+n_soil_layer_quincy=0   # number of soil layers (HYDRO_ & SSE_) 0: use jsbach vgrid init | 5-20: use quincy vgrid init
+log_negative_vegpool=T  # T/F test for negative veg_pool values and, in case of negative values, write message and value to LOG file
+restartWith3HourSim=F   # T/F restart & checkpoint after 30 min (may only be used with the 3H simulation; useful for comparing results with/without restart)
+restartWith13MonthSim=F # T/F restart & checkpoint after 125 days (may only be used with the 13M simulation; useful for comparing results with/without restart)
+runSpinAccWith10YSim=F  # T/F run 1x the "SB_ slow pool spinup-accelerator" at year 6 with the 10 yrs simulation
+use_lakes=yes
+use_glaciers=yes
+##############################################################################
+
+if [[ ${mpi_total_procs} -gt 1 ]]; then
+  echo "ICON-Land site-level experiments can only be run on one node and one MPI proc! Exit ..."
+  exit 1
+fi
+
+#--------------------------------------------------------------------------------------------------
+# (0) unset some setting of create_target_header for levante
+#
+
+unset OMPI_MCA_coll_fca_enable
+unset OMPI_MCA_coll_fca_priority
+
+# Overwrite OpenMP threads
+OMP_NUM_THREADS=1
+ICON_THREADS=1
+
+#--------------------------------------------------------------------------------------------------
+
+# (1) Variables provided by the scripting mechanism
+
+# EXPNAME                       = name of exp. in 'exp.<name>'
+# basedir                       = base directory, where src/, run/ etc exist
+# icon_data_poolFolder          = base directory, where grids/, input/ and setup/ exist
+# nproma                        = blocking length for array dimensioning and inner loop lengths
+
+icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/grids/public/mpim"
+
+#--------------------------------------------------------------------------------------------------
+
+# (2) Set variables needed by the scripting mechanism
+
+# horizontal grid(s)
+#
+grids_folder=${icon_data_poolFolder}/Planar_one_triangle
+
+# Folder containing land external parameters (separate sub-directories for each site shortname)
+lnd_data_InputFolder=${icon_data_poolFolder}/Planar_one_triangle/land/r0002
+
+# Folder containing land forcing data (separate sub-directories for each site shortname)
+SEP=/pool/data/JSBACH/jsbalone_forcing/sites  # path on DKRZ and MPIM machines
+
+refyear=1850 # currently only used for n and p deposition
+
+# greenhouse gases file if not constant
+forcingCO2globalFile=${icon_data_poolFolder}/0049/land/r0103/global_co2_c13_c14_annually_1700_2021.nc
+
+calendar="proleptic gregorian"  # '365 day year' or '360 day year' or 'proleptic gregorian'
+
+#----- start and end date+time
+## start
+if [[ "$simulation_type" == "spin_up" ]]; then
+  start_date=${start_date:="850-01-01T00:00:00Z"}
+else
+  start_date=${start_date:="1850-01-01T00:00:00Z"}
+fi
+
+## end
+if [[ "$testrun_time" == "50Y" ]]; then
+  end_date=${end_date:="1901-01-01T00:00:00Z"}
+elif [[ "$testrun_time" == "10Y" ]]; then
+  end_date=${end_date:="1860-01-01T00:00:00Z"}
+elif [[ "$testrun_time" == "2Y" ]]; then
+  end_date=${end_date:="1852-01-01T00:00:00Z"}
+elif [[ "$testrun_time" == "13M" ]]; then
+  # 13 months for IQJ restart test
+  end_date=${end_date:="1851-02-01T00:00:00Z"}
+elif [[ "$testrun_time" == "2M" ]]; then
+  end_date=${end_date:="1850-03-01T00:00:00Z"}
+elif [[ "$testrun_time" == "2D" ]]; then
+  end_date=${end_date:="1850-01-03T00:00:00Z"}
+elif [[ "$testrun_time" == "1D" ]]; then
+  end_date=${end_date:="1850-01-02T00:00:00Z"}
+elif [[ "$testrun_time" == "3H" ]]; then
+  end_date=${end_date:="1850-01-01T03:00:00Z"}
+elif [[ "$testrun_time" == "2H" ]]; then
+  end_date=${end_date:="1850-01-01T02:00:00Z"}
+else
+  echo "  ERROR!  This runtime is not available, you set: "${testrun_time}
+  exit 1
+fi
+
+if [[ "$simulation_type" == "spin_up" ]]; then
+  end_date=${end_date:="850-01-03T00:00:00Z"}
+fi
+
+modelTimeStep="PT30M"   # this must not be longer than 1 day because mo_jsb4_forcing can not handle this!
+
+#----- restart intervals
+if [[ "$testrun_time" == "10Y" ]] || [[ "$testrun_time" == "50Y" ]]; then
+  checkpoint_interval="P4Y"
+  restart_interval="P8Y"    # Do not use month!
+elif [[ "$testrun_time" == "13M" ]]; then
+  if [[ "$restartWith13MonthSim" == "T" ]]; then
+    checkpoint_interval="P125D"
+    restart_interval="P125D"
+  else
+    checkpoint_interval="P125D"
+    restart_interval="P5Y"
+  fi
+elif [[ "$testrun_time" == "2D" ]] ; then
+  checkpoint_interval="P1D"
+  restart_interval="P1Y"
+elif [[ "$testrun_time" == "3H" ]] ; then
+  if [[ "$restartWith3HourSim" == "T" ]]; then
+    checkpoint_interval="PT30M"
+    restart_interval="PT30M"
+  else
+    checkpoint_interval="PT30M"
+    restart_interval="P5Y"
+  fi
+elif [[ "$testrun_time" == "2H" ]] ; then
+  checkpoint_interval="PT30M"
+  restart_interval="P1Y"
+else
+  checkpoint_interval="P1Y"
+  restart_interval="P5Y"
+fi
+
+#----- output intervals
+if [[ "$testrun_time" == "50Y" ]] || [[ "$testrun_time" == "10Y" ]]; then
+  output_interval="P1M" # P1D, PT6H
+  file_interval="P1Y"
+elif [[ "$testrun_time" == "2Y" ]]; then
+  output_interval="P1D"
+  file_interval="P1Y"
+elif [[ "$testrun_time" == "13M" ]]; then
+  output_interval="P1M"
+  file_interval="P1M"
+elif [[ "$testrun_time" == "2M" ]]; then
+  output_interval="PT6H"
+  file_interval="P1M"
+elif [[ "$testrun_time" == "2D" ]]; then
+  output_interval="PT6H"
+  file_interval="P1D"
+elif [[ "$testrun_time" == "2H" ]] || [[ "$testrun_time" == "3H" ]] || [[ "$testrun_time" == "1D" ]]; then
+  output_interval="PT30M"
+  file_interval="PT30M"
+else
+  echo "  ERROR!  No output interval available for this simulation length, you set: "${testrun_time}
+  exit 1
+fi
+
+# namelist files
+jsbach_namelist="NAMELIST_${EXPNAME}_jsb"
+
+# interface variables input infos
+
+
+if [[ "$simulation_type" == "S2" ]] || [[ "$simulation_type" == "S3" ]]; then
+  years_for_cyclic_forcing=0                      # If > 0, number of years to use for cyclic forcing
+  start_year_for_cyclic_forcing=9999              # First year of cyclic forcing; 9999 means use start year of experiment
+  ghg_scenario="true"                             # greenhouse gases file for scenario runs
+elif [[ "$simulation_type" == "S0" ]] || [[ "$simulation_type" == "spin_up" ]]; then
+  years_for_cyclic_forcing=30
+  start_year_for_cyclic_forcing=1869
+  ghg_scenario="false"
+elif [[ "$simulation_type" == "S1" ]]; then
+  years_for_cyclic_forcing=30
+  start_year_for_cyclic_forcing=1869
+  ghg_scenario="true"
+fi
+forcing_steps_per_day="1"     # The number of time steps included by the used forcing file(s) per day
+forcing_synchron_factor="48"  # Factor defines how many time steps the JS4 driver performs for each atmospheric forcing time step that is read in
+
+#--------------------------------------------------------------------------------------------------
+# (3) Define the model configuration
+#
+
+# ICON-Land settings
+modelScheme=quincy                  # jsbach / jsbach_quincy / quincy
+quincy_usecase=quincy_13_pfts       # jsbach_lite or jsbach_pfts or jsbach_jedi
+npft=13                             # number of plant functional types
+num_land_sites=2                # for sitelevel experiments: number of sites
+land_sites=("ham1" "ham2")      # Vector of shortnames for sites (used e.g. for namelists, output, etc.)
+land_sites_dirs=("ham" "ham")   # Vector of sub-directories for sites (used for input and forcing data)
+land_sites_name=("Hamburg 1" "Hamburg 2") # Vector of long names for sites (used in log output)
+land_sites_lon=(10.0 10.0)      # Vector of longitudes for sites
+land_sites_lat=(53.0 53.0)      # Vector of latitudes for sites
+extra_namelist_configs=yes
+rad_lyr_perp=(.TRUE. .TRUE.)    # Settings for zenith angle computation
+rad_yr_perp=(1979 2020)
+
+output_lnd=basic                    # set of output variables: none/basic/medium/full
+if [[ "$testrun_time" == "10Y" ]] && [[ "$runSpinAccWith10YSim" == "T" ]]; then
+  flag_slow_sb_pool_spinup_accelerator=.TRUE.
+elif [[ "$simulation_type" == "spin_up" ]]; then
+  flag_slow_sb_pool_spinup_accelerator=.TRUE.
+else
+  flag_slow_sb_pool_spinup_accelerator=.FALSE.
+fi
+slow_sb_pool_spinup_accelerator_frequency=100
+slow_sb_pool_spinup_accelerator_length=1000
+slow_sb_pool_spinup_accelerator_start_year=1856  # calendar year, e.g., 1850 (not the number of years since simulation start)
+slow_sb_pool_spinup_accelerator_max_executions=1
+
+# HD model (hydrology of water outflow from a grid cell)
+use_hd=no
+
+# water balance checking: enable additional output via output_nml
+jsbach_check_wbal=yes          # [no,yes]
+
+# check and log negative vegetation pools
+if [ "${log_negative_vegpool}" == "T" ]; then
+  flag_log_negative_vegpool=.TRUE.
+  echo "  Testing for negative veg_pool values is enabled - negative values are written to LOG file."
+else
+  flag_log_negative_vegpool=.FALSE.
+fi
+
+# quincy setup used for canopy and land mode
+flag_t_resp_acclimation=.TRUE.
+flag_t_jmax_acclimation=.TRUE.
+apply_agriculture=.TRUE.
+l_skin_temp=.TRUE.
+leaf_stoichom_scheme=dynamic
+
+# quincy setup needed only for land mode
+veg_dynamics_scheme=population
+sb_nloss_scheme=dynamic
+flag_N_prescribed=.FALSE.        # default: dynamic N    (not relevant for canopy mode)
+flag_P_prescribed=.TRUE.         # default: prescribed P (not relevant for canopy mode)
+
+# quincy settings different between canopy/land mode
+if [[ "$quincyModel" == "canopy" ]]; then
+  nutrient_dynamic=C
+  flag_dynamicRoots=.FALSE.         # T: roots grow at runtime; F: fixed root distribution at model init (always F for canopy mode)
+  biomass_alloc_scheme=fixed
+  apply_sylviculture=.FALSE.
+  use_product_pools=.FALSE.
+  flag_herbivory=.FALSE.
+  force_c_isotopes=.FALSE.
+elif [[ "$quincyModel" == "land" ]]; then
+  flag_dynamicRoots=.TRUE.
+  biomass_alloc_scheme=dynamic
+  apply_sylviculture=.TRUE.
+  use_product_pools=.TRUE.
+  flag_herbivory=.TRUE.
+  force_c_isotopes=.TRUE.
+fi
+
+if [[ "$simulation_type" == "S0" ]] || [[ "$simulation_type" == "spin_up" ]]; then
+  l_read_fertiliser=.FALSE.
+  deposition_scheme=refyear
+  with_alcc=no
+  syl_harvest_scheme=reference
+elif [[ "$simulation_type" == "S1" ]] || [[ "$simulation_type" == "S2" ]]; then
+  l_read_fertiliser=.FALSE.
+  deposition_scheme=transient
+  with_alcc=no
+  syl_harvest_scheme=reference
+elif [[ "$simulation_type" == "S3" ]]; then
+  l_read_fertiliser=.TRUE.
+  deposition_scheme=transient
+  with_alcc=yes
+  syl_harvest_scheme=transient
+fi
+
+if [[ "with_alcc" == 'yes' ]]; then
+  end_date_fract="${end_date}"
+else
+  end_date_fract="${start_date}"
+fi
+
+# quincy settings relevant for the land mode C/CN
+if [[ "$nutrient_dynamic" == "C" ]]; then
+  veg_bnf_scheme=unlimited
+  sb_bnf_scheme=unlimited
+  flag_veg_interactive_n=.FALSE.      # T = N cycle affects veg stoichiometry, allocation and sink limitation
+  flag_veg_interactive_p=.FALSE.      # T = P cycle affects veg stoichiometry, allocation and sink limitation
+  flag_sb_interactive_n=.FALSE.       # T = N cycle affects soil stoichiometry, + in JSM: uptake and use-efficiencies
+  flag_sb_interactive_p=.FALSE.       # T = P cycle affects soil stoichiometry, + in JSM: uptake and use-efficiencies
+elif [[ "$nutrient_dynamic" == "CN" ]]; then
+  veg_bnf_scheme=dynamic
+  sb_bnf_scheme=dynamic
+  flag_veg_interactive_n=.TRUE.       # T = N cycle affects veg stoichiometry, allocation and sink limitation
+  flag_veg_interactive_p=.FALSE.      # T = P cycle affects veg stoichiometry, allocation and sink limitation
+  flag_sb_interactive_n=.TRUE.        # T = N cycle affects soil stoichiometry, + in JSM: uptake and use-efficiencies
+  flag_sb_interactive_p=.FALSE.       # T = P cycle affects soil stoichiometry, + in JSM: uptake and use-efficiencies
+else
+  echo "  Error! Unsupported dynamics mode '$nutrient_dynamic'. Expected 'C' or 'CN'."
+  exit 1
+fi
+
+# thermodynamic functions of: NWP or AES atmospheric physics
+# default: NWP
+thermodynFunc=3
+if [[ "$thermodynamicFunc" == "AES" ]]; then
+  thermodynFunc=2
+  echo "  Applying AES thermodynamic functions."
+else
+  echo "  Applying NWP thermodynamic functions."
+fi
+
+#
+# Some further processing for land configuration
+# ----------------------------------------------
+#
+
+## namelist settings for lake and glacier tiles
+llake=$([ "${use_lakes:=yes}" == yes ] && echo .TRUE. || echo .FALSE. )
+lglacier=$([ "${use_glaciers:=yes}" == yes ] && echo .TRUE. || echo .FALSE. )
+
+## quincy
+# default output:
+output_tiles="'box'"
+# add output for other tiles:
+#output_tiles="${output_tiles}, 'veg'"
+#output_tiles="${output_tiles}, 'pft*'"
+#output_tiles="${output_tiles}, 'pft01', 'pft02', 'pft03', 'pft04', 'pft05', 'pft06', 'pft07', 'pft08', 'pft09', 'pft10', 'pft11', 'pft12', 'pft13'"
+
+echo "  IQ - QUINCY in ICON-Land:"
+echo "  output tile(s): ${output_tiles}"
+echo ""
+#--------------------------------------------------------------------------------------------------
+
+#####################
+# Prepare NAMELISTS #
+#####################
+
+case ${forcing_tag} in
+  GSWP3 )
+    forcing_set_ocean_to_constants=true  # in this version wind is only defined for land cells
+    forcing_precip_in_mm_per_day=false    # true: mm/day; false: mm/s (= kg/m2s)
+    forcing_qair_type=QAIR               # specific humidity in forcing data
+    forcing_height_humidity=2.           # reference height for specific humidity data
+    forcing_height_wind=10.              # reference height for wind data
+    ;;
+  CRUJRA )
+    forcing_set_ocean_to_constants=true  # in this version wind is only defined for land cells
+    forcing_precip_in_mm_per_day=true    # true: mm/day; false: mm/s (= kg/m2s)
+    forcing_qair_type=QAIR               # specific humidity in forcing data
+    forcing_height_humidity=2.           # reference height for specific humidity data
+    forcing_height_wind=10.              # reference height for wind data
+    ;;
+  ICON-XPP )
+    forcing_set_ocean_to_constants=false  # in this version wind is only defined for land cells
+    forcing_precip_in_mm_per_day=false   # true: mm/day; false: mm/s (= kg/m2s)
+    forcing_qair_type=QAIR               # specific humidity in forcing data
+    forcing_height_humidity=-1.          # reference height for specific humidity data
+    forcing_height_wind=-1.              # reference height for wind data
+    ;;
+  * )
+    print "\t|- WARNING: Check if namelist parameters correspond to forcing data!"
+    # example for forcing data generated from ECHAM output (pre industrial control)
+    forcing_set_ocean_to_constants=false # For all variables echam forcing is defined for all cells
+    forcing_precip_in_mm_per_day=false   # true: mm/day; false mm/s (= kg/m2s)
+    forcing_qair_type=QAIR               # only available in recent model versions (after CMIP5)
+  ;;
+esac
+
+if [[ ${ghg_scenario} = false ]]; then
+  forcing_co2_file="climate_"
+  forcing_co2_frequ=CONST              # constant CO2 forcing
+  forcing_co2_const_co2=284.725e-6     # pre-industrial (1850)
+  forcing_co2_unit="mol_per_mol"       # mol_per_mol (mol/mol) / ppmv / kg_per_kg (kg/kg)
+else
+  forcing_co2_file="bc_greenhouse_gases.nc"
+  forcing_co2_unit="ppmv"
+  if [[ ${forcing_co2_frequ} != "" ]]; then
+    echo "\t|- WARNING: CO2 concentration is read from greenhouse gas scenario file ${forcing_co2_file}."
+    echo "\t|           The value you set for forcing_co2_frequ is ignored."
+  fi
+  forcing_co2_frequ="ghg_scenario"
+  forcing_c13_const_c13=-6.74   # value from 1901
+  forcing_c14_const_c14=-3.4    # value from 1901
+fi
+
+# namelists inherited from NAMELIST_atm_amip_les_atm:
+# ---------------------------------------------------
+cat > ${jsbach_namelist} << EOF
+&parallel_nml
+ nproma           = 1
+ num_io_procs     = 0     ! Number of procs for output (not more than number of output files!)
+/
+&grid_nml
+ dynamics_grid_filename = "planar_one_triangle.nc"
+/
+&run_nml
+ num_lev          = 1           ! Number of full levels for each domain. For JS4-driver we use 1.
+ modelTimeStep    = "${modelTimeStep}"     ! this is dtime
+ output           = 'nml'
+ msg_level        = 0          ! e.g. 15. level of details report during integration
+ restart_filename = "${EXPNAME}_restart_jsbach_SITE<idom>_<rsttime>.nc"
+ activate_sync_timers = .FALSE. ! nur zum debuggen wieder auf .FALSE. setzen
+ ltimer           = .TRUE.     ! monitoring the runtime of specific routines
+ timers_level     = 10
+! profiling_output = 1   ! 1 ist default.
+                        ! TIMER_MODE_AGGREGATED=1,
+                        ! TIMER_MODE_DETAILED=2,
+                        ! TIMER_MODE_WRITE_FILES=3
+/
+&nwp_phy_nml
+  itype_satpres_coeffs = 2 ! if iforcing=3 (NWP)  1 = old coefficients inherited from the COSMO model
+                           !                      2 = more accurate coefficients used in IFS
+/
+EOF
+if [[ $extra_namelist_configs == yes ]]; then
+  cat >> $jsbach_namelist << EOF
+&aes_rad_nml
+EOF
+  for site in `seq $num_land_sites`
+  do
+    cat >> $jsbach_namelist << EOF
+ aes_rad_config($site)%lyr_perp = ${rad_lyr_perp[$site-1]}
+ aes_rad_config($site)%yr_perp = ${rad_yr_perp[$site-1]}
+EOF
+  done
+  cat >> $jsbach_namelist << EOF
+/
+EOF
+fi # extra_namelist_configs
+#
+for site in `seq $num_land_sites`
+do
+  sname=${land_sites[$site-1]}
+  cat > ${jsbach_namelist}_${sname} << EOF
+  &jsb_forcing_nml
+    cyclic_nyears=${years_for_cyclic_forcing}
+    cyclic_start_year=${start_year_for_cyclic_forcing}
+    forcing_synchron_factor=${forcing_synchron_factor}
+    forcing_steps_per_day=${forcing_steps_per_day}
+    forcing_height_wind=${forcing_height_wind}
+    forcing_height_humidity=${forcing_height_humidity}
+    !--- Some external forcing is only defined for land cells. In this case ocean cells need to be replaced
+    !    by constants (reasonable values for the different variables) to ensure numeric stability.
+    !    If set to false forcing is expected for all variables for all cells (e.g. forcing from echam)
+    forcing_set_ocean_to_constants=.${forcing_set_ocean_to_constants:-true}.
+
+    !--- temperature forcing ----
+    forcing_temp_file_prefix="climate_${sname}_"
+    forcing_temp_frequ="DAILY"       !Forcing frequency (DAILY/TIMESTEP/CONST)
+    forcing_temp_ocean=0.0           !jsb4 calculates for all cells, CRUNCEP has missingValue for ocean cells
+    forcing_temp_unit="${forcing_tmp_unit:-""}"
+
+    !--- precipitation forcing ----
+    forcing_precip_file_prefix="climate_${sname}_"
+    forcing_precip_frequ="DAILY"     !Forcing frequency (DAILY/TIMESTEP/CONST)
+    forcing_precip_ocean=0.0         !jsb4 calculates for all cells, CRUNCEP has missingValue for ocean cells
+    forcing_precip_in_mm_per_day=.${forcing_precip_in_mm_per_day:-false}.
+    forcing_precip_unit="${forcing_precip_unit:-""}"
+
+    !--- atmospheric humidity forcing
+    forcing_qair_file_prefix="climate_${sname}_"
+    forcing_qair_type="${forcing_qair_type:-QAIR}" ! (QAIR/RH/NONE)
+    forcing_qair_frequ="DAILY"       !Forcing frequency (DAILY/TIMESTEP/CONST)
+    forcing_qair_ocean=1e-5          !jsb4 calculates for all cells, CRUNCEP has missingValue for ocean cells
+    forcing_qair_unit="${forcing_qair_unit:-""}"
+
+    !--- longwave radiative forcing [W/m^2] ---
+    forcing_lw_file_prefix="climate_${sname}_"
+    forcing_lw_frequ="DAILY"         !Forcing frequency (MONTHLY/DAILY/CONST)
+    forcing_lw_ocean=100             !jsb4 calculates for all cells, CRUNCEP has missingValue for ocean cells
+    forcing_lw_unit="${forcing_lw_unit:-""}"
+
+    !--- shortwave radiative forcing [W/m^2] ---
+    forcing_sw_file_prefix="climate_${sname}_"
+    forcing_sw_frequ="DAILY"         !Forcing frequency (DAILY/TIMESTEP/CONST)
+    forcing_sw_ocean=0               !jsb4 calculates for all cells, CRUNCEP has missingValue for ocean cells
+    forcing_sw_unit="${forcing_sw_unit:-""}"
+
+    ! --- CO2 forcing ---
+    forcing_co2_file_prefix="${forcing_co2_file}"
+    forcing_co2_frequ="${forcing_co2_frequ:-CONST}"  !Forcing frequency (DAILY/TIMESTEP/CONST/GHG_SCENARIO)
+    forcing_co2_ocean=285
+    forcing_co2_const_co2=${forcing_co2_const_co2:-284.725e-6}  ! default for 1850
+    forcing_co2_unit="${forcing_co2_unit:-""}"
+
+    ! --- C13 forcing ---
+    forcing_c13_file_prefix="${forcing_co2_file}"
+    forcing_c13_frequ="${forcing_co2_frequ:-CONST}"         ! Forcing frequency (DAILY/TIMESTEP/CONST/GHG_SCENARIO)
+    forcing_c13_const_c13=${forcing_c13_const_c13:-"-6.74"} ! constant for c13
+
+    ! --- C14 forcing ---
+    forcing_c14_file_prefix="${forcing_co2_file}"
+    forcing_c14_frequ="${forcing_co2_frequ:-CONST}"         ! Forcing frequency (DAILY/TIMESTEP/CONST/GHG_SCENARIO)
+    forcing_c14_const_c14=${forcing_c14_const_c14:-"-3.4"}  ! constant for c14
+
+    ! --- wind speed forcing ---
+    forcing_wind_file_prefix="climate_${sname}_"
+    forcing_wind_frequ="DAILY"       !Forcing frequency (DAILY/TIMESTEP/CONST)
+    forcing_wind_ocean=0             !jsb4 calculates for all cells, CRUNCEP has missingValue for ocean cells
+    forcing_wind_unit="${forcing_wind_unit:-""}"
+  /
+EOF
+
+  # namelists inherited from NAMELIST_atm_amip_les_lnd:
+  # ---------------------------------------------------
+  cat >> ${jsbach_namelist}_${sname} << EOF
+  &jsb_model_nml  ! Same jsb_model_nml namelist name exists in namelist_standalone_master but has different content
+    model_scheme         = "${modelScheme}"
+    usecase              = "${quincy_usecase}"
+    use_lakes            = ${llake}
+    quincy_model         = "${quincyModel}"
+    npft                 = ${npft}
+    flag_slow_sb_pool_spinup_accelerator           = ${flag_slow_sb_pool_spinup_accelerator}
+    slow_sb_pool_spinup_accelerator_frequency      = ${slow_sb_pool_spinup_accelerator_frequency}
+    slow_sb_pool_spinup_accelerator_length         = ${slow_sb_pool_spinup_accelerator_length}
+    slow_sb_pool_spinup_accelerator_start_year     = ${slow_sb_pool_spinup_accelerator_start_year}
+    slow_sb_pool_spinup_accelerator_max_executions = ${slow_sb_pool_spinup_accelerator_max_executions}
+    force_c_isotopes     = ${force_c_isotopes}
+    fract_filename  = "bc_land_frac_${sname}.nc"
+    output_tiles         = ${output_tiles}
+    is_single_site  = .TRUE.
+    single_site_name = "${land_sites_name[$site-1]}"
+    single_site_shortname = "${sname}"
+    single_site_lonlat = ${land_sites_lon[$site-1]} ${land_sites_lat[$site-1]}
+  /
+  &jsb_seb_nml
+    bc_filename     = "bc_land_phys_${sname}.nc"
+    ic_filename     = "ic_land_soil_${sname}.nc"
+    l_skin_temp     = ${l_skin_temp}
+  /
+  &jsb_rad_nml
+    active              = .TRUE.
+    use_alb_veg_simple  = .FALSE.           ! Use TRUE for jsbach_lite, FALSE for jsbach_pfts/jsbach_jedi
+    bc_filename     = "bc_land_phys_${sname}.nc"
+    ic_filename     = "ic_land_soil_${sname}.nc"
+  /
+  &jsb_turb_nml
+    active          = .TRUE.
+    bc_filename     = "bc_land_phys_${sname}.nc"
+    ic_filename     = "ic_land_soil_${sname}.nc"
+  /
+  &jsb_sse_nml
+    l_heat_cap_map          = .FALSE.
+    l_heat_cond_map         = .FALSE.
+    l_heat_cap_dyn          = .TRUE.
+    l_heat_cond_dyn         = .TRUE.
+    l_dynsnow               = .TRUE.
+    l_freeze                = .TRUE.
+    l_supercool             = .TRUE.
+    l_soil_texture          = .TRUE.
+    bc_filename             = "bc_land_soil_${sname}.nc"
+    ic_filename             = "ic_land_soil_${sname}.nc"
+    bc_quincy_soil_filename = "bc_soil_quincy_${sname}.nc"
+    quincy_nsoil_e          = ${n_soil_layer_quincy}
+  /
+  &lnd_veg_nml
+    active                    = .TRUE.
+    flag_dynamic_roots        = ${flag_dynamicRoots}
+    veg_bnf_scheme            = "${veg_bnf_scheme}"
+    leaf_stoichom_scheme      = "${leaf_stoichom_scheme}"
+    biomass_alloc_scheme      = "${biomass_alloc_scheme}"
+    veg_dynamics_scheme       = "${veg_dynamics_scheme}"
+    flag_veg_interactive_n    = ${flag_veg_interactive_n}
+    flag_veg_interactive_p    = ${flag_veg_interactive_p}
+    flag_herbivory            = ${flag_herbivory}
+    flag_log_negative_vegpool = ${flag_log_negative_vegpool}
+    l_use_product_pools       = ${use_product_pools}
+  /
+  &lnd_sb_nml
+    active                  = .TRUE.
+    bc_quincy_soil_filename = "bc_soil_quincy_${sname}.nc"
+    deposition_scheme       = "${deposition_scheme}"
+    deposition_filename_prefix  = "bc_land_npdep_quincy_${sname}"
+    flag_sb_prescribe_nh4   = ${flag_N_prescribed}
+    flag_sb_prescribe_no3   = ${flag_N_prescribed}
+    flag_sb_prescribe_po4   = ${flag_P_prescribed}
+    sb_nloss_scheme         = "${sb_nloss_scheme}"
+    sb_bnf_scheme           = "${sb_bnf_scheme}"
+    flag_sb_interactive_n   = ${flag_sb_interactive_n}
+    flag_sb_interactive_p   = ${flag_sb_interactive_p}
+  /
+  &lnd_q_agr_nml
+    active                     = ${apply_agriculture}
+    bc_filename                = "bc_land_use_static_${sname}.nc"
+    fertiliser_filename_prefix = "bc_land_use_quincy_${sname}"
+    l_read_fertiliser          = ${l_read_fertiliser}
+  /
+  &lnd_q_syl_nml
+    active                  = ${apply_sylviculture}
+    bc_filename             = "bc_land_use_static_${sname}.nc"
+    harvest_scheme          = "${syl_harvest_scheme}"
+    harvest_filename_prefix = "bc_land_use_quincy_${sname}"
+  /
+  &lnd_q_assimi_nml
+    active                  = .TRUE.
+    flag_t_resp_acclimation = ${flag_t_resp_acclimation}
+    flag_t_jmax_acclimation = ${flag_t_jmax_acclimation}
+  /
+  &lnd_q_pheno_nml
+    active          = .TRUE.
+    ic_filename     = "ic_land_soil_${sname}.nc"
+  /
+
+  &jsb_hydro_nml
+    l_organic       = .TRUE.
+    bc_filename     = "bc_land_soil_${sname}.nc"
+    ic_filename     = "ic_land_soil_${sname}.nc"
+    bc_sso_filename = "bc_land_sso_${sname}.nc"
+    l_soil_texture       = .TRUE.
+    quincy_nsoil_w       = ${n_soil_layer_quincy}
+    enforce_water_budget = 'logging'
+    snow_depth_max       = -1
+  /
+EOF
+
+  if [[ ${with_alcc} = "yes" ]]; then
+    cat >> ${jsbach_namelist}_${sname} << EOF
+  &jsb_alcc_nml
+    active               = .TRUE.
+    l_daily_alcc         = .TRUE.
+    alcc_filename_prefix = "bc_land_frac_${pft_file_tag}${sname}_"
+  /
+EOF
+  fi
+
+  if [[ ${with_alcc} == "yes" ]] || [[ ${apply_sylviculture} == ".TRUE." ]]; then
+    cat >> ${jsbach_namelist}_${sname} << EOF
+  &jsb_pplcc_nml
+    active               = .TRUE.
+  /
+EOF
+fi
+done
+
+
+#--------------------------------------------------------------------------------------------------
+
+# (4) Define the input
+
+# model files
+add_required_file ${grids_folder}/planar_one_triangle.nc ./
+#
+for site in `seq $num_land_sites`
+do
+  sname=${land_sites[$site-1]}
+  sdir=${land_sites_dirs[$site-1]}
+
+  # jsbach namelist file
+  add_required_file ${basedir}/run/${jsbach_namelist}_${sname}            ./
+
+  # initial conditions and parameters
+  datadir=${lnd_data_InputFolder}/${sdir}
+  add_link_file ${datadir}/ic_land_soil.nc                     ./ic_land_soil_${sname}.nc
+  add_link_file $datadir/bc_land_phys.nc                       ./bc_land_phys_${sname}.nc
+  add_link_file $datadir/bc_land_soil.nc                       ./bc_land_soil_${sname}.nc
+  add_link_file $datadir/bc_land_sso.nc                        ./bc_land_sso_${sname}.nc
+  add_link_file $datadir/bc_soil_quincy.nc                     ./bc_soil_quincy_${sname}.nc
+
+  dep_datadir=${datadir}/NP_deposition
+  add_link_file ${dep_datadir}/bc_land_npdep_quincy_${refyear}.nc  ./bc_land_npdep_quincy_${sname}.nc
+  add_link_file $datadir/bc_land_quincy_land_use_static.nc         ./bc_land_use_static_${sname}.nc
+  add_link_file $datadir/LUH_harvest_mean_1850-1869.nc             ./bc_land_use_quincy_${sname}.nc
+  add_link_file $datadir/bc_land_frac_iq_${npft}pfts_${refyear}.nc ./bc_land_frac_${sname}.nc
+
+  # transient deposition and land-use data
+  if [ "${deposition_scheme}" == "transient" ] || [ "${syl_harvest_scheme}" == "transient" ]; then
+    start_year=${start_date%%-*}
+    end_year=${end_date%%-*}
+    year=${start_year}
+    while [ ${year} -le ${end_year} ]; do
+      if [ "${syl_harvest_scheme}" == "transient" ]; then
+        lu_ifile=bc_land_use_quincy_${year}.nc
+        lu_ofile=bc_land_use_quincy_${sname}_${year}.nc
+        if [ -f "${datadir}"/"${lu_ifile}" ]; then
+          add_link_file $datadir/"${lu_ifile}"   ./"${lu_ofile}"
+        else
+          echo "  ERROR!  QUINCY: "${datadir}"/"${lu_ifile}" not available"
+          exit 1
+        fi
+      fi
+
+      if [ "${deposition_scheme}" == "transient" ]; then
+        dep_ofile=bc_land_npdep_quincy_${sname}_${year}.nc
+        if [ ${year} -le 2022 ]; then
+          dep_ifile=bc_land_npdep_quincy_${year}.nc
+        else
+          dep_ifile=bc_land_npdep_quincy_2022.nc
+        fi
+        if [ -f "${dep_datadir}"/"${dep_ifile}" ]; then
+          add_link_file "${dep_datadir}"/"${dep_ifile}"   ./"${dep_ofile}"
+        else
+          echo "  ERROR!  QUINCY: "${dep_datadir}"/"${dep_ifile}" not available"
+          exit 1
+        fi
+      fi
+      (( year = year + 1 ))
+    done || exit 1
+  fi
+
+  if [[ ${with_alcc} = yes ]]; then
+    year=${start_date%%-*}
+    end_year=$(( ${end_date%%-*} + 1 ))
+    while [[ $year -le $end_year ]]; do
+      add_link_file ${datadir}/bc_land_frac_iq_${npft}pfts_${year}.nc  ./bc_land_frac_${sname}_${year}.nc
+      (( year = year+1 ))
+    done
+  fi
+
+done
+
+## quincy lctlib
+add_link_file ${basedir}/externals/jsbach/data/lctlib_quincy_nlct14.def             ./lctlib_quincy_nlct14.def
+
+# boundary conditions
+#
+# - well mixed greenhouse gases
+add_link_file ${forcingCO2globalFile}                            ./bc_greenhouse_gases.nc
+#
+
+# range of years for yearly files
+# assume start_date and end_date have the format yyyy-...
+start_year=$(( ${start_date%%-*} - 1 ))
+end_year=$(( ${end_date%%-*} + 1 ))
+if [ ${years_for_cyclic_forcing} -gt 0 ]
+then
+  [[ ${start_year_for_cyclic_forcing} -eq 9999 ]] || (( start_year=start_year_for_cyclic_forcing - 1 ))
+  (( end_year = start_year + years_for_cyclic_forcing + 1 ))
+fi
+#
+# Provide Links to the climate forcing files
+
+year=$start_year
+while [ ${year} -le ${end_year} ]; do
+
+  case ${forcing_tag} in
+    GSWP3 )
+      for site in `seq $num_land_sites`
+      do
+        sname=${land_sites[$site-1]}
+        sdir=${land_sites_dirs[$site-1]}
+        forcing_dir=${SEP}/${sdir}/GSWP3-W5E5/data
+        add_link_file   ${forcing_dir}/climate_gswp3-w5e5_daily_${year}.nc  ./climate_${sname}_${year}.nc
+      done
+      ;;
+    * )
+      add_link_file   Climate_${forcing_tag}_${year}.nc                             ./climate_${year}.nc
+      ;;
+  esac
+
+  (( year = year+1 ))
+done
+
+#--------------------------------------------------------------------------------------------------
+
+# (5) Define the output
+
+# Parameters for all output files
+# -------------------------------
+cat >> $jsbach_namelist << EOF
+&io_nml
+ restart_file_type= 5
+ restart_write_mode = "sync"  ! Default: " " = fallback mode. If num_restart_proc == 0 (parallel_nml), then this behaves like "sync", otherwise like "async".
+/
+EOF
+
+# Define output files
+# -------------------
+for site in `seq $num_land_sites`; do
+  #
+  sname=${land_sites[$site-1]} # shortname of current site
+  #
+  if [[ "$output_lnd" != "none" ]]; then
+    cat >> ${jsbach_namelist} << EOF
+  &output_nml
+  output_filename  = "${EXPNAME}_lnd_fract"
+  filename_format  = "<output_filename>_${sname}_<levtype_l>_<datetime2>"
+  dom              = $site
+  filetype         = 5
+  mode             = 1 ! relative time axis
+  remap            = 0
+  output_grid      = .TRUE.
+  output_start     = "${start_date}"
+EOF
+    if [[ "$with_alcc" == yes ]]; then
+      cat >> ${jsbach_namelist} << EOF
+  output_end       = "${end_date}"
+EOF
+    else
+      cat >> ${jsbach_namelist} << EOF
+  output_end       = "${start_date}"
+EOF
+    fi
+    cat >> ${jsbach_namelist} << EOF
+  output_interval  = "${output_interval}"
+  file_interval    = "${file_interval}"
+  include_last     = .FALSE.
+  ml_varlist       = "group:jsb_tile_fractions"
+  /
+  &output_nml
+  output_filename  = "${EXPNAME}_lnd_basic"
+  filename_format  = "<output_filename>_${sname}_<levtype_l>_<datetime2>"
+  dom              = $site
+  filetype         = 5
+  mode             = 1 ! relative time axis
+  remap            = 0
+  operation        = 'mean'
+  output_grid      = .TRUE.
+  output_start     = "${start_date}"
+  output_end       = "${end_date}"
+  output_interval  = "${output_interval}"
+  file_interval    = "${file_interval}"
+  include_last     = .FALSE.
+  ml_varlist       = 'group:jsb_all_basic'
+  /
+EOF
+  fi
+
+  # output group: medium
+  case "${output_lnd}" in
+    medium|full)
+      cat >> ${jsbach_namelist} << EOF
+  &output_nml
+  output_filename  = "${EXPNAME}_lnd_medium"
+  filename_format  = "<output_filename>_${sname}_<levtype_l>_<datetime2>"
+  dom              = $site
+  filetype         = 5
+  mode             = 1 ! relative time axis
+  remap            = 0
+  operation        = 'mean'
+  output_grid      = .TRUE.
+  output_start     = "${start_date}"
+  output_end       = "${end_date}"
+  output_interval  = "${output_interval}"
+  file_interval    = "${file_interval}"
+  include_last     = .FALSE.
+  ml_varlist       = 'group:jsb_all_medium'
+  /
+EOF
+      ;;
+  esac
+
+  # output group: full
+  case "${output_lnd}" in
+    full)
+      cat >> ${jsbach_namelist} << EOF
+  &output_nml
+  output_filename  = "${EXPNAME}_lnd_full"
+  filename_format  = "<output_filename>_${sname}_<levtype_l>_<datetime2>"
+  dom              = $site
+  filetype         = 5
+  mode             = 1 ! relative time axis
+  remap            = 0
+  operation        = 'mean'
+  output_grid      = .TRUE.
+  output_start     = "${start_date}"
+  output_end       = "${end_date}"
+  output_interval  = "${output_interval}"
+  file_interval    = "${file_interval}"
+  include_last     = .FALSE.
+  ml_varlist       = 'group:jsb_all_full'
+  /
+EOF
+      ;;
+  esac
+
+  if [[ "$jsbach_check_wbal" == "yes" ]]; then
+    cat >> ${jsbach_namelist} << EOF
+  &output_nml
+  output_filename  = "${EXPNAME}_lnd_wbal"
+  filename_format  = "<output_filename>_${sname}_<levtype_l>_<datetime2>"
+  dom              = $site
+  filetype         = 5
+  mode             = 1 ! relative time axis
+  remap            = 0
+  operation        = 'mean'
+  output_grid      = .TRUE.
+  output_start     = "${start_date}"
+  output_end       = "${end_date}"
+  output_interval  = "${output_interval}"
+  file_interval    = "${file_interval}"
+  include_last     = .FALSE.
+  ml_varlist       = 'hydro_weq_fluxes_box', 'hydro_weq_land_box', 'hydro_weq_balance_err_box',
+  /
+EOF
+  fi
+  #
+done
+
+#-----------------------------------------------------------------------------

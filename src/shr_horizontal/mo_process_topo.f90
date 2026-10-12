@@ -1,16 +1,15 @@
-! Contains routine for topography smoothing
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains routine for topography smoothing
 
 MODULE mo_process_topo
 
@@ -49,7 +48,7 @@ CONTAINS
   !!
   SUBROUTINE compute_smooth_topo(p_patch, p_int, topo_c, niter, topo_smt_c)
 
-    TYPE(t_patch),TARGET,INTENT(INOUT) :: p_patch
+    TYPE(t_patch),TARGET,INTENT(IN) :: p_patch
     TYPE(t_int_state), INTENT(IN) :: p_int
 
     ! Input fields: topography on cells
@@ -74,12 +73,12 @@ CONTAINS
     i_startblk = p_patch%cells%start_blk(2,1)
     nblks_c    = p_patch%nblks_c
 
-    CALL sync_patch_array(SYNC_C,p_patch,z_topo)
+    CALL sync_patch_array(SYNC_C,p_patch,z_topo, lacc=.FALSE.)
 
     ! Apply nabla2-diffusion niter times to create smooth topography
     DO iter = 1, niter
 
-      CALL nabla2_scalar(z_topo, p_patch, p_int, nabla2_topo, &
+      CALL nabla2_scalar(z_topo, p_patch, p_int, nabla2_topo, lacc=.FALSE., &
         &                 slev=1, elev=1, rl_start=2, rl_end=min_rlcell )
 
       DO jb = i_startblk,nblks_c
@@ -93,7 +92,7 @@ CONTAINS
         ENDDO
       ENDDO
 
-      CALL sync_patch_array(SYNC_C,p_patch,z_topo)
+      CALL sync_patch_array(SYNC_C,p_patch,z_topo, lacc=.FALSE.)
 
     ENDDO
 
@@ -107,12 +106,12 @@ CONTAINS
   !-----------------------------------------------------------------------
   !! Topography smoothing
   !!
-  !! Topography smoothing by selectively applying nabla2 and nabla4 
+  !! Topography smoothing by selectively applying nabla2 and nabla4
   !! operators.
   !!
   SUBROUTINE smooth_topo (p_patch, p_int, topography_c)
 
-    TYPE(t_patch)      , INTENT(INOUT) :: p_patch
+    TYPE(t_patch)      , INTENT(IN)    :: p_patch
     TYPE(t_int_state)  , INTENT(IN)    :: p_int
     REAL(wp)           , INTENT(INOUT) :: topography_c(:,:) ! original topography on input
                                                             ! smoothed one on output
@@ -161,7 +160,7 @@ CONTAINS
         z_hdiffmax(:,:)   = 0._wp
         lnabla2_mask(:,:) = .FALSE.
 
-        CALL nabla2_scalar( z_topo, p_patch, p_int, z_nabla2_topo, &
+        CALL nabla2_scalar( z_topo, p_patch, p_int, z_nabla2_topo, lacc=.FALSE., &
           &                 slev=1, elev=1, rl_start=2, rl_end=min_rlcell )
 
         npts = 0
@@ -186,7 +185,7 @@ CONTAINS
 
         ENDDO
 
-        ! set diffusion mask also true if one of the neighboring grid points 
+        ! set diffusion mask also true if one of the neighboring grid points
         ! fulfills the height difference criterion
         i_startblk = p_patch%cells%start_blk(3,1)
 
@@ -215,7 +214,7 @@ CONTAINS
         ENDDO
 
         z_topo(:,1,:) = topography_c(:,:)
-        CALL sync_patch_array(SYNC_C, p_patch, z_topo)
+        CALL sync_patch_array(SYNC_C, p_patch, z_topo, lacc=.FALSE.)
         topography_c(:,:) = z_topo(:,1,:)
 
       ENDDO ! iteration of local nabla2 smoothing
@@ -226,7 +225,7 @@ CONTAINS
       z_topo(:,1,:)   = topography_c(:,:)
       z_topo_old(:,1,:) = z_topo(:,1,:)
 
-      CALL nabla4_scalar(z_topo, p_patch, p_int, z_nabla4_topo, &
+      CALL nabla4_scalar(z_topo, p_patch, p_int, z_nabla4_topo, lacc=.FALSE., &
         & slev=1, elev=UBOUND(z_topo,2), rl_start=3, rl_end=min_rlcell, &
         & p_nabla2=z_nabla2_topo )
 
@@ -305,7 +304,7 @@ CONTAINS
       ENDDO
 
       z_topo(:,1,:)   = topography_c(:,:)
-      CALL sync_patch_array(SYNC_C, p_patch, z_topo)
+      CALL sync_patch_array(SYNC_C, p_patch, z_topo, lacc=.FALSE.)
       topography_c(:,:)=z_topo(:,1,:)
 
       DO jb = i_startblk,nblks_c
@@ -348,7 +347,7 @@ CONTAINS
       ENDDO
 
       z_topo(:,1,:)   = topography_c(:,:)
-      CALL sync_patch_array(SYNC_C, p_patch, z_topo)
+      CALL sync_patch_array(SYNC_C, p_patch, z_topo, lacc=.FALSE.)
       topography_c(:,:)=z_topo(:,1,:)
 
     ENDDO !iter
@@ -359,16 +358,16 @@ CONTAINS
 
   !-----------------------------------------------------------------------
   !!
-  !! Topography smoothing for real-case runs. Apart from smoothing the 
-  !! topography field, 
-  !! - the height of sea-points is reset to that of the raw topography 
+  !! Topography smoothing for real-case runs. Apart from smoothing the
+  !! topography field,
+  !! - the height of sea-points is reset to that of the raw topography
   !!   data set
-  !! - the SSO standard deviation field is updated based on the smoothed 
+  !! - the SSO standard deviation field is updated based on the smoothed
   !!   topography
   !!
   SUBROUTINE smooth_topo_real_data (p_patch, p_int, fr_land, topography_c, fr_lake, sso_stdh)
 
-    TYPE(t_patch)      , INTENT(INOUT) :: p_patch
+    TYPE(t_patch)      , INTENT(IN)    :: p_patch
     TYPE(t_int_state)  , INTENT(IN)    :: p_int
     REAL(wp)           , INTENT(IN)    :: fr_land(:,:)
     REAL(wp)           , INTENT(INOUT) :: topography_c(:,:)
@@ -446,7 +445,7 @@ CONTAINS
   !!
   SUBROUTINE smooth_frland (p_patch, p_int, fr_land, fr_land_smt)
 
-    TYPE(t_patch)      , INTENT(INOUT) :: p_patch
+    TYPE(t_patch)      , INTENT(IN)    :: p_patch
     TYPE(t_int_state)  , INTENT(IN)    :: p_int
     REAL(wp)           , INTENT(IN)    :: fr_land(:,:)
     REAL(wp)           , INTENT(OUT)   :: fr_land_smt(:,:)
@@ -484,7 +483,7 @@ CONTAINS
 
       ENDDO  !jb
 
-      CALL sync_patch_array(SYNC_C, p_patch, zaux)
+      CALL sync_patch_array(SYNC_C, p_patch, zaux, lacc=.FALSE.)
       fr_land_smt(:,:) = zaux(:,:)
 
     ENDDO
@@ -497,7 +496,7 @@ CONTAINS
   !!
   SUBROUTINE smooth_urbfrac (p_patch, p_int, fr_urb, fr_urb_smt)
 
-    TYPE(t_patch)      , INTENT(INOUT) :: p_patch
+    TYPE(t_patch)      , INTENT(IN)    :: p_patch
     TYPE(t_int_state)  , INTENT(IN)    :: p_int
     REAL(wp)           , INTENT(IN)    :: fr_urb(:,:)
     REAL(wp)           , INTENT(OUT)   :: fr_urb_smt(:,:)
@@ -529,7 +528,7 @@ CONTAINS
 
     ENDDO  !jb
 
-    CALL sync_patch_array(SYNC_C, p_patch, fr_urb_smt)
+    CALL sync_patch_array(SYNC_C, p_patch, fr_urb_smt, lacc=.FALSE.)
 
 
   END SUBROUTINE smooth_urbfrac
@@ -537,13 +536,13 @@ CONTAINS
   !-----------------------------------------------------------------------
   !! Reduce SSO stdh and slope over glaciers depending on the ratio between SSO slope and resolved slope
   !!
-  !! This should preferably done in extpar, but the results with a globally modified calculation of 
-  !! the SSO parameters (by removing the grid-scale slope before calculating stdh and SSO-slope) 
+  !! This should preferably done in extpar, but the results with a globally modified calculation of
+  !! the SSO parameters (by removing the grid-scale slope before calculating stdh and SSO-slope)
   !! were quite ambivalent
   !!
   SUBROUTINE postproc_sso (p_patch, p_int, fr_glac, topography_c, sso_stdh, sso_sigma)
 
-    TYPE(t_patch)      , INTENT(INOUT) :: p_patch
+    TYPE(t_patch)      , INTENT(IN)    :: p_patch
     TYPE(t_int_state)  , INTENT(IN)    :: p_int
     REAL(wp)           , INTENT(IN)    :: fr_glac(:,:)
     REAL(wp)           , INTENT(IN)    :: topography_c(:,:)
@@ -567,7 +566,7 @@ CONTAINS
 
     ! compute grid-scale slope
     !
-    CALL rbf_interpol_c2grad(z_topo_c, p_patch, p_int, slope_x, slope_y)
+    CALL rbf_interpol_c2grad(z_topo_c, p_patch, p_int, slope_x, slope_y, lacc=.FALSE.)
 
     DO jb = i_startblk,i_endblk
 
@@ -579,7 +578,7 @@ CONTAINS
 
     ENDDO
 
-    CALL sync_patch_array(SYNC_C, p_patch, slope)
+    CALL sync_patch_array(SYNC_C, p_patch, slope, lacc=.FALSE.)
 
     ! Reduce SSO stdh and slope depending on the glacier fration and the ratio between SSO slope and grid-scale slope
     ! With Merit/Rema raw data, it turned out to be beneficial to extend the slope correction the whole Arctic region
@@ -612,4 +611,3 @@ CONTAINS
 
 
 END MODULE mo_process_topo
-

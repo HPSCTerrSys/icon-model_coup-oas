@@ -1,18 +1,18 @@
-! Module defining the derived types for the selection of vertical
-! levels for the output module.
-!
-! Details of the implementation: see "mo_level_selection".
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module defining the derived types for the selection of vertical
+! levels for the output module.
+!
+! Details of the implementation: see "mo_level_selection".
 
 MODULE mo_level_selection_types
 
@@ -70,4 +70,3 @@ CONTAINS
   END SUBROUTINE t_level_selection_finalize
 
 END MODULE mo_level_selection_types
-

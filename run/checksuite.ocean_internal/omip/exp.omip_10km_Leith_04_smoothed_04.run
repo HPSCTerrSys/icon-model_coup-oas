@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -35,7 +35,7 @@
 # with openmp=yes
 # memory_model=default
 # submit with sbatch -N ${SLURM_JOB_NUM_NODES:-1}
-# 
+#
 #=============================================================================
 set -x
 . ./add_run_routines
@@ -66,7 +66,7 @@ mpi_procs_pernode=$((${SLURM_JOB_CPUS_PER_NODE%%\(*} / 2 / OMP_NUM_THREADS))
 ((mpi_total_procs=no_of_nodes * mpi_procs_pernode))
 START="srun --cpu-freq=HighM1 --kill-on-bad-exit=1 --nodes=${SLURM_JOB_NUM_NODES:-1} --cpu_bind=verbose,cores --distribution=block:block --ntasks=$((no_of_nodes * mpi_procs_pernode)) --ntasks-per-node=${mpi_procs_pernode} --cpus-per-task=$((2 * OMP_NUM_THREADS)) --propagate=STACK"
 #-----------------------------------------------------------------------------
-# load ../setting if exists  
+# load ../setting if exists
 if [ -a ../setting ]
 then
   echo "Load Setting"
@@ -172,7 +172,7 @@ cat > ${ocean_namelist} << EOF
  nproma         = $nproma
  p_test_run     = .false.
  l_fast_sum     = .true.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -229,14 +229,14 @@ cat > ${ocean_namelist} << EOF
   l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
   l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-13 ! this may further be reduced
 
   select_lhs                      = 1       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
   fast_performance_level          = 200       ! performance level 12: for cell-based; 5: default
   use_continuity_correction       = .TRUE.    ! height adjustment according to vertical velocity in dynamics
@@ -274,8 +274,8 @@ cat > ${ocean_namelist} << EOF
   LeithHarmonicViscosity_reference =  7.5E-4
 
   LeithViscosity_SmoothIterations = 1
-  LeithViscosity_SpatialSmoothFactor = 0.5 
- 
+  LeithViscosity_SpatialSmoothFactor = 0.5
+
   HorizontalViscosity_SmoothIterations = 1
   HorizontalViscosity_SpatialSmoothFactor = 0.5
 
@@ -320,7 +320,7 @@ cat > ${ocean_namelist} << EOF
 /
 &ocean_physics_nml
   i_sea_ice                       =   1       ! 0 = no sea ice; 1 = sea ice model on; default=1
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                     =   1       ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
   i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics
@@ -351,7 +351,7 @@ cat > ${ocean_namelist} << EOF
   forcing_fluxes_type             =   1       ! read from file
 ! forcing_enable_freshwater       = .TRUE.    ! apply freshwater forcing boundary condition (OMIP only)
 ! forcing_set_runoff_to_zero      = .FALSE.   ! set runoff to zero for comparison to MPIOM; default: false
-! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false 
+! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false
                                               ! salt-change due to internal fluxes only
   limit_seaice                    = .TRUE.    ! default: true
   seaice_limit                    =   0.8     ! hard limit set to 80% of upper layer for sea ice
@@ -360,11 +360,11 @@ cat > ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type           = 1         ! read from file
   initial_temperature_type        = 1         ! read from file
-/                                    
+/
 &ocean_diagnostics_nml
   diagnostics_level            = 1
   diagnose_for_horizontalVelocity = .false.
-/                                    
+/
 &io_nml
   write_last_restart = .true.
   lkeep_in_sync = .true.          ! sync after each timestep

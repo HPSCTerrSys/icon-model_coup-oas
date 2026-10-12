@@ -1,35 +1,59 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
+
+!----------------------------
+#include "omp_definitions.inc"
+!----------------------------
 
 MODULE mo_output_coupling
 
-  USE mo_kind                ,ONLY: wp
+  USE mo_kind                ,ONLY: wp, dp
   USE mo_model_domain        ,ONLY: t_patch
-  USE mo_var                 ,ONLY: t_var_ptr
+  USE mo_var                 ,ONLY: t_var_ptr, level_type_ml, level_type_pl, &
+       &                            level_type_hl, level_type_il
   USE mo_var_groups          ,ONLY: MAX_GROUPS, var_groups_dyn
+  USE mo_var_list_register,   ONLY: t_vl_register_iter
+  USE mo_var_metadata,        ONLY: get_var_timelevel, get_var_name
   USE mo_run_config          ,ONLY: nlev, msg_level
   USE mo_run_config          ,ONLY: ltimer
   USE mo_timer               ,ONLY: timer_start, timer_stop, &
-       &                            timer_coupling_put
+       &                            timer_coupling_output_put, timer_coupling_output_1stput, &
+       &                            timer_coupling_output, timer_coupling_output_buf_prep
   USE mo_util_string         ,ONLY: int2string
   USE mo_exception           ,ONLY: message, finish
   USE mo_parallel_config     ,ONLY: nproma
   USE mo_zaxis_type          ,ONLY: zaxisTypeList
+  USE mo_fortran_tools       ,ONLY: set_acc_host_or_device
+  USE mo_impl_constants      ,ONLY: REAL_T, TLEV_NNOW, TLEV_NNEW, TLEV_NNOW_RCF, TLEV_NNEW_RCF
+  USE mo_dynamics_config,     ONLY: nnow, nnow_rcf, nnew, nnew_rcf
+  USE mo_cdi_constants,       ONLY: GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_VERT
+  USE mo_coupling_utils,      ONLY: cpl_get_instance_id
+
+  USE, INTRINSIC :: ieee_arithmetic
 
 #ifdef _OPENACC
-  USE mo_mpi                 ,ONLY: i_am_accel_node
   USE openacc
 #endif
+
+#ifdef YAC_coupling
+    USE yac,                    ONLY: yac_fget_field_collection_size, yac_fput, yac_fget_action, &
+         &                            yac_fupdate, YAC_ACTION_NONE, yac_dble_ptr, &
+         &                            yac_fdef_field, YAC_TIME_UNIT_ISO_FORMAT, &
+         &                            yac_fdef_field_metadata, yac_fget_component_name, &
+         &                            yac_fget_grid_name, yac_fenable_field_frac_mask_instance,  &
+         &                            yac_fget_role_from_field_id, YAC_EXCHANGE_TYPE_NONE, &
+         &                            YAC_EXCHANGE_TYPE_SOURCE
+#endif
+
+  IMPLICIT NONE
 
   CHARACTER(len=*), PARAMETER :: str_module = 'mo_output_coupling' ! Output of module for debug
   CHARACTER(len=2), PARAMETER :: newline = ACHAR(13) // ACHAR(10)
@@ -38,6 +62,7 @@ MODULE mo_output_coupling
      INTEGER :: yac_field_id
      TYPE(t_var_ptr) :: var(1:3)
      INTEGER :: tlev_source, var_size
+     INTEGER :: hgrid, vgrid
      TYPE(t_exposed_var), POINTER :: next => NULL()
   END TYPE t_exposed_var
 
@@ -48,6 +73,18 @@ MODULE mo_output_coupling
 
   TYPE(t_exposed_var), POINTER :: exposed_vars_head => NULL()
   INTEGER :: max_collection_size = 0, max_hor_size = 0
+  INTEGER :: yac_valid_mask_sfc_field_id, yac_valid_mask_field_id, yac_valid_mask_half_field_id
+
+  ! buffers for yac
+  REAL(dp), ALLOCATABLE, TARGET :: buffer(:,:)
+  REAL(dp), ALLOCATABLE, TARGET :: frac_mask_buf(:,:)
+  REAL(dp), ALLOCATABLE, TARGET :: frac_mask_verts_buf(:,:)
+
+
+  INTEGER :: nblks_c, nblks_v, npromz_c, npromz_v
+  INTEGER, POINTER :: vert2cell_idx(:,:,:)
+  INTEGER, POINTER :: vert2cell_blk(:,:,:)
+  INTEGER, POINTER :: num_neighbor_cells(:,:)
 
 CONTAINS
 
@@ -58,28 +95,23 @@ CONTAINS
   !! variables as a fields in the coupler.
 
   SUBROUTINE construct_output_coupling ( &
-    p_patch, comp_id, cell_point_id, vertex_point_id, timestepstring)
-
-    USE mo_var_list_register,   ONLY: t_vl_register_iter
-    USE mo_var_metadata,        ONLY: get_var_timelevel, get_var_name
-    USE mo_cdi_constants,       ONLY: GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_VERT
-    USE mo_var,                 ONLY: level_type_ml
-    USE mo_coupling_utils,      ONLY: cpl_get_instance_id
-#ifdef YAC_coupling
-    USE mo_yac_finterface      ,ONLY: yac_fdef_field, YAC_TIME_UNIT_ISO_FORMAT, &
-         yac_fdef_field_metadata, yac_fget_component_name, yac_fget_grid_name
-#endif
+    p_patch, comp_id, cell_point_id, vertex_point_id, timestepstring, use_frac_mask)
 
     TYPE(t_patch), TARGET, INTENT(IN) :: p_patch(:)
     INTEGER, INTENT(IN) :: comp_id
     INTEGER, INTENT(IN) :: cell_point_id, vertex_point_id
     CHARACTER(LEN=*), INTENT(IN) :: timestepstring
+    LOGICAL, INTENT(IN) :: use_frac_mask
 
     TYPE(t_vl_register_iter), ALLOCATABLE :: vl_iter
     TYPE(t_exposed_var), POINTER :: exposed_var
     CHARACTER(len=:), ALLOCATABLE :: var_name, metadata, comp_name, grid_name
+    CHARACTER(len=4) :: var_name_prefix
+    CHARACTER(len=5) :: grib2_discipline, grib2_category, grib2_number, grib2_bits, grib2_gridtype, grib2_subgridtype
+    CHARACTER(len=11) :: grib2_int_val ! 10 digits to cover 2**31-1 + sign
+    CHARACTER(len=28) :: grib2_dbl_val
     INTEGER :: iv, tl, collection_size, key_notl, count = 0, var_size, grpi, nblks, pos(3)
-    INTEGER :: point_id, var_ref_pos, instance_id
+    INTEGER :: point_id, var_ref_pos, instance_id, grib_i
 
     TYPE t_tmp_timelevel_var
        INTEGER :: key_notl
@@ -94,16 +126,34 @@ CONTAINS
                 'built without coupling support.')
 #else
 
-    CALL construct_output_nml_coupling(comp_id, cell_point_id, vertex_point_id)
-
     instance_id = cpl_get_instance_id()
 
     max_hor_size = MAX(p_patch(1)%n_patch_cells, p_patch(1)%n_patch_verts)
+    vert2cell_idx => p_patch(1)%verts%cell_idx
+    vert2cell_blk => p_patch(1)%verts%cell_blk
+    num_neighbor_cells => p_patch(1)%verts%num_edges
+    nblks_c = p_patch(1)%nblks_c
+    nblks_v = p_patch(1)%nblks_v
+    npromz_c = p_patch(1)%npromz_c
+    npromz_v = p_patch(1)%npromz_v
 
     ALLOCATE(vl_iter)
     VARLIST_LOOP: DO WHILE(vl_iter%next())
        IF (vl_iter%cur%p%patch_id .NE. 1) CYCLE ! support ICON horizontal grid only
-       IF (vl_iter%cur%p%vlevel_type /= level_type_ml) CYCLE ! avoid ambigious var names
+       SELECT CASE(vl_iter%cur%p%vlevel_type)
+       CASE (level_type_ml)
+         var_name_prefix = ""
+       CASE (level_type_pl)
+         var_name_prefix = "pl::"
+       CASE (level_type_hl)
+         var_name_prefix = "hl::"
+       CASE (level_type_il)
+         var_name_prefix = "il::"
+       CASE DEFAULT
+         IF (msg_level >= 15) &
+              CALL message(str_module, "Omitted vlist due to unknown vlevel type: " // TRIM(vl_iter%cur%p%vlname))
+         CYCLE
+       END SELECT
        DO iv = 1, vl_iter%cur%p%nvars
 
           ASSOCIATE( elem => vl_iter%cur%p%vl(iv)%p )
@@ -119,6 +169,12 @@ CONTAINS
                IF (msg_level >= 15) &
                   CALL message(str_module, "Omitted due to lcontainer: " // TRIM(elem%info%name))
                CYCLE
+            END IF
+
+            IF(elem%info%data_type /= REAL_T) THEN
+              IF (msg_level >= 15) &
+                   CALL message(str_module, "Omitted due to datatype: " // TRIM(elem%info%name))
+              CYCLE
             END IF
 
             ! expose only vars on the icon grid (cells or vertices)
@@ -148,9 +204,10 @@ CONTAINS
             IF (elem%info%used_dimensions(pos(1)) .NE. nproma .OR. &
                elem%info%used_dimensions(pos(3)) .LT. nblks)  THEN !the blk dimension could be larger than nblks
                IF (msg_level >= 15) &
-                  CALL message(str_module, "Omitted due to invalid dimensions: " // TRIM(elem%info%name) // &
-                       "nproma: " // int2string(elem%info%used_dimensions(pos(1))) // ", " // &
-                       "nblks: " // int2string(elem%info%used_dimensions(pos(3))))
+                    CALL message(str_module, &
+                    & "Omitted due to invalid dimensions: " // TRIM(elem%info%name) // ", " // &
+                    & "nproma: " // int2string(elem%info%used_dimensions(pos(1))) // ", " // &
+                    & "nblks: " // int2string(elem%info%used_dimensions(pos(3))))
                CYCLE
             END IF
 
@@ -161,15 +218,23 @@ CONTAINS
             END IF
 
             tl = get_var_timelevel(elem%info%name)
+            IF (tl > 3) THEN
+              CALL message(str_module, &
+                    & "Omitted due to invalid timelevel: " // TRIM(elem%info%name))
+               CYCLE
+            END IF
             key_notl = vl_iter%cur%p%key_notl(iv)
-            var_name = TRIM(get_var_name(elem%info))
+            var_name = TRIM(var_name_prefix) // TRIM(get_var_name(elem%info))
             exposed_var => NULL()
             IF(tl /= -1) THEN
                ! check if we already have a timelevel val registered
                tmp_timelevel_var => tmp_timelevel_var_head
                TL_VAR_LOOP: DO WHILE(ASSOCIATED(tmp_timelevel_var))
-                  IF (tmp_timelevel_var%key_notl == key_notl) THEN
+                  IF (tmp_timelevel_var%key_notl == key_notl .AND. elem%info%vgrid == tmp_timelevel_var%exposed_var%vgrid) THEN
                      exposed_var => tmp_timelevel_var%exposed_var
+                     IF (msg_level >= 15) &
+                          CALL message(str_module, &
+                          & "Found already exposed timestep variable for: " // TRIM(elem%info%name))
                      EXIT TL_VAR_LOOP
                   ENDIF
                   tmp_timelevel_var => tmp_timelevel_var%next
@@ -178,6 +243,8 @@ CONTAINS
             IF (.NOT. ASSOCIATED(exposed_var)) THEN
                ALLOCATE(exposed_var)
                exposed_var%var_size = var_size
+               exposed_var%hgrid = vl_iter%cur%p%hgrid(iv)
+               exposed_var%vgrid = elem%info%vgrid
                IF(tl /= -1) THEN
                   exposed_var%var(tl) = vl_iter%cur%p%vl(iv)
                   exposed_var%tlev_source = elem%info%tlev_source
@@ -185,6 +252,8 @@ CONTAINS
                   exposed_var%var(1) = vl_iter%cur%p%vl(iv)
                   exposed_var%tlev_source = -1
                ENDIF
+               IF (msg_level >= 15) &
+                    CALL message(str_module, "Register field " // var_name )
                CALL yac_fdef_field(             &
                     & var_name,                 &
                     & comp_id,                  &
@@ -196,8 +265,16 @@ CONTAINS
                     & exposed_var%yac_field_id )
                count = count + 1
                max_collection_size = MAX(max_collection_size, collection_size)
-               ! add element to list
 
+               IF ( use_frac_mask ) THEN
+                 CALL yac_fenable_field_frac_mask_instance( &
+                      instance_id, &
+                      yac_fget_component_name(exposed_var%yac_field_id),&
+                      yac_fget_grid_name(exposed_var%yac_field_id), &
+                      var_name, ieee_value(1.0d0, ieee_quiet_nan))
+               ENDIF
+
+               ! add element to list
                exposed_var%next => exposed_vars_head
                exposed_vars_head => exposed_var
                ! if it has a nontrival timelevel we add it into the temporary list
@@ -207,18 +284,67 @@ CONTAINS
                   tmp_timelevel_var%exposed_var => exposed_var
                   tmp_timelevel_var%next => tmp_timelevel_var_head
                   tmp_timelevel_var_head => tmp_timelevel_var
-               END IF
+                END IF
 
-               ! add some metadata
-               metadata = "standard_name: !!str '" // TRIM(elem%info%cf%standard_name) // "'" // newline &
-                    //    "units: !!str '" // TRIM(elem%info%cf%units) // "'" // newline &
-                    //    "short_name: !!str '" // TRIM(elem%info%cf%short_name) // "'" // newline &
-                    //    "long_name: !!str '" // TRIM(elem%info%cf%long_name) // "'" // newline &
-                    //    "groups:" // newline
-               DO grpi = 1,SIZE(var_groups_dyn%gname)
-                  IF (elem%info%in_group(grpi)) metadata = metadata // "  - " // TRIM(var_groups_dyn%gname(grpi)) // newline
-               END DO
-               CALL yac_fdef_field_metadata( &
+                WRITE(grib2_discipline, '(I0)') elem%info%grib2%discipline
+                WRITE(grib2_category, '(I0)') elem%info%grib2%category
+                WRITE(grib2_number, '(I0)') elem%info%grib2%number
+                WRITE(grib2_bits, '(I0)') elem%info%grib2%bits
+                WRITE(grib2_gridtype, '(I0)') elem%info%grib2%gridtype
+                WRITE(grib2_subgridtype, '(I0)') elem%info%grib2%subgridtype
+
+                ! add some metadata in JSON format
+                metadata = "{" // newline &
+                     // '  "cf": {' // newline &
+                     // '    "standard_name": "' // TRIM(elem%info%cf%standard_name) // '",' // newline &
+                     // '    "units": "' // TRIM(elem%info%cf%units) // '",' // newline &
+                     // '    "short_name": "' // TRIM(elem%info%cf%short_name) // '",' // newline &
+                     // '    "long_name":  "' // TRIM(elem%info%cf%long_name) // '"' // newline &
+                     // '  },' // newline &
+                     // '  "grib2": {' // newline &
+                     // '    "discipline": ' // TRIM(grib2_discipline) // ',' // newline &
+                     // '    "category": ' // TRIM(grib2_category) // ',' // newline &
+                     // '    "number": ' // TRIM(grib2_number) // ',' // newline &
+                     // '    "bits": ' // TRIM(grib2_bits) // ',' // newline &
+                     // '    "gridtype": ' // TRIM(grib2_gridtype) // ',' // newline &
+                     // '    "subgridtype": ' // TRIM(grib2_subgridtype)
+                IF (elem%info%grib2%additional_keys%nint_keys > 0 .OR. elem%info%grib2%additional_keys%ndbl_keys > 0) THEN
+                  metadata = metadata // ',' // newline &
+                       // '    "additional_keys": {'
+                  DO grib_i = 1,elem%info%grib2%additional_keys%nint_keys
+                    IF (grib_i > 1) THEN
+                      metadata = metadata // ','
+                    ENDIF
+                    WRITE(grib2_int_val, '(I0)') elem%info%grib2%additional_keys%int_key(grib_i)%val
+                    metadata = metadata &
+                         // newline // '      "' // TRIM(elem%info%grib2%additional_keys%int_key(grib_i)%key) // '": ' &
+                         // TRIM(grib2_int_val)
+                  END DO
+                  DO grib_i = 1,elem%info%grib2%additional_keys%ndbl_keys
+                    IF (grib_i > 1 .OR. elem%info%grib2%additional_keys%nint_keys > 0) THEN
+                      metadata = metadata // ','
+                    ENDIF
+                    WRITE(grib2_dbl_val, '(ES28.20)') elem%info%grib2%additional_keys%dbl_key(grib_i)%val
+                    metadata = metadata &
+                         // newline // '      "' // TRIM(elem%info%grib2%additional_keys%dbl_key(grib_i)%key) // '": ' &
+                         // TRIM(grib2_dbl_val)
+                  END DO
+                  metadata = metadata // newline // '    }'
+                END IF
+                metadata = metadata // newline &
+                     // '  },' // newline &
+                     // '  "groups": ['
+                DO grpi = 1,SIZE(var_groups_dyn%gname)
+                  IF (elem%info%in_group(grpi)) THEN
+                    IF (grpi > 1) THEN
+                      metadata = metadata // ','
+                    ENDIF
+                    metadata = metadata // newline // '    "' // TRIM(var_groups_dyn%gname(grpi)) // '"'
+                  ENDIF
+                END DO
+                metadata = metadata // newline // "  ]" // newline &
+                     // '}'
+                CALL yac_fdef_field_metadata( &
                     instance_id, &
                     yac_fget_component_name(exposed_var%yac_field_id),&
                     yac_fget_grid_name(exposed_var%yac_field_id), &
@@ -243,6 +369,39 @@ CONTAINS
        DEALLOCATE(tmp_timelevel_var_head)
     END DO
     DEALLOCATE(vl_iter)
+
+    IF (use_frac_mask) THEN
+      CALL yac_fdef_field(             &
+           & "valid_mask_sfc",         &
+           & comp_id,                  &
+           & (/cell_point_id/),        &
+           & 1,                        &
+           & 1,                        & ! collection_size
+           & timestepstring,           &
+           & YAC_TIME_UNIT_ISO_FORMAT, &
+           & yac_valid_mask_sfc_field_id )
+
+      CALL yac_fdef_field(             &
+           & "valid_mask",             &
+           & comp_id,                  &
+           & (/cell_point_id/),        &
+           & 1,                        &
+           & nlev,                     & ! collection_size
+           & timestepstring,           &
+           & YAC_TIME_UNIT_ISO_FORMAT, &
+           & yac_valid_mask_field_id )
+
+      CALL yac_fdef_field(             &
+           & "valid_mask_half",        &
+           & comp_id,                  &
+           & (/cell_point_id/),        &
+           & 1,                        &
+           & nlev + 1,                 & ! collection_size
+           & timestepstring,           &
+           & YAC_TIME_UNIT_ISO_FORMAT, &
+           & yac_valid_mask_half_field_id )
+    ENDIF
+
 ! YAC_coupling
 #endif
   END SUBROUTINE construct_output_coupling
@@ -258,8 +417,6 @@ CONTAINS
    CALL finish(str_module // 'construct_output_coupling_finalize', &
                "built without coupling support.")
 #else
-    USE mo_yac_finterface, ONLY: yac_fget_role_from_field_id, &
-         YAC_EXCHANGE_TYPE_NONE, YAC_EXCHANGE_TYPE_SOURCE
     TYPE(t_exposed_var), POINTER :: exposed_var, tmp
     INTEGER :: role, count = 1
 
@@ -305,138 +462,300 @@ CONTAINS
   !>
   !! SUBROUTINE output_coupling -- Exchange fields between
   !! atmosphere and output components.
-  SUBROUTINE output_coupling (valid_mask)
+  SUBROUTINE output_coupling (lacc, valid_mask)
 
-    USE, INTRINSIC :: ieee_arithmetic
-    USE mo_impl_constants      ,ONLY: TLEV_NNOW, TLEV_NNEW, TLEV_NNOW_RCF, TLEV_NNEW_RCF
-    USE mo_dynamics_config,     ONLY: nnow, nnow_rcf, nnew, nnew_rcf
 #ifdef YAC_coupling
-    USE mo_yac_finterface,      ONLY: yac_fget_field_collection_size, yac_fput, yac_fget_action, &
+    USE mo_impl_constants,      ONLY: TLEV_NNOW, TLEV_NNEW, TLEV_NNOW_RCF, TLEV_NNEW_RCF
+    USE mo_dynamics_config,     ONLY: nnow, nnow_rcf, nnew, nnew_rcf
+    USE yac,                    ONLY: yac_fget_field_collection_size, yac_fput, yac_fget_action, &
       &                               yac_fupdate, YAC_ACTION_NONE, yac_dble_ptr
 #endif
 
-    REAL(wp), OPTIONAL :: valid_mask(:,:,:)
+    LOGICAL, INTENT(IN) :: lacc
+    REAL(wp), OPTIONAL, INTENT(IN) :: valid_mask(:,:,:)
 
 #ifndef YAC_coupling
-   CALL finish(str_module // 'output_coupling', &
-               'built without coupling support')
+    CALL finish(str_module // 'output_coupling', &
+         'built without coupling support')
 #else
-    INTEGER               :: info, ierror, collection_size, nn, now, ncontained, var_size, var_ref_pos
-    REAL(wp), ALLOCATABLE, TARGET, SAVE :: buffer(:,:)
-    REAL(wp), CONTIGUOUS, POINTER :: tmp_buffer(:,:)
-    TYPE(t_exposed_var), POINTER :: cur_field
-    TYPE(t_var_ptr) :: var_now
-    TYPE(yac_dble_ptr), ALLOCATABLE :: buffer_ptr(:, :)
+    INTEGER                             :: info, ierror, collection_size, nn, now, num_hor_points
+    INTEGER                             :: ncontained, var_size, var_ref_pos, timer_put
+    REAL(dp), CONTIGUOUS, POINTER       :: tmp_buffer(:,:)
+    TYPE(t_exposed_var), POINTER        :: cur_field
+    TYPE(t_var_ptr)                     :: var_now
+    TYPE(yac_dble_ptr), ALLOCATABLE     :: buffer_ptr(:, :)
+    TYPE(yac_dble_ptr)                  :: frac_mask_ptr(1, nlev+1)
+    TYPE(yac_dble_ptr)                  :: frac_mask_verts_ptr(1, nlev+1)
+    LOGICAL :: lzacc
+    INTEGER :: n_valid_mask_lev_from, n_valid_mask_lev_to
+    INTEGER :: info_valid_mask_full, info_valid_mask_half, info_valid_mask_sfc
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    IF (ltimer) CALL timer_start(timer_coupling_output)
+    timer_put = timer_coupling_output_1stput
+
+    IF (.NOT. ALLOCATED(buffer)) ALLOCATE(buffer(max_hor_size, max_collection_size))
+    IF (.NOT. ALLOCATED(buffer_ptr)) ALLOCATE(buffer_ptr(1, nlev+1))
+
+    IF( PRESENT(valid_mask) ) THEN
+
+      CALL build_frac_mask(valid_mask, GRID_UNSTRUCTURED_CELL, frac_mask_ptr, frac_mask_buf)
+      CALL build_frac_mask(valid_mask, GRID_UNSTRUCTURED_VERT, frac_mask_verts_ptr, frac_mask_verts_buf)
+
+      CALL yac_fget_action(yac_valid_mask_sfc_field_id, info_valid_mask_sfc)
+      CALL yac_fget_action(yac_valid_mask_field_id, info_valid_mask_full)
+      CALL yac_fget_action(yac_valid_mask_half_field_id, info_valid_mask_half)
+
+      IF ( info_valid_mask_sfc == YAC_ACTION_NONE ) THEN
+        CALL yac_fupdate(yac_valid_mask_sfc_field_id)
+      ELSE
+        CALL yac_fput(yac_valid_mask_sfc_field_id, 1, &
+             1, frac_mask_ptr(:, 2:2), info, ierror)
+      ENDIF
+
+      IF ( info_valid_mask_full == YAC_ACTION_NONE ) THEN
+        CALL yac_fupdate(yac_valid_mask_field_id)
+      ELSE
+        CALL yac_fput(yac_valid_mask_field_id, 1, &
+             nlev, frac_mask_ptr(:, 2:nlev+1), info, ierror)
+      ENDIF
+
+      IF ( info_valid_mask_half == YAC_ACTION_NONE ) THEN
+        CALL yac_fupdate(yac_valid_mask_half_field_id)
+      ELSE
+        CALL yac_fput(yac_valid_mask_half_field_id, 1, &
+             nlev+1, frac_mask_ptr(:, 1:nlev+1), info, ierror)
+      ENDIF
+    ENDIF
 
     cur_field => exposed_vars_head
-    IF (.NOT. ALLOCATED(buffer)) ALLOCATE(buffer(max_hor_size, max_collection_size))
-    IF (.NOT. ALLOCATED(buffer_ptr)) ALLOCATE(buffer_ptr(1, max_collection_size))
 
     DO WHILE (ASSOCIATED(cur_field))
-       IF (cur_field%tlev_source == -1) THEN
-          now = 1
-       ELSE
-          SELECT CASE (cur_field%tlev_source)
-          CASE(TLEV_NNOW);     now = nnow(1)
-          CASE(TLEV_NNOW_RCF); now = nnow_rcf(1)
-          CASE(TLEV_NNEW);     now = nnew(1)
-          CASE(TLEV_NNEW_RCF); now = nnew_rcf(1)
-          CASE DEFAULT
-             CALL finish(str_module,'Unsupported tlev_source')
-          END SELECT
-       ENDIF
-       var_now = cur_field%var(now)
+      IF (ltimer) CALL timer_start(timer_coupling_output_buf_prep)
+      IF (cur_field%tlev_source == -1) THEN
+        now = 1
+      ELSE
+        SELECT CASE (cur_field%tlev_source)
+        CASE(TLEV_NNOW);     now = nnow(1)
+        CASE(TLEV_NNOW_RCF); now = nnow_rcf(1)
+        CASE(TLEV_NNEW);     now = nnew(1)
+        CASE(TLEV_NNEW_RCF); now = nnew_rcf(1)
+        CASE DEFAULT
+          CALL finish(str_module,'Unsupported tlev_source')
+        END SELECT
+      ENDIF
+      var_now = cur_field%var(now)
 
-       collection_size = yac_fget_field_collection_size(cur_field%yac_field_id)
+      collection_size = yac_fget_field_collection_size(cur_field%yac_field_id)
 
-       CALL yac_fget_action(cur_field%yac_field_id, info)
-       IF ( info == YAC_ACTION_NONE ) THEN
-          CALL yac_fupdate(cur_field%yac_field_id)
-          cur_field => cur_field%next
-          IF (msg_level >= 15) &
+      CALL yac_fget_action(cur_field%yac_field_id, info)
+      IF ( info == YAC_ACTION_NONE ) THEN
+        CALL yac_fupdate(cur_field%yac_field_id)
+        cur_field => cur_field%next
+        IF (msg_level >= 15) &
              CALL message(str_module, " skipping field " // TRIM(var_now%p%info%name))
-          CYCLE
-       ENDIF
-       IF (msg_level >= 15) &
-          CALL message(str_module, " sending field " // TRIM(var_now%p%info%name))
+        IF (ltimer) CALL timer_stop(timer_coupling_output_buf_prep)
+        CYCLE
+      ENDIF
+      IF (msg_level >= 15) &
+           CALL message(str_module, " sending field " // TRIM(var_now%p%info%name))
 
-!$ACC UPDATE HOST(var_now%p%r_ptr) IF(i_am_accel_node .AND. acc_is_present(var_now%p%r_ptr))
-       var_ref_pos = MERGE(var_now%p%info%var_ref_pos, 4, var_now%p%info%lcontained)
-       ncontained = MERGE(var_now%p%info%ncontained, 1, var_now%p%info%lcontained)
-       var_size = cur_field%var_size
+      IF (.NOT. ASSOCIATED(var_now%p%wp_ptr)) THEN
+        CALL finish(str_module, " pointer not ASSOCIATED " // TRIM(var_now%p%info%name))
+      ENDIF
 
-       IF (zaxisTypeList%is_2d(var_now%p%info%vgrid)) THEN
+      !$ACC UPDATE HOST(var_now%p%wp_ptr) IF(lzacc .AND. acc_is_present(var_now%p%wp_ptr))
+      var_ref_pos = MERGE(var_now%p%info%var_ref_pos, 4, var_now%p%info%lcontained)
+      ncontained = MERGE(var_now%p%info%ncontained, 1, var_now%p%info%lcontained)
+      var_size = cur_field%var_size
+
+      IF (zaxisTypeList%is_2d(var_now%p%info%vgrid)) THEN
+        SELECT CASE (var_ref_pos)
+        CASE (1)
+          buffer(:,1) = RESHAPE(var_now%p%wp_ptr(ncontained, :, :, 1, 1), (/var_size/))
+          buffer_ptr(1, 1)%p(1:var_size) => buffer(:,1)
+        CASE (2)
+          buffer(:,1) = RESHAPE(var_now%p%wp_ptr(:, ncontained, :, 1, 1), (/var_size/))
+          buffer_ptr(1, 1)%p(1:var_size) => buffer(:,1)
+        CASE (3)
+#ifdef __SINGLE_PRECISION
+          buffer(:,1) = RESHAPE(var_now%p%wp_ptr(:, :, ncontained, 1, 1), (/var_size/))
+          buffer_ptr(1, 1)%p(1:var_size) => buffer(:,1)
+#else
+          tmp_buffer => var_now%p%wp_ptr(:, :, ncontained, 1, 1)
+          buffer_ptr(1, 1)%p(1:var_size) => tmp_buffer
+#endif
+        CASE (4)
+#ifdef __SINGLE_PRECISION
+          buffer(:,1) => RESHAPE(var_now%p%wp_ptr(:, :, 1, ncontained, 1), (/var_size/))
+          buffer_ptr(1, 1)%p(1:var_size) => buffer(:,1)
+#else
+          tmp_buffer => var_now%p%wp_ptr(:, :, 1, ncontained, 1)
+          buffer_ptr(1, 1)%p(1:var_size) => tmp_buffer
+#endif
+        CASE (5)
+#ifdef __SINGLE_PRECISION
+          buffer(:,1) => RESHAPE(var_now%p%wp_ptr(:, :, 1, 1, ncontained), (/var_size/))
+          buffer_ptr(1, 1)%p(1:var_size) => buffer(:,1)
+#else
+          tmp_buffer => var_now%p%wp_ptr(:, :, 1, 1, ncontained)
+          buffer_ptr(1, 1)%p(1:var_size) => tmp_buffer
+#endif
+        CASE DEFAULT
+          CALL finish(str_module, "Unsupported var_ref_pos " // int2string(var_ref_pos) // &
+               " for variable " // TRIM(var_now%p%info%name))
+        END SELECT
+
+      ELSE
+        DO nn = 1 , collection_size
           SELECT CASE (var_ref_pos)
           CASE (1)
-             buffer(1:var_size,1:1) = var_now%p%r_ptr(ncontained, :, :, 1, 1)
-             buffer_ptr(1, 1)%p => buffer(:,1)
+            buffer(:,nn) = RESHAPE(var_now%p%wp_ptr(ncontained, :, nn, :, 1), (/var_size/))
           CASE (2)
-             buffer(1:var_size,1:1) = var_now%p%r_ptr(:, ncontained, :, 1, 1)
-             buffer_ptr(1, 1)%p => buffer(:,1)
+            buffer(:,nn) = RESHAPE(var_now%p%wp_ptr(:, ncontained, nn, :, 1), (/var_size/))
           CASE (3)
-             tmp_buffer => var_now%p%r_ptr(:, :, ncontained, 1, 1)
-             buffer_ptr(1, 1)%p(1:var_size) => tmp_buffer
+            buffer(:,nn) = RESHAPE(var_now%p%wp_ptr(:, nn, ncontained, :, 1), (/var_size/))
           CASE (4)
-             tmp_buffer => var_now%p%r_ptr(:, :, 1, ncontained, 1)
-             buffer_ptr(1, 1)%p(1:var_size) => tmp_buffer
+            buffer(:,nn) = RESHAPE(var_now%p%wp_ptr(:, nn, :, ncontained, 1), (/var_size/))
           CASE (5)
-             tmp_buffer => var_now%p%r_ptr(:, :, 1, 1, ncontained)
-             buffer_ptr(1, 1)%p(1:var_size) => tmp_buffer
+            buffer(:,nn) = RESHAPE(var_now%p%wp_ptr(:, nn, :, 1, ncontained), (/var_size/))
           CASE DEFAULT
-             CALL finish(str_module, "Unsupported var_ref_pos " // int2string(var_ref_pos) // &
-                  " for variable " // TRIM(var_now%p%info%name))
+            CALL finish(str_module, "Unsupported var_ref_pos " // int2string(var_ref_pos) // &
+                 " for variable " // TRIM(var_now%p%info%name))
           END SELECT
-       ELSE
-          DO nn = 1 , collection_size
-             SELECT CASE (var_ref_pos)
-             CASE (1)
-                buffer(:,nn) = RESHAPE(var_now%p%r_ptr(ncontained, :, nn, :, 1), &
-                     (/ var_size /))
-             CASE (2)
-                buffer(:,nn) = RESHAPE(var_now%p%r_ptr(:, ncontained, nn, :, 1), &
-                     (/ var_size /))
-             CASE (3)
-                buffer(:,nn) = RESHAPE(var_now%p%r_ptr(:, nn, ncontained, :, 1), &
-                     (/ var_size /))
-             CASE (4)
-                buffer(:,nn) = RESHAPE(var_now%p%r_ptr(:, nn, :, ncontained, 1), &
-                     (/ var_size /))
-             CASE (5)
-                buffer(:,nn) = RESHAPE(var_now%p%r_ptr(:, nn, :, 1, ncontained), &
-                     (/ var_size /))
-             CASE DEFAULT
-                CALL finish(str_module, "Unsupported var_ref_pos " // int2string(var_ref_pos) // &
-                     " for variable " // TRIM(var_now%p%info%name))
-             END SELECT
-             buffer_ptr(1, nn)%p => buffer(:,nn)
-          ENDDO
-       END IF
+          buffer_ptr(1, nn)%p(1:var_size) => buffer(1:var_size,nn)
+        ENDDO
+      END IF
 
-       ! The ocean model does not mask land cells hence we set them to NaN manually before coupling to YAC.
-       IF ( PRESENT(valid_mask) ) THEN
-          DO nn = 1 , collection_size
-             ! dont overwrite the variable itself
-             IF (.NOT. ASSOCIATED(buffer_ptr(1, nn)%p, buffer(:,nn))) THEN
-                buffer(:,nn) = buffer_ptr(1, nn)%p
-                buffer_ptr(1, nn)%p => buffer(:,nn)
-             ENDIF
-             ! Duplicate first level of ocean-mask for half-depth fields.
-             WHERE ( RESHAPE(valid_mask(:, MAX(1, nn - MAX(0, collection_size - nlev)), :), &
-                  (/ var_size /)) .LT. 0.5_wp )
-                buffer_ptr(1, nn)%p = ieee_value(buffer_ptr(1, nn)%p, ieee_quiet_nan)
-             ENDWHERE
-          ENDDO
-       ENDIF
+      IF (ltimer) CALL timer_stop(timer_coupling_output_buf_prep)
 
-       IF (ltimer) CALL timer_start(timer_coupling_put)
-       CALL yac_fput(cur_field%yac_field_id, 1, &
-            collection_size, buffer_ptr(:, 1:collection_size), info, ierror)
-       IF (ltimer) CALL timer_stop(timer_coupling_put)
-       cur_field => cur_field%next
+      IF (ltimer) CALL timer_start(timer_put)
+      IF ( PRESENT(valid_mask)) THEN
+        n_valid_mask_lev_from = MERGE(1, 2, collection_size > nlev)
+        IF (cur_field%hgrid == GRID_UNSTRUCTURED_CELL) THEN
+          CALL yac_fput(cur_field%yac_field_id, 1, &
+               collection_size, buffer_ptr(:, 1:collection_size), &
+               frac_mask_ptr(:, n_valid_mask_lev_from:n_valid_mask_lev_from+collection_size-1), &
+               info, ierror)
+        ELSE
+          CALL yac_fput(cur_field%yac_field_id, 1, &
+               collection_size, buffer_ptr(:, 1:collection_size), &
+               frac_mask_verts_ptr(:, n_valid_mask_lev_from:n_valid_mask_lev_from+collection_size-1), &
+               info, ierror)
+        ENDIF
+      ELSE
+        CALL yac_fput(cur_field%yac_field_id, 1, &
+             collection_size, buffer_ptr(:, 1:collection_size), info, ierror)
+      ENDIF
+      IF (ltimer) CALL timer_stop(timer_put)
+      timer_put = timer_coupling_output_put
+      cur_field => cur_field%next
     ENDDO
-! YAC_coupling
+    IF (ltimer) CALL timer_stop(timer_coupling_output)
+    ! YAC_coupling
 #endif
   END SUBROUTINE output_coupling
+
+#ifdef YAC_coupling
+  SUBROUTINE build_frac_mask(valid_mask, hgrid, yac_ptrs, buffer)
+    REAL(wp), INTENT(IN) :: valid_mask(:,:,:)
+    INTEGER, INTENT(IN) :: hgrid
+    TYPE(yac_dble_ptr), INTENT(INOUT) :: yac_ptrs(1,nlev+1)
+    REAL(dp), ALLOCATABLE, TARGET, INTENT(INOUT) :: buffer(:,:)
+
+    INTEGER :: nn, jb, jc, ji, nlen
+    TYPE(t_exposed_var), POINTER        :: cur_field
+    INTEGER :: n_valid_mask_lev_from, n_valid_mask_lev_to, num_hor_points, info, collection_size
+    INTEGER :: info_valid_mask_full, info_valid_mask_half, info_valid_mask_sfc
+
+    n_valid_mask_lev_from = 2
+    n_valid_mask_lev_to = 1
+
+    num_hor_points = SIZE(valid_mask, 1)*SIZE(valid_mask, 3)
+    IF (.NOT. ALLOCATED(buffer)) ALLOCATE(buffer(max_hor_size, nlev))
+
+    ! check which frac mask is needed
+    cur_field => exposed_vars_head
+    DO WHILE (ASSOCIATED(cur_field))
+      IF (cur_field%hgrid /= hgrid) CONTINUE
+      CALL yac_fget_action(cur_field%yac_field_id, info)
+      IF (info /= YAC_ACTION_NONE) THEN
+        collection_size = yac_fget_field_collection_size(cur_field%yac_field_id)
+        IF ( collection_size == nlev + 1 ) THEN
+          n_valid_mask_lev_from = 1
+          n_valid_mask_lev_to = nlev + 1
+        ELSE IF ( collection_size == nlev ) THEN
+          n_valid_mask_lev_to = nlev + 1
+        ELSE IF ( collection_size == 1 ) THEN
+          n_valid_mask_lev_to = MAX(2, n_valid_mask_lev_to)
+        ELSE
+          CALL finish(str_module,'Unsupported vgrid')
+        ENDIF
+      ENDIF
+      cur_field => cur_field%next
+    ENDDO
+
+    ! handle 3d valid mask
+    IF (hgrid == GRID_UNSTRUCTURED_CELL) THEN
+      CALL yac_fget_action(yac_valid_mask_sfc_field_id, info_valid_mask_sfc)
+      CALL yac_fget_action(yac_valid_mask_field_id, info_valid_mask_full)
+      CALL yac_fget_action(yac_valid_mask_half_field_id, info_valid_mask_half)
+      IF (info_valid_mask_half /= YAC_ACTION_NONE) THEN
+        n_valid_mask_lev_from = 1
+        n_valid_mask_lev_to = nlev + 1
+      ELSE IF (info_valid_mask_full /= YAC_ACTION_NONE) THEN
+        n_valid_mask_lev_to = nlev + 1
+      ELSE IF (info_valid_mask_sfc /= YAC_ACTION_NONE) THEN
+        n_valid_mask_lev_to = MAX(2, n_valid_mask_lev_to)
+      END IF
+    ENDIF
+
+!$OMP PARALLEL
+    IF (hgrid == GRID_UNSTRUCTURED_CELL) THEN
+!$OMP DO PRIVATE(jb,jc,nlen,nn) ICON_OMP_DEFAULT_SCHEDULE
+      DO jb = 1, nblks_c
+        DO nn = 1, n_valid_mask_lev_to-1
+          IF (jb /= nblks_c) THEN
+            nlen = nproma
+          ELSE
+            nlen = npromz_c
+          ENDIF
+          DO jc = 1, nlen
+            buffer((jb-1)*nproma + jc , nn) = MERGE(1, 0, valid_mask(jc, nn, jb) >= 0.5)
+          END DO
+        END DO
+      END DO
+    ELSE IF(hgrid == GRID_UNSTRUCTURED_VERT) THEN
+      DO jb = 1, nblks_v
+        DO nn = 1, n_valid_mask_lev_to-1
+          IF (jb /= nblks_v) THEN
+            nlen = nproma
+          ELSE
+            nlen = npromz_v
+          ENDIF
+          DO jc = 1, nlen
+            buffer((jb-1)*nproma + jc , nn) = 0
+            DO ji=1,6
+              IF (vert2cell_idx(jc,jb,ji) > 0) THEN
+                IF (valid_mask(vert2cell_idx(jc,jb,ji), nn, vert2cell_blk(jc,jb,ji)) >= 0.5) THEN
+                  buffer((jb-1)*nproma + jc , nn) = 1
+                ENDIF
+              ENDIF
+            END DO
+          END DO
+        END DO
+      END DO
+    ELSE
+      CALL finish(str_module, "Not supported hgrid")
+    ENDIF
+!$OMP END PARALLEL
+
+    DO nn = n_valid_mask_lev_from, n_valid_mask_lev_to
+      yac_ptrs(1, nn)%p => buffer(:,MAX(1,nn-1)) ! if nn=1 is needed it is equal to 2
+    END DO
+  END SUBROUTINE build_frac_mask
+#endif
 
   !>
   !! SUBROUTINE destruct_output_coupling -- destructs the fields list
@@ -449,75 +768,5 @@ CONTAINS
        DEALLOCATE(tmp)
     END DO
   END SUBROUTINE destruct_output_coupling
-
-
-  SUBROUTINE construct_output_nml_coupling(comp_id, cell_point_id, vertex_point_id)
-
-    USE mo_cdi_constants,          ONLY: GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_VERT
-    USE mo_exception,              ONLY: message_text
-    USE mo_name_list_output_init,  ONLY: output_file, nlevs_of_var
-    USE mo_name_list_output_types, ONLY: FILETYPE_YAC, t_output_name_list
-    USE mo_var_metadata,           ONLY: get_var_name
-    USE mo_var_metadata_types,     ONLY: t_var_metadata
-#ifdef YAC_coupling
-    USE mo_yac_finterface,         ONLY: yac_fdef_field, YAC_TIME_UNIT_ISO_FORMAT
-#endif
-
-    INTEGER, INTENT(IN) :: comp_id
-    INTEGER, INTENT(IN) :: cell_point_id, vertex_point_id
-
-#ifndef YAC_coupling
-    CALL finish(str_module // 'construct_output_coupling', &
-                'built without coupling support.')
-#else
-    TYPE(t_var_metadata), POINTER :: info
-    TYPE(t_output_name_list), POINTER :: name_list
-    CHARACTER(len=:), ALLOCATABLE :: name
-    INTEGER :: i, j, k, nlevs, point_id
-
-    IF (.NOT. ALLOCATED(output_file)) RETURN
-
-    DO i=1,SIZE(output_file)
-       name_list => output_file(i)%name_list
-       IF (name_list%filetype == FILETYPE_YAC) THEN
-          DO j=1,output_file(i)%num_vars
-             info => output_file(i)%var_desc(j)%info
-
-             nlevs = nlevs_of_var(info, output_file(i)%level_selection)
-
-             name = TRIM(name_list%output_filename) // "_" // TRIM(get_var_name(info))
-
-             IF (info%hgrid .EQ. GRID_UNSTRUCTURED_CELL) THEN
-                point_id = cell_point_id
-             ELSEIF (info%hgrid .EQ. GRID_UNSTRUCTURED_VERT) THEN
-                point_id = vertex_point_id
-             ELSE
-                CALL finish(str_module, "Invalid hgrid for yac-coupled output_nml") ! TODO support other grids
-             END IF
-
-             IF (LEN_TRIM(name_list%output_start(1)) == 0 .OR. LEN_TRIM(name_list%output_start(2)) > 1) THEN
-                CALL finish(str_module, "Must be exactly one output interval for yac-coupled output_nml")
-             END IF
-
-             IF (msg_level >= 15) THEN
-                WRITE (message_text,'(a,a,a,i0,a)') 'Defining field for ', name,' with vgrid size ', nlevs, ' for yac-coupled output_nml'
-                CALL message(str_module, message_text)
-             END IF
-
-             CALL yac_fdef_field(                 &
-                  & name,                         &
-                  & comp_id,                      &
-                  & (/point_id/),                 &
-                  & 1,                            &
-                  & nlevs,                        &
-                  & name_list%output_interval(1), &
-                  & YAC_TIME_UNIT_ISO_FORMAT,     &
-                  & info%cdiVarID )
-          END DO
-       END IF
-    END DO
-! YAC_coupling
-#endif
-  END SUBROUTINE construct_output_nml_coupling
 
 END MODULE mo_output_coupling

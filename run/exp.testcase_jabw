@@ -1,0 +1,179 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+#-----------------------------------------------------------------------------
+# Created from DWD icon_tutorial2024 document
+#   S4.2 Jablonowski-Williamson Baroclinic Wave Test
+#
+# Variables:
+#  - output_data : control model output ('on'/'off')
+#  - grid_refinement : input grid
+#  - lrbf_read : enable/disable reading rbf coefficients ('.TRUE.'/'.FALSE.')
+#-----------------------------------------------------------------------------
+
+# Control model output ("on"/"off")
+output_data=${output_data:-'off'}
+
+# the namelist filename
+atmo_namelist=NAMELIST_${EXPNAME}
+#
+#-----------------------------------------------------------------------------
+# global timing
+start_date="2008-09-01T00:00:00Z"
+  end_date="2008-09-09T00:00:00Z"
+ndays_restart=60
+dt_restart=`expr ${ndays_restart} \* 86400`
+#
+#-----------------------------------------------------------------------------
+# model timing
+# - dtime is dependent on grid refinement. 576sec for R2B5 and then 0.5x for
+#   each 2x in resolution
+#-----------------------------------------------------------------------------
+
+#-----------------------------------------------------------------------------
+
+# horizontal grid(s)
+#
+# Choose resolution:
+grid_refinement=R02B05
+# Get grid id
+if   [ ${grid_refinement} == R02B10 ] ; then
+   grid_id=0056
+   dtime=4.5
+elif [ ${grid_refinement} == R02B09 ] ; then
+   grid_id=0055
+   dtime=18
+elif [ ${grid_refinement} == R02B08 ] ; then
+   grid_id=0054
+   dtime=72
+elif [ ${grid_refinement} == R02B06 ] ; then
+   grid_id=0052
+   dtime=288
+elif [ ${grid_refinement} == R02B05 ] ; then
+   grid_id=0051
+   dtime=576
+elif [ ${grid_refinement} == R02B04 ] ; then
+   grid_id=0049
+   dtime=1152
+fi
+
+# Get grid path and name
+icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/grids/public/mpim"
+grids_folder=${icon_data_poolFolder}/${grid_id}
+grid_label=G
+grid_name=icon_grid_${grid_id}_${grid_refinement}_${grid_label}
+#
+atmo_dyn_grids="${grid_name}.nc"
+atmo_dyn_rbf_coeffs="${grid_name}-rbf_coeffs.nc"
+
+# Using public swift server as backup if grid and rbf files not on file system, browse via url:
+#   https://swiftbrowser.dkrz.de/public/dkrz_ab6243f85fe24767bb1508712d1eb504/buildbot-grid_files
+GRID_BASE_URL='https://swift.dkrz.de/v1/dkrz_ab6243f85fe24767bb1508712d1eb504/buildbot-grid_files'
+RBF_BASE_URL="${GRID_BASE_URL}"
+lrbf_read='.TRUE.'
+
+#-----------------------------------------------------------------------------
+
+
+#-----------------------------------------------------------------------------
+#
+# write ICON namelist parameters
+# ------------------------
+# For a complete list see Namelist_overview and Namelist_overview.pdf
+#-----------------------------------------------------------------------------
+
+cat > ${basedir}/run/${atmo_namelist} << EOF
+&parallel_nml
+ nproma         = ${nproma}
+ nproma_sub     = ${nproma_sub}
+ nblocks_c      = ${nblocks_c}
+ p_test_run     = .false.
+ l_test_openmp  = .false.
+ l_log_checks   = .false.
+ num_io_procs   = ${num_io_procs}
+ proc0_shift    = ${proc0_shift}
+/
+&nh_testcase_nml
+ nh_test_name   = 'jabw'     ! test case identifier
+ jw_up          = 1.0
+ jw_u0          = 35.0
+ jw_temp0       = 288.0
+/
+&run_nml
+ ltestcase      = .TRUE.       ! run testcase
+ ldynamics      = .TRUE.       ! dynamics
+ ltransport     = .FALSE.      ! TRUE to enable passive tracers
+ iforcing       = 0            !
+ num_lev        = 40,          ! number of full levels of vertical grid
+ dtime          = ${dtime}     ! timestep in seconds
+ msg_level      = 12           ! detailed report during integration
+ ltimer         = .TRUE.
+ timers_level   = 10
+ !output         = "nml"
+/
+&dynamics_nml
+ lcoriolis      = .TRUE.
+/
+&extpar_nml
+ itopo          = 0
+/
+&grid_nml
+ dynamics_grid_filename = "${atmo_dyn_grids}",
+/
+&sleve_nml
+ top_height     = 35000.
+/
+&nonhydrostatic_nml
+ vwind_offctr   = 0.2
+ exner_expol    = 0.5
+ damp_height    = 25000.
+ rayleigh_coeff = 0.1
+/
+&diffusion_nml
+ hdiff_order      = 5
+ itype_vn_diffu   = 2
+ itype_t_diffu    = 2
+ hdiff_efdt_ratio = 20.0
+/
+&io_nml
+/
+&interpol_nml
+ lrbf_read  = ${lrbf_read}
+ !lrbf_write = .TRUE.
+ rbf_coeffs_filename = "${atmo_dyn_rbf_coeffs}",
+/
+EOF
+
+test "$output_data" = "on" && {
+cat >> ${base_dir}/run/${atmo_namelist} << EOF
+&output_nml
+ filetype               = 4
+ dom                    = -1
+ output_time_unit       = 1
+ !output_bounds          = 0.,86400.,7200.  ! start, end, increment
+ !steps_per_file         = 25
+ output_start           = "${start_date}"
+ output_end             = "${end_date}"
+ output_interval        = "P1D"            ! daily output
+ file_interval          = "P1M"            ! max per file 1 month output
+ include_last           = .TRUE.
+ remap                  = 0                ! output on triangular grid
+ output_filename        = "native"         ! file name base
+ filename_format        = "<output_filename>_<levtype_l>_<datetime2>"
+ output_grid            = .TRUE.
+ ml_varlist             = 'u','v','w','temp','pres','pres_sfc','rho','z_ifc','z_mc'
+ pl_varlist             = 'temp'
+ p_levels               = 85000
+/
+EOF
+}
+
+# empty line - do not remove

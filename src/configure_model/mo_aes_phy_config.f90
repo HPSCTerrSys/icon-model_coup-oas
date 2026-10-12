@@ -1,16 +1,15 @@
-! Configuration of the AES physics package.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Configuration of the AES physics package.
 
 MODULE mo_aes_phy_config
 
@@ -48,7 +47,7 @@ MODULE mo_aes_phy_config
   !! Name of this unit
   !!
   CHARACTER(LEN=*), PARAMETER :: name = 'aes_phy'
-  
+
   !>
   !! Configuration type containing parameters and switches for the configuration of the AES physics package
   !!
@@ -209,7 +208,7 @@ MODULE mo_aes_phy_config
   !!
   TYPE(t_aes_phy_config), TARGET :: aes_phy_config (max_dom)
   TYPE(t_aes_phy_tc)    , TARGET :: aes_phy_tc     (max_dom)
-  
+
   !>
   !! Events and event group
   !!
@@ -285,7 +284,7 @@ CONTAINS
     aes_phy_config(:)% suppress_shflx_adjustment_over_ice = .FALSE.
     !
     ! vertical range parameters
-    aes_phy_config(:)% zmaxcloudy = 33000.0_wp
+    aes_phy_config(:)% zmaxcloudy = 22500.0_wp
     !
   END SUBROUTINE init_aes_phy_config
 

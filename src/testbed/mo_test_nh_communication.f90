@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -20,9 +19,9 @@ MODULE mo_test_nh_communication
   USE mo_master_control,      ONLY: get_my_process_name
   USE mo_icon_testbed_config, ONLY: testbed_iterations
 
-  USE mo_model_domain,        ONLY: p_patch  
+  USE mo_model_domain,        ONLY: p_patch
   USE mo_atmo_model,          ONLY: construct_atmo_model, destruct_atmo_model
-  
+
   USE mo_icon_comm_lib
   USE mo_atmo_nonhydrostatic, ONLY: construct_atmo_nonhydrostatic, destruct_atmo_nonhydrostatic
   USE mo_async_latbc_types,   ONLY: t_latbc_data
@@ -34,7 +33,7 @@ MODULE mo_test_nh_communication
   USE mo_grid_config,         ONLY: n_dom, n_dom_start
   USE mo_intp_data_strc,      ONLY: t_int_state
   USE mo_grf_intp_data_strc,  ONLY: t_gridref_state
-  
+
   !-------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------
@@ -46,7 +45,7 @@ PRIVATE
 PUBLIC :: test_nh_communication
 
 CONTAINS
-  
+
 
   !-------------------------------------------------------------------------
   !>
@@ -56,9 +55,9 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(in) :: namelist_filename
     CHARACTER(LEN=*), INTENT(in) :: shr_namelist_filename
 
-    ! 2D variables    
+    ! 2D variables
 
-    
+
     INTEGER :: patch_no, i
 
     TYPE(t_latbc_data) :: latbc !< data structure for async latbc prefetching
@@ -67,15 +66,15 @@ CONTAINS
 
     !---------------------------------------------------------------------
     write(0,*) TRIM(get_my_process_name()), ': Start of ', method_name
-    
+
     !---------------------------------------------------------------------
 
     ltimer = .false.
     CALL construct_atmo_model(namelist_filename,shr_namelist_filename)
     CALL construct_atmo_nonhydrostatic(latbc)
-        
+
     CALL work_mpi_barrier()
-    
+
     !---------------------------------------------------------------------
     DO i=1,testbed_iterations
 !       CALL integrate_nh_test_comm(p_nh_state, p_patch, p_int_state, datetime, p_grf_state, &
@@ -83,7 +82,7 @@ CONTAINS
 !         &               l_compute_diagnostic_quants                              )
     ENDDO
     !---------------------------------------------------------------------
-    
+
 
     !---------------------------------------------------------------------
     ! Carry out the shared clean-up processes
@@ -102,11 +101,11 @@ CONTAINS
       CALL print_timer()
 !    ENDIF
     !---------------------------------------------------------------------
-     
+
 
   END SUBROUTINE test_nh_communication
   !-------------------------------------------------------------------------
-  
+
 
   !-------------------------------------------------------------------------
 #ifdef __NO_NESTING__
@@ -131,14 +130,13 @@ CONTAINS
     INTEGER , INTENT(IN)    :: nstep_global !< counter of global time step
     INTEGER , INTENT(IN)    :: num_steps    !< number of time steps to be executed
     REAL(wp), INTENT(IN)    :: dt_loc       !< time step applicable to local grid level
-    REAL(wp), INTENT(IN)    :: dtadv_loc    !< advective time step applicable to 
+    REAL(wp), INTENT(IN)    :: dtadv_loc    !< advective time step applicable to
                                             !< local grid level
     REAL(wp), INTENT(INOUT) :: sim_time(n_dom) !< elapsed simulation time on each
                                                !< grid level
     LOGICAL, INTENT(IN) :: l_compute_diagnostic_quants    !< computation of diagnostic quantities
 
-   END SUBROUTINE integrate_nh_test_comm 
+   END SUBROUTINE integrate_nh_test_comm
   !-------------------------------------------------------------------------
 
 END MODULE mo_test_nh_communication
-

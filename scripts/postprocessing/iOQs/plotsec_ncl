@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -149,7 +149,7 @@ begin
 
 ;      format@wkPaperHeightF = 8.3
 ;      format@wkPaperWidthF = 11.7
- 
+
 
 ;---Open workstation and change color map
   wks = gsn_open_wks(format,"$OFILE")   ; "ps", "pdf", "png"
@@ -176,7 +176,7 @@ begin
   res@gsnFrame= False
 
   res@gsnMaximize       = True     ; maximize plot in frame
-  res@gsnPaperOrientation = "portrait" 
+  res@gsnPaperOrientation = "portrait"
 
 
 ;---These are sample resources you might want to set
@@ -221,7 +221,7 @@ begin
 
 
 
-  if ( "${TITLE}" .eq. "") then   
+  if ( "${TITLE}" .eq. "") then
     res@tiMainString = "${IFILE}"
   else
     res@tiMainString = "${TITLE}"
@@ -236,7 +236,7 @@ begin
   res@cnLevelSpacingF      = $INCR
 
 
-  if ( "${LSTRING}" .eq. "") then   
+  if ( "${LSTRING}" .eq. "") then
 
 ;        res@gsnLeftString =  x@long_name+" ["+ x@units+"]"
         res@gsnLeftString = "["+x@units+"]"
@@ -245,7 +245,7 @@ begin
       res@gsnLeftString = "${LSTRING}"
   end if
 
-  if ( "${CSTRING}" .eq. "") then   
+  if ( "${CSTRING}" .eq. "") then
      res@gsnCenterString =   x@long_name
   else
        res@gsnCenterString = "${CSTRING}"
@@ -253,27 +253,27 @@ begin
 
   do timestep = 0, dimsizes(time)-1
 
-    
+
    ; Convert to UTC time.
      utc_date = cd_calendar(time(timestep), 0)
    ; Store return information into more meaningful variables.
- 
-    year   = tointeger(utc_date(0,0))    
+
+    year   = tointeger(utc_date(0,0))
     month  = tointeger(utc_date(0,1))
     day    = tointeger(utc_date(0,2))
 
-    sdate = sprinti("%0.4i", year) +"-"+ sprinti("%0.2i", month) +"-"+ sprinti("%0.2i", day) 
+    sdate = sprinti("%0.4i", year) +"-"+ sprinti("%0.2i", month) +"-"+ sprinti("%0.2i", day)
 
-    if ( "${RSTRING}" .eq. "") then   
+    if ( "${RSTRING}" .eq. "") then
       res@gsnRightString = sdate
-    else 
+    else
       res@gsnRightString = "${RSTRING}"
     end if
 
     res@sfXArray             = lat_t
     res@sfYArray             = depth_t
 
-    res@gsnYAxisIrregular2Linear = True   ; converts irreg depth to linear 
+    res@gsnYAxisIrregular2Linear = True   ; converts irreg depth to linear
     res@trYReverse               = True   ; reverses y-axis
 
     plot = gsn_csm_contour(wks,x(timestep,:,:),res)     ; create plot

@@ -2,66 +2,113 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #############################################
-#  This file was written by Harel Muskatel E-mail: muskatelh@ims.gov.il
-#  
-#  from the website:
-#  https://confluence.ecmwf.int/display/ECRAD
-#  download 3D monthly aerosol climatology derived from CAMS reanalysis system as described by Bozzo et al. (2020):FTP site containing netCDF file (274 MB)
-#  rename the file: aerosol_cams_3d_climatology_2003-2013_orig.nc
 #
-#  CDO is needed for this script to work (version 2.1.0 and above)
+#  Download 4D monthly aerosol climatology file
+#  'aerosol_cams_climatology_49r2_1951-2019_4D.nc' from:
+#  https://aux.ecmwf.int/ecpds/home/radiation/aerosol_climatology/
+#  and rename it as 'aerosol_cams_climatology_49r2_1951-2019_4D_orig.nc'
+#
+#  The climatology contains aerosol mixing ratios with dimensions
+#  (epoch, month, lev, lat, lon). Since CDO cannot cope with five
+#  dimensions and requires the time variable to be named 'time',
+#  this script renames 'month' into 'time', selects only the
+#  last epoch of the dataset (2015) and drops the epoch dimension
+#  before interpolating the fields onto the ICON grid.
+#
+#  References:
+#  Bozzo et al. 2019 https://doi.org/10.5194/gmd-2019-149
+#  Flemming et al. 2013 https://doi.org/10.5194/acp-17-1945-2017
+#  Remy et al. 2019 https://doi.org/10.5194/gmd-12-4627-2019
+#  More information on the climatology can also be found in the
+#  file metadata.
+#
+#  How to run:
+#  Copy this script, together with ICON grid file and original
+#  climatology file into the same folder. Ensure that
+#  CDO (version 2.1.0 or later), NCO (4.8.1 or later)  and
+#  python3 (3.10.11 or later, incl. numpy, xarray) are available.
+#  Execute the script.
+#
+#  Note: CDO versions more recent than 2.0.6 may produce HDF-
+#  related warnings. These can be ignored.
+#
 #############################################
 
-BaseName=aerosol_cams_3d_climatology_2003-2013
-GridName=C3_DOM01 # an example
+BaseName=aerosol_cams_climatology_49r2_1951-2019_4D
+GridName=icon_grid_0026_R03B07_G # an example
 
 # name of the original CAMS climatology file
 origFile=${BaseName}_orig.nc
-# temporal text file
-txtFile=${BaseName}.txt
+timeFile=${BaseName}_time.nc
 
-ncdump $origFile > $txtFile
+# rename month dimension as 'time'
+ncrename -O -d month,time ${origFile} ${timeFile}
 
-search="2003-2013_orig"
-replace="2003-2013"
-sed -i -e "s|$search|$replace|g" $txtFile
+# create netcdf file only containing correct time values
+cat > create_time.py << EOF
+import xarray as xr
+import numpy as np
 
-search="month = 12 ;"
-replace="time = UNLIMITED ; // (12 currently)"
-sed -i -e "s|$search|$replace|g" $txtFile
+fileout='./timevar.nc'
 
-search="short month(month) ;"
-replace="float time(time) ;"
-sed -i -e "s|$search|$replace|g" $txtFile
+time_values = np.array([1,2,3,4,5,6,7,8,9,10,11,12])
+dummy_data = np.random.random(len(time_values))
 
-search="Month"
-replace="unstructured"
-sed -i -e "s|$search|$replace|g" $txtFile
+ds = xr.Dataset(
+    {
+        "dummy_var": (["time"], dummy_data)  # Variable definition
+    },
+    coords={
+        "time": time_values  # Define the time coordinate
+    }
+)
+ds.encoding["unlimited_dims"] = {"time"}
+ds.to_netcdf(fileout)
+EOF
 
-search="month:long_name"
-replace="time:CDI_grid_type"
-sed -i -e "s|$search|$replace|g" $txtFile
+runpython=`python3 create_time.py`
+$runpython
 
-search="(month, lev, lat, lon)"
-replace="(time, lev, lat, lon)"
-sed -i -e "s|$search|$replace|g" $txtFile
+# append newly created time variable
+ncks -m -A -C -v time ./timevar.nc ${timeFile}
+# edit attributes
+ncatted -O -a standard_name,time,o,c,'time' ${timeFile}
+ncatted -O -a units,time,o,c,"months since 2001-1-15 12:00:00" ${timeFile}
+ncatted -O -a calendar,time,o,c,"proleptic_gregorian" ${timeFile}
+ncatted -O -a axis,time,o,c,"T" ${timeFile}
 
-search="month = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 ;"
-replace="time = 1.111011e+07,1.111021e+07,1.111031e+07,1.111041e+07,1.111051e+07,1.111061e+07,1.111071e+07,1.111081e+07,1.111091e+07,1.111101e+07,1.111111e+07,1.111121e+07;"
-sed -i -e "s|$search|$replace|g" $txtFile
 
-ncgen -b $txtFile
+# extract last epoch (index 12)
+ncks -d epoch,12,12 ${timeFile} ${BaseName}_epoch12.nc
 
-rm -rf $txtFile
+# remove "epoch" dimension from file, leaving dimensions
+# (time,lev,lat,lon)
+cat > drop_dimension.py << EOF
+import xarray as xr
+
+filein='./aerosol_cams_climatology_49r2_1951-2019_4D_epoch12.nc'
+fileout='./aerosol_cams_climatology_49r2_1951-2019_4D.nc'
+
+ds=xr.open_dataset(filein,decode_times=False)
+
+ds_without_epoch = ds.isel(epoch=0)
+ds_without_epoch = ds_without_epoch.drop_vars("epoch")
+
+ds_without_epoch.to_netcdf(fileout)
+EOF
+
+runpython=`python3 drop_dimension.py`
+$runpython
 
 # name of the CAMS climatology file after the above modifications
 sourceFile=${BaseName}.nc
@@ -72,33 +119,19 @@ TARGETGRID=${GridName}.nc
 # name of the output file with the interpulated CAMS climatology on ICON grid
 OFILE=icon_cams_clim_${GridName}.nc
 
-startDate='2001-1-15'
-startTime='24:00:00'
-timeUnit='1months'
-
-GRIDNUM=`cdo sinfov ${TARGETGRID} | grep nvertex=3 | awk '{print $1}'` 
-cdo -s -r -P 4 remapbic,"${TARGETGRID}:${GRIDNUM}" -settaxis,${startDate},${startTime},${timeUnit} ${sourceFile} t1.nc
+# interpolate climatology file onto ICON grid
+# NOTE: bicubic (remapbic) interpolation leads to overshooting features around high orography!
+# NOTE: conservative (remapcon) interpolation leads to visible "edges" along lat/lon squares of
+#       original grid
+# remapbil appears to be the best interpolation option using cdo at this time.
+# Pick your poison!
+GRIDNUM=`cdo sinfov ${TARGETGRID} | grep nvertex=3 | awk '{print $1}'`
+cdo -s -P 4 remapbil,"${TARGETGRID}:${GRIDNUM}"  ${sourceFile} t1.nc
 cdo mul -gec,0.0 t1.nc t1.nc t2.nc
 cdo add -mulc,0.0 -ltc,0.0 t1.nc t2.nc ${OFILE}
 rm -rf t1.nc t2.nc
+
+#cleanup
+rm ${timeFile} ${BaseName}_epoch12.nc timevar.nc create_time.py drop_dimension.py
+
 echo 'Done'
-
-# If you get error like this:
-#    Error (cdf_enddef): NetCDF: One or more variable sizes violate format constraints
-# It means that you file is too large.
-
-# solution from:  https://stackoverflow.com/questions/17332353/what-is-the-easiest-way-to-convert-netcdf-to-hdf5-on-windows:
-# First, see which netCDF format your file is using.
-# if you have netCDF installed on your system,
-# the easiest way to do this is to use ncdump:
-
-#   > ncdump -k your_file.nc
-
-# If ncdump returns netCDF-4, or netCDF-4  classic  model, then congratulations,
-# you already have an HDF file, as netCDF-4 is the netCDF data model implemented using HDF5 as the storage layer.
-# These files can be ready by the HDF library version 1.8 or later, and from what I can tell, pytables.
-# If ncdump returns classic or 64-bit offset, then you are using netCDF-3 and will need to convert to netCDF-4
-# (and thus HDF). The good news is that if you have netCDF installed, you can do the conversion pretty easily
-# (...the conversion can become quite time consuming):
-
-#    > nccopy -k 4 your_file.nc your_file_4c.nc

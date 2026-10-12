@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Some utilities which are specific to the transport algorithm.
 ! Routines are mostly dealing with the computation of backward
 ! trajectories and/or departure regions.
@@ -6,18 +17,6 @@
 ! to the transport schemes. These subroutines or functions are needed at
 ! various places within the transport scheme. Therefore outsourcing these
 ! routines protects from possible circular dependencies.
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -73,7 +72,7 @@ MODULE mo_advection_traj
     !
     PROCEDURE :: construct
     PROCEDURE :: destruct
-    
+
   END TYPE t_back_traj
 
   CHARACTER(len=*), PARAMETER :: modname = 'mo_advection_traj'
@@ -152,7 +151,7 @@ CONTAINS
   !! In a final step, this vector is transformed into a rotated coordinate system
   !! which has its origin at the circumcenter. The coordinate axes point to the local
   !! east and local north. Note that this subroutine has specifically been designed
-  !! for the MIURA scheme with second order (linear) reconstruction of the subgrid 
+  !! for the MIURA scheme with second order (linear) reconstruction of the subgrid
   !! distribution.
   !!
   SUBROUTINE btraj_compute_o1( btraj, ptr_p, ptr_int, p_vn, p_vt, p_dthalf, &
@@ -326,40 +325,40 @@ CONTAINS
     !$ACC WAIT(1)
 
   END SUBROUTINE btraj_compute_o1
- 
- 
+
+
 
   !-------------------------------------------------------------------------
   !>
   !! Computation of first order backward trajectories for FFSL transport scheme
   !!
   !! Computes backward trajectories in order to determine an approximation to the
-  !! departure region. Here, the departure region is approximated by a rhomboid 
-  !! with the help of first order accurate backward trajectories which start at 
-  !! edge vertices. Computations are performed on a plane tangent to the edge 
-  !! midpoint. Base vectors of this coordinate system (S1) point into the 
-  !! local tangential and normal direction. Once the departure region vertices 
-  !! are known w.r.t. S1, they are transformed into second coordinate frame (S2) 
-  !! which follows from S1 by translation and rotation. The origin of S2 is 
-  !! located at the cell circumcenter of the upstream cell, with the base 
+  !! departure region. Here, the departure region is approximated by a rhomboid
+  !! with the help of first order accurate backward trajectories which start at
+  !! edge vertices. Computations are performed on a plane tangent to the edge
+  !! midpoint. Base vectors of this coordinate system (S1) point into the
+  !! local tangential and normal direction. Once the departure region vertices
+  !! are known w.r.t. S1, they are transformed into second coordinate frame (S2)
+  !! which follows from S1 by translation and rotation. The origin of S2 is
+  !! located at the cell circumcenter of the upstream cell, with the base
   !! vectors pointing to local east and local north.
   !! So far, we take care that the departure region vertices are stored in
-  !! counterclockwise order. This ensures that the following gaussian 
+  !! counterclockwise order. This ensures that the following gaussian
   !! quadrature is positive definite.
   !!
-  !! This subroutine may be combined with any reconstruction method 
+  !! This subroutine may be combined with any reconstruction method
   !! for the subgrid distribution.
   !!
-  !! NOTE_1: Since we are only interested in the departure region average rather than 
-  !!       the departure region integral, counterclockwise numbering is not strictly 
-  !!       necessary. Maybe we should remove the computational overhead of counterclockwise 
-  !!       numbering at some time. However, the vertices must not be numbered in 
-  !!       random order. Care must be taken that the points are numbered either 
-  !!       clockwise or counterclockwise. 
-  !!       
-  !! Note_2: The coordinates for 2 of the 4 vertices are time independent. However, 
-  !!       tests indicated that re-computing these coordinates is faster than fetching 
-  !!       precomputed ones from memory. 
+  !! NOTE_1: Since we are only interested in the departure region average rather than
+  !!       the departure region integral, counterclockwise numbering is not strictly
+  !!       necessary. Maybe we should remove the computational overhead of counterclockwise
+  !!       numbering at some time. However, the vertices must not be numbered in
+  !!       random order. Care must be taken that the points are numbered either
+  !!       clockwise or counterclockwise.
+  !!
+  !! Note_2: The coordinates for 2 of the 4 vertices are time independent. However,
+  !!       tests indicated that re-computing these coordinates is faster than fetching
+  !!       precomputed ones from memory.
   !!
   SUBROUTINE btraj_dreg( ptr_p, ptr_int, p_vn, p_vt, p_dt, lcounterclock, &
        &                   p_cell_idx, p_cell_blk, p_coords_dreg_v,       &
@@ -381,7 +380,7 @@ CONTAINS
     REAL(wp), INTENT(IN)    ::  &  !< time step $\Delta t$
          &  p_dt
 
-    LOGICAL, INTENT(IN)     ::  &  !< if TRUE, flux area vertices are ordered 
+    LOGICAL, INTENT(IN)     ::  &  !< if TRUE, flux area vertices are ordered
          &  lcounterclock            !< counterclockwise. If FALSE, some are ordered
                                      !< counterclockwise, some clockwise
 
@@ -409,11 +408,11 @@ CONTAINS
          &  opt_elev
 
     TYPE(t_list2D), INTENT(INOUT), OPTIONAL :: & !< list with points for which a local
-         &  opt_falist                      !< polynomial approximation is insufficient 
-                                            !< and a piecewise approximation is needed, 
+         &  opt_falist                      !< polynomial approximation is insufficient
+                                            !< and a piecewise approximation is needed,
                                             !< instead
 
-    REAL(wp) ::            &       !< coordinates of departure points 
+    REAL(wp) ::            &       !< coordinates of departure points
          &  depart_pts(2,2)        !< in edge-based coordinate system
 
     REAL(wp) ::            &       !< coordinates of departure region vertices
@@ -552,7 +551,7 @@ CONTAINS
         ! So if nproma*nlev > 65536 * gang_size * pts_per_thread the FAST_ATOMIC code won't work
 #ifdef __NVCOMPILER_MAJOR__
         IF ( (elev-slev+1)*(i_endidx-i_startidx+1) > 65535 * gang_size * pts_per_thread ) THEN
-          CALL finish(modname//":btraj_dreg", & 
+          CALL finish(modname//":btraj_dreg", &
             "Too many grid points for the fast algorithm, please undefine _USE_FAST_ATOMIC and recompile")
         END IF
 #endif
@@ -581,7 +580,7 @@ CONTAINS
 
             IF (traj_length > 1.25_wp*e2c_length) THEN   ! add point to index list
 #ifndef _USE_FAST_ATOMIC
-              ! Default code path 
+              ! Default code path
               !$ACC ATOMIC CAPTURE
               ie = ie + 1
               ie_capture = ie
@@ -644,7 +643,7 @@ CONTAINS
           ! departure region and correct counterclockwise numbering of vertices
           !--------------------------------------------------------------------
           !
-          ! Quadrilaterals show the position of the departure region, depending 
+          ! Quadrilaterals show the position of the departure region, depending
           ! on the sign of vn.
           !
           !        -1                          +1            : system orientation
@@ -671,7 +670,7 @@ CONTAINS
 
           !
           ! Calculate backward trajectories, starting at the two edge vertices
-          ! (arrival points). It is assumed that the velocity vector is constant 
+          ! (arrival points). It is assumed that the velocity vector is constant
           ! along the edge.
           !
 
@@ -686,7 +685,7 @@ CONTAINS
             &                          ptr_p%edges%cell_blk(je,jb,2),lvn_pos)
 
 
-          ! departure points of the departure cell. Point 1 belongs to edge-vertex 1, 
+          ! departure points of the departure cell. Point 1 belongs to edge-vertex 1,
           ! point 2 belongs to edge_vertex 2.
           !
           ! position of vertex 4 (vn > 0) / vertex 2(vn < 0) in normal direction
@@ -774,4 +773,3 @@ CONTAINS
   END SUBROUTINE btraj_dreg
 
 END MODULE mo_advection_traj
-

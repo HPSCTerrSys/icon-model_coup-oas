@@ -1,0 +1,158 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/common/dkrz.yml
+  - local: .gitlab/ci/utils/pip.yml
+
+.nwp:muphys:common:
+  needs: []
+  extends:
+    - .common:dkrz:levante
+    - .utils:pip
+  variables:
+    ICON_CI_COMMON_DKRZ_SLURM_NTASKS: 32
+    GIT_SUBMODULE_PATHS: externals/fortran-support externals/iconmath externals/probtest
+    ICON_CI_UTILS_GIT_CLONE_PATH: ${ICON_CI_COMMON_DKRZ_SHMEM_PATH}/icon
+    ICON_CI_MICROPHYSICS_PYVENV: ${ICON_CI_COMMON_DKRZ_SHMEM_PATH}/venv
+    ICON_CI_UTILS_PIP_PYTHON: ${ICON_CI_MICROPHYSICS_PYVENV}/bin/python3
+    ICON_CI_UTILS_PIP_UPGRADE: true
+    ICON_CI_UTILS_PIP_REQUIREMENT: ${ICON_CI_UTILS_GIT_CLONE_PATH}/externals/probtest/requirements.txt
+    ICON_CI_UTILS_PIP_CACHE_PATH: null
+    ICON_CI_MICROPHYSICS_EXTRA_MODULES: >-
+      gcc/11.2.0-gcc-11.2.0
+      python3/2023.01-gcc-11.2.0
+    ICON_CI_MICROPHYSICS_BUILD_PATH: ${ICON_CI_COMMON_DKRZ_SHMEM_PATH}/build
+    ICON_CI_MICROPHYSICS_TARGET: all
+    CLICOLOR_FORCE: 1
+    VERBOSE: # any given value is ignored, it's just checked for existence
+    CMAKE_BUILD_PARALLEL_LEVEL: ${ICON_CI_COMMON_DKRZ_SLURM_NTASKS}
+    MAKEFLAGS: --no-print-directory --output-sync=target
+    CTEST_OUTPUT_ON_FAILURE: 1
+    CTEST_PARALLEL_LEVEL: ${ICON_CI_COMMON_DKRZ_SLURM_NTASKS}
+  before_script:
+    - !reference [.common:dkrz:levante, before_script]
+    - |
+      # !reference [.nwp:muphys:common, before_script]
+      module --verbose load ${ICON_CI_MICROPHYSICS_EXTRA_MODULES-}
+      icon_ci_log_section_start 'Initializing Python environment'
+      (
+        python3 --version
+        set -x
+        python3 -m venv "${ICON_CI_MICROPHYSICS_PYVENV}"
+      )
+      icon_ci_log_section_end
+    - !reference [.utils:pip, before_script]
+    - |
+      # !reference [.nwp:muphys:common, before_script]
+      icon_ci_log_section_start "Configuring 'test/microphysics_1mom_schemes'"
+      (
+        set -u
+        cmake --version
+        set -x
+        cmake \
+          -S "${ICON_CI_UTILS_GIT_CLONE_PATH}/test/microphysics_1mom_schemes" \
+          -B "${ICON_CI_MICROPHYSICS_BUILD_PATH}" \
+          -G 'Unix Makefiles' \
+          -DPython3_EXECUTABLE="${ICON_CI_UTILS_PIP_PYTHON}"
+      ) 2>&1
+      icon_ci_log_section_end
+      icon_ci_log_section_start "Building target '${ICON_CI_MICROPHYSICS_TARGET}'"
+      (
+        set -ux
+        cmake \
+          --build "${ICON_CI_MICROPHYSICS_BUILD_PATH}" \
+          --target="${ICON_CI_MICROPHYSICS_TARGET}"
+      ) 2>&1
+      icon_ci_log_section_end
+  script:
+    - |
+      # !reference [.nwp:muphys:common, script]
+      icon_ci_log_section_start 'Running tests' 'collapsed=false'
+      (
+        set -ux
+        ctest --test-dir "${ICON_CI_MICROPHYSICS_BUILD_PATH}"
+      ) 2>&1
+      icon_ci_log_section_end
+  cache: null
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - !reference [.common:dkrz:levante, rules]
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+nwp:muphys:gcc:
+  stage: functional
+  extends: .nwp:muphys:common
+  variables:
+    CC: gcc
+    FC: gfortran
+    CXX: g++
+    NetCDF_ROOT: /sw/spack-levante/netcdf-fortran-4.5.3-l2ulgp
+
+nwp:muphys:intel:
+  stage: functional
+  extends: .nwp:muphys:common
+  variables:
+    # We load the gcc module to make Intel compiler use the correct standard
+    # headers and libraries:
+    ICON_CI_MICROPHYSICS_EXTRA_MODULES: >-
+      gcc/11.2.0-gcc-11.2.0
+      intel-oneapi-compilers/2022.0.1-gcc-11.2.0
+      python3/2023.01-gcc-11.2.0
+    CC: icc
+    FC: ifort
+    CXX: icpc
+    NetCDF_ROOT: /sw/spack-levante/netcdf-fortran-4.5.3-pvmcx6
+
+"nwp:muphys: Generate tolerance data":
+  stage: optional
+  extends: nwp:muphys:gcc
+  variables:
+    ICON_CI_MICROPHYSICS_TARGET: tolerance
+    TOLERANCE_PATCH: tolerance.patch
+  script:
+    - |
+      # !reference ["nwp:muphys: Generate tolerance data", script]
+      icon_ci_log_section_start 'Generating patch file with new tolerance data' 'collapsed=false'
+      (
+        set -u
+
+        (
+          set -x
+          git -C "${ICON_CI_UTILS_GIT_CLONE_PATH}" \
+            diff --ignore-submodules --patch-with-raw -- \
+            test/microphysics_1mom_schemes/tolerance \
+            test/microphysics_1mom_schemes/reference \
+            > "${CI_PROJECT_DIR}/${TOLERANCE_PATCH}"
+        ) && {
+          test -s "${TOLERANCE_PATCH}" && {
+            icon_ci_log_info_msg \
+              "Download (wait until the job is finished) and apply the \
+      following patch to accept new tolerance data (see artifacts):
+        ${CI_JOB_URL}/artifacts/raw/${TOLERANCE_PATCH}."
+          } || {
+            icon_ci_log_info_msg \
+              'The generated tolerance data is identical to the one in the repository: no update required.'
+            rm -f "${TOLERANCE_PATCH}"
+          }
+        } || {
+          icon_ci_log_error_msg 'Failed to generate a patch file.'
+          rm -f "${CI_PROJECT_DIR}/${TOLERANCE_PATCH}"
+          exit 1
+        }
+      ) 2>&1
+      icon_ci_log_section_end
+  artifacts:
+    paths:
+      - ${TOLERANCE_PATCH}
+    expire_in: 1 day
+  when: manual

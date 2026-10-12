@@ -1,19 +1,18 @@
-! Provide an implementation of the sea-ice model.
-!
-! Provide an implementation of the parameters of the surface module (sea ice)
-! used between the atmopshere and the hydrostatic ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of the sea-ice model.
+!
+! Provide an implementation of the parameters of the surface module (sea ice)
+! used between the atmopshere and the hydrostatic ocean model.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -36,12 +35,12 @@ MODULE mo_sea_ice
   USE mo_model_domain,        ONLY: t_patch
   USE mo_exception,           ONLY: finish
   USE mo_impl_constants,      ONLY: sea_boundary
-  USE mo_physical_constants,  ONLY: rhoi, rhos, rho_ref, Tf,        &
+  USE mo_physical_constants,  ONLY: rhoi, rhos, rho_ref,            &
     &                               mu, alf, clw
 
   USE mo_ocean_nml,           ONLY: no_tracer
   USE mo_sea_ice_nml,         ONLY: hnull, hmin,                    &
-    &                               leadclose_1, leadclose_2n,      &
+    &                               leadclose_1, leadclose_2n, Tf,      &
     &                               use_constant_tfreez, t_heat_base, sice
   USE mo_ocean_types,         ONLY: t_hydro_ocean_state
   USE mo_ocean_state,         ONLY: v_base
@@ -90,7 +89,6 @@ CONTAINS
     INTEGER                       :: k, jb, jc, i_startidx_c, i_endidx_c
  !  REAL(wp) :: sst(nproma,p_patch%alloc_cell_blocks)
  !  REAL(wp) :: sss(nproma,p_patch%alloc_cell_blocks)
-    REAL(wp) :: Tfw(nproma,p_patch%alloc_cell_blocks) ! Ocean freezing temperature [C]
     LOGICAL  :: lzacc
 
     CALL set_acc_host_or_device(lzacc, lacc)
@@ -101,17 +99,25 @@ CONTAINS
 
     CALL dbg_print('IceConcCh: IceConc beg' ,ice%conc, str_module, 4, in_subset=p_patch%cells%owned)
 
-    !$ACC DATA CREATE(Tfw) IF(lzacc)
-
     ! Calculate the sea surface freezing temperature                        [C]
     IF ( no_tracer < 2 .OR. use_constant_tfreez ) THEN
-      !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
-      Tfw(:,:) = Tf
-      !$ACC END KERNELS
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO jb = 1, p_patch%alloc_cell_blocks
+        DO jc = 1, nproma
+          ice%Tfw(jc,jb) = Tf
+        END DO
+      END DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
     ELSE
-      !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
-      Tfw(:,:) = -mu * p_os%p_prog(nold(1))%tracer(:,1,:,2)
-      !$ACC END KERNELS
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO jb = 1, p_patch%alloc_cell_blocks
+        DO jc = 1, nproma
+          ice%Tfw(jc,jb) = -mu * p_os%p_prog(nold(1))%tracer(jc,1,jb,2)
+        END DO
+      END DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
     ENDIF
 
     ! This should not be needed
@@ -121,13 +127,14 @@ CONTAINS
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, jb) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jc = i_startidx_c,i_endidx_c
           ice%vol (jc,k,jb) = ice%hi(jc,k,jb)*ice%conc(jc,k,jb)*p_patch%cells%area(jc,jb)
           ice%vols(jc,k,jb) = ice%hs(jc,k,jb)*ice%conc(jc,k,jb)*p_patch%cells%area(jc,jb)
         END DO
         !$ACC END PARALLEL LOOP
       END DO
+      !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
     END DO
 
@@ -138,7 +145,7 @@ CONTAINS
     ! Concentration change due to new ice formation
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         IF (ice%newice(jc,jb) > 0._wp .AND. v_base%lsm_c(jc,1,jb) <= sea_boundary) THEN
           ! New volume - we just preserve volume:
@@ -168,6 +175,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
 #ifndef _OPENMP
@@ -181,7 +189,7 @@ CONTAINS
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, jb) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         IF (ice%hiold(jc,1,jb) > ice%hi(jc,1,jb) .AND. ice%hi(jc,1,jb) > 0._wp) THEN
           ! Hibler's way to change the concentration due to lateral melting (leadclose parameter 1)
@@ -196,6 +204,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
 #ifndef _OPENMP
@@ -209,7 +218,7 @@ CONTAINS
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, jb) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         IF (ice%hi(jc,1,jb) < hmin .AND. ice%hi(jc,1,jb) > 0._wp) THEN
           ice%hi  (jc,1,jb) = hmin
@@ -219,17 +228,18 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, jb) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         IF (ice%hi(jc,1,jb) <= 0._wp) THEN
-          ice%Tsurf(jc,1,jb) = Tfw(jc,jb)
-          ice%T1   (jc,1,jb) = Tfw(jc,jb)
-          ice%T2   (jc,1,jb) = Tfw(jc,jb)
+          ice%Tsurf(jc,1,jb) = ice%Tfw(jc,jb)
+          ice%T1   (jc,1,jb) = ice%Tfw(jc,jb)
+          ice%T2   (jc,1,jb) = ice%Tfw(jc,jb)
           ice%conc (jc,1,jb) = 0.0_wp
           ice%hi   (jc,1,jb) = 0.0_wp
           ice%hs   (jc,1,jb) = 0.0_wp
@@ -240,17 +250,19 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, jb) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         ice%concSum(jc,jb) = SUM(ice%conc(jc,:,jb))
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
     CALL dbg_print('IceConcCh: IceConc end' ,ice%conc, str_module, 3, in_subset=p_patch%cells%owned)
@@ -258,8 +270,6 @@ CONTAINS
     CALL dbg_print('IceConcCh: hs   at end' ,ice%hs  , str_module, 4, in_subset=p_patch%cells%owned)
     CALL dbg_print('IceConcCh: vol  at end' ,ice%vol , str_module, 4, in_subset=p_patch%cells%owned)
     CALL dbg_print('IceConcCh: vols at end' ,ice%vols, str_module, 4, in_subset=p_patch%cells%owned)
-
-    !$ACC END DATA
 
   END SUBROUTINE ice_conc_change
 

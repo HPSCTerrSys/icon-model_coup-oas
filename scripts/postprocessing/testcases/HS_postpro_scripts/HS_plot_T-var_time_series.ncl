@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -25,7 +25,7 @@
   VarName    = getenv("VarName")
 
   title = "Held-Suarez Test"
-  DataFile = DataPath+DataID+".nc" 
+  DataFile = DataPath+DataID+".nc"
   PlotFile = PlotPath+DataID
 
 ;----------------------------------------------
@@ -34,7 +34,7 @@
   File = addfile( DataFile,"r" )
   lev  = doubletointeger(File->lev)
   lev  = lev/100
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 ; plot settings
 
      ResC = True
@@ -52,7 +52,7 @@
      ResC@tmYLMinorLengthF       = 0.005
      ResC@tmYRMajorLengthF       = 0.01
      ResC@tmYRMinorLengthF       = 0.005
-     ResC@tmYLMajorThicknessF    = 3. 
+     ResC@tmYLMajorThicknessF    = 3.
      ResC@tmYRMajorThicknessF    = 3.
 
      ResC@tiXAxisString          = "Time ( days )"
@@ -61,8 +61,8 @@
      ResC@tmXBLabelFontHeightF   = 0.014
      ResC@tmXBMajorLengthF       = 0.01
      ResC@tmXBMinorLengthF       = 0.005
-     ResC@tmXBMajorThicknessF    = 3. 
-     ResC@tmXTMajorThicknessF    = 3. 
+     ResC@tmXBMajorThicknessF    = 3.
+     ResC@tmXTMajorThicknessF    = 3.
 
      ResC@cnFillOn       = True
      ResC@cnLinesOn      = False
@@ -89,11 +89,11 @@
      ResC@gsnLeftString   = ConfigStr
      ResC@gsnCenterString = ""
      ResC@gsnRightString  = "Zonal temperature variance (K~S~2~N~) at "+lev+" hPa"
-     
+
      ResC@cnLevelSelectionMode  = "ManualLevels"
-     ResC@cnMinLevelValF        =  0             
-     ResC@cnMaxLevelValF        =  80 
-     ResC@cnLevelSpacingF       =  5 
+     ResC@cnMinLevelValF        =  0
+     ResC@cnMaxLevelValF        =  80
+     ResC@cnLevelSpacingF       =  5
 
      contour = gsn_csm_lat_time( wks,var(lat|:,time|:),ResC )
 

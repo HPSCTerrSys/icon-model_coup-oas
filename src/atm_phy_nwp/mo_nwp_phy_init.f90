@@ -1,18 +1,15 @@
-!
-!  Initialize the physical schemes at start time
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Initialize the physical schemes at start time
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -23,13 +20,12 @@ MODULE mo_nwp_phy_init
   USE mo_kind,                ONLY: wp
   USE mo_math_constants,      ONLY: rad2deg
   USE mo_physical_constants,  ONLY: grav, rd_o_cpd, cpd, p0ref, rd, p0sl_bg,         &
-    &                               dtdz_standardatm, lh_v=>alv, o3mr2gg 
-!   USE mo_math_utilities,      ONLY: sphere_cell_mean_char_length
+    &                               dtdz_standardatm, lh_v=>alv, o3mr2gg, amd, amco2
   USE mo_nwp_phy_types,       ONLY: t_nwp_phy_diag,t_nwp_phy_tend
   USE mo_nwp_lnd_types,       ONLY: t_lnd_prog, t_wtr_prog, t_lnd_diag
   USE mo_ext_data_types,      ONLY: t_external_data
-  USE mo_ext_data_state,      ONLY: nlev_o3, nmonths
   USE mo_ext_data_init,       ONLY: diagnose_ext_aggr, vege_clim
+  USE mo_td_ext_data,         ONLY: set_cdnc_from_extdata
   USE mo_nonhydro_types,      ONLY: t_nh_prog, t_nh_diag, t_nh_metrics
   USE mo_exception,           ONLY: message, finish, message_text
   USE mo_vertical_coord_table,ONLY: vct_a
@@ -42,11 +38,14 @@ MODULE mo_nwp_phy_init
   USE mo_impl_constants_grf,  ONLY: grf_bdywidth_c
   USE mo_loopindices,         ONLY: get_indices_c
   USE mo_parallel_config,     ONLY: nproma
-  USE mo_fortran_tools,       ONLY: copy
-  USE mo_run_config,          ONLY: ltestcase, iqv, iqc, inccn, ininpot, msg_level 
+  USE mo_fortran_tools,       ONLY: copy, init
+  USE mo_run_config,          ONLY: ltestcase, iqv, iqc, inccn, ininpot, msg_level,  &
+    &                               dtime, ico2
   USE mo_atm_phy_nwp_config,  ONLY: atm_phy_nwp_config, lrtm_filename,               &
-    &                               cldopt_filename, icpl_aero_conv, iprog_aero
-  USE mo_extpar_config,       ONLY: itype_vegetation_cycle
+    &                               cldopt_filename, icpl_aero_conv, icpl_aero_ice,  &
+    &                               i2daero_dust, i2daero_seas, i2daero_anthro, spg_num
+  USE mo_extpar_config,       ONLY: ext_o3_attr, itype_vegetation_cycle
+
   !radiation
   USE mo_newcld_optics,       ONLY: setup_newcld_optics
   USE mo_lrtm_setup,          ONLY: lrtm_setup
@@ -57,7 +56,9 @@ MODULE mo_nwp_phy_init
     &                               iRadAeroKinneSP,                                  &
     &                               ssi_radt, tsi_radt,irad_o3, rad_csalbw,           &
     &                               ghg_filename, irad_co2, irad_cfc11, irad_cfc12,   &
-    &                               irad_n2o, irad_ch4, isolrad
+    &                               irad_n2o, irad_ch4, isolrad, lcalculate_fsd,      &
+    &                               fsd_gridlen, vmr_co2
+  USE mo_ccycle_config,       ONLY: ccycle_config, update_ccycle_config, CCYCLE_MODE_INTERACTIVE
   USE mo_nwp_aerosol,         ONLY: nwp_aerosol_init
   USE mo_srtm_config,         ONLY: setup_srtm, ssi_amip, ssi_coddington
   USE mo_aerosol_util,        ONLY: init_aerosol_props_tegen_rrtm,                  &
@@ -66,42 +67,45 @@ MODULE mo_nwp_phy_init
 #ifdef __ECRAD
   USE mo_nwp_ecrad_init,      ONLY: setup_ecrad
   USE mo_ecrad,               ONLY: ecrad_conf, IGasModelIFSRRTMG,                  &
-    &                               ecrad_ssi_default, ecrad_ssi_coddington
+    &                               ecrad_ssi_default, ecrad_ssi_coddington, ecrad_ssi_amip
   USE mo_aerosol_util,        ONLY: init_aerosol_props_tegen_ecrad
 #endif
 
+  ! microphysics
   USE mo_2mom_mcrph_driver,   ONLY: two_moment_mcrph_init
   USE microphysics_1mom_schemes, ONLY: microphysics_1mom_init
-  USE mo_sbm_util,            ONLY: sbm_init 
+  USE mo_sbm_util,            ONLY: sbm_init
+
+  USE mo_stoch_pattern_generator, ONLY: stochastic_pattern_init, &
+                                        stochastic_pattern_boundaries
 
 #ifdef __ICON_ART
+  USE mo_art_data,            ONLY: p_art_data
   USE mo_art_clouds_interface,ONLY: art_clouds_interface_2mom_init
 #endif
-  USE mo_cpl_aerosol_microphys, ONLY: lookupcreate_segalkhain, specccn_segalkhain_simple, &
-                                      ncn_from_tau_aerosol_speccnconst
-
+  USE mo_cpl_aerosol_microphys, ONLY: lookupcreate_segalkhain
+  USE mo_cpl_aerosol_microphys, ONLY: init_cloud_num_cdnc
   ! convection
   USE mo_cuparameters,        ONLY: sucst,  sucumf,    &
     &                               su_yoethf,         &
     &                               sucldp, suphli,    &
     &                               suvdf , suvdfs
+
   ! turbulence
-  USE mo_turbdiff_config,     ONLY: turbdiff_config
-  USE turb_data,              ONLY: get_turbdiff_param, lsflcnd, &
-                                    impl_s, impl_t,              &
-                                    impl_weight,                 &
-                                    imode_pat_len, pat_len, ndim
+  USE mo_turbdiff_config,     ONLY: turbdiff_config, t_turbdiff_config, &
+                                    ndim
   USE turb_transfer,          ONLY: turbtran
   USE turb_diffusion,         ONLY: turbdiff
   USE mo_nwp_vdiff_interface, ONLY: nwp_vdiff_init, nwp_vdiff_update_seaice_list
   USE mo_turb_vdiff_config,   ONLY: vdiff_config
 
   USE mo_nwp_sfc_utils,       ONLY: nwp_surface_init, init_snowtile_lists, init_sea_lists, &
-    &                               aggregate_tg_qvs, copy_lnd_prog_now2new
-  USE mo_lnd_nwp_config,      ONLY: ntiles_total, lsnowtile, ntiles_water, &
-    &                               lseaice, zml_soil, nlev_soil, dzsoil_icon => dzsoil
+    &                               aggregate_tg_qvs, copy_lnd_prog_now2new, reset_ocean_skin
+  USE mo_lnd_nwp_config,      ONLY: ntiles_total, lsnowtile, ntiles_water, llake, loskin, &
+    &                               lseaice, zml_soil, nlev_soil, dzsoil_icon => dzsoil, tf_salt
+  USE sfc_flake_data,         ONLY: h_Ice_min_flk, tpl_T_f
   USE sfc_terra_data,         ONLY: csalbw, cpwp, cfcap
-  USE mo_satad,               ONLY: sat_pres_water, &  !! saturation vapor pressure w.r.t. water
+  USE mo_thdyn_functions,     ONLY: sat_pres_water, &  !! saturation vapor pressure w.r.t. water
     &                               sat_pres_ice, &    !! saturation vapor pressure w.r.t. ice
     &                               spec_humi          !! Specific humidity
 
@@ -110,22 +114,24 @@ MODULE mo_nwp_phy_init
   USE mo_master_config,       ONLY: isRestart
   USE mo_nwp_parameters,      ONLY: t_phy_params
 
-  USE mo_initicon_config,     ONLY: init_mode, lread_tke
-  USE mo_apt_routines,        ONLY: init_apt_fields
-  USE mo_nwp_tuning_config,   ONLY: tune_zceff_min, tune_v0snow, tune_zvz0i, tune_icesedi_exp, tune_box_liq_sfc_fac
+  USE mo_initicon_config,     ONLY: init_mode, lread_tke, itype_sma
+  USE mo_apt_routines,        ONLY: init_apt_fields, apply_landalb_tuning, apply_sma
+  USE mo_nwp_tuning_config,   ONLY: tune_zceff_min, tune_v0snow, tune_zvz0i, tune_icesedi_exp, &
+    &                               tune_box_liq_sfc_fac, tune_zcsg, tune_dice_conv
   USE mo_cuparameters,        ONLY: sugwd
   USE mtime,                  ONLY: datetime, MAX_DATETIME_STR_LEN, &
     &                               datetimeToString, newDatetime, deallocateDatetime
   USE mo_bcs_time_interpolation, ONLY: t_time_interpolation_weights,         &
     &                                  calculate_time_interpolation_weights
   USE mo_timer,               ONLY: timers_level, timer_start, timer_stop,   &
-    &                               timer_init_nwp_phy, timer_phys_reff, timer_upatmo
-  USE mo_bc_greenhouse_gases, ONLY: read_bc_greenhouse_gases, bc_greenhouse_gases_time_interpolation
+    &                               timer_init_nwp_phy, timer_phys_reff
+  USE mo_bc_greenhouse_gases, ONLY: read_bc_greenhouse_gases
   USE mo_nwp_reff_interface,  ONLY: init_reff
   USE mo_upatmo_config,       ONLY: upatmo_config
   USE mo_upatmo_impl_const,   ONLY: iUpatmoPrcStat, iUpatmoStat
 #ifndef __NO_ICON_UPATMO__
-  USE mo_upatmo_phy_setup,    ONLY: init_upatmo_phy_nwp
+  USE mo_upatmo_interface,    ONLY: init_upatmo_phy_nwp
+  USE mo_upatmo_timer,        ONLY: timer_upatmo
 #endif
 
   USE mo_ape_params,          ONLY: ape_sst
@@ -133,32 +139,32 @@ MODULE mo_nwp_phy_init
   USE mo_grid_config,         ONLY: l_scm_mode
   USE mo_scm_nml,             ONLY: i_scm_netcdf, lscm_read_tke, lscm_read_z0, &
                                     scm_sfc_temp, scm_sfc_qv
-  USE mo_nh_torus_exp,        ONLY: read_soil_profile_nc
+  USE mo_nh_torus_exp,        ONLY: read_soil_profile_nc, read_soil_profile_nc_uf
 
   USE mo_cover_koe,           ONLY: cover_koe_config
   USE mo_bc_aeropt_kinne,     ONLY: read_bc_aeropt_kinne
-  USE mo_bc_aeropt_cmip6_volc,ONLY: read_bc_aeropt_cmip6_volc
+  USE mo_bc_aeropt_volc,      ONLY: read_bc_aeropt_volc
   USE mo_bc_aeropt_splumes,   ONLY: setup_bc_aeropt_splumes
   USE mo_bc_ozone,            ONLY: read_bc_ozone
   USE mo_bc_solar_irradiance, ONLY: read_bc_solar_irradiance
+  USE mo_coupling_config,     ONLY: is_coupled_to_aero, is_coupled_to_o3
 
   USE mo_sppt_state,          ONLY: sppt
   USE mo_sppt_config,         ONLY: sppt_config
   USE mo_sppt_util,           ONLY: init_rn
-
-
 
   IMPLICIT NONE
 
   PRIVATE
 
 
-  PUBLIC  :: init_nwp_phy, init_cloud_aero_cpl, clim_cdnc
+  PUBLIC  :: init_nwp_phy, init_cloud_aero_cpl
 
   CHARACTER(len=*), PARAMETER :: modname = 'mo_nwp_phy_init'
 
-CONTAINS
+  TYPE(t_turbdiff_config), POINTER :: tdc ! 'turbdiff' configuration state for a single patch (domain)
 
+CONTAINS
 
 SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
                        &  p_prog_now,  p_diag,            &
@@ -188,10 +194,10 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   REAL(wp)            :: pref(p_patch%nlev)
   REAL(wp)            :: zlat, zprat, zn1, zn2, zcdnc
   REAL(wp)            :: zpres, zpres0
-  REAL(wp)            :: gz0(nproma), l_hori(nproma)
+  REAL(wp)            :: l_hori(nproma)
   REAL(wp)            :: scale_fac ! scale factor used only for RCE cases
-  REAL(wp) :: zvariaux(nproma,p_patch%nlevp1,ndim)  !< to pass values from turbdiff to vertdiff
-  REAL(wp) :: zrhon   (nproma,p_patch%nlevp1)       !< to pass values from turbdiff to vertdiff
+  REAL(wp) :: zvari   (nproma,p_patch%nlevp1,0:ndim)  !< storage for internal variables and gradients in turbdif and turbtran
+  REAL(wp) :: zrhon   (nproma,p_patch%nlevp1)         !< storage for half-level density in turbdiff and turbtran
   REAL(wp)            :: w_so_profile(nlev_soil)    !soil moisture for SCM initialization
   REAL(wp)            :: t_so_profile(nlev_soil+1)  !soil temperature for SCM initialization
   REAL(wp)            :: t_g_in                     !T,g for SCM initialization
@@ -217,12 +223,15 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   REAL(wp), ALLOCATABLE :: zpres_sfc(:,:)    ! ref sfc press
   REAL(wp), ALLOCATABLE :: zpres_ifc(:,:,:)  ! ref press at interfaces
 
-  LOGICAL :: lland, lglac, lshallow, ldetrain_prec, lgrayzone_dc, lrestune_off, lmflimiter_off
+  LOGICAL :: lland, lglac, lshallow, ldetrain_prec, lgrayzone_dc, lconv_cdnc, lrestune_off, lmflimiter_off
   LOGICAL :: lstoch_expl, lstoch_sde,lstoch_deep,lvvcouple,lvv_shallow_deep
-  LOGICAL :: ltkeinp_loc, lgz0inp_loc  !< turbtran switches
+  LOGICAL :: ltkeinp_loc  !< turbtran switch
+  INTEGER :: igz0inp_loc  !< turbtran switch
+  INTEGER :: itype_ascent !< convection switch
   LOGICAL :: linit_mode, lturb_init, lreset_mode
   LOGICAL :: lupatmo_phy
   LOGICAL :: l_filename_year
+  LOGICAL, DIMENSION(nproma) :: l_lake, l_sice
 
   INTEGER :: jb,ic,jc,jt,jg,ist,nzprv
   INTEGER :: nlev, nlevp1, nlevcm    !< number of full, half and canopy levels
@@ -232,6 +241,7 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   INTEGER :: i_startidx, i_endidx    !! slices
   INTEGER :: i_nchdom                !! domain index
   INTEGER :: lc_class,i_lc_si
+  INTEGER :: idusta0, idustb0, idustc0
 
   INTEGER :: ierrstat=0
   CHARACTER (LEN=25) :: eroutine
@@ -243,9 +253,10 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   INTEGER :: istatus=0
 
   REAL(wp) :: hag                    ! height above ground
-  REAL(wp) :: h650_standard, h850_standard, h950_standard  ! height of 850hPa and 950hPa level in m 
+  REAL(wp) :: h650_standard, h850_standard, h950_standard  ! height of 850hPa and 950hPa level in m
 
-  REAL(wp) :: N_cn0,z0_nccn,z1e_nccn,N_in0,z0_nin,z1e_nin     ! for CCN and IN in case of gscp=5
+  REAL(wp) :: N_cn0,z0_nccn,z1e_nccn,N_in0,z0_nin,z1e_nin  ! for CCN and IN in case of gscp=5
+  REAL(wp), POINTER :: edr_ptr(:,:), len_scale_ptr(:,:) ! dummy pointer, not used
 
   CHARACTER(len=*), PARAMETER ::  &
      routine = modname//':init_nwp_phy'
@@ -268,6 +279,12 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
     lturb_init = .TRUE.
   ELSE
     linit_mode = .NOT. isRestart()
+  ENDIF
+
+  ! Also for SCM model new initialization needed for restarts.
+  IF (l_scm_mode) THEN
+    linit_mode = .TRUE.
+    lturb_init = .TRUE.
   ENDIF
 
   IF (PRESENT(lreset)) THEN
@@ -297,11 +314,13 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   dz2 = 0.0_wp
   dz3 = 0.0_wp
 
-  ! Initialization of upper-atmosphere physics 
+  tdc => turbdiff_config(jg)
+
+  ! Initialization of upper-atmosphere physics
   ! only in case of no reset and if the upatmo physics are switched on
   ! (upper-atmosphere physics are not integrated into the IAU iterations)
   lupatmo_phy = (.NOT. lreset_mode) .AND. &
-    & upatmo_config(jg)%nwp_phy%l_phy_stat( iUpatmoPrcStat%enabled ) 
+    & upatmo_config(jg)%nwp_phy%l_phy_stat( iUpatmoPrcStat%enabled )
 
   IF ( nh_test_name == 'RCE' .OR. nh_test_name == 'RCE_Tconst' .OR. nh_test_name == 'RCE_Tprescr' .OR. nh_test_name == 'RCE_bubble' ) THEN
     ! allocate storage var for press to be used in o3_pl2ml
@@ -344,17 +363,28 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
       )
   END IF
 
-
-  IF (.NOT. lreset_mode .AND. itype_vegetation_cycle >= 2) THEN
-    CALL vege_clim (p_patch, ext_data, p_diag)
+  ! reset SST warm layer and cold skin to 0 for new pure sea-ice points (no open water fraction)
+  IF (loskin) THEN
+    CALL reset_ocean_skin( p_patch        = p_patch,                        & ! in
+      &                    list_seaice    = ext_data%atm%list_seaice,       & ! in
+      &                    fr_seaice      = p_diag_lnd%fr_seaice     (:,:), & ! in
+      &                    sst_warm_layer = p_diag_lnd%sst_warm_layer(:,:), & ! inout
+      &                    sst_cold_skin  = p_diag_lnd%sst_cold_skin (:,:)  ) ! inout
   ENDIF
 
-  CALL init_apt_fields(p_patch, p_diag, prm_diag, ext_data, p_diag_lnd, p_prog_wtr_now)
+  IF (.NOT. lreset_mode) THEN
+    IF (itype_vegetation_cycle >= 2) CALL vege_clim (p_patch, ext_data, p_diag)
+    CALL init_apt_fields(p_patch, p_diag, prm_diag, ext_data, p_diag_lnd, p_prog_wtr_now)
+    CALL apply_landalb_tuning (p_patch, prm_diag, ext_data)
+  ENDIF
+
+  IF (itype_sma >= 2 .AND. .NOT. isRestart()) &
+    CALL apply_sma (p_patch, p_diag, ext_data, p_diag_lnd, p_prog_lnd_now)
 
   ! Diagnose aggregated external parameter fields
   ! (mainly for output purposes)
   ! aggregated sai needed below for organize_turbdiff
-  ! This routine is called after init_sea_lists,  
+  ! This routine is called after init_sea_lists,
   ! in order to have all tile-related index lists available.
   !
   CALL diagnose_ext_aggr (p_patch, ext_data)
@@ -393,12 +423,17 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
       ELSE
         prm_diag%innertropics_mask(jc,jb) = (17.5_wp-zlat)/5._wp
       ENDIF
+      zlat = p_patch%cells%center(jc,jb)%lat*rad2deg
       IF (zlat > 60._wp) THEN
         prm_diag%sso_lat_mask(jc,jb) = 0._wp
-      ELSE IF (zlat < 30._wp) THEN
-        prm_diag%sso_lat_mask(jc,jb) = 1._wp
-      ELSE
+      ELSE IF (zlat > 30._wp) THEN
         prm_diag%sso_lat_mask(jc,jb) = COS(3._wp*(zlat-30._wp)/rad2deg)
+      ELSE IF (zlat > 0._wp) THEN
+        prm_diag%sso_lat_mask(jc,jb) = 1._wp
+      ELSE IF (zlat > -30._wp) THEN
+        prm_diag%sso_lat_mask(jc,jb) = COS(3._wp*zlat/rad2deg)
+      ELSE
+        prm_diag%sso_lat_mask(jc,jb) = 0._wp
       ENDIF
     ENDDO
 
@@ -506,24 +541,24 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
 
         !initialize soil moisture and temperature and Tskin for SCM case
         ELSEIF (l_scm_mode .AND. (atm_phy_nwp_config(jg)%inwp_surface == 1) .AND. &
-      &          (i_scm_netcdf == 1)) THEN 
+      &          (i_scm_netcdf == 1)) THEN
 
-          !IF (i_scm_netcdf==2) THEN !unified format
-          ! CALL read_soil_profile_nc_uf(w_so_profile,t_so_profile,t_g_in) 
+          !IF (i_scm_netcdf==2) THEN    ! DEPHY unified SCM format
+          ! CALL read_soil_profile_nc_uf(w_so_profile,t_so_profile,t_g_in)
           !ELSE
-           CALL read_soil_profile_nc(w_so_profile,t_so_profile,t_g_in) 
+           CALL read_soil_profile_nc(w_so_profile,t_so_profile,t_g_in)
           !ENDIF
 
           DO jt = 1, ntiles_total
             DO jc = i_startidx, i_endidx
-              DO jk = 1,nlev_soil+1 
+              DO jk = 1,nlev_soil+1
                 p_prog_lnd_now%t_so_t(jc,jk,jb,jt) = t_so_profile(jk)
                 p_prog_lnd_new%t_so_t(jc,jk,jb,jt) = t_so_profile(jk)
               END DO
               DO jk = 1,nlev_soil
                 ! soil moisture from SCM input needs to be converted from kg/m2 to m
-                p_prog_lnd_now%w_so_t(jc,jk,jb,jt) = w_so_profile(jk)/1000._wp 
-                p_prog_lnd_new%w_so_t(jc,jk,jb,jt) = w_so_profile(jk)/1000._wp 
+                p_prog_lnd_now%w_so_t(jc,jk,jb,jt) = w_so_profile(jk)/1000._wp
+                p_prog_lnd_new%w_so_t(jc,jk,jb,jt) = w_so_profile(jk)/1000._wp
               END DO
             END DO
           END DO
@@ -564,11 +599,16 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
             END DO
           END DO
 
-        ELSEIF ( l_scm_mode .AND. (atm_phy_nwp_config(jg)%inwp_surface == 0) .AND. &
-      &          (scm_sfc_temp==1) .AND. (scm_sfc_qv==3) .AND. (i_scm_netcdf > 0) ) THEN 
+        ELSEIF ( l_scm_mode .AND. (atm_phy_nwp_config(jg)%inwp_surface == 0) .AND. (i_scm_netcdf > 0) &
+          &      .AND. ((scm_sfc_temp==1) .OR. (scm_sfc_temp==5) &
+          &        .OR. (scm_sfc_qv  ==3) .OR. (scm_sfc_qv  ==6))  ) THEN
 
-          CALL read_soil_profile_nc(t_g_in=t_g_in) 
-      
+          IF (i_scm_netcdf==2) THEN        ! DEPHY unified SCM format
+            CALL read_soil_profile_nc_uf(t_g_in=t_g_in)
+          ELSE
+            CALL read_soil_profile_nc(t_g_in=t_g_in)
+          ENDIF
+
       	  ! set T_G
           DO jc = i_startidx, i_endidx
             p_prog_lnd_now%t_g(jc,jb) = t_g_in
@@ -576,7 +616,7 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
             p_prog_lnd_now%t_g_t(jc,jb,1) = p_prog_lnd_now%t_g  (jc,jb)
             p_prog_lnd_new%t_g_t(jc,jb,1) = p_prog_lnd_now%t_g  (jc,jb)
 
-            p_diag_lnd%qv_s(jc,jb) = spec_humi( sat_pres_water(t_g_in), p_diag%pres_sfc(jc,jb)) 
+            p_diag_lnd%qv_s(jc,jb) = spec_humi( sat_pres_water(t_g_in), p_diag%pres_sfc(jc,jb))
             p_diag_lnd%qv_s_t(jc,jb,1) = p_diag_lnd%qv_s(jc,jb)
           END DO
 
@@ -817,13 +857,28 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
 !     & p_patch%geometry_info%mean_characteristic_length
 !   write(0,*) "=============================================="
 
-  ! compute level index corresponding to the HAG of the 60hPa level 
-  ! (currently only needed by mo_nwp_diagnosis:cal_cape_cin) 
+  ! compute level index corresponding to the HAG of the 60hPa level
+  ! (currently only needed by mo_nwp_diagnosis:cal_cape_cin)
   phy_params%k060=1
   DO jk=nlev,1,-1
     IF(pref(jk) >  60.e2_wp) phy_params%k060=jk
   ENDDO
 
+  !------------------------------------------
+  !< initialize stochastic pattern generator
+  !------------------------------------------
+
+  IF (atm_phy_nwp_config(jg)%lstoch_pattern_generator.AND.jg==1) THEN
+    CALL stochastic_pattern_boundaries(p_patch)
+    CALL stochastic_pattern_init(                            &
+          dtime=dtime, mtime_current=ini_date, pspg=spg_num, &
+          plam=atm_phy_nwp_config(jg)%spg_fourier_modes,     &
+          plength=atm_phy_nwp_config(jg)%spg_length_scale,   &
+          ptime=atm_phy_nwp_config(jg)%spg_time_scale,       &
+          pmodes=atm_phy_nwp_config(jg)%spg_spec_modes,      &
+          pasl=atm_phy_nwp_config(jg)%spg_use_asl,           &
+          pvar=atm_phy_nwp_config(jg)%spg_variance           )
+  ENDIF
 
   !------------------------------------------
   !< call for cloud microphysics
@@ -838,29 +893,31 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
         igscp    = atm_phy_nwp_config(jg)%inwp_gscp, &
         tune_zceff_min   = tune_zceff_min,               &
         tune_v0snow      = tune_v0snow,                  &
+        tune_zcsg        = tune_zcsg,                    &
         tune_zvz0i       = tune_zvz0i,                   &
+        tune_dice_conv   = tune_dice_conv,               &
         tune_icesedi_exp = tune_icesedi_exp,             &
         tune_mu_rain        = atm_phy_nwp_config(1)%mu_rain,&
-        tune_rain_n0_factor = atm_phy_nwp_config(1)%rain_n0_factor)
-  
+        tune_rain_n0_factor = atm_phy_nwp_config(1)%rain_n0_factor, &
+        lvariable_rain_n0 = atm_phy_nwp_config(1)%lvariable_rain_n0 )
 
   CASE (4,7) !two moment microphysics
     IF (msg_level >= 12)  CALL message(modname, 'init microphysics: two-moment')
 
-    
+
     ! Provide turbulent length to microphysics to calculate the dissipation factor.
-    ! The Prandtl constant (0.4) arises from different definitions for tur_len: microphysics follows Mellor-Yamada.
-    atm_phy_nwp_config(jg)%cfg_2mom%turb_len = turbdiff_config(jg)%tur_len * 0.4_wp
+    ! The Prandtl constant (0.4) arises from different definitions for tur_len: microphysics follows Mellor-Yamada:
+    atm_phy_nwp_config(jg)%cfg_2mom%turb_len = tdc%tur_len * 0.4_wp
 
     IF (jg == 1) CALL two_moment_mcrph_init(igscp=atm_phy_nwp_config(jg)%inwp_gscp, msg_level=msg_level, &
          &                                  cfg_2mom=atm_phy_nwp_config(jg)%cfg_2mom)
 
     ! Init of number concentrations moved to mo_initicon_io.f90 !!!
 
-  CASE (8) !sbm micrphysics
+  CASE (8) !SBM microphysics
     IF (msg_level >= 12)  CALL message('mo_nwp_phy_init:', 'init microphysics: sbm')
 
-    IF (jg == 1) CALL sbm_init(p_patch, p_prog_now, ext_data%atm%fr_land, p_metrics%ddqz_z_full)
+    IF (jg == 1) CALL sbm_init(p_patch, p_prog_now, ext_data%atm%fr_land, p_metrics%z_mc, atm_phy_nwp_config(jg)%dt_fastphy)
 
   CASE (5) !two moment microphysics
     IF (msg_level >= 12)  CALL message(modname, 'init microphysics: two-moment')
@@ -902,23 +959,72 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   CASE (6) ! two-moment scheme with prognostic cloud droplet number
            ! and chemical composition taken from the ART extension
     IF (msg_level >= 12)  CALL message(modname, 'init microphysics: ART two-moment')
-    
+
     IF (jg == 1) CALL art_clouds_interface_2mom_init(msg_level,cfg_2mom=atm_phy_nwp_config(jg)%cfg_2mom)
 
     ! Init of number concentrations moved to mo_initicon_io.f90 !!!
 #endif
   END SELECT
 
+  ! Monthly MODIS cdnc climatology: The time interpolation has been done in mo_ext_data_init.
+  ! Here we just have to set prm_diag%cloud_num from ext_data%atm%cdnc
+  IF (atm_phy_nwp_config(jg)%icpl_aero_gscp == 3 .AND. linit_mode) THEN
+    CALL set_cdnc_from_extdata(p_patch, ext_data, prm_diag)
+  ENDIF
+
+#ifdef __ICON_ART
+  ! Indices of dust tracers for coupled ice nucleation with ART. The indices are not needed here, we are
+  ! just checking that they exist and write them to standard out, if the msg_level is high enough.
+  IF ( icpl_aero_ice == 3 .OR. icpl_aero_ice == 4 ) THEN
+    CALL p_art_data(jg)%dict_tracer%get('dusta0',idusta0,ierrstat)
+    IF(ierrstat /= SUCCESS) CALL finish (modname, 'dusta0 not found in dictionary.')
+    CALL p_art_data(jg)%dict_tracer%get('dustb0',idustb0,ierrstat)
+    IF(ierrstat /= SUCCESS) CALL finish (modname, 'dustb0 not found in dictionary.')
+    CALL p_art_data(jg)%dict_tracer%get('dustc0',idustc0,ierrstat)
+    IF(ierrstat /= SUCCESS) CALL finish (modname, 'dustc0 not found in dictionary.')
+    IF (msg_level > 15) THEN
+      WRITE(message_text,'(A,I5)') "icpl_aero_ice = ",icpl_aero_ice; CALL message(TRIM(routine),TRIM(message_text))
+      CALL message (TRIM(routine), "Found the three dust modes")
+      WRITE(message_text,'(A,I5)') "   idusta0 = ", idusta0; CALL message(TRIM(routine),TRIM(message_text))
+      WRITE(message_text,'(A,I5)') "   idustb0 = ", idustb0; CALL message(TRIM(routine),TRIM(message_text))
+      WRITE(message_text,'(A,I5)') "   idustc0 = ", idustc0; CALL message(TRIM(routine),TRIM(message_text))
+    END IF
+  END IF
+#endif
+
+
   ! Fill parameters for cover_koe
   ! Set physics options in cloud cover derived type
   ! This should be moved to init routine in an interface module
   cover_koe_config(jg)%icldscheme  = atm_phy_nwp_config(jg)%inwp_cldcover
   cover_koe_config(jg)%inwp_turb   = atm_phy_nwp_config(jg)%inwp_turb
-  cover_koe_config(jg)%inwp_gscp   = atm_phy_nwp_config(jg)%inwp_gscp
+!  cover_koe_config(jg)%inwp_gscp   = atm_phy_nwp_config(jg)%inwp_gscp
   cover_koe_config(jg)%inwp_cpl_re = atm_phy_nwp_config(jg)%icpl_rad_reff
   cover_koe_config(jg)%inwp_reff   = atm_phy_nwp_config(jg)%icalc_reff
   cover_koe_config(jg)%lsgs_cond   = atm_phy_nwp_config(jg)%lsgs_cond
+  cover_koe_config(jg)%lcalculate_fsd= lcalculate_fsd
   cover_koe_config(jg)%tune_box_liq_sfc_fac = tune_box_liq_sfc_fac(jg)
+  cover_koe_config(jg)%clc_diag    = tdc%clc_diag
+  cover_koe_config(jg)%q_crit      = tdc%q_crit
+  cover_koe_config(jg)%fsd_gridlen = fsd_gridlen(jg)
+
+  ! FSD for the ice phase can only be calculated if deep convection parameterization is active
+  ! Create separate logical for ice FSD, and set to .false. if deep convection param is inactive.
+  cover_koe_config(jg)%lcalculate_ice_fsd=cover_koe_config(jg)%lcalculate_fsd
+  IF (atm_phy_nwp_config(jg)%lshallowconv_only .OR.atm_phy_nwp_config(jg)%lgrayzone_deepconv &
+       & .OR. atm_phy_nwp_config(jg)%inwp_convection==0 ) THEN
+     cover_koe_config(jg)%lcalculate_ice_fsd=.false.
+     CALL message(modname,'Warning: Ice FSD not calculated, default value 1 is used in ice cloud.')
+  ENDIF
+
+#ifdef _OPENACC
+  SELECT CASE( cover_koe_config(jg)%icldscheme )
+    CASE( 3 )
+      CALL finish(routine, "inwp_cldcover=3 is not possible with OpenACC.")
+    CASE( 4 )
+      CALL finish(routine, "inwp_cldcover=4 is not possible with OpenACC.")
+  END SELECT
+#endif
 
   !$ACC ENTER DATA CREATE(cover_koe_config(jg:jg))
   !$ACC UPDATE DEVICE(cover_koe_config(jg:jg)) ASYNC(1) ! This updates all components of cover_koe_config as they are statically allocated
@@ -926,11 +1032,10 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   ! Initiate parameters for reff calculations
   IF (atm_phy_nwp_config(jg)%icalc_reff > 0) THEN
     IF (timers_level > 10) CALL timer_start(timer_phys_reff)
-    CALL init_reff ( prm_diag, p_patch, p_prog_now) 
+    CALL init_reff ( prm_diag, p_patch, p_prog_now)
     IF (timers_level > 10) CALL timer_stop(timer_phys_reff)
   END IF
 
-    
 
   ! Compute lookup tables for aerosol-microphysics coupling
   IF (jg == 1 .AND. (atm_phy_nwp_config(jg)%icpl_aero_gscp > 0 .OR. icpl_aero_conv > 0)) &
@@ -939,10 +1044,7 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   !------------------------------------------
   !< radiation
   !------------------------------------------
-  SELECT CASE ( atm_phy_nwp_config(jg)%inwp_radiation )
-  CASE (1, 4)
-
-!    prm_diag%lfglac (:,:) = ext_data%atm%soiltyp(:,:) == 1  !soiltyp=ice
+  IF ( atm_phy_nwp_config(jg)%inwp_radiation > 0 ) THEN
 
     SELECT CASE(atm_phy_nwp_config(jg)%inwp_radiation)
       CASE(1) ! RRTM init
@@ -969,6 +1071,9 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
             ssi_radt(:) = ssi_amip(:)
           CASE(1)       ! Use ssi values from Coddington et al (2016)
             ssi_radt(:) = ssi_coddington(:)
+          CASE(4)       ! 4: RCE
+            scale_fac   = sol_const/1361.371_wp   ! computed relative to amip (1361)
+            ssi_radt(:) = scale_fac*ssi_amip(:)
         END SELECT
         tsi_radt    = SUM(ssi_radt(:))
 
@@ -978,20 +1083,13 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
           tsi_radt    = 1365._wp
         ENDIF  ! APE
 
-        IF ( nh_test_name == 'RCE'         .OR. nh_test_name == 'RCE_Tconst'         .OR. &
-           & nh_test_name == 'RCE_Tprescr' .OR. nh_test_name == 'RCEMIP_analytical') THEN
-          scale_fac   = sol_const/1361.371_wp   ! computed relative to amip (1361)
-          ssi_radt(:) = scale_fac*ssi_amip(:)
-          tsi_radt    = SUM(ssi_radt(:))
-        ENDIF
-        !
       CASE(4) ! ecRad init
 #ifdef __ECRAD
         IF (msg_level >= 12)  CALL message(modname, 'init ECRAD')
         !
         ! Do ecrad initialization only once
         IF (.NOT.lreset_mode .AND. jg==1) THEN
-          CALL setup_ecrad(p_patch,ecrad_conf,ini_date)
+          CALL setup_ecrad(ecrad_conf)
           !
           ! Setup Tegen aerosol needs to be done only once for all domains
           IF (irad_aero == iRadAeroTegen .OR. irad_aero == iRadAeroART) THEN
@@ -1009,7 +1107,8 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
         IF (ANY( irad_aero == (/iRadAeroConstKinne, iRadAeroKinneVolcSP, iRadAeroKinneSP/) )) THEN
           ! Only the background aerosol (pre-industry) is read in:
           l_filename_year = .FALSE.
-          CALL read_bc_aeropt_kinne(ini_date, p_patch, l_filename_year, ecrad_conf%n_bands_lw, ecrad_conf%n_bands_sw)
+          CALL read_bc_aeropt_kinne(ini_date, p_patch, l_filename_year, ecrad_conf%n_bands_lw, ecrad_conf%n_bands_sw,&
+      &                             opt_from_coupler = is_coupled_to_aero())
         ENDIF
 
         CALL nwp_aerosol_init(ini_date, p_patch)
@@ -1017,25 +1116,23 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
         IF (ANY( irad_aero == (/iRadAeroKinne,iRadAeroKinneVolc/) )) THEN
           ! Transient Kinne aerosol:
           l_filename_year = .TRUE.
-          CALL read_bc_aeropt_kinne(ini_date, p_patch, l_filename_year, ecrad_conf%n_bands_lw, ecrad_conf%n_bands_sw)
+          CALL read_bc_aeropt_kinne(ini_date, p_patch, l_filename_year, ecrad_conf%n_bands_lw, ecrad_conf%n_bands_sw, &
+       &                            opt_from_coupler = is_coupled_to_aero())
         ENDIF
         IF (ANY( irad_aero == (/iRadAeroVolc,iRadAeroKinneVolc,iRadAeroKinneVolcSP/) )) THEN
-          ! Volcanic aerosol from CMIP6
-          CALL read_bc_aeropt_cmip6_volc(ini_date, ecrad_conf%n_bands_lw, ecrad_conf%n_bands_sw)
+          ! Volcanic aerosol
+          CALL read_bc_aeropt_volc(ini_date, ecrad_conf%n_bands_lw, ecrad_conf%n_bands_sw)
         ENDIF
-        IF (ANY( irad_aero == (/iRadAeroKinneVolcSP,iRadAeroKinneSP/) )) THEN
-          ! Simple plume anthropogenic aerosol
+        ! If Simple Plume aerosol is required or cdnc scaling factor is needed (e.g. in case picontrol)
+        IF ( ANY( irad_aero == (/iRadAeroKinneVolcSP,iRadAeroKinneSP/) ) .OR. ( atm_phy_nwp_config(jg)%scale_cdnc_mode /= 0 )) THEN
+          ! Read in the simple plume anthropogenic aerosol input data:
           CALL setup_bc_aeropt_splumes
         ENDIF
         !
         ! Read ozone transient data
-        IF (irad_o3 == 5) CALL read_bc_ozone(ini_date%date%year,p_patch,irad_o3,vmr2mmr_opt=o3mr2gg)
-
-        ! cloud_num_fac is used in clim_cdnc, but is only available after the 1st call of init_slowphys
-        ! however, clim_cdnc has to be called once before the 1st call of init_slowphys
-        IF (atm_phy_nwp_config(jg)%lscale_cdnc .AND. linit_mode) THEN
-          prm_diag%cloud_num_fac(:,:) = 1._wp
-        ENDIF
+        IF (irad_o3 == 5) CALL read_bc_ozone(ini_date%date%year,p_patch,irad_o3, &
+     &                                       vmr2mmr_opt=o3mr2gg,opt_from_coupler=is_coupled_to_o3(), &
+     &                                       lacc=.FALSE.)
 
         !------------------------------------------------------------
         ! Initialize solar flux in SW bands and solar constant (W/m2)
@@ -1048,21 +1145,17 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
           CASE(2)       ! 2: Use ssi values from external file
             CALL read_bc_solar_irradiance(ini_date%date%year,.TRUE.)
             ssi_radt(:) = 0._wp
+          CASE(4)       ! 4: RCE
+            scale_fac   = sol_const/1361.371_wp   ! computed relative to amip (1361)
+            ssi_radt(:) = scale_fac*ecrad_ssi_amip(:)
         END SELECT
         tsi_radt    = SUM(ssi_radt(:))
 
-        ! In case of Aqua planet or RCE experiment:
+        ! In case of Aqua planet experiment:
         IF ( nh_test_name == 'APE_nwp' .OR. nh_test_name == 'dcmip_tc_52' ) THEN
           ssi_radt(:) = ssi_radt(:)*1365._wp/tsi_radt
           tsi_radt    = 1365._wp
         ENDIF  ! APE
-        IF ( nh_test_name == 'RCE'         .OR. nh_test_name == 'RCE_Tconst'         .OR. &
-           & nh_test_name == 'RCE_Tprescr' .OR. nh_test_name == 'RCEMIP_analytical') THEN
-          scale_fac   = sol_const/1361.371_wp   ! computed relative to amip (1361)
-          ssi_radt(:) = scale_fac*ssi_amip(:)
-          tsi_radt    = SUM(ssi_radt(:))
-        ENDIF
-        !
 #else
         CALL finish(routine,  &
           &      'atm_phy_nwp_config(jg)%inwp_radiation = 4 needs -D__ECRAD.')
@@ -1165,22 +1258,24 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
            & .OR. nh_test_name == 'RCE_Tprescr'                      ) THEN
           CALL o3_pl2ml (jcs=i_startidx, jce=i_endidx,     &
             & kbdim=nproma,                                &
-            & nlev_pres = nlev_o3,klev= nlev ,             &
+            & nlev_pres = ext_o3_attr(jg)%nlev_o3,         &
+            & klev= nlev ,                                 &
             & pfoz = ext_data%atm_td%pfoz(:),              &
             & phoz = ext_data%atm_td%phoz(:),              &! in o3-levs
             & ppf = zrefpres (:,:,jb),                  &! in  pres
             & pph = zpres_ifc(:,:,jb),               &! in  pres_halfl
-            & o3_time_int = ext_data%atm_td%o3(:,:,jb,nmonths),     &! in
+            & o3_time_int = ext_data%atm_td%o3(:,:,jb,ext_o3_attr(jg)%nmonths),     &! in
             & o3_clim     = ext_data%atm%o3(:,:,jb) )         ! OUT
         ELSE ! default behaviour
           CALL o3_pl2ml (jcs=i_startidx, jce=i_endidx,     &
             & kbdim=nproma,                                &
-            & nlev_pres = nlev_o3,klev= nlev ,             &
+            & nlev_pres = ext_o3_attr(jg)%nlev_o3,         &
+            & klev= nlev ,                                 &
             & pfoz = ext_data%atm_td%pfoz(:),              &
             & phoz = ext_data%atm_td%phoz(:),              &! in o3-levs
             & ppf = p_diag%pres (:,:,jb),                  &! in  pres
             & pph = p_diag%pres_ifc(:,:,jb),               &! in  pres_halfl
-            & o3_time_int = ext_data%atm_td%o3(:,:,jb,nmonths),     &! in
+            & o3_time_int = ext_data%atm_td%o3(:,:,jb,ext_o3_attr(jg)%nmonths),     &! in
             & o3_clim     = ext_data%atm%o3(:,:,jb) )         ! OUT
         ENDIF
       ENDIF
@@ -1193,7 +1288,7 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
       rad_csalbw(ist) = csalbw(ist) / (2.0_wp * zml_soil(1))
     ENDDO
 
-  END SELECT !inwp_radiation
+  END IF !inwp_radiation > 0
 
   IF ( nh_test_name == 'RCE' .OR. nh_test_name == 'RCE_Tconst' .OR. &
      & nh_test_name == 'RCE_Tprescr'                                ) THEN
@@ -1247,6 +1342,7 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
 
     lshallow   = atm_phy_nwp_config(jg)%lshallowconv_only
     lgrayzone_dc = atm_phy_nwp_config(jg)%lgrayzone_deepconv
+    lconv_cdnc = atm_phy_nwp_config(jg)%lconv_cdnc_interp
     ldetrain_prec = atm_phy_nwp_config(jg)%ldetrain_conv_prec
     lrestune_off = atm_phy_nwp_config(jg)%lrestune_off
     lmflimiter_off = atm_phy_nwp_config(jg)%lmflimiter_off
@@ -1255,9 +1351,10 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
     lstoch_deep = atm_phy_nwp_config(jg)%lstoch_deep
     lvvcouple = atm_phy_nwp_config(jg)%lvvcouple
     lvv_shallow_deep = atm_phy_nwp_config(jg)%lvv_shallow_deep
-    
-    CALL sucumf(rsltn,nlev,phy_params,lshallow,lgrayzone_dc,ldetrain_prec,lrestune_off, &
-         & lmflimiter_off,lstoch_expl,lstoch_sde,lstoch_deep,lvvcouple,lvv_shallow_deep, &
+    itype_ascent = atm_phy_nwp_config(jg)%itype_parcel_ascent
+
+    CALL sucumf(rsltn,nlev,phy_params,lshallow,lgrayzone_dc,lconv_cdnc,ldetrain_prec,lrestune_off, &
+         & lmflimiter_off,lstoch_expl,lstoch_sde,lstoch_deep,lvvcouple,lvv_shallow_deep,itype_ascent, &
          & pref)
     CALL suphli
     CALL suvdf
@@ -1273,6 +1370,7 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
     phy_params%rhebc_ocean      = 0._wp
     phy_params%rhebc_land_trop  = 0._wp
     phy_params%rhebc_ocean_trop = 0._wp
+    phy_params%tune_grzdc_offset= 0._wp
     phy_params%entrorg          = 0._wp
     phy_params%texc             = 0._wp
     phy_params%qexc             = 0._wp
@@ -1281,7 +1379,7 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   ! Initialize fields k850 and k950, which are required for computing the
   ! convective contribution to wind gusts
   !
-  ! k800, k400 will be used for inwp_convection==0 as well. 
+  ! k800, k400 will be used for inwp_convection==0 as well.
   ! k700 is used for LHN data assimilation
   ! Thus we need to make sure that they are initialized.
   prm_diag%k650(:,:) = nlev
@@ -1389,22 +1487,20 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   ! initialize gz0 (roughness length * g)
   !
   IF ( ANY( (/icosmo,igme,ismag,iprog/)==atm_phy_nwp_config(jg)%inwp_turb ) .AND. &
-       linit_mode ) THEN
+       linit_mode ) THEN !seclected turbulence scheme requires '%gz0'-initialization
 
     ! gz0 is initialized if we do not start from an own first guess
-    IF (lturb_init) THEN
+    IF (lturb_init) THEN !no first guess present
 
       IF (msg_level >= 12)  CALL message(modname, 'init roughness length')
 
-      IF (turbdiff_config(jg)%lconst_z0) THEN
-        ! constant z0 for idealized tests
-        prm_diag%gz0(:,:) = grav * turbdiff_config(jg)%const_z0
-
+      IF (tdc%lconst_z0) THEN
+        prm_diag%gz0(:,:) = grav * tdc%const_z0
       ELSE IF (atm_phy_nwp_config(jg)%itype_z0 == 1) THEN
         ! default
         prm_diag%gz0(:,:) = grav * ext_data%atm%z0(:,:)
 
-      ELSE IF (atm_phy_nwp_config(jg)%itype_z0 >= 2) THEN
+      ELSE IF (atm_phy_nwp_config(jg)%itype_z0 >= 2) THEN !use tile-specific information
 
         rl_start = grf_bdywidth_c + 1 ! land-cover classes are not set for nest-boundary points
         rl_end   = min_rlcell_int
@@ -1417,31 +1513,44 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
         fact_z0rough = 1.e-5_wp*ATAN(phy_params%mean_charlen/2250._wp)
 
 !$OMP PARALLEL
-!$OMP DO PRIVATE(jb,jc,ic,jt,i_startidx,i_endidx,lc_class,gz0) ICON_OMP_DEFAULT_SCHEDULE
+!$OMP DO PRIVATE(jb,jc,ic,jt,i_startidx,i_endidx,lc_class) ICON_OMP_DEFAULT_SCHEDULE
         DO jb = i_startblk, i_endblk
 
           CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
             &                i_startidx, i_endidx, rl_start, rl_end)
 
-          ! specify land-cover-related roughness length over land points
-          ! note:  water points are set in turbdiff
-          gz0(:) = 0._wp
+          ! specify land-cover-related roughness length over land points:
+
+!$NEC ivdep
+          DO ic = 1, ext_data%atm%list_land%ncount(jb)
+            jc = ext_data%atm%list_land%idx(ic,jb)
+            prm_diag%gz0(jc,jb) = 0._wp
+          END DO
+
+          !Notes:
+          !In '%gz0', snow-cover dependent tile-contributions of provided tile-specific z0-values
+          ! are added together for each grid-point being considered as a land-point
+          ! (defined by "%fr_land>frlnd_thrhld", s. SUB 'init_index_lists').
+          !The resulting grid-point mean of '%gz0' is going to be used below for the initialization calls of
+          ! 'turbtran' and 'turbdiff'.
+          !For non-land points (water- or ice-surfaces), '%gz0' is initialized by SUB 'turbtran'.
 
           DO jt = 1, ntiles_total
 !$NEC ivdep
             DO ic = 1, ext_data%atm%list_land%ncount(jb)
               jc = ext_data%atm%list_land%idx(ic,jb)
               lc_class = MAX(1,ext_data%atm%lc_class_t(jc,jb,jt)) ! to avoid segfaults
-              gz0(jc) = gz0(jc) + ext_data%atm%frac_t(jc,jb,jt) * grav * (             &
-               (1._wp-p_diag_lnd%snowfrac_t(jc,jb,jt))*ext_data%atm%z0_lcc(lc_class)+  &
-                p_diag_lnd%snowfrac_t(jc,jb,jt)*0.5_wp*ext_data%atm%z0_lcc(i_lc_si) ) ! i_lc_si = snow/ice class
+              prm_diag%gz0(jc,jb) = prm_diag%gz0(jc,jb) + ext_data%atm%frac_t(jc,jb,jt)*grav*( &
+                  (1._wp-p_diag_lnd%snowfrac_t(jc,jb,jt))*ext_data%atm%z0_lcc(lc_class) +      &
+                         p_diag_lnd%snowfrac_t(jc,jb,jt) *0.5_wp*ext_data%atm%z0_lcc(i_lc_si) ) !i_lc_si: snow/ice class
             ENDDO
           ENDDO
           IF (atm_phy_nwp_config(jg)%itype_z0 == 3) THEN
 !$NEC ivdep
             DO ic = 1, ext_data%atm%list_land%ncount(jb)
               jc = ext_data%atm%list_land%idx(ic,jb)
-              gz0(jc) = gz0(jc) + grav*MIN(fact_z0rough*ext_data%atm%sso_stdh_raw(jc,jb)**2,7.5_wp)
+              prm_diag%gz0(jc,jb) = prm_diag%gz0(jc,jb) + &
+                                    grav*MIN(fact_z0rough*ext_data%atm%sso_stdh_raw(jc,jb)**2,7.5_wp)
             ENDDO
           ENDIF
           DO jt = ntiles_total+1, ntiles_total+ntiles_water ! required if there are mixed land-water points
@@ -1449,51 +1558,42 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
             DO ic = 1, ext_data%atm%list_land%ncount(jb)
               jc = ext_data%atm%list_land%idx(ic,jb)
               lc_class = MAX(1,ext_data%atm%lc_class_t(jc,jb,jt)) ! to avoid segfaults
-              gz0(jc) = gz0(jc) + ext_data%atm%frac_t(jc,jb,jt) * grav*ext_data%atm%z0_lcc(lc_class)
+              prm_diag%gz0(jc,jb) = prm_diag%gz0(jc,jb) + &
+                                    ext_data%atm%frac_t(jc,jb,jt) * grav*ext_data%atm%z0_lcc(lc_class)
             ENDDO
-          ENDDO
-!$NEC ivdep
-          DO ic = 1, ext_data%atm%list_land%ncount(jb)
-            jc = ext_data%atm%list_land%idx(ic,jb)
-            prm_diag%gz0(jc,jb) = gz0(jc)
           ENDDO
         ENDDO  !jb
 !$OMP END DO
 !$OMP END PARALLEL
-      ENDIF  !initialize gz0
 
-    END IF
+      ENDIF !use tile-specific information
 
-  ENDIF
+    END IF !no first guess present
+  ENDIF !seclected turbulence scheme requires '%gz0'-initialization
 
   IF ( ANY( (/icosmo/)==atm_phy_nwp_config(jg)%inwp_turb ) ) THEN
 
     ! allocate and init implicit weights for tridiagonal solver
-    ALLOCATE( turbdiff_config(jg)%impl_weight(nlevp1), &
-              STAT=istatus )
-    ! note that impl_weight => turbdiff_config(jg)%impl_weight
-    !$ACC ENTER DATA CREATE(turbdiff_config(jg:jg))
-    !$ACC ENTER DATA CREATE(turbdiff_config(jg)%impl_weight)
+    ALLOCATE( tdc%impl_weight(nlevp1), STAT=istatus )
+    ! note that 'tdc'=>'turbdiff_config(jg)'
+    !$ACC ENTER DATA CREATE(tdc%impl_weight)
     IF(istatus/=SUCCESS)THEN
       CALL finish(routine, &
                  'allocation of impl_weight failed')
     ENDIF
 
-    CALL get_turbdiff_param(jg)
-
     ! using an over implicit value (impl_s) near surface,
     ! reduced to in general slightly off-centered value (impl_t)
     ! in about 1500 m height
     DO jk = 1, k1500m
-      impl_weight(jk) = impl_t
+      tdc%impl_weight(jk) = tdc%impl_t
     END DO
     DO jk = k1500m+1, nlev
-      impl_weight(jk) = impl_t &
-                      + (impl_s-impl_t) * (jk-k1500m) / REAL(nlev-k1500m, wp)
+      tdc%impl_weight(jk) = tdc%impl_t + (tdc%impl_s-tdc%impl_t)*(jk-k1500m)/REAL(nlev-k1500m, wp)
     END DO
-    impl_weight(nlevp1) = impl_s
+    tdc%impl_weight(nlevp1) = tdc%impl_s
     ! impl_weight is never changed
-    !$ACC UPDATE DEVICE(turbdiff_config(jg)%impl_weight) ASYNC(1)
+    !$ACC UPDATE DEVICE(tdc%impl_weight) ASYNC(1)
 
 ! computing l_pat: cannot be done in mo_ext_data_init, because it seems we do not have
 !                  phy_params(jg)%mean_charlen available then?
@@ -1511,14 +1611,14 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
 
       ! effective length scale of circulation patterns
       DO jc = i_startidx, i_endidx
-        IF (ext_data%atm%fr_land(jc,jb) < 0.5_wp) THEN
-          ext_data%atm%l_pat (jc,jb)  = 0.0_wp
-        ELSE
-          IF (imode_pat_len == 2) THEN
-!           ext_data%atm%l_pat (jc,jb)  = MIN( pat_len, ext_data%atm%sso_stdh_raw(jc,jb) )
-            ext_data%atm%l_pat (jc,jb)  = MIN( pat_len, prm_diag%pat_len(jc,jb)          )
-          ELSE
-            ext_data%atm%l_pat (jc,jb)  =      pat_len
+        IF (ext_data%atm%fr_land(jc,jb)<=0.5_wp) THEN
+          ext_data%atm%l_pat (jc,jb) = 0.0_wp
+        ELSE !a point being dominated by a land surface
+          IF (tdc%imode_pat_len == 2) THEN !using the standard deviat. of SGS orography as a lower
+                                           ! limit of 'l_pat'
+            ext_data%atm%l_pat (jc,jb) = MIN( tdc%pat_len, prm_diag%pat_len(jc,jb) )
+          ELSE !using a constant 'l_pat'
+            ext_data%atm%l_pat (jc,jb) = tdc%pat_len
           ENDIF
           ext_data%atm%l_pat (jc,jb) = (phy_params%mean_charlen * ext_data%atm%l_pat (jc,jb)) / &
              &                         (phy_params%mean_charlen + ext_data%atm%l_pat (jc,jb))
@@ -1540,154 +1640,160 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
     i_startblk = p_patch%cells%start_blk(rl_start,1)
     i_endblk   = p_patch%cells%end_blk(rl_end,i_nchdom)
 
+!$OMP PARALLEL PRIVATE(edr_ptr,len_scale_ptr)
+    edr_ptr => NULL()
+    len_scale_ptr => NULL()
 
-#ifndef __PGI
-!FIXME: PGI + OpenMP produce deadlock in this loop. Compiler bug suspected
-!$OMP PARALLEL DO PRIVATE(jb,jk,i_startidx,i_endidx,ic,jc,jt, &
-!$OMP            ltkeinp_loc,lgz0inp_loc,nlevcm,l_hori,nzprv,zvariaux,zrhon, &
+!$OMP DO PRIVATE(jb,jk,i_startidx,i_endidx,ic,jc,jt, &
+!$OMP            ltkeinp_loc,igz0inp_loc,nlevcm,l_hori,nzprv,zvari,zrhon, &
+!$OMP            l_lake,l_sice, &
 !$OMP            ierrstat, errormsg, eroutine) ICON_OMP_DEFAULT_SCHEDULE
-#endif
 
     DO jb = i_startblk, i_endblk
 
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
         &                i_startidx, i_endidx, rl_start, rl_end)
 
-      IF (.not. ltestcase) THEN
-       IF (lturb_init) THEN
+      IF (ltestcase) THEN
+        igz0inp_loc = MERGE( 1, 0, lscm_read_z0 ) !"lscm_read_z0 =T": initial 'gz0' (for water points) is being taken from FG
+        ltkeinp_loc = lscm_read_tke               !"lscm_read_tke=T": initial 'tke' (in general)       is being taken from FG
+      ELSE ! "lturb_init=T": 'gz0' (for water points) and 'tke' (in general) are being initialized (that means: not taken from FG),
+        igz0inp_loc = MERGE( 0, 1, lturb_init )
+        ltkeinp_loc = .NOT.lturb_init
+      END IF
 
-        ltkeinp_loc = .FALSE.  ! initialize TKE field
-        lgz0inp_loc = .FALSE.  ! initialize gz0 field (water points only)
-
-       ELSE
-        !
-        ! TKE and gz0 are not re-initialized, but re-used from the first guess
-        !
-        ltkeinp_loc = .TRUE.   ! do NOT re-initialize TKE field (read from FG)
-        lgz0inp_loc = .TRUE.   ! do NOT re-initialize gz0 field (read from FG)
-
-
-        ! Note that TKE in turbtran/turbdiff is defined as the turbulence velocity scale
-        ! TVS=SQRT(2*TKE). The TKE is limited to 5.e-5 here because it may be zero on lateral
-        ! boundary points for the limited-area mode, which would cause a crash in the initialization
-        ! performed here but hs no impact on the results otherwise.
-        !
+      IF (ltkeinp_loc) THEN ! do NOT re-initialize TKE field (read from FG)
+        ! Note that TKE in turbtran/turbdiff is defined as the turbulence velocity scale TVS=SQRT(2*TKE).
+        ! TKE is limited to "5.e-5" here, because it may be zero on lateral boundary points for the limited-area mode,
+        !  which would cause a crash in the initialization performed here but has no impact on the results otherwise.
         DO jk =1,nlevp1
           DO jc = i_startidx, i_endidx
             p_prog_now%tke(jc,jk,jb)= SQRT(2.0_wp*MAX(5.e-5_wp,p_prog_now%tke(jc,jk,jb)))
           ENDDO
         ENDDO
-       ENDIF
-      ELSE !ltestcase
-
-       IF (lscm_read_tke) THEN
-        ltkeinp_loc = .TRUE.   ! do NOT re-initialize TKE field (read from FG)
-        ! Note that TKE in turbtran/turbdiff is defined as the turbulence velocity scale
-        ! TVS=SQRT(2*TKE). The TKE is limited to 5.e-5 here because it may be zero on lateral
-        ! boundary points for the limited-area mode, which would cause a crash in the initialization
-        ! performed here but hs no impact on the results otherwise.
-        !
-        DO jk =1,nlevp1
-          DO jc = i_startidx, i_endidx
-            p_prog_now%tke(jc,jk,jb)= SQRT(2.0_wp*MAX(5.e-5_wp,p_prog_now%tke(jc,jk,jb)))
-          ENDDO
-        ENDDO
-       ELSE
-        ltkeinp_loc = .FALSE.  ! initialize TKE field
-       ENDIF
-       IF (lscm_read_z0) THEN
-        lgz0inp_loc = .TRUE.   ! do NOT re-initialize gz0 field (read from FG)
-       ELSE
-        lgz0inp_loc = .FALSE.  ! initialize gz0 field (water points only)
-       ENDIF
-
       ENDIF
 
       l_hori(i_startidx:i_endidx)=phy_params%mean_charlen
 
-      nlevcm = nlevp1
+      DO jc = i_startidx, i_endidx
+        l_lake(jc)=(ext_data%atm%depth_lk(jc,jb)>0._wp)
+         l_sice(jc) = ext_data%atm%fr_land(jc,jb)<=0.5_wp .AND. & ! a non-land point, and:
+                      MERGE( MERGE( (p_prog_wtr_now%h_ice(jc,jb)>=h_Ice_min_flk), & !either more than marginal lake-ice depth from lake-scheme
+                                    (p_prog_lnd_now%t_g  (jc,jb)< tpl_T_f      ), & ! or frozen lake due to surface-temperature,
+                                    llake   ), & !dependent on whether lake scheme is active or not
+                             MERGE( (p_prog_wtr_now%h_ice(jc,jb)>0._wp  ), & !either sea-ice present from sea-ice scheme
+                                    (p_prog_lnd_now%t_g  (jc,jb)<tf_salt), & !or frozen salty sea due to surface temperature
+                                    lseaice ), & !dependent on whether sea-ice scheme is active or not
+                             l_lake(jc) ) !seperate treatment of lake points and non-lake points
+      END DO
 
-!MR: There should be an initialization for each tile, or the initialization can be
-!    executed for 'turbtran' and 'turbdiff' within a single CALL of 'organize_turbdiff'!
+      !Note(MR):
+      !Since there should be no '%h_ice' at non-land points, 'l_sice' indicates all grid-points coverd by sea- or lake-ice,
+      ! while frozen land points e.g. covered by snow or glaciers) are excluded.
+      !This is additionally ensured by only considering points with "%fr_land(jc,jb)<=0.5p".
 
-     ! set nzprv to 1 and use it as nprv (which is INOUT in turbtran and turbdiff
-     !  but this feature is not used here during initialization)
-     nzprv = 1
+      nlevcm = 3 !so far no vertically resolved roughness layer
 
-     ! turbtran: only surface-layer turbulence
-     CALL turbtran (                                                          &
-       &  iini=1, ltkeinp=ltkeinp_loc, lgz0inp=lgz0inp_loc, lstfnct=.TRUE. ,  &
-       &          lsrflux=.TRUE., lnsfdia=.TRUE., lrunscm=.FALSE.,            &  !including near-surface diagnostics and surface-flux calculations
-       &  dt_tke=atm_phy_nwp_config(jg)%dt_fastphy  ,                         &
-       &  nprv=nzprv, ntur=1, ntim=1,                                         &
-       &  nvec=nproma, ke=nlev, ke1=nlevp1, kcm=nlevcm, iblock=jb,            &
-       &  ivstart=i_startidx, ivend=i_endidx,                                 &
-       &  l_hori=l_hori, hhl=p_metrics%z_ifc(:,:,jb),                         &
-       &  fr_land=ext_data%atm%fr_land(:,jb),                                 &
-       &  depth_lk=ext_data%atm%depth_lk(:,jb),                               &
-       &  h_ice=p_prog_wtr_now%h_ice(:,jb),                                   &
-       &  rlamh_fac=prm_diag%rlamh_fac_t(:,jb,1),                             &
-       &  sai=ext_data%atm%sai(:,jb),                                         &
-       &  urb_isa=ext_data%atm%urb_isa_t(:,jb,1),                             &
-       &  gz0=prm_diag%gz0(:,jb),                                             &
-       &  t_g=p_prog_lnd_now%t_g(:,jb),                                       &
-       &  qv_s=p_diag_lnd%qv_s(:,jb),                                         &
-       &  ps=p_diag%pres_sfc(:,jb),                                           &
-       &  u=p_diag%u(:,:,jb),                                                 &
-       &  v=p_diag%v(:,:,jb),                                                 &
-       &  t=p_diag%temp(:,:,jb),                                              &
-       &  qv=p_prog_now%tracer(:,:,jb,iqv),                                   &
-       &  qc=p_prog_now%tracer(:,:,jb,iqc),                                   &
-       &  prs=p_diag%pres(:,:,jb),                                            &
-       &  epr=p_prog_now%exner(:,:,jb),                                       &
-       &  tcm=prm_diag%tcm(:,jb),                                             &
-       &  tch=prm_diag%tch(:,jb),                                             &
-       &  tvm=prm_diag%tvm(:,jb),                                             &
-       &  tvh=prm_diag%tvh(:,jb),                                             &
-       &  tfm=prm_diag%tfm(:,jb),                                             &
-       &  tfh=prm_diag%tfh(:,jb),                                             &
-       &  tfv=prm_diag%tfv(:,jb),                                             &
-       &  tkr=prm_diag%tkr(:,jb),                                             &
-       &  tke=p_prog_now%tke(:,:,jb),                                         &
-       &  tkvm=prm_diag%tkvm(:,:,jb),                                         &
-       &  tkvh=prm_diag%tkvh(:,:,jb),                                         &
-       &  rcld=prm_diag%rcld(:,:,jb),                                         &
-       &  t_2m=prm_diag%t_2m(:,jb),                                           &
-       &  qv_2m=prm_diag%qv_2m(:,jb),                                         &
-       &  td_2m=prm_diag%td_2m(:,jb),                                         &
-       &  rh_2m=prm_diag%rh_2m(:,jb),                                         &
-       &  u_10m=prm_diag%u_10m(:,jb),                                         &
-       &  v_10m=prm_diag%v_10m(:,jb),                                         &
-       &  shfl_s=prm_diag%shfl_s(:,jb),                                       &
-       &  qvfl_s=prm_diag%qhfl_s(:,jb))
+      ! set nzprv to 1 and use it as nprv (which is INOUT in turbtran and turbdiff
+      !  but this feature is not used here during initialization)
+      nzprv  = 1
 
+      ! turbtran: only surface-layer turbulence
+      CALL turbtran (                                                          & !only surface-layer turbulence
+!
+        &  tdc=tdc,                                                            & !in (current config-state for turbulence)
+!
+        &  iini=1, ltkeinp=ltkeinp_loc, igz0inp=igz0inp_loc,                   &
+        &          lsrflux=.TRUE., lnsfdia=.TRUE., lrunscm=.FALSE.,            & !incl. near-surf. diagn. and surf.-flux calcul.
+        &          ladsshr=.FALSE.,                                            & !no additional NTC-shear
+!
+        &  dt_tke=atm_phy_nwp_config(jg)%dt_fastphy  ,                         &
+        &  nprv=nzprv, ntur=1, ntim=1,                                         &
+        &  nvec=nproma, ke=2, ke1=3, kcm=nlevcm, iblock=jb,                    &
+        &  ivstart=i_startidx, ivend=i_endidx,                                 &
+!
+!
+        &  l_hori=l_hori, hhl=p_metrics%z_ifc(:,nlev-1:nlevp1,jb),             &
+        &  l_pat=ext_data%atm%l_pat(:,jb),                                     &
+        &  fr_land=ext_data%atm%fr_land(:,jb),                                 &
+        &  l_lake=l_lake(:),                                                   & !in (lake surfaces)
+        &  l_sice=l_sice(:),                                                   & !in (ice  surfaces)
+!
+        &  rlamh_fac=prm_diag%rlamh_fac_t(:,jb,1),                             &
+        &  sai=ext_data%atm%sai(:,jb),                                         &
+        &  urb_isa=ext_data%atm%urb_isa_t(:,jb,1),                             &
+        &  gz0=prm_diag%gz0(:,jb),                                             &
+        &  z0_waves=prm_diag%gz0(:,jb),                                        & !dummy input; wave coupling is never active here
+!
+        &  t_g=p_prog_lnd_now%t_g(:,jb),                                       &
+        &  qv_s=p_diag_lnd%qv_s(:,jb),                                         &
+        &  ps=p_diag%pres_sfc(:,jb),                                           &
+!
+        &  u=p_diag%u(:,nlev-1:nlev,jb),                                       &
+        &  v=p_diag%v(:,nlev-1:nlev,jb),                                       &
+        &  t=p_diag%temp(:,nlev-1:nlev,jb),                                    &
+        &  qv=p_prog_now%tracer(:,nlev-1:nlev,jb,iqv),                         &
+        &  qc=p_prog_now%tracer(:,nlev-1:nlev,jb,iqc),                         &
+        &  epr=p_prog_now%exner(:,nlev-1:nlev,jb),                             &
+!
+        &  tcm=prm_diag%tcm(:,jb),                                             &
+        &  tch=prm_diag%tch(:,jb),                                             &
+        &  tvm=prm_diag%tvm(:,jb),                                             &
+        &  tvh=prm_diag%tvh(:,jb),                                             &
+        &  tfm=prm_diag%tfm(:,jb),                                             &
+        &  tfh=prm_diag%tfh(:,jb),                                             &
+        &  tfv=prm_diag%tfv(:,jb),                                             &
+        &  tkr=prm_diag%tkr_t(:,jb,1),                                         &
+!
+        &  tke=p_prog_now%tke(:,nlev-1:nlevp1,jb),                             &
+        &  tkvm=prm_diag%tkvm(:,nlev-1:nlevp1,jb),                             &
+        &  tkvh=prm_diag%tkvh(:,nlev-1:nlevp1,jb),                             &
+        &  rcld=prm_diag%rcld(:,nlev-1:nlevp1,jb),                             &
+        &  tketens=prm_nwp_tend%ddt_tke(:,nlevp1:nlevp1,jb),                   &
+        ! Note: 'ddt_tke' is only employed here in order to transfer "0"-values for the surface level!
+!
+        &  t_2m=prm_diag%t_2m(:,jb),                                           &
+        &  qv_2m=prm_diag%qv_2m(:,jb),                                         &
+        &  td_2m=prm_diag%td_2m(:,jb),                                         &
+        &  rh_2m=prm_diag%rh_2m(:,jb),                                         &
+        &  u_10m=prm_diag%u_10m(:,jb),                                         &
+        &  v_10m=prm_diag%v_10m(:,jb),                                         &
+!
+        &  shfl_s=prm_diag%shfl_s(:,jb),                                       &
+        &  qvfl_s=prm_diag%qhfl_s(:,jb)                                        &
+        &                                                                      ) !end of 'turbtran' call
 
-      prm_diag%lhfl_s(i_startidx:i_endidx,jb) = &
-        &  prm_diag%qhfl_s(i_startidx:i_endidx,jb) * lh_v
+      prm_diag%lhfl_s(i_startidx:i_endidx,jb) = prm_diag%qhfl_s(i_startidx:i_endidx,jb) * lh_v
 
-      ! turbdiff
+      nlevcm = nlevp1 !so far no vertically resolved roughness layer
+
       CALL turbdiff ( &
-        &  iini=1,                                               & !atmosph. turbulence and vertical diffusion
-        &  ltkeinp=ltkeinp_loc,                                  &
-        &  lstfnct=.TRUE. ,                                      &
-        &  l3dturb=.FALSE.,                                      & ! not possible for ICON
-        &  lrunsso=(atm_phy_nwp_config(jg)%inwp_sso > 0),        & ! running COSMO SSO scheme
-        &  lruncnv=(atm_phy_nwp_config(jg)%inwp_convection > 0), & ! running convection
-        &  lrunscm=.FALSE.,                                      & ! no single column model
-        &  lsfluse=lsflcnd,                                      & !
+!
+        &  tdc=tdc,                                                 & !in (current config-state for turbulence)
+!
+        &  iini=1,                                                  & !separate initialization before the time loop
+        &  ltkeinp=ltkeinp_loc,                                     & !
+        &  l3dturb=.FALSE.,                                         & !not yet arranged for ICON
+        &  lrunsso=(atm_phy_nwp_config(jg)%inwp_sso > 0),           & !running COSMO SSO scheme
+        &  lruncnv=(atm_phy_nwp_config(jg)%inwp_convection > 0),    & !running convection
+        &  lrunscm=.FALSE.,                                         & !no single column model
+!
         &  dt_var=atm_phy_nwp_config(jg)%dt_fastphy,                &
         &  dt_tke=atm_phy_nwp_config(jg)%dt_fastphy,                &
         &  nprv=nzprv, ntur=1, ntim=1,                              &
         &  nvec=nproma, ke=nlev, ke1=nlevp1, kcm=nlevcm, iblock=jb, &
         &  ivstart=i_startidx, ivend=i_endidx,                      &
+!
         &  l_hori=l_hori,                                           &
         &  hhl=p_metrics%z_ifc(:,:,jb),                             &
         &  dp0=p_diag%dpres_mc(:,:,jb),                             &
         &  gz0=prm_diag%gz0(:,jb),                                  &
         &  l_pat = ext_data%atm%l_pat(:,jb),                        &
+!
         &  t_g=p_prog_lnd_now%t_g(:,jb),                            &
         &  qv_s=p_diag_lnd%qv_s(:,jb),                              &
         &  ps=p_diag%pres_sfc(:,jb),                                &
+!
         &  u=p_diag%u(:,:,jb),                                      &
         &  v=p_diag%v(:,:,jb),                                      &
         &  w=p_prog_now%w(:,:,jb),                                  &
@@ -1698,41 +1804,59 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
         &  rhoh=p_prog_now%rho(:,:,jb),                             &
         &  rhon=zrhon(:,:),                                         &
         &  epr=p_prog_now%exner(:,:,jb),                            &
-        &  impl_weight=turbdiff_config(jg)%impl_weight,             &
+!
         &  tvm=prm_diag%tvm(:,jb),                                  &
         &  tvh=prm_diag%tvh(:,jb),                                  &
         &  tfm=prm_diag%tfm(:,jb),                                  &
         &  tfh=prm_diag%tfh(:,jb),                                  &
+        &  tfv=prm_diag%tfv(:,jb),                                  &
         &  tke=p_prog_now%tke(:,:,jb),                              &
         &  tkvm=prm_diag%tkvm(:,:,jb),                              &
         &  tkvh=prm_diag%tkvh(:,:,jb),                              &
+        &  tprn=prm_diag%tprn(:,:,jb),                              &
         &  rcld=prm_diag%rcld(:,:,jb),                              &
-        &  u_tens=prm_nwp_tend%ddt_u_turb(:,:,jb),                  &
-        &  v_tens=prm_nwp_tend%ddt_v_turb(:,:,jb),                  &
+!
+        &  trop_mask=prm_diag%tropics_mask(:,jb),                   & !in
+        &  innertrop_mask=prm_diag%innertropics_mask(:,jb),         & !in
+!
         &  tketens=prm_nwp_tend%ddt_tke(:,:,jb),                    &
-        &  ut_sso=REAL(prm_nwp_tend%ddt_u_sso(:,:,jb),wp),          &
-        &  vt_sso=REAL(prm_nwp_tend%ddt_v_sso(:,:,jb),wp),          &
-        &  shfl_s=prm_diag%shfl_s(:,jb),                            &
-        &  qvfl_s=prm_diag%qhfl_s(:,jb),                            &
-        &  zvari=zvariaux                                           & !out
-        &  )
+!
+        &  zvari=zvari,                                             & !out
+        &  edr=edr_ptr,                                             & !dummy pointer, not used
+        &  tur_len_scale=len_scale_ptr                              & !dummy pointer, not used
+        &                                                           ) !end of 'turbdiff' call
 
       ! preparation for concentration boundary condition. Usually inactive for standard ICON runs.
-      IF ( .NOT. lsflcnd ) THEN
-        prm_diag%lhfl_s(i_startidx:i_endidx,jb) = &
-          &  prm_diag%qhfl_s(i_startidx:i_endidx,jb) * lh_v
+      IF ( .NOT. tdc%lsflcnd ) THEN
+        prm_diag%lhfl_s(i_startidx:i_endidx,jb) = prm_diag%qhfl_s(i_startidx:i_endidx,jb) * lh_v
       END IF
-
 
       ! tile-specific quantities needed by turbtran
       !
       DO jt = 1, ntiles_total+ntiles_water
-        prm_diag%gz0_t   (:,jb,jt) = prm_diag%gz0(:,jb)
+
+        IF (jt<=ntiles_total) THEN !for a not-tiled model run or for a land (sub)tile
+           prm_diag%gz0_t(:,jb,jt) = prm_diag%gz0(:,jb) !use '%gz0' for the tile-specific '%gz0_t' at each point
+        ELSE !for non-land tiles
+           DO jc = i_startidx, i_endidx !for all points
+             IF (ext_data%atm%fr_land(jc,jb) <= 0.5_wp ) THEN !'%gz0' has been calculated by 'turbtran'
+               prm_diag%gz0_t(jc,jb,jt) = prm_diag%gz0(jc,jb) !use this '%gz0' for the tile-specific '%gz0_t'
+
+               !Note:
+               !In this case, '%gz0' already refers to a non-land surface and is a good estimate for '%gz0_t'.
+             ELSE !'%gz0' has not been calculated by 'turbtran'
+               prm_diag%gz0_t(jc,jb,jt) = grav*tdc%z0_ice !use the value for sea-ice as applied in 'turbtran'
+             END IF
+           END DO
+        END IF
+
         prm_diag%tvs_s_t (:,jb,jt) = p_prog_now%tke(:,nlevp1,jb)  !here: SQRT(2*TKE)
         prm_diag%tkvm_s_t(:,jb,jt) = prm_diag%tkvm(:,nlevp1,jb)
         prm_diag%tkvh_s_t(:,jb,jt) = prm_diag%tkvh(:,nlevp1,jb)
-        prm_diag%tcm_t   (:,jb,jt) = prm_diag%tcm(:,jb)
-        prm_diag%tkr_t   (:,jb,jt) = prm_diag%tkr(:,jb)
+        prm_diag%rcld_s_t(:,jb,jt) = prm_diag%rcld(:,nlevp1,jb)
+        prm_diag%tvm_t   (:,jb,jt) = prm_diag%tvm(:,jb)
+        prm_diag%tvh_t   (:,jb,jt) = prm_diag%tvh(:,jb)
+        IF (jt>1) prm_diag%tkr_t   (:,jb,jt) = prm_diag%tkr_t(:,jb,1) !necessary if "imode_trancnf>=4"
       ENDDO
 
 
@@ -1745,9 +1869,12 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
       ENDDO
 
     ENDDO  ! jb
+!$OMP END DO
+!$OMP END PARALLEL
+
+    tdc%iinit=-1 !initialization has passed
 
     IF (msg_level >= 12)  CALL message(modname, 'Cosmo turbulence initialized')
-
 
   ELSE IF (  atm_phy_nwp_config(jg)%inwp_turb == igme .AND. linit_mode) THEN
 
@@ -1783,9 +1910,9 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
 
     CALL message(modname, 'init LES turbulence')
 
-    IF(atm_phy_nwp_config(jg)%inwp_surface == 0)THEN
-      IF (turbdiff_config(jg)%lconst_z0) THEN
-        prm_diag%gz0(:,:) = grav * turbdiff_config(jg)%const_z0
+    IF (atm_phy_nwp_config(jg)%inwp_surface == 0)THEN
+      IF (tdc%lconst_z0) THEN
+        prm_diag%gz0_t(:,:,1) = grav * tdc%const_z0
       ELSE
         CALL finish(routine, 'Only constant roughness length allowed idealized LES cases!')
       END IF
@@ -1798,7 +1925,7 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
         DO jt = 1, ntiles_total+ntiles_water
           prm_diag%gz0_t(i_startidx:i_endidx,jb,jt) = prm_diag%gz0(i_startidx:i_endidx,jb)
         ENDDO
-        !Note: 
+        !Note:
         !Although only '%gz0' (as a grid-surface mean) is required for the turbulence part,
         ! the tile-specific roughnes-length '%gz0_t' is still used in the soil/surfce part!
       ENDDO
@@ -1822,13 +1949,28 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
   CALL sugwd(nlev, pref, phy_params, jg)
   IF (linit_mode) prm_diag%ktop_envel(:,:) = nlev
 
+  ! update ccycle and ico2conc if C4MIP_FLAG
+  ! is set in user's runscript
+  IF(ccycle_config(jg)% C4MIP_FLAG /= 'none') THEN
+    CALL update_ccycle_config
+  ENDIF
+
+  ! CO2 tracer field intialization
+  IF (ccycle_config(jg)%iccycle == CCYCLE_MODE_INTERACTIVE) THEN
+    IF (ASSOCIATED(p_prog_now%tracer_ptr(ico2)%p_3d)) THEN
+!$OMP PARALLEL
+      CALL init(p_prog_now%tracer_ptr(ico2)%p_3d, vmr_co2*amco2/amd, lacc=.FALSE.)
+!$OMP END PARALLEL
+    END IF
+  END IF
+
   ! read time-dependent boundary conditions from file
   ! well mixed greenhouse gases, horizontally constant
-  IF(ANY((/irad_co2,irad_cfc11,irad_cfc12,irad_n2o,irad_ch4/) == 4)) THEN
+  IF(ANY((/irad_co2,irad_cfc11,irad_cfc12,irad_n2o,irad_ch4/) == 4) .OR. ccycle_config(jg)% ico2conc == 4 ) THEN
     ! read annual means
     CALL read_bc_greenhouse_gases(ghg_filename)
-    CALL bc_greenhouse_gases_time_interpolation(ini_date, print_report=(msg_level >= 5))
     ! interpolation to the current date and time takes place in the radiation interface
+    ! and - in simulation with jsbach - in the vdiff interface.
   ENDIF
 
 #ifndef __NO_ICON_UPATMO__
@@ -1868,14 +2010,14 @@ SUBROUTINE init_nwp_phy ( p_patch, p_metrics,             &
 
 END SUBROUTINE init_nwp_phy
 
-
-  SUBROUTINE init_cloud_aero_cpl ( mtime_date, p_patch, p_metrics, ext_data, prm_diag)
+  SUBROUTINE init_cloud_aero_cpl ( mtime_date, p_patch, p_metrics, ext_data, prm_diag, p_prog_now, p_diag)
 
     TYPE(datetime),   POINTER               :: mtime_date
     TYPE(t_patch),               INTENT(in) :: p_patch
     TYPE(t_nh_metrics),          INTENT(in) :: p_metrics
     TYPE(t_external_data),       INTENT(in) :: ext_data
-
+    TYPE(t_nh_prog),      TARGET,INTENT(inout) :: p_prog_now !!the prognostic variables
+    TYPE(t_nh_diag),      TARGET,INTENT(inout) :: p_diag  !!the diagostic variables
     TYPE(t_nwp_phy_diag),        INTENT(inout) :: prm_diag
 
     INTEGER          :: imo1, imo2
@@ -1883,22 +2025,23 @@ END SUBROUTINE init_nwp_phy
     INTEGER          :: jb, jc, jg, nlev
 
     REAL(wp) :: wgt, zncn(nproma, p_patch%nlev)
-    
+
+    LOGICAL :: lacc
+
     TYPE(t_time_interpolation_weights) :: current_time_interpolation_weights
 
     TYPE(datetime), POINTER :: mtime_hour
-    
+
     jg = p_patch%id
     nlev = p_patch%nlev
 
     IF (ALL (irad_aero /= (/iRadAeroTegen, iRadAeroART, iRadAeroCAMSclim, iRadAeroCAMStd/))) RETURN
-    IF (atm_phy_nwp_config(jg)%icpl_aero_gscp /= 1 .AND. icpl_aero_conv /= 1) RETURN
+    IF (atm_phy_nwp_config(jg)%icpl_aero_gscp /= 1 .AND. atm_phy_nwp_config(jg)%icpl_aero_gscp /= 2 .AND. icpl_aero_conv /= 1) RETURN
 
-    
     mtime_hour => newDatetime(mtime_date)
     mtime_hour%time%minute = 0
     mtime_hour%time%second = 0
-    mtime_hour%time%ms     = 0          
+    mtime_hour%time%ms     = 0
     current_time_interpolation_weights = calculate_time_interpolation_weights(mtime_hour)
     call deallocateDatetime(mtime_hour)
     imo1 = current_time_interpolation_weights%month1
@@ -1916,8 +2059,8 @@ END SUBROUTINE init_nwp_phy
     DO jb = i_startblk, i_endblk
 
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
- 
-      IF (iprog_aero == 0) THEN
+
+      IF ( ALL((/i2daero_dust, i2daero_seas, i2daero_anthro/) == 0) ) THEN
         DO jc = i_startidx, i_endidx
 
           prm_diag%aerosol(jc,iss,jb) = ext_data%atm_td%aer_ss(jc,jb,imo1) + &
@@ -1934,17 +2077,27 @@ END SUBROUTINE init_nwp_phy
         ENDDO
       ENDIF
 
-      CALL ncn_from_tau_aerosol_speccnconst (nproma, nlev, i_startidx, i_endidx, nlev, nlev, &
-        p_metrics%z_ifc(:,:,jb), prm_diag%aerosol(:,iss,jb), prm_diag%aerosol(:,iso4,jb),    &
-        prm_diag%aerosol(:,iorg,jb), prm_diag%aerosol(:,idu,jb), zncn)
+      ! Initiate both the 2D cloud_num and the 3D cdnc cloud droplets number concentration
+      ! Compute lookup tables for aerosol-microphysics coupling
+      IF (atm_phy_nwp_config(jg)%icpl_aero_gscp == 2) THEN
 
-      CALL specccn_segalkhain_simple (nproma, i_startidx, i_endidx, zncn(:,nlev), prm_diag%cloud_num(:,jb))
+        CALL init_cloud_num_cdnc (atm_phy_nwp_config(jg)%icpl_aero_gscp, icpl_aero_conv, nproma, nlev,                 &
+          & i_startidx, i_endidx, nlev, p_prog_now%w(:,:,jb), p_prog_now%tracer(:,:,jb,iqc), p_prog_now%rho(:,:,jb),  &
+          & p_metrics%z_ifc(:,:,jb), prm_diag%acdnc(:,:,jb),prm_diag%cloud_num(:,jb), ncn=p_diag%camsaermr(:,:,jb,:))
 
-      ! Impose lower limit on cloud_num over land
-      DO jc = i_startidx, i_endidx
-        IF (ext_data%atm%llsm_atm_c(jc,jb) .OR. ext_data%atm%llake_c(jc,jb)) &
-          prm_diag%cloud_num(jc,jb) = MAX(175.e6_wp,prm_diag%cloud_num(jc,jb))
-      ENDDO
+      ELSE
+        CALL init_cloud_num_cdnc (atm_phy_nwp_config(jg)%icpl_aero_gscp, icpl_aero_conv, nproma, nlev,                    &
+          & i_startidx, i_endidx, nlev, p_prog_now%w(:,:,jb), p_prog_now%tracer(:,:,jb,iqc), p_prog_now%rho(:,:,jb),      &
+          & p_metrics%z_ifc(:,:,jb), prm_diag%acdnc(:,:,jb),prm_diag%cloud_num(:,jb), aer_ss=prm_diag%aerosol(:,iss,jb),  &
+          & aer_so4=prm_diag%aerosol(:,iso4,jb), aer_org=prm_diag%aerosol(:,iorg,jb), aer_dust=prm_diag%aerosol(:,idu,jb))
+
+          ! Impose lower limit on cloud_num over land
+          DO jc = i_startidx, i_endidx
+            IF (ext_data%atm%llsm_atm_c(jc,jb) .OR. ext_data%atm%llake_c(jc,jb)) &
+              prm_diag%cloud_num(jc,jb) = MAX(175.e6_wp,prm_diag%cloud_num(jc,jb))
+          ENDDO
+
+      END IF
 
     ENDDO
 !$OMP END DO
@@ -1952,67 +2105,4 @@ END SUBROUTINE init_nwp_phy
 
   END SUBROUTINE init_cloud_aero_cpl
 
-  !------------------------------------------------
-  ! Use climatological data of cloud droplet number 
-  ! Satellite based data are provided in EXTPAR 
-  !------------------------------------------------
-
-  SUBROUTINE clim_cdnc(mtime_date, p_patch, ext_data, prm_diag)
-
-    TYPE(datetime)       , INTENT(in)    :: mtime_date
-    TYPE(t_patch)        , INTENT(in)    :: p_patch
-    TYPE(t_external_data), INTENT(in)    :: ext_data
-
-    TYPE(t_nwp_phy_diag) , INTENT(inout) :: prm_diag
-
-    INTEGER  :: imo1, imo2
-    INTEGER  :: rl_start, rl_end, i_startblk, i_endblk, i_startidx, i_endidx
-    INTEGER  :: jb, jc
-
-    REAL(wp) :: wgt
-
-    TYPE(t_time_interpolation_weights) :: current_time_interpolation_weights
-
-    TYPE(datetime), POINTER            :: mtime_hour
-
-    CALL message('mo_nwp_phy_init:', 'Use climatological cdnc')
-
-    mtime_hour => newDatetime(mtime_date)
-    mtime_hour%time%minute = 0
-    mtime_hour%time%second = 0
-    mtime_hour%time%ms     = 0
-    current_time_interpolation_weights = calculate_time_interpolation_weights(mtime_hour)
-    call deallocateDatetime(mtime_hour)
-    imo1 = current_time_interpolation_weights%month1
-    imo2 = current_time_interpolation_weights%month2
-    wgt  = current_time_interpolation_weights%weight2
-    rl_start = 1
-    rl_end   = min_rlcell_int
-
-    i_startblk = p_patch%cells%start_block(rl_start)
-    i_endblk   = p_patch%cells%end_block(rl_end)
-
-!$OMP PARALLEL
-!$OMP DO PRIVATE(jb,jc,i_startidx,i_endidx)
-    DO jb = i_startblk, i_endblk
-
-      CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
-        DO jc = i_startidx, i_endidx
-          ! Calculate the weighted average of monthly cloud droplet number
-          prm_diag%cloud_num(jc,jb) = ( ext_data%atm_td%cdnc(jc,jb,imo1) + &
-                   ( ext_data%atm_td%cdnc(jc,jb,imo2) - ext_data%atm_td%cdnc(jc,jb,imo1) ) * wgt )
-
-          ! scaling of external cdnc with a scaling factor derived from the simple plumes
-          IF ( atm_phy_nwp_config(p_patch%id)%lscale_cdnc ) THEN
-              prm_diag%cloud_num(jc,jb) = prm_diag%cloud_num_fac(jc,jb) * prm_diag%cloud_num(jc,jb)
-          ENDIF
-        ENDDO
-
-    ENDDO
-!$OMP END DO
-!$OMP END PARALLEL
-
-  END SUBROUTINE clim_cdnc
-
 END MODULE mo_nwp_phy_init
-

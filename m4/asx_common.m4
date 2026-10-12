@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2024, MPI-M
+# Copyright (c) 2018-2026, MPI-M
 #
 # Author: Sergey Kosukhin <sergey.kosukhin@mpimet.mpg.de>
 #
@@ -105,6 +105,16 @@ AC_DEFUN([ASX_ESCAPE_SINGLE_QUOTE],
      [AS_VAR_SET([$1], [`AS_ECHO(["AS_VAR_GET([$1])"]) | dnl
 sed "s/'/'\\\\\\\\''/g"`])])])
 
+# ASX_ESCAPE_MAKE_SYNTAX(VARIABLE)
+# -----------------------------------------------------------------------------
+# Emits shell code that modifies the value of the shell variable VARIABLE to
+# conform with Makefile syntax (e.g. each dollar sign "$" is duplicated).
+#
+AC_DEFUN([ASX_ESCAPE_MAKE_SYNTAX],
+  [AS_CASE([AS_VAR_GET([$1])], [*\$[]*],
+     [AS_VAR_SET([$1], [`AS_ECHO(["AS_VAR_GET([$1])"]) | dnl
+sed 's/\\$/$$/g'`])])])
+
 # ASX_SRCDIRS(BUILD-DIR-NAME)
 # -----------------------------------------------------------------------------
 # Receives a normalized (i.e. does not contain '/./', '..', etc.) path
@@ -133,5 +143,25 @@ sed "s/'/'\\\\\\\\''/g"`])])])
 #     9) ac_abs_top_srcdir - absolute path to the top source directory.
 #
 AC_DEFUN([ASX_SRCDIRS],
-  [AC_REQUIRE_SHELL_FN([acx_subdir_srcdirs_fn], [], [_AC_SRCDIRS(["$[]1"])])dnl
-   acx_subdir_srcdirs_fn $1])
+  [AC_REQUIRE_SHELL_FN([asx_srcdirs_fn], [], [_AC_SRCDIRS(["$[]1"])])dnl
+   asx_srcdirs_fn $1])
+
+# ASX_DIRNAME(FILE-NAME)
+# -----------------------------------------------------------------------------
+# Simulates the command 'dirname FILE-NAME', which might not be available on
+# the system. Relies on the standard AS_DIRNAME macro, but keeps the configure
+# script smaller by moving the required shell code to a shell function.
+#
+AC_DEFUN([ASX_DIRNAME],
+  [AC_REQUIRE_SHELL_FN([asx_dirname_fn], [], [AS_DIRNAME(["$[]1"])])dnl
+   asx_dirname_fn $1])
+
+# ASX_BASENAME(FILE-NAME)
+# -----------------------------------------------------------------------------
+# Simulates the command 'basename FILE-NAME', which might not be available on
+# the system. Relies on the standard AS_BASENAME macro, but keeps the configure
+# script smaller by moving the required shell code to a shell function.
+#
+AC_DEFUN([ASX_BASENAME],
+  [AC_REQUIRE_SHELL_FN([asx_basename_fn], [], [AS_BASENAME(["$[]1"])])dnl
+   asx_basename_fn $1])

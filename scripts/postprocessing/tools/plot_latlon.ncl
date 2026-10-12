@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -19,8 +19,8 @@
 ; 08/2011 : F. Prill, DWD
 ;----------------------------------------------------------------------
 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"  
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"  
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 
 begin
 
@@ -39,11 +39,11 @@ begin
   pi_180 = atan(1.)/45.
 
   wks_type = "ps"        ; or "pdf"
-  
+
 ; wks_type@wkOrientation = "landscape"
 
   wks  = gsn_open_wks (wks_type, outfilename)       ; open workstation
- 
+
   gsn_define_colormap(wks,"BlWhRe")
   res  = True
   res@gsnDraw            = True
@@ -57,7 +57,7 @@ begin
 ; res@mpCenterLatF           =  20
 ; res@mpGridLatSpacingF      =  20
 ; res@mpGridLonSpacingF      =  20
-  res@mpPerimOn              = False                ; don't draw box around map    
+  res@mpPerimOn              = False                ; don't draw box around map
 
   res@mpGridLineDashPattern  = 2                    ; make lat/lon lines dash
   res@mpGridAndLimbOn        = True                 ; turn on lat/lon grid lines
@@ -76,7 +76,7 @@ begin
 ;---------------------------------------------------------------
 
   ; open netCDF file
-  cdf_file = addfile(DataFileName,"r") 
+  cdf_file = addfile(DataFileName,"r")
 
   startlev = "grid_nml:start_lev"
   grid_category = "R2B" + (cdf_file@$startlev$)
@@ -142,6 +142,3 @@ begin
   plot = gsn_csm_contour_map(wks,var_lonlat,res)
 
 end
-
-
-

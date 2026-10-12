@@ -1,22 +1,20 @@
-!
-! Data types and variables used by the rte-rrtmgp radiation package.
-!
-! This module contains
-!  definition of data types for organising rte-rrtmgp diagnostics,
-!  the actual variables that are declared of these types, and
-!  subroutines for (de-)allocating memory for the variables.
-! 
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Data types and variables used by the rte-rrtmgp radiation package.
+!
+! This module contains
+!  definition of data types for organising rte-rrtmgp diagnostics,
+!  the actual variables that are declared of these types, and
+!  subroutines for (de-)allocating memory for the variables.
 
 MODULE mo_radiation_forcing
   USE mo_kind,                ONLY: wp
@@ -40,7 +38,7 @@ MODULE mo_radiation_forcing
        & kproma           ,kbdim             ,klevp1           ,krow           ,&
        & pflx_dnlw        ,pflx_dnsw         ,pflx_dnlw_clr    ,pflx_dnsw_clr   )
 
-    INTEGER, INTENT(in)     :: jg,     & !< domain index 
+    INTEGER, INTENT(in)     :: jg,     & !< domain index
                              & kproma, & !< block length
                              & kbdim,  & !< maximum block length
                              & klevp1, & !< number of layers + 1
@@ -58,7 +56,7 @@ MODULE mo_radiation_forcing
 
   END SUBROUTINE prepare_radiation_forcing
   !-----------------------------------------------------------------------------
-  ! calculate_forcing: calculate radiative forcing 
+  ! calculate_forcing: calculate radiative forcing
   !-----------------------------------------------------------------------------
 
   SUBROUTINE calculate_radiation_forcing( jg                 &
@@ -67,7 +65,7 @@ MODULE mo_radiation_forcing
        & ,pconvfact          ,pflxs            ,pflxs0             &
        & ,pflxt              ,pflxt0           ,pemiss             &
        & ,ptsfctrad          ,pztsnew                              )
-    INTEGER, INTENT(in)          :: jg,     & !< domain index 
+    INTEGER, INTENT(in)          :: jg,     & !< domain index
                                   & jcs,jce, & !< block length
                                   & kbdim,  & !< maximum block length
                                   & klevp1, & !< number of layers + 1
@@ -127,7 +125,7 @@ MODULE mo_radiation_forcing
     IF (lradforcing(2)) THEN
       !--- Radiation flux forcing:
       zflxt_all_for(jcs:jce,1:klev)=zemter_for(jcs:jce,1:klev)
-      ! 
+      !
       ! in the following formulae, the order of calculation has to be as is
       ! if not, for an aerosol free atmosphere the forcing is not exactly 0
       ! because of numeric effects (see the corresponding formulae in radheat)

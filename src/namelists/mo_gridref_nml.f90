@@ -1,16 +1,15 @@
-! Namelist for configuration of grid refinement algorithms.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Namelist for configuration of grid refinement algorithms.
 
 MODULE mo_gridref_nml
 
@@ -20,12 +19,12 @@ MODULE mo_gridref_nml
   USE mo_io_units,            ONLY: nnml, nnml_output
   USE mo_master_control,      ONLY: use_restart_namelists
   USE mo_namelist,            ONLY: position_nml, POSITIONED, open_nml, close_nml
-  USE mo_mpi,                 ONLY: my_process_is_stdio 
+  USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_restart_nml_and_att, ONLY: open_tmpfile, store_and_close_namelist,  &
                                   & open_and_restore_namelist, close_tmpfile
 
   USE mo_gridref_config,      ONLY:   &
-    &                            config_rbf_vec_kern_grf_e => rbf_vec_kern_grf_e,& 
+    &                            config_rbf_vec_kern_grf_e => rbf_vec_kern_grf_e,&
     &                            config_rbf_scale_grf_e    => rbf_scale_grf_e,&
     &                            config_grf_velfbk         => grf_velfbk,&
     &                            config_grf_scalfbk        => grf_scalfbk,&
@@ -60,7 +59,7 @@ MODULE mo_gridref_nml
   INTEGER  :: grf_velfbk     ! switch for velocity feedback method
                              ! 1 = averaging over child edges 1 and 2;
                              ! 2 = 2nd-order method using RBF reconstruction to child vertices
-  
+
   INTEGER  :: grf_scalfbk    ! switch for feedback method of scalar dynamical variables
                              ! 1 = area-weighted averaging
                              ! 2 = bilinear interpolation
@@ -86,14 +85,14 @@ MODULE mo_gridref_nml
 
 CONTAINS
   !-------------------------------------------------------------------------
-  !! This subroutine 
-  !! - reads the Namelist for local grid refinement 
+  !! This subroutine
+  !! - reads the Namelist for local grid refinement
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)    
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_gridref_namelist( filename )
 
@@ -102,7 +101,7 @@ CONTAINS
     CHARACTER(len=*),PARAMETER :: routine = 'mo_gridref_nml:read_gridref_namelist'
 
     !-----------------------
-    ! 1. default settings   
+    ! 1. default settings
     !-----------------------
 
     ! Switch for interpolation method used for cell-based dynamical
@@ -147,7 +146,7 @@ CONTAINS
     fbk_relax_timescale = 10800._wp ! 3 hours
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN

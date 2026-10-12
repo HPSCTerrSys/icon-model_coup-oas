@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -16,7 +16,7 @@
 ##
 #-----------------------------------------------------------------------------
 #PBS -q sx_norm
-#PBS -v NE=1,CPE=1,NMPI_ROOT=/opt/nec/ve/mpi/2.3.1 
+#PBS -v NE=1,CPE=1,NMPI_ROOT=/opt/nec/ve/mpi/2.3.1
 #PBS -l elapstim_req=00:10:00
 #PBS --venode=${NE}
 #PBS --venum-lhost=1     # Number of VE per logical host
@@ -139,8 +139,8 @@ end_date="2014-11-25T12:00:00Z"
 #-----------------------------------------------------------------------------
 DT_DATA=`expr 1 \* 3600`      # output each n hours
 DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000                # number of time steps per output file 
+#n_in_ofile=60                # number of time steps per output file
+n_in_ofile=10000                # number of time steps per output file
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -202,7 +202,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
@@ -231,7 +231,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12 !25           ! detailed report during integration
  output         = 'nml'
 /
@@ -241,8 +241,8 @@ cat > NAMELIST_${EXPNAME} << EOF
  lscm_read_tke=.False.     ! read initial tke from netcdf
  lscm_read_z0=.TRUE.       ! read initial z0 from netcdf
  scm_sfc_mom=0 !0             ! 0=TERRA,1=turb_trans,2=prescribed u*, 0
-                           ! 0 , combined with inwp_surface = 0 (TERRA off) 
-			   ! to let turb_trans determine u* (do not overwrite flux)  
+                           ! 0 , combined with inwp_surface = 0 (TERRA off)
+			   ! to let turb_trans determine u* (do not overwrite flux)
  scm_sfc_temp=1            ! 0=TERRA,1=turb_trans+t_g,prescribed sensible heat flux at surface
  scm_sfc_qv=3              ! 0=TERRA,1=turb_trans+q_vs,prescribed latent heat flux at surface,3=qv_s at saturation
 
@@ -257,7 +257,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 
 
 &nwp_phy_nml
- inwp_gscp       = 4 ! 
+ inwp_gscp       = 4 !
  icalc_reff = 4 ! use effective radius calculation consitent between micro and cloud, use same as inwp_gscp
  inwp_convection = 0 ! 1:Tiedtke/Bechtold 0:apdf
  inwp_radiation  = 1 ! 1:RRTM radiation
@@ -285,7 +285,7 @@ cat > NAMELIST_${EXPNAME} << EOF
   irad_o3 = 11 ! 0: switch off ozone and initialize in test_case setup instead
   !irad_aero = 6 ! 6: Tegen aerosol climatology in radiation (not workin with testcase?
   !izenith = 6 ! same lat lon for all grid points in zenith angle calculation, rad_lat, rad_lon set in grid_nml
-  albedo_type = 1 ! 2: MODIS albedo, together with inwp_surface = 0 
+  albedo_type = 1 ! 2: MODIS albedo, together with inwp_surface = 0
                   ! 1: albedo based on soil type, see mo_phyparam_soil
  vmr_ch4                      = 1800.e-09
  vmr_n2o                      = 322.0e-09
@@ -330,13 +330,14 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing       = .FALSE.
  is_nudging           = .FALSE.
  is_nudging_uv        = .FALSE.
- is_nudging_tq        = .FALSE.
+ is_nudging_t         = .FALSE.
+ is_nudging_q         = .FALSE.
  is_theta             = .FALSE.
 /
 
 &turbdiff_nml
  tkhmin  = 0.6 !0.75  ! new default since rev. 16527
- tkmmin  = 0.75  !           
+ tkmmin  = 0.75  !
  tkhmin_strat                 = 1.0
  tkmmin_strat                 = 4
  alpha0                       = 0.0123
@@ -349,7 +350,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  frcsmot = 0.2      ! these 2 switches together apply vertical smoothing of the TKE source terms
  imode_frcsmot = 2  ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher = 3    
+ itype_sher = 3
  ltkeshs    = .true.
  a_hshr     = 2.0
  lconst_z0 = .TRUE.
@@ -361,7 +362,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 &nwp_tuning_nml
  itune_albedo                 = 0       ! somewhat reduced albedo (w.r.t. MODIS data) over Sahara in order to reduce cold bias
  tune_zceff_min               = 0.01    ! ** default value to be used for R3B7; use 0.025 for R2B6 in order to get similar temperature biases in upper troposphere **
- tune_gkdrag                  = 0.075   ! R2B6: 0.075  
+ tune_gkdrag                  = 0.075   ! R2B6: 0.075
  tune_gkwake                  = 1.5     ! R2B6: 1.5
  tune_gfrcrit                 = 0.425   ! R2B6: 0.425
  tune_dust_abs                = 0.
@@ -391,8 +392,6 @@ cat > NAMELIST_${EXPNAME} << EOF
  ivctype        = 2          ! sleve vertical coordinate
  damp_height    = 44000.     ! top_height-damp_height should be about 15km
  ndyn_substeps  = ${ndyn_substeps}
- l_open_ubc     = .false.   ! top open upper boundary condition. might help to go higher
- rayleigh_type   = 1 
  rayleigh_coeff = 0.5 !0.0
  htop_moist_proc= 22500.
  hbot_qvsubstep	= 16000.    ! Default: 22500  ! M. Koehler: 19000; at leas as large as htop_moist_proc
@@ -401,7 +400,6 @@ cat > NAMELIST_${EXPNAME} << EOF
  itime_scheme                 = 4
  exner_expol                  = 0.333
  vwind_offctr                 = 0.2         ! 0.2 for R2B6 and higher resolution, 0.3 for lower resolution
- lhdiff_rcf                   = .true.
  divdamp_order                = 24          ! 2 ass, 24 fc
  divdamp_type                 = 32          ! optional: 2 assimilation cycle, 32 forecast
  divdamp_fac                  = 0.004       ! 0.004 for R2B6; recommendation for R3B7: 0.003
@@ -432,8 +430,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &dynamics_nml
- iequations     = 3       ! equation system
- idiv_method    = 1
  divavg_cntrwgt = 0.50
  lcoriolis      = .TRUE.  ! SCM attention: .TRUE. distroys U-profile!!
 /
@@ -452,12 +448,12 @@ cat > NAMELIST_${EXPNAME} << EOF
 ! ml_varlist       = 'group:all', 'rh' , ! 'ddt_temp_gscp'#,'ddt_tke_therm'
 !                    'z_ifc','z_mc','u','v','w','temp','pres','rho','theta_v','pres_sfc','div',
 !                    'qv','qc','qi','qs','qr','rh',
-!                    !'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t', 
+!                    !'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t',
 !                    'ddt_temp_radsw', 'ddt_temp_radlw', 'ddt_temp_turb', 'ddt_temp_drag', 'ddt_temp_pconv','ddt_temp_gscp',
 !                    'ddt_qv_turb','ddt_qc_turb','ddt_qv_conv','ddt_qc_conv','u_10m', 'v_10m', 't_2m', 't_g',
 !                    'qv_s','z_mc','lhfl_s','shfl_s','umfl_s','vmfl_s','tcm','tch','clc','tke','rcld','qhfl_s',
 !                    'sob_s', 'thb_s','sob_t', 'lwflx_dn',
-!	       !'tet_flux','vap_flux','liq_flux' 
+!	       !'tet_flux','vap_flux','liq_flux'
 !	       'tetfl_turb', 'vapfl_turb', 'liqfl_turb',
 !	       !'ddt_tke_therm', 'ddt_tke_mech', 'ddt_tke_shear','ddt_tke_pconv','ddt_tke_hsh', ! ,'edr',
 !               'qnc','qnr','qni','qns','qng','qnh','ninact', ! for 2mom scheme, cnnc when aerosol?
@@ -499,7 +495,7 @@ cat > NAMELIST_${EXPNAME} << EOF
   ml_varlist = 'z_mc','z_ifc','pres','exner','theta_v','temp','rh','qv','qc','qr','qi','qs','rho','tot_qv_dia','tot_qi_dia','tot_qc_dia',
                'clc','u','v','tkvm','tkvh','tke','ddt_qv_turb','ddt_qc_turb','ddt_tke',
 	       'ddt_temp_gscp','ddt_temp_radsw','ddt_temp_radlw','ddt_temp_turb','lwflxall','trsolall','pres_sfc','t_g',
-	       'qnc','qnr','qni','qns','qng','qnh','ninact', 
+	       'qnc','qnr','qni','qns','qng','qnh','ninact',
 	       'tetfl_turb','vapfl_turb','liqfl_turb',
 	       'lwflx_up','lwflx_dn','swflx_up','swflx_dn',
 	       'reff_qc','reff_qr'
@@ -546,7 +542,7 @@ mpiexec -v -x -venode -np ${PPN} ${MODEL}
 
 #/opt/nec/ve/bin/mpirun -v    -vh     -node 0        -np 1      -env OMP_NUM_THREADS 1 ${MODEL_SCAL} : \
 #                             -x      -venode        -np ${PPN} -env OMP_NUM_THREADS 1 ${MODEL} : \
-#                             -vh     -node 0        -np 4      -env OMP_NUM_THREADS 1 ${MODEL_SCAL} 
+#                             -vh     -node 0        -np 4      -env OMP_NUM_THREADS 1 ${MODEL_SCAL}
 #
 
 echo $data1 ; date

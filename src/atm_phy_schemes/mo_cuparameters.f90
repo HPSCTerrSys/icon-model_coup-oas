@@ -16,19 +16,20 @@ MODULE mo_cuparameters
 
   USE mo_kind,       ONLY: jpim=>i4, jprb=>wp
   USE mo_exception,  ONLY: message_text, message
-  USE mo_physical_constants, ONLY: rday => rdaylen
+  USE mo_time_base,  ONLY: rday => rdaylen
   USE mo_nwp_parameters,  ONLY: t_phy_params
   USE mo_nwp_tuning_config, ONLY: tune_entrorg, tune_rhebc_land, tune_rhebc_ocean, tune_rcucov, &
     tune_texc, tune_qexc, tune_rhebc_land_trop, tune_rhebc_ocean_trop, tune_rcucov_trop, tune_gkdrag, &
     tune_gkwake, tune_gfrcrit, tune_grcrit, tune_rprcon, tune_rdepths, tune_minsso, tune_blockred, &
-    tune_eiscrit, tune_gkdrag_enh, tune_grcrit_enh, tune_minsso_gwd
+    tune_eiscrit, tune_gkdrag_enh, tune_grcrit_enh, tune_minsso_gwd, tune_grzdc_offset, &
+    tune_rmfdeps_land, tune_rmfdeps_ocean, tune_detrainment_profile, tune_entrainment_profile
 
   IMPLICIT NONE
 
   PRIVATE
 
 
-  
+
   !*    Common of physical constants of IFS
   ! A1.0 Fundamental constants
   REAL(KIND=jprb) :: rpi
@@ -112,14 +113,14 @@ MODULE mo_cuparameters
   REAL(KIND=jprb) :: rparzi
   REAL(KIND=jprb) :: rlamsk
   LOGICAL lelwdd
-  
+
   !**   ** *YOEDFS* CONTAINS STABILITY FUNCTION TABLES FOR *VDF...*
-  
+
   !     A.C.M. BELJAARS   E.C.M.W.F.       26/03/90.
-  
+
   !      NAME      TYPE        PURPOSE
   !      ----      ----        -------
-  
+
   !     *RCHBA*     REAL       *CONSTANT A IN *HOLTSLAG AND *DEBRUIN
   !                            FUNCTIONS FOR STABLE SITUATIONS
   !     *RCHBB*     REAL       *CONSTANT B IN *HB* FUNCTIONS
@@ -145,7 +146,7 @@ MODULE mo_cuparameters
   !     *ARITBL*    REAL ARRAY *SECOND DERIVATIVES OF TABULATED FUNCTION
   !                            FOR SPLINE INTERPOLATION.
   !     ------------------------------------------------------------------
-  
+
   INTEGER(KIND=jpim), PARAMETER :: jpritbl=101
   REAL(KIND=jprb) :: ritbl(jpritbl)
   REAL(KIND=jprb) :: aritbl(jpritbl)
@@ -165,12 +166,12 @@ MODULE mo_cuparameters
   REAL(KIND=jprb) :: rimax
   REAL(KIND=jprb) :: dritbl
   REAL(KIND=jprb) :: dri26
-  
+
   !     J.-J. MORCRETTE                   91/07/14  ADAPTED TO I.F.S.
-  
+
   !      NAME     TYPE      PURPOSE
   !      ----     ----      -------
-  
+
   !     *R__ES*   REAL      *CONSTANTS USED FOR COMPUTATION OF SATURATION
   !                         MIXING RATIO OVER LIQUID WATER(*R_LES*) OR
   !                         ICE(*R_IES*).
@@ -188,7 +189,7 @@ MODULE mo_cuparameters
   !     *RTICECU* REAL      *RTICECU=RTT-23.0
   !     *RTWAT_RTICE_R*   REAL      *RTWAT_RTICE_R=1./(RTWAT-RTICE)
   !     *RTWAT_RTICECU_R* REAL      *RTWAT_RTICECU_R=1./(RTWAT-RTICECU)
-  
+
   !       ----------------------------------------------------------------
   REAL(KIND=jprb) :: r2es
   REAL(KIND=jprb) :: r3les
@@ -211,20 +212,20 @@ MODULE mo_cuparameters
   REAL(KIND=jprb) :: rticecu
   REAL(KIND=jprb) :: rtwat_rtice_r
   REAL(KIND=jprb) :: rtwat_rticecu_r
-  
+
   ! LEPCLD : LOGICAL : TURN THE PROGNOSTIC CLOUD SCHEME ON
   LOGICAL lepcld
-  
+
   !*     *YOEPHLI* CONTAINS CONSTANTS NEEDED BY
   !     THE LINEARIZED PHYSICS
-  
-  
+
+
   !     J.F. MAHFOUF        E.C.M.W.F.    23/06/96
-  
-  
+
+
   !     NAME        TYPE     DESCRIPTION
   !     ----        ----     -----------
-  
+
   !     *RLPTRC*    REAL     CRITICAL TEMPERATURE FOR MIXED PHASE PROPERTIES
   !                          OF WATER
   !     *RLPAL1*    REAL     SMOOTHING COEFFICIENT
@@ -246,7 +247,7 @@ MODULE mo_cuparameters
   LOGICAL lphylin
   LOGICAL lenopert
   LOGICAL lraisanen
-  
+
   REAL(KIND=jprb) :: rlptrc
   REAL(KIND=jprb) :: rlpal1
   REAL(KIND=jprb) :: rlpal2
@@ -258,14 +259,14 @@ MODULE mo_cuparameters
   REAL(KIND=jprb) :: rlpdrag
   REAL(KIND=jprb) :: rlpevap
   REAL(KIND=jprb) :: rlpp00
-  
+
   !*    ** *YOECUMF* - PARAMETERS FOR CUMULUS MASSFLUX SCHEME
-  
+
   !     M.TIEDTKE       E. C. M. W. F.      18/1/89
 
   !     NAME      TYPE      PURPOSE
   !     ----      ----      -------
-  
+
   !     LMFPEN    LOGICAL  TRUE IF PENETRATIVE CONVECTION IS SWITCHED ON
   !     LMFSCV    LOGICAL  TRUE IF SHALLOW     CONVECTION IS SWITCHED ON
   !     LMFMID    LOGICAL  TRUE IF MIDLEVEL    CONVECTION IS SWITCHED ON
@@ -304,7 +305,7 @@ MODULE mo_cuparameters
   !     NJKT1, NJKT2, NJKT3-5 INTEGER  LEVEL LIMITS FOR CUBASEN/CUDDR
   !     EISCRIT   REAL     CRITICAL STABILITY THRESHOLD FOR STRATOCUMULUS
   !     ----------------------------------------------------------------
-  
+
   ! REAL(KIND=jprb) :: entrorg
   REAL(KIND=jprb) :: entshalp
   ! REAL(KIND=jprb) :: entstpc1 -> moved into phy_params because it is configuration-dependent
@@ -327,6 +328,8 @@ MODULE mo_cuparameters
   ! REAL(KIND=jprb) :: rtau0 -> moved into phy_params because it is resolution-dependent
   INTEGER         :: icapdcycl
   REAL(KIND=jprb) :: rcpecons
+  REAL(KIND=jprb) :: rdetrain(2), rentrain(2)
+!$ACC DECLARE CREATE(rdetrain, rentrain)
   ! REAL(KIND=jprb) :: rcucov
   REAL(KIND=jprb) :: rtaumel
   ! REAL(KIND=jprb) :: rhebc
@@ -412,20 +415,20 @@ MODULE mo_cuparameters
   !     -----------------------------------------------------------------
   !*    ** *YOEGWD* - PARAMETERS FOR GRAVITY WAVE DRAG CALCULATIONS
   !     -----------------------------------------------------------------
-  
+
   !        * E.C.M.W.F. PHYSICS PACKAGE *
-  
+
   !     M. J. MILLER          E.C.M.W.F.      89/12/14
-  
+
   !  NAME     TYPE     PURPOSE
   !  ----  :  ----   : ---------------------------------------------------
-  
+
   ! GFRCRIT: CRITICAL FROUDE NUMBER
   ! GRCRIT : CRITICAL RICHARDSON NUMBER FOR ONSET OF WAVE TURBULENCE.
   ! GKDRAG : DRAG CONSTANT (PROPORTIONAL TO WAVENUMBER)
   ! GKWAKE : DRAG COEFFICIENT FOR LOWLEVEL WAKE DRAG
   ! NKTOPG : NUMBER OF TOPMOST LAYER USED TO DEFINE LOW-LEVEL FLOW
-  ! NGWDLIM: VERTICAL LEVEL ABOVE WHICH THE WIND TENDENCIES WILL BE LIMITED 
+  ! NGWDLIM: VERTICAL LEVEL ABOVE WHICH THE WIND TENDENCIES WILL BE LIMITED
   !          TO GTENLIM
   ! GTENLIM: LIMITER FOR WIND TENDENCIES IN THE STRATOSPHERE AND MESOSPHERE
   ! GRFPLM : PRESUURE LIMIT FOR RAYLEIGH FRICTION
@@ -433,11 +436,11 @@ MODULE mo_cuparameters
   ! LRDIFF_STRATO: IF TRUE REDUCED VERTICAL DIFFUSION IN STRATOSPHERE
   ! NDIFF_STRATO: TYPE OF REDUCED VERTICAL DIFFUSION IN STRATOSPHERE
   ! LDIAG_STRATO:  IF TRUE STORE GRAVITY-WAVE MOMENTUM FLUXES
-  
-  
+
+
   !*    SECURITY PARAMETERS.
   !     --------------------
-  
+
   ! GSSEC  : TO SECURE STABILITY.
   ! GTSEC  : TO SECURE THE STRESS CALCULATION.
   ! GVSEC  : TO SECURE THE PROJECTION CALCULATION.
@@ -458,12 +461,15 @@ MODULE mo_cuparameters
   REAL(KIND=JPRB) :: GRFPLM
   LOGICAL         :: LRDIFF_STRATO
   LOGICAL         :: LDIAG_STRATO
-  
+
+  REAL(KIND=JPRB), PARAMETER :: cdnc_low  = 70.e6_JPRB
+  REAL(KIND=JPRB), PARAMETER :: cdnc_high = 110.e6_JPRB
+  REAL(KIND=JPRB), PARAMETER :: cdnc_delt = cdnc_high - cdnc_low
 
   ! yomhook
-  LOGICAL:: LHOOK=.FALSE.  
+  LOGICAL:: LHOOK=.FALSE.
   !
-  
+
   !yoecld
   PUBLIC :: rlmin
   !yomcst
@@ -499,7 +505,7 @@ MODULE mo_cuparameters
           & rcdhpi2  ,rcheta   ,rchetb   ,rchbb    ,&
           & rchbcd   ,rchbd    ,rchb23a  ,rchbbcd  ,&
           & rchba    ,rchbhdl  ,rimax    ,dritbl   ,dri26
-      
+
   PUBLIC :: phihu    ,phimu    ,phims    ,phihs
 
   !yoegwd
@@ -516,12 +522,15 @@ MODULE mo_cuparameters
   PUBLIC :: sugwd
   PUBLIC :: dr_hook
   PUBLIC :: lhook
+  PUBLIC :: rdetrain, rentrain
   PUBLIC :: vdiv, vexp, vrec, vlog
 ! shallow stochastic convection
   PUBLIC :: k_wei, alpha_mf, beta_mf, mean_mf, m0, C1, kinv, active_fraction, mavg1,nclds
 ! deep stochastic convection
   PUBLIC :: deep_k_wei, deep_alpha_mf, deep_beta_mf, deep_mean_mf, deep_mean_tau
-  
+! cloud droplet number based interpolation
+  PUBLIC :: cdnc_low, cdnc_delt
+
   ! Module variables used in acc routine need to be in acc declare create()
   ! these variables are used in mo_cufunctions.f90
   !$ACC DECLARE CREATE(rtice, rtwat, rtwat_rtice_r)
@@ -534,7 +543,7 @@ MODULE mo_cuparameters
   !$ACC DECLARE CREATE(lphylin, lhook, rlptrc, rlpal1, rlpal2)
 
 CONTAINS
-  
+
   ! fcttrm.h
   !!     ABSOLUTE THERMODYNAMICAL FUNCTIONS .
   !
@@ -545,37 +554,37 @@ CONTAINS
   !!     ESS : SATURATION IN PRESENCE OF ICE
   !!     ES  : SATURATION (IF T>RTT THEN WATER ; IF T<RTT THEN ICE)
   !!        INPUT (FOR ALL SIX FUNCTIONS) : PTARG = TEMPERATURE .
-  
+
   ELEMENTAL FUNCTION rlv(ptarg)
     REAL(KIND=jprb)             :: rlv
     REAL(KIND=jprb), INTENT(in) :: ptarg
     rlv = rlvtt+(rcpv-rcw)*(ptarg-rtt)
   END FUNCTION rlv
-  
+
   ELEMENTAL FUNCTION rls(ptarg)
     REAL(KIND=jprb)             :: rls
     REAL(KIND=jprb), INTENT(in) :: ptarg
     rls = rlstt+(rcpv-rcs)*(ptarg-rtt)
   END FUNCTION rls
-  
+
   ELEMENTAL FUNCTION rlf(ptarg)
     REAL(KIND=jprb)             :: rlf
     REAL(KIND=jprb), INTENT(in) :: ptarg
     rlf = rls(ptarg)-rlv(ptarg)
   END FUNCTION rlf
-  
+
   ELEMENTAL FUNCTION esw(ptarg)
     REAL(KIND=jprb)             :: esw
     REAL(KIND=jprb), INTENT(in) :: ptarg
     esw = EXP(ralpw-rbetw/ptarg-rgamw*LOG(ptarg))
   END FUNCTION esw
-  
+
   ELEMENTAL FUNCTION ess(ptarg)
     REAL(KIND=jprb)             :: ess
     REAL(KIND=jprb), INTENT(in) :: ptarg
     ess = EXP(ralps-rbets/ptarg-rgams*LOG(ptarg))
   END FUNCTION ess
-  
+
   ELEMENTAL FUNCTION es (ptarg)
     REAL(KIND=jprb)             :: es
     REAL(KIND=jprb), INTENT(in) :: ptarg
@@ -584,41 +593,41 @@ CONTAINS
       & -(rbetw+rbetd*MAX(0.0_JPRB,SIGN(1.0_JPRB,rtt-ptarg)))/ptarg    &
       & -(rgamw+rgamd*MAX(0.0_JPRB,SIGN(1.0_JPRB,rtt-ptarg)))*LOG(ptarg))
   END FUNCTION es
-  
+
   !! Orbit of the earth
-  
+
   ELEMENTAL FUNCTION rteta(ptime)
     REAL(KIND=jprb)             :: rteta
     REAL(KIND=jprb), INTENT(in) :: ptime
     rteta = ptime/(rday*365.25_JPRB)
   END FUNCTION rteta
-  
+
   ELEMENTAL FUNCTION rel(pteta)
     REAL(KIND=jprb)             :: rel
     REAL(KIND=jprb), INTENT(in) :: pteta
     rel = 1.7535_JPRB+6.283076_JPRB*pteta
   END FUNCTION rel
-  
+
   PURE FUNCTION rem(pteta)
     REAL(KIND=jprb)             :: rem
     REAL(KIND=jprb), INTENT(in) :: pteta
     rem = 6.240075_JPRB+6.283020_JPRB*pteta
   END FUNCTION rem
-  
+
   ELEMENTAL FUNCTION rrs(pteta)
     REAL(KIND=jprb)             :: rrs
     REAL(KIND=jprb), INTENT(in) :: pteta
     rrs = rea*(1.0001_JPRB-0.0163_JPRB*SIN(rel(pteta))&
       & +0.0037_JPRB*COS(rel(pteta)))
   END FUNCTION rrs
-  
+
   !! Relative movement Sun/Earth
   PURE FUNCTION rlls (pteta)
     REAL(KIND=jprb)             :: rlls
     REAL(KIND=jprb), INTENT(in) :: pteta
     rlls = 4.8951_JPRB+6.283076_JPRB*pteta
   END FUNCTION rlls
-  
+
   ELEMENTAL FUNCTION rllls (pteta)
     REAL(KIND=jprb)             :: rllls
     REAL(KIND=jprb), INTENT(in) :: pteta
@@ -626,13 +635,13 @@ CONTAINS
       & -0.0326_JPRB*COS(rel(pteta))-0.0003_JPRB*SIN(2.0_JPRB*rel(pteta))  &
       & +0.0002_JPRB*COS(2.0_JPRB*rel(pteta))
   END FUNCTION rllls
-  
+
   ELEMENTAL FUNCTION rds (pteta)
     REAL(KIND=jprb)             :: rds
     REAL(KIND=jprb), INTENT(in) :: pteta
     rds = ASIN(SIN(repsm)*SIN(rllls(pteta)))
   END FUNCTION rds
-  
+
   ELEMENTAL FUNCTION ret (pteta)
     REAL(KIND=jprb)             :: ret
     REAL(KIND=jprb), INTENT(in) :: pteta
@@ -641,73 +650,73 @@ CONTAINS
       & -12.7_JPRB*SIN(4._jprb*rlls(pteta))-4.8_JPRB*SIN(2.0_JPRB*rem(pteta))
   END FUNCTION ret
   !    -------------------------------------------------------------
-  
+
   PURE FUNCTION ndd(kgrdat)
     INTEGER(KIND=jpim)             :: ndd
     INTEGER(KIND=jpim), INTENT(in) :: kgrdat
     ndd = MOD(kgrdat,100)
   END FUNCTION ndd
-  
+
   ELEMENTAL FUNCTION nmm(kgrdat)
     INTEGER(KIND=jpim)             :: nmm
     INTEGER(KIND=jpim), INTENT(in) :: kgrdat
     nmm  =MOD((kgrdat-ndd(kgrdat))/100,100)
   END FUNCTION nmm
-  
+
   PURE FUNCTION nccaa(kgrdat)
     INTEGER(KIND=jpim)             :: nccaa
     INTEGER(KIND=jpim), INTENT(in) :: kgrdat
     nccaa = kgrdat/10000
   END FUNCTION nccaa
-  
+
   ELEMENTAL FUNCTION naa(kgrdat)
     INTEGER(KIND=jpim)             :: naa
     INTEGER(KIND=jpim), INTENT(in) :: kgrdat
     naa = MOD(nccaa(kgrdat),100)
   END FUNCTION naa
-  
+
   ELEMENTAL FUNCTION namd(kgrdat)
     INTEGER(KIND=jpim)              :: namd
     INTEGER(KIND=jpim), INTENT(in)  :: kgrdat
     namd = MOD(kgrdat,1000000)
   END FUNCTION namd
-  
+
   ELEMENTAL FUNCTION ncth(ksec)
     INTEGER(KIND=jpim)              :: ncth
     INTEGER(KIND=jpim), INTENT(in)  :: ksec
     ncth = ksec/3600
   END FUNCTION ncth
-  
+
   ELEMENTAL FUNCTION ncent(kgrdat)
     INTEGER(KIND=jpim)              :: ncent
     INTEGER(KIND=jpim), INTENT(in)  :: kgrdat
     ncent = nccaa(kgrdat)/100+MIN(naa(kgrdat),1)
   END FUNCTION ncent
-  
+
   ELEMENTAL FUNCTION nyearc(kgrdat)
     INTEGER(KIND=jpim)             :: nyearc
     INTEGER(KIND=jpim), INTENT(in) :: kgrdat
     nyearc = naa(kgrdat)+100*(1-MIN(naa(kgrdat),1))
   END FUNCTION nyearc
-  
+
   ELEMENTAL FUNCTION nconstruct_date(kcent,kyearc,kmonth,kday)
     INTEGER(KIND=jpim)             :: nconstruct_date
     INTEGER(KIND=jpim) , INTENT(in):: kcent,kyearc,kmonth,kday
     nconstruct_date = (kcent-1)*10**6+kyearc*10**4+kmonth*10**2+kday
   END FUNCTION nconstruct_date
-  
+
   ELEMENTAL FUNCTION nzzaa(kaaaa,kmm)
     INTEGER(KIND=jpim)             :: nzzaa
     INTEGER(KIND=jpim), INTENT(in) :: kaaaa,kmm
     nzzaa = kaaaa-( (1-SIGN(1,kmm-3))/2 )
   END FUNCTION nzzaa
-  
+
   ELEMENTAL FUNCTION nzzmm(kmm)
     INTEGER(KIND=jpim)             :: nzzmm
     INTEGER(KIND=jpim), INTENT(in) :: kmm
     nzzmm = kmm+6*(1-SIGN(1,kmm-3))
   END FUNCTION nzzmm
-  
+
   ELEMENTAL FUNCTION rjudat(kaaaa,kmm,kdd)
     REAL(KIND=jprb)                ::  rjudat
     INTEGER(KIND=jpim), INTENT(in) ::  kaaaa,kmm,kdd
@@ -717,15 +726,15 @@ CONTAINS
       & + INT(30.601_JPRB*REAL(nzzmm(kmm)+1,jprb))               &
       & +  kdd,jprb)
   END FUNCTION rjudat
-  
+
   ELEMENTAL FUNCTION rtime(kaaaa,kmm,kdd,kss)
     REAL(KIND=jprb)                ::  rtime
     INTEGER(KIND=jpim), INTENT(in) ::  kaaaa,kmm,kdd,kss
     rtime = (rjudat(kaaaa,kmm,kdd)-2451545._jprb)&
       & *  rday+REAL(kss,jprb)
   END FUNCTION rtime
-  
-  
+
+
   ! fcvdfs.h
   !     ------------------------------------------------------------------
   !     *FCVDFS** CONTAINS STATEMENT FUNCTIONS DESCRIBING STAB. FUNCT.
@@ -766,13 +775,13 @@ CONTAINS
   !        *PHI AND *PSI FUNCTIONS FOR UNSTABLE SITUATIONS ACCORDING
   !        TO HOGSTROM FOR MOMENTUM AND DERIVED FROM THE ELLISON AND
   !        TURNER RELATION FOR THE RATIO OF PHIM AMD PHIH.
-  
+
   ELEMENTAL FUNCTION phims(peta)
     REAL(KIND=jprb)             :: phims
     REAL(KIND=jprb), INTENT(in) :: peta
     phims = 1.0_JPRB+rcheta*peta
   END FUNCTION phims
-  
+
   ELEMENTAL FUNCTION phihs(peta)
     REAL(KIND=jprb)             :: phihs
     REAL(KIND=jprb), INTENT(in) :: peta
@@ -781,34 +790,34 @@ CONTAINS
 
 
 !------------------------------------------------------------------------------
- 
- 
+
+
   SUBROUTINE sucst(kulout,kdat,ksss,kprintlev)
     !>
     !! Description:
     !!**** *SUCST * - Routine to initialize the constants of the model.
-    
+
     !!     Purpose.
     !!     --------
     !!           Initialize and print the common YOMCST + initialize
     !!         date and time of YOMRIP.
-    
+
     !!        Explicit arguments :
     !!        --------------------
-    
+
     !!        KULOUT  - logical unit for the output
     !!        KDAT    - date in the form AAAAMMDD
     !!        KSSS    - number of seconds in the day
     !!        KPRINTLEV - printing level
-    
+
     !!     Reference.
     !!     ----------
     !!        ECMWF Research Department documentation of the IFS
-    
+
     !!     Author.
     !!     -------
     !!        Mats Hamrud and Philippe Courtier  *ECMWF*
-    
+
     !!     Modifications.
     !!     --------------
     !!        Original : 87-10-15
@@ -817,9 +826,9 @@ CONTAINS
     !!                    96-08-12 M.Hamrud - Reduce printing
     !!    ------------------------------------------------------------------
     !!
-    
+
     !USE PARKIND1  ,ONLY : JPIM     ,JPRB
-    
+
     !USE YOMCST   , ONLY : RPI      ,RCLUM    ,RHPLA    ,RKBOL    ,&
     !            &RNAVO    ,RDAY     ,REA      ,REPSM    ,RSIYEA   ,&
     !            &RSIDAY   ,ROMEGA   ,RA       ,RG       ,R1SA     ,&
@@ -831,48 +840,48 @@ CONTAINS
     !            &RALPW    ,RBETW    ,RGAMW    ,RALPS    ,RBETS    ,&
     !            &RGAMS    ,RALPD    ,RBETD    ,RGAMD
     !USE YOMRIP   , ONLY : RTIMST   ,RTIMTR
-    
+
     !KF 'USE' instead of 'include'
     !#include "fctast.h"
     !#include "fcttrm.h"
     !#include "fcttim.h"
-    
-    
+
+
     !     DUMMY INTEGER SCALARS
     INTEGER(KIND=jpim) :: kdat
     INTEGER(KIND=jpim) :: kprintlev
     INTEGER(KIND=jpim) :: ksss
     INTEGER(KIND=jpim) :: kulout
-    
-    
+
+
     !     LOCAL INTEGER SCALARS
     INTEGER(KIND=jpim) :: ia, id, idat, im, isss, j
-    
+
     !     LOCAL REAL SCALARS
     REAL(KIND=jprb) :: zde, zet, zju, zrs, zrsrel, zteta, zti
-    
+
     !      -----------------------------------------------------------------
-    
+
     !*       1.    DEFINE FUNDAMENTAL CONSTANTS.
     !              -----------------------------
-    
+
     rpi=2._jprb*ASIN(1._jprb)
     rclum=299792458._jprb
     rhpla=6.6260755E-34_JPRB
     rkbol=1.380658E-23_JPRB
     rnavo=6.0221367E+23_JPRB
-    
+
     !     ------------------------------------------------------------------
-    
+
     !*       2.    DEFINE ASTRONOMICAL CONSTANTS.
     !              ------------------------------
     rea=149597870000._jprb
     repsm=0.409093_JPRB
-    
+
     rsiyea=365.25_JPRB*rday*2._jprb*rpi/6.283076_JPRB
     rsiday=rday/(1._jprb+rday/rsiyea)
     romega=2._jprb*rpi/rsiday
-    
+
     idat=kdat
     isss=ksss
     id=ndd(idat)
@@ -887,29 +896,29 @@ CONTAINS
     zde=rds(zteta)
     zet=ret(zteta)
     zrsrel=zrs/rea
-    
+
     !     ------------------------------------------------------------------
-    
+
     !*       3.    DEFINE GEOIDE.
     !              --------------
-    
+
     rg=9.80665_JPRB
     ra=6371229._jprb
     r1sa=REAL(1._jprb/REAL(ra,KIND(1._jprb)),KIND(r1sa))
-    
+
     !     ------------------------------------------------------------------
-    
+
     !*       4.    DEFINE RADIATION CONSTANTS.
     !              ---------------------------
-    
+
     rsigma=2._jprb * rpi**5 * rkbol**4 /(15._jprb* rclum**2 * rhpla**3)
     ri0=1370._jprb
-    
+
     !     ------------------------------------------------------------------
-    
+
     !*       5.    DEFINE THERMODYNAMIC CONSTANTS, GAS PHASE.
     !              ------------------------------------------
-    
+
     r=rnavo*rkbol
     rmd=28.9644_JPRB
     rmv=18.0153_JPRB
@@ -922,28 +931,28 @@ CONTAINS
     rcvv=rcpv-rv
     rkappa=rd/rcpd
     retv=rv/rd-1._jprb
-    
+
     !$ACC UPDATE DEVICE(r, rmd, rmv, rmo3, rd, rv, rcpd, rcvd, rcpv, rcvv, rkappa, retv) ASYNC(1)
 
     !     ------------------------------------------------------------------
-    
+
     !*       6.    DEFINE THERMODYNAMIC CONSTANTS, LIQUID PHASE.
     !              ---------------------------------------------
-    
+
     rcw=4218._jprb
-    
+
     !     ------------------------------------------------------------------
-    
+
     !*       7.    DEFINE THERMODYNAMIC CONSTANTS, SOLID PHASE.
     !              --------------------------------------------
-    
+
     rcs=2106._jprb
-    
+
     !     ------------------------------------------------------------------
-    
+
     !*       8.    DEFINE THERMODYNAMIC CONSTANTS, TRANSITION OF PHASE.
     !              ----------------------------------------------------
-    
+
     rtt=273.16_JPRB
     rdt=11.82_JPRB
     rlvtt=2.5008E+6_JPRB
@@ -952,12 +961,12 @@ CONTAINS
     rlszer=rlstt+rtt*(rcs-rcpv)
     rlmlt=rlstt-rlvtt
     ratm=100000._jprb
-    
+
     !     ------------------------------------------------------------------
-    
+
     !*       9.    SATURATED VAPOUR PRESSURE.
     !              --------------------------
-    
+
     restt=611.14_JPRB
     rgamw=(rcw-rcpv)/rv
     rbetw=rlvtt/rv+rgamw*rtt
@@ -968,11 +977,11 @@ CONTAINS
     rgamd=rgams-rgamw
     rbetd=rbets-rbetw
     ralpd=ralps-ralpw
-    
+
     !     ------------------------------------------------------------------
-    
+
     !*      10.    PRINTS
-    
+
     IF (kprintlev >= 1) THEN
       WRITE(kulout,'(''0*** Constants of the ICM   ***'')')
       WRITE(kulout,'('' *** Fundamental constants ***'')')
@@ -988,7 +997,7 @@ CONTAINS
       WRITE(kulout,'('' sideral year = '',E13.7,'' s'')')rsiyea
       WRITE(kulout,'(''  sideral day = '',E13.7,'' s'')')rsiday
       WRITE(kulout,'(''        omega = '',E13.7,'' s-1'')')romega
-      
+
       WRITE(kulout,'('' The initial date of the run is :'')')
       WRITE(kulout,'(1X,I8,1X,I5,5X,I4,1X,I2,1X,I2)')idat,isss,ia,im,id
       WRITE(kulout,'('' The Julian date is : '',F11.2)') zju
@@ -1046,14 +1055,14 @@ CONTAINS
 
     !RETURN
   END SUBROUTINE sucst
-  
+
 
 !------------------------------------------------------------------------------
 
-  
-  SUBROUTINE sucumf(rsltn,klev,phy_params,lshallow_only,lgrayzone_deepconv,ldetrain_conv_prec, &
+
+  SUBROUTINE sucumf(rsltn,klev,phy_params,lshallow_only,lgrayzone_deepconv,lconv_cdnc_interp,ldetrain_conv_prec, &
        & lrestune_off,lmflimiter_off,lstoch_expl,lstoch_sde,lstoch_deep,lvvcouple, &
-       & lvv_shallow_deep,pmean)
+       & lvv_shallow_deep,itype_parcel_ascent,pmean)
 
 
 !     THIS ROUTINE DEFINES DISPOSABLE PARAMETERS FOR MASSFLUX SCHEME
@@ -1073,7 +1082,7 @@ CONTAINS
 !                                      (modified gravity)
 !                                      add options for diurnal cycle over land
 !          P. Lopez, ECMWF (Oct 2007)  Put reading of NAMCUMF back in.
-!          R. Forbes, May 2008         Changed factor in RTAUMEL from 
+!          R. Forbes, May 2008         Changed factor in RTAUMEL from
 !                                      1.5 to 0.66
 !          N. Semane+P.Bechtold     04-10-2012 Add RCORIOI/RPLRG/RPLDARE/RHOUR/RCVRFACTOR for small planet
 !          T. Wilhelmsson (Sept 2013) Geometry and setup refactoring.
@@ -1106,7 +1115,7 @@ INTEGER(KIND=jpim) :: nflevg
 INTEGER(KIND=jpim), INTENT(in) :: klev
 REAL(KIND=jprb)   , INTENT(in) :: rsltn
 TYPE(t_phy_params), INTENT(inout) :: phy_params
-LOGICAL           , INTENT(in) :: lshallow_only, lgrayzone_deepconv
+LOGICAL           , INTENT(in) :: lshallow_only, lgrayzone_deepconv,lconv_cdnc_interp
 LOGICAL           , INTENT(in) :: ldetrain_conv_prec
 LOGICAL           , INTENT(in) :: lrestune_off
 LOGICAL           , INTENT(in) :: lmflimiter_off
@@ -1115,6 +1124,7 @@ LOGICAL           , INTENT(in) :: lstoch_sde
 LOGICAL           , INTENT(in) :: lstoch_deep
 LOGICAL           , INTENT(in) :: lvvcouple
 LOGICAL           , INTENT(in) :: lvv_shallow_deep
+INTEGER(KIND=jpim), INTENT(in) :: itype_parcel_ascent
 REAL(KIND=jprb)   , INTENT(in), OPTIONAL :: pmean(klev)
 
 !* change to operations
@@ -1138,7 +1148,7 @@ phy_params%detrpen=0.75E-4_JPRB
 IF (lshallow_only .OR. lgrayzone_deepconv) &
   phy_params%detrpen = phy_params%detrpen*MAX(1._jprb,SQRT(5.e3_jprb/rsltn))
 
-!         NOTA:SHALLOW/DEEP ENTRAINMENT RATES ARE 
+!         NOTA:SHALLOW/DEEP ENTRAINMENT RATES ARE
 !              VERTICALLY SCALED BY FUNCTION  (qs/qsb)**3
 
 !     ENTRORG: ENTRAINMENT FOR POSITIVELY BUOYANT DEEP/SHALLOW CONVECTION 1/(M)
@@ -1190,8 +1200,8 @@ IF (lshallow_only .OR. lgrayzone_deepconv) THEN
   rmfdeps       = 0.30_JPRB
   rmfdeps_ocean = rmfdeps
 ELSE
-  rmfdeps       = 0.25_JPRB
-  rmfdeps_ocean = 0.15_JPRB
+  rmfdeps       = tune_rmfdeps_land      ! was 0.25_JPRB before
+  rmfdeps_ocean = tune_rmfdeps_ocean     ! was 0.15_JPRB before
 ENDIF
 
 !     RDEPTHS:   MAXIMUM ALLOWED SHALLOW CLOUD DEPTH (Pa)
@@ -1262,6 +1272,11 @@ ENDIF
 phy_params%entrorg = tune_entrorg
 IF (lshallow_only .AND. .NOT. lrestune_off .OR. lgrayzone_deepconv ) &
    phy_params%entrorg = phy_params%entrorg*MAX(1._jprb,SQRT(5.e3_jprb/MAX(2.e3_jprb,rsltn)))
+
+! parameter for RH-dependent detrainment and entrainment
+rdetrain(:) = tune_detrainment_profile(:)
+rentrain(:) = tune_entrainment_profile(:)
+!$ACC UPDATE DEVICE(rdetrain, rentrain)
 
 ! resolution-dependent settings for 'excess values' of temperature and QV used for convection triggering (test parcel ascent)
 
@@ -1335,9 +1350,20 @@ ENDIF
 
 IF (lgrayzone_deepconv) THEN
   phy_params%lgrayzone_deepconv = .TRUE.
+  phy_params%tune_grzdc_offset = tune_grzdc_offset
 ELSE
   phy_params%lgrayzone_deepconv = .FALSE.
+  phy_params%tune_grzdc_offset = 0._jprb
 ENDIF
+
+IF (lconv_cdnc_interp) THEN
+  CALL message('mo_cuparameters','Using CDNC-based interpolation in convection')
+  WRITE(message_text,'(2(a,e7.2))') "   cdnc_low = ",cdnc_low,", cdnc_high = ",cdnc_high
+  CALL message('mo_cuparameters', TRIM(message_text))
+  phy_params%lconv_cdnc_interp = .TRUE.
+ELSE
+  phy_params%lconv_cdnc_interp = .FALSE.
+END IF
 
 IF (ldetrain_conv_prec) THEN
   phy_params%lmfdsnow = .TRUE.
@@ -1375,6 +1401,8 @@ ELSE
   phy_params%lvv_shallow_deep = .FALSE.
 ENDIF
 
+phy_params%itype_parcel_ascent = itype_parcel_ascent
+
 lmfdd   =.TRUE.   ! use downdrafts
 lmfit   =.FALSE.  ! updraught iteration or not
 LMFUVDIS=.TRUE.   ! use kinetic energy dissipation (addit T-tendency)
@@ -1397,7 +1425,7 @@ ELSE                    ! master branch default
    ELSE
       phy_params%mfcfl = 2._JPRB*MIN(2._JPRB,1._JPRB + 2.5e-5_JPRB*rsltn)
    ENDIF
-ENDIF 
+ENDIF
 
 IF (.NOT. PRESENT(pmean)) RETURN
 
@@ -1411,7 +1439,7 @@ ELSE                      ! master branch default
    rmflia=0.0_JPRB   ! value of absolut mass flux limit
    rmflmax=1.75_jprb ! mass flux limit following a suggestion by P. Bechtold [kg/(m**2s)]
    rmfdef=0.1_JPRB   ! first-guess mass flux value for deep convection (M. Ahlgrimm)
-ENDIF 
+ENDIF
 
 
 !     MASSFLUX SOLVERs FOR MOMEMTUM AND TRACERS
@@ -1464,14 +1492,14 @@ nclds           = 5000           ! max number of shallow clouds to keep track of
 ! Deep stochastic convection
 ! Distribution parameters for deep convection based on
 ! Plant and Craig 2008 (as implemented originally by Ekaterina Machulskaya)
-deep_k_wei           = 0.7_JPRB     ! 
+deep_k_wei           = 0.7_JPRB     !
 deep_alpha_mf        = 0.33_JPRB    ! factor in lifetime relationship
 deep_beta_mf         = 1.1_JPRB     ! exponent in lifetime relationship
 deep_mean_mf         = 2.0E+07_JPRB ! deep
-deep_mean_tau        = 45.*60._JPRB ! timescale 
+deep_mean_tau        = 45.*60._JPRB ! timescale
 
 CALL message('mo_cuparameters, sucumf', 'NJKT1, NJKT2, KSMAX')
-WRITE(message_text,'(2i7,E12.5)') phy_params%kcon1, phy_params%kcon2, rsltn 
+WRITE(message_text,'(2i7,E12.5)') phy_params%kcon1, phy_params%kcon2, rsltn
 CALL message('mo_cuparameters, sucumf ', TRIM(message_text))
 CALL message('mo_cuparameters, sucumf', 'LMFMID, LMFDD, LMFDUDV, RTAU, ENTRORG, TEXC, QEXC')
 WRITE(message_text,'(4x,l6,l6,l6,F8.4,E11.4,2F8.5)')phy_params%lmfmid,lmfdd,lmfdudv,phy_params%tau,&
@@ -2032,45 +2060,45 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
 
 
   SUBROUTINE SUGWD(KLEV,pmean,phy_params,jg)
-  
+
   !**** *SUGWD* INITIALIZE COMMON YOEGWD CONTROLLING GRAVITY WAVE DRAG
-  
+
   !     PURPOSE.
   !     --------
   !           INITIALIZE YOEGWD, THE COMMON THAT CONTROLS THE
   !           GRAVITY WAVE DRAG PARAMETRIZATION.
-  
+
   !**   INTERFACE.
   !     ----------
   !        CALL *SUGWD* FROM *SUPHEC*
   !              -----        ------
-  
+
   !        EXPLICIT ARGUMENTS :
   !        --------------------
   !        KULOUT      : LOGICAL UNIT FOR THE OUTPUT
   !        PVAH,PVBH   : VERTICAL COORDINATE TABLE
   !        KLEV        : NUMBER OF MODEL LEVELS
-  
+
   !        IMPLICIT ARGUMENTS :
   !        --------------------
   !        COMMON YOEGWD
-  
+
   !     METHOD.
   !     -------
   !        SEE DOCUMENTATION
-  
+
   !     EXTERNALS.
   !     ----------
   !        NONE
-  
+
   !     REFERENCE.
   !     ----------
   !        ECMWF Research Department documentation of the IFS
-  
+
   !     AUTHOR.
   !     -------
   !        MARTIN MILLER             *ECMWF*
-  
+
   !     MODIFICATIONS.
   !     --------------
   !        ORIGINAL : 90-01-01       ALSO : 95-01-20
@@ -2082,61 +2110,61 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
   !        R. El Khatib  10-Aug-2011 More proper abort check when EC physics is inactive
   !        T. Wilhelmsson (Sept 2013) Geometry and setup refactoring.
   !     ------------------------------------------------------------------
-  
-  
+
+
   IMPLICIT NONE
-  
-  INTEGER(KIND=JPIM),INTENT(IN)    :: KLEV 
+
+  INTEGER(KIND=JPIM),INTENT(IN)    :: KLEV
 
   TYPE(t_phy_params), INTENT(inout) :: phy_params
   REAL(KIND=jprb)   , INTENT(in)    :: pmean(klev)
   INTEGER           , INTENT(in)    :: jg
 
   !      ----------------------------------------------------------------
-  
+
   INTEGER(KIND=JPIM) :: JK
-  
+
   REAL(KIND=JPRB) :: ZPM1R(KLEV), ZSIGT, ZPLIM
   REAL(KIND=JPRB) :: ZHOOK_HANDLE
 
-  
+
   REAL(KIND=JPRB) :: RHOUR=3600.0
-  
-  
-  
+
+
+
   !*       1.    SET THE VALUES OF THE PARAMETERS
   !              --------------------------------
-  
+
   IF (LHOOK) CALL DR_HOOK('SUGWD',0,ZHOOK_HANDLE)
-  
+
   !dmk ZSIGT=0.94_JPRB
   !xxx ZPR  =80000._JPRB
-  
+
   zsigt =  75000._jprb ! (750 hPa in International Standard Atmosphere)
   !xxx
-  
+
   !  As a security measure when running with few levels,
   !  we force NKTOPG=KLEV to make sure it is defined
-  
+
   phy_params%NKTOPG=KLEV
-  
+
   !dmk DO JK=KLEV,1,-1
   !      ZPM1R(JK)=0.5_JPRB*(PVAH(JK)+PVAH(JK+1)+ZPR*(PVBH(JK)+PVBH(JK+1)))
   !      IF((ZPM1R(JK)/ZPR) >= ZSIGT)THEN
   !        NKTOPG=JK
   !      ENDIF
   !xxx ENDDO
-  
+
 
   DO jk=klev,1,-1
-    ! Find highest full level with zf(jk) <= zsigt 
+    ! Find highest full level with zf(jk) <= zsigt
     IF (pmean(jk) >= zsigt) THEN
       phy_params%nktopg=jk
     END IF
   END DO
-  
 
-  
+
+
   GRFPLM=9.9_JPRB
   phy_params%NGWDTOP=1
   DO JK=1,KLEV
@@ -2145,7 +2173,7 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
       phy_params%NGWDTOP=JK
     ENDIF
   ENDDO
-  
+
   ! SSO tuning parameters
   phy_params%gkdrag  = tune_gkdrag(jg)
   phy_params%gkdrag_enh  = tune_gkdrag_enh(jg)
@@ -2158,27 +2186,27 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
   phy_params%blockred= tune_blockred(jg)
 
   !      ----------------------------------------------------------------
-  
+
   !*       2.    SET VALUES OF SECURITY PARAMETERS
   !              ---------------------------------
-  
+
   GVSEC=0.10_JPRB
   GSSEC=1.E-12_JPRB
-  
+
   GTSEC=1.E-07_JPRB
-  
+
   !      ----------------------------------------------------------------
-  
+
   !*       3.    SET VALUES OF PARAMETERS FOR LIMITING
   !*             THE WIND TENDENCIES IN STRATOSPHERE AND MESOSPHERE
-  
+
   ! WIND TENDENCIES LIMITED ABOVE 50hPa
   IF(KLEV > 19)THEN
     ZPLIM=5000._JPRB
   ELSE
     ZPLIM=1000._JPRB
   ENDIF
-  
+
   phy_params%NGWDLIM=0
   !xmk DO JK=KLEV,1,-1
   !      IF(STPRE(JK) >= ZPLIM) THEN
@@ -2187,29 +2215,29 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
       phy_params%NGWDLIM=JK
     ENDIF
   ENDDO
-  
 
-  
+
+
   CALL message('mo_cuparameters, sugwd', 'nktopg, ngwdlim, ngwdtop')
   WRITE(message_text,'(3i6)') phy_params%NKTOPG,phy_params%NGWDLIM,phy_params%NGWDTOP
   CALL message('mo_cuparameters, sugwd', TRIM(message_text))
 
-  
+
   ! WIND TENDENCIES LIMITED TO LESS OR EQUAL TO 20.m/s per hour
   !  Recommend a value of at least 80.m/s per hour
   ! GTENLIM=20.0_JPRB/RHOUR
   GTENLIM=80.0_JPRB/RHOUR
-  
+
   ! Reduced vertical diffusion in stratosphere
   LRDIFF_STRATO=.FALSE.
   NDIFF_STRATO=5
   ! Diagnostics: stratosphere wave fluxes
   LDIAG_STRATO=.FALSE.
-  
+
 
   IF (LHOOK) CALL DR_HOOK('SUGWD',1,ZHOOK_HANDLE)
   END SUBROUTINE SUGWD
-  
+
 
 !------------------------------------------------------------------------------
 
@@ -2220,9 +2248,9 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
     CHARACTER::CH
     INTEGER(KIND=JPIM)::K1
     REAL(KIND=JPRB)::P1
-  END SUBROUTINE DR_HOOK 
+  END SUBROUTINE DR_HOOK
 
-  
+
 !------------------------------------------------------------------------------
 ! Dummy routines vdiv, vexp, vrec (only use when V_MASS>0)
 
@@ -2234,24 +2262,24 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
     REAL(KIND=jprb)::p1(k1),p2(k1),p3(k1)
   END SUBROUTINE vdiv
 
-  
+
 !------------------------------------------------------------------------------
 
-  
+
   SUBROUTINE vexp(p1,p2,k1)
-    
+
     !USE PARKIND1  ,ONLY : JPIM     ,JPRB
     IMPLICIT NONE
     INTEGER(KIND=jpim)::k1
     REAL(KIND=jprb)::p1(k1),p2(k1)
   END SUBROUTINE vexp
 
-  
+
 !------------------------------------------------------------------------------
 
-  
+
   SUBROUTINE vrec(p1,p2,k1)
-    
+
     !USE PARKIND1  ,ONLY : JPIM     ,JPRB
     IMPLICIT NONE
     INTEGER(KIND=jpim)::k1
@@ -2261,9 +2289,9 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
 
 !------------------------------------------------------------------------------
 
-  
+
   SUBROUTINE vlog(p1,p2,k1)
-    
+
     !USE PARKIND1  ,ONLY : JPIM     ,JPRB
     IMPLICIT NONE
     INTEGER(KIND=jpim)::k1
@@ -2272,4 +2300,3 @@ IF (lhook) CALL dr_hook('SUCUMF',1,zhook_handle)
 
 
 END MODULE mo_cuparameters
-

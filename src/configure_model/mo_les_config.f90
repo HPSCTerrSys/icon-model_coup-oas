@@ -1,15 +1,15 @@
-! Contains the setup of variables related to large eddy simulation setup
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the setup of variables related to large eddy simulation setup
 
 MODULE mo_les_config
 
@@ -36,7 +36,7 @@ MODULE mo_les_config
     INTEGER  :: smag_coeff_type  ! 1=Smagorinsky model; 2=set coeff. externally by Km_ext, Kh_ext (for tests)
 
     REAL(wp) :: ufric      ! friction velocity
- 
+
     LOGICAL  :: is_dry_cbl  !special case for CBL testcase
 
     !For isrf_type==3
@@ -45,9 +45,9 @@ MODULE mo_les_config
 
     !Some parameters
     REAL(wp) :: smag_constant
-    REAL(wp) :: turb_prandtl 
+    REAL(wp) :: turb_prandtl
     REAL(wp) :: rturb_prandtl     !inverse turbulent prandtl number
-    REAL(wp) :: km_min        !min mass weighted turbulent viscosity 
+    REAL(wp) :: km_min        !min mass weighted turbulent viscosity
     REAL(wp) :: Km_ext        !externally set constant kinematic viscosity [m2/s]
     REAL(wp) :: Kh_ext        !externally set constant diffusion coeff.    [m2/s]
     REAL(wp) :: max_turb_scale !max turbulence length scale
@@ -58,7 +58,7 @@ MODULE mo_les_config
 
     !Parameters for additional diagnostic output
     LOGICAL  :: ldiag_les_out                    !.TRUE. to turn it on
-    REAL(wp) :: avg_interval_sec, sampl_freq_sec !averaging and sampling time 
+    REAL(wp) :: avg_interval_sec, sampl_freq_sec !averaging and sampling time
     CHARACTER(MAX_CHAR_LENGTH) :: expname        !name of experiment for naming the file
 
     LOGICAL  :: les_metric  ! .TRUE. to use LES metric terms
@@ -72,7 +72,7 @@ MODULE mo_les_config
 
   SUBROUTINE configure_les(jg, dtime)
   !--------------------------------------------------------------------------------------
-  !  Set up LES parameters 
+  !  Set up LES parameters
   !--------------------------------------------------------------------------------------
     INTEGER, INTENT(IN) :: jg !patch id
     REAL(wp),INTENT(IN) :: dtime
@@ -85,8 +85,8 @@ MODULE mo_les_config
 
     IF(les_config(jg)%isrfc_type==1)THEN
 
-       les_config(jg)%shflx = 0._wp   
-       les_config(jg)%lhflx = 0._wp   
+       les_config(jg)%shflx = 0._wp
+       les_config(jg)%lhflx = 0._wp
 
        WRITE(message_text,'(a,e14.6)')'LES with surface scheme TERRA'
 
@@ -113,7 +113,7 @@ MODULE mo_les_config
           CALL finish(routine, 'Wrong input for irsfc_type=3')
 
     END IF
-  
+
     IF(les_config(jg)%is_dry_cbl)THEN
        les_config(jg)%lhflx = 0._wp
     END IF
@@ -152,8 +152,8 @@ MODULE mo_les_config
      END IF
 
     ENDIF
-     
- 
+
+
   END SUBROUTINE configure_les
 
 END MODULE mo_les_config

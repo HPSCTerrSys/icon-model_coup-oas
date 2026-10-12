@@ -1,12 +1,13 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ------------------------------------------
+
 ######################## PGI/NVIDIA INLINE LIBRARY DATA ########################
 
 # List of procedures to be inlined:
@@ -15,7 +16,6 @@ pgi_inlib_procedures+= \
   alb_seaice_equil \
   alpha0_char \
   calc_ustar \
-  ccw \
   clct2ww \
   create_rdm_seed \
   create_rdm_seed_in_time \
@@ -59,8 +59,6 @@ pgi_inlib_procedures+= \
   latent_heat_vaporization \
   laxfr_upflux \
   laxfr_upflux_v \
-  line_intersect \
-  lintersect \
   make_normalized \
   mc_limiter \
   nwp_dyn_gust \
@@ -121,7 +119,6 @@ pgi_inlib_f90_files+= \
   src/lnd_phy_schemes/sfc_seaice.f90 \
   src/lnd_phy_schemes/sfc_terra.f90 \
   src/serialization/mo_ser_common.f90 \
-  src/shared/mo_math_utilities.f90 \
   src/shared/mo_statistics.f90
 
 # List of files to be compiled with the GPU register limit flag:

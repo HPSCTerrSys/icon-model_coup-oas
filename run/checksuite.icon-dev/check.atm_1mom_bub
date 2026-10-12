@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -23,7 +23,7 @@
 # file run/exp.<EXPNAME>. EXPNAME is used also for:
 # - the output directory name: experiments/<EXPNAME>
 # - the output  file names: <EXPNAME>_<TYPE>_<DATE>.nc
-# - the restart file names: 
+# - the restart file names:
 #
 export EXPERIMENT='atm_1mom_bub_test'
 
@@ -38,29 +38,21 @@ export TYPES='atm_2d_ml atm_3d_ml'
 export DATES='20080801T000000Z 20080801T000030Z 20080801T000100Z 20080801T000130Z 20080801T000200Z 20080801T000230Z 20080801T000300Z 20080801T000330Z 20080801T000400Z'
 
 # RESTART_DATE defines the date and time from which restarts should be performed.
-# 
+#
 export RESTART_DATE='20080801T000200Z'
 
 #--------------------------------------------------------------------------------
-# 
+#
 # 2. Define the checksuite mode
 #
 export MD='rnmo'
 
 #--------------------------------------------------------------------------------
-# 
+#
 # 3. Launch the checksuite from run/
 
 rundir=`pwd`
 cd checksuite.icon-dev
-
-# load python packages
-case $HOST in
-    *daint*)
-        export MD='rnmot'
-        export PYTHONPATH=""
-        source /project/g110/icon/probtest/conda/miniconda/bin/activate probtest
-esac
 
 ./icon-dev.checksuite
 STATUS=$?

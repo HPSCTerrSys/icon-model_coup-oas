@@ -1,17 +1,16 @@
-! Configuration of the parameterization for cloud cover,
-! that is used in the AES physics package.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Configuration of the parameterization for cloud cover,
+! that is used in the AES physics package.
 
 MODULE mo_aes_cov_config
 
@@ -33,7 +32,7 @@ MODULE mo_aes_cov_config
   !! Name of this unit
   !!
   CHARACTER(LEN=*), PARAMETER :: name = 'aes_cov'
-  
+
   !>
   !! Configuration type containing parameters and switches for the configuration of the AES microphysics
   !!
@@ -50,7 +49,7 @@ MODULE mo_aes_cov_config
   !! Configuration state vectors, for multiple domains/grids.
   !!
   TYPE(t_aes_cov_config), TARGET :: aes_cov_config(max_dom)
-  
+
 CONTAINS
 
   !----

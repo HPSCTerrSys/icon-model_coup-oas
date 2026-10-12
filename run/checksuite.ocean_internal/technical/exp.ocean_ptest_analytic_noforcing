@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -61,7 +61,7 @@ init_relax=0   # 1: use relaxation initialization file
 #   ts_surf_annual-iconR${R}B0{B}-${init_rel_suff}
 #
 #-----------------------------------------------------------------------------
-# ocean forcing (iforc=12) needs an additional flux file 
+# ocean forcing (iforc=12) needs an additional flux file
 # NO_FORCING                 = 10
 # ANALYT_FORC                = 11  - dependent on testcase
 # FORCING_FROM_FILE_FLUX     = 12  - OMIP or NCEP type forcing
@@ -201,7 +201,7 @@ cat > ${ocean_namelist} << EOF
   richardson_veloc   = 2.0e-3    ! factor for vertical viscosity coefficient in PP scheme
   richardson_tracer  = 2.0e-3    ! factor for vertical diffusion coefficient in PP scheme
   physics_parameters_type = 1   ! physics_parameters_ICON_PPoptimized_type
-/    
+/
 &sea_ice_nml
   stress_ice_zero = .TRUE.
 /
@@ -223,11 +223,11 @@ cat > ${ocean_namelist} << EOF
 /
 &ocean_initialConditions_nml
   ! itestcase_oce = 1050
-  initial_salinity_type      = 202    
+  initial_salinity_type      = 202
   initial_salinity_top       = 34.1
   initial_salinity_bottom    = 35.0
   initial_temperature_type   = 200
-  initial_temperature_top    = 10.0 
+  initial_temperature_top    = 10.0
   initial_temperature_bottom = 10.0
 /
 &io_nml
@@ -240,4 +240,3 @@ EOF
 # add standard atmo_non-hydrostatic_files
 . ${thisdir}/add_required_ocean_files
 #-----------------------------------------------------------------------------
-

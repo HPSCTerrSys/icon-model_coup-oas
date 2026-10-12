@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! This module contains the main computations of diffusivities based on
 ! TKE (following Gaspar'90)  with the calculation of the mixing length following (Blanke, B., P. Delecluse)
 !
@@ -6,18 +17,7 @@
 !
 ! @see  Blanke, B., P. Delecluse
 !       J. Phys. Oceanogr., 23, 1363-1388. doi: http://dx.doi.org/10.1175/1520-0485(1993)023<1363:VOTTAO>2.0.CO;2
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
+
 MODULE mo_ocean_tke_base
   USE mo_kind,               ONLY: wp
   USE mo_ocean_math_utils,   ONLY: solve_tridiag, solve_tridiag_block
@@ -138,58 +138,58 @@ CHARACTER(LEN=*), PARAMETER :: method_name = module_name//':init_tke'
 
 ! FIXME: not sure about the allowed ranges for TKE parameters
 if (present(c_k)) then
-  if(c_k.lt. 0.0d0 .or. c_k .gt. 1.5d0) then
+  if(c_k.lt. 0.0_wp .or. c_k .gt. 1.5_wp) then
 !    print*, "ERROR:c_k can only be allowed_range"
 !    stop 1
     CALL finish(method_name,'ERROR:c_k can only be allowed_range')
   end if
   call put_tke('c_k', c_k, tke_userdef_constants)
 else
-  call put_tke('c_k',0.1d0 , tke_userdef_constants)
+  call put_tke('c_k',0.1_wp , tke_userdef_constants)
 end if
 
 if (present(c_eps)) then
-  if(c_eps.lt. 0.d0 .or. c_eps .gt. 10.d0) then
+  if(c_eps.lt. 0.0_wp .or. c_eps .gt. 10.0_wp) then
 !    print*, "ERROR:c_eps can only be allowed_range"
 !    stop 1
     CALL finish(method_name,'ERROR:c_eps can only be allowed_range')
   end if
   call put_tke('c_eps', c_eps, tke_userdef_constants)
 else
-  call put_tke('c_eps', 0.7d0, tke_userdef_constants)
+  call put_tke('c_eps', 0.7_wp, tke_userdef_constants)
 end if
 
 if (present(cd)) then
-  if(cd.lt. 0.1d0 .or. cd .gt. 30.d0) then
+  if(cd.lt. 0.1_wp .or. cd .gt. 30.0_wp) then
 !    print*, "ERROR:cd can only be allowed_range"
 !    stop 1
     CALL finish(method_name,'ERROR:cd can only be allowed_range')
   end if
   call put_tke('cd', cd, tke_userdef_constants)
 else
-  call put_tke('cd', 3.75d0, tke_userdef_constants)
+  call put_tke('cd', 3.75_wp, tke_userdef_constants)
 end if
 
 if (present(alpha_tke)) then
-  if(alpha_tke.lt. 1.d0 .or. alpha_tke .gt. 90.d0) then
+  if(alpha_tke.lt. 1.0_wp .or. alpha_tke .gt. 90.0_wp) then
 !    print*, "ERROR:alpha_tke can only be allowed_range"
 !    stop 1
     CALL finish(method_name,'ERROR:alpha_tke can only be allowed_range')
  end if
   call put_tke('alpha_tke', alpha_tke, tke_userdef_constants)
 else
-  call put_tke('alpha_tke', 30.d0, tke_userdef_constants)
+  call put_tke('alpha_tke', 30.0_wp, tke_userdef_constants)
 end if
 
 if (present(mxl_min)) then
-  if(mxl_min.lt. 1.d-12 .or. mxl_min .gt. 0.4d0) then
+  if(mxl_min.lt. 1.e-12_wp .or. mxl_min .gt. 0.4_wp) then
 !    print*, "ERROR:mxl_min can only be allowed_range"
 !    stop 1
     CALL finish(method_name,'ERROR:mxl_min can only be allowed_range')
   end if
   call put_tke('mxl_min', mxl_min, tke_userdef_constants)
 else
-  call put_tke('mxl_min', 1.d-8, tke_userdef_constants)
+  call put_tke('mxl_min', 1.e-8_wp, tke_userdef_constants)
 end if
 
 if (present(use_Kappa_min)) then
@@ -199,36 +199,36 @@ else
 end if
 
 if (present(KappaM_min)) then
-!  if(KappaM_min.lt. 0.d0 .or. KappaM_min .gt. 1.d0) then
+!  if(KappaM_min.lt. 0.0_wp .or. KappaM_min .gt. 1.0_wp) then
 !!    print*, "ERROR:KappaM_min can only be allowed_range"
 !!    stop 1
 !    CALL finish(method_name,'ERROR:KappaM_min can only be allowed_range')
 !  end if
   call put_tke('KappaM_min', KappaM_min, tke_userdef_constants)
 else
-  call put_tke('KappaM_min', 1.d-4, tke_userdef_constants)
+  call put_tke('KappaM_min', 1.e-4_wp, tke_userdef_constants)
 end if
 
 if (present(KappaH_min)) then
-!  if(KappaH_min.lt. 0.d0 .or. KappaH_min .gt. 1.d0) then
+!  if(KappaH_min.lt. 0.0_wp .or. KappaH_min .gt. 1.0_wp) then
 !!    print*, "ERROR:KappaH_min can only be allowed_range"
 !!    stop 1
 !    CALL finish(method_name,'ERROR:KappaH_min can only be allowed_range')
 !  end if
   call put_tke('KappaH_min', KappaH_min, tke_userdef_constants)
 else
-  call put_tke('KappaH_min', 1.d-5, tke_userdef_constants)
+  call put_tke('KappaH_min', 1.e-5_wp, tke_userdef_constants)
 end if
 
 if (present(KappaM_max)) then
-  if(KappaM_max.lt. 10.d0 .or. KappaM_max .gt. 1000.d0) then
+  if(KappaM_max.lt. 10.0_wp .or. KappaM_max .gt. 1000.0_wp) then
 !    print*, "ERROR:KappaM_max can only be allowed_range"
 !    stop 1
     CALL finish(method_name,'ERROR:KappaM_max can only be allowed_range')
   end if
   call put_tke('KappaM_max', KappaM_max, tke_userdef_constants)
 else
-  call put_tke('KappaM_max', 100.d0, tke_userdef_constants)
+  call put_tke('KappaM_max', 100.0_wp, tke_userdef_constants)
 end if
 
 if (present(tke_mxl_choice)) then
@@ -254,36 +254,36 @@ else
 end if
 
 if (present(clc)) then
-  if(clc.lt. 0.0 .or. clc .gt. 30.0) then
+  if(clc.lt. 0.0_wp .or. clc .gt. 30.0_wp) then
     print*, "ERROR:clc can only be allowed_range"
     stop 1
   end if
   call put_tke('clc', clc, tke_userdef_constants)
 else
-  call put_tke('clc',0.15d0 , tke_userdef_constants)
+  call put_tke('clc',0.15_wp , tke_userdef_constants)
 end if
 
 
 if (present(tke_min)) then
-  if(tke_min.lt. 1.d-9 .or. tke_min.gt. 1.d-2 ) then
+  if(tke_min.lt. 1.e-9_wp .or. tke_min.gt. 1.e-2_wp ) then
 !    print*, "ERROR:tke_min can only be allowed_range"
 !    stop 1
     CALL finish(method_name,'ERROR:tke_min can only be allowed_range')
   end if
   call put_tke('tke_min', tke_min, tke_userdef_constants)
 else
-  call put_tke('tke_min', 1.d-6, tke_userdef_constants)
+  call put_tke('tke_min', 1.e-6_wp, tke_userdef_constants)
 end if
 
 if (present(tke_surf_min)) then
-  if(tke_surf_min.lt. 1.d-7 .or. tke_surf_min.gt. 1.d-2 ) then
+  if(tke_surf_min.lt. 1.e-7_wp .or. tke_surf_min.gt. 1.e-2_wp ) then
 !    print*, "ERROR:tke_surf_min can only be allowed_range"
 !    stop 1
     CALL finish(method_name,'ERROR:tke_surf_min can only be allowed_range')
   end if
   call put_tke('tke_surf_min', tke_surf_min, tke_userdef_constants)
 else
-  call put_tke('tke_surf_min', 1.d-4, tke_userdef_constants)
+  call put_tke('tke_surf_min', 1.e-4_wp, tke_userdef_constants)
 end if
 
 if (present(use_ubound_dirichlet)) then
@@ -446,7 +446,7 @@ subroutine integrate_tke_gpu(                      &
     cp                                                          , & !
     dp
 
-  integer :: k, kk, kp1, jc, nlev, i
+  integer :: k, kk, kp1, jc, nlev, i, level
   real(wp) :: m, fxa
 
   CHARACTER(LEN=*), PARAMETER :: method_name = module_name//':integrate_tke_gpu'
@@ -465,28 +465,30 @@ subroutine integrate_tke_gpu(                      &
     IF (levels(jc) > 0) THEN
 
       ! initialize diagnostics
-      tke_Tbpr(jc,:) = 0.0
-      tke_Tspr(jc,:) = 0.0
-      tke_Tdif(jc,:) = 0.0
-      tke_Tdis(jc,:) = 0.0
-      tke_Twin(jc,:) = 0.0
-      tke_Tiwf(jc,:) = 0.0
-      tke_Tbck(jc,:) = 0.0
-      tke_Ttot(jc,:) = 0.0
+      DO level = 1, max_nlev+1
+        tke_Tbpr(jc,level) = 0.0_wp
+        tke_Tspr(jc,level) = 0.0_wp
+        tke_Tdif(jc,level) = 0.0_wp
+        tke_Tdis(jc,level) = 0.0_wp
+        tke_Twin(jc,level) = 0.0_wp
+        tke_Tiwf(jc,level) = 0.0_wp
+        tke_Tbck(jc,level) = 0.0_wp
+        tke_Ttot(jc,level) = 0.0_wp
 
-      vmix_int_1(jc,:) = 0.0
-      vmix_int_2(jc,:) = 0.0
-      vmix_int_3(jc,:) = 0.0
+        vmix_int_1(jc,level) = 0.0_wp
+        vmix_int_2(jc,level) = 0.0_wp
+        vmix_int_3(jc,level) = 0.0_wp
 
-      tke_new(jc,:) = 0.0
-      tke_upd(jc,:) = 0.0
+        tke_new(jc,level) = 0.0_wp
+        tke_upd(jc,level) = 0.0_wp
 
-      a_dif(jc,:) = 0.0
-      b_dif(jc,:) = 0.0
-      c_dif(jc,:) = 0.0
-      a_tri(jc,:) = 0.0
-      b_tri(jc,:) = 0.0
-      c_tri(jc,:) = 0.0
+        a_dif(jc,level) = 0.0_wp
+        b_dif(jc,level) = 0.0_wp
+        c_dif(jc,level) = 0.0_wp
+        a_tri(jc,level) = 0.0_wp
+        b_tri(jc,level) = 0.0_wp
+        c_tri(jc,level) = 0.0_wp
+      END DO
 
       alpha_tke  = tke_constants_in%alpha_tke
       c_eps      = tke_constants_in%c_eps
@@ -511,15 +513,17 @@ subroutine integrate_tke_gpu(                      &
       !---------------------------------------------------------------------------------
       ! Part 1: calculate mixing length scale
       !---------------------------------------------------------------------------------
-      sqrttke(jc,:) = sqrt(max(0d0,tke_old(jc,:)))
+      DO level = 1, max_nlev+1
+        sqrttke(jc,level) = sqrt(max(0.0_wp,tke_old(jc,level)))
 
-      ! turbulent mixing length
-      mxl(jc,:) = sqrt(2D0)*sqrttke(jc,:)/sqrt(max(1d-12,Nsqr(jc,:)))
+        ! turbulent mixing length
+        mxl(jc,level) = sqrt(2.0_wp)*sqrttke(jc,level)/sqrt(max(1e-12_wp,Nsqr(jc,level)))
+      END DO
 
       ! constrain mixing length scale as in MITgcm
       if (tke_mxl_choice==2) then
-        mxl(jc,1) = 0.d0
-        mxl(jc,nlev+1) = 0.d0
+        mxl(jc,1) = 0.0_wp
+        mxl(jc,nlev+1) = 0.0_wp
         do k=2,nlev
           mxl(jc,k) = min(mxl(jc,k), mxl(jc,k-1) + dzw(jc,k-1))
         end do
@@ -527,7 +531,9 @@ subroutine integrate_tke_gpu(                      &
         do k=nlev-1,2,-1
           mxl(jc,k) = min(mxl(jc,k), mxl(jc,k+1) + dzw(jc,k))
         end do
-        mxl(jc,:) = max(mxl(jc,:), mxl_min)
+        DO level = 1, max_nlev+1
+          mxl(jc,level) = max(mxl(jc,level), mxl_min)
+        END DO
       else if (tke_mxl_choice==3) then
         depth = sum(dzw(jc,1:nlev))
         do k=2,nlev+1
@@ -535,7 +541,9 @@ subroutine integrate_tke_gpu(                      &
           mxl(jc,k) = min(zzw, mxl(jc,k), depth-zzw)
         end do
         mxl(jc,1) = mxl(jc,2)
-        mxl(jc,:) = max(mxl(jc,:), mxl_min)
+        DO level = 1, max_nlev+1
+          mxl(jc,level) = max(mxl(jc,level), mxl_min)
+        END DO
       else
 !        CALL finish(method_name,'Wrong choice of tke_mxl_choice. Aborting...')
       end if
@@ -543,54 +551,61 @@ subroutine integrate_tke_gpu(                      &
       !---------------------------------------------------------------------------------
       ! Part 2: calculate diffusivities
       !---------------------------------------------------------------------------------
-      KappaM_out(jc,:) = min(KappaM_max, c_k*mxl(jc,:)*sqrttke(jc,:))
-      Rinum(jc,:) = Nsqr(jc,:) / max(Ssqr(jc,:), 1d-12)
+      DO level = 1, max_nlev+1
+        KappaM_out(jc,level) = min(KappaM_max, c_k*mxl(jc,level)*sqrttke(jc,level))
+        Rinum(jc,level) = Nsqr(jc,level) / max(Ssqr(jc,level), 1e-12_wp)
 
-      if (.not.only_tke) &
-        Rinum(jc,:) = min(Rinum(jc,:), KappaM_out(jc,:) * Nsqr(jc,:) / max(1d-12, alpha_c(jc,:)*E_iw(jc,:)**2))
+        if (.not.only_tke) &
+          Rinum(jc,level) = min(Rinum(jc,level), KappaM_out(jc,level) * Nsqr(jc,level) / max(1e-12_wp, alpha_c(jc,level)*E_iw(jc,level)**2))
 
-      prandtl(jc,:) = max(1d0, min(10d0, 6.6*Rinum(jc,:)))
-      KappaH_out(jc,:) = KappaM_out(jc,:) / prandtl(jc,:)
+        prandtl(jc,level) = max(1.0_wp, min(10.0_wp, 6.6_wp*Rinum(jc,level)))
+        KappaH_out(jc,level) = KappaM_out(jc,level) / prandtl(jc,level)
 
-      ! restrict to minimum values
-      if (use_Kappa_min) then
-        KappaM_out(jc,:) = max(KappaM_min, KappaM_out(jc,:))
-        KappaH_out(jc,:) = max(KappaH_min, KappaH_out(jc,:))
-      end if
+        ! restrict to minimum values
+        if (use_Kappa_min) then
+          KappaM_out(jc,level) = max(KappaM_min, KappaM_out(jc,level))
+          KappaH_out(jc,level) = max(KappaH_min, KappaH_out(jc,level))
+        end if
+      END DO
 
       !---------------------------------------------------------------------------------
       ! Part 3: tke forcing
       !---------------------------------------------------------------------------------
-      ! initialize forcing
-      forc(jc,:) = 0.0
+      DO level = 1, max_nlev+1
+        ! initialize forcing
+        forc(jc,level) = 0.0_wp
 
-      ! --- forcing by shear and buoycancy production
-      K_diss_v(jc,:) = Ssqr(jc,:) * KappaM_out(jc,:)
-      P_diss_v(jc,:) = Nsqr(jc,:) * KappaH_out(jc,:)
-      P_diss_v(jc,1) = -forc_rho_surf(jc) * grav / rho_ref
-      forc(jc,:) = forc(jc,:) + K_diss_v(jc,:) - P_diss_v(jc,:)
+        ! --- forcing by shear and buoycancy production
+        K_diss_v(jc,level) = Ssqr(jc,level) * KappaM_out(jc,level)
+        P_diss_v(jc,level) = Nsqr(jc,level) * KappaH_out(jc,level)
+        P_diss_v(jc,1) = -forc_rho_surf(jc) * grav / rho_ref
+        forc(jc,level) = forc(jc,level) + K_diss_v(jc,level) - P_diss_v(jc,level)
 
-      ! --- additional langmuir turbulence term
-      if (l_lc) forc(jc,:) = forc(jc,:) + tke_plc(jc,:)
+        ! --- additional langmuir turbulence term
+        if (l_lc) forc(jc,level) = forc(jc,level) + tke_plc(jc,level)
 
-      ! --- forcing by internal wave dissipation
-      if (.not.only_tke) forc(jc,:) = forc(jc,:) + iw_diss(jc,:)
+        ! --- forcing by internal wave dissipation
+        if (.not.only_tke) forc(jc,level) = forc(jc,level) + iw_diss(jc,level)
+      END DO
 
       !---------------------------------------------------------------------------------
       ! Part 4: vertical diffusion and dissipation is solved implicitely
       !---------------------------------------------------------------------------------
-      ke(jc,:) = 0.d0
+      DO level = 1, max_nlev+1
+        ke(jc,level) = 0.0_wp
+      END DO
+
       do k = 1, nlev
         kp1      = min(k+1,nlev)
         kk       = max(k,2)
-        ke(jc,k) = alpha_tke * 0.5 * (KappaM_out(jc,kp1) + KappaM_out(jc,kk))
+        ke(jc,k) = alpha_tke * 0.5_wp * (KappaM_out(jc,kp1) + KappaM_out(jc,kk))
       end do
 
       !--- c is lower diagonal of matrix
       do k=1,nlev
         c_dif(jc,k) = ke(jc,k)/( dzt(jc,k)*dzw(jc,k) )
       end do
-      c_dif(jc,nlev+1) = 0.d0 ! not part of the diffusion matrix, thus value is arbitrary
+      c_dif(jc,nlev+1) = 0.0_wp ! not part of the diffusion matrix, thus value is arbitrary
 
       !--- b is main diagonal of matrix
       do k=2,nlev
@@ -601,53 +616,65 @@ subroutine integrate_tke_gpu(                      &
       do k=2,nlev+1
         a_dif(jc,k) = ke(jc,k-1)/( dzt(jc,k)*dzw(jc,k-1) )
       end do
-      a_dif(jc,1) = 0.d0 ! not part of the diffusion matrix, thus value is arbitrary
+      a_dif(jc,1) = 0.0_wp ! not part of the diffusion matrix, thus value is arbitrary
 
-      ! copy tke_old
-      tke_upd(jc,1:nlev+1) = tke_old(jc,1:nlev+1)
+      DO level = 1, nlev+1
+        ! copy tke_old
+        tke_upd(jc,level) = tke_old(jc,level)
+      END DO
 
       ! upper boundary condition
       if (use_ubound_dirichlet) then
-        sqrttke(jc,1)   = 0.d0 ! to suppres dissipation for k=1
-        forc(jc,1)      = 0.d0 ! to suppres forcing for k=1
+        sqrttke(jc,1)   = 0.0_wp ! to suppres dissipation for k=1
+        forc(jc,1)      = 0.0_wp ! to suppres forcing for k=1
         tke_surf        = max(tke_surf_min, cd*forc_tke_surf(jc))
         tke_upd(jc,1)   = tke_surf
         diff_surf_forc  = a_dif(jc,2) * tke_surf
         forc(jc,2)      = forc(jc,2) + diff_surf_forc
-        a_dif(jc,2)     = 0.d0 ! and set matrix element to zero
-        b_dif(jc,1)     = 0.d0 ! 0 line in matrix for k=1
-        c_dif(jc,1)     = 0.d0 ! 0 line in matrix for k=1
+        a_dif(jc,2)     = 0.0_wp ! and set matrix element to zero
+        b_dif(jc,1)     = 0.0_wp ! 0 line in matrix for k=1
+        c_dif(jc,1)     = 0.0_wp ! 0 line in matrix for k=1
       else
         ! add wind forcing
-        forc(jc,1)      = forc(jc,1) + (cd*forc_tke_surf(jc)**(3./2.))/(dzt(jc,1))
+        forc(jc,1)      = forc(jc,1) + (cd*forc_tke_surf(jc)**(3.0_wp/2.0_wp))/(dzt(jc,1))
         b_dif(jc,1)     = ke(jc,1)/( dzt(jc,1)*dzw(jc,1) )
-        diff_surf_forc  = 0.0
+        diff_surf_forc  = 0.0_wp
       endif
 
       ! lower boundary condition
       if (use_lbound_dirichlet) then
-        sqrttke(jc,nlev+1) = 0.d0 ! to suppres dissipation for k=nlev+1
-        forc(jc,nlev+1)    = 0.d0 ! to suppres forcing for k=nlev+1
+        sqrttke(jc,nlev+1) = 0.0_wp ! to suppres dissipation for k=nlev+1
+        forc(jc,nlev+1)    = 0.0_wp ! to suppres forcing for k=nlev+1
         tke_bott           = tke_min
         tke_upd(jc,nlev+1) = tke_bott
         diff_bott_forc     = c_dif(jc,nlev)*tke_bott
         forc(jc,nlev)      = forc(jc,nlev)+diff_bott_forc
-        c_dif(jc,nlev)     = 0.d0 ! and set matrix element to zero
-        b_dif(jc,nlev+1)   = 0.d0 ! 0 line in matrix for k=nlev+1
-        a_dif(jc,nlev+1)   = 0.d0 ! 0 line in matrix for k=nlev+1
+        c_dif(jc,nlev)     = 0.0_wp ! and set matrix element to zero
+        b_dif(jc,nlev+1)   = 0.0_wp ! 0 line in matrix for k=nlev+1
+        a_dif(jc,nlev+1)   = 0.0_wp ! 0 line in matrix for k=nlev+1
       else
         b_dif(jc,nlev+1)   = ke(jc,nlev)/( dzt(jc,nlev+1)*dzw(jc,nlev) )
-        diff_bott_forc     = 0.0
+        diff_bott_forc     = 0.0_wp
       end if
 
       !--- construct tridiagonal matrix to solve diffusion and dissipation implicitely
-      a_tri(jc,:)      = -dtime * a_dif(jc,:)
-      b_tri(jc,:)      = 1+dtime * b_dif(jc,:)
-      b_tri(jc,2:nlev) = b_tri(jc,2:nlev) + dtime * c_eps * sqrttke(jc,2:nlev) / mxl(jc,2:nlev)
-      c_tri(jc,:)      = -dtime * c_dif(jc,:)
+      DO level = 1, max_nlev+1
+        a_tri(jc,level)      = -dtime * a_dif(jc,level)
+        b_tri(jc,level)      = 1.0_wp+dtime * b_dif(jc,level)
+      END DO
 
-      !--- d is r.h.s. of implicite equation (d: new tke with only explicite tendencies included)
-      d_tri(jc,1:nlev+1)  = tke_upd(jc,1:nlev+1) + dtime*forc(jc,1:nlev+1)
+      DO level = 2, nlev
+        b_tri(jc,level) = b_tri(jc,level) + dtime * c_eps * sqrttke(jc,level) / mxl(jc,level)
+      END DO
+
+      DO level = 1, max_nlev+1
+        c_tri(jc,level)      = -dtime * c_dif(jc,level)
+      END DO
+
+      DO level = 1, nlev+1
+        !--- d is r.h.s. of implicite equation (d: new tke with only explicite tendencies included)
+        d_tri(jc,level)  = tke_upd(jc,level) + dtime*forc(jc,level)
+      END DO
 
       ! solve the tri-diag matrix
       cp(jc,1) = c_tri(jc,1) / b_tri(jc,1)
@@ -655,7 +682,7 @@ subroutine integrate_tke_gpu(                      &
 
       do i = 2,nlev+1
         m = b_tri(jc,i) - cp(jc,i-1) * a_tri(jc,i)
-        fxa = 1D0/m
+        fxa = 1.0_wp/m
         cp(jc,i) = c_tri(jc,i) * fxa
         dp(jc,i) = (d_tri(jc,i) - dp(jc,i-1) * a_tri(jc,i)) * fxa
       end do
@@ -689,52 +716,78 @@ subroutine integrate_tke_gpu(                      &
       end if
 
       ! dissipation of TKE
-      tke_Tdis(jc,:) = 0.d0
-      tke_Tdis(jc,2:nlev) = -c_eps / mxl(jc,2:nlev) * sqrttke(jc,2:nlev) * tke_new(jc,2:nlev)
+      DO level = 1, max_nlev+1
+        tke_Tdis(jc,level) = 0.0_wp
+      END DO
+
+      DO level = 2, nlev
+        tke_Tdis(jc,level) = -c_eps / mxl(jc,level) * sqrttke(jc,level) * tke_new(jc,level)
+      END DO
 
       !---------------------------------------------------------------------------------
       ! Part 5: reset tke to bounding values
       !---------------------------------------------------------------------------------
-      ! copy of unrestored tke to diagnose energy input by restoring
-      tke_unrest(jc,:) = tke_new(jc,:)
+      DO level = 1, max_nlev+1
+        ! copy of unrestored tke to diagnose energy input by restoring
+        tke_unrest(jc,level) = tke_new(jc,level)
+      END DO
 
-      ! restrict values of TKE to tke_min, if IDEMIX is not used
-      if (only_tke) &
-        tke_new(jc,1:nlev+1) = MAX(tke_new(jc,1:nlev+1), tke_min)
+      IF (only_tke) THEN
+        DO level = 1, nlev+1
+          ! restrict values of TKE to tke_min, if IDEMIX is not used
+          tke_new(jc,level) = MAX(tke_new(jc,level), tke_min)
+        END DO
+      END IF
 
       !---------------------------------------------------------------------------------
       ! Part 6: Assign diagnostic variables
       !---------------------------------------------------------------------------------
-      tke_Tbpr(jc,1:nlev+1) = -P_diss_v(jc,1:nlev+1)
-      tke_Tspr(jc,1:nlev+1) = K_diss_v(jc,1:nlev+1)
-      tke_Tbck(jc,:) = (tke_new(jc,:) - tke_unrest(jc,:)) / dtime
+      DO level = 1, nlev+1
+        tke_Tbpr(jc,level) = -P_diss_v(jc,level)
+        tke_Tspr(jc,level) = K_diss_v(jc,level)
+      END DO
+
+      DO level = 1, max_nlev+1
+        tke_Tbck(jc,level) = (tke_new(jc,level) - tke_unrest(jc,level)) / dtime
+      END DO
+
       if (use_ubound_dirichlet) then
         tke_Twin(jc,1) = (tke_new(jc,1) - tke_old(jc,1)) / dtime - tke_Tdif(jc,1)
-        tke_Tbck(jc,1) = 0.0
+        tke_Tbck(jc,1) = 0.0_wp
       else
-        tke_Twin(jc,1) = (cd * forc_tke_surf(jc)**(3./2.)) / (dzt(jc,1))
+        tke_Twin(jc,1) = (cd * forc_tke_surf(jc)**(3.0_wp/2.0_wp)) / (dzt(jc,1))
       end if
 
       if (use_lbound_dirichlet) then
         tke_Twin(jc,nlev+1) = (tke_new(jc,nlev+1) - tke_old(jc,nlev+1)) /  dtime - tke_Tdif(jc,nlev+1)
-        tke_Tbck(jc,nlev+1) = 0.0
+        tke_Tbck(jc,nlev+1) = 0.0_wp
       else
-        tke_Twin(jc,nlev+1) = 0.0
+        tke_Twin(jc,nlev+1) = 0.0_wp
       end if
 
-      tke_Tiwf(jc,1:nlev+1) = iw_diss(jc,1:nlev+1)
-      tke_Ttot(jc,:)        = (tke_new(jc,:) - tke_old(jc,:)) / dtime
-      tke_Lmix(jc,nlev+1:)  = 0.0
-      tke_Lmix(jc,1:nlev+1) = mxl(jc,1:nlev+1)
-      tke_Pr(jc,nlev+1:)    = 0.0
-      tke_Pr(jc,1:nlev+1)   = prandtl(jc,1:nlev+1)
+      DO level = 1, max_nlev+1
+        tke_Ttot(jc,level)        = (tke_new(jc,level) - tke_old(jc,level)) / dtime
+      END DO
+
+      DO level = 1, nlev+1
+        tke_Tiwf(jc,level) = iw_diss(jc,level)
+        tke_Lmix(jc,level) = mxl(jc,level)
+        tke_Pr(jc,level)   = prandtl(jc,level)
+      END DO
+
+      DO level = nlev+2, max_nlev+1
+        tke_Lmix(jc,level)  = 0.0_wp
+        tke_Pr(jc,level)    = 0.0_wp
+      END DO
 
       ! -----------------------------------------------
       ! the rest is for debugging
       ! -----------------------------------------------
-      vmix_int_1(jc,:) = KappaH_out(jc,:)
-      vmix_int_2(jc,:) = KappaM_out(jc,:)
-      vmix_int_3(jc,:) = Nsqr(jc,:)
+      DO level = 1, max_nlev+1
+        vmix_int_1(jc,level) = KappaH_out(jc,level)
+        vmix_int_2(jc,level) = KappaM_out(jc,level)
+        vmix_int_3(jc,level) = Nsqr(jc,level)
+      END DO
 
     END IF
   END DO
@@ -952,33 +1005,35 @@ subroutine integrate_tke_block( &
 
   ! initialize diagnostics
   !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-  tke_Tbpr = 0.0
-  tke_Tspr = 0.0
-  tke_Tdif = 0.0
-  tke_Tdis = 0.0
-  tke_Twin = 0.0
-  tke_Tiwf = 0.0
-  tke_Tbck = 0.0
-  tke_Ttot = 0.0
-  vmix_int_1 = 0.0
-  vmix_int_2 = 0.0
-  vmix_int_3 = 0.0
+  tke_Tbpr = 0.0_wp
+  tke_Tspr = 0.0_wp
+  tke_Tdif = 0.0_wp
+  tke_Tdis = 0.0_wp
+  tke_Twin = 0.0_wp
+  tke_Tiwf = 0.0_wp
+  tke_Tbck = 0.0_wp
+  tke_Ttot = 0.0_wp
+  vmix_int_1 = 0.0_wp
+  vmix_int_2 = 0.0_wp
+  vmix_int_3 = 0.0_wp
 
-  tke_new = 0.0
-  tke_upd = 0.0
+  tke_new = 0.0_wp
+  tke_upd = 0.0_wp
 
-  a_dif = 0.0
-  b_dif = 0.0
-  c_dif = 0.0
-  a_tri = 0.0
-  b_tri = 0.0
-  c_tri = 0.0
+  a_dif = 0.0_wp
+  b_dif = 0.0_wp
+  c_dif = 0.0_wp
+  a_tri = 0.0_wp
+  b_tri = 0.0_wp
+  c_tri = 0.0_wp
 
   nlev_p1(si:ei) = nlev(si:ei) + 1
 
   !$ACC END KERNELS
+  !$ACC WAIT(1)
 
-  !$ACC UPDATE HOST(nlev_p1) WAIT(1)
+  !$ACC UPDATE SELF(nlev_p1) ASYNC(1) IF(lzacc)
+  !$ACC WAIT(1)
 
   !---------------------------------------------------------------------------------
   ! set tke_constants locally
@@ -1002,16 +1057,16 @@ subroutine integrate_tke_block( &
   use_ubound_dirichlet = tke_constants_in%use_ubound_dirichlet
   use_lbound_dirichlet = tke_constants_in%use_lbound_dirichlet
 
-  !c_k        = 0.1
-  !c_eps      = 0.7
-  !alpha_tke  = 30.0
-  !mxl_min    = 1.d-8
-  !KappaM_min = 0.0
-  !KappaM_max = 100.0
-  !cd         = 3.75
-  !tke_min    = 1.d-6
+  !c_k        = 0.1_wp
+  !c_eps      = 0.7_wp
+  !alpha_tke  = 30.0_wp
+  !mxl_min    = 1.e-8_wp
+  !KappaM_min = 0.0_wp
+  !KappaM_max = 100.0_wp
+  !cd         = 3.75_wp
+  !tke_min    = 1.e-6_wp
   !tke_mxl_choice = 2
-  !tke_surf_min = 1.d-4
+  !tke_surf_min = 1.e-4_wp
   !only_tke = .true.
   !use_ubound_dirichlet = .false.
   !use_lbound_dirichlet = .false.
@@ -1020,10 +1075,10 @@ subroutine integrate_tke_block( &
   ! Part 1: calculate mixing length scale
   !---------------------------------------------------------------------------------
   !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-  sqrttke(si:ei,:) = sqrt(max(0d0,tke_old(si:ei,:)))
+  sqrttke(si:ei,:) = sqrt(max(0.0_wp,tke_old(si:ei,:)))
 
   ! turbulent mixing length
-  mxl(si:ei,:) = sqrt(2D0)*sqrttke(si:ei,:)/sqrt(max(1d-12,Nsqr(si:ei,:)))
+  mxl(si:ei,:) = sqrt(2.0_wp)*sqrttke(si:ei,:)/sqrt(max(1e-12_wp,Nsqr(si:ei,:)))
   !$ACC END KERNELS
 
   ! constrain mixing length scale as in MITgcm
@@ -1033,8 +1088,8 @@ subroutine integrate_tke_block( &
     !$ACC LOOP GANG VECTOR
     do jc = si, ei
       if (nlev(jc) > 0) then
-        mxl(jc,1) = 0.d0
-        mxl(jc,nlev(jc)+1) = 0.d0
+        mxl(jc,1) = 0.0_wp
+        mxl(jc,nlev(jc)+1) = 0.0_wp
       endif
     enddo
 
@@ -1065,9 +1120,8 @@ subroutine integrate_tke_block( &
       enddo
     enddo
 
-    !$ACC LOOP SEQ
+    !$ACC LOOP GANG VECTOR COLLAPSE(2)
     do k = 1, max_n + 1
-      !$ACC LOOP GANG VECTOR
       do jc = si, ei
         if (k <= nlev(jc) + 1) then
           mxl(jc,k) = max(mxl(jc,k),mxl_min)
@@ -1079,8 +1133,8 @@ subroutine integrate_tke_block( &
   ! bounded by the distance to surface/bottom
   elseif (tke_mxl_choice==3) then
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    depth(si:ei) = 0.
-    zzw(si:ei) = 0.
+    depth(si:ei) = 0.0_wp
+    zzw(si:ei) = 0.0_wp
     !$ACC END KERNELS
 
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -1093,9 +1147,8 @@ subroutine integrate_tke_block( &
       enddo
     enddo
 
-    !$ACC LOOP SEQ
+    !$ACC LOOP GANG VECTOR COLLAPSE(2)
     do k = 2, max_n + 1
-      !$ACC LOOP GANG VECTOR
       do jc = si, ei
         if (k <= nlev(jc) + 1) then
           zzw(jc) = zzw(jc) + dzw(jc,k-1)
@@ -1123,15 +1176,15 @@ subroutine integrate_tke_block( &
     do jc = si, ei
       if (k <= nlev(jc) + 1) then
         KappaM_out(jc,k) = min(KappaM_max,c_k*mxl(jc,k)*sqrttke(jc,k))
-        Rinum(jc,k) = Nsqr(jc,k)/max(Ssqr(jc,k),1d-12)
+        Rinum(jc,k) = Nsqr(jc,k)/max(Ssqr(jc,k),1e-12_wp)
         ! FIXME: nils: Check this later if IDEMIX is coupled.
         ! FIXME: nils: Why E_iw**2 and not dissipation with mixed time level?
         ! FIXME: nils: Why not passing Rinum as Rinum_idemix to tke scheme?
         if (.not.only_tke) then  !IDEMIX is on
-          Rinum(jc,k) = min(Rinum(jc,k),KappaM_out(jc,k)*Nsqr(jc,k)/max(1d-12,alpha_c(jc,k)*E_iw(jc,k)**2))
+          Rinum(jc,k) = min(Rinum(jc,k),KappaM_out(jc,k)*Nsqr(jc,k)/max(1e-12_wp,alpha_c(jc,k)*E_iw(jc,k)**2))
         end if
 
-        prandtl(jc,k)=max(1d0,min(10d0,6.6*Rinum(jc,k)))
+        prandtl(jc,k)=max(1.0_wp,min(10.0_wp,6.6_wp*Rinum(jc,k)))
         KappaH_out(jc,k)=KappaM_out(jc,k)/prandtl(jc,k)
 
         ! restrict to minimum values
@@ -1153,7 +1206,7 @@ subroutine integrate_tke_block( &
     do jc = si, ei
       if (k <= nlev(jc) + 1) then
 
-        forc(jc,k) = 0.
+        forc(jc,k) = 0.0_wp
 
         ! --- forcing by shear and buoycancy production
         K_diss_v(jc,k)   = Ssqr(jc,k)*KappaM_out(jc,k)
@@ -1186,22 +1239,21 @@ subroutine integrate_tke_block( &
   ! Part 4: vertical diffusion and dissipation is solved implicitely
   !---------------------------------------------------------------------------------
   !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-  ke = 0.d0
+  ke = 0.0_wp
   !$ACC END KERNELS
-  
-  !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-  !$ACC LOOP SEQ
+
+  !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
   do k = 1, max_n
-    !$ACC LOOP GANG(STATIC: 1) VECTOR
     do jc = si, ei
       if (k <= nlev(jc)) then
         kp1 = min(k+1,nlev(jc))
         kk  = max(k,2)
-        ke(jc,k) = alpha_tke*0.5*(KappaM_out(jc,kp1)+KappaM_out(jc,kk))
+        ke(jc,k) = alpha_tke*0.5_wp*(KappaM_out(jc,kp1)+KappaM_out(jc,kk))
         c_dif(jc,k) = ke(jc,k)/( dzt(jc,k)*dzw(jc,k) )
       endif
     enddo
   enddo
+  !$ACC END PARALLEL LOOP
 
 ! !--- c is lower diagonal of matrix
 ! !$ACC LOOP GANG(STATIC:1) VECTOR
@@ -1213,17 +1265,17 @@ subroutine integrate_tke_block( &
 !   enddo
 ! enddo
 
+  !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
   !$ACC LOOP GANG(STATIC: 1) VECTOR
   do jc = si, ei
     if (nlev(jc) > 0) then
-      c_dif(jc,nlev(jc)+1) = 0.d0 ! not part of the diffusion matrix, thus value is arbitrary
+      c_dif(jc,nlev(jc)+1) = 0.0_wp ! not part of the diffusion matrix, thus value is arbitrary
     endif
   enddo
 
   !--- b is main diagonal of matrix
-  !$ACC LOOP SEQ
+  !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
   do k = 2, max_n
-    !$ACC LOOP GANG(STATIC: 1) VECTOR
     do jc = si, ei
       if (k <= nlev(jc)) then
         b_dif(jc,k) = ke(jc,k-1)/( dzt(jc,k)*dzw(jc,k-1) ) + ke(jc,k)/( dzt(jc,k)*dzw(jc,k) )
@@ -1232,9 +1284,8 @@ subroutine integrate_tke_block( &
   enddo
 
   !--- a is upper diagonal of matrix
-  !$ACC LOOP SEQ
+  !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
   do k= 2, max_n + 1
-    !$ACC LOOP GANG(STATIC: 1) VECTOR
     do jc = si, ei
       if (k <= nlev(jc) + 1) then
         a_dif(jc,k) = ke(jc,k-1)/( dzt(jc,k)*dzw(jc,k-1) )
@@ -1245,7 +1296,7 @@ subroutine integrate_tke_block( &
   !$ACC LOOP GANG(STATIC: 1) VECTOR
   do jc = si, ei
     if (nlev(jc) > 0) then
-      a_dif(jc,1) = 0.d0 ! not part of the diffusion matrix, thus value is arbitrary
+      a_dif(jc,1) = 0.0_wp ! not part of the diffusion matrix, thus value is arbitrary
     endif
   enddo
   !$ACC END PARALLEL
@@ -1260,16 +1311,16 @@ subroutine integrate_tke_block( &
     !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     do jc = si, ei
       if (nlev(jc) > 0) then
-        sqrttke(jc,1)      = 0.d0 ! to suppres dissipation for k=1
-        forc(jc,1)         = 0.d0 ! to suppres forcing for k=1
+        sqrttke(jc,1)      = 0.0_wp ! to suppres dissipation for k=1
+        forc(jc,1)         = 0.0_wp ! to suppres forcing for k=1
         tke_surf(jc)       = max(tke_surf_min, cd*forc_tke_surf(jc))
         tke_upd(jc,1)      = tke_surf(jc)
         ! add diffusive part that depends on tke_surf to forcing
         diff_surf_forc(jc) = a_dif(jc,2)*tke_surf(jc)
         forc(jc,2)         = forc(jc,2)+diff_surf_forc(jc)
-        a_dif(jc,2)        = 0.d0 ! and set matrix element to zero
-        b_dif(jc,1)        = 0.d0 ! 0 line in matrix for k=1
-        c_dif(jc,1)        = 0.d0 ! 0 line in matrix for k=1
+        a_dif(jc,2)        = 0.0_wp ! and set matrix element to zero
+        b_dif(jc,1)        = 0.0_wp ! 0 line in matrix for k=1
+        c_dif(jc,1)        = 0.0_wp ! 0 line in matrix for k=1
       endif
     enddo
     !$ACC END PARALLEL LOOP
@@ -1278,9 +1329,9 @@ subroutine integrate_tke_block( &
     !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     do jc = si, ei
       if (nlev(jc) > 0) then
-        forc(jc,1) = forc(jc,1) + (cd*forc_tke_surf(jc)**(3./2.))/(dzt(jc,1))
+        forc(jc,1) = forc(jc,1) + (cd*forc_tke_surf(jc)**(3.0_wp/2.0_wp))/(dzt(jc,1))
         b_dif(jc,1)        = ke(jc,1)/( dzt(jc,1)*dzw(jc,1) )
-        diff_surf_forc(jc)  = 0.0
+        diff_surf_forc(jc)  = 0.0_wp
       endif
     enddo
     !$ACC END PARALLEL LOOP
@@ -1291,8 +1342,8 @@ subroutine integrate_tke_block( &
     !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     do jc = si, ei
       if (nlev(jc) > 0) then
-        sqrttke(jc,nlev(jc)+1) = 0.d0 ! to suppres dissipation for k=nlev+1
-        forc(jc,nlev(jc)+1)    = 0.d0 ! to suppres forcing for k=nlev+1
+        sqrttke(jc,nlev(jc)+1) = 0.0_wp ! to suppres dissipation for k=nlev+1
+        forc(jc,nlev(jc)+1)    = 0.0_wp ! to suppres forcing for k=nlev+1
         ! FIXME: make tke_bott dependend on bottom friction?
         tke_bott(jc)        = tke_min
         !tke_old(nlev+1) = tke_bott
@@ -1300,9 +1351,9 @@ subroutine integrate_tke_block( &
         ! add diffusive part that depends on tke_bott to forcing
         diff_bott_forc(jc)  = c_dif(jc,nlev(jc))*tke_bott(jc)
         forc(jc,nlev(jc))      = forc(jc,nlev(jc))+diff_bott_forc(jc)
-        c_dif(jc,nlev(jc))     = 0.d0 ! and set matrix element to zero
-        b_dif(jc,nlev(jc)+1)   = 0.d0 ! 0 line in matrix for k=nlev+1
-        a_dif(jc,nlev(jc)+1)   = 0.d0 ! 0 line in matrix for k=nlev+1
+        c_dif(jc,nlev(jc))     = 0.0_wp ! and set matrix element to zero
+        b_dif(jc,nlev(jc)+1)   = 0.0_wp ! 0 line in matrix for k=nlev+1
+        a_dif(jc,nlev(jc)+1)   = 0.0_wp ! 0 line in matrix for k=nlev+1
       endif
     enddo
     !$ACC END PARALLEL LOOP
@@ -1311,7 +1362,7 @@ subroutine integrate_tke_block( &
     do jc = si, ei
       if (nlev(jc) > 0) then
         b_dif(jc,nlev(jc)+1)   = ke(jc,nlev(jc))/( dzt(jc,nlev(jc)+1)*dzw(jc,nlev(jc)) )
-        diff_bott_forc(jc)  = 0.0
+        diff_bott_forc(jc)  = 0.0_wp
       endif
     enddo
     !$ACC END PARALLEL LOOP
@@ -1320,7 +1371,7 @@ subroutine integrate_tke_block( &
   !--- construct tridiagonal matrix to solve diffusion and dissipation implicitely
   !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
   a_tri(si:ei,:) = -dtime*a_dif(si:ei,:)
-  b_tri(si:ei,:) = 1+dtime*b_dif(si:ei,:)
+  b_tri(si:ei,:) = 1.0_wp+dtime*b_dif(si:ei,:)
   c_tri(si:ei,:) = -dtime*c_dif(si:ei,:)
   !$ACC END KERNELS
 
@@ -1352,9 +1403,8 @@ subroutine integrate_tke_block( &
   ! --- diagnose implicite tendencies (only for diagnostics)
   ! vertical diffusion of TKE
   !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-  !$ACC LOOP SEQ
+  !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
   do k=2,max_n
-    !$ACC LOOP GANG(STATIC: 1) VECTOR
     do jc = si, ei
       if (k <= nlev(jc)) then
         tke_Tdif(jc,k) = a_dif(jc,k)*tke_new(jc,k-1) - b_dif(jc,k)*tke_new(jc,k) + c_dif(jc,k)*tke_new(jc,k+1)
@@ -1399,7 +1449,7 @@ subroutine integrate_tke_block( &
 
   ! dissipation of TKE
   !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-  tke_Tdis(si:ei,:) = 0.d0
+  tke_Tdis(si:ei,:) = 0.0_wp
   !$ACC END KERNELS
 
   !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -1462,12 +1512,12 @@ subroutine integrate_tke_block( &
   if (use_ubound_dirichlet) then
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     tke_Twin(si:ei,1) = (tke_new(si:ei,1)-tke_old(si:ei,1))/dtime - tke_Tdif(si:ei,1)
-    tke_Tbck(si:ei,1) = 0.0
+    tke_Tbck(si:ei,1) = 0.0_wp
     !$ACC END KERNELS
   else
     !tke_Twin(1) = forc_tke_surf/(dzt(1))
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    tke_Twin(si:ei,1) = (cd*forc_tke_surf(si:ei)**(3./2.))/(dzt(si:ei,1))
+    tke_Twin(si:ei,1) = (cd*forc_tke_surf(si:ei)**(3.0_wp/2.0_wp))/(dzt(si:ei,1))
     !$ACC END KERNELS
   endif
   ! FIXME: Find better name for tke_Twin either tke_Tbou or use tke_Tsur
@@ -1477,7 +1527,7 @@ subroutine integrate_tke_block( &
     do jc = si, ei
       if (nlev(jc) > 0) then
         tke_Twin(jc,nlev(jc)+1) = (tke_new(jc,nlev(jc)+1)-tke_old(jc,nlev(jc)+1))/dtime - tke_Tdif(jc,nlev(jc)+1)
-        tke_Tbck(jc,nlev(jc)+1) = 0.0
+        tke_Tbck(jc,nlev(jc)+1) = 0.0_wp
       endif
     enddo
     !$ACC END PARALLEL LOOP
@@ -1486,7 +1536,7 @@ subroutine integrate_tke_block( &
     !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     do jc = si, ei
       if (nlev(jc) > 0) then
-        tke_Twin(jc,nlev(jc)+1) = 0.0
+        tke_Twin(jc,nlev(jc)+1) = 0.0_wp
       endif
     enddo
     !$ACC END PARALLEL LOOP
@@ -1514,8 +1564,8 @@ subroutine integrate_tke_block( &
         tke_Lmix(jc,k) = mxl(jc,k)
         tke_Pr(jc,k) = prandtl(jc,k)
       else
-        tke_Pr(jc,k) = 0.0
-        tke_Lmix(jc,k) = 0.0
+        tke_Pr(jc,k) = 0.0_wp
+        tke_Lmix(jc,k) = 0.0_wp
       endif
     enddo
   enddo
@@ -1796,28 +1846,28 @@ subroutine integrate_tke( &
   !              or something like this that might include already this factor.
 
   ! initialize diagnostics
-  tke_Tbpr = 0.0
-  tke_Tspr = 0.0
-  tke_Tdif = 0.0
-  tke_Tdis = 0.0
-  tke_Twin = 0.0
-  tke_Tiwf = 0.0
-  tke_Tbck = 0.0
-  tke_Ttot = 0.0
+  tke_Tbpr = 0.0_wp
+  tke_Tspr = 0.0_wp
+  tke_Tdif = 0.0_wp
+  tke_Tdis = 0.0_wp
+  tke_Twin = 0.0_wp
+  tke_Tiwf = 0.0_wp
+  tke_Tbck = 0.0_wp
+  tke_Ttot = 0.0_wp
 
-  vmix_int_1 = 0.0
-  vmix_int_2 = 0.0
-  vmix_int_3 = 0.0
+  vmix_int_1 = 0.0_wp
+  vmix_int_2 = 0.0_wp
+  vmix_int_3 = 0.0_wp
 
-  tke_new = 0.0
-  tke_upd = 0.0
+  tke_new = 0.0_wp
+  tke_upd = 0.0_wp
 
-  a_dif = 0.0
-  b_dif = 0.0
-  c_dif = 0.0
-  a_tri = 0.0
-  b_tri = 0.0
-  c_tri = 0.0
+  a_dif = 0.0_wp
+  b_dif = 0.0_wp
+  c_dif = 0.0_wp
+  a_tri = 0.0_wp
+  b_tri = 0.0_wp
+  c_tri = 0.0_wp
 
   !---------------------------------------------------------------------------------
   ! set tke_constants locally
@@ -1841,16 +1891,16 @@ subroutine integrate_tke( &
   use_ubound_dirichlet = tke_constants_in%use_ubound_dirichlet
   use_lbound_dirichlet = tke_constants_in%use_lbound_dirichlet
 
-  !c_k        = 0.1
-  !c_eps      = 0.7
-  !alpha_tke  = 30.0
-  !mxl_min    = 1.d-8
-  !KappaM_min = 0.0
-  !KappaM_max = 100.0
-  !cd         = 3.75
-  !tke_min    = 1.d-6
+  !c_k        = 0.1_wp
+  !c_eps      = 0.7_wp
+  !alpha_tke  = 30.0_wp
+  !mxl_min    = 1.e-8_wp
+  !KappaM_min = 0.0_wp
+  !KappaM_max = 100.0_wp
+  !cd         = 3.75_wp
+  !tke_min    = 1.e-6_wp
   !tke_mxl_choice = 2
-  !tke_surf_min = 1.d-4
+  !tke_surf_min = 1.e-4_wp
   !only_tke = .true.
   !use_ubound_dirichlet = .false.
   !use_lbound_dirichlet = .false.
@@ -1858,16 +1908,16 @@ subroutine integrate_tke( &
   !---------------------------------------------------------------------------------
   ! Part 1: calculate mixing length scale
   !---------------------------------------------------------------------------------
-  sqrttke = sqrt(max(0d0,tke_old))
+  sqrttke = sqrt(max(0.0_wp,tke_old))
 
   ! turbulent mixing length
-  mxl = sqrt(2D0)*sqrttke/sqrt(max(1d-12,Nsqr))
+  mxl = sqrt(2.0_wp)*sqrttke/sqrt(max(1e-12_wp,Nsqr))
 
   ! constrain mixing length scale as in MITgcm
   if (tke_mxl_choice==2) then
     !FIXME: What should we do at the surface and bottom?
-    mxl(1) = 0.d0
-    mxl(nlev+1) = 0.d0
+    mxl(1) = 0.0_wp
+    mxl(nlev+1) = 0.0_wp
     do k=2,nlev
       mxl(k) = min(mxl(k), mxl(k-1)+dzw(k-1))
     enddo
@@ -1895,16 +1945,16 @@ subroutine integrate_tke( &
   ! Part 2: calculate diffusivities
   !---------------------------------------------------------------------------------
   KappaM_out = min(KappaM_max,c_k*mxl*sqrttke)
-  Rinum = Nsqr/max(Ssqr,1d-12)
+  Rinum = Nsqr/max(Ssqr,1e-12_wp)
 
   ! FIXME: nils: Check this later if IDEMIX is coupled.
   ! FIXME: nils: Why E_iw**2 and not dissipation with mixed time level?
   ! FIXME: nils: Why not passing Rinum as Rinum_idemix to tke scheme?
   if (.not.only_tke) then  !IDEMIX is on
-    Rinum = min(Rinum,KappaM_out*Nsqr/max(1d-12,alpha_c*E_iw**2))
+    Rinum = min(Rinum,KappaM_out*Nsqr/max(1e-12_wp,alpha_c*E_iw**2))
   end if
 
-  prandtl=max(1d0,min(10d0,6.6*Rinum))
+  prandtl=max(1.0_wp,min(10.0_wp,6.6_wp*Rinum))
   KappaH_out=KappaM_out/prandtl
 
   ! restrict to minimum values
@@ -1917,7 +1967,7 @@ subroutine integrate_tke( &
   ! Part 3: tke forcing
   !---------------------------------------------------------------------------------
   ! initialize forcing
-  forc = 0.0
+  forc = 0.0_wp
 
   ! --- forcing by shear and buoycancy production
   K_diss_v   = Ssqr*KappaM_out
@@ -1940,11 +1990,11 @@ subroutine integrate_tke( &
   !---------------------------------------------------------------------------------
   ! Part 4: vertical diffusion and dissipation is solved implicitely
   !---------------------------------------------------------------------------------
-  ke = 0.d0
+  ke = 0.0_wp
   do k = 1, nlev
     kp1 = min(k+1,nlev)
     kk  = max(k,2)
-    ke(k) = alpha_tke*0.5*(KappaM_out(kp1)+KappaM_out(kk))
+    ke(k) = alpha_tke*0.5_wp*(KappaM_out(kp1)+KappaM_out(kk))
   enddo
 
   !--- c is lower diagonal of matrix
@@ -1952,7 +2002,7 @@ subroutine integrate_tke( &
     !c_dif(k) = delta(k+1)/dzt(k)
     c_dif(k) = ke(k)/( dzt(k)*dzw(k) )
   enddo
-  c_dif(nlev+1) = 0.d0 ! not part of the diffusion matrix, thus value is arbitrary
+  c_dif(nlev+1) = 0.0_wp ! not part of the diffusion matrix, thus value is arbitrary
 
   !--- b is main diagonal of matrix
   do k=2,nlev
@@ -1965,34 +2015,34 @@ subroutine integrate_tke( &
     !a_dif(k) = delta(k)/dzt(k)
     a_dif(k) = ke(k-1)/( dzt(k)*dzw(k-1) )
   enddo
-  a_dif(1) = 0.d0 ! not part of the diffusion matrix, thus value is arbitrary
+  a_dif(1) = 0.0_wp ! not part of the diffusion matrix, thus value is arbitrary
 
   ! copy tke_old
   tke_upd(1:nlev+1) = tke_old(1:nlev+1)
 
   ! upper boundary condition
   if (use_ubound_dirichlet) then
-    sqrttke(1)      = 0.d0 ! to suppres dissipation for k=1
-    forc(1)         = 0.d0 ! to suppres forcing for k=1
+    sqrttke(1)      = 0.0_wp ! to suppres dissipation for k=1
+    forc(1)         = 0.0_wp ! to suppres forcing for k=1
     tke_surf        = max(tke_surf_min, cd*forc_tke_surf)
     tke_upd(1)      = tke_surf
     ! add diffusive part that depends on tke_surf to forcing
     diff_surf_forc  = a_dif(2)*tke_surf
     forc(2)         = forc(2)+diff_surf_forc
-    a_dif(2)        = 0.d0 ! and set matrix element to zero
-    b_dif(1)        = 0.d0 ! 0 line in matrix for k=1
-    c_dif(1)        = 0.d0 ! 0 line in matrix for k=1
+    a_dif(2)        = 0.0_wp ! and set matrix element to zero
+    b_dif(1)        = 0.0_wp ! 0 line in matrix for k=1
+    c_dif(1)        = 0.0_wp ! 0 line in matrix for k=1
   else
     ! add wind forcing
-    forc(1) = forc(1) + (cd*forc_tke_surf**(3./2.))/(dzt(1))
+    forc(1) = forc(1) + (cd*forc_tke_surf**(3.0_wp/2.0_wp))/(dzt(1))
     b_dif(1)        = ke(1)/( dzt(1)*dzw(1) )
-    diff_surf_forc  = 0.0
+    diff_surf_forc  = 0.0_wp
   endif
 
   ! lower boundary condition
   if (use_lbound_dirichlet) then
-    sqrttke(nlev+1) = 0.d0 ! to suppres dissipation for k=nlev+1
-    forc(nlev+1)    = 0.d0 ! to suppres forcing for k=nlev+1
+    sqrttke(nlev+1) = 0.0_wp ! to suppres dissipation for k=nlev+1
+    forc(nlev+1)    = 0.0_wp ! to suppres forcing for k=nlev+1
     ! FIXME: make tke_bott dependend on bottom friction?
     tke_bott        = tke_min
     !tke_old(nlev+1) = tke_bott
@@ -2000,17 +2050,17 @@ subroutine integrate_tke( &
     ! add diffusive part that depends on tke_bott to forcing
     diff_bott_forc  = c_dif(nlev)*tke_bott
     forc(nlev)      = forc(nlev)+diff_bott_forc
-    c_dif(nlev)     = 0.d0 ! and set matrix element to zero
-    b_dif(nlev+1)   = 0.d0 ! 0 line in matrix for k=nlev+1
-    a_dif(nlev+1)   = 0.d0 ! 0 line in matrix for k=nlev+1
+    c_dif(nlev)     = 0.0_wp ! and set matrix element to zero
+    b_dif(nlev+1)   = 0.0_wp ! 0 line in matrix for k=nlev+1
+    a_dif(nlev+1)   = 0.0_wp ! 0 line in matrix for k=nlev+1
   else
     b_dif(nlev+1)   = ke(nlev)/( dzt(nlev+1)*dzw(nlev) )
-    diff_bott_forc  = 0.0
+    diff_bott_forc  = 0.0_wp
   endif
 
   !--- construct tridiagonal matrix to solve diffusion and dissipation implicitely
   a_tri = -dtime*a_dif
-  b_tri = 1+dtime*b_dif
+  b_tri = 1.0_wp+dtime*b_dif
   b_tri(2:nlev) = b_tri(2:nlev) + dtime*c_eps*sqrttke(2:nlev)/mxl(2:nlev)
   c_tri = -dtime*c_dif
 
@@ -2043,7 +2093,7 @@ subroutine integrate_tke( &
   endif
 
   ! dissipation of TKE
-  tke_Tdis = 0.d0
+  tke_Tdis = 0.0_wp
   tke_Tdis(2:nlev) = -c_eps/mxl(2:nlev)*sqrttke(2:nlev)*tke_new(2:nlev)
   !tke_diss_out(1:nlev+1) = c_eps/mxl(1:nlev+1)*sqrttke(1:nlev+1)*tke_new(1:nlev)
 
@@ -2074,27 +2124,27 @@ subroutine integrate_tke( &
   tke_Tbck = (tke_new-tke_unrest)/dtime
   if (use_ubound_dirichlet) then
     tke_Twin(1) = (tke_new(1)-tke_old(1))/dtime - tke_Tdif(1)
-    tke_Tbck(1) = 0.0
+    tke_Tbck(1) = 0.0_wp
   else
     !tke_Twin(1) = forc_tke_surf/(dzt(1))
-    tke_Twin(1) = (cd*forc_tke_surf**(3./2.))/(dzt(1))
+    tke_Twin(1) = (cd*forc_tke_surf**(3.0_wp/2.0_wp))/(dzt(1))
   endif
   ! FIXME: Find better name for tke_Twin either tke_Tbou or use tke_Tsur
   ! tke_Tbot
   if (use_lbound_dirichlet) then
     tke_Twin(nlev+1) = (tke_new(nlev+1)-tke_old(nlev+1))/dtime - tke_Tdif(nlev+1)
-    tke_Tbck(nlev+1) = 0.0
+    tke_Tbck(nlev+1) = 0.0_wp
   else
     !FIXME: no flux condition so far, add bottom friction later
-    tke_Twin(nlev+1) = 0.0
+    tke_Twin(nlev+1) = 0.0_wp
   endif
 
   tke_Tiwf(1:nlev+1) = iw_diss(1:nlev+1)
   tke_Ttot = (tke_new-tke_old)/dtime
   !tke = tke_new
-  tke_Lmix(nlev+1:) = 0.0
+  tke_Lmix(nlev+1:) = 0.0_wp
   tke_Lmix(1:nlev+1) = mxl(1:nlev+1)
-  tke_Pr(nlev+1:) = 0.0
+  tke_Pr(nlev+1:) = 0.0_wp
   tke_Pr(1:nlev+1) = prandtl(1:nlev+1)
 
   ! -----------------------------------------------

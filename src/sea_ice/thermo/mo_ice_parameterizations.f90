@@ -1,16 +1,15 @@
-! Provide an implementation of various sea ice parametrizations.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of various sea ice parametrizations.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -32,7 +31,7 @@ MODULE mo_ice_parameterizations
   USE mo_sea_ice_nml,         ONLY: i_ice_albedo, i_Qio_type, i_ice_therm, albi, albim, albsm, albs, Cd_io, Ch_io
   USE mo_ocean_types,         ONLY: t_hydro_ocean_state
   USE mo_sea_ice_types,       ONLY: t_sea_ice
-  USE mo_fortran_tools,       ONLY: set_acc_host_or_device
+  USE mo_fortran_tools,       ONLY: set_acc_host_or_device, set_acc_async_queue
 
 
   IMPLICIT NONE
@@ -53,7 +52,7 @@ CONTAINS
   !! ! set_ice_albedo: set ice albedo
   !!
   SUBROUTINE set_ice_albedo(i_startidx_c, i_endidx_c, nbdim, kice, Tsurf, hi, hs, &
-      & albvisdir, albvisdif, albnirdir, albnirdif, lacc)
+      & albvisdir, albvisdif, albnirdir, albnirdif, lacc, opt_acc_async_queue)
 
     INTEGER, INTENT(IN)  :: i_startidx_c, i_endidx_c, nbdim, kice
     REAL(wp),INTENT(IN)  :: Tsurf(nbdim,kice)
@@ -64,6 +63,7 @@ CONTAINS
     REAL(wp),INTENT(OUT) :: albnirdir  (nbdim,kice)
     REAL(wp),INTENT(OUT) :: albnirdif  (nbdim,kice)
     LOGICAL, INTENT(IN), OPTIONAL :: lacc
+    INTEGER, INTENT(IN), OPTIONAL :: opt_acc_async_queue
 
 
     !Local variables
@@ -71,14 +71,16 @@ CONTAINS
     REAL(wp)            :: albflag, frac_snow
     INTEGER             :: jc,k
     LOGICAL :: lzacc
+    INTEGER :: acc_async_queue
     !-------------------------------------------------------------------------------
 
     CALL set_acc_host_or_device(lzacc, lacc)
+    CALL set_acc_async_queue(acc_async_queue, opt_acc_async_queue)
 
     SELECT CASE (i_ice_albedo)
     CASE (1)
       ! This is Uwe's albedo expression from the old budget function
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
       !$ACC LOOP SEQ
       DO k=1,kice
         !$ACC LOOP GANG VECTOR PRIVATE(albflag)
@@ -101,7 +103,7 @@ CONTAINS
       !$ACC END PARALLEL
 
       ! all albedos are the same
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
       !$ACC LOOP SEQ
       DO k=1,kice
         !$ACC LOOP GANG VECTOR
@@ -115,7 +117,7 @@ CONTAINS
 
     CASE (2)
       ! This is the CCSM 3 albedo scheme
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
       !$ACC LOOP SEQ
 !PREVENT_INCONSISTENT_IFORT_FMA
       DO k=1,kice
@@ -136,7 +138,7 @@ CONTAINS
       !$ACC END PARALLEL
 
       ! diffuse and direct albedos are the same
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
       !$ACC LOOP SEQ
       DO k=1,kice
         !$ACC LOOP GANG VECTOR
@@ -202,18 +204,19 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) SCHEDULE(dynamic)
       DO jb = 1,p_patch%nblks_c
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jc = i_startidx_c,i_endidx_c
           ice%zHeatOceI(jc,:,jb) = 0.0_wp
         ENDDO
         !$ACC END PARALLEL LOOP
       ENDDO
+      !$ACC WAIT(1)
 
     CASE (1)
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) SCHEDULE(dynamic)
       DO jb = 1,p_patch%nblks_c
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jc = i_startidx_c,i_endidx_c
           IF (ice%hi(jc,1,jb) > 0._wp) THEN
             ! energy of warm water below ice covered part of grid area only is used for melting
@@ -222,13 +225,14 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
         ENDDO
         !$ACC END PARALLEL LOOP
       END DO
+      !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
    CASE(2)
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) SCHEDULE(dynamic)
     DO jb = 1,p_patch%nblks_c
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         IF (ice%hi(jc,1,jb) > 0._wp) THEN
             ! melting energy depends on velocity difference between water and ice, bulk formulation
@@ -239,13 +243,14 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
       ENDDO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
     CASE (3)
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, k) SCHEDULE(dynamic)
       DO jb = 1,p_patch%nblks_c
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jc = i_startidx_c,i_endidx_c
           DO k=1,ice%kice
           IF (ice%hi(jc,k,jb) > 0._wp) THEN
@@ -261,6 +266,7 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
         ENDDO
         !$ACC END PARALLEL LOOP
       END DO
+      !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
     CASE DEFAULT
@@ -305,7 +311,7 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, k, jc, hi_from_flood) SCHEDULE(dynamic)
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO k=1,ice%kice
         DO jc = i_startidx_c,i_endidx_c
 
@@ -324,17 +330,19 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) SCHEDULE(dynamic)
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         ice%draftave(jc,jb) = sum(ice%draft(jc,:,jb) * ice%conc(jc,:,jb))
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
 
@@ -375,7 +383,7 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
 !ICON_OMP_PARALLEL_DO PRIVATE(jb, jc, i_startidx_c, i_endidx_c)
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         IF (( p_ice%conc(jc,1,jb) > 1._wp )) THEN
           p_ice%conc  (jc,1,jb) = 1._wp
@@ -386,6 +394,7 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
     ! Fix undershoots - ONLY for the one-ice-class case
@@ -393,7 +402,7 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
 !ICON_OMP_PARALLEL_DO PRIVATE(jb, jc, i_startidx_c, i_endidx_c)
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         IF (( p_ice%conc(jc,1,jb) < TINY(1._wp) ) .OR. ( p_ice%hi(jc,1,jb) < TINY(1._wp) )) THEN
           p_ice%conc  (jc,1,jb) = 0._wp
@@ -405,17 +414,19 @@ SUBROUTINE oce_ice_heatflx (p_patch, p_os, ice, lacc)
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
 !ICON_OMP_PARALLEL_DO PRIVATE(jb, jc, i_startidx_c, i_endidx_c)
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         p_ice%concSum(jc,jb) = SUM(p_ice%conc(jc,:,jb))
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE ice_cut_off

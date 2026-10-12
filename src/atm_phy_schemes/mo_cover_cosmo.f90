@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -57,10 +57,10 @@ CONTAINS
   !  Cloud cover and cloud water/ice calculation from COSMO model.
   !  (extracted from subroutine organize_radiation
   !   in file cosmo/src_radiation.f90, section 3.1 & 3.2)
-  !  Changes: 
+  !  Changes:
   !  * 500hPa threshold for thin upper-level ice clouds has been taken out.
   !  * fix to SGS/grid-scale cloud water/ice interaction:
-  !    if small grid-scale qc or qi then 
+  !    if small grid-scale qc or qi then
   !      qc,total=qc,sgs+qi,sgs
   !      qi,total=qc,sgs+qi,sgs
   !    This overestimates the SGS cloud water.
@@ -85,6 +85,8 @@ SUBROUTINE cover_cosmo ( &
     t_g        ,    & ! weighted surface temperature                  (  k  )
     clc_sgs    ,    & ! subgrid-scale stratiform cloud cover          ( --- )
     clc_con    ,    & ! cloud cover due to convection                 ( --- )
+    clc_diag  ,     & ! cloud cover at saturation in statistical cloud diagnostic
+    q_crit    ,     & ! critical value for normalized super-saturation
     icldm_rad  ,    & ! mode of cloud representation in radiation parametr.
     itype_wcld ,    & ! type of water cloud diagnosis
     lprog_qi   ,    & ! if .TRUE., running with cloud ice
@@ -131,6 +133,10 @@ REAL(KIND=ireals), DIMENSION(ie,nnew), INTENT(IN) ::   &
 REAL(KIND=ireals), DIMENSION(ie,ke), INTENT(IN) ::   &
   & p0               , & ! reference pressure at full levels             ( pa  )
   & pgeo                 ! geopotential                                  (m2/s2 )
+
+REAL(KIND=ireals) :: &
+  & clc_diag,          & ! cloud cover at saturation in statistical cloud diagnostic
+  & q_crit               ! critical value for normalized super-saturation
 
 INTEGER(KIND=iintegers), INTENT(IN) ::  &
   & icldm_rad        , & ! mode of cloud representation in radiation  parametr.
@@ -216,7 +222,7 @@ REAL(KIND=ireals), PARAMETER :: &
   DO k = kstart, ke
     DO  i = istartrad, iendparrad    ! istartpar, iendpar
       IF( ldcum(i) .AND. kctop(i) > 0 .AND. k <= kcbot(i) .AND. k >= kctop(i) ) THEN
- 
+
         clc_con(i,k) = 0.7_ireals/10000.0_ireals &
                      & * ( pgeo(i,kctop(i)) - pgeo(i,kcbot(i)) ) / grav
 
@@ -309,6 +315,7 @@ REAL(KIND=ireals), PARAMETER :: &
          ie, 1 , ke,                                         &
          t(:,:,nzx), qv(:,:,nzx), qc(:,:,nzx), pp(:,:,nzx),  &
          p0, rcld, ps(:,nzx),                                &
+         clc_diag, q_crit, &
          itype_wcld )
 
     DO  k = kstart, ke

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -11,7 +11,7 @@
 # ------------------------------------------
 
 # ===========================================================================
-# 
+#
 # Name: exp.c2sm_clm_r13b03_seaice.run
 #
 # Purpose: Run script for ICON on the R13B03 grid in the Baltic Sea region.
@@ -20,7 +20,7 @@
 #
 # Authors: Annika Lauber, Michael Jaehn (C2SM)
 #
-# =========================================================================== 
+# ===========================================================================
 
 set -x
 
@@ -33,7 +33,7 @@ set -x
 # icon_data_poolFolder          = base directory, where grids/, input/ and setup/ exist
 # nproma                        = blocking length for array dimensioning and inner loop lengths
 
-icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/c2sm"
+input_folder="${testingFolder_prefix}/testing-input-data/c2sm/clm_r13b03_seaice"
 
 # =======================================================================
 # Setup - experiment
@@ -50,10 +50,7 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/c2sm"
 # =======================
 
 # Folder containing required grid information
-grids_folder=${icon_data_poolFolder}/grids/clm_r13b03_seaice
-
-# Folder containing lateral boundary conditions
-latbc_path=${icon_data_poolFolder}/input/clm_r13b03_seaice
+grids_folder=${input_folder}
 
 dynamics_grid_filename=baltic_sea_DOM01.nc
 atmo_dyn_grids="'${dynamics_grid_filename}',"
@@ -62,8 +59,8 @@ radiation_grid_filename=baltic_sea_DOM01.parent.nc
 atmo_rad_grids="'${radiation_grid_filename}',"
 
 # start and end date+time
-start_date=${start_date:="1979-02-01T18:00:00Z"}
-  end_date=${end_date:="1979-02-01T18:30:00Z"}
+start_date=${start_date:="1979-02-01T12:00:00Z"}
+  end_date=${end_date:="1979-02-01T12:30:00Z"}
 
 # output intervals
 output_bounds="0.,10000000.,360."
@@ -76,7 +73,7 @@ atmo_namelist=NAMELIST_${EXPNAME}_atm
 # Get required files together
 # ========================
 
-extpar_filename="external_parameter_icon_baltic_sea_DOM01_tiles.nc"
+extpar_filename="external_parameter_icon_baltic_sea_DOM01_tiles_cdnc.nc"
 add_required_file "${grids_folder}/${extpar_filename}" ./
 
 # files needed for radiation
@@ -89,11 +86,12 @@ add_required_file ${basedir}/run/ana_varnames_map_file.txt map_file.ana
 
 
 # initial data
-add_link_file ${latbc_path}/caf1979020100_ini.nc .
+add_link_file ${input_folder}/caf1979020100_ini.nc .
 
 # lateral boundary data
-add_link_file ${latbc_path}/caf1979020100_lbc.nc .
-add_link_file ${latbc_path}/caf1979020106_lbc.nc .
+add_link_file ${input_folder}/caf1979020100_lbc.nc .
+add_link_file ${input_folder}/caf1979020106_lbc.nc .
+add_link_file ${input_folder}/caf1979020112_lbc.nc .
 
 # dictionary file for output variable names
 dict_file="dict.output.mch"
@@ -101,14 +99,50 @@ add_required_file ${basedir}/run/${dict_file} .
 
 # dictionary file for LBC
 dict_latbc_file="dict.latbc"
-add_required_file ${latbc_path}/${dict_latbc_file} .
+add_required_file ${input_folder}/${dict_latbc_file} .
 
 # greenhouse gases file
-add_required_file ${latbc_path}/bc_greenhouse_rcp45_1765-2500.nc .
+add_required_file ${input_folder}/bc_greenhouse_rcp45_1765-2500.nc .
 
 # input files for SST-ICE mode 6
-add_required_file ${latbc_path}/LOWBC_1979_02.nc .
-add_required_file ${latbc_path}/LOWBC_1979_02.nc .
+add_required_file ${input_folder}/LOWBC_1979_02.nc .
+add_required_file ${input_folder}/LOWBC_1979_02.nc .
+
+# - ssi and tsi
+add_link_file ${input_folder}/swflux_14band_cmip6_1850-2299-v3.2.nc  ./bc_solar_irradiance_sw_b14.nc
+# Add required files for iRadAeroKinnVolcSP (irad_aero=18)
+add_required_file ${input_folder}/bc_aeropt_cmip6_volc_lw_b16_sw_b14_1979.nc ./bc_aeropt_volc_lw_b16_sw_b14_1979.nc
+
+# - tropospheric anthropogenic aerosols, simple plumes
+add_link_file ${input_folder}/MACv2.0-SP_v1.nc                          ./MACv2.0-SP_v1.nc
+#
+# - Kinne background aerosols are needed for the year 1850 (irad_aero=18,19)
+#
+datadir=${input_folder}
+#
+add_link_file $input_folder/bc_aeropt_kinne_lw_b16_coa.nc                    ./
+add_link_file $input_folder/bc_aeropt_kinne_sw_b14_coa.nc                    ./
+add_link_file $input_folder/bc_aeropt_kinne_sw_b14_fin_1850.nc               ./bc_aeropt_kinne_sw_b14_fin.nc
+
+# range of years for yearly files
+# assume start_date and end_date have the format yyyy-...
+start_year=$(( ${start_date%%-*} - 1 ))
+end_year=$(( ${end_date%%-*} + 1 ))
+#
+# - ozone
+# -- for irad_o3=5
+year=$start_year
+datadir=${grids_folder_ozone}
+while [[ $year -le $end_year ]]
+do
+  if [[ $year -le 2014 ]]
+  then
+    add_link_file $input_folder/bc_ozone_historical_${year}.nc               ./bc_ozone_${year}.nc
+  else
+    add_link_file $input_folder/bc_ozone_historical_2014.nc                  ./bc_ozone_${year}.nc
+  fi
+  (( year = year+1 ))
+done
 
 # ===========================================================================
 # Create ICON master namelist
@@ -208,11 +242,11 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
   lread_ana                   = .false. ! (T) Read dwdana
   ifs2icon_filename           = "caf1979020100_ini.nc"
   zpbl1                       = 500.
-  zpbl2                       = 1000. 
+  zpbl2                       = 1000.
   ltile_init                  = .TRUE.
   ltile_coldstart             = .true.
   pinit_seed                  = 0
-  pinit_amplitude             = 1e-14
+  pinit_amplitude             = 0
 /
 
 ! grid_nml: horizontal grid --------------------------------------------------
@@ -240,8 +274,8 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  nudge_max_coeff             =                          0.075     ! maximum relaxation coefficient for lateral boundary nudging
  lsq_high_ord                = 3
  l_intp_c2l                  = .true.
- l_mono_c2l                  = .true. 
- rbf_scale_mode_ll           = 2 
+ l_mono_c2l                  = .true.
+ rbf_scale_mode_ll           = 2
 /
 
 ! io_nml: general switches for model I/O -------------------------------------
@@ -261,13 +295,13 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
 
 ! limarea_nml: settings for limited area mode ---------------------------------
 &limarea_nml
- latbc_path                  = "${latbc_path}"       ! Absolute path to boundary data
+ latbc_path                  = "${input_folder}"       ! Absolute path to boundary data
  itype_latbc                 = 1
- dtime_latbc                 = 21600.0 
- latbc_varnames_map_file     = '${dict_latbc_file}' 
- latbc_filename              = 'caf<y><m><d><h>_lbc.nc' 
+ dtime_latbc                 = 21600.0
+ latbc_varnames_map_file     = '${dict_latbc_file}'
+ latbc_filename              = 'caf<y><m><d><h>_lbc.nc'
  latbc_contains_qcqi         = .true.      ! = .true.  if  qc, qi are in latbc
-                                           ! = .false. if qc, qi are not in latbc 
+                                           ! = .false. if qc, qi are not in latbc
 /
 
 ! lnd_nml: land scheme switches -----------------------------------------------
@@ -283,9 +317,9 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  idiag_snowfrac             = 20
  itype_snowevap             = 3
  lsnowtile                  = .true.
- lseaice                    = .true. 
+ lseaice                    = .true.
  llake                      = .true.
- itype_lndtbl               = 4 
+ itype_lndtbl               = 4
  itype_evsl                 = 4
  itype_trvg                 = 3
  itype_root                 = 2
@@ -306,7 +340,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  vwind_offctr                =                          0.2       ! off-centering in vertical wind solver
  damp_height                 =                      12250.0       ! height at which Rayleigh damping of vertical wind starts
  rayleigh_coeff              =                          5.0       ! Rayleigh damping coefficient
- divdamp_order               =                         24         ! order of divergence damping 
+ divdamp_order               =                         24         ! order of divergence damping
  divdamp_type                =                         32         ! gdm default: 3 type of divergence damping
  divdamp_fac                 =                          0.004     ! scaling factor for divergence damping
  igradp_method               =                          3         ! discretization of horizontal pressure gradient
@@ -336,9 +370,9 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  itype_z0         = 2
  icapdcycl        = 3
  icpl_aero_conv   = 1
- icpl_aero_gscp   = 1
+ icpl_aero_gscp   = 3
+ scale_cdnc_mode  = 2
  icpl_o3_tp       = 1
- iprog_aero       = 0
  dt_rad           = 2400
  dt_conv          = 800
  dt_sso           = 1600
@@ -359,9 +393,13 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  tune_rcucov = 0.075
  tune_rhebc_land = 0.825
  tune_gust_factor=7.0
+ tune_eiscrit = 6.
+ tune_sc_eis = 6.
+ tune_sc_invmin = 100.
+ tune_sc_invmax = 2500.
 /
 
-! output_nml: control the output ------------------------------------------------ 
+! output_nml: control the output ------------------------------------------------
 &output_nml
  output_filename  = "${EXPNAME}_atm_3d"
  filename_format  = "<output_filename>_<levtype_l>_<datetime2>"
@@ -386,7 +424,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
   'ddt_temp_pconv','ddt_u_turb','ddt_u_sso','ddt_u_pconv','ddt_v_turb','ddt_v_sso',
   'ddt_qv_turb','ddt_qc_turb','ddt_qv_conv','ddt_qc_conv','ddt_tke','ddt_tke_pconv','ddt_tke_hsh','qv_s',
   'runoff_g','plantevap','t_snow','rho_snow','h_snow','freshsnow','ddt_vn_adv','ddt_vn_pgr','exner',
-  'h_ice','t_ice','alb_si'
+  'h_ice','t_ice','alb_si','hpbl'
 /
 
 ! radiation_nml: radiation scheme ---------------------------------------------
@@ -399,8 +437,9 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
   irad_n2o    = 4           ! 4: from greenhouse gas scenario
   irad_cfc11  = 4           ! 4: from greenhouse gas scenario
   irad_cfc12  = 4           ! 4: from greenhouse gas scenario
-  irad_o3     = 79
-  irad_aero   = 6
+  isolrad     = 2
+  irad_o3     = 5
+  irad_aero   = 18
   albedo_type = 2          ! Modis albedo
   direct_albedo = 4
   albedo_whitecap = 1
@@ -455,8 +494,8 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  ser_output_diag             =                            0,12,12
  ser_latbc_data              =                            0,12,12
  ser_dynamics                =                            0,12,12
- ser_diffusion               =                            0,12,12 
- ser_step_advection          =                            0,12,12 
+ ser_diffusion               =                            0,12,12
+ ser_step_advection          =                            0,12,12
  ser_physics                 =                            0,12,12
  ser_surface                 =                            0,12,12
  ser_microphysics            =                            0,12,12
@@ -468,10 +507,10 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  ser_radheat                 =                            0,12,12
  ser_gwdrag                  =                            0,12,12
  ser_convection              =                            0,12,12
- ser_nudging                 =                            0,12,12 
+ ser_nudging                 =                            0,12,12
  ser_nfail                   =                            1
  ser_nreport                 =                            10
- ser_all_debug               =                            0 
+ ser_all_debug               =                            0
  ser_debug                   =                        .FALSE.      ! serialize the debug statements from mo_ser_debug
 /
 

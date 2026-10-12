@@ -1,16 +1,15 @@
-!
-! Subroutine interface_aes_rht calls the radiative heating scheme.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutine interface_aes_rht calls the radiative heating scheme.
 
 MODULE mo_interface_aes_rht
 
@@ -22,6 +21,7 @@ MODULE mo_interface_aes_rht
   USE mo_aes_phy_memory,             ONLY: t_aes_phy_field, prm_field, &
     &                                      t_aes_phy_tend,  prm_tend
 
+  USE mo_aes_rad_config,             ONLY: aes_rad_config
   USE mo_radheating,                 ONLY: radheating
   USE mo_radiation_solar_data,       ONLY: psctm
 
@@ -57,6 +57,8 @@ CONTAINS
     LOGICAL  :: is_in_sd_ed_interval
     LOGICAL  :: is_active
     !
+    LOGICAL  :: lclrsky_lw, lclrsky_sw
+    !
     INTEGER  :: nlevp1, jc, jk
     !
     REAL(wp) :: q_rad(aes_phy_dims(jg)%nproma,aes_phy_dims(jg)%nlev)
@@ -73,6 +75,9 @@ CONTAINS
     pdtime               = aes_phy_tc(jg)%dt_phy_sec
     is_in_sd_ed_interval = aes_phy_tc(jg)%is_in_sd_ed_interval_rad
     is_active            = aes_phy_tc(jg)%is_active_rad
+
+    lclrsky_lw           = aes_rad_config(jg)%lclrsky_lw
+    lclrsky_sw           = aes_rad_config(jg)%lclrsky_sw
 
     ! associate pointers
     field  => prm_field(jg)
@@ -98,6 +103,9 @@ CONTAINS
                & kbdim      = nproma                         ,&! dimension size
                & klev       = nlev                           ,&! vertical dimension size
                & klevp1     = nlevp1                         ,&! vertical dimension size
+               !
+               & lclrsky_lw = lclrsky_lw                     ,&! switch for computation of LW clear sky fluxes
+               & lclrsky_sw = lclrsky_sw                     ,&! switch for computation of SW clear sky fluxes
                !
                & rsdt0      = psctm(jg)                      ,&! toa incident shortwave radiation for sun in zenith
                & cosmu0     = field%cosmu0    (:,jb)         ,&! solar zenith angle at current time
@@ -140,6 +148,8 @@ CONTAINS
                & rsutcs     = field%rsutcs             (:,jb),&! clear-sky shortwave upward   flux at current   time [W/m2]
                & rsdscs     = field%rsdscs             (:,jb),&! clear-sky shortwave downward flux at current   time [W/m2]
                & rsuscs     = field%rsuscs             (:,jb),&! clear-sky shortwave upward   flux at current   time [W/m2]
+               & rsntcs     = field%rsntcs             (:,jb)  ,&!< clear-sky shortwave net      [W/m2]
+               & rsnscs     = field%rsnscs             (:,jb)  ,&!< clear-sky shortwave net      [W/m2]
                !
                & rvds_dir   = field%rvds_dir           (:,jb),&!< out  all-sky downward direct visible radiation at surface
                & rpds_dir   = field%rpds_dir           (:,jb),&!< out  all-sky downward direct PAR     radiation at surface
@@ -157,6 +167,8 @@ CONTAINS
                !
                & rlutcs     = field%rlutcs             (:,jb),&! clear-sky longwave  upward   flux at current   time [W/m2]
                & rldscs     = field%rldscs             (:,jb),&! clear-sky longwave  downward flux at current   time [W/m2]
+               & rlntcs     = field%rlntcs             (:,jb)  ,&!< clear-sky longwave  net      [W/m2]
+               & rlnscs     = field%rlnscs             (:,jb)  ,&!< clear-sky longwave  net      [W/m2]
                !
                & q_rsw      = q_rsw                    (:,:) ,&! rad. heating by SW           [W/m2]
                & q_rlw      = q_rlw                    (:,:)  )! rad. heating by LW           [W/m2]
@@ -190,7 +202,7 @@ CONTAINS
           END IF
           !
           ! for output: LW heating
-          IF (ASSOCIATED(field% q_rlw)) THEN 
+          IF (ASSOCIATED(field% q_rlw)) THEN
             !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
             DO jk = 1, nlev
               DO jc = jcs, jce

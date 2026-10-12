@@ -1,22 +1,19 @@
-!
-! Initialization routines for vertical coordinate
-!
-! Initialization routines for two height-based terrain following coordinates
-! - Hybrid Gal-Chen coordiate (Gal-Chen and Somerville, 1975; Simmons and Burridge, 1981)
-! - Smooth level vertical (SLEVE) coordinate (Schaer et al, 2002; Leuenberger et al, 2010)
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Initialization routines for vertical coordinate
+!
+! Initialization routines for two height-based terrain following coordinates
+! - Hybrid Gal-Chen coordiate (Gal-Chen and Somerville, 1975; Simmons and Burridge, 1981)
+! - Smooth level vertical (SLEVE) coordinate (Schaer et al, 2002; Leuenberger et al, 2010)
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -56,8 +53,8 @@ CONTAINS
 
   !---------------------------------------------------------------------------
   !>
-  !! Initialize hybrid coords by reading or constructing the 'a' and 'b'. 
-  !! They are assumed to be HEIGHT BASED in contrast to the hydrostatic model version. 
+  !! Initialize hybrid coords by reading or constructing the 'a' and 'b'.
+  !! They are assumed to be HEIGHT BASED in contrast to the hydrostatic model version.
   !!
   SUBROUTINE init_hybrid_coord(nlev, vct_filename, vct_a, vct_b, layer_thickness, n_flat_level)
 
@@ -65,7 +62,7 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(IN   ) :: vct_filename
     REAL(wp),         INTENT(INOUT) :: vct_a(:), vct_b(:)
     REAL(wp),         INTENT(IN)    :: layer_thickness   ! constant \Delta vct_a
-    INTEGER,          INTENT(IN)    :: n_flat_level      ! number of flat levels, 
+    INTEGER,          INTENT(IN)    :: n_flat_level      ! number of flat levels,
                                                          ! i.e. where vct_b
     REAL(wp) :: z_height, z_flat
     REAL(wp) :: x1
@@ -102,7 +99,7 @@ CONTAINS
 
         ENDDO
 
-      ELSE  
+      ELSE
 
         z_flat = REAL(nlevp1-n_flat_level,wp) * layer_thickness
         DO jk = 1, nlevp1
@@ -147,7 +144,7 @@ CONTAINS
       ! read hybrid parameters
       CALL read_vct (nlev, vct_filename, vct_a, vct_b)
 
-    ELSE 
+    ELSE
 
       IF (min_lay_thckn > 0.01_wp) THEN
 
@@ -205,7 +202,7 @@ CONTAINS
               zvcta(jk) = zvcta(jk+1)+MIN(max_lay_thckn,dvct(jk))
             ELSE IF (jk2 == 0) THEN
               jk2 = jk+1
-              jks = MAX(0,jk1-jk2+nshift_above_thcklay)  ! shift layers from which thicknesses are taken downward 
+              jks = MAX(0,jk1-jk2+nshift_above_thcklay)  ! shift layers from which thicknesses are taken downward
                                                          ! in order to prevent sudden jumps
               zvcta(jk) = zvcta(jk+1)+dvct(jk+jks)
             ELSE
@@ -258,13 +255,13 @@ CONTAINS
 
     ENDIF  ! TRIM(vct_filename) /= ""
 
-    ! Fill vct_b with meaningful values. 
-    ! Strictly speaking, vct_b is not required for the SLEVE coordinate 
-    ! (see subroutine init_vert_coord below). However, vct_b is for vertical wind 
-    ! initialization in init_w and adjust_w (mo_nh_init_utils), in order to 
-    ! approximately describe the transition from terrain following to 
+    ! Fill vct_b with meaningful values.
+    ! Strictly speaking, vct_b is not required for the SLEVE coordinate
+    ! (see subroutine init_vert_coord below). However, vct_b is for vertical wind
+    ! initialization in init_w and adjust_w (mo_nh_init_utils), in order to
+    ! approximately describe the transition from terrain following to
     ! constant height levels.
-    ! 
+    !
     IF (itype_laydistr == 3) THEN
       z_flat = flat_height  ! from 'sleve_nml'
       DO jk = 1, nlevp1
@@ -347,14 +344,14 @@ CONTAINS
     IF ( ivctype == 2 .AND. (ABS(vct_a(1) - top_height) > eps) ) THEN
        IF (lvct_from_file) THEN
         ! If vct_a has been read from file, enforce consistency between vct_a(1) and top_height
-        ! 
+        !
        WRITE(message_text,'(a,f10.3,a,f10.3,a)') 'The model top vct_a(1)=', vct_a(1), &
-          &  ' is NOT at top_height=', top_height, ', please reconsider your settings for sleve_nml!' 
+          &  ' is NOT at top_height=', top_height, ', please reconsider your settings for sleve_nml!'
        CALL finish(TRIM(routine), TRIM(message_text))
       ELSE
         ! throw a warning
        WRITE(message_text,'(a,f10.3,a,f10.3,a)') '!!WARNING!!: The model top vct_a(1)=', vct_a(1), &
-          &  ' is NOT at top_height=', top_height, ', please reconsider your settings for sleve_nml!' 
+          &  ' is NOT at top_height=', top_height, ', please reconsider your settings for sleve_nml!'
         CALL message(TRIM(routine), TRIM(message_text))
       ENDIF
     ENDIF
@@ -536,4 +533,3 @@ CONTAINS
 
 
 END MODULE mo_init_vgrid
-

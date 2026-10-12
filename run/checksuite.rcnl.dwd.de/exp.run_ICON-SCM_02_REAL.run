@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -11,14 +11,20 @@
 # ------------------------------------------
 
 # ----------------------------------------------------------------------------
+# SCM run script for real case:
+#   input from ICON to run SCM based on global ICON input to reproduce it at one location
+#
+# Martin Koehler, Jan. 2022
+# ----------------------------------------------------------------------------
+#PBS -S /bin/bash
 #PBS -q sx_norm
 #PBS -v NE=1,CPE=8
 #PBS -v NMPI_MALLOC_HEAP_EXPANSION_SIZE=512
 #PBS -v NMPI_MALLOC_MMAP_THRESHOLD=512
 #PBS -v MPI_IB_VBUF_TOTAL_SIZE=131072
 #PBS -l elapstim_req=00:40:00
-#PBS --venode=${NE}
-#PBS --venum-lhost=1     # Number of VE per logical host
+#PBS --venode=${NE}          # NE: number VE nodes, CPE: number cores on each VE
+#PBS --venum-lhost=1         # Number of VE per logical host
 #PBS -l cpunum_job=1
 #PBS -l coresz_prc=0
 #PBS -T necmpi_hydra
@@ -26,22 +32,18 @@
 #PBS -j o
 #PBS -o LOG.exp.run_ICON-SCM_02_REAL.run.run.o
 # ----------------------------------------------------------------------------
-# ============================================================================
-#
-date
 
+date
 set -x
 . /etc/profile
 
 # OpenMP settings
 export OMP_SCHEDULE="static"
 export OMP_DYNAMIC="false"
-export OMP_NUM_THREADS=1
+export OMP_NUM_THREADS=1                   # check total number of requested cores!
 
 # Run information
-let PPN=${CPE}*${NE}/${OMP_NUM_THREADS}         # no. of MPI procs. per NQS job
-let NE1=${NE}-1
-echo "PPN etc. $NE $CPE $PPN"
+let PPN=${CPE}*${NE}/${OMP_NUM_THREADS}    # no. of MPI procs. per NQS job
 
 ID=`echo $PBS_JOBID | cut -d: -f2 | cut -d. -f1`
 ulimit -s unlimited
@@ -60,49 +62,35 @@ module list
 # specifiy experiment (real simulation)
 # ----------------------------------------------------------------------------
 EXPNAME=SCM_REAL
+
 # ----------------------------------------------------------------------------
 # path definitions
 # ----------------------------------------------------------------------------
-
 if [[ -n ${PBS_O_WORKDIR} ]] ; then
   cd ${PBS_O_WORKDIR}
 fi
+
+# base directory for ICON sources and binary:
 ICONDIR=${PBS_O_WORKDIR}/..
 
-# base directory
-
-# ROUTINE PATHS>>>>
+# directory with input grids:
 GRIDDIR=/hpc/rwork0/routfor/test/icon/buildbot_data/nwp/Checksuite_data/${EXPNAME}
 INITDIR=${GRIDDIR}
-MODEL=${ICONDIR}/vector/bin/icon
-MODEL_SCAL=${ICONDIR}/host/bin/icon
-#MODEL=${ICONDIR}/build/VE/bin/icon
-#MODEL_SCAL=${ICONDIR}/build/VH/bin/icon
 
+# absolute path to output directory for results:
 EXPDIR=${TMPDIR}/${EXPNAME}
+
+# optional output testing reference data
 REFDIR=${INITDIR}
 
+# path to model binary, including the executable:
+MODEL_VH=${ICONDIR}/host/bin/icon
+MODEL_VE=${ICONDIR}/vector/bin/icon
+
+
 # ----------------------------------------------------------------------------
-# copy input data: grids, external parameters, model
-# ----------------------------------------------------------------------------
-
-# the directory for the experiment will be created, if not already there
-if [ ! -d $EXPDIR ]; then
-    mkdir -p $EXPDIR
-fi
-cd ${EXPDIR}
-
-# files needed for radiation
-ln -sf ${ICONDIR}/data/ECHAM6_CldOptProps.nc .
-ln -sf ${ICONDIR}/data/rrtmg_lw.nc .
-# APE BCs
-ln -sf ${ICONDIR}/data/external/ape_o3_R2B04_1Pa_spr0.90-cell.nc o3_icon_DOM01.nc
-ecRad_data_path=${ICONDIR}'/externals/ecrad/data'
-
-
-#-----------------------------------------------------------------------------
 # model timing
-#-----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------
 
 # 0.4 s for 70 m res., 0.5 for 100 m; 30 s for 2.5 km?
 dtime=60
@@ -114,13 +102,7 @@ dtrelax=10800.0 # nudging time time scale
 start_date="2021-06-12T00:00:00Z"
 end_date="2021-06-12T03:00:00Z"
 
-#-----------------------------------------------------------------------------
-# output
-#-----------------------------------------------------------------------------
-DT_DATA=`expr 1 \* 3600`      # output each n hours
-DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000              # number of time steps per output file 
+corio_lat=52.2   # Lindenberg
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -140,12 +122,31 @@ for gridfile in ${atmo_rad_grids}; do
   radiation_grid_filename="${radiation_grid_filename} '${gridfile}',"
 done
 
+# ----------------------------------------------------------------------------
+# copy input data: grids, external parameters, model
+# ----------------------------------------------------------------------------
+
+# the directory for the experiment will be created, if not already there
+if [ ! -d $EXPDIR ]; then
+    mkdir -p $EXPDIR
+fi
+cd ${EXPDIR}
+
+# grid
 ln -sf ${GRIDDIR}/${atmo_dyn_grids} .
 
+# SCM extpar file
 ln -sf ${INITDIR}/extpar_ilam_Torus_Triangles_4x4_2500m_lat52_lon14.nc extpar_${atmo_dyn_grids}
 
-#forcings
+# initial condition and forcing
 ln -sf ${INITDIR}/init_${EXPNAME}.nc init_SCM.nc
+
+# files needed for radiation
+ln -sf ${ICONDIR}/data/ECHAM6_CldOptProps.nc .
+ln -sf ${ICONDIR}/data/rrtmg_lw.nc .
+ln -sf ${ICONDIR}/data/rrtmg_sw.nc .
+
+ecRad_data_path=${ICONDIR}'/externals/ecrad/data'
 
 # ----------------------------------------------------------------------------
 # create ICON master namelist
@@ -153,12 +154,9 @@ ln -sf ${INITDIR}/init_${EXPNAME}.nc init_SCM.nc
 
 cat > icon_master.namelist << EOF
 
-! master_nml: ----------------------------------------------------------------
 &master_nml
  lrestart                    =                     .FALSE.        ! .TRUE.=current experiment is resumed
 /
-
-! master_model_nml: repeated for each model ----------------------------------
 &master_model_nml
  model_type                  =                          1         ! identifies which component to run (atmosphere,ocean,...)
  model_name                  =                      "ATMO"        ! character string for naming this component.
@@ -179,7 +177,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
@@ -192,25 +190,26 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &grid_nml
- l_scm_mode             = .TRUE.     ! 
  dynamics_grid_filename = "${atmo_dyn_grids}",
- corio_lat              = 52.2                      ! ???
- is_plane_torus         = .TRUE.
-/
+ corio_lat      = ${corio_lat}
+ is_plane_torus = .TRUE.
+ l_scm_mode     = .TRUE.     ! main logical to turn on SCM mode
+/                            ! note: if ldynamics on this transitions to LES or CRM
 
 &scm_nml
- i_scm_netcdf  = 1     ! read initial profiles and forcings from netcdf
- lscm_read_tke = .FALSE.    ! read initial tke from netcdf
- lscm_read_z0  = .TRUE.     ! read initial z0 from netcdf
- lscm_icon_ini = .TRUE.    ! read initial conditions from ICON output
- scm_sfc_mom   = 0          ! 0: TURBTRANS: no prescribed u*
- scm_sfc_temp  = 0          ! 0: TERRA:     no prescribed sensible heat flux at surface
- scm_sfc_qv    = 0          ! 0: TERRA:     no prescribed latent heat flux at surface
+ i_scm_netcdf   = 1          ! read initial profiles and forcings from netcdf
+ lscm_read_tke  = .FALSE.    ! read initial tke from netcdf
+ lscm_read_z0   = .TRUE.     ! read initial z0 from netcdf
+ lscm_icon_ini  = .TRUE.     ! read initial conditions from ICON output
+ scm_sfc_mom    = 0          ! 0: TURBTRANS: no prescribed u*
+ scm_sfc_temp   = 0          ! 0: TERRA:     no prescribed sensible heat flux at surface
+ scm_sfc_qv     = 0          ! 0: TERRA:     no prescribed latent heat flux at surface
 /
 
 &io_nml
  dt_checkpoint  = ${dt_checkpoint}
  lkeep_in_sync  = .true.
+ lflux_avg      = .FALSE.      ! false: accumulated fluxes
 /
 
 &run_nml
@@ -222,7 +221,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12           ! detailed report during integration
  output         = 'nml','totint'
  check_uuid_gracefully = .TRUE.
@@ -243,7 +242,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  icpl_aero_gscp  = 1
  icpl_o3_tp      = 1
  latm_above_top  = .TRUE.  ! needed for radiation routine
- itype_z0        = 2
+ itype_z0        = 0
  dt_rad	         = 1800.        ! Default: 1800   ! M. Koehler: 1440
  dt_conv         = 600.         ! Default: 600    ! M. Koehler: 360
  dt_sso	         = 600.         ! Default: 1200   ! M. Koehler: 720
@@ -253,12 +252,12 @@ cat > NAMELIST_${EXPNAME} << EOF
 &nwp_tuning_nml
  itune_albedo                 = 0       ! somewhat reduced albedo (w.r.t. MODIS data) over Sahara in order to reduce cold bias
  tune_zceff_min               = 0.01    ! ** default value to be used for R3B7; use 0.025 for R2B6 in order to get similar temperature biases in upper troposphere **
- tune_gkdrag                  = 0.075   ! R2B6: 0.075  
+ tune_gkdrag                  = 0.075   ! R2B6: 0.075
  tune_gkwake                  = 1.5     ! R2B6: 1.5
  tune_gfrcrit                 = 0.425   ! R2B6: 0.425
  tune_dust_abs                = 0.
  tune_zvz0i                   = 0.85
- tune_box_liq_asy             = 3.25   ! oper global: 3.0 , oper D2: 3.25, default: 2.5
+ tune_box_liq_asy             = 3.25    ! oper global: 3.0 , oper D2: 3.25, default: 2.5
  tune_box_liq                 = 0.05
  tune_rcucov                  = 0.075
  tune_rhebc_land              = 0.825
@@ -283,8 +282,8 @@ cat > NAMELIST_${EXPNAME} << EOF
  frcsmot                      = 0.2     ! these 2 switches together apply vertical smoothing of the TKE source terms
  imode_frcsmot                = 2       ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  itype_sher                   = 3       ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects
- ltkeshs                      = .true.
- a_hshr                       = 2.0
+ ltkeshs                      = .false.
+ a_hshr                       = 0.0
  icldm_turb                   = 1       ! 2: Gauss clouds for turbulence    1: grid scale clouds
  icldm_tran                   = 2       ! 2: Gauss clouds for surface layer 1: grid scale clouds
 /
@@ -339,10 +338,17 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing               = .FALSE.
  is_nudging                   = .TRUE.
  is_nudging_uv                = .TRUE.
- is_nudging_tq                = .TRUE.         ! TRUE best T profiles, FALSE best T2m ???
- nudge_start_height           = 2000.0            ! 1000.0
- nudge_full_height            = 4000.0            ! 2000.0
- dt_relax                     = ${dtrelax}     ! 10800.0
+ is_nudging_t                 = .TRUE.         ! TRUE best T profiles, FALSE best T2m ???
+ is_nudging_q                 = .TRUE.
+ nudge_start_height_uv        = 2000.0
+ nudge_full_height_uv         = 4000.0
+ nudge_start_height_t         = 2000.0
+ nudge_full_height_t          = 4000.0
+ nudge_start_height_q         = 2000.0
+ nudge_full_height_q          = 4000.0
+ dt_relax_uv                  = ${dtrelax}
+ dt_relax_t                   = ${dtrelax}
+ dt_relax_q                   = ${dtrelax}
 /
 
 &nonhydrostatic_nml
@@ -368,7 +374,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 
 &sleve_nml
  min_lay_thckn                = 20.         ! lowest level thickness (between half-levels)
- max_lay_thckn                = 25000.        ! maximum layer thickness below htop_thcknlimit
+ max_lay_thckn                = 25000.      ! maximum layer thickness below htop_thcknlimit
  htop_thcknlimit              = 15000.
  top_height                   = 22000.
  stretch_fac                  = 0.65
@@ -380,7 +386,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 
 &dynamics_nml
  divavg_cntrwgt               = 0.50
- lcoriolis                    = .TRUE.   ! SCM attention: .TRUE. distroys U-profile!!
+ lcoriolis                    = .TRUE.      ! SCM attention: .TRUE. distroys U-profile!!
 /
 
 &transport_nml
@@ -393,14 +399,15 @@ cat > NAMELIST_${EXPNAME} << EOF
  hdiff_order                  = 5
  itype_vn_diffu               = 1
  itype_t_diffu                = 2
- hdiff_efdt_ratio             = 24.0   ! for R2B6; recommendation for R3B7: 30.0
- hdiff_smag_fac               = 0.025  ! for R2B6; recommendation for R3B7: 0.02
+ hdiff_efdt_ratio             = 24.0        ! for R2B6; recommendation for R3B7: 30.0
+ hdiff_smag_fac               = 0.025       ! for R2B6; recommendation for R3B7: 0.02
  lhdiff_vn                    = .true.
  lhdiff_temp                  = .true.
 /
 
 &extpar_nml
- itopo                        = 1   ! 0: analytical topo; 1: topography/ext. data read from file - if TERRA is on!!!
+ itopo                        = 1   ! 0: topo/ext data from SCM input file;
+                                    ! 1: topo/ext data from SCM extpar file - if TERRA is on!!!
 !n_iter_smooth_topo           = 1,1
 !hgtdiff_max_smooth_topo      = 750.,750.,
 !heightdiff_threshold         = 3000.
@@ -410,7 +417,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  output_time_unit =  1                        ! 1: seconds
  output_bounds    =  0., 10000000., 900.     ! start, end, increment
  mode             =  1                        ! 1: forecast
- steps_per_file   = ${n_in_ofile}
+ steps_per_file   = 10000
  include_last     = .TRUE.
  output_filename  = 'scm_out'
  filename_format  = "<output_filename>_<levtype>_<datetime2>"
@@ -420,6 +427,9 @@ cat > NAMELIST_${EXPNAME} << EOF
 
 EOF
 
+# ----------------------------------------------------------------------------
+# run the model!
+# ----------------------------------------------------------------------------
 
 ###  BEGIN: special environment  ###
  set -x
@@ -440,14 +450,14 @@ EOF
 
 tic=$(date)
 
-/opt/nec/ve/mpi/3.5.0/bin/runtime/mpirun -v     -x      -venode        -np ${PPN} -env OMP_NUM_THREADS 1 ${MODEL} 
+/opt/nec/ve/mpi/3.5.0/bin/runtime/mpirun -v -x -venode -np ${PPN} -env OMP_NUM_THREADS 1 ${MODEL_VE}
 
 toc=$(date)
 echo 'tic: ' $tic
 echo 'toc: ' $toc
 
 
-###----- Optional block for testing output.... 
+###----- Optional block for testing output....
 # EXIT_STATUS=0
 # module load cdo
 # CDO=$(which cdo)
@@ -455,7 +465,7 @@ echo 'toc: ' $toc
 ###-- Check for bit equality using CDO....
 # echo ${CDO} diffn ${REFDIR}/scm_out_ML_20210612T000000Z.nc ${EXPDIR}/scm_out_ML_20210612T000000Z.nc > ${DIFFILE}
 # ${CDO} diffn ${REFDIR}/scm_out_ML_20210612T000000Z.nc ${EXPDIR}/scm_out_ML_20210612T000000Z.nc > ${DIFFILE}
-# if [ -s ${DIFFILE} ]; then 
+# if [ -s ${DIFFILE} ]; then
 #     echo " Files differ "
 #     EXIT_STATUS=$(($EXIT_STATUS + 1))
 # else
@@ -463,4 +473,4 @@ echo 'toc: ' $toc
 # fi
 ###-- Other test, e.g. diurnal cycle, mean states, and other physical consistencies
 # exit $EXIT_STATUS
-###---- Done and RETURN 
+###---- Done and RETURN

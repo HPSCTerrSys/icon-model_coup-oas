@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -9,11 +9,11 @@
 # ------------------------------------------
 
 # ===========================================================================
-# 
+#
 # Name: exp.mch_ch_lowres_prog_rbf.run
 #
-# Purpose: Run script for ICON on a very low resolution grid on 
-#          switzerland and surrounding area 
+# Purpose: Run script for ICON on a very low resolution grid on
+#          switzerland and surrounding area
 #          It is used for a technical test at MeteoSwiss.
 #          This experiment is not tested!
 #
@@ -24,7 +24,7 @@
 #--------------------------------------------------------------------------------------------------
 #
 # This experiment describes a ICON-LAM experiment using the physics packages that are
-# used at MeteoSwiss for production. This simulation computes a few time steps on 
+# used at MeteoSwiss for production. This simulation computes a few time steps on
 # a low-resolution grid over Switzerland. The setup is for development purposes.
 #
 # This experiment uses "cloudice" microphysics. (Other mch_opr_r04b07* experiments use
@@ -45,10 +45,10 @@
 #   'qv'
 #
 # A spread of 7.0 is required to make the variables above validate.
-# This experiment was tested on Euler cluster (gcc 9.3.0) and on 
+# This experiment was tested on Euler cluster (gcc 9.3.0) and on
 # Piz Daint (nvhpc 21.3 and gcc 9.3.0).
 #
-# The variables 'qi' and 'qc' are failing probtest for spreads up to 20. 
+# The variables 'qi' and 'qc' are failing probtest for spreads up to 20.
 # Therefore the fields have been excluded.
 #
 # Note:
@@ -96,10 +96,6 @@ atmo_rad_grids="'${radiation_grid_filename}',"
 
 extpar_filename="grid.extpar.sst.nc"
 add_required_file "${grids_folder}/${extpar_filename}" ./
-
-# files needed for radiation
-add_required_file ${basedir}/data/ECHAM6_CldOptProps.nc rrtm_cldopt.nc
-add_required_file ${basedir}/data/rrtmg_lw.nc .
 
 # Dictionary for the mapping: DWD GRIB2 names <-> ICON internal names
 add_required_file ${basedir}/run/ana_varnames_map_file.txt map_file.ana
@@ -176,7 +172,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  hdiff_order                 =                          5         ! order of nabla operator for diffusion
  itype_vn_diffu              =                          1         ! reconstruction method used for Smagorinsky diffusion
  itype_t_diffu               =                          2         ! discretization of temperature diffusion
- hdiff_efdt_ratio            =                         24.0       ! ratio of e-folding time to time step 
+ hdiff_efdt_ratio            =                         24.0       ! ratio of e-folding time to time step
  hdiff_smag_fac              =                          0.025     ! scaling factor for Smagorinsky diffusion
 /
 
@@ -199,7 +195,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
 
 ! initicon_nml: specify read-in of initial state ------------------------------
 &initicon_nml
- init_mode                   =                          7         ! start from DWD fg with subsequent vertical remapping 
+ init_mode                   =                          7         ! start from DWD fg with subsequent vertical remapping
  lread_ana                   =                     .FALSE.        ! no analysis data will be read
  ana_varnames_map_file       =              "map_file.ana"        ! Dictionary for initial data file
  dwdfg_filename              =          "igfff00000000.nc"        ! initial data filename
@@ -284,7 +280,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  vwind_offctr                =                          0.2       ! off-centering in vertical wind solver
  damp_height                 =                      12500.0       ! height at which Rayleigh damping of vertical wind starts
  rayleigh_coeff              =                          5.0       ! Rayleigh damping coefficient
- divdamp_order               =                         24         ! order of divergence damping 
+ divdamp_order               =                         24         ! order of divergence damping
  divdamp_type                =                         3          ! type of divergence damping
  divdamp_fac                 =                          0.004     ! scaling factor for divergence damping
  igradp_method               =                          3         ! discretization of horizontal pressure gradient
@@ -300,7 +296,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  inwp_gscp                   =                          1         ! cloud microphysics and precipitation
  inwp_convection             =                          1         ! convection
  lshallowconv_only           =                      .TRUE.        ! only shallow convection
- inwp_radiation              =                          1         ! radiation
+ inwp_radiation              =                          4         ! radiation
  inwp_cldcover               =                          1         ! cloud cover scheme for radiation
  inwp_turb                   =                          1         ! vertical diffusion and transfer
  inwp_satad                  =                          1         ! saturation adjustment
@@ -314,8 +310,6 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  icapdcycl                   =                          3         ! apply CAPE modification to improve diurnalcycle over tropical land
  icpl_aero_conv              =                          1         ! coupling between autoconversion and Tegen aerosol climatology
  icpl_aero_gscp              =                          0         ! coupling between autoconversion and Tegen aerosol climatology
- lrtm_filename               =                'rrtmg_lw.nc'       ! longwave absorption coefficients for RRTM_LW
- cldopt_filename             =             'rrtm_cldopt.nc'       ! RRTM cloud optical properties
  mu_rain                     =                         0.5        ! shap parameter in gamma distribution for rain
  rain_n0_factor              =                         0.1        ! tuning factor for intercept parameter of raindrop size distr.
  dt_rad                      =                         720.       ! time step for radiation in s
@@ -364,6 +358,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  vmr_o2                      =                     0.20946
  vmr_cfc11                   =                    240.e-12
  vmr_cfc12                   =                    532.e-12
+ ecrad_data_path             = '${basedir}/externals/ecrad/data'
 /
 
 ! sleve_nml: vertical level specification -------------------------------------
@@ -409,8 +404,8 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  ser_output_diag             =                            0,12,12
  ser_latbc_data              =                            0,12,12
  ser_dynamics                =                            0,12,12
- ser_diffusion               =                            0,12,12 
- ser_step_advection          =                            0,12,12 
+ ser_diffusion               =                            0,12,12
+ ser_step_advection          =                            0,12,12
  ser_physics                 =                            0,12,12
  ser_surface                 =                            0,12,12
  ser_microphysics            =                            0,12,12
@@ -422,13 +417,12 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  ser_radheat                 =                            0,12,12
  ser_gwdrag                  =                            0,12,12
  ser_convection              =                            0,12,12
- ser_nudging                 =                            0,12,12 
+ ser_nudging                 =                            0,12,12
  ser_nfail                   =                            1
  ser_nreport                 =                            10
- ser_all_debug               =                            0 
+ ser_all_debug               =                            0
  ser_debug                   =                        .FALSE.      ! serialize the debug statements from mo_ser_debug
  ser_rbf                     =                        .TRUE.       ! serialize the rbf coefficients
 /
 
 EOF
-

@@ -1,16 +1,15 @@
-! Module determines some constants to be used by wave model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module determines some constants to be used by wave model.
 
 MODULE mo_wave_constants
 
@@ -35,5 +34,14 @@ MODULE mo_wave_constants
   REAL(wp), PARAMETER :: CONSD = -CDIS * pi2**9 / grav**4 !! dissipation constant for deep water
   REAL(wp), PARAMETER :: CONSS = -CDIS * pi2 !! dissipation constant for shallow water
 
+  !
+  ! Implementation constants
+  !
+
+  ! Model initialization
+  INTEGER, PARAMETER :: MODE_ANA  = 1  ! read wave energy spectrum from analysis file
+  INTEGER, PARAMETER :: MODE_COLD = 2  ! model coldstart:
+                                       ! initialize wave energy spectrum by analytic parameterization
+                                       ! (such as JONSWAP)
 
 END MODULE mo_wave_constants

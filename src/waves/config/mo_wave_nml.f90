@@ -1,17 +1,16 @@
-! Namelist setup for waves.
-! The content of namelists is mostly adopted from the WAM 4.5.4.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Namelist setup for waves.
+! The content of namelists is mostly adopted from the WAM 4.5.4.
 
 MODULE mo_wave_nml
 
@@ -47,7 +46,8 @@ CONTAINS
 
     INTEGER  :: ndirs    ! NUMBER OF DIRECTIONS.
     INTEGER  :: nfreqs   ! NUMBER OF FREQUENCIES.
-    INTEGER  :: IREF     ! FREQUENCY BIN NUMBER OF REFERENCE FREQUENCY
+    INTEGER  :: iref     ! FREQUENCY BIN NUMBER OF REFERENCE FREQUENCY
+    INTEGER  :: Tlength  ! Duration of sample time series
 
     REAL(wp) :: fr1      ! FIRST FREQUENCY [HZ].
     REAL(wp) :: CO       ! FREQUENCY RATIO
@@ -57,7 +57,8 @@ CONTAINS
     REAL(wp) :: GAMMA_wave ! OVERSHOOT FACTOR
     REAL(wp) :: SIGMA_A    ! LEFT PEAK WIDTH
     REAL(wp) :: SIGMA_B    ! RIGHT PEAK WIDTH
-    REAL(wp) :: FETCH      ! FETCH IN METRES (IF ZERO THEN 0.5 OF THE LATITUDE INCREMENT IS USED.).
+    REAL(wp) :: fetch             ! fetch in metres used for initialisation of spectrum
+    REAL(wp) :: fetch_min_energy  ! fetch in meters used for calculation of minimum allowed energy level
 
     REAL(wp) :: roair   ! AIR DENSITY
     REAL(wp) :: RNUAIR  ! KINEMATIC AIR VISCOSITY
@@ -67,22 +68,23 @@ CONTAINS
     REAL(wp) :: XINVEPS
 
     REAL(wp) :: ALPHA_CH ! minimum charnock constant (ecmwf cy45r1).
-                         ! 0.0060, if le 30 frequencies changed !@waves todo
-                         ! to 0.0075 in subroutine initmdl !@waves todo
 
-    REAL(wp) :: depth     ! ocean depth (m) if not 0, then constant depth
-    REAL(wp) :: depth_min ! allowed minimum of model depth (m)
-    REAL(wp) :: depth_max ! allowed maximum of model depth (m)
+    CHARACTER(LEN=filename_max) :: oce_vct_filename ! name of ocean vertical coordinates file
+
+    REAL(wp) :: depth        ! ocean depth (m) if not 0, then constant depth
+    REAL(wp) :: depth_min    ! allowed minimum of model depth (m)
+    REAL(wp) :: depth_max    ! allowed maximum of model depth (m)
+    INTEGER  :: stokes_method ! 1 - calculation of Stokes profile from the full spectrum
+                              ! 2 - calculation based on Breivik (2016)
+    REAL(wp) :: stokes_depth ! maximum of Stokes layer depth (m)
 
     INTEGER  :: niter_smooth ! number of smoothing iterations for wave bathymetry
+    INTEGER  :: nsubs_refrac ! number of susteps in wave refraction
 
     REAL(wp) :: XKAPPA  ! VON KARMAN CONSTANT.
     REAL(wp) :: XNLEV   ! WINDSPEED REF. LEVEL.
     REAL(wp) :: BETAMAX ! PARAMETER FOR WIND INPUT (ECMWF CY45R1).
     REAL(wp) :: ZALP    ! SHIFTS GROWTH CURVE (ECMWF CY45R1).
-    !  REAL(wp)  :: ALPHA      ! MINIMUM CHARNOCK CONSTANT (ECMWF CY45R1).
-    ! if LE 30 frequencies changed
-    ! to 0.0075 in subroutine INITMDL
 
     INTEGER :: jtot_tauhf          ! dimension of wave_config%wtauhf. it must be odd !!!
 
@@ -103,8 +105,10 @@ CONTAINS
     LOGICAL :: lwave_stress2   ! if .TRUE., calculate wave stress, second call
 
     ! for test case
-    REAL(wp) :: peak_u10, peak_v10 ! peak values (m/s) of 10 m U and V wind speed for test case
     REAL(wp) :: peak_lat, peak_lon ! geographical location (deg) of wind peak value
+    REAL(wp) :: peak_wsp10         ! peak value of 10m wind speed at (peak_lat, peak_lon)
+    REAL(wp) :: dir_wsp10          ! wind direction measured clockwise from true north (deg)
+    REAL(wp) :: r_wsp10            ! physical radius of wind field (m)
 
     ! source function time integration
     REAL(wp) :: impl_fac       ! implicitness factor for total source function time integration
@@ -112,16 +116,23 @@ CONTAINS
                                ! impl_fac=1   : first order Euler backward scheme
                                ! valid range: 0.5 <= impl_fac <= 1
 
+    ! not available to the outside world for the time being
+    INTEGER,  PARAMETER :: jmax  = 300            ! number of wind speed bins in flminfr table
+    REAL(wp), PARAMETER :: flmin = 0.000001_wp    ! minimum of energy in flminfr table
+    REAL(wp), PARAMETER :: umax  = 75.0_wp        ! maximum wind speed in flminfr table
+
     NAMELIST /wave_nml/ &
          forc_file_prefix,          &
-         ndirs, nfreqs, fr1, CO, IREF,                      &
-         ALPHA, FM, GAMMA_wave, SIGMA_A, SIGMA_B, FETCH,    &
+         ndirs, nfreqs, fr1, CO, iref, Tlength, &
+         ALPHA, FM, GAMMA_wave, SIGMA_A, SIGMA_B, fetch, fetch_min_energy, &
          roair, RNUAIR, RNUAIRM, ROWATER, XEPS, XINVEPS, &
          XKAPPA, XNLEV, BETAMAX, ZALP, jtot_tauhf, ALPHA_CH, &
-         depth, depth_min, depth_max, niter_smooth, &
+         oce_vct_filename, depth, depth_min, depth_max, &
+         stokes_method, stokes_depth, niter_smooth, &
          linput_sf1, linput_sf2, ldissip_sf, lwave_brk_sf, lnon_linear_sf, lbottom_fric_sf, &
-         lwave_stress1, lwave_stress2, peak_u10, peak_v10, peak_lat, peak_lon, &
-         impl_fac
+         lwave_stress1, lwave_stress2, peak_lat, peak_lon, &
+         peak_wsp10, dir_wsp10, r_wsp10, &
+         impl_fac, nsubs_refrac
 
     !-----------------------------------------------------------
     ! 1. default settings
@@ -130,7 +141,9 @@ CONTAINS
     nfreqs     = 25             !! NUMBER OF FREQUENCIES.
     fr1        = 0.04177248_wp  !! FIRST FREQUENCY [HZ].
     CO         = 1.1_wp         !! FREQUENCY RATIO
-    IREF       = 1              !! FREQUENCY BIN NUMBER OF REFERENCE FREQUENCY
+    iref       = 1              !! FREQUENCY BIN NUMBER OF REFERENCE FREQUENCY
+
+    Tlength    = 10800          !! DEFAULT TIME SERIES DURATION FOR HMAX CALCULATION [S].
 
     ALPHA      = 0.018_wp       !! PHILLIPS PARAMETER.
     FM         = 0.2_wp         !! PEAK FREQUENCY (HZ) AND/OR MAXIMUM FREQUENCY.
@@ -138,7 +151,8 @@ CONTAINS
     SIGMA_A    = 0.07_wp        !! LEFT PEAK WIDTH.
     SIGMA_B    = 0.09_wp        !! RIGHT PEAK WIDTH.
 
-    FETCH      = 300000._wp     !! FETCH IN METRES.
+    fetch            = 300000._wp ! fetch in metres used for initialisation of spectrum
+    fetch_min_energy = 25000._wp  ! fetch in meters used for calculation of minimum allowed energy level
 
     roair      = 1.225_wp       !! AIR DENSITY
     RNUAIR     = 1.5E-5_wp      !! KINEMATIC AIR VISCOSITY
@@ -153,11 +167,21 @@ CONTAINS
     jtot_tauhf = 19             !! dimension of wtauhf. it must be odd
     ALPHA_CH   = 0.0075_wp      !! minimum charnock constant (ecmwf cy45r1).
 
-    depth        = 0._wp        !! ocean depth (m) if not 0, then constant depth
-    depth_min    = 0.2_wp       !! allowed minimum of model depth (m)
-    depth_max    = 999.0_wp     !! allowed maximum of model depth (m)
+    oce_vct_filename = ''       !! name of ocean vertical coordinates file
+                                !! this file must contain the number of ocean vertical interfaces
+                                !! on the first line oce_nifc (type integer), followed by lines
+                                !! with the interface index (type integer) and interface depth
+                                !! in meters oce_ifc (type real), separated by a space
+
+    depth         = 0._wp       !! ocean depth (m) if not 0, then constant depth
+    depth_min     = 0.2_wp      !! allowed minimum of model depth (m)
+    depth_max     = 999.0_wp    !! allowed maximum of model depth (m)
+    stokes_method = 1           !! calculation of Stokes profile from the full spectrum
+    stokes_depth  = 50._wp      !! maximum of Stokes layer depth
+
     niter_smooth = 1            !! number of smoothing iterations for wave bathymetry
                                 !! if 0 then no smoothing
+    nsubs_refrac = 1            !! default: no substepping in wave refraction
 
     XKAPPA     = 0.40_wp        !! VON KARMAN CONSTANT.
     XNLEV      = 10.0_wp        !! WINDSPEED REF. LEVEL.
@@ -173,13 +197,14 @@ CONTAINS
     lwave_stress1  =   .TRUE. !< if .TRUE., calculate wave stress, first call
     lwave_stress2  =   .TRUE. !< if .TRUE., calculate wave stress, second call
 
-    peak_u10 = 9.0_wp         !! peak value (m/s) of 10 m U wind component for test case
-    peak_v10 = 9.0_wp         !! peak value (m/s) of 10 m V wind component for test case
-    peak_lat = -60.0_wp       !! latitude (deg) of wind peak value
-    peak_lon = -140.0_wp      !! longitude (deg) of wind peak value
+    peak_lat  = -60.0_wp   !< latitude (deg) of max wind speed
+    peak_lon  = -140.0_wp  !< longitude (deg) of max wind speed
+    peak_wsp10 = 25.0_wp   !< peak 10m wind spead (m/s) at (peak_lat, peak_lon)
+    dir_wsp10 = 45._wp     !< flow direction measured clockwise from true north (deg)
+    r_wsp10 = 1000000._wp  !< physical radius of wind field (typical radius of extratropical cyclones) (m)
 
-    impl_fac = 1.0_wp         !! first order Euler backward time integration scheme
-                              !! for total source function
+    impl_fac = 1.0_wp     !! first order Euler backward time integration scheme
+                          !! for total source function
 
     !------------------------------------------------------------------
     ! 2. If this is a resumed integration, overwrite the defaults above
@@ -219,11 +244,11 @@ CONTAINS
     !----------------------------------------------------
 
     IF (MOD(jtot_tauhf,2).eq.0) THEN
-      CALL finish(TRIM(routine),'Error: jtot_tauhf must be odd')
+      CALL finish(routine,'Error: jtot_tauhf must be odd')
     END IF
 
     IF ( (impl_fac<0.5_wp) .OR. (impl_fac>1.0_wp)) THEN
-      CALL finish(TRIM(routine),'impl_fac outside permissible range 0.5<=impl_fac<=1.0')
+      CALL finish(routine,'impl_fac outside permissible range 0.5<=impl_fac<=1.0')
     ENDIF
 
     !----------------------------------------------------
@@ -236,13 +261,18 @@ CONTAINS
       wave_config(jg)%nfreqs            = nfreqs
       wave_config(jg)%fr1               = fr1
       wave_config(jg)%CO                = CO
-      wave_config(jg)%IREF              = IREF
+      wave_config(jg)%iref              = iref
+      wave_config(jg)%Tlength           = Tlength
+      wave_config(jg)%jmax              = jmax
+      wave_config(jg)%flmin             = flmin
+      wave_config(jg)%umax              = umax
       wave_config(jg)%ALPHA             = ALPHA
       wave_config(jg)%FM                = FM
       wave_config(jg)%GAMMA_wave        = GAMMA_wave
       wave_config(jg)%SIGMA_A           = SIGMA_A
       wave_config(jg)%SIGMA_B           = SIGMA_B
-      wave_config(jg)%FETCH             = FETCH
+      wave_config(jg)%fetch             = fetch
+      wave_config(jg)%fetch_min_energy  = fetch_min_energy
       wave_config(jg)%roair             = roair
       wave_config(jg)%RNUAIR            = RNUAIR
       wave_config(jg)%RNUAIRM           = RNUAIRM
@@ -255,10 +285,14 @@ CONTAINS
       wave_config(jg)%ZALP              = ZALP
       wave_config(jg)%jtot_tauhf        = jtot_tauhf
       wave_config(jg)%ALPHA_CH          = ALPHA_CH
+      wave_config(jg)%oce_vct_filename  = TRIM(oce_vct_filename)
       wave_config(jg)%depth             = depth
       wave_config(jg)%depth_min         = depth_min
       wave_config(jg)%depth_max         = depth_max
+      wave_config(jg)%stokes_method     = stokes_method
+      wave_config(jg)%stokes_depth      = stokes_depth
       wave_config(jg)%niter_smooth      = niter_smooth
+      wave_config(jg)%nsubs_refrac      = nsubs_refrac
       wave_config(jg)%forc_file_prefix  = forc_file_prefix
       wave_config(jg)%linput_sf1        = linput_sf1
       wave_config(jg)%linput_sf2        = linput_sf2
@@ -268,10 +302,11 @@ CONTAINS
       wave_config(jg)%lbottom_fric_sf   = lbottom_fric_sf
       wave_config(jg)%lwave_stress1     = lwave_stress1
       wave_config(jg)%lwave_stress2     = lwave_stress2
-      wave_config(jg)%peak_u10          = peak_u10
-      wave_config(jg)%peak_v10          = peak_v10
       wave_config(jg)%peak_lat          = peak_lat
       wave_config(jg)%peak_lon          = peak_lon
+      wave_config(jg)%peak_wsp10        = peak_wsp10
+      wave_config(jg)%dir_wsp10         = dir_wsp10
+      wave_config(jg)%r_wsp10           = r_wsp10
       wave_config(jg)%impl_fac          = impl_fac
     ENDDO
 

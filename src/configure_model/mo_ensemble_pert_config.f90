@@ -1,17 +1,17 @@
-! @brief Ensemble perturbations of nwp physics
-!
-! configuration setup for ensemble physics perturbations
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief Ensemble perturbations of nwp physics
+!
+! configuration setup for ensemble physics perturbations
 
 MODULE mo_ensemble_pert_config
 
@@ -46,8 +46,12 @@ MODULE mo_ensemble_pert_config
   USE microphysics_1mom_schemes, ONLY:  &
                                   get_terminal_fall_velocity_ice, &
                                   set_terminal_fall_velocity_ice
+  USE mo_2mom_mcrph_config,  ONLY: copy_cfg_2mom_all2pert, copy_cfg_2mom_pert2all
+  USE mo_2mom_mcrph_types,   ONLY: aerosol_ccn, particle
+  USE mo_2mom_mcrph_main,    ONLY: init_2mom_types_base
+  USE mo_2mom_mcrph_setup,   ONLY: set_ccn_cloud_type
   USE mo_ext_data_types,     ONLY: t_external_data
-  USE mo_extpar_config,      ONLY: nclass_lu
+  USE mo_extpar_config,      ONLY: ext_atm_attr
   USE mo_exception,          ONLY: message_text, message, finish
   USE mtime,                 ONLY: datetime, getDayOfYearFromDateTime
   USE mo_mpi,                ONLY: p_io, p_comm_work, p_bcast
@@ -70,7 +74,8 @@ MODULE mo_ensemble_pert_config
             itype_pert_gen, timedep_pert, range_a_stab, range_c_diff, range_q_crit, range_thicklayfac,  &
             box_liq_sv, thicklayfac_sv, box_liq_asy_sv, range_lhn_coef, range_lhn_artif_fac,            &
             range_fac_lhn_down, range_fac_lhn_up, range_fac_ccqc, range_rmfdeps, range_entrorg_mult,    &
-            range_dustyci_crit, range_dustyci_rhi
+            range_ccn_Ncn0, range_in_fact, range_avel_g, range_avel_i, range_cap_snow, range_cap_ice,   &
+            range_dustyci_crit, range_dustyci_rhi, fac_rng_spinup, shift_ratsea, shift_boxliq_asy
 
   !!--------------------------------------------------------------------------
   !! Basic configuration setup for ensemble perturbations
@@ -90,25 +95,43 @@ MODULE mo_ensemble_pert_config
   REAL(wp) :: &                    !< gravity wave flux emission
     &  range_gfluxlaun, rnd_gfluxlaun
 
-  REAL(wp) :: &                    !< Terminal fall velocity of ice 
+  REAL(wp) :: &                    !< Terminal fall velocity of ice
     &  range_zvz0i, rnd_zvz0i
 
-  REAL(wp) :: &                    !< Tuning factor for intercept parameter of raindrop size distribution 
+  REAL(wp) :: &                    !< Tuning factor for intercept parameter of raindrop size distribution
     &  range_rain_n0fac, rnd_rain_n0fac
 
-  REAL(wp) :: &                    !< Entrainment parameter for deep convection valid at dx=20 km 
+  REAL(wp) :: &                    !< Tuning factor for CN concentration near ground for Segal&Khain cloud nucleation (inwp_gscp=4,5,7)
+    &  range_ccn_Ncn0, rnd_ccn_Ncn0
+
+  REAL(wp) :: &                    !< Additional tuning factor for the tuning factor of parameterized ice nuclei concentration (inwp_gscp=4,5,7)
+    &  range_in_fact, rnd_in_fact
+
+  REAL(wp) :: &                    !< Tuning factor for graupel fall speed (inwp_gscp=4,5,7)
+    &  range_avel_g, rnd_avel_g
+
+  REAL(wp) :: &                    !< Tuning factor for cloud ice fall speed (inwp_gscp=4,5,7)
+    &  range_avel_i, rnd_avel_i
+
+  REAL(wp) :: &                    !< Range for snow capacitance for depositional growth (inwp_gscp=4,5,7)
+    &  range_cap_snow, rnd_cap_snow
+
+  REAL(wp) :: &                    !< Range for cloud ice capacitance for depositional growth (inwp_gscp=4,5,7)
+    &  range_cap_ice, rnd_cap_ice
+
+  REAL(wp) :: &                    !< Entrainment parameter for deep convection valid at dx=20 km
     &  range_entrorg, rnd_entrorg
 
-  REAL(wp) :: &                    !< Multiplicative perturbation of Entrainment parameter for deep convection valid at dx=20 km 
+  REAL(wp) :: &                    !< Multiplicative perturbation of Entrainment parameter for deep convection valid at dx=20 km
     &  range_entrorg_mult, rnd_entrorg_mult
 
-  REAL(wp) :: &                    !< Maximum shallow convection depth 
+  REAL(wp) :: &                    !< Maximum shallow convection depth
     &  range_rdepths, rnd_rdepths
 
-  REAL(wp) :: &                    !< Factor for fraction of initial downdraft mass flux 
+  REAL(wp) :: &                    !< Factor for fraction of initial downdraft mass flux
     &  range_rmfdeps, rnd_rmfdeps
 
-  REAL(wp) :: &                    !< Entrainment parameter for deep convection valid at dx=20 km 
+  REAL(wp) :: &                    !< Entrainment parameter for deep convection valid at dx=20 km
     &  range_rprcon, rnd_rprcon
 
   REAL(wp) :: &                    !< Fraction of CAPE diurnal cycle correction applied in the extratropics
@@ -156,25 +179,25 @@ MODULE mo_ensemble_pert_config
   REAL(wp), ALLOCATABLE :: &       !< Array of random numbers used for computing the above-mentioned perturbation
     &  rnd_fac_ccqc(:)
 
-  REAL(wp) :: &                    !< Minimum vertical diffusion for heat/moisture 
+  REAL(wp) :: &                    !< Minimum vertical diffusion for heat/moisture
     &  range_tkhmin, rnd_tkhmin
 
-  REAL(wp) :: &                    !< Minimum vertical diffusion for momentum 
+  REAL(wp) :: &                    !< Minimum vertical diffusion for momentum
     &  range_tkmmin, rnd_tkmmin
 
-  REAL(wp) :: &                    !< Perturbation scale (multiplicative) of reduction of minimum diffusion 
-    &  range_tkred_sfc             !  coefficients near the surface 
+  REAL(wp) :: &                    !< Perturbation scale (multiplicative) of reduction of minimum diffusion
+    &  range_tkred_sfc             !  coefficients near the surface
 
   REAL(wp), ALLOCATABLE :: &        !< Array of random numbers used for computing the above-mentioned perturbation
     &  rnd_tkred_sfc(:)
 
-  REAL(wp) :: &                    !< Laminar transport resistance parameter 
+  REAL(wp) :: &                    !< Laminar transport resistance parameter
     &  range_rlam_heat, rnd_rlam_heat
 
-  REAL(wp) :: &                    !< Maximum turbulent mixing length scale 
+  REAL(wp) :: &                    !< Maximum turbulent mixing length scale
     &  range_turlen, rnd_turlen
 
-  REAL(wp) :: &                    !< Scaling factor for extended horizontal shear term in turbulence scheme 
+  REAL(wp) :: &                    !< Scaling factor for extended horizontal shear term in turbulence scheme
     &  range_a_hshr, rnd_a_hshr
 
   REAL(wp) :: &                    !< Scaling factor for stability correction in turbulence scheme
@@ -186,7 +209,7 @@ MODULE mo_ensemble_pert_config
   REAL(wp) :: &                    !< Critical value for normalized supersaturation in turbulent cloud scheme
     &  range_q_crit, rnd_q_crit
 
-  REAL(wp) :: &                    !< Upper and lower bound of wind-speed dependent Charnock parameter 
+  REAL(wp) :: &                    !< Upper and lower bound of wind-speed dependent Charnock parameter
     &  range_charnock, rnd_charnock, rnd_alpha0
 
   REAL(wp) :: &                    !< Scaling factor for latent heat nudging increments
@@ -201,7 +224,7 @@ MODULE mo_ensemble_pert_config
   REAL(wp) :: &                    !< Upper limit for increase of pre-existing latent heating in LHN
     &  range_fac_lhn_up, rnd_fac_lhn_up
 
-  REAL(wp) :: &                    !< Roughness length attributed to land-cover class 
+  REAL(wp) :: &                    !< Roughness length attributed to land-cover class
     &  range_z0_lcc
 
   REAL(wp) :: &                    !< Root depth related to land-cover class
@@ -226,8 +249,13 @@ MODULE mo_ensemble_pert_config
   REAL(wp) :: &                    !< Tuning factor for saturation pressure over oceans, compensating the systematic
     &  sst_pert_corrfac            !  increase of evaporation related to the SST perturbations
 
+  ! Options to reduce bias differences between DET and EPS by shifting tuning parameters w.r.t the deterministic value
+  REAL(wp) :: shift_ratsea         !< Option to shift rat_sea w.r.t. deterministic setting
+  REAL(wp) :: shift_boxliq_asy     !< Option to shift tune_box_liq_asy w.r.t. deterministic setting
+
   INTEGER :: itype_pert_gen        !< type of ensemble perturbation generation
   INTEGER :: timedep_pert          !< time dependence of ensemble perturbations
+  INTEGER :: fac_rng_spinup        !< factor for number of RNG spinup calls
   LOGICAL :: use_ensemble_pert     !< main switch
   LOGICAL :: linit                 !< internal switch to decide between initializing and applying random numbers
 
@@ -242,7 +270,8 @@ MODULE mo_ensemble_pert_config
   REAL(wp), DIMENSION(1:max_dom) :: gkwake_sv, gfrcrit_sv, gkdrag_sv, rain_n0_sv, tkhmin_sv, tkhmin_strat_sv, tkmmin_sv,    &
                                     tkmmin_strat_sv, rlam_heat_sv, rat_sea_sv, tur_len_sv, a_hshr_sv, a_stab_sv, c_diff_sv, &
                                     q_crit_sv, alpha0_sv, alpha0_max_sv, lhn_coef_sv, lhn_artif_fac_sv, fac_lhn_down_sv,    &
-                                    fac_lhn_up_sv, gkdrag_enh_sv
+                                    fac_lhn_up_sv, gkdrag_enh_sv, ccn_Ncn0_sv, in_fact_sv, avel_i_sv, avel_g_sv,            &
+                                    cap_snow_sv, cap_ice_sv
 
 #ifdef __ICON_ART
   ! Dusty Cirrus
@@ -253,7 +282,7 @@ MODULE mo_ensemble_pert_config
   CONTAINS
 
 
-  !! Application of the ensemble perturbation to the config/namelist variables 
+  !! Application of the ensemble perturbation to the config/namelist variables
   !!
   !! This is done based on random numbers determined by the ensemble member ID
   !!
@@ -290,7 +319,7 @@ MODULE mo_ensemble_pert_config
       ENDIF
 
       CALL RANDOM_SEED(PUT=rnd_seed)
-      DO i = 1, 10+ipn
+      DO i = 1, (10+ipn)*fac_rng_spinup
         CALL RANDOM_NUMBER(rnd_num)
       ENDDO
 
@@ -298,15 +327,14 @@ MODULE mo_ensemble_pert_config
       linit = .TRUE.
       CALL set_scalar_ens_pert(timedep_pert<2, lacc=.FALSE.)
 
-      ! Renitialize random number generator with the same seed as before, 
+      ! Renitialize random number generator with the same seed as before,
       ! excluding the time dependence applied to the physics perturbations in the case of timedep_pert=1
-      ipn = gribout_config(1)%perturbationNumber
       DO i = 1, rnd_size
         rnd_seed(i) = (135+i)*ipn - (21+i**2)*(5+MOD(ipn,10))**2 + 3*i**3
       ENDDO
 
       CALL RANDOM_SEED(PUT=rnd_seed)
-      DO i = 1, 10+ipn
+      DO i = 1, (10+ipn)*fac_rng_spinup
         CALL RANDOM_NUMBER(rnd_num)
       ENDDO
 
@@ -320,17 +348,17 @@ MODULE mo_ensemble_pert_config
         rnd_seed(i) = (139+i)*ipn - (23+i**2)*(5+MOD(ipn,12))**2 + 4*i**3
       ENDDO
       CALL RANDOM_SEED(PUT=rnd_seed)
-      DO i = 1, 10+ipn
+      DO i = 1, (10+ipn)*fac_rng_spinup
         CALL RANDOM_NUMBER(rnd_num)
       ENDDO
 
-      ALLOCATE(rnd_tkred_sfc(nclass_lu(1)), rnd_fac_ccqc(nclass_lu(1)))
+      ALLOCATE(rnd_tkred_sfc(MAX(1,ext_atm_attr(1)%nclass_lu)), rnd_fac_ccqc(MAX(1,ext_atm_attr(1)%nclass_lu)))
 
       CALL message('','')
       CALL message('','Perturbed external parameters: roughness length, root depth, min. stomata resistance,&
                    & max. leaf area index; defaults in brackets')
       ! Perturbations for external parameters specified depending on the land cover class
-      DO i = 1, nclass_lu(1) ! we assume here that the same land cover dataset is used for all model domains
+      DO i = 1, ext_atm_attr(1)%nclass_lu ! we assume here that the same land cover dataset is used for all model domains
 
         ! roughness length
         CALL random_gen(dum,rnd_num)
@@ -360,7 +388,7 @@ MODULE mo_ensemble_pert_config
           ext_data(jg)%atm%laimax_lcc(i)     = laimax
         ENDDO
 
-        ! store random number for subsequent (in SR compute_ensemble_pert) computation of perturbation of 
+        ! store random number for subsequent (in SR compute_ensemble_pert) computation of perturbation of
         ! minimum diffusion coefficients near the surface
         CALL RANDOM_NUMBER(rnd_num)
         rnd_tkred_sfc(i) = rnd_num
@@ -375,6 +403,9 @@ MODULE mo_ensemble_pert_config
 
       CALL RANDOM_NUMBER(rnd_num)
       rnd_rmfdeps = rnd_num
+
+      WRITE(message_text,'(a,2f8.4)') 'rnd_entrorg_mult, rnd_rmfdeps: ', rnd_entrorg_mult, rnd_rmfdeps
+      CALL message('', TRIM(message_text))
 
       !$ACC ENTER DATA COPYIN(rnd_tkred_sfc, rnd_fac_ccqc, rnd_entrorg_mult, rnd_rmfdeps)
 
@@ -411,6 +442,17 @@ MODULE mo_ensemble_pert_config
   !!
   SUBROUTINE save_unperturbed_params
 
+    ! These are the fundamental hydrometeor particle variables for the two-moment scheme,
+    ! needed to get the actual hydrometeor config parameters:
+    TYPE(particle)                :: cloud, rain, ice, snow
+    TYPE(particle), TARGET        :: graupel_frz, hail_frz
+    TYPE(particle), TARGET        :: graupel_lwf, hail_lwf
+
+    ! Pointers to these derived types that are actually needed in calling init_2mom_types_base():
+    TYPE(particle), POINTER  :: graupel, hail
+
+    INTEGER               :: zccn_type, zcloud_type ! dummies
+    TYPE(aerosol_ccn)     :: zccn_coeffs
 
     ! SSO tuning
     gkwake_sv (1:max_dom) = tune_gkwake(1:max_dom)
@@ -421,9 +463,82 @@ MODULE mo_ensemble_pert_config
     ! GWD tuning
     gfluxlaun_sv = tune_gfluxlaun
 
-    ! grid-scale microphysics
+    ! grid-scale 1-moment microphysics (inwp_gscp=1,2,3)
     zvz0i_sv   = tune_zvz0i
     rain_n0_sv(1:max_dom) = atm_phy_nwp_config(1:max_dom)%rain_n0_factor
+
+    ! grid-scale 2-moment microphysics (inwp_gscp=4,5,7) - Note: atm_phy_nwp_config(1)%l2moment flag has not yet been set
+    IF ( ANY(atm_phy_nwp_config(1)%inwp_gscp == [4,5,7]) ) THEN
+
+      ! First, determine the hardcoded background values from the particle types. These
+      ! are needed in case the respective namelist values are set to -999.99,
+      ! which means that these background values are actually applied later in the 2-mom scheme:
+      IF ( atm_phy_nwp_config(1)%inwp_gscp == 7 ) THEN
+        graupel => graupel_lwf
+        hail    => hail_lwf
+      ELSE
+        graupel => graupel_frz
+        hail    => hail_frz
+      END IF
+      ! .. set the particle types, but no calculations
+      CALL init_2mom_types_base(cloud,rain,ice,snow,graupel,hail)
+
+      SELECT CASE (atm_phy_nwp_config(1)%inwp_gscp)
+      CASE (4,7)
+        CALL set_ccn_cloud_type(zccn_type, zcloud_type, zccn_coeffs, zcfg_2mom=atm_phy_nwp_config(1)%cfg_2mom)
+      CASE (5)
+        ! zN_cn0=0.0 is only a dummy here, needed for correct logic in set_ccn_cloud_type()
+        CALL set_ccn_cloud_type(zccn_type, zcloud_type, zccn_coeffs, zN_cn0=0.0_wp, zcfg_2mom=atm_phy_nwp_config(1)%cfg_2mom)
+      CASE default
+        CALL message ('Warning mo_ensemble_pert_config','this 2-moment microphysics flavor cannot be perturbed')
+      END SELECT
+
+      ! a) perturbation(s) which are only effective in the init phase:
+      IF (atm_phy_nwp_config(1)%cfg_2mom%avel_i < -900.0_wp) THEN
+        avel_i_sv  (1:max_dom) = ice%a_vel ! hardcoded value from mo_2mom_mcrph_main.f90
+      ELSE
+        avel_i_sv  (1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%avel_i
+      END IF
+      IF (atm_phy_nwp_config(1)%cfg_2mom%avel_g < -900.0_wp) THEN
+        avel_g_sv  (1:max_dom) = graupel%a_vel ! hardcoded value from mo_2mom_mcrph_main.f90
+      ELSE
+        avel_g_sv  (1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%avel_g
+      END IF
+      IF (atm_phy_nwp_config(1)%cfg_2mom%ccn_Ncn0 < -900.0_wp) THEN
+        ccn_Ncn0_sv(1:max_dom) = zccn_coeffs%Ncn0
+      ELSE
+        ccn_Ncn0_sv(1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%ccn_Ncn0
+      END IF
+      in_fact_sv (1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%in_fact
+
+      ! b) perturbation(s) which are effective during time stepping:
+      IF (atm_phy_nwp_config(1)%cfg_2mom%cap_snow < -900.0_wp) THEN
+        cap_snow_sv(1:max_dom) = snow%cap ! hardcoded value from mo_2mom_mcrph_main.f90
+      ELSE
+        cap_snow_sv(1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%cap_snow
+      END IF
+      IF (atm_phy_nwp_config(1)%cfg_2mom%cap_ice < -900.0_wp) THEN
+        cap_ice_sv (1:max_dom) = ice%cap ! hardcoded value from mo_2mom_mcrph_main.f90
+      ELSE
+        cap_ice_sv (1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%cap_ice
+      END IF
+
+    ELSE
+
+      ! In this case, the above 2-moment scheme perturbations to not have any effect, because
+      ! the 2-moment scheme is not used or the ART version of the 2-moment scheme with
+      ! fully coupled prognostic CN and IN and without any coupling to namelist parameters
+      ! in atm_phy_nwp_config(1:max_dom)%cfg_2mom is used.
+
+      ! So just set dummy values from the namelist defaults:
+      avel_i_sv  (1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%avel_i
+      avel_g_sv  (1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%avel_g
+      ccn_Ncn0_sv(1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%ccn_Ncn0
+      in_fact_sv (1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%in_fact
+      cap_snow_sv(1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%cap_snow
+      cap_ice_sv (1:max_dom) = atm_phy_nwp_config(1:max_dom)%cfg_2mom%cap_ice
+
+    END IF
 
     ! convection
     rprcon_sv  = tune_rprcon
@@ -447,6 +562,9 @@ MODULE mo_ensemble_pert_config
     thicklayfac_sv = tune_thicklayfac
     box_liq_asy_sv = tune_box_liq_asy
 
+    ! optional shift of EPS mean
+    box_liq_asy_sv = box_liq_asy_sv + shift_boxliq_asy
+
     ! turbulence
     tkhmin_sv(1:max_dom)       = turbdiff_config(1:max_dom)%tkhmin
     tkhmin_strat_sv(1:max_dom) = turbdiff_config(1:max_dom)%tkhmin_strat
@@ -461,6 +579,9 @@ MODULE mo_ensemble_pert_config
     q_crit_sv(1:max_dom)       = turbdiff_config(1:max_dom)%q_crit
     alpha0_sv(1:max_dom)       = turbdiff_config(1:max_dom)%alpha0
     alpha0_max_sv(1:max_dom)   = turbdiff_config(1:max_dom)%alpha0_max
+
+    ! optional shift of EPS mean
+    rat_sea_sv(1:max_dom) = rat_sea_sv(1:max_dom) + shift_ratsea
 
     ! TERRA
     minsnowfrac_sv = tune_minsnowfrac
@@ -509,8 +630,8 @@ MODULE mo_ensemble_pert_config
     CALL random_gen(rnd_gkdrag, rnd_num)
     tune_gkdrag(1) = gkdrag_sv(1) + 2._wp*(rnd_num-0.5_wp)*range_gkdrag
     IF (gkdrag_sv(1) > 0._wp) THEN
-      tune_gkdrag(2:max_dom)     = (gkdrag_sv(1) + 2._wp*(rnd_num-0.5_wp)*range_gkdrag)*gkdrag_sv(2:max_dom)/gkdrag_sv(1)
-      tune_gkdrag_enh(1:max_dom) = (gkdrag_sv(1) + 2._wp*(rnd_num-0.5_wp)*range_gkdrag)*gkdrag_enh_sv(1:max_dom)/gkdrag_sv(1)
+      tune_gkdrag(2:max_dom)     = (gkdrag_sv(1) + 2._wp*(rnd_num-0.5_wp)*range_gkdrag)*(gkdrag_sv(2:max_dom)/gkdrag_sv(1))
+      tune_gkdrag_enh(1:max_dom) = (gkdrag_sv(1) + 2._wp*(rnd_num-0.5_wp)*range_gkdrag)*(gkdrag_enh_sv(1:max_dom)/gkdrag_sv(1))
     ELSE
       tune_gkdrag(2:max_dom)     = gkdrag_sv(2:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_gkdrag
       tune_gkdrag_enh(1:max_dom) = gkdrag_enh_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_gkdrag
@@ -520,7 +641,7 @@ MODULE mo_ensemble_pert_config
     CALL random_gen(rnd_gfluxlaun, rnd_num)
     tune_gfluxlaun = gfluxlaun_sv + 2._wp*(rnd_num-0.5_wp)*range_gfluxlaun
 
-    ! grid-scale microphysics
+    ! grid-scale 1-moment microphysics (inwp_gscp=1,2,3)
     CALL random_gen(rnd_zvz0i, rnd_num)
     ! perturbations for cloud ice sedimentation and convective precip conversion rate must be anticorrelated if constant
     ! in time because they systematically alter the temperature bias in the middle/upper troposphere
@@ -533,6 +654,69 @@ MODULE mo_ensemble_pert_config
       rnd_fac = range_rain_n0fac**(2._wp*(rnd_num-0.5_wp))
       atm_phy_nwp_config(1:max_dom)%rain_n0_factor = rain_n0_sv(1:max_dom)*rnd_fac
     ENDIF
+
+    ! grid-scale 2-moment microphysics (inwp_gscp=4,5,6,7)
+    ! - at the moment ccn_Ncn0, in_fact, avel_g and avel_i are only perturbed with a time-independent value
+    !   because they are transferred to the 2-moment scheme only once during the init phase of the model in two_moment_mcrph_init().
+    !   For avel_g and avel_i this is the only way. If we would like to have time-dependent parameters
+    !   for ccn_Ncn0 and in_fact, we would have to update the type ccn_coeffs in each call to two_moment_mcrph() in mo_2mom_mcrph_driver.f90.
+    IF ( ANY(atm_phy_nwp_config(1)%inwp_gscp == [4,5,7]) ) THEN
+      IF (linit) THEN
+        ! perturbations for CN, at the moment assumed to be factors which are uncorrellated and discrete random numbers.
+        ! Here we have to put the perturbations into the container cfg_2mom, because it is used in the init
+        ! phase of the 2-moment scheme:
+        IF (ccn_Ncn0_sv(1) > -900.0_wp) THEN
+          CALL random_gen(rnd_ccn_Ncn0, rnd_num)
+          rnd_fac = range_ccn_Ncn0**(2._wp*(rnd_num-0.5_wp))
+          atm_phy_nwp_config(1:max_dom)%cfg_2mom_pert%ccn_Ncn0 = ccn_Ncn0_sv(1:max_dom)*rnd_fac
+        END IF
+
+        CALL random_gen(rnd_in_fact, rnd_num)
+        rnd_fac = range_in_fact**(2._wp*(rnd_num-0.5_wp))
+        atm_phy_nwp_config(1:max_dom)%cfg_2mom_pert%in_fact = in_fact_sv(1:max_dom)*rnd_fac
+
+        IF (avel_g_sv(1) > -900.0_wp) THEN
+          ! avel_g is not time-dependent in case of timedep_pert=2 because this would entail several recomputations,
+          ! and it is a factor based on continuous random numbers, not discrete ones (".TRUE."):
+          CALL random_gen(rnd_avel_g, rnd_num, .TRUE.)
+          rnd_fac = range_avel_g**(2._wp*(rnd_num-0.5_wp))
+          atm_phy_nwp_config(1:max_dom)%cfg_2mom_pert%avel_g = avel_g_sv(1:max_dom)*rnd_fac
+        ENDIF
+
+        IF (avel_i_sv(1) > -900.0_wp) THEN
+          ! avel_i is not time-dependent in case of timedep_pert=2 because this would entail several recomputations,
+          ! and it is a factor based on continuous random numbers, not discrete ones (".TRUE."):
+          CALL random_gen(rnd_avel_i, rnd_num, .TRUE.)
+          rnd_fac = range_avel_i**(2._wp*(rnd_num-0.5_wp))
+          atm_phy_nwp_config(1:max_dom)%cfg_2mom_pert%avel_i = avel_i_sv(1:max_dom)*rnd_fac
+        ENDIF
+
+      END IF
+
+      ! perturbations for capacitances of snow and cloud ice, at the moment assumed to be uncorrelated
+      ! and discrete random numbers. These are time-dependent.
+      ! For these time-step dependent perturbations, we have to use the container cfg_2mom_pert:
+      IF (cap_snow_sv(1) > -900.0_wp) THEN
+        CALL random_gen(rnd_cap_snow, rnd_num)
+        rnd_fac = range_cap_snow**(2._wp*(rnd_num-0.5_wp))
+        atm_phy_nwp_config(1:max_dom)%cfg_2mom_pert%cap_snow = cap_snow_sv(1:max_dom)*rnd_fac
+      END IF
+
+      IF (cap_ice_sv(1) > -900.0_wp) THEN
+        CALL random_gen(rnd_cap_ice, rnd_num)
+        rnd_fac = range_cap_ice**(2._wp*(rnd_num-0.5_wp))
+        atm_phy_nwp_config(1:max_dom)%cfg_2mom_pert%cap_ice = cap_ice_sv(1:max_dom)*rnd_fac
+      END IF
+
+      IF (linit) THEN
+        ! Synchronize cfg_2mom and cfg_2mom_pert in the first timestep, because
+        ! some parameters like avel_g and ccn_Ncn0 take only effect in the initialization, for
+        ! which they need to be in the container cfg_2mom:
+        DO jg = 1, n_dom
+          CALL copy_cfg_2mom_pert2all (atm_phy_nwp_config(jg)%cfg_2mom_pert, atm_phy_nwp_config(jg)%cfg_2mom)
+        END DO
+      END IF
+    END IF
 
     ! convection
     CALL random_gen(rnd_entrorg, rnd_num)
@@ -562,14 +746,14 @@ MODULE mo_ensemble_pert_config
     ! corresponding parameters for the tropics
     tune_rhebc_land_trop  = rhebc_land_trop_sv  + 2._wp*(rnd_num-0.5_wp)*range_rhebc
     tune_rhebc_ocean_trop = rhebc_ocean_trop_sv + 2._wp*(rnd_num-0.5_wp)*range_rhebc
-    ! 
+    !
     IF (timedep_pert == 2) CALL random_gen(rnd_rcucov, rnd_num)
     tune_rcucov      = rcucov_sv / (1._wp + 15._wp*range_rhebc*(rnd_num-0.5_wp))
     tune_rcucov_trop = rcucov_trop_sv / (1._wp + 15._wp*range_rhebc*(rnd_num-0.5_wp))
 
     CALL random_gen(rnd_texc, rnd_num)
     tune_texc = texc_sv + 2._wp*(rnd_num-0.5_wp)*range_texc
-    
+
     CALL random_gen(rnd_qexc, rnd_num)
     tune_qexc = qexc_sv + 2._wp*(rnd_num-0.5_wp)*range_qexc
 
@@ -586,13 +770,13 @@ MODULE mo_ensemble_pert_config
     ! turbulence
     CALL random_gen(rnd_tkhmin, rnd_num)
     tkfac = tkhmin_strat_sv(1)/tkhmin_sv(1)
-    turbdiff_config(1:max_dom)%tkhmin = tkhmin_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_tkhmin
-    turbdiff_config(1:max_dom)%tkhmin_strat = tkhmin_strat_sv(1:max_dom) + 2._wp*tkfac*(rnd_num-0.5_wp)*range_tkhmin
+    turbdiff_config(1:max_dom)%tkhmin = MAX(0._wp, tkhmin_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_tkhmin)
+    turbdiff_config(1:max_dom)%tkhmin_strat = MAX(0._wp, tkhmin_strat_sv(1:max_dom) + 2._wp*tkfac*(rnd_num-0.5_wp)*range_tkhmin)
 
     CALL random_gen(rnd_tkmmin, rnd_num)
     tkfac = tkmmin_strat_sv(1)/tkmmin_sv(1)
-    turbdiff_config(1:max_dom)%tkmmin = tkmmin_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_tkmmin
-    turbdiff_config(1:max_dom)%tkmmin_strat = tkmmin_strat_sv(1:max_dom) + 2._wp*tkfac*(rnd_num-0.5_wp)*range_tkmmin
+    turbdiff_config(1:max_dom)%tkmmin = MAX(0._wp, tkmmin_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_tkmmin)
+    turbdiff_config(1:max_dom)%tkmmin_strat = MAX(0._wp, tkmmin_strat_sv(1:max_dom) + 2._wp*tkfac*(rnd_num-0.5_wp)*range_tkmmin)
 
     CALL random_gen(rnd_rlam_heat, rnd_num)
     turbdiff_config(1:max_dom)%rlam_heat = MAX(0.1_wp, rlam_heat_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_rlam_heat)
@@ -600,10 +784,10 @@ MODULE mo_ensemble_pert_config
     turbdiff_config(1:max_dom)%rat_sea   = rat_sea_sv(1:max_dom)*rlam_heat_sv(1:max_dom)/turbdiff_config(1:max_dom)%rlam_heat
 
     CALL random_gen(rnd_turlen, rnd_num)
-    turbdiff_config(1:max_dom)%tur_len = tur_len_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_turlen
+    turbdiff_config(1:max_dom)%tur_len = MAX(0._wp, tur_len_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_turlen)
 
     CALL random_gen(rnd_a_hshr, rnd_num)
-    turbdiff_config(1:max_dom)%a_hshr = a_hshr_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_a_hshr
+    turbdiff_config(1:max_dom)%a_hshr = MAX(0._wp, a_hshr_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_a_hshr)
 
     ! a_stab has default value 0 and needs positive definite perturbations
     CALL random_gen(rnd_a_stab, rnd_num)
@@ -614,7 +798,7 @@ MODULE mo_ensemble_pert_config
     turbdiff_config(1:max_dom)%c_diff = c_diff_sv(1:max_dom) * rnd_fac
 
     CALL random_gen(rnd_q_crit, rnd_num)
-    turbdiff_config(1:max_dom)%q_crit = q_crit_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_q_crit
+    turbdiff_config(1:max_dom)%q_crit = MAX(0._wp, q_crit_sv(1:max_dom) + 2._wp*(rnd_num-0.5_wp)*range_q_crit)
 
     CALL random_gen(rnd_alpha0, rnd_num)
     rnd_fac   = range_charnock**(2._wp*(rnd_num-0.5_wp))
@@ -630,7 +814,7 @@ MODULE mo_ensemble_pert_config
 
     ! TERRA
     CALL random_gen(rnd_minsnowfrac, rnd_num)
-    tune_minsnowfrac = minsnowfrac_sv + 2._wp*(rnd_num-0.5_wp)*range_minsnowfrac
+    tune_minsnowfrac =  MAX(0._wp, minsnowfrac_sv + 2._wp*(rnd_num-0.5_wp)*range_minsnowfrac)
 
     CALL random_gen(rnd_c_soil, rnd_num)
     c_soil = c_soil_sv + 2._wp*(rnd_num-0.5_wp)*range_c_soil
@@ -652,79 +836,79 @@ MODULE mo_ensemble_pert_config
 
 
 #ifdef _OPENACC
-    IF(acc_is_present(tune_gkdrag)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_gkdrag)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_gkdrag` is supposed to be on CPU only.")
-    IF(acc_is_present(tune_gkwake)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_gkwake)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_gkwake` is supposed to be on CPU only.")
-    IF(acc_is_present(tune_gfrcrit)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_gfrcrit)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_gfrcrit` is supposed to be on CPU only.")
-    IF(acc_is_present(tune_gfluxlaun, 1)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_gfluxlaun, 1)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_gfluxlaun` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_zvz0i)
-    IF(acc_is_present(tune_zvz0i, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_zvz0i, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_zvz0i` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_rprcon)
-    IF(acc_is_present(tune_rprcon, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_rprcon, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_rprcon` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_entrorg)
-    IF(acc_is_present(tune_entrorg, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_entrorg, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_entrorg` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_capdcfac_et)
-    IF(acc_is_present(tune_capdcfac_et, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_capdcfac_et, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_capdcfac_et` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_rdepths)
-    IF(acc_is_present(tune_rdepths, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_rdepths, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_rdepths` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_capdcfac_tr)
-    IF(acc_is_present(tune_capdcfac_tr, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_capdcfac_tr, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_capdcfac_tr` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_lowcapefac)
-    IF(acc_is_present(tune_lowcapefac, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_lowcapefac, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_lowcapefac` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(limit_negpblcape)
-    IF(acc_is_present(limit_negpblcape, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(limit_negpblcape, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `limit_negpblcape` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_rhebc_land)
-    IF(acc_is_present(tune_rhebc_land, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_rhebc_land, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_rhebc_land` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_rhebc_ocean)
-    IF(acc_is_present(tune_rhebc_ocean, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_rhebc_ocean, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_rhebc_ocean` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_rhebc_land_trop)
-    IF(acc_is_present(tune_rhebc_land_trop, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_rhebc_land_trop, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_rhebc_land_trop` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_rhebc_ocean_trop)
-    IF(acc_is_present(tune_rhebc_ocean_trop, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_rhebc_ocean_trop, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_rhebc_ocean_trop` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_rcucov)
-    IF(acc_is_present(tune_rcucov, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_rcucov, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_rcucov` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_rcucov_trop)
-    IF(acc_is_present(tune_rcucov_trop, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_rcucov_trop, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_rcucov_trop` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_texc)
-    IF(acc_is_present(tune_texc, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_texc, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_texc` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_qexc)
-    IF(acc_is_present(tune_qexc, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_qexc, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_qexc` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_box_liq)
-    IF(acc_is_present(tune_box_liq, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_box_liq, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_box_liq` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_thicklayfac)
-    IF(acc_is_present(tune_thicklayfac, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_thicklayfac, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_thicklayfac` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_box_liq_asy)
-    IF(acc_is_present(tune_box_liq_asy, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_box_liq_asy, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_box_liq_asy` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(tune_minsnowfrac)
-    IF(acc_is_present(tune_minsnowfrac, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(tune_minsnowfrac, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `tune_minsnowfrac` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(c_soil)
-    IF(acc_is_present(c_soil, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(c_soil, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `c_soil` is supposed to be on CPU only.")
     nbytes = C_SIZEOF(cwimax_ml)
-    IF(acc_is_present(cwimax_ml, nbytes)) CALL finish("set_scalar_ens_pert", & 
+    IF(acc_is_present(cwimax_ml, nbytes)) CALL finish("set_scalar_ens_pert", &
         "Internal error. `cwimax_ml` is supposed to be on CPU only.")
 
     DO jg = 1, n_dom
@@ -758,6 +942,16 @@ MODULE mo_ensemble_pert_config
       WRITE(message_text,'(4f8.4,e11.4,2f8.4)') tune_gkwake(1), tune_gkdrag(1), tune_gkdrag_enh(1), tune_gfrcrit(1), &
         tune_gfluxlaun, tune_zvz0i, atm_phy_nwp_config(1)%rain_n0_factor
       CALL message('Perturbed values, gkwake, gkdrag, gkdrag_enh, gfrcrit, gfluxlaun, zvz0i, rain_n0fac', TRIM(message_text))
+
+      IF ( ANY(atm_phy_nwp_config(1)%inwp_gscp == [4,5,7]) ) THEN
+        WRITE(message_text,'(es11.4,f8.1,2es11.4,2f8.3)') atm_phy_nwp_config(1)%cfg_2mom_pert%ccn_Ncn0, &
+             atm_phy_nwp_config(1)%cfg_2mom_pert%in_fact, &
+             atm_phy_nwp_config(1)%cfg_2mom_pert%avel_i,  &
+             atm_phy_nwp_config(1)%cfg_2mom_pert%avel_g,  &
+             atm_phy_nwp_config(1)%cfg_2mom_pert%cap_snow, &
+             atm_phy_nwp_config(1)%cfg_2mom_pert%cap_ice
+        CALL message('Perturbed values, ccn_Ncn0, in_fact, avel_i, avel_g, cap_snow, cap_ice', TRIM(message_text))
+      END IF
 
       WRITE(message_text,'(2e11.4,f8.1)') tune_entrorg, tune_rprcon, tune_rdepths
       CALL message('Perturbed values, entrorg, rprcon, rdepths', TRIM(message_text))
@@ -918,7 +1112,7 @@ MODULE mo_ensemble_pert_config
           IF (jt <= ntiles_lnd .OR. jt >= ntiles_total+1) THEN
             !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(ilu)
             DO jc = i_startidx, i_endidx
-              ilu = MAX(1,ext_data(jg)%atm%lc_class_t(jc,jb,jt))
+              ilu = MIN(MAX(1, ext_data(jg)%atm%lc_class_t(jc,jb,jt)), UBOUND(rnd_tkred_sfc,dim=1))
               wrnd_num(jc) = wrnd_num(jc) + rnd_tkred_sfc(ilu)*ext_data(jg)%atm%lc_frac_t(jc,jb,jt)
               wrnd_num2(jc) = wrnd_num2(jc) + rnd_fac_ccqc(ilu)*ext_data(jg)%atm%lc_frac_t(jc,jb,jt)
             ENDDO
@@ -962,11 +1156,11 @@ MODULE mo_ensemble_pert_config
       IF (lrecomp) THEN
         DO jg = 1, n_dom
           CALL sucumf(p_patch(jg)%geometry_info%mean_characteristic_length,p_patch(jg)%nlev,phy_params(jg),&
-            atm_phy_nwp_config(jg)%lshallowconv_only,atm_phy_nwp_config(jg)%lgrayzone_deepconv,            &
+            atm_phy_nwp_config(jg)%lshallowconv_only,atm_phy_nwp_config(jg)%lgrayzone_deepconv,atm_phy_nwp_config(jg)%lconv_cdnc_interp, &
             atm_phy_nwp_config(jg)%ldetrain_conv_prec,atm_phy_nwp_config(jg)%lrestune_off,atm_phy_nwp_config(jg)%lmflimiter_off, &
             atm_phy_nwp_config(jg)%lstoch_expl,atm_phy_nwp_config(jg)%lstoch_sde,atm_phy_nwp_config(jg)%lstoch_deep, &
-            atm_phy_nwp_config(jg)%lvvcouple, atm_phy_nwp_config(jg)%lvv_shallow_deep)
-          
+            atm_phy_nwp_config(jg)%lvvcouple, atm_phy_nwp_config(jg)%lvv_shallow_deep,atm_phy_nwp_config(jg)%itype_parcel_ascent)
+
           phy_params(jg)%gkdrag      = tune_gkdrag(jg)
           phy_params(jg)%gkdrag_enh  = tune_gkdrag_enh(jg)
           phy_params(jg)%gkwake      = tune_gkwake(jg)

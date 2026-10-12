@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -105,16 +105,16 @@ echo ref_resolution=$ref_resolution               >> ${set_env}
 echo ref_data_path=$ref_data_path                 >> ${set_env}
 echo ref_timerange=$ref_timerange                 >> ${set_env}
 
-echo evol_istart=$evol_istart                     >> ${set_env}           
-echo evol_iend=$evol_iend                         >> ${set_env}           
-echo plev_evol=\"${plev_evol}\"                   >> ${set_env}           
-echo hlev_evol=\"${hlev_evol}\"                   >> ${set_env}           
-echo mlev_evol=\"${mlev_evol}\"                   >> ${set_env}           
+echo evol_istart=$evol_istart                     >> ${set_env}
+echo evol_iend=$evol_iend                         >> ${set_env}
+echo plev_evol=\"${plev_evol}\"                   >> ${set_env}
+echo hlev_evol=\"${hlev_evol}\"                   >> ${set_env}
+echo mlev_evol=\"${mlev_evol}\"                   >> ${set_env}
 
 #=============
 # Run scripts
 
-# NOTE: Any variable listed below must exist in model output and 
+# NOTE: Any variable listed below must exist in model output and
 # have been registered in "lookup_variable.ksh".
 
 # --- Zonal mean climate (vertical cross section) ---
@@ -141,16 +141,16 @@ cat > zonal.list << EOF_LIST
 EOF_LIST
 /e/uhome/for1han/bin/pshell -p7 -f zonal.list
 
-# --- Evolution plots ---                                                 
-                                                                          
-for var in T ; do                                                 
-  ./lat-time.ksh -v ${var} -e ${set_env}                                  
-done                                                                      
-                                                                          
-#==========                                                               
-# Clean up                                                                
-                                                                          
-if [ -f ${set_env} ]; then                                                
-  rm -f ${set_env}                                                        
-fi                               
+# --- Evolution plots ---
+
+for var in T ; do
+  ./lat-time.ksh -v ${var} -e ${set_env}
+done
+
+#==========
+# Clean up
+
+if [ -f ${set_env} ]; then
+  rm -f ${set_env}
+fi
 exit

@@ -1,17 +1,15 @@
-!
-! Type definition for SPPT (Stochastic Perturbation of Physics Tendencies)
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Type definition for SPPT (Stochastic Perturbation of Physics Tendencies)
 
 MODULE mo_sppt_types
 
@@ -48,7 +46,7 @@ MODULE mo_sppt_types
     & rn_2d_now(:,:),         &        ! utility array for random numbers              [-]
     & rn_2d_new(:,:),         &        ! utility array for random numbers              [-]
 
-    ! c) fields used for calculations of tendencies 
+    ! c) fields used for calculations of tendencies
     & ddt_temp_fast(:,:,:), &          ! fast physics tendency for air temperature     [K/s]
     & ddt_u_fast(:,:,:),    &          ! fast physics tendency for wind component u    [m/s^2]
     & ddt_v_fast(:,:,:),    &          ! fast physics tendency for wind component v    [m/s^2]
@@ -72,4 +70,3 @@ MODULE mo_sppt_types
 
 
 END MODULE mo_sppt_types
-

@@ -1,11 +1,7 @@
-!
-! This module provides an input instruction list that is used to
-! determine, which variables may be read from which input file.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,11 +9,15 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! This module provides an input instruction list that is used to
+! determine, which variables may be read from which input file.
+
 MODULE mo_input_instructions
 
     USE mo_exception,          ONLY: message, finish, message_text
-    USE mo_impl_constants,     ONLY: SUCCESS, MODE_DWDANA, MODE_ICONVREMAP, MODE_IAU, MODE_IAU_OLD, &
-      &                              MODE_COMBINED, MODE_COSMO, max_ntracer, vname_len
+    USE mo_impl_constants,     ONLY: SUCCESS, MODE_DWDANA, MODE_ICONVREMAP, MODE_IAU,          &
+      &                              MODE_COMBINED, MODE_COSMO, MODE_DWDANA_OCE, MODE_IAU_OCE, &
+      &                              vname_len
     USE mo_initicon_config,    ONLY: initicon_config, lread_ana, ltile_coldstart, lp2cintp_incr,    &
       &                              lp2cintp_sfcana, lvert_remap_fg
     USE mo_initicon_types,     ONLY: ana_varnames_dict
@@ -28,13 +28,16 @@ MODULE mo_input_instructions
     USE mo_util_table,         ONLY: t_table, initialize_table, add_table_column, set_table_entry,  &
       &                              print_table, finalize_table
     USE mo_var_list_register_utils, ONLY: vlr_group
-
+    USE mo_ocean_nml,          ONLY: lread_ana_oce
+    USE mo_dictionary,         ONLY: t_dictionary
     IMPLICIT NONE
     PRIVATE
 
     PUBLIC :: t_readInstructionList, readInstructionList_make, t_readInstructionListPtr
+    PUBLIC :: readInstructionListOce_make !Needed for Initicon-o
     PUBLIC :: kInputSourceNone, kInputSourceFg, kInputSourceAna, kInputSourceBoth, kInputSourceCold
     PUBLIC :: kStateNoFetch, kStateFailedFetch, kStateRead,  kInputSourceAnaI, kInputSourceFgAnaI
+    PUBLIC :: collectGroupAnaIncrement
 
     ! The possible RETURN values of readInstructionList_sourceOfVar().
     ! kInputSourceBoth  : First guess and analysis increment read from file
@@ -68,8 +71,8 @@ MODULE mo_input_instructions
     ! sourceOfVar will be set to kInputSourceCold, indicating that the
     ! variable should experience some sort of coldstart
     ! initialization.
-    ! If there exists a fallback variable for a particular variable, 
-    ! optionalReadResultXXX() has to be used instead of handleErrorXXX(). 
+    ! If there exists a fallback variable for a particular variable,
+    ! optionalReadResultXXX() has to be used instead of handleErrorXXX().
     ! The former won't panick if no data is available.
     TYPE :: t_readInstructionList
         TYPE(t_readInstruction), POINTER :: list(:)
@@ -106,7 +109,7 @@ MODULE mo_input_instructions
 
         ! returns the result of a read attempt for a particular field:
         PROCEDURE :: fetchStatus => readInstructionList_fetchStatus
-        
+
         ! print a table with the information obtained via
         ! `handleErrorXXX()`, and `setSource()`; THIS DEPENDS ON THE
         ! ACTUAL READ ATTEMPTS AND THEIR RESULTS, NOT ON `lReadFg` or
@@ -134,7 +137,7 @@ MODULE mo_input_instructions
         ! is not necessary to start the run. (re-set to
         ! .FALSE. according to the `fg_checklist` namelist parameter):
         LOGICAL :: lOptionalFg
-                              
+
         ! Panick if reading from analysis fails (set according to the
         ! `ana_checklist` namelist parameter):
         LOGICAL :: lRequireAna
@@ -182,8 +185,6 @@ CONTAINS
                 ! fgGroup += tracerGroup
                 CALL add_to_list(outGroup, outGroupSize, tracerGroup, tracerGroupSize)
                 CALL add_to_list(outGroup, outGroupSize, jsbGroup, jsbGroupSize)
-            CASE(MODE_IAU_OLD)
-                CALL vlr_group('mode_iau_old_fg_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
             CASE(MODE_COMBINED)
                 CALL vlr_group('mode_combined_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
             CASE(MODE_COSMO)
@@ -194,12 +195,8 @@ CONTAINS
     END SUBROUTINE collectGroupFg
 
     ! Sub-list of optional first guess fields
-    ! Fields in this list are read from the first guess field if they are present, 
-    ! but they are not needed to start the model.
-    !
-    ! ToDo: 
-    ! So far, this list has to be created manually. In the future this 
-    ! should be done automatically via (add_var) metadata flags. 
+    ! Fields in this list are read from the first guess field if they are present,
+    ! but they are not needed to start the model. They are collected in group 'opt_fg_vars'
     !
     ! The JSBACH fields are marked optional to allow for initialization from files
     ! without JSBACH fields. In that case JSBACH uses its own initialization files
@@ -211,18 +208,11 @@ CONTAINS
         CHARACTER(LEN = vname_len), ALLOCATABLE, INTENT(OUT) :: outGroup(:)
         INTEGER, INTENT(OUT) :: outGroupSize
 
-        CHARACTER(len=vname_len), ALLOCATABLE :: jsbGroup(:)
-        INTEGER :: jsbGroupSize
+        CHARACTER(len=vname_len), ALLOCATABLE :: jsbGroup(:), optfgGroup(:)
+        INTEGER :: jsbGroupSize, optfgGroupSize
 
-        CALL add_to_list(outGroup, outGroupSize,                                            &
-          &    str_list2=(/'alb_si       ','rho_snow_mult','aer_ss       ','aer_or       ', &
-          &                'aer_bc       ','aer_su       ','aer_du       ','plantevap    ', &
-          &                't_sk         ','t2m_bias     ','hsnow_max    ','snow_age     ', &
-          &                'qg           ','qh           ','qnc          ','qni          ', &
-          &                'qnr          ','qns          ','qng          ','qnh          ', &
-          &                'rh_avginc    ','t_avginc     ','t_wgt_avginc ','p_avginc     ', &
-          &                'clmf_a       ','clmf_p       ','clmf_d       ','clnum_a      ', &
-          &                'clnum_p      ','clnum_d      ','vabs_avginc  '/))
+        CALL vlr_group('opt_fg_vars', optfgGroup, optfgGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
+        CALL add_to_list(outGroup, outGroupSize, optfgGroup, optfgGroupSize)
 
         CALL vlr_group('jsb_init_vars', jsbGroup, jsbGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
         CALL add_to_list(outGroup, outGroupSize, jsbGroup, jsbGroupSize)
@@ -239,8 +229,6 @@ CONTAINS
                 CALL vlr_group('mode_dwd_ana_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
             CASE(MODE_IAU)
                 CALL vlr_group('mode_iau_ana_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
-            CASE(MODE_IAU_OLD)
-                CALL vlr_group('mode_iau_old_ana_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
             CASE DEFAULT
                 CALL new_list(outGroup, outGroupSize)
         END SELECT
@@ -252,12 +240,41 @@ CONTAINS
         INTEGER, INTENT(IN) :: init_mode
 
         SELECT CASE(init_mode)
-            CASE(MODE_IAU, MODE_IAU_OLD)
+            CASE(MODE_IAU)
                 CALL vlr_group('mode_iau_anaatm_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
             CASE DEFAULT
                 CALL new_list(outGroup, outGroupSize)
         END SELECT
     END SUBROUTINE collectGroupAnaAtm
+
+    !>
+    !! @brief Collect all input variables that may be provided as analysis increments (group: "ana_increment")
+    !!
+    SUBROUTINE collectGroupAnaIncrement(outGroup, outGroupSize, init_mode)
+
+      CHARACTER(LEN=vname_len), ALLOCATABLE, INTENT(OUT) :: outGroup(:)
+      INTEGER, INTENT(OUT) :: outGroupSize
+      INTEGER, INTENT(IN)  :: init_mode
+
+      !----------------------------
+
+      ! Just to make sure
+      outGroupSize = 0
+
+      SELECT CASE(init_mode)
+      CASE(MODE_IAU)
+        ! Analysis increments apply to this init mode only
+        CALL vlr_group(grp_name         = "ana_increment", & ! in
+          &            var_name         = outGroup,        & ! out
+          &            nvars            = outGroupSize,    & ! out
+          &            loutputvars_only = .FALSE.,         & ! in
+          &            lremap_lonlat    = .FALSE.          ) ! in
+      CASE DEFAULT
+        ! The following routine will return "outGroup" allocated with space for 8 strings, and "outGroupSize = 0"
+        CALL new_list(outGroup, outGroupSize)
+      END SELECT
+
+    END SUBROUTINE collectGroupAnaIncrement
 
     SUBROUTINE mergeAnaIntoFg(anaGroup, anaGroupSize, fgGroup, fgGroupSize, init_mode)
         CHARACTER(LEN = vname_len), ALLOCATABLE, INTENT(INOUT) :: anaGroup(:), fgGroup(:)
@@ -285,7 +302,6 @@ CONTAINS
         CHARACTER(LEN = *), PARAMETER :: routine = modname//':collectGroups'
         CHARACTER(LEN=vname_len), ALLOCATABLE, DIMENSION(:) :: anaAtmGroup
         INTEGER :: anaAtmGroupSize, jg
-        LOGICAL :: lRemoveSnowfrac
 
         ! get the raw DATA
         CALL collectGroupFg(fgGroup, fgGroupSize, init_mode)
@@ -307,19 +323,17 @@ CONTAINS
                 IF (init_mode == MODE_ICONVREMAP) CALL add_to_list(fgGroup, fgGroupSize, 'clw')
                 IF (init_mode == MODE_ICONVREMAP) CALL add_to_list(fgGroup, fgGroupSize, 'cli')
 
-            CASE(MODE_IAU, MODE_IAU_OLD)
+            CASE(MODE_IAU)
                 ! in case of tile coldstart, we can omit snowfrac_lc
                 ! Remove field 'snowfrac_lc' from FG list
-                lRemoveSnowfrac = ltile_coldstart
-                IF(init_mode == MODE_IAU .AND. .NOT. lsnowtile) lRemoveSnowfrac = .TRUE.
-                IF(lRemoveSnowfrac) CALL difference(fgGroup, fgGroupSize, (/'snowfrac_lc'/), 1)
+                IF (ltile_coldstart .OR. .NOT. lsnowtile) CALL difference(fgGroup, fgGroupSize, (/'snowfrac_lc'/), 1)
 
                 IF (.NOT. lp2cintp_incr(jg) .AND. .NOT. lp2cintp_sfcana(jg) ) THEN
                     ! full ANA read
 
                 ELSE IF (lp2cintp_incr(jg) .AND. .NOT. lp2cintp_sfcana(jg)) THEN
                     ! SFC-ANA read
-                    ! atmospheric analysis fieds are interpolated from parent domain, 
+                    ! atmospheric analysis fieds are interpolated from parent domain,
                     ! however surface analysis fields are read from file
 
                     ! Remove fields atmospheric analysis fields from anaGroup
@@ -336,7 +350,7 @@ CONTAINS
                     CALL finish(routine, message_text)
                 ENDIF
 
-                ! when vertical remapping of the FG-fields is applied, z_ifc is required 
+                ! when vertical remapping of the FG-fields is applied, z_ifc is required
                 ! as FG input field
                 IF (lvert_remap_fg) THEN
                   CALL add_to_list(fgGroup, fgGroupSize, 'z_ifc')
@@ -346,6 +360,16 @@ CONTAINS
                 ! add SMI to the default list
                 ! I.e. ICON tries to read SMI, with W_SO being the fallback-option
                 CALL add_to_list(fgGroup, fgGroupSize, 'smi')
+
+                ! Add FLake prognostic variables to first-guess optional group to prevent
+                ! 'CALL finish(...)' if those variables are not found in the first-guess file.
+                ! This is required to avoid FLake cold start initialization if ICON is run
+                ! in 'MODE_COMBINED' using spun-up FLake prognostic variables.
+                IF(init_mode == MODE_COMBINED) THEN
+                  CALL add_to_list(fgOptGroup, fgOptGroupSize,  &
+                   &   str_list2=(/'t_mnw_lk        ', 't_wml_lk        ', 'h_ml_lk         ',  &
+                   &               't_bot_lk        ', 'c_t_lk          '/))
+                END IF
 
                 ! no analysis group
                 anaGroupSize = 0
@@ -359,6 +383,109 @@ CONTAINS
 
     END SUBROUTINE collectGroups
 
+
+    SUBROUTINE collectGroupOceFg(outGroup, outGroupSize, init_mode_oce)
+      CHARACTER(LEN = vname_len), ALLOCATABLE, INTENT(OUT) :: outGroup(:)
+      INTEGER, INTENT(OUT) :: outGroupSize
+      INTEGER, INTENT(IN) :: init_mode_oce
+
+      ! local tracerGroup to add all vars in group tracer_fg_in to first guess
+      CHARACTER(LEN = vname_len), ALLOCATABLE :: tracerGroup(:)
+      INTEGER :: tracerGroupSize
+
+      SELECT CASE(init_mode_oce)
+        CASE(MODE_DWDANA_OCE)
+          CALL vlr_group('mode_dwd_fg_oce_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
+          CALL vlr_group('tracer_fg_oce_in', tracerGroup, tracerGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
+          ! fgGroup += tracerGroup
+          CALL add_to_list(outGroup, outGroupSize, tracerGroup, tracerGroupSize)
+        CASE(MODE_IAU_OCE)
+          CALL vlr_group('mode_iau_fg_oce_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
+          CALL vlr_group('tracer_fg_oce_in', tracerGroup, tracerGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
+          ! fgGroup += tracerGroup
+          CALL add_to_list(outGroup, outGroupSize, tracerGroup, tracerGroupSize)
+        CASE DEFAULT
+          outGroupSize = 0
+        END SELECT
+    END SUBROUTINE collectGroupOceFg
+
+    ! Sub-list of optional first guess fields
+    ! Fields in this list are read from the first guess field if they are present,
+    ! but they are not needed to start the model.
+    !
+    ! ToDo:
+    ! So far, this list has to be created manually. In the future this
+    ! should be done automatically via (add_var) metadata flags.
+    !
+    SUBROUTINE collectGroupOceFgOpt(outGroup, outGroupSize)
+      CHARACTER(LEN = vname_len), ALLOCATABLE, INTENT(OUT) :: outGroup(:)
+      INTEGER, INTENT(OUT) :: outGroupSize
+
+      CALL add_to_list(outGroup, outGroupSize,                                          &
+      &    str_list2=(/'to             ','so             ','zos            ','conc           ', &
+      &                'u              ','v              ','normal_velocity','stretch_c      ', &
+      &                'hi             ','hs             ','SWPT           ','tke            '/))
+
+    END SUBROUTINE collectGroupOceFgOpt
+
+    SUBROUTINE collectGroupOceAna(outGroup, outGroupSize, init_mode_oce)
+      CHARACTER(LEN = vname_len), ALLOCATABLE, INTENT(INOUT) :: outGroup(:)
+      INTEGER, INTENT(OUT) :: outGroupSize
+      INTEGER, INTENT(IN) :: init_mode_oce
+
+      SELECT CASE(init_mode_oce)
+        CASE(MODE_DWDANA_OCE)
+          CALL vlr_group('mode_dwd_ana_oce_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
+        CASE(MODE_IAU_OCE)
+          CALL vlr_group('mode_iau_ana_oce_in', outGroup, outGroupSize, loutputvars_only=.FALSE., lremap_lonlat=.FALSE.)
+        CASE DEFAULT
+          outGroupSize = 0
+      END SELECT
+    END SUBROUTINE collectGroupOceAna
+
+    SUBROUTINE mergeAnaIntoFgOce(anaOceGroup, anaOceGroupSize, fgOceGroup, fgOceGroupSize)
+      CHARACTER(LEN = vname_len), ALLOCATABLE, INTENT(INOUT) :: anaOceGroup(:), fgOceGroup(:)
+      INTEGER, INTENT(INOUT) :: anaOceGroupSize, fgOceGroupSize
+
+      ! fgGroup += anaGroup
+      CALL add_to_list(fgOceGroup, fgOceGroupSize, anaOceGroup, anaOceGroupSize)
+
+      ! anaGroup = --
+      anaOceGroupSize = 0
+    END SUBROUTINE mergeAnaIntoFgOce
+
+    SUBROUTINE collectGroupsOce(init_mode_oce, fgGroup, fgGroupSize, &
+         &                      fgOptGroup, fgOptGroupSize, anaGroup, anaGroupSize)
+      INTEGER, INTENT(in) :: init_mode_oce
+      CHARACTER(LEN = vname_len), ALLOCATABLE, INTENT(INOUT) :: anaGroup(:), fgGroup(:), fgOptGroup(:)
+      INTEGER, INTENT(OUT) :: anaGroupSize, fgGroupSize, fgOptGroupSize
+
+      CHARACTER(LEN = *), PARAMETER :: routine = modname//':collectGroupsOce'
+
+      ! get the raw DATA
+      CALL collectGroupOceFg(fgGroup, fgGroupSize, init_mode_oce)
+      CALL collectGroupOceFgOpt(fgOptGroup, fgOptGroupSize)
+      CALL collectGroupOceAna(anaGroup, anaGroupSize, init_mode_oce)
+
+      ! integrate the information of these three groups, the init_mode, AND some flags to produce the effective fgGroup AND anaGroup
+      ! Expend these cases by ice only, etc.
+      SELECT CASE(init_mode_oce)
+        CASE(MODE_DWDANA_OCE)
+          IF(.NOT.lread_ana_oce) THEN
+            ! lump together fgGroup and anaGroup
+            CALL mergeAnaIntoFgOce(anaGroup, anaGroupSize, fgGroup, fgGroupSize)
+          ENDIF
+        CASE(MODE_IAU_OCE)
+          IF(.NOT.lread_ana_oce) THEN
+            ! lump together fgGroup and anaGroup
+            CALL mergeAnaIntoFgOce(anaGroup, anaGroupSize, fgGroup, fgGroupSize)
+          ENDIF
+        CASE DEFAULT
+          fgGroupSize = 0
+          anaGroupSize = 0
+      END SELECT
+
+    END SUBROUTINE collectGroupsOce
 
     !-------------
     !>
@@ -380,7 +507,6 @@ CONTAINS
     !!     MODE_DWDANA    : mode_dwd_fg_in + mode_dwd_ana_in
     !!     MODE_ICONVREMAP: mode_dwd_fg_in + mode_dwd_ana_in
     !!     MODE_IAU       : mode_iau_fg_in + mode_iau_ana_in - mode_iau_anaatm_in
-    !!     MODE_IAU_OLD   : mode_iau_old_fg_in + mode_iau_old_ana_in - mode_iau_anaatm_in
     !!     MODE_COMBINED  : mode_combined_in
     !!     MODE_COSMO     : mode_cosmo_in
     !!     MODE_IFSANA    : <NONE>
@@ -419,7 +545,7 @@ CONTAINS
             curInstruction => resultVar%findInstruction(grp_vars_fg(ivar))
             curInstruction%lReadFg = .TRUE.
             !
-            ! mark optional first guess fields in the instruction list. 
+            ! mark optional first guess fields in the instruction list.
             IF (one_of(TRIM(grp_vars_fg(ivar)), grp_vars_optfg)/=-1) THEN
                 WRITE(message_text,'(a,a,a,i2)') 'Declare ',TRIM(grp_vars_fg(ivar)),' as OPTIONAL for DOM ', p_patch%id
                 CALL message(routine, message_text)
@@ -433,9 +559,9 @@ CONTAINS
         END DO
 
         ! Allow the user to override the DEFAULT settings for optional fields via fg_checklist
-        ! I.e. the user can change an optional field into a mandatory one and force a model abort, 
+        ! I.e. the user can change an optional field into a mandatory one and force a model abort,
         ! if the field is not available as input.
-        ! 
+        !
         ! translate GRIB2 varname to internal netcdf varname
         ! If requested GRIB2 varname is not found in the dictionary
         ! (i.e. due to typos) -> Model abort
@@ -445,12 +571,11 @@ CONTAINS
             curInstruction => resultVar%findInstruction(TRIM(ana_varnames_dict%get( &
                  &                                                  initicon_config(p_patch%id)%fg_checklist(ivar), &
                  &                                                  linverse=.TRUE.)), opt_expand=.FALSE.)
-            ! Note that depending on the Namelist settings, not every field listed in 
-            ! fg_checklist is part of the instruction list. Therefore, curInstruction 
-            ! may be non-associated. 
+            ! Note that depending on the Namelist settings, not every field listed in
+            ! fg_checklist is part of the instruction list. Therefore, curInstruction
+            ! may be non-associated.
             IF (ASSOCIATED(curInstruction) .AND. curInstruction%lOptionalFg) THEN
                 curInstruction%lOptionalFg = .FALSE.
-
                 WRITE(message_text,'(a,a,a,i2)') 'Transform ',TRIM(ana_varnames_dict%get( &
                  &                                initicon_config(p_patch%id)%fg_checklist(ivar), linverse=.TRUE.)), &
                  &                               ' into a mandatory first guess field for DOM', p_patch%id
@@ -489,20 +614,20 @@ CONTAINS
     FUNCTION readInstructionList_findInstruction(me, varName, opt_expand) RESULT(resultVar)
         CLASS(t_readInstructionList), INTENT(INOUT) :: me
         CHARACTER(LEN = *), INTENT(IN) :: varName
-        LOGICAL, INTENT(IN), OPTIONAL  :: opt_expand  ! TRUE: expand list, if variable is not found 
+        LOGICAL, INTENT(IN), OPTIONAL  :: opt_expand  ! TRUE: expand list, if variable is not found
         TYPE(t_readInstruction), POINTER :: resultVar
 
         INTEGER :: i
         CHARACTER(LEN = *), PARAMETER :: routine = modname//":readInstructionList_findInstruction"
-        LOGICAL :: expand   ! TRUE/FALSE: expand/do not expand list, if variable is not found  
+        LOGICAL :: expand   ! TRUE/FALSE: expand/do not expand list, if variable is not found
 
         IF (PRESENT(opt_expand)) THEN
             expand = opt_expand
         ELSE
-            expand = .TRUE. 
+            expand = .TRUE.
         ENDIF
         ! initialize
-        resultVar => NULL() 
+        resultVar => NULL()
 
         ! try to find it IN the current list
         DO i = 1, me%nInstructions
@@ -650,7 +775,7 @@ CONTAINS
         ELSE
             IF (instruction%lOptionalFg) THEN
                 ! field is not necessary for starting the model
-                ! Therefore we set the status to kStateFailedOptFetch 
+                ! Therefore we set the status to kStateFailedOptFetch
                 ! instead of kStateFailedFetch
                 instruction%statusFg = kStateFailedOptFetch
             ELSE
@@ -664,7 +789,7 @@ CONTAINS
                     CALL finish(caller, "failed to read variable '"//varName//"' from the first guess file, &
                     &and reading from analysis file is not allowed")
                 END IF
-            ENDIF 
+            ENDIF
         END IF
     END SUBROUTINE readInstructionList_handleErrorFg
 
@@ -810,11 +935,102 @@ CONTAINS
     END FUNCTION readInstructionList_fetchStatus
 
 
+    FUNCTION readInstructionListOce_make(p_patch, init_mode_oce, ana_varnames_dict_oce) RESULT(resultVar)
+        TYPE(t_patch), INTENT(IN) :: p_patch
+        INTEGER, INTENT(IN) :: init_mode_oce
+        ! the resulting list of variable names to be READ together with flags defining which input file may be used
+        TYPE(t_readInstructionList), POINTER :: resultVar
+        TYPE (t_dictionary), INTENT(IN) :: ana_varnames_dict_oce
+
+        ! local variables
+        CHARACTER(LEN = *), PARAMETER :: routine = modname//':readInstructionListOce_make'
+        INTEGER :: ivar, error
+        TYPE(t_readInstruction), pointer :: curInstruction
+
+        ! lists of variable names
+        CHARACTER(LEN=vname_len), ALLOCATABLE, DIMENSION(:) :: grp_vars_fg, grp_vars_optfg, grp_vars_ana
+
+        ! the corresponding sizes of the lists above
+        INTEGER :: ngrp_vars_fg, ngrp_vars_optfg, ngrp_vars_ana
+        !
+        !-------------------------------------------------------------------------
+
+        ! create a list of instructions according to the current init_mode AND configuration flags
+        CALL collectGroupsOce(init_mode_oce, grp_vars_fg   , ngrp_vars_fg   , &
+        &                                    grp_vars_optfg, ngrp_vars_optfg, &
+        &                                    grp_vars_ana  , ngrp_vars_ana    )
+        ALLOCATE(resultVar, STAT = error)
+        IF(error /= SUCCESS) CALL finish(routine, "memory allocation failure");
+        CALL resultVar%construct()
+        DO ivar = 1, ngrp_vars_fg
+          curInstruction => resultVar%findInstruction(grp_vars_fg(ivar))
+          curInstruction%lReadFg = .TRUE.
+          !
+          ! mark optional first guess fields in the instruction list.
+          IF (one_of(TRIM(grp_vars_fg(ivar)), grp_vars_optfg)/=-1) THEN
+            WRITE(message_text,'(a,a,a,i2)') 'Declare ',TRIM(grp_vars_fg(ivar)),' as OPTIONAL for DOM ', p_patch%id
+            CALL message(routine, message_text)
+            curInstruction%lOptionalFg=.TRUE.
+          ENDIF
+        END DO
+        DO ivar = 1, ngrp_vars_ana
+          curInstruction => resultVar%findInstruction(grp_vars_ana(ivar))
+          curInstruction%lReadFg = .TRUE.
+          curInstruction%lReadAna = .TRUE.
+        END DO
+
+        ! Allow the user to override the DEFAULT settings for optional fields via fg_checklist
+        ! I.e. the user can change an optional field into a mandatory one and force a model abort,
+        ! if the field is not available as input.
+        !
+        ! translate GRIB2 varname to internal netcdf varname
+        ! If requested GRIB2 varname is not found in the dictionary
+        ! (i.e. due to typos) -> Model abort
+        DO ivar=1,SIZE(initicon_config(p_patch%id)%fg_checklist)
+          IF (initicon_config(p_patch%id)%fg_checklist(ivar) == ' ') EXIT
+
+          curInstruction => resultVar%findInstruction(TRIM(ana_varnames_dict_oce%get( &
+          &                                                      initicon_config(p_patch%id)%fg_checklist(ivar), &
+          &                                                      linverse=.TRUE.)), opt_expand=.FALSE.)
+          ! Note that depending on the Namelist settings, not every field listed in
+          ! fg_checklist is part of the instruction list. Therefore, curInstruction
+          ! may be non-associated.
+          IF (ASSOCIATED(curInstruction) .AND. curInstruction%lOptionalFg) THEN
+            curInstruction%lOptionalFg = .FALSE.
+
+            WRITE(message_text,'(a,a,a,i2)') 'Transform ',TRIM(ana_varnames_dict_oce%get( &
+            &                                initicon_config(p_patch%id)%fg_checklist(ivar), linverse=.TRUE.)), &
+            &                               ' into a mandatory first guess field for DOM', p_patch%id
+            CALL message(routine, message_text)
+          ENDIF
+        ENDDO
+
+        ! Allow the user to override the DEFAULT settings via ana_checklist. These variables must be READ from analysis.
+        IF( lread_ana_oce ) THEN
+          ! translate GRIB2 varname to internal netcdf varname
+          ! If requested GRIB2 varname is not found in the dictionary
+          ! (i.e. due to typos) -> Model abort
+          DO ivar=1,SIZE(initicon_config(p_patch%id)%ana_checklist)
+            IF (initicon_config(p_patch%id)%ana_checklist(ivar) == ' ') EXIT
+
+            curInstruction => resultVar%findInstruction(TRIM(ana_varnames_dict_oce%get( &
+            &                                                      initicon_config(p_patch%id)%ana_checklist(ivar), &
+            &                                                      linverse=.TRUE.)))
+            curInstruction%lReadAna = .TRUE.
+            curInstruction%lRequireAna = .TRUE.
+            WRITE(message_text,'(a,a,a,i2)') 'Transform ',TRIM(ana_varnames_dict_oce%get( &
+            &                                initicon_config(p_patch%id)%ana_checklist(ivar), linverse=.TRUE.)), &
+            &                               ' into a mandatory analysis field for DOM', p_patch%id
+            CALL message(routine, message_text)
+          ENDDO
+        END IF
+
+      END FUNCTION readInstructionListOce_make
 
 
-    ! The table that is printed by this function deliberately depends on the actual read attempts and their results, 
-    ! not on `lReadFg` or `lReadAna`. This is due to the fact that there are existing discrepancies between the 
-    ! input groups and the actual read attempts made by the `fetch...()` routines in `mo_initicon_io`: 
+    ! The table that is printed by this function deliberately depends on the actual read attempts and their results,
+    ! not on `lReadFg` or `lReadAna`. This is due to the fact that there are existing discrepancies between the
+    ! input groups and the actual read attempts made by the `fetch...()` routines in `mo_initicon_io`:
     ! The table is supposed to show the reality of which data was read from where, and which inputs were used,
     ! not some hypothetical this-is-what-should-have-been-done info.
     SUBROUTINE readInstructionList_printSummary(me, jg)

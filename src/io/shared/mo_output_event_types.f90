@@ -1,19 +1,18 @@
-! Type definitions for handling of regular output steps and ready
-! file events on multiple I/O PEs.
-!
-! See "mo_output_event_handler" for a detailed description.
-!
-! -----------------------------------------------------------------------------------!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Type definitions for handling of regular output steps and ready
+! file events on multiple I/O PEs.
+!
+! See "mo_output_event_handler" for a detailed description.
 
 MODULE mo_output_event_types
   USE mtime,                 ONLY: datetime
@@ -40,7 +39,7 @@ MODULE mo_output_event_types
 
   !>  default event name (ie. events that DO NOT write ready files
   CHARACTER (LEN=*), PARAMETER :: DEFAULT_EVENT_NAME = "default"
-  
+
 
   !---------------------------------------------------------------
   ! types
@@ -125,7 +124,7 @@ MODULE mo_output_event_types
 
   !---------------------------------------------------------------
   ! DEFINITION OF EVENT STEPS
-  
+
   !> Single step of an event.
   !
   !  Events are triggered by the simulation step (INTEGER) only to
@@ -141,7 +140,7 @@ MODULE mo_output_event_types
     TYPE(t_event_step_data), ALLOCATABLE  :: event_step_data(:)               !< event data for each PE
   END TYPE t_event_step
 
-  
+
   !> List of steps for an event.
   !
   TYPE t_output_event
@@ -154,7 +153,7 @@ MODULE mo_output_event_types
 
   !---------------------------------------------------------------
   ! MPI-PARALLEL EVENTS
- 
+
   !> List of steps of an event that is performed on several PEs in
   !  parallel.
   !

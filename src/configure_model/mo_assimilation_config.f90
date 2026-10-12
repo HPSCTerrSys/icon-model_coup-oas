@@ -1,9 +1,7 @@
-! @brief configuration setup for data assimilation
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -11,25 +9,26 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! @brief configuration setup for data assimilation
+
 MODULE mo_assimilation_config
   USE mo_kind,                 ONLY: wp, i8
-  USE mo_impl_constants,       ONLY: max_dom, MODE_IAU, MODE_IAU_OLD
+  USE mo_impl_constants,       ONLY: max_dom
   USE mo_exception,            ONLY: message, message_text
-  USE mo_run_config,           ONLY: dtime,nsteps
+  USE mo_run_config,           ONLY: dtime, nsteps
   USE mo_mpi,                  ONLY: my_process_is_stdio
-  USE mo_initicon_config,      ONLY: timeshift, init_mode
   USE mo_phy_events,           ONLY: t_phyProcFast, t_phyProcGroup
   USE mo_grid_config,          ONLY: start_time, end_time, DEFAULT_ENDTIME
   USE mo_time_config,          ONLY: time_config
   USE mtime,                   ONLY: datetime, timedelta, newTimedelta, &
     &                                getPTStringFromMS, MAX_TIMEDELTA_STR_LEN, &
     &                                deallocateTimedelta, OPERATOR(+), OPERATOR(>)
-  USE mo_model_domain,         ONLY: p_patch 
+  USE mo_model_domain,         ONLY: t_patch
 
   IMPLICIT NONE
 
 
-  PUBLIC 
+  PUBLIC
 
 
   !!--------------------------------------------------------------------------
@@ -37,7 +36,7 @@ MODULE mo_assimilation_config
   !!--------------------------------------------------------------------------
 !  INTEGER, PARAMETER  :: n_noobs  = 36 !Maximum number of times with missing observations
 
-  TYPE :: t_assimilation_config 
+  TYPE :: t_assimilation_config
 
     LOGICAL :: dace_coupling      !> Invoke DACE for model equivalents of observations
     INTEGER :: dace_time_ctrl(3)  !> Steering parameters for DACE time control: start,end,step
@@ -72,18 +71,18 @@ MODULE mo_assimilation_config
       lhn_diag         ,& ! produce more detailed diagnostic output during lhn
       lhn_artif_only   ,& ! apply only artificial temperature profile instead of applying modelled tt_lheat profile
       lhn_refbias         ! apply bias correction of LHN reference precipitation
-  
+
     INTEGER ::  &
-      nlhn_start       ,& ! start of latent heat nudging period in timesteps
-      nlhn_end         ,& ! end of latent heat nudging period in timesteps
-      nlhnverif_start  ,& ! start of latent heat nudging period in timesteps
-      nlhnverif_end    ,& ! end of latent heat nudging period in timesteps
       nlhn_relax       ,& ! number of interations of horizontal filtering
       nradar           ,& ! max. number of radar stations within input data
       lhn_updt_rule    ,& ! Rule for updates of temperature/humidity/hydrometeors
       nobs_times          ! number of observation times (i.e. records in radar data file)
 
     REAL (KIND=wp)                   ::           &
+      nlhn_start        ,& ! start of latent heat nudging period in seconds
+      nlhn_end          ,& ! end of latent heat nudging period in seconds
+      nlhnverif_start   ,& ! start of latent heat nudging period in seconds
+      nlhnverif_end     ,& ! end of latent heat nudging period in seconds
       lhn_coef          ,& ! factor for reduction of lhn t-increments
       lhn_dt_obs        ,& ! time step of input data in minutes
       abs_lhn_lim       ,& ! absolute limit for lhn t-increments (used if lhn_limit lhn_limitp)
@@ -103,17 +102,17 @@ MODULE mo_assimilation_config
       bbthres           ,& ! threshold of precipitation rate used in bright band detection
       hzerolim             ! limitation of hzerocl used in bright band detection
 
-  
+
    CHARACTER (LEN=100)              ::           &
       radar_in             ,& ! directory for reading radar-files
       radardata_file       ,& ! filename of blacklist for radar data
       blacklist_file       ,& ! filename of blacklist for radar data
       height_file             ! dxheight_file_name
-  
+
    TYPE(t_phyProcFast)  :: dass_lhn   !> event for LHN
    TYPE(t_phyProcFast)  :: dass_lhn_verif   !> event for LHN
    TYPE(t_phyProcFast)  :: dass_lhn_brightband   !> event for LHN
-   TYPE(t_phyProcGroup) :: dass_g        
+   TYPE(t_phyProcGroup) :: dass_g
 
   END TYPE t_assimilation_config
 
@@ -122,15 +121,16 @@ MODULE mo_assimilation_config
 
   CONTAINS
 
-  SUBROUTINE configure_lhn(jg)
-   INTEGER, INTENT(IN) :: jg          !< patch
-   CHARACTER (LEN=255)              ::           &
-     filepath
+  SUBROUTINE configure_lhn(p_patch)
+   TYPE(t_patch),       INTENT(IN) :: p_patch
+   CHARACTER (LEN=255)  :: filepath
    LOGICAL  :: lf_exist,lb_exist,lh_exist
-   INTEGER  :: nobs,nt_end,nt_start, idt_shift
+   INTEGER  :: nobs
+   REAL(wp) :: dt_shift,nt_end,nt_start
 
 
     ! local
+    INTEGER                         :: jg
     TYPE(timedelta), POINTER        :: eventInterval    => NULL()
     TYPE(timedelta), POINTER        :: eventInterval_bb    => NULL()
     TYPE(datetime)                  :: eventEndDate_proc     ! process-specific end date
@@ -146,21 +146,13 @@ MODULE mo_assimilation_config
     TYPE(datetime)           :: eventStartDate, eventEndDate
     TYPE(timedelta), POINTER :: td_start, td_end, td_dt   => NULL()
 
-    REAL(wp)            :: dt_ass            !< assimilation time intervals
+    REAL(wp)            :: dt_ass            !< assimilation time intervals in seconds
 
+    jg = p_patch%id
 
+    dt_shift = MIN(0._wp,time_config%timeshift%dt_shift)
 
-    IF (ANY((/MODE_IAU,MODE_IAU_OLD/)==init_mode)) THEN
-       idt_shift=timeshift%dt_shift
-    ELSE
-       idt_shift=0
-    ENDIF
-
-    IF (jg > 1) THEN
-       dt_ass = (dtime/2._wp**(p_patch(jg)%level -  p_patch(1)%level))            !seconds
-    ELSE
-       dt_ass = dtime
-    ENDIF
+    dt_ass = time_config%get_model_timestep_sec(p_patch%nest_level)
 
     IF (assimilation_config(jg)%llhn .OR. assimilation_config(jg)%llhnverif) THEN
        filepath=TRIM(assimilation_config(jg)%radar_in)//TRIM(assimilation_config(jg)%radardata_file)
@@ -194,7 +186,7 @@ MODULE mo_assimilation_config
              assimilation_config(jg)%lhn_bright = lh_exist
           ENDIF
        ENDIF
-   
+
     ENDIF
 
     IF (assimilation_config(jg)%lhn_logscale) THEN
@@ -205,10 +197,10 @@ MODULE mo_assimilation_config
 
 
     nt_end = MAX(assimilation_config(jg)%nlhn_end,assimilation_config(jg)%nlhnverif_end)
-    nt_end = MIN(nt_end,INT(REAL(nsteps,wp)*dtime-idt_shift))
+    nt_end = MIN(nt_end,(REAL(nsteps,wp)*dtime-dt_shift))
     nt_start = MIN(assimilation_config(jg)%nlhn_start,assimilation_config(jg)%nlhnverif_start)
     nt_start = MIN(nt_end - 1,nt_start)
-    nobs = NINT((REAL(nt_end-nt_start,wp)+3600._wp)/(assimilation_config(jg)%lhn_dt_obs*60._wp)) ! consider one hour more to be safe
+    nobs = NINT((nt_end-nt_start+3600._wp)/(assimilation_config(jg)%lhn_dt_obs*60._wp)) ! consider one hour more to be safe
     IF (nobs > 0) THEN
       assimilation_config(jg)%nobs_times = nobs
     ELSE
@@ -220,8 +212,8 @@ MODULE mo_assimilation_config
 
     if (assimilation_config(jg)%llhnverif) assimilation_config(jg)%lhn_diag=.true.
 
-    assimilation_config(jg)%nlhn_start      = INT(dt_ass)*NINT(REAL(assimilation_config(jg)%nlhn_start,wp)/dt_ass)
-    assimilation_config(jg)%nlhnverif_start = INT(dt_ass)*NINT(REAL(assimilation_config(jg)%nlhnverif_start,wp)/dt_ass)
+    assimilation_config(jg)%nlhn_start      = dt_ass*REAL(NINT(assimilation_config(jg)%nlhn_start/dt_ass),wp)
+    assimilation_config(jg)%nlhnverif_start = dt_ass*REAL(NINT(assimilation_config(jg)%nlhnverif_start/dt_ass),wp)
 
     ! LHN event
 
@@ -241,19 +233,19 @@ MODULE mo_assimilation_config
       CALL deallocateTimedelta(td_start)
 !      domStartDate = time_config%tc_exp_startdate
       ! take care of possibe IAU-Timeshift
-      IF (timeshift%dt_shift < 0._wp) THEN
-        domStartDate = domStartDate + timeshift%mtime_shift
+      IF (time_config%timeshift%dt_shift < 0._wp) THEN
+        domStartDate = domStartDate + time_config%timeshift%mtime_shift
       ENDIF
     ENDIF
     ! Note that the model time is updated at the beginning of a timestep.
     !
-    ! by adding td_dt we make sure, that all events are triggered 
+    ! by adding td_dt we make sure, that all events are triggered
     ! during the first integration step of the given patch.
     CALL getPTStringFromMS(INT(dt_ass*1000._wp,i8), td_dt_str)
     td_dt => newTimedelta(td_dt_str)
    !
     eventStartDate = domStartDate + td_dt
-!    eventStartDate = domStartDate 
+!    eventStartDate = domStartDate
 !    CALL deallocateTimedelta(td_dt)
 
     ! compute event end date
@@ -327,19 +319,19 @@ MODULE mo_assimilation_config
       CALL deallocateTimedelta(td_start)
 !      domStartDate = time_config%tc_exp_startdate
       ! take care of possibe IAU-Timeshift
-      IF (timeshift%dt_shift < 0._wp) THEN
-        domStartDate = domStartDate + timeshift%mtime_shift
+      IF (time_config%timeshift%dt_shift < 0._wp) THEN
+        domStartDate = domStartDate + time_config%timeshift%mtime_shift
       ENDIF
     ENDIF
     ! Note that the model time is updated at the beginning of a timestep.
     !
-    ! by adding td_dt we make sure, that all events are triggered 
+    ! by adding td_dt we make sure, that all events are triggered
     ! during the first integration step of the given patch.
 !    CALL getPTStringFromMS(INT(dt_ass*1000._wp,i8), td_dt_str)
 !    td_dt => newTimedelta(td_dt_str)
    !
     eventStartDate = domStartDate + td_dt
-!    eventStartDate = domStartDate 
+!    eventStartDate = domStartDate
 !    CALL deallocateTimedelta(td_dt)
 
     ! compute event end date

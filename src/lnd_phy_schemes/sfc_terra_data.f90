@@ -1,10 +1,7 @@
-! Data module for all parametric data in the soil model "terra"!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,14 +9,15 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Data module for all parametric data in the soil model "terra"!
+
 MODULE sfc_terra_data
 
 !------------------------------------------------------------------------------
 !
 ! Modules used:
 
-USE mo_kind, ONLY:     &
-    wp           ! KIND-type parameter for real variables
+USE mo_kind, ONLY: wp
 
 !==============================================================================
 
@@ -31,84 +29,124 @@ PUBLIC           ! All constants and variables in this module are public
 
 ! Global (i.e. public) Declarations:
 
-! 1. Data arrays for properties of different soil types (array index)     
+  ! BATS parameters
+  REAL  (KIND=wp) , PARAMETER ::  &
+    crhowm     =    0.8_wp    , & !  BATS (1)
+    cdmin      =    0.25E-9_wp, & !  BATS (m**2/s)
+    cfinull    =    0.2_wp    , & !  BATS (m)
+    ckrdi      =    1.0E-5_wp , & !  BATS (m/s)
+    cdash      =    0.05_wp   , & !  BATS ((m/s)**1/2)
+    clai       =    3.0_wp    , & !  BATS
+    cparcrit   =  100.0_wp    , & !  BATS (W/m**2)
+    ctend      =  313.15_wp   , & !  BATS (K)
+    csatdef    = 4000.0_wp        !  BATS (Pa)
+
+! 1. Data arrays for properties of different soil types (array index)
 ! -------------------------------------------------------------------
- 
-  REAL  (KIND=wp) , TARGET    ::  &
-!   a) parameters describing the soil water budget
-    cporv (10), &  !  pore volume (fraction of volume)
-    cfcap (10), &  !  field capacity (fraction of volume)
-    cpwp  (10), &  !  plant wilting point (fraction of volume)
-    cadp  (10), &  !  air dryness point (fraction of volume)
-    cik2  (10), &  !  minimum infiltration rate (kg/s*m**2)
-    ckw0  (10), &  !  parameter for determination of hydr. conductivity (m/s)
-    ckw1  (10), &  !  parameter for determination of hydr. conductivity (1)
-    cdw0  (10), &  !  parameter for determination of hydr. diffusivity (m**2/s)
-    cdw1  (10), &  !  parameter for determination of hydr. diffusivity (1)
-    crock (10), &  !  rock/ice/water indicator (hydrological calculations 
-                   !  only for crock=1)
+  ! Soil type indexes
+  INTEGER, PARAMETER :: IST_ICE = 1 !< Soil type: ice.
+  INTEGER, PARAMETER :: IST_ROCK = 2 !< Soil type: rock.
+  INTEGER, PARAMETER :: IST_SAND = 3 !< Soil type: sand.
+  INTEGER, PARAMETER :: IST_SLOAM = 4 !< Soil type: sandy loam.
+  INTEGER, PARAMETER :: IST_LOAM = 5 !< Soil type: loam.
+  INTEGER, PARAMETER :: IST_CLOAM = 6 !< Soil type: clay loam.
+  INTEGER, PARAMETER :: IST_CLAY = 7 !< Soil type: clay.
+  INTEGER, PARAMETER :: IST_PEAT = 8 !< Soil type: peat.
+  INTEGER, PARAMETER :: IST_SEAWTR = 9 !< Soil type: sea water.
+  INTEGER, PARAMETER :: IST_SEAICE = 10 !< Soil type: sea ice.
+  INTEGER, PARAMETER :: IST_NUM = 10 !< Number of soil types.
 
-!   b) parameters describing the soil heat budget
-    cdz1  (10), &  !  top layer thickness (EFR-method)
-    crhoc (10), &  !  soil heat capacity  (J/K*m**3)
-    cala0 (10), &  !  parameters for the determination of
-    cala1 (10), &  !      the soil heat conductivity (W/(K*m))
-    csalb1(10), csalb2(10), &  !  options for diffuse solar albedo; selection is made in mo_radiation_nml
-    csalbw(10), &  !  slope of solar albedo with respect to soil water content     
+  ! Scheme IDs
+  !> BATS bare-soil evaporation.
+  INTEGER, PARAMETER :: EVSL_BATS = 2
+  !> Noilhan and Planton (1989) bare-soil evaporation.
+  INTEGER, PARAMETER :: EVSL_NP89 = 3
+  !> Resistance-based formulation [Schulz & Vogel (2020)].
+  INTEGER, PARAMETER :: EVSL_RESIST = 4
+  !> Resistance-based formulation with `c_soil=2` and `cr_bsmin` as tuning parameter.
+  INTEGER, PARAMETER :: EVSL_RESIST_RBS = 5
 
-!   c) additional parameters for the BATS scheme (Dickinson)
-    ck0di (10), &  !  (m/s)
-    cbedi (10), &  !  (1)
-    clgk0 (10), &  !  auxiliary variable
+  !> Heat conductivity based on assumption of a soil water content which is equal to the average
+  !! between wilting point and field capacity.
+  INTEGER, PARAMETER :: HCOND_AVG = 1
+  !> Heat conductivity based on Peters-Lidard et al. (1998)
+  INTEGER, PARAMETER :: HCOND_PL98 = 2
+  !> Heat conductivity based on Peters-Lidard et al. (1998) with modified conductivity in upper soil
+  !! due to vegetation.
+  INTEGER, PARAMETER :: HCOND_PL98_VEG = 3
 
-!   d) additional parameters for soil water content dependent freezing/melting
-    csandf(10), &  !  mean fraction of sand (weight percent)
-    cclayf(10)     !  mean fraction of clay (weight percent)
- 
-  REAL  (KIND=wp) , POINTER ::  csalb(:)
+  INTEGER, PARAMETER :: TRVG_BATS = 2 !< BATS transpiration.
+  INTEGER, PARAMETER :: TRVG_BATS_EXT = 3 !< Extended BATS transpiration scheme.
 
-  !$ACC DECLARE COPYIN(clgk0) CREATE(csalb)
+  INTEGER, PARAMETER :: ROOT_CONSTANT = 1 !< Constant root density.
+  INTEGER, PARAMETER :: ROOT_EXPONENTIAL = 2 !< Exponentially decaying root density.
 
-  ! Initialization of soil type parameters except cdz1 
-  ! (being calculated during execution)
+  INTEGER, PARAMETER :: itype_mire = 0 !< Switch for mire parameterization
 
-  ! soil type:   ice    rock    sand    sandy   loam   clay      clay    peat    sea     sea  
+  ! Initialization of soil type parameters
+  INTEGER, PRIVATE :: i
+
+  ! soil type:   ice    rock    sand    sandy   loam   clay      clay    peat    sea     sea
   ! (by index)                          loam           loam                     water    ice
 
-  DATA  cporv / 1.E-10_wp, 1.E-10_wp, 0.364_wp  , 0.445_wp  , 0.455_wp  , 0.475_wp  , 0.507_wp  , 0.863_wp  , 1.E-10_wp, 1.E-10_wp /
-  DATA  cfcap / 1.E-10_wp, 1.E-10_wp, 0.196_wp  , 0.260_wp  , 0.340_wp  , 0.370_wp  , 0.463_wp  , 0.763_wp  , 1.E-10_wp, 1.E-10_wp /
-  DATA  cpwp  / 0.0_wp   , 0.0_wp   , 0.042_wp  , 0.100_wp  , 0.110_wp  , 0.185_wp  , 0.257_wp  , 0.265_wp  , 0.0_wp   ,  0.0_wp   /
-  DATA  cadp  / 0.0_wp   , 0.0_wp   , 0.012_wp  , 0.030_wp  , 0.035_wp  , 0.060_wp  , 0.065_wp  , 0.098_wp  , 0.0_wp   ,  0.0_wp   /
-  DATA  crhoc / 1.92E6_wp, 2.10E6_wp, 1.28E6_wp , 1.35E6_wp , 1.42E6_wp , 1.50E6_wp , 1.63E6_wp , 0.58E6_wp , 4.18E6_wp, 1.92E6_wp /
-  DATA  cik2  / 0.0_wp   , 0.0_wp   , 0.0035_wp , 0.0023_wp , 0.0010_wp , 0.0006_wp , 0.0001_wp , 0.0002_wp , 0.0_wp   ,  0.0_wp   /
-  DATA  ckw0  / 0.0_wp   , 0.0_wp   , 479.E-7_wp, 943.E-8_wp, 531.E-8_wp, 764.E-9_wp, 85.E-9_wp , 58.E-9_wp , 0.0_wp   ,  0.0_wp   /
-  DATA  ckw1  / 0.0_wp   , 0.0_wp   , -19.27_wp , -20.86_wp , -19.66_wp , -18.52_wp , -16.32_wp , -16.48_wp , 0.0_wp   ,  0.0_wp   /
-  DATA  cdw0  / 0.0_wp   , 0.0_wp   , 184.E-7_wp, 346.E-8_wp, 357.E-8_wp, 118.E-8_wp, 442.E-9_wp, 106.E-9_wp, 0.0_wp   ,  0.0_wp   /
-  DATA  cdw1  / 0.0_wp   , 0.0_wp   , -8.45_wp  , -9.47_wp  , -7.44_wp  , -7.76_wp  , -6.74_wp  , -5.97_wp  , 0.0_wp   ,  0.0_wp   /
-  DATA  crock / 0.0_wp   , 0.0_wp   , 1.0_wp    , 1.0_wp    , 1.0_wp    , 1.0_wp    , 1.0_wp    , 1.0_wp    , 0.0_wp   ,  0.0_wp   /
-  DATA  cala0 / 2.26_wp  , 2.41_wp  , 0.30_wp   , 0.28_wp   , 0.25_wp   , 0.21_wp   , 0.18_wp   , 0.06_wp   , 1.0_wp   ,  2.26_wp  /
-  DATA  cala1 / 2.26_wp  , 2.41_wp  , 2.40_wp   , 2.40_wp   , 1.58_wp   , 1.55_wp   , 1.50_wp   , 0.50_wp   , 1.0_wp   ,  2.26_wp  /
-  DATA  csalb1/ 0.70_wp  , 0.30_wp  , 0.30_wp   , 0.25_wp   , 0.25_wp   , 0.25_wp   , 0.25_wp   , 0.20_wp   , 0.07_wp  ,  0.70_wp  /
-  DATA  csalb2/ 0.70_wp  , 0.30_wp  , 0.30_wp   , 0.25_wp   , 0.25_wp   , 0.25_wp   , 0.25_wp   , 0.20_wp   , 0.06_wp  ,  0.70_wp  /
-  DATA  csalbw/ 0.00_wp  , 0.00_wp  , 0.44_wp   , 0.27_wp   , 0.24_wp   , 0.23_wp   , 0.22_wp   , 0.10_wp   , 0.00_wp  ,  0.00_wp  /
-  DATA  ck0di / 1.E-4_wp , 1.E-4_wp , 2.E-4_wp  , 2.E-5_wp  , 6.E-6_wp  , 2.E-6_wp  , 1.E-6_wp  , 1.5E-6_wp , 0.00_wp  ,  0.00_wp  /
-  DATA  cbedi / 1.00_wp  , 1.00_wp  , 3.5_wp    , 4.8_wp    , 6.1_wp    , 8.6_wp    , 10.0_wp   , 9.0_wp    , 0.00_wp  ,  0.00_wp  /
-  DATA  csandf/ 0.0_wp   , 0.0_wp   , 90._wp    , 65._wp    , 40._wp    , 35._wp    , 15._wp    , 90._wp    , 0.00_wp  ,  0.00_wp /
-  DATA  cclayf/ 0.0_wp   , 0.0_wp   , 5.0_wp    , 10._wp    , 20._wp    , 35._wp    , 70._wp    , 5.0_wp    , 0.00_wp  ,  0.00_wp /
- 
-  !$ACC DECLARE COPYIN(cporv, cfcap, cpwp, cadp, cik2, ckw0, ckw1, cdw0, cdw1, crock, cala0, cala1)
-  !$ACC DECLARE COPYIN(csalb1, csalb2, csalbw, crhoc, ck0di, cbedi, csandf, cclayf)
-!==============================================================================
-! Soiltype IDs
-!------------------------------------------------------------------------------
-  INTEGER, PARAMETER :: ist_seawtr = 9     ! ID of soiltype 'sea water'
-  INTEGER, PARAMETER :: ist_seaice = 10    ! ID of soiltype 'sea ice'
+  REAL(wp), PARAMETER, DIMENSION(IST_NUM) :: &
+  ! a) parameters describing the soil water budget
+    !> pore volume (fraction of volume)
+    cporv = [ 1.E-10_wp, 1.E-10_wp, 0.364_wp  , 0.445_wp  , 0.455_wp  , 0.475_wp  , 0.507_wp  , 0.863_wp  , 1.E-10_wp, 1.E-10_wp], &
+    !> field capacity (fraction of volume)
+    cfcap = [ 1.E-10_wp, 1.E-10_wp, 0.196_wp  , 0.260_wp  , 0.340_wp  , 0.370_wp  , 0.463_wp  , 0.763_wp  , 1.E-10_wp, 1.E-10_wp], &
+    !> plant wilting point (fraction of volume)
+    cpwp  = [ 0.0_wp   , 0.0_wp   , 0.042_wp  , 0.100_wp  , 0.110_wp  , 0.185_wp  , 0.257_wp  , 0.265_wp  , 0.0_wp   ,  0.0_wp  ], &
+    !> air dryness point (fraction of volume)
+    cadp  = [ 0.0_wp   , 0.0_wp   , 0.012_wp  , 0.030_wp  , 0.035_wp  , 0.060_wp  , 0.065_wp  , 0.098_wp  , 0.0_wp   ,  0.0_wp  ], &
+    !> minimum infiltration rate (kg/s*m**2)
+    cik2  = [ 0.0_wp   , 0.0_wp   , 0.0035_wp , 0.0023_wp , 0.0010_wp , 0.0006_wp , 0.0001_wp , 0.0002_wp , 0.0_wp   ,  0.0_wp  ], &
+    !> parameter for determination of hydr. conductivity (m/s)
+    ckw0  = [ 0.0_wp   , 0.0_wp   , 479.E-7_wp, 943.E-8_wp, 531.E-8_wp, 764.E-9_wp, 85.E-9_wp , 58.E-9_wp , 0.0_wp   ,  0.0_wp  ], &
+    !> parameter for determination of hydr. conductivity (1)
+    ckw1  = [ 0.0_wp   , 0.0_wp   , -19.27_wp , -20.86_wp , -19.66_wp , -18.52_wp , -16.32_wp , -16.48_wp , 0.0_wp   ,  0.0_wp  ], &
+    !> parameter for determination of hydr. diffusivity (m**2/s)
+    cdw0  = [ 0.0_wp   , 0.0_wp   , 184.E-7_wp, 346.E-8_wp, 357.E-8_wp, 118.E-8_wp, 442.E-9_wp, 106.E-9_wp, 0.0_wp   ,  0.0_wp  ], &
+    !> parameter for determination of hydr. diffusivity (1)
+    cdw1  = [ 0.0_wp   , 0.0_wp   , -8.45_wp  , -9.47_wp  , -7.44_wp  , -7.76_wp  , -6.74_wp  , -5.97_wp  , 0.0_wp   ,  0.0_wp  ], &
+    !> rock/ice/water indicator (hydrological calculations only for crock=1)
+    crock = [ 0.0_wp   , 0.0_wp   , 1.0_wp    , 1.0_wp    , 1.0_wp    , 1.0_wp    , 1.0_wp    , 1.0_wp    , 0.0_wp   ,  0.0_wp  ], &
+  ! b) parameters describing the soil heat budget
+    !> soil heat capacity  (J/K*m**3)
+    crhoc = [ 1.92E6_wp, 2.10E6_wp, 1.28E6_wp , 1.35E6_wp , 1.42E6_wp , 1.50E6_wp , 1.63E6_wp , 0.58E6_wp , 4.18E6_wp, 1.92E6_wp], &
+    !> parameter for the determination of the soil heat conductivity (W/(K*m))
+    cala0 = [ 2.26_wp  , 2.41_wp  , 0.30_wp   , 0.28_wp   , 0.25_wp   , 0.21_wp   , 0.18_wp   , 0.06_wp   , 1.0_wp   ,  2.26_wp ], &
+    !> parameter for the determination of the soil heat conductivity (W/(K*m))
+    cala1 = [ 2.26_wp  , 2.41_wp  , 2.40_wp   , 2.40_wp   , 1.58_wp   , 1.55_wp   , 1.50_wp   , 0.50_wp   , 1.0_wp   ,  2.26_wp ], &
+    !> slope of solar albedo with respect to soil water content
+    csalbw = [0.00_wp  , 0.00_wp  , 0.44_wp   , 0.27_wp   , 0.24_wp   , 0.23_wp   , 0.22_wp   , 0.10_wp   , 0.00_wp  ,  0.00_wp ], &
+  ! c) additional parameters for soil water content dependent freezing/melting
+    !> mean fraction of sand (weight percent)
+    csandf = [0.0_wp   , 0.0_wp   , 90._wp    , 65._wp    , 40._wp    , 35._wp    , 15._wp    , 90._wp    , 0.00_wp  ,  0.00_wp ], &
+    !> mean fraction of clay (weight percent)
+    cclayf = [0.0_wp   , 0.0_wp   , 5.0_wp    , 10._wp    , 20._wp    , 35._wp    , 70._wp    , 5.0_wp    , 0.00_wp  ,  0.00_wp ], &
+  ! d) additional parameters for the BATS scheme (Dickinson)
+    !>  (m/s)
+    ck0di = [ 1.E-4_wp , 1.E-4_wp , 2.E-4_wp  , 2.E-5_wp  , 6.E-6_wp  , 2.E-6_wp  , 1.E-6_wp  , 1.5E-6_wp , 0.00_wp  ,  0.00_wp ], &
+    !>  (1)
+    cbedi = [ 1.00_wp  , 1.00_wp  , 3.5_wp    , 4.8_wp    , 6.1_wp    , 8.6_wp    , 10.0_wp   , 9.0_wp    , 0.00_wp  ,  0.00_wp ], &
+    !>  auxiliary variable
+    clgk0 = [ (LOG10(MAX(1.0E-6_wp,ck0di(i)/ckrdi)), i = 1, IST_NUM) ]
+  ! options for diffuse solar albedo; selection is made in mo_radiation_nml.
+  ! These cannot be PARAMETERs because the pointer below points to one of them.
+  REAL(wp), TARGET, DIMENSION(IST_NUM) :: &
+    csalb1 = [0.70_wp  , 0.30_wp  , 0.30_wp   , 0.25_wp   , 0.25_wp   , 0.25_wp   , 0.25_wp   , 0.20_wp   , 0.07_wp  ,  0.70_wp ], &
+    csalb2 = [0.70_wp  , 0.30_wp  , 0.30_wp   , 0.25_wp   , 0.25_wp   , 0.25_wp   , 0.25_wp   , 0.20_wp   , 0.06_wp  ,  0.70_wp ]
+  !$ACC DECLARE COPYIN(csalb1, csalb2)
 
+  !> Diffuse solar albedo (IST_NUM) [1].
+  REAL(wp), POINTER :: csalb(:)
+  !$ACC DECLARE CREATE(csalb)
 
-! 2. Additional parameters for the soil model                             
+! 2. Additional parameters for the soil model
 ! -------------------------------------------------------------------
 
-  REAL  (KIND=wp)           ::  &
+  REAL  (KIND=wp), PARAMETER :: &
 !==============================================================================
 
     csalb_p        = 0.15_wp  , & !  solar albedo of ground covered by plants
@@ -123,8 +161,8 @@ PUBLIC           ! All constants and variables in this module are public
     csalb_snow_fe  = 0.270_wp , &  ! solar albedo of snow for surfaces with evergreen forest
     csalb_snow_fd  = 0.320_wp , &  ! solar albedo of snow for surfaces with deciduous forest
 
-    ctalb          = 0.004_wp , & !  thermal albedo ( of all soil types )   
-    cf_snow        = 0.0150_wp, & !  parameter for the calculation of the 
+    ctalb          = 0.004_wp , & !  thermal albedo ( of all soil types )
+    cf_snow        = 0.0150_wp, & !  parameter for the calculation of the
                                   !  fractional snow coverage
   ! for the multi-layer soil model
     cwhc       = 0.04_wp      , & !  water holding capacity of snow ()
@@ -136,33 +174,35 @@ PUBLIC           ! All constants and variables in this module are public
     cf_w       = 0.0010_wp    , & !  parameter for the calculation of the
                                   !  fractional water coverage
 
-    csvoro     = 1.0000_wp    , & !  parameter to estimate the subgrid-scale 
+    csvoro     = 1.0000_wp    , & !  parameter to estimate the subgrid-scale
                                   !  variation of orography
-    cik1       = 0.0020_wp    , & !  parameter for the determination of the 
+    cik1       = 0.0020_wp    , & !  parameter for the determination of the
                                   !  maximum infiltaration
-    ctau_i     = 7200.0_wp    , & !  time constant for the drainage from the interception storage
     cakw       = 0.8000_wp    , & !  parameter for averaging the water contents
-                                  !  of the top and middle soil water layers to 
-                                  !  calculate the hydraulic diffusivity and 
+                                  !  of the top and middle soil water layers to
+                                  !  calculate the hydraulic diffusivity and
                                   !  conductiviy
 
     ctau1      = 1.0000_wp    , & !  first adjustment time period in EFR-method
     ctau2      = 5.0000_wp    , & !  second adjustment time period in EFR-method
-    chc_i      = 2100.0_wp    , & !  heat capacity of ice     
-    chc_w      = 4180.0_wp    , & !  heat capacity of water     
+    chc_i      = 2100.0_wp    , & !  heat capacity of ice
+    chc_w      = 4180.0_wp    , & !  heat capacity of water
 
-    cdzw12     = 0.1000_wp    , & !  thickness of upper soil water layer in 
-                                  !  two-layer model         
-    cdzw22     = 0.9000_wp    , & !  thickness of lower soil water layer in 
-                                  !  two-layer model      
-    cdzw13     = 0.0200_wp    , & !  thickness of upper soil water layer in 
+    cdzw12     = 0.1000_wp    , & !  thickness of upper soil water layer in
+                                  !  two-layer model
+    cdzw22     = 0.9000_wp    , & !  thickness of lower soil water layer in
+                                  !  two-layer model
+    cdzw13     = 0.0200_wp    , & !  thickness of upper soil water layer in
                                   !  three-layer model
-    cdzw23     = 0.0800_wp    , & !  thickness of middle soil water layer in 
-                                  !  three-layer model 
-    cdzw33     = 0.9000_wp        !  thickness of lower soil water layer in 
+    cdzw23     = 0.0800_wp    , & !  thickness of middle soil water layer in
+                                  !  three-layer model
+    cdzw33     = 0.9000_wp        !  thickness of lower soil water layer in
                                   !  three-layer model
 
-  REAL  (KIND=wp)           ::  &
+  ! Monolithic TERRA modifies this
+  REAL (KIND=wp) :: ctau_i = 7200.0_wp !< time constant for the drainage from the interception storage
+
+  REAL (KIND=wp), PARAMETER ::  &
     cdsmin     = 0.0100_wp    , & !  minimum snow depth
     crhosmin   = 500.00_wp    , & !  minimum density of snow
     crhosmax   = 800.00_wp    , & !  maximum density of snow
@@ -172,29 +212,19 @@ PUBLIC           ! All constants and variables in this module are public
     crhosmaxf  = 150.00_wp    , & !  maximum density of fresh snow
     crhogminf  = 100.00_wp    , & !  minimum density of fresh graupel / convective snow
     crhogmaxf  = 200.00_wp    , & !  maximum density of fresh graupel / convective snow
-    crhosmint  =  0.125_wp    , & !  value of time constant for ageing 
+    crhosmint  =  0.125_wp    , & !  value of time constant for ageing
                                   !  of snow at csnow_tmin (8 days)
-    crhosmaxt  =   0.40_wp    , & !  maximum value of time constant for ageing 
+    crhosmaxt  =   0.40_wp    , & !  maximum value of time constant for ageing
                                   !  of snow
     crhosmax_tmin = 200.00_wp , & ! maximum density of snow at csnow_tmin
-    csnow_tmin = 258.15_wp    , & !  lower threshold temperature of snow for 
-                                  !  ageing and fresh snow density computation 
+    csnow_tmin = 258.15_wp    , & !  lower threshold temperature of snow for
+                                  !  ageing and fresh snow density computation
                                   !  ( = 273.15-15.0)
     crhos_dw   = 300.00_wp    , & !  change of snow density with water content
     calasmin   = 0.2000_wp    , & !  minimum heat conductivity of snow (W/m K)
     calasmax   = 1.5000_wp    , & !  maximum heat conductivity of snow (W/m K)
     calas_dw   = 1.3000_wp    , & !  change of snow heat conductivity with
                                   !  water content                (W/(m**2) K)
-   
-    crhowm     =    0.8_wp    , & !  BATS (1)
-    cdmin      =    0.25E-9_wp, & !  BATS (m**2/s)
-    cfinull    =    0.2_wp    , & !  BATS (m)
-    ckrdi      =    1.0E-5_wp , & !  BATS (m/s)
-    cdash      =    0.05_wp   , & !  BATS ((m/s)**1/2)
-    clai       =    3.0_wp    , & !  BATS
-    cparcrit   =  100.0_wp    , & !  BATS (W/m**2)
-    ctend      =  313.15_wp   , & !  BATS (K)
-    csatdef    = 4000.0_wp    , & !  BATS (Pa)
 
     !Minimum and maximum value of stomatal resistance (s/m)
     !used by the Pen.-Mont. method for vegetation transpiration
@@ -217,31 +247,31 @@ PUBLIC           ! All constants and variables in this module are public
 ! 4. Variables for TERRA_URB
 ! --------------------------
 
-  ! Default urban fabric parameters are derived according to literature. 
-  ! They are obtained/tested for 
-  !      Toulouse, Basel (Wouters et al., 2015), 
-  !      Paris (De Ridder et al., 2013; 
-  !      Sarkar and De Ridder, 2010; 
-  !      Demuzere et al., 2008), 
+  ! Default urban fabric parameters are derived according to literature.
+  ! They are obtained/tested for
+  !      Toulouse, Basel (Wouters et al., 2015),
+  !      Paris (De Ridder et al., 2013;
+  !      Sarkar and De Ridder, 2010;
+  !      Demuzere et al., 2008),
 
-  REAL  (KIND=wp) ::       &
+  REAL  (KIND=wp), PARAMETER ::       &
     ctalb_bm = 0.08_wp   , & !  default effective thermal albedo of building/road environment
 
-    ! csalb_eff_uf = 0.80_wp,   & ! correction factor for effective albedo induced by the 
-    !                             ! urban fabric (street canyons). 
-    ! ! This value is based on observations and monte-carlo simulations, taking H/W ratio of 1.0 
-    ! ! and roof fraction of 0.5, see Pawlak et al. 
+    ! csalb_eff_uf = 0.80_wp,   & ! correction factor for effective albedo induced by the
+    !                             ! urban fabric (street canyons).
+    ! ! This value is based on observations and monte-carlo simulations, taking H/W ratio of 1.0
+    ! ! and roof fraction of 0.5, see Pawlak et al.
     ! ! ????: http://nargeo.geo.uni.lodz.pl/~icuc5/text/P_4_6.pdf. csalb_eff_uf = (20% + 15%)/2
 
-    csalb_bm = 0.213_wp  , & ! default short-wave albedo of building/road materials 
+    csalb_bm = 0.213_wp  , & ! default short-wave albedo of building/road materials
                              ! in the urban fabric
-      ! csalb_bm is chosen in such a way that the effective albedo for a dense urban 
+      ! csalb_bm is chosen in such a way that the effective albedo for a dense urban
       ! environment csalb_bm * csalb_eff_uf is equal to 0.17
 
-  ! Default surface area index of buildings/street environment. This is esimated from the 
-  ! squared thermal inertia = 3.8E6 (for Paris, see De Ridder et al.,2013) estimated from 
-  ! model simulations divided by the building material parameters below estimates 
-  ! c_rhoc_bm * c_ala_bm 
+  ! Default surface area index of buildings/street environment. This is esimated from the
+  ! squared thermal inertia = 3.8E6 (for Paris, see De Ridder et al.,2013) estimated from
+  ! model simulations divided by the building material parameters below estimates
+  ! c_rhoc_bm * c_ala_bm
 
     ! c_ai_uf = 2.0_wp,    &
     c_uf_h  = 15._wp     , & ! default height of building elements in urban fabric (metre)
@@ -252,15 +282,15 @@ PUBLIC           ! All constants and variables in this module are public
   ! default building/road 'material' properties...
 
     ! Value of 'concrete' is taken (see engineering-toolbox.com)
-    c_rhoc_bm = 1.74E6_wp, & ! default specific heat times density of buildings, 
+    c_rhoc_bm = 1.74E6_wp, & ! default specific heat times density of buildings,
 
-    !  Value of 'medium concrete' is taken (higher boundary, as average value for 
+    !  Value of 'medium concrete' is taken (higher boundary, as average value for
     !  concrete in,  see engineerintoolbox.com)
-    c_ala_bm  = 0.87_wp  , & ! default building material heat conductivity: 
-    c_isa_runoff = 1.0_wp, & ! default fraction of water exiting from the impervious 
-                               ! surface leading to runoff. The remainder fraction is (potentially) 
-                               ! infiltrated in the neighbouring natural soil (switched off by default). 
-                               ! Some addaptation strategies (such as infiltration of roof water) 
+    c_ala_bm  = 0.87_wp  , & ! default building material heat conductivity:
+    c_isa_runoff = 1.0_wp, & ! default fraction of water exiting from the impervious
+                               ! surface leading to runoff. The remainder fraction is (potentially)
+                               ! infiltrated in the neighbouring natural soil (switched off by default).
+                               ! Some addaptation strategies (such as infiltration of roof water)
                                ! will lead to values less than 1
     c_isa_delt = 0.12_wp , & ! The maximum wet-surface fraction delta_max, see Wouters et al., 2015
     cwisamax = 1.31E-3_wp, & ! Maximum amount of water that can be stored by impervious surfaces  (mH2O)
@@ -282,6 +312,7 @@ PUBLIC           ! All constants and variables in this module are public
 ! -------------------------------
 
   LOGICAL                   ::  &
+
     lsoilinit_dfi = .FALSE.         ! initialize soil after dfi forward launching
 
 ! 6. Epsilons (security constants)
@@ -308,8 +339,8 @@ PUBLIC           ! All constants and variables in this module are public
     ! temperatures up to 500K.
     eps_temp = MAX(1.0E-6_wp,500.0_wp*EPSILON(1.0_wp)), &
 
-    ! Extremely small value in order to prevent a floating point underflow 
-    ! in double precision.  
+    ! Extremely small value in order to prevent a floating point underflow
+    ! in double precision.
     eps_nounderflow = 1.0E-5_wp * EPSILON(1.0_wp)
 
 
@@ -324,6 +355,6 @@ PUBLIC           ! All constants and variables in this module are public
     b_sand     = -0.9_wp,        &
     b_org      = -1.0_wp
 
-
+  REAL(wp), PARAMETER :: rho_i = 910.0_wp !< Density of solid ice (soil model) [kg/m**3].
 
 END MODULE sfc_terra_data

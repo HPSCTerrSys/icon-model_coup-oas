@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #
 set -e
@@ -55,7 +56,7 @@ MODELDIR=~/icon-aes/
 #####MODELDIR=/home/zmaw/m214091/contrib_quick/
 #######################################################
 #
-# cell=filled triangles cont=filled contour 
+# cell=filled triangles cont=filled contour
 # default= 1: model=cell, ERAinterim=cont, model-ERAinterim=cont
 default=1
 # otherwise default = 0
@@ -74,7 +75,7 @@ export ERAystrt
 echo ERAystrt path $ERAystrt
 export ERAylast
 echo ERAylast path $ERAylast
-# era_RES= atmospheric grid resolution 63 
+# era_RES= atmospheric grid resolution 63
 #          (used for ERAinterim-data and table program)
 era_RES=63
 # oce_RES= ocean grid resolution GR15 GR30 TP04 TP10
@@ -110,7 +111,7 @@ cd ${PLTDIR}
 pwd
 
 
-# Load modules 
+# Load modules
 MODULES=
 
     case `hostname` in
@@ -132,7 +133,7 @@ MODULES=
     module unload ncl
     module load $MODULES
 
-which cdo 
+which cdo
 which ncl
 
 
@@ -143,7 +144,7 @@ then
 
 echo $TYP $DATDIR $NAME $EXP $YY1 $YY2
 
-  ${QUELLE}/TABLE.job $TYP $NAME $EXP $YY1 $YY2 $DATDIR 
+  ${QUELLE}/TABLE.job $TYP $NAME $EXP $YY1 $YY2 $DATDIR
 
 
 fi
@@ -172,7 +173,7 @@ eof00
 #---prepare seasonal amd timaverage from 2d-ERA-iterim
 if [ ! -s "ERAin_${atm_RES}_atm_2d_${ERAystrt}_${ERAylast}_${TYP}.nc" ]
 then
- ${QUELLE}/PREPAREera $ERAystrt $ERAylast $TYP $atm_RES 
+ ${QUELLE}/PREPAREera $ERAystrt $ERAylast $TYP $atm_RES
 fi
 
 
@@ -223,7 +224,7 @@ cp ${QUELLE}/partab .
 if [ ! -s "ERAin_T63_atm_3d_zon_${ERAystrt}_${ERAylast}_${TYP}.nc" -o \
      ! -s "ERAin_T63L47_atm_3d_zon_${ERAystrt}_${ERAylast}_${TYP}.nc" ]
 then
- ${QUELLE}/PREPAREera_3d $ERAystrt $ERAylast $TYP $atm_RES 
+ ${QUELLE}/PREPAREera_3d $ERAystrt $ERAylast $TYP $atm_RES
 fi
 
 #---prepare seasonal amd timaverage from 2d-ERA-iterim
@@ -233,7 +234,7 @@ then
 fi
 
 #---
-${QUELLE}/PREPAREatm_3d_logp $TYP $NAME $atm_RES $era_RES $ERAylast $LEV $DATDIR 
+${QUELLE}/PREPAREatm_3d_logp $TYP $NAME $atm_RES $era_RES $ERAylast $LEV $DATDIR
 
 if [ "$PAGE" = "1" ]
 then
@@ -251,12 +252,12 @@ ${QUELLE}/PREPAREatm_3d $TYP $NAME $atm_RES $era_RES $ERAylast $DATDIR
 
 if [ "$PAGE" = "1" ]
 then
-  nclsh  ${QUELLE}/atm_3d_linp_page.ncl 
+  nclsh  ${QUELLE}/atm_3d_linp_page.ncl
   nclsh  ${QUELLE}/atm_3d_map_page.ncl -default=${default} -cell=${cell}
 fi
 if [ "$SINGLE" = "1" ]
 then
-  nclsh  ${QUELLE}/atm_3d_linp_single.ncl 
+  nclsh  ${QUELLE}/atm_3d_linp_single.ncl
   nclsh  ${QUELLE}/atm_3d_map_single.ncl -default=${default} -cell=${cell}
 fi
 
@@ -283,10 +284,10 @@ exit
 #
 # YY1= start date, appears in the caption of the plots
 # YY2= end date, appears in the caption of the plots
-#                                
-#      
+#
+#
 # NAME= XXX name of data files (XXX_atm_2d_ml.nc and XXX_atm_3d_ml.nc)
-# WORKDIR= working directory 
+# WORKDIR= working directory
 # DATDIR = directory for input data XXX_atm_2d_ml.nc and XXX_atm_3d_ml.nc
 # MODELDIR= model directory
 #
@@ -299,30 +300,30 @@ exit
 #
 #       the plot program expects the following two files:
 #               XXX_atm_2d_ml.nc (surface data, containing at least:
-#                           variable: 
+#                           variable:
 #                                 clwvi Liquid water + ice content
-#                                 clt   total cloud cover     
-#                                 psl   sea level pressure    
-#                                 tas   2 m temperature       
-#                                 ts    surface temperature   
-#                                 tauu  zonal wind stress     
-#                                 prw   column water vapor    
+#                                 clt   total cloud cover
+#                                 psl   sea level pressure
+#                                 tas   2 m temperature
+#                                 ts    surface temperature
+#                                 tauu  zonal wind stress
+#                                 prw   column water vapor
 #                                       vertical integral of cloud liquid water
-#                                 pr    total precipitation   
-#                                                          
-#       the interpolation from model level to pressure level computes this programm automatically 
-# 
-#              XXX_atm_3d_ml.nc (atmosphere data, pressure levels 
+#                                 pr    total precipitation
+#
+#       the interpolation from model level to pressure level computes this programm automatically
+#
+#              XXX_atm_3d_ml.nc (atmosphere data, pressure levels
 #                         in hPa:  1000,925,850,775,700,600,500,400,300,250,
 #                                   200,150,100,70,50,30,10
 #                         containing at least:
-#                             variable: ta  temperature           
-#                                       ua  zonal wind            
-#                                       va  meridional wind       
-#                                       hus specific humidity     
+#                             variable: ta  temperature
+#                                       ua  zonal wind
+#                                       va  meridional wind
+#                                       hus specific humidity
 #                                           velocity potential
-#                                       clw cloud liquid water    
-#                                       cli cloud ice             
+#                                       clw cloud liquid water
+#                                       cli cloud ice
 #                                       zg  geopotential height
 #                                       hur relative humidity
 #                                       cl  cloud cover
@@ -334,10 +335,9 @@ exit
 #                         13239,11066,9102,7406,5964,4752,3743,2914,2235,1685,
 #                         1245,901,637,440,296,193,122,74,43,23,11,4,1
 #
-#                         
+#
 #                         containing at least:
 #                             variable: ta  temperature
 #                                       ua  zonal wind
 #                                       va  meridional wind
-#        
-
+#

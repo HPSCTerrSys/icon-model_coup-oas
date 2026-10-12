@@ -1,16 +1,15 @@
-! Contains the setup of the sleve coordinate
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the setup of the sleve coordinate
 
 MODULE mo_sleve_nml
 
@@ -34,7 +33,7 @@ MODULE mo_sleve_nml
     &                               config_decay_exp     => decay_exp    , &
     &                               config_flat_height   => flat_height  , &
     &                               config_stretch_fac   => stretch_fac  , &
-    &                               config_lread_smt     => lread_smt 
+    &                               config_lread_smt     => lread_smt
   USE mo_nml_annotate,        ONLY: temp_defaults, temp_settings
 
   IMPLICIT NONE
@@ -64,23 +63,23 @@ MODULE mo_sleve_nml
 
   ! c) Parameter for reading in smoothed topography
   LOGICAL :: lread_smt
- 
+
   NAMELIST /sleve_nml/ min_lay_thckn, max_lay_thckn, htop_thcknlimit, top_height,         &
                        decay_scale_1, decay_scale_2, decay_exp, flat_height, stretch_fac, &
                        lread_smt, itype_laydistr, nshift_above_thcklay
 
 CONTAINS
   !-------------------------------------------------------------------------
-  !! Read Namelist for SLEVE coordinate. 
+  !! Read Namelist for SLEVE coordinate.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for SLEVE coordinate
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)    
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_sleve_namelist( filename )
 
@@ -90,7 +89,7 @@ CONTAINS
     CHARACTER(len=*), PARAMETER :: routine = 'mo_sleve_nml:read_sleve_namelist'
 
     !-----------------------
-    ! 1. default settings   
+    ! 1. default settings
     !-----------------------
 
     ! a) Parameters determining the distribution of model layers
@@ -101,21 +100,21 @@ CONTAINS
     htop_thcknlimit = 15000._wp   ! Height below which the layer thickness must not exceed max_lay_thckn
     nshift_above_thcklay = 0      ! No layer index shift
     top_height      = 23500._wp   ! Height of model top
-    stretch_fac     = 1._wp       ! Scaling factor for stretching/squeezing 
+    stretch_fac     = 1._wp       ! Scaling factor for stretching/squeezing
                                   ! the model layer distribution
 
     ! b) Parameters setting up the decay function of the topographic signal
     decay_scale_1   = 4000._wp    ! Decay scale of large-scale topography component
     decay_scale_2   = 2500._wp    ! Decay scale of small-scale topography component
     decay_exp       = 1.2_wp      ! Exponent for decay function
-    flat_height     = 16000._wp   ! Height above which the coordinate surfaces are 
+    flat_height     = 16000._wp   ! Height above which the coordinate surfaces are
                                       ! flat
 
     ! c) parameter to switch on/off internal topography smoothing
     lread_smt       = .FALSE.     ! read smoothed topography from file (TRUE/FALSE)
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -169,8 +168,8 @@ CONTAINS
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=sleve_nml)                    
-      CALL store_and_close_namelist(funit, 'sleve_nml') 
+      WRITE(funit,NML=sleve_nml)
+      CALL store_and_close_namelist(funit, 'sleve_nml')
     ENDIF
     ! 6. write the contents of the namelist to an ASCII file
     IF(my_process_is_stdio()) WRITE(nnml_output,nml=sleve_nml)

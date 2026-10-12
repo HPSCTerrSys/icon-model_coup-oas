@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -9,7 +9,7 @@
 ; ------------------------------------------
 
 ;----------------------------------------------------------------------
-; plot_torus_prof.ncl 
+; plot_torus_prof.ncl
 ;----------------------------------------------------------------------
 ; Plot torus profile.
 ;
@@ -19,7 +19,7 @@
 ;    varName=\"${var}\" expnum=\"${title}\"
 ;
 ; Required Parameters:
-; iFile         : input file 
+; iFile         : input file
 ; varName       : name of the variable to plot
 ;
 ; Optional Parameter:
@@ -31,7 +31,7 @@
 ;----------------------------------------------------------------------
 
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"  
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
 begin
@@ -58,12 +58,12 @@ begin
 ;----------------------------------------------------------------------
 ; read data
 ;----------------------------------------------------------------------
-  
+
   File = addfile( iFile, "r" )
   if (varName.eq."w") then
     lev = File->height_2             ;lev_2 or ilev
     zz  = File->z_ifc
-  else   
+  else
     lev = File->height               ;lev or mlev]
     zz  = File->z_mc
   end if
@@ -86,7 +86,7 @@ begin
   res@trYMaxF                = nbot
   res@gsnCenterString        = expnum
   res@gsnCenterStringOrthogonalPosF = 0.08
-  res@gsnLeftString          = varlongname 
+  res@gsnLeftString          = varlongname
   res@tiXAxisString          = "[" +  varunit + "]"
   res@tiYAxisString          = "Model Levels"
   res@tiXAxisFontHeightF     = 0.018
@@ -102,8 +102,8 @@ begin
   res@xyComputeXMin          = True
   res@gsnDraw                = False
   res@gsnFrame               = False
-  
-  wks = gsn_open_wks(oType,oFile) 
+
+  wks = gsn_open_wks(oType,oFile)
 
 ;----------------------------------------------------------------------
 ; create an independent axis with level heights
@@ -148,7 +148,7 @@ begin
 ;---------------------------------------------------------------------
 ; Make the plot
 ;---------------------------------------------------------------------
-  
+
   var0 = var(isteps(0), res@trYMinF-1:res@trYMaxF-1, 0, 0)
   var1 = var(isteps(1), res@trYMinF-1:res@trYMaxF-1, 0, 0)
   var2 = var(isteps(2), res@trYMinF-1:res@trYMaxF-1, 0, 0)
@@ -160,7 +160,7 @@ begin
   min1=(/min(var0),min(var1),min(var2),min(var3)/)
   max2=(/max(var0),max(var1),max(var2),max(var3)/)
   res@trXMinF = min(min1)
-  res@trXMaxF = max(max2) 
+  res@trXMaxF = max(max2)
 
   res@xyLineColor      = colors(0)
   plot0 = gsn_csm_xy(wks,var0,z0,res)
@@ -186,7 +186,7 @@ begin
   lgres@vpWidthF           = 0.15            ; width of legend (NDC)
   lgres@vpHeightF          = 0.10           ; height of legend (NDC)
   lgres@lgPerimThicknessF  = 2.0            ; thicken the box perimeter
-  lgres@lgLineThicknessF   = 3.0 
+  lgres@lgLineThicknessF   = 3.0
   lgres@lgMonoDashIndex    = True
   lgres@lgDashIndex        = 0
 

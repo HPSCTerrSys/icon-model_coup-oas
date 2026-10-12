@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,21 +13,21 @@
 ; --------------------------
 ; Skripts are based on NCL MJO Climate Variability Tools
 ; https://www.ncl.ucar.edu/Applications/mjoclivar.shtml
-; 
-; These were developed following the recommendations 
+;
+; These were developed following the recommendations
 ; of US-CLIVAR MJO Working Group
-; 
+;
 ; Adapted for use at DWD by Julia Keller, FE 13, August 2015
 ; Works with NCL 6.3.0
-; 
+;
 ; Program:
-;   mjo_analysis_clivar_mean_state.ncl  
+;   mjo_analysis_clivar_mean_state.ncl
 ; Purpose:
 ;   Plot mean state fields
 ;
 ;-----------------------------------------------------------
 ; Required Input:
-;   Boreal winter or summer mean of 
+;   Boreal winter or summer mean of
 ;   * 850hPa Zonal Wind
 ;   * Daily Total Precipitation
 ;   Both files have to have same lat, lon and time dimensions
@@ -35,7 +35,7 @@
 ;
 ;
 ;
-;    
+;
 ;***********************************************************
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
@@ -47,7 +47,7 @@ print("started")
 begin
 
 ;***********************************************************
-; Preparation  
+; Preparation
 ;***********************************************************
 
 ;------------------------------------------------
@@ -62,12 +62,12 @@ begin
 ;      season     - winter or summer season
 ;      lats       - number of latitudes
 ;      lons       - number of longitudes
-;--------------------------------------------------    
+;--------------------------------------------------
 
 ;************************************************
 ; open file and read in data
 ;***********************************************
- 
+
   if ( season .eq. "summer" )
     months = "(May - Oct)"
   end if
@@ -75,7 +75,7 @@ begin
     months = "(Nov - Apr)"
   end if
 
-; Define plot settings  
+; Define plot settings
    wksType = "png"
    wksNameBase = plotdir+datainfo+"_mean_state_"+season
    wksPlotTitle = datainfo+" 850hPa Zonal Wind & Total Precipitation ~C~        mean state in boreal "+season+months
@@ -84,42 +84,42 @@ begin
    vars1  = getfilevarnames(fin1)                  ; write all variable names in array
    fin2 = addfile(infile2,"r")
    vars2  = getfilevarnames(fin2)                  ; write all variable names in array
-  
+
 ; Process file 1
    nvars = dimsizes(vars1)
    timecount=0
    do i = 0,nvars-1
-     dummy      = fin1->$vars1(i)$               ; read variable 
+     dummy      = fin1->$vars1(i)$               ; read variable
      dummydims  = getvardims(dummy)              ; get dimensions of variable
      ndims      = dimsizes(dummydims)            ; get number of dimensions
-     delete(dummydims)      
+     delete(dummydims)
                                       ; separate between data and coordinates
-     if ( ndims .eq. 1) then                      ; data = several dimensions        
-                                                  ; coordinates =  one dimension 
+     if ( ndims .eq. 1) then                      ; data = several dimensions
+                                                  ; coordinates =  one dimension
        if (dimsizes(dummy) .eq. lats) then        ; identify lat, lon and time coords
-          lat     = fin1->$vars1(i)$              ; set dimension names to standard 
+          lat     = fin1->$vars1(i)$              ; set dimension names to standard
           lat!0   = "lat"
           lat@lat = "latitude"
-       end if        
+       end if
        if (dimsizes(dummy) .eq. lons) then
           lon     = fin1->$vars1(i)$
           lon!0   = "lon"
           lon@lon = "longitude"
        end if
- 
+
      end if                                        ; end of process for coordinates
-     delete(dummy) 
+     delete(dummy)
      if (ndims .eq. 2) then                        ; identify data and its characteristics
        print("---get data file 1---")
        if (getfilevartypes(fin1,vars1(i)) .eq. "short") then
           datain1 = short2flt(fin1->$vars1(i)$ )
        else if (getfilevartypes(fin1,vars1(i)) .eq. "integer") then
           datain1 = int2flt(fin1->$vars1(i)$ )
-       else 
+       else
           datain1 = fin1->$vars1(i)$
        end if
-       end if  
-                                                   ; determine size of dimensions and 
+       end if
+                                                   ; determine size of dimensions and
        subdims = dimsizes(datain1)                 ; rename dimensions accordingly
        do j = 0, ndims-1
            if (subdims(j) .eq. lats) then
@@ -133,16 +133,16 @@ begin
        end do
        datain1@long_name = "Daily Precipitation"
        datain1@units = "mm day~S~-1"
-     end if  
+     end if
      delete(ndims)
- 
+
    end do
    delete(subdims)
 ; Process file 2
    nvars = dimsizes(vars2)
    timecount=0
    do i = 0,nvars-1
-     dummy      = fin2->$vars2(i)$                 ; read variable 
+     dummy      = fin2->$vars2(i)$                 ; read variable
      dummydims  = getvardims(dummy)                ; get dimensions of variable
      ndims      = dimsizes(dummydims)              ; get number of dimensions
      delete(dummy)
@@ -153,10 +153,10 @@ begin
           datain2 = short2flt(fin2->$vars2(i)$ )
        else if (getfilevartypes(fin2,vars2(i)) .eq. "integer") then
           datain2 = int2flt(fin2->$vars2(i)$ )
-       else 
+       else
           datain2 = fin2->$vars2(i)$
        end if
-       end if                                      ; determine size of dimensions and 
+       end if                                      ; determine size of dimensions and
        subdims = dimsizes(datain2)                 ; rename dimensions accordingly
        do j = 0, ndims-1
            if (subdims(j) .eq. lats) then
@@ -170,12 +170,12 @@ begin
        end do
        datain2@long_name = "850hPa Zonal Wind"
        datain2@units = "m s~S~-1"
-     end if  
+     end if
      delete(ndims)
-   end do  
-     
+   end do
+
      printVarSummary(datain1)
- 
+
 ;************************************************
 ; create overlay plot
 ;************************************************
@@ -204,7 +204,7 @@ begin
 					   "(/0.365,0.686,0.255/)","(/0.996,0.886,0.388/)", \
 					   "(/0.953,0.639,0.173/)","(/0.875,0.420,0.118/)", \
 					   "(/0.765,0.204,0.082/)","(/0.592,0.086,0.078/)", \
-               		   "(/0.408,0.039,0.067/)" /)  
+               		   "(/0.408,0.039,0.067/)" /)
   res@gsnAddCyclic          = False          ; data already has cyclic point
   res@gsnMajorLatSpacing = 10              ; change maj lat tm spacing
   res@gsnMajorLonSpacing = 40              ; change maj lon tm spacing
@@ -216,7 +216,7 @@ begin
   res@gsnRightString = ""
   res@gsnLeftString = ""
   res@lbLabelFontHeightF = 0.01
-  res@pmLabelBarOrthogonalPosF = 0.4 
+  res@pmLabelBarOrthogonalPosF = 0.4
 ; define options for second plot
   sres                      = True              ; set up a second resource list
   sres@gsnDraw              = False             ; do not draw the plot
@@ -229,7 +229,7 @@ begin
   sres@cnInfoLabelOn        = False
   sres@gsnRightString = ""
   sres@gsnLeftString = ""
- 
+
   plot    = gsn_csm_contour_map(wks,datain1,res)   ; create the precipitation plot
   plot_ov = gsn_csm_contour(wks,datain2,sres)      ; create the U-wind plot
 
@@ -237,6 +237,3 @@ begin
   draw(plot)                                  ; draw the temperature plot (with the U-wind plot overlaid)
   frame(wks)                                  ; advance the frame
 end
-
-  
- 

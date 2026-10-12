@@ -1,25 +1,25 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ---------------------------------------------------------------
 
-# ----------------------------------------------------------------------------
 #PBS -q sx_norm
-#PBS -l elapstim_req=00:20:00
-#PBS --venode=3          # Run up to 3 * 8 = 24 MPI jobs
+#PBS -l elapstim_req=00:35:00
+#PBS --venode=4          # Run up to 4 * 8 = 32 MPI jobs
 #PBS --venum-lhost=8     # Number of VE per logical host
 #PBS --use-hca=2         # Number of HCA per logical host
 #PBS -T necmpi_hydra
 #PBS -j o
 #PBS -o LOG.exp.check_externals_DWD.run.run.o
-# ----------------------------------------------------------------------
+
+set -x
 
 # for PBS change to directory where job was submitted
 # (without this job is started in HOME)
@@ -31,41 +31,28 @@ fi
 # file produced by the scheduler because it might be empty if the time limit for
 # the job is exceeded, which leads to a false positive result of the test.
 # Instead, we create 'exp.check_externals_DWD.run.final_status', which has
-# higher priority for the Buildbot. First, we write a non-zero exit code to the
-# file, which will indicate a failure if the rest of the script below does not
-# have enough time to finish the tests:
+# higher priority for the Buildbot. We write a non-zero exit code to the file,
+# which will indicate a failure if the code below does not have enough time to
+# finish:
 echo '255' > exp.check_externals_DWD.run.final_status
 
-# Speed up the 'make check' (this step is allowed to fail):
-MAKE_PROCS=14
-make -C ../vector -j ${MAKE_PROCS} check-bundled TESTS= XFAIL_TESTS=
+unset MAKEFLAGS
 
-# Run 'make check' for the vector engine build and save its exit code:
-exitcode=0
-make -C ../vector check || exitcode=$?
+# Build the tests with the highest level of parallelism (limited by the number
+# of the host CPU cores available on one node) and then run them with a smaller
+# number of jobs (limited by the number of the vector engines available on all
+# allocated nodes):
+time make -C ../vector --jobs=24 --keep-going --no-print-directory --output-sync=target V=1 TESTS= check-bundled && \
+  time make -C ../vector --jobs=3 --keep-going ICON_VERBOSE_TESTS=1 ICON_COLOR_TESTS=always \
+    TESTS_ENVIRONMENT='echo "$${mgn}RUNNING$${std}: $$f"; st=$$(date +%s.%N);' \
+    AM_TESTS_FD_REDIRECT=';printf "$${brg}duration$${std}: %s: %0.2fs\n" "$$f" "$$(echo "$$(date +%s.%N) - $${st}" | bc -l)"' \
+    check-bundled
+
+# Save the exit code of the 'make check-bundled' command:
+exitcode=$?
 
 # Overwrite the status file with the real exit code:
 echo "${exitcode}" > exp.check_externals_DWD.run.final_status
 
-# Print the log files for debugging:
-if false; then  # change false to true if the logs are needed
-  set +x
-  echo " ***** Test logs from '$(pwd)' ***** "
-  for d in $(find . -name 'tests'); do
-    echo " ||||| '$d' ||||| "
-    for f in $(find $d -name '*.log'); do
-      echo " ///// '$f' ///// "
-      cat $f
-      execf=${f%.log}
-      if test -f $execf; then
-        echo " +++++ '$execf' +++++ "
-        cat $execf
-      fi
-    done
-  done
-  echo " ***** End of test logs from '$(pwd)' ***** "
-  set -x
-fi
-
-# Exit with the exit code of the 'make check' command:
+# Exit with the exit code of the 'make check-bundled' command:
 exit ${exitcode}

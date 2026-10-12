@@ -1,17 +1,15 @@
-! Contains correction term for moist thermodynamics (moisture-dependence of heat capacities)
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains correction term for moist thermodynamics (moisture-dependence of heat capacities)
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -164,7 +162,7 @@ MODULE mo_nh_moist_thdyn
       DO jk = 2, kstart_moist(jg)-1
         DO jc = i_startidx, i_endidx
 
-          z_a = 1._wp - p_prog_rcf%tracer(jc,jk,jb,iqv) 
+          z_a = 1._wp - p_prog_rcf%tracer(jc,jk,jb,iqv)
 
           chi_q(jc,jk) = 1._wp - (                                   &
               ( z_a + cpv * p_prog_rcf%tracer(jc,jk,jb,iqv)  / cpd ) &
@@ -184,7 +182,7 @@ MODULE mo_nh_moist_thdyn
 
           p_prog%exner(jc,jk,jb) = exner_sv + beta_q * ( v_flxdiv(jc,jk)           &
             + prep_adv%vol_flx_ic(jc,jk,jb)   * p_nh%metrics%deepatmo_divzU_mc(jk) &
-            - prep_adv%vol_flx_ic(jc,jk+1,jb) * p_nh%metrics%deepatmo_divzL_mc(jk) ) 
+            - prep_adv%vol_flx_ic(jc,jk+1,jb) * p_nh%metrics%deepatmo_divzL_mc(jk) )
 
           ! recompute theta
           p_prog%theta_v(jc,jk,jb) = p_prog%theta_v(jc,jk,jb) * &
@@ -203,4 +201,3 @@ MODULE mo_nh_moist_thdyn
   END SUBROUTINE thermo_src_term
 
 END MODULE mo_nh_moist_thdyn
-

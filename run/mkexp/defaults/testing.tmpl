@@ -1,0 +1,45 @@
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+# Testig helper functions
+
+from enum import Enum
+class TestStatus(Enum):
+    PASSED = 0
+    FAILED = 1
+    ERROR  = 1
+
+def flip_single_result(expected_fail_str, test_result):
+    """\
+    Flip result of a single test according to the test parameter "expected_fail"
+    """
+    logging.info(f"expected_fail = {expected_fail_str}")
+    if expected_fail_str == 'true':
+        logging.debug(f"flip result ({test_result.name}) since failing is expected")
+        if test_result == TestStatus.PASSED:
+            test_result = TestStatus.FAILED
+        elif test_result == TestStatus.FAILED:
+            test_result = TestStatus.PASSED
+        else:
+            logging.error("Soemthing went wrong when fliping single result!")
+        logging.debug(f"result of a single check = {test_result.name}")
+    return test_result
+
+
+def flip_test_status(test_status, single_result):
+    """\
+    Flip status of a the entire test according to a single test result.
+    iA single failing test flips the entire test to failing
+    """
+    if single_result == TestStatus.FAILED:
+        logging.debug(f"flip test status ({test_status.name}) when test fails")
+        test_status = TestStatus.FAILED
+    logging.info(f"status of the entire test = {test_status.name}\n")
+    return test_status

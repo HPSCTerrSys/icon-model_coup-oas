@@ -1,16 +1,15 @@
-! Contains the variables to set up the grid configuration
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the variables to set up the grid configuration
 
 MODULE mo_grid_nml
 !-------------------------------------------------------------------------
@@ -25,7 +24,7 @@ MODULE mo_grid_nml
 ! USE mo_exception,          ONLY: message, message_text, finish
   USE mo_io_units,           ONLY: nnml, nnml_output,filename_max
   USE mo_namelist,           ONLY: position_nml, positioned, open_nml, close_nml
-  USE mo_mpi,                ONLY: my_process_is_stdio 
+  USE mo_mpi,                ONLY: my_process_is_stdio
   USE mo_impl_constants,     ONLY: max_dom
   USE mo_math_constants,     ONLY: rad2deg
 !  USE mo_master_control,     ONLY: use_restart_namelists
@@ -66,7 +65,7 @@ MODULE mo_grid_nml
 
   PRIVATE
   PUBLIC :: read_grid_namelist
-  
+
 
   ! ------------------------------------------------------------------------
   ! 1.0 Namelist variables and auxiliary variables
@@ -78,8 +77,8 @@ MODULE mo_grid_nml
  !!  Initialization of grid namelist variables
  !!
   SUBROUTINE read_grid_namelist( filename )
-    
-    CHARACTER(LEN=*), INTENT(IN) :: filename                                           
+
+    CHARACTER(LEN=*), INTENT(IN) :: filename
     INTEGER  :: i_status, i
 !    INTEGER  :: funit
 
@@ -88,11 +87,11 @@ MODULE mo_grid_nml
     REAL(wp)   :: start_time(max_dom)      ! time at which execution of a (nested) model domain starts
     REAL(wp)   :: end_time(max_dom)        ! time at which execution of a (nested) model domain terminates
     LOGICAL    :: lredgrid_phys(max_dom)   ! If set to .true. radiation is calculated on a reduced grid
-    INTEGER    :: nexlevs_rrg_vnest        ! Maximum number of extra model layers used for calculating radiation if 
+    INTEGER    :: nexlevs_rrg_vnest        ! Maximum number of extra model layers used for calculating radiation if
                                            ! a reduced radiation grid is combined with vertical nesting
-    LOGICAL    :: l_limited_area           ! limited area setup where forcing comes in from sides            
+    LOGICAL    :: l_limited_area           ! limited area setup where forcing comes in from sides
     LOGICAL    :: l_scm_mode               ! SCM mode is designed for tests where all columns are identical
-    LOGICAL    :: lsep_grfinfo             ! If .true., read fields related to grid refinement from separate 
+    LOGICAL    :: lsep_grfinfo             ! If .true., read fields related to grid refinement from separate
                                            ! grid files
     LOGICAL    :: use_duplicated_connectivity ! if true, the zero connectivity is replaced by the last non-zero value
     LOGICAL    :: use_dummy_cell_closure   ! if true then create a dummy cell and connect it to cells and edges with no neigbor
@@ -100,7 +99,7 @@ MODULE mo_grid_nml
     LOGICAL    :: lplane                   ! f-plane option
     LOGICAL    :: is_plane_torus           ! f-plane with doubly periodic boundary==> like a plane torus
     REAL(wp)   :: corio_lat                ! Latitude, where the f-plane is located if lplane=.true.
-  
+
     REAL(wp)   :: patch_weight(max_dom)    ! If patch_weight is set to a value > 0
                                            ! for any of the first level child patches,
                                            ! processor splitting will be performed
@@ -109,7 +108,7 @@ MODULE mo_grid_nml
     INTEGER                     :: dynamics_parent_grid_id(max_dom)
     CHARACTER(LEN=filename_max) :: radiation_grid_filename
     INTEGER                     :: dynamics_radiation_grid_link(max_dom)
-        
+
     REAL(wp) :: grid_rescale_factor, grid_angular_velocity
     LOGICAL  :: lrescale_timestep, lrescale_ang_vel
     INTEGER                    :: iunit
@@ -119,7 +118,7 @@ MODULE mo_grid_nml
     !> files containing vct_a, vct_b, z_ifc
     CHARACTER(LEN=filename_max) :: vertical_grid_filename(max_dom)
     CHARACTER(LEN=filename_max) :: vct_filename ! for reading in vct_a, vct_b
-                                                ! we implicitly assume that all other domains 
+                                                ! we implicitly assume that all other domains
                                                 ! share their levels wih dom01.
 
 
@@ -151,7 +150,7 @@ MODULE mo_grid_nml
       ! "dynamics_parent_grid_id": This namelist parameter is
       ! necessary only for old ICON grids without a proper UUID
       ! attribute.
-      dynamics_parent_grid_id(i)  = -1 
+      dynamics_parent_grid_id(i)  = -1
     ENDDO
 
     ! For the coarsest grid, we set the default "parent ID" to 0. This
@@ -162,7 +161,7 @@ MODULE mo_grid_nml
     radiation_grid_filename  = ""
     vertical_grid_filename   = " "
     vct_filename             = ""
-      
+
     lfeedback   = .TRUE.
     ifeedback_type = 2
     start_time(:) = 0._wp
@@ -218,7 +217,7 @@ MODULE mo_grid_nml
     ! convert degrees in radiant for the Coriolis latitude
     corio_lat =  corio_lat/rad2deg
 
-    ! Reset start and end times for global domain in order to avoid 
+    ! Reset start and end times for global domain in order to avoid
     ! interferences with output flow control
     start_time(1) = 0._wp
     end_time(1) = DEFAULT_ENDTIME
@@ -270,9 +269,9 @@ MODULE mo_grid_nml
       IF (my_process_is_stdio()) &
         WRITE (0,*) "WARNING: Namelist switch 'lsep_grfinfo' is deprecated and will soon be removed!"
     END IF
-          
+
   END SUBROUTINE read_grid_namelist
   !-----------------------------------------------------------------------
-  
-  
+
+
 END MODULE mo_grid_nml

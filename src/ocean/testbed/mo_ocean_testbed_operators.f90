@@ -1,11 +1,7 @@
-! Contains the implementation of the mathematical operators for the ocean.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,14 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the implementation of the mathematical operators for the ocean.
+
 MODULE mo_ocean_testbed_operators
   !-------------------------------------------------------------------------
   USE mo_kind,               ONLY: wp
   USE mo_parallel_config,    ONLY: nproma
   USE mo_exception,          ONLY: message, message_text, finish
   USE mo_run_config,         ONLY: test_mode
-  USE mo_math_constants
-  USE mo_physical_constants
   USE mo_impl_constants,     ONLY: boundary, sea, sea_boundary !,sea,land, land_boundary, sea, max_char_length, &
   USE mo_model_domain,       ONLY: t_patch, t_patch_3D
   USE mo_ext_data_types,     ONLY: t_external_data
@@ -89,7 +85,7 @@ CONTAINS
         CALL test_div(patch_3D, ocean_state(1), operators_coefficients, test_mode)
       CASE (114:115)
         CALL test_PtP(patch_3D, ocean_state(1), operators_coefficients, test_mode)
-      
+
       CASE DEFAULT
         CALL finish(method_name, "Unknown test_mode")
 
@@ -101,24 +97,24 @@ CONTAINS
 
   !-----------------------------------------------------------------------
   SUBROUTINE operator_test_old( patch_3d, ocean_state, operators_coefficients)!, vn_e, trac_c)
-    
+
     TYPE(t_patch_3d ),TARGET, INTENT(in) :: patch_3d
     TYPE(t_hydro_ocean_state), TARGET    :: ocean_state
     TYPE(t_operator_coeff),TARGET, INTENT(in)   :: operators_coefficients
-    
+
     !Local variables
     INTEGER :: start_index, end_index
     INTEGER :: jc, je, jv, jk, jb,edge_index,edge_block
     REAL(wp) :: curl_integral(1:n_zlev), div_integral(1:n_zlev), lhs(1:n_zlev),rhs(1:n_zlev)
     REAL(wp) :: grad(nproma, n_zlev, patch_3d%p_patch_2d(1)%nblks_e)
-    REAL(wp) :: div (nproma, n_zlev, patch_3d%p_patch_2d(1)%alloc_cell_blocks)    
+    REAL(wp) :: div (nproma, n_zlev, patch_3d%p_patch_2d(1)%alloc_cell_blocks)
     REAL(wp) :: curl(nproma, n_zlev, patch_3d%p_patch_2d(1)%nblks_v)
-    REAL(wp) :: curlgrad(nproma, n_zlev, patch_3d%p_patch_2d(1)%nblks_v)    
+    REAL(wp) :: curlgrad(nproma, n_zlev, patch_3d%p_patch_2d(1)%nblks_v)
     TYPE(t_subset_range), POINTER :: edges_in_domain, cells_in_domain, verts_in_domain
     TYPE(t_patch), POINTER :: patch_2D
-    TYPE(t_cartesian_coordinates) :: vn_dual(nproma,n_zlev,patch_3d%p_patch_2d(1)%nblks_v)    
+    TYPE(t_cartesian_coordinates) :: vn_dual(nproma,n_zlev,patch_3d%p_patch_2d(1)%nblks_v)
     REAL(wp), POINTER :: vn_e(:,:,:)!(nproma, n_zlev, patch_3d%p_patch_2d(1)%nblks_e)
-    REAL(wp), POINTER :: trac_c(:,:,:)!(nproma, n_zlev, patch_3d%p_patch_2d(1)%alloc_cell_blocks)    
+    REAL(wp), POINTER :: trac_c(:,:,:)!(nproma, n_zlev, patch_3d%p_patch_2d(1)%alloc_cell_blocks)
 
     !-------------------------------------------------------------------------------
     patch_2D        => patch_3d%p_patch_2d(1)
@@ -127,24 +123,24 @@ CONTAINS
     verts_in_domain => patch_2D%verts%in_domain
     !-------------------------------------------------------------------------------
     vn_e  => ocean_state%p_prog(1)%vn
-    trac_c=>ocean_state%p_prog(1)%tracer(:,:,:,1) 	
+    trac_c=>ocean_state%p_prog(1)%tracer(:,:,:,1)
 
     grad    (1:nproma,1:n_zlev,1:patch_2D%nblks_e)=0.0_wp
     div     (1:nproma,1:n_zlev,1:patch_2D%nblks_c)=0.0_wp
     curl    (1:nproma,1:n_zlev,1:patch_2D%nblks_v)=0.0_wp
     curlgrad(1:nproma,1:n_zlev,1:patch_2D%nblks_v)=0.0_wp
-    
-    
+
+
     !vn_e=0.0_wp
     vn_e(1:5,1,1)=10.0_wp
     trac_c=35.0_wp
     CALL map_edges2vert_3d(patch_2D, vn_e, operators_coefficients%edge2vert_coeff_cc, vn_dual)
-    
+
     !calculate gradient of curl and curl
     CALL grad_fd_norm_oce_3d( trac_c, patch_3D, operators_coefficients%grad_coeff, grad)
     CALL rot_vertex_ocean_3d( patch_3D, grad, vn_dual, operators_coefficients, curlgrad)
     CALL rot_vertex_ocean_3d( patch_3D, vn_e, vn_dual, operators_coefficients, curl)
-    
+
     !domain integrated curl
     curl_integral=0.0_wp
     DO jb = verts_in_domain%start_block, verts_in_domain%end_block
@@ -170,19 +166,19 @@ CONTAINS
           DO je=1,3
           edge_index = patch_2D%cells%edge_idx(jc,jb, je)
           edge_block = patch_2D%cells%edge_blk(jc,jb,je)
-          
+
              div_integral(jk)= div_integral(jk)+(vn_e(edge_index,jk, edge_block)* &
              &patch_2D%edges%primal_edge_length(edge_index, edge_block)/patch_2D%cells%area(jc,jb)       * &
             & patch_2D%cells%edge_orientation(jc,jb, je))* patch_2D%cells%area(jc,jb)
 IF(jk==1)&
 &write(123,*)'details:',jk,jc,jb,je,edge_index,edge_block,vn_e(edge_index,jk, edge_block)* &
 !             &patch_2D%edges%primal_edge_length(edge_index, edge_block)        * &
-            & patch_2D%cells%edge_orientation(jc,jb, je)             
+            & patch_2D%cells%edge_orientation(jc,jb, je)
           END DO
           div_integral(jk)= div_integral(jk)
-IF(jk==1)&          
-&write(123,*)'details2',jk,jc,jb,div_integral(jk)         
-!          div_integral(jk) = div_integral(jk) + div(jc,jk,jb)*patch_2D%cells%area(jc,jb)                            
+IF(jk==1)&
+&write(123,*)'details2',jk,jc,jb,div_integral(jk)
+!          div_integral(jk) = div_integral(jk) + div(jc,jk,jb)*patch_2D%cells%area(jc,jb)
         END DO
       END DO
     END DO
@@ -199,8 +195,8 @@ IF(jk==1)&
     DO jb = cells_in_domain%start_block, cells_in_domain%end_block
       CALL get_index_range(cells_in_domain, jb, start_index, end_index)
       DO jk = 1, n_zlev
-        DO jc = start_index, end_index    
-          lhs(jk)=lhs(jk)+trac_c(jc,jk,jb)*div(jc,jk,jb)*patch_2D%cells%area(jc,jb)        
+        DO jc = start_index, end_index
+          lhs(jk)=lhs(jk)+trac_c(jc,jk,jb)*div(jc,jk,jb)*patch_2D%cells%area(jc,jb)
         END DO
       END DO
     END DO
@@ -216,13 +212,12 @@ IF(jk==1)&
       END DO
     END DO
     Do jk=1,n_zlev
-      write(0,*)'OPERATOR-TEST: integration-by-parts:',jk,lhs(jk),rhs(jk),lhs(jk)+rhs(jk)          
+      write(0,*)'OPERATOR-TEST: integration-by-parts:',jk,lhs(jk),rhs(jk),lhs(jk)+rhs(jk)
       write(0,*)'OPERATOR-TEST: integration-by-parts2:',jk,&
-      &maxval(grad(:,jk,:)),minval(grad(:,jk,:)),maxval(vn_e(:,jk,:)),minval(vn_e(:,jk,:))          
-      
-    END DO  
+      &maxval(grad(:,jk,:)),minval(grad(:,jk,:)),maxval(vn_e(:,jk,:)),minval(vn_e(:,jk,:))
+
+    END DO
   END SUBROUTINE operator_test_old
   !-------------------------------------------------------------------------------
 
 END MODULE mo_ocean_testbed_operators
-

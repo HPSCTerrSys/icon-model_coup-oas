@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -84,11 +84,11 @@ CONTAINS
     REAL(wp)                          :: snow_x
     REAL(wp), INTENT(IN)              :: temp, rho, qs
     REAL(wp)                          :: ncn
-    REAL(wp), PARAMETER               :: eps = 1.0e-8    ! Epsilon constant    
+    REAL(wp), PARAMETER               :: eps = 1.0e-8    ! Epsilon constant
 
     ! number of snow flakes per volume air given by N_0/lambda
-    ncn=snow_number(temp,rho,qs) 
-    ncn=ncn/snow_lambda(rho,qs,ncn) 
+    ncn=snow_number(temp,rho*qs)
+    ncn=ncn/snow_lambda(rho*qs,ncn)
     snow_x=rho*qs/(ncn+eps) ! average mass of snow flake in [kg]
   END FUNCTION snow_x
 

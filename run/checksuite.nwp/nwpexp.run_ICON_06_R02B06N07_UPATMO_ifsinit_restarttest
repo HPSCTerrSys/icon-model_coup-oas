@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -20,17 +20,17 @@
 # AND run_ICON_14_R2B6N7_oper_IAU_and_restarttest
 # WITH MODIFICATIONS FOR AN UPPER-ATMOSPHERE SIMULATION.
 #
-# Please note: 
+# Please note:
 # * three runs are performed:
 #   1)    simple run: all upper-atmosphere physics are switched on
-#   2, 3) restart test: upper-atmosphere radiation has to be switched off, 
-#         since it is inherently prone to the accumulation 
-#         of round-off errors and will fail restart tests 
-#         (at least under the typical compiler settings 
+#   2, 3) restart test: upper-atmosphere radiation has to be switched off,
+#         since it is inherently prone to the accumulation
+#         of round-off errors and will fail restart tests
+#         (at least under the typical compiler settings
 #         for operational use on the CRAY)
-# 
+#
 # * in case that users would like to use parts of this script
-#   as a template for upper-atmosphere simulations, 
+#   as a template for upper-atmosphere simulations,
 #   all upper-atmosphere-related namelist switches are stated explicitly,
 #   although the settings are often identical with the default values.
 # ---------------------------------------------------------------
@@ -46,7 +46,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -195,6 +195,10 @@ ofile_prfx="UPATMO_REST"
 imode_rad_dom1=0
 imode_rad_dom2=2
 
+# remove output files written after restart because existing output files are opened
+# in append mode in case of a restart (only relevant for manually executed tests)
+rm -f ${ofile_prfx}*.nc
+
 fi
 
 # ----------------------------------------------------------------------------
@@ -236,7 +240,7 @@ num_io_procs_radar=0
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_NWP << EOF
 
@@ -273,7 +277,7 @@ cat > NAMELIST_NWP << EOF
  hdiff_order                 =                          5         ! order of nabla operator for diffusion
  itype_vn_diffu              =                          1         ! reconstruction method used for Smagorinsky diffusion
  itype_t_diffu               =                          2         ! discretization of temperature diffusion
- hdiff_efdt_ratio            =                         36.0       ! ratio of e-folding time to time step 
+ hdiff_efdt_ratio            =                         36.0       ! ratio of e-folding time to time step
  hdiff_smag_fac              =                          0.025     ! scaling factor for Smagorinsky diffusion
  lhdiff_vn                   =                      .TRUE.        ! diffusion on the horizontal wind field
  lhdiff_temp                 =                      .TRUE.        ! diffusion on the temperature field
@@ -283,8 +287,8 @@ cat > NAMELIST_NWP << EOF
 &dynamics_nml
  divavg_cntrwgt              =                          0.50      ! weight of central cell for divergence averaging
  lcoriolis                   =                      .TRUE.        ! Coriolis force
- ldeepatmo                   =                      .TRUE.        ! .TRUE. -> deep-atmosphere modification is applied 
-                                                                  ! to the non-hydrostatic model equations 
+ ldeepatmo                   =                      .TRUE.        ! .TRUE. -> deep-atmosphere modification is applied
+                                                                  ! to the non-hydrostatic model equations
                                                                   ! (default is .FALSE. -> standard shallow-atmosphere dynamics)
 /
 
@@ -300,9 +304,9 @@ cat > NAMELIST_NWP << EOF
 &initicon_nml
   zpbl1                      =                        500.0       ! bottom height of layer used for gradient computation
   zpbl2                      =                       1000.0       ! top height of layer used for gradient computation
-  itype_vert_expol           =                          2         ! type of vertical extrapolation of initial data: 
-                                                                  ! 1: linear extrapolation (default) 
-                                                                  ! 2: blending with climatology 
+  itype_vert_expol           =                          2         ! type of vertical extrapolation of initial data:
+                                                                  ! 1: linear extrapolation (default)
+                                                                  ! 2: blending with climatology
                                                                   ! (intended for simulations with the upper-atmosphere configuration)
 /
 
@@ -340,7 +344,7 @@ cat > NAMELIST_NWP << EOF
  rayleigh_coeff              =                   10.0, 10.0       ! Rayleigh damping coefficient
  ndyn_substeps               =                          5         ! number of dynamical core substeps
  divdamp_order               =                         24         ! order of divergence damping
- divdamp_fac                 =                          0.004     ! scaling factor for divergence damping 
+ divdamp_fac                 =                          0.004     ! scaling factor for divergence damping
  igradp_method               =                          3         ! discretization of horizontal pressure gradient
  l_zdiffu_t                  =                      .TRUE.        ! specifies computation of Smagorinsky temperature diffusion
  thslp_zdiffu                =                          0.02      ! slope threshold (temperature diffusion)
@@ -353,7 +357,7 @@ cat > NAMELIST_NWP << EOF
 &nwp_phy_nml
  inwp_gscp                   =                          1         ! cloud microphysics and precipitation
  inwp_convection             =                          1         ! convection
- inwp_radiation              =                          1         ! radiation
+ inwp_radiation              =                          4         ! radiation
  inwp_cldcover               =                          1         ! cloud cover scheme for radiation
  inwp_turb                   =                          1         ! vertical diffusion and transfer
  inwp_satad                  =                          1         ! saturation adjustment
@@ -392,12 +396,13 @@ cat > NAMELIST_NWP << EOF
  irad_o3                     =                          7         ! ozone climatology
  irad_aero                   =                          6         ! aerosols
  albedo_type                 =                          2         ! type of surface albedo
- vmr_co2                     =                        390.e-06    ! volume mixing ratio of CO2 
+ vmr_co2                     =                        390.e-06    ! volume mixing ratio of CO2
  vmr_ch4                     =                       1800.e-09
  vmr_n2o                     =                        322.0e-09
  vmr_o2                      =                          0.20946
  vmr_cfc11                   =                        240.e-12
- vmr_cfc12                   =                        532.e-12 
+ vmr_cfc12                   =                        532.e-12
+ ecrad_data_path             = '${basedir}/externals/ecrad/data'
 /
 
 ! transport_nml: tracer transport ---------------------------------------------
@@ -443,22 +448,22 @@ cat > NAMELIST_NWP << EOF
  !------------------------------------------------------
  ! upper-atmosphere extrapolation: itype_vert_expol = 2
  !------------------------------------------------------
- expol_start_height          =                      70000.0       ! (m) height above which extrapolation (blending) 
+ expol_start_height          =                      70000.0       ! (m) height above which extrapolation (blending)
                                                                   ! of initial data starts (default value is 70000 m)
  expol_blending_scale        =                      10000.0       ! (m) blending scale height (default value is 10000 m)
- expol_vn_decay_scale        =                      10000.0       ! (m) scale height for (exponential) decay of extrapolated 
+ expol_vn_decay_scale        =                      10000.0       ! (m) scale height for (exponential) decay of extrapolated
                                                                   ! horizontal wind component (for stability reasons)
                                                                   ! (default value is 10000m)
- expol_temp_infty            =                        400.0       ! (K) climatological temperature of exosphere (z -> infinity)  
- lexpol_sanitycheck          =                      .TRUE.        ! .TRUE. -> apply sanity check to extrapolated fields 
+ expol_temp_infty            =                        400.0       ! (K) climatological temperature of exosphere (z -> infinity)
+ lexpol_sanitycheck          =                      .TRUE.        ! .TRUE. -> apply sanity check to extrapolated fields
                                                                   ! (default is .FALSE.)
  !----------------------------------------------------------------
- ! upper-atmosphere physics for NWP forcing: lupatmo_phy = .TRUE. 
+ ! upper-atmosphere physics for NWP forcing: lupatmo_phy = .TRUE.
  !----------------------------------------------------------------
- orbit_type                  =                           1        ! orbit model: 
+ orbit_type                  =                           1        ! orbit model:
                                                                   ! * 1: vsop87 -> standard and accurate model (default)
-                                                                  ! * 2: kepler -> simple model, appropriate for idealized work      
- solvar_type                 =                           1        ! solar activity: 
+                                                                  ! * 2: kepler -> simple model, appropriate for idealized work
+ solvar_type                 =                           1        ! solar activity:
                                                                   ! * 1: normal activity (default)
                                                                   ! * 2: low --,,--
                                                                   ! * 3: high --,,--
@@ -478,13 +483,13 @@ cat > NAMELIST_NWP << EOF
                                                                   ! (default value is 300 s)
  nwp_grp_imf%t_start         =          "${start_date_imf}"       ! start time for physics group:
                                                                   ! * empty string: simulation start date is start time (default)
-                                                                  ! * e.g., "2012-06-21T06:00:00Z": tendency computation would start 
-                                                                  !   6 hours after the initial date and time 
-                                                                  !   set with ini_datetime_string above. 
+                                                                  ! * e.g., "2012-06-21T06:00:00Z": tendency computation would start
+                                                                  !   6 hours after the initial date and time
+                                                                  !   set with ini_datetime_string above.
                                                                   !   Before the start time, tendencies are set to zero
- nwp_grp_imf%t_end           =           "${stop_date_imf}"       ! end time for physics group: 
+ nwp_grp_imf%t_end           =           "${stop_date_imf}"       ! end time for physics group:
                                                                   ! * empty string: simulation end date is end time (default)
-                                                                  ! * e.g., "2012-06-21T18:00:00Z": tendency computation 
+                                                                  ! * e.g., "2012-06-21T18:00:00Z": tendency computation
                                                                   !   would be stopped 18 hours after ini_datetime_string.
                                                                   !   After the end time, tendencies are set to zero
  nwp_grp_imf%start_height    =                        -999.0      ! (m) start height of physics group:
@@ -494,7 +499,7 @@ cat > NAMELIST_NWP << EOF
                                                                   !   tendencies above 50 km. Below, all processes are inactive
                                                                   !   and the tendencies are set to zero
  nwp_grp_rad%imode           = ${imode_rad_dom1}, ${imode_rad_dom2}  ! mode for physics group: (RAD)iation and chemical heating.
-                                                                  ! The following variables, nwp_grp_rad%..., 
+                                                                  ! The following variables, nwp_grp_rad%...,
                                                                   ! have the same meaning as with nwp_grp_imf%...
  nwp_grp_rad%dt              = ${dt_rad_dom1}, ${dt_rad_dom2}     ! (default value is 600 s)
  nwp_grp_rad%t_start         =          "${start_date_rad}"
@@ -506,30 +511,30 @@ cat > NAMELIST_NWP << EOF
                                                                   ! * 1: constant gas concentration (independent of space and time),
                                                                   !      specified by nwp_gas_o3%vmr
                                                                   ! * 2: external data; meridionally, vertically and monthly varying
-                                                                  !      gas concentrations are read from a file 
+                                                                  !      gas concentrations are read from a file
                                                                   !      with name: nwp_extdat_gases%filename (default)
  nwp_gas_o3%vmr              =                           0.0      ! (m3 m-3) constant volume mixing ratio for ozone
                                                                   ! (for nwp_gas_o3%imode = 1, default value is 0 m3 m-3)
- nwp_gas_o3%fscale           =                           1.0      ! scaling factor the gas concentration is multiplied with 
+ nwp_gas_o3%fscale           =                           1.0      ! scaling factor the gas concentration is multiplied with
                                                                   ! in each grid cell (default value is 1)
  nwp_gas_o2%imode            =                           2        ! mode for radiatively active gas: dioxygen (O2).
                                                                   ! The following variables, nwp_gas_o2%...,
                                                                   ! have the same meaning as with nwp_gas_o3%...
  nwp_gas_o2%vmr              =                           0.0
- nwp_gas_o2%fscale           =                           1.0 
+ nwp_gas_o2%fscale           =                           1.0
  nwp_gas_o%imode             =                           2        ! mode for radiatively active gas: atomic oxygen (O)
- nwp_gas_o%vmr               =                           0.0 
- nwp_gas_o%fscale            =                           1.0 
+ nwp_gas_o%vmr               =                           0.0
+ nwp_gas_o%fscale            =                           1.0
  nwp_gas_co2%imode           =                           1        ! mode for radiatively active gas: carbon dioxide (CO2)
  nwp_gas_co2%vmr             =                         348.0e-6
  nwp_gas_co2%fscale          =                           1.0
  nwp_gas_no%imode            =                           2        ! mode for radiatively active gas: nitric oxide (NO)
  nwp_gas_no%vmr              =                           0.0
- nwp_gas_no%fscale           =                           1.0 
- nwp_extdat_gases%dt         =                       86400.0      ! (s) update period for time interpolation 
+ nwp_gas_no%fscale           =                           1.0
+ nwp_extdat_gases%dt         =                       86400.0      ! (s) update period for time interpolation
                                                                   ! of gas concentrations from external data (default value is 86400 s)
  nwp_extdat_gases%filename   =   "upatmo_gases_chemheat.nc"       ! name of file containing external data
- nwp_extdat_chemheat%dt      =                       86400.0      ! (s) update period for time interpolation 
+ nwp_extdat_chemheat%dt      =                       86400.0      ! (s) update period for time interpolation
                                                                   ! of temperature tendencies of chemical heating
                                                                   ! from external data (default value is 86400 s)
  nwp_extdat_chemheat%filename=   "upatmo_gases_chemheat.nc"       ! name of file containing external data
@@ -546,7 +551,7 @@ cat >> NAMELIST_NWP << EOF
  filetype                    =                          4         ! output format: 2=GRIB2, 4=NETCDFv2
  dom                         =                          2         ! write domain 2
  output_start                =      "${output_start_date}"        ! start date and time of output
- output_end                  =        "${output_end_date}"        ! end date and time of output 
+ output_end                  =        "${output_end_date}"        ! end date and time of output
  output_interval             =        "${output_interval}"        ! time interval between two outputs
  steps_per_file              =                          5         ! number of output steps in one output file
  mode                        =                          2         ! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)
@@ -554,7 +559,7 @@ cat >> NAMELIST_NWP << EOF
  output_filename             =             "${ofile_prfx}"        ! file name base
  output_grid                 =                      .TRUE.        ! flag whether grid information is added to output.
  !
- ml_varlist                  =   'group:upatmo_tendencies', 'group:upatmo_rad_gases', 'upatmo_mdry', 'upatmo_amd', 'upatmo_cpair', 
+ ml_varlist                  =   'group:upatmo_tendencies', 'group:upatmo_rad_gases', 'upatmo_mdry', 'upatmo_amd', 'upatmo_cpair',
 'upatmo_grav', 'upatmo_sclrlw', 'upatmo_effrsw'
 /
 
@@ -569,7 +574,7 @@ cat >> NAMELIST_NWP << EOF
  filetype                    =                          4         ! output format: 2=GRIB2, 4=NETCDFv2
  dom                         =                          1         ! write domain 1
  output_start                =      "${output_start_date}"        ! start date and time of output
- output_end                  =        "${output_end_date}"        ! end date and time of output 
+ output_end                  =        "${output_end_date}"        ! end date and time of output
  output_interval             =        "${output_interval}"        ! time interval between two outputs
  steps_per_file              =                          5         ! number of output steps in one output file
  mode                        =                          2         ! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)

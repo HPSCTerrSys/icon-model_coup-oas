@@ -1,10 +1,7 @@
-! Contains the variables to set up the ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,11 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the variables to set up the ocean model.
+
 MODULE mo_ocean_nml
 !-------------------------------------------------------------------------
   USE mo_kind,               ONLY: wp, sp
   USE mo_exception,          ONLY: message, warning, message_text, finish
-  USE mo_impl_constants,     ONLY: max_char_length
+  USE mo_impl_constants,     ONLY: max_char_length, INIT_FROM_RESTART, vname_len, &
+      &                            max_var_ml, MODE_DWDANA_OCE, MODE_IAU_OCE, max_dom
   USE mo_io_units,           ONLY: nnml, nnml_output
   USE mo_namelist,           ONLY: position_nml, positioned, open_nml, close_nml
   USE mo_mpi,                ONLY: my_process_is_stdio
@@ -24,8 +24,21 @@ MODULE mo_ocean_nml
   USE mo_io_units,           ONLY: filename_max
   USE mo_physical_constants, ONLY: a_T, b_S,rho_ref, grav, sitodbar
   USE mo_param1_bgc,         ONLY: n_bgctra, ntraad
+  USE mtime,             ONLY: max_calendar_str_len, setCalendar,                            &
+       &                       proleptic_gregorian, year_of_365_days,  year_of_360_days,     &
+       &                       max_datetime_str_len, max_timedelta_str_len,                  &
+       &                       datetime, newDatetime, deallocateDatetime,                    &
+       &                       timedelta, newTimedelta, deallocateTimedelta,                 &
+       &                       datetimeToString, OPERATOR(+), &
+       &                       getTimeDeltaFromDateTime, getTotalSecondsTimeDelta
+  USE mo_master_config,      ONLY: my_model_do_restart
+  USE mo_time_config,        ONLY: set_tc_timeshift
+  USE mo_initicon_config,    ONLY: dwdana_filename, type_iau_wgt
 
-#ifndef __NO_ICON_ATMO__
+  USE mo_cdi,                ONLY: cdiInqMissval
+
+
+#ifdef YAC_coupling
   USE mo_coupling_config,    ONLY: is_coupled_to_atmo
 #endif
   IMPLICIT NONE
@@ -51,8 +64,8 @@ MODULE mo_ocean_nml
   !      - contains all default values to minimize ocean namelist (SLO, 2012/03)
   ! ------------------------------------------------------------------------
 
-  INTEGER  :: vert_cor_type   = 0  ! Vertical co-ordinate type 0: z  1: z* 
-  
+  INTEGER  :: vert_cor_type   = 0  ! Vertical co-ordinate type 0: z  1: z*
+
   INTEGER  :: press_grad_type = 0  ! Only affects zstar. If we use 1, we will get
                                    ! chain rule correction for pressure gradient
                                    ! that removes uniform height gradient errors
@@ -77,8 +90,13 @@ MODULE mo_ocean_nml
 !                                          !be run. Example: tracer tests with prescribed time-invariant velocity and height.
   ! ----------------------------------------------------------------------------
   ! DIAGNOSTICS
+! set fillvalue
+  REAL(wp) :: fillvalue  = 0.0_wp
   ! switch for ocean diagnostics - 0: no diagnostics; 1: write to stderr
   INTEGER            :: diagnostics_level      = 1
+
+  ! print a simple loop
+  INTEGER            :: time_verbosity = 0
 
   ! switch for ocean stream function (not yet activated):
   !                   ! 0: no output
@@ -89,24 +107,24 @@ MODULE mo_ocean_nml
   ! parameterized velocity boundary conditions
                       ! Velocity boundary condition: Currently only no-slip is supported !!
                       ! i_bc_veloc_lateral = 0: boundary condition for velocity is no-slip: normal
-                      !                         and tangential velocity components at lateral 
+                      !                         and tangential velocity components at lateral
                       !                         boundaries are set to zero
-                      ! i_bc_veloc_lateral = 1: boundary condition for velocity is free-slip: 
+                      ! i_bc_veloc_lateral = 1: boundary condition for velocity is free-slip:
                       !                         normal velocity components at lateral boundariea is
                       !                         set to zero, tangential not.
-  INTEGER,PARAMETER  :: i_bc_veloc_lateral_noslip   = 0                         
-  INTEGER,PARAMETER  :: i_bc_veloc_lateral_freeslip = 1                           
-  INTEGER            :: i_bc_veloc_lateral = i_bc_veloc_lateral_noslip   
+  INTEGER,PARAMETER  :: i_bc_veloc_lateral_noslip   = 0
+  INTEGER,PARAMETER  :: i_bc_veloc_lateral_freeslip = 1
+  INTEGER            :: i_bc_veloc_lateral = i_bc_veloc_lateral_noslip
 
-  INTEGER            :: i_bc_veloc_top = 1  !Top boundary condition for velocity: 
+  INTEGER            :: i_bc_veloc_top = 1  !Top boundary condition for velocity:
                                             ! i_bc_veloc_top =0 : zero value at top boundary,no wind stress
-                                            ! i_bc_veloc_top =1 : forced by wind stress 
+                                            ! i_bc_veloc_top =1 : forced by wind stress
                                             !                     stored in p_os%p_aux%bc_top_veloc
                                             ! i_bc_veloc_top =2 : forced by difference between wind
-                                            !                     field in p_os%p_aux%bc_top_veloc 
+                                            !                     field in p_os%p_aux%bc_top_veloc
                                             !                     and ocean velocity at top layer
   INTEGER            :: i_bc_veloc_bot = 1  !Bottom boundary condition for velocity:
-                                            ! i_bc_veloc_bot =0 : zero value at bottom boundary 
+                                            ! i_bc_veloc_bot =0 : zero value at bottom boundary
                                             ! i_bc_veloc_bot =1 : bottom boundary friction
                                             ! i_bc_veloc_bot =2 : bottom friction plus topographic
                                             !                     slope (not implemented yet)
@@ -133,49 +151,49 @@ MODULE mo_ocean_nml
   INTEGER, PARAMETER :: KineticEnergy_onDualGrid      = 200
   INTEGER, PARAMETER :: KineticEnergy_onPrimalGrid    = 201
   INTEGER            :: KineticEnergy_type            = KineticEnergy_onDualGrid
-  
+
   LOGICAL :: l_ANTICIPATED_VORTICITY  = .FALSE.
 
   !Identifiers for advection schemes
   INTEGER, PARAMETER :: upwind                     = 1
-  INTEGER, PARAMETER :: central                    = 2  
+  INTEGER, PARAMETER :: central                    = 2
   INTEGER, PARAMETER :: lax_friedrichs             = 3
   INTEGER, PARAMETER :: miura_order1               = 4
   INTEGER, PARAMETER :: horz_flux_twisted_vec_recon = 5
   INTEGER, PARAMETER :: fct_vert_adpo              = 6
-  INTEGER, PARAMETER :: fct_vert_ppm               = 7  
-  INTEGER, PARAMETER :: fct_vert_minmod            = 8      
-  INTEGER, PARAMETER :: fct_vert_zalesak           = 9      
+  INTEGER, PARAMETER :: fct_vert_ppm               = 7
+  INTEGER, PARAMETER :: fct_vert_minmod            = 8
+  INTEGER, PARAMETER :: fct_vert_zalesak           = 9
   !Additional parameters for FCT: High and low order flux calculations can be
   !chosen from list above. Below is the default option
   INTEGER            :: fct_high_order_flux= central
-  INTEGER            :: fct_low_order_flux = upwind 
+  INTEGER            :: fct_low_order_flux = upwind
   !Limiters for Flux-Corrected Transport
   INTEGER, PARAMETER :: fct_limiter_horz_zalesak   =100
   INTEGER, PARAMETER :: fct_limiter_horz_minmod    =101
-  INTEGER, PARAMETER :: fct_limiter_horz_posdef    =102  
-  
+  INTEGER, PARAMETER :: fct_limiter_horz_posdef    =102
+
   !The default setting concerning tracer advection
   !horizontal
-  INTEGER            :: flux_calculation_horz      = horz_flux_twisted_vec_recon      
-  INTEGER            :: fct_limiter_horz           = fct_limiter_horz_zalesak!! 
+  INTEGER            :: flux_calculation_horz      = horz_flux_twisted_vec_recon
+  INTEGER            :: fct_limiter_horz           = fct_limiter_horz_zalesak!!
   !vertical
   INTEGER            :: flux_calculation_vert      = fct_vert_ppm !fct_vert_ppm
 
-  
+
   LOGICAL            :: l_adpo_flowstrength        = .FALSE.   ! .TRUE.: activate second condition for adpo weight
 
   LOGICAL            :: l_LAX_FRIEDRICHS          =.FALSE.  !Additional LAX-Friedich for horizontal tracer advection of full mimetic scheme horz_flux_twisted_vec_recon
   LOGICAL            :: l_GRADIENT_RECONSTRUCTION = .FALSE. !Additional Gradient-Reconstruction for horizontal tracer advection of full mimetic scheme horz_flux_twisted_vec_recon
   !this distinction is no longer used: INTEGER  :: i_sfc_forcing_form        = 0
   !=0: surface forcing applied as top boundary condition to vertical diffusion
-  !=1: surface forcing applied as volume forcing at rhs, i.e.part of explicit term in momentum and tracer eqs. 
+  !=1: surface forcing applied as volume forcing at rhs, i.e.part of explicit term in momentum and tracer eqs.
   !in this case, top boundary ondition of vertical Laplacians are homogeneous
   !INTEGER            :: vbc_zero_cond   =   0   ! no or zero boundary condition
 
   ! parameterized shallow water mode in the ocean model
   INTEGER            :: iswm_oce        =   0  ! switch for shallow water mode (1 = on, 0 = 3dim)
-  INTEGER            :: discretization_scheme    =   1  ! discretization scheme: 1 for mimetic, 
+  INTEGER            :: discretization_scheme    =   1  ! discretization scheme: 1 for mimetic,
                                                ! 2 for RBF-type of discretization
 
   ! parameters for Adams-Bashforth semi-implicit time stepping scheme
@@ -198,6 +216,7 @@ MODULE mo_ocean_nml
   INTEGER, PARAMETER :: select_gmres_r = 2  ! GMRES restart
   INTEGER, PARAMETER :: select_gmres_mp_r = 3 ! GMRES restart mixed precision
   INTEGER, PARAMETER :: select_cg = 4 ! conjugate gradients - Fletcher-Reeves
+  INTEGER, PARAMETER :: select_cgo = 40 ! conjugate gradients - Fletcher-Reeves + Optimisations (LAWN56)
   INTEGER, PARAMETER :: select_cgj = 5  ! conjugate gradients - Fletcher-Reeves + Jacobi-Preconditioner
   INTEGER, PARAMETER :: select_bcgs = 6 ! bi-conjugate gradients (stabilized)
   INTEGER, PARAMETER :: select_legacy_gmres = 7  ! GMRES restart former implementation, but in updated calling infrastructure (l_lhs_direct must be true)
@@ -218,14 +237,14 @@ MODULE mo_ocean_nml
 
 
 
-  LOGICAL :: use_continuity_correction           = .true.  
+  LOGICAL :: use_continuity_correction           = .true.
   INTEGER :: fast_performance_level              = 50 ! 5  ! 0= most safe, bit identical results, should be fast_sum = .false.
                                                       ! 1 = no optimized calls
                                                       ! 5 = standard (use of gmres restart)
                                                       ! > 10 = latest performnce optimizations
 !   LOGICAL :: use_edges2edges_viacell_fast        = .false.
 
-  INTEGER           :: MASS_MATRIX_INVERSION_TYPE =0  
+  INTEGER           :: MASS_MATRIX_INVERSION_TYPE =0
   INTEGER,PARAMETER :: NO_INVERSION               =0
   INTEGER,PARAMETER :: MASS_MATRIX_INVERSION_ADVECTION =1
   INTEGER,PARAMETER :: MASS_MATRIX_INVERSION_ALLTERMS  =2
@@ -240,7 +259,7 @@ MODULE mo_ocean_nml
   REAL(wp) :: threshold_max_S       = 60.0_wp    ! abort criterion for salinity minimum
 
   REAL(wp) :: tracer_threshold_min(8), tracer_threshold_max(8) ! as above but with indexes
-  CHARACTER(LEN=8) :: namelist_tracer_name(12) 
+  CHARACTER(LEN=8) :: namelist_tracer_name(12)
 
   INTEGER  :: no_tracer             = 2          ! number of tracers
 
@@ -269,7 +288,7 @@ MODULE mo_ocean_nml
   REAL(wp) :: para_3dimRelax_Salt   = 1.0_wp     ! strength of 3-dim relaxation for salinity in months
   LOGICAL  :: limit_elevation       = .FALSE.    ! .TRUE.: balance sea level elevation
   LOGICAL  :: limit_seaice          = .TRUE.     ! .TRUE.: set a cutoff limit to sea ice thickness
-  INTEGER  :: limit_seaice_type     = 1 
+  INTEGER  :: limit_seaice_type     = 1
   REAL(wp) :: seaice_limit          = 0.4_wp     ! limit sea ice thickness to fraction of surface layer thickness
   REAL(wp) :: seaice_limit_abs      = 0.0_wp     ! absolute value of maximum ice thickness (only used if > 0.0)
 
@@ -322,6 +341,9 @@ MODULE mo_ocean_nml
 
   INTEGER :: minVerticalLevels       = 2
 
+  LOGICAL :: is_ocean_limited_area = .FALSE. ! TRUE: use limited area mode, provide ocean_limarea_nml
+  REAL(wp) :: ssh_fatal_level = 300.0_wp
+
   NAMELIST/ocean_dynamics_nml/&
     &                 ab_beta                      , &
     &                 ab_const                     , &
@@ -330,6 +352,7 @@ MODULE mo_ocean_nml
     &                 basin_center_lon             , &
     &                 basin_height_deg             , &
     &                 basin_width_deg              , &
+    &                 time_verbosity               , &
     &                 cfl_check                    , &
     &                 cfl_write                    , &
     &                 cfl_stop_on_violation        , &
@@ -378,23 +401,25 @@ MODULE mo_ocean_nml
     &                 solver_FirstGuess            , &
     &                 use_smooth_ocean_boundary    , &
     &                 createSolverMatrix           , &
-    &                 minVerticalLevels
+    &                 minVerticalLevels            , &
+    &                 is_ocean_limited_area        , &
+    &                 ssh_fatal_level
 
-  LOGICAL :: use_draftave_for_transport_h = .true.   !  
-  
+  LOGICAL :: use_draftave_for_transport_h = .true.   !
+
   NAMELIST/ocean_tracer_transport_nml/&
-    &                 no_tracer                    , &  
+    &                 no_tracer                    , &
     &                 flux_calculation_horz        , &
-    &                 flux_calculation_vert        , & 
+    &                 flux_calculation_vert        , &
     &                 fct_high_order_flux          , &
     &                 fct_low_order_flux           , &
-    &                 fct_limiter_horz             , & 
-    &                 l_adpo_flowstrength          , &     
+    &                 fct_limiter_horz             , &
+    &                 l_adpo_flowstrength          , &
     &                 l_with_horz_tracer_advection , &
     &                 l_with_horz_tracer_diffusion , &
     &                 l_with_vert_tracer_advection , &
     &                 l_with_vert_tracer_diffusion , &
-    &                 use_tracer_x_height          , &           
+    &                 use_tracer_x_height          , &
     &                 threshold_max_S              , &
     &                 threshold_max_T              , &
     &                 threshold_min_S              , &
@@ -413,7 +438,7 @@ MODULE mo_ocean_nml
   REAL(wp) :: Salinity_HorizontalDiffusion_Reference     = 1.0E+3_wp
   INTEGER  :: TracerHorizontalDiffusion_scaling          = 1 ! 1= constant, 5=scale with edge (dual) **3
   REAL(wp) :: TracerHorizontalDiffusion_ScaleWeight      = 1.0_wp
-  REAL(wp) :: Tracer_HorizontalDiffusion_PTP_coeff       = 1.0E+3_wp  ! horizontal mixing coefficient for ptp 
+  REAL(wp) :: Tracer_HorizontalDiffusion_PTP_coeff       = 1.0E+3_wp  ! horizontal mixing coefficient for ptp
 
   REAL(wp) :: TracerDiffusion_LeithWeight = 0.0_wp ! if Leith is active then the Leith coeff*this id added to the tracer diffusion coeff
   REAL(wp) :: max_turbulenece_TracerDiffusion = 4.0_wp ! max tracer diffusion amplification from turbulenece on top of the standard one
@@ -443,7 +468,7 @@ MODULE mo_ocean_nml
   REAL(wp) :: velocity_TopWindMixing = 0.5E-3_wp ! Value from MPIOM
   REAL(wp) :: WindMixingDecayDepth  = 40.0
 
- 
+
   ! velocity diffusion
   REAL(wp) :: VerticalViscosity_TimeWeight = 0.0_wp
   REAL(wp) :: velocity_VerticalDiffusion_background      = 1.0E-3_wp  ! vertical diffusion coefficient
@@ -484,7 +509,7 @@ MODULE mo_ocean_nml
   REAL(wp) :: c_k = 0.1_wp
   REAL(wp) :: c_eps = 0.7_wp
   REAL(wp) :: alpha_tke = 30.0_wp
-  REAL(wp) :: mxl_min = 1.E-8_wp 
+  REAL(wp) :: mxl_min = 1.E-8_wp
   LOGICAL  :: use_Kappa_min = .false.
   REAL(wp) :: KappaM_min = 1.E-4_wp
   REAL(wp) :: KappaH_min = 1.E-5_wp
@@ -623,8 +648,8 @@ MODULE mo_ocean_nml
   INTEGER            :: tapering_scheme=tapering_DanaMcWilliams
   LOGICAL            :: switch_off_diagonal_vert_expl=.TRUE.
   LOGICAL            :: GMREDI_COMBINED_DIAGNOSTIC=.TRUE.
-  LOGICAL            :: GM_INDIVIDUAL_DIAGNOSTIC=.TRUE.  
-  LOGICAL            :: REDI_INDIVIDUAL_DIAGNOSTIC=.TRUE.    
+  LOGICAL            :: GM_INDIVIDUAL_DIAGNOSTIC=.TRUE.
+  LOGICAL            :: REDI_INDIVIDUAL_DIAGNOSTIC=.TRUE.
   LOGICAL            :: TEST_MODE_GM_ONLY=.FALSE.
   LOGICAL            :: TEST_MODE_REDI_ONLY=.FALSE.
   LOGICAL            :: SWITCH_OFF_TAPERING=.FALSE.
@@ -632,7 +657,7 @@ MODULE mo_ocean_nml
   LOGICAL            :: SWITCH_ON_TAPERING_HORIZONTAL_DIFFUSION=.FALSE.
   LOGICAL            :: SLOPE_CALC_VIA_TEMPERTURE_SALINITY=.FALSE.
   LOGICAL            :: BOLUS_VELOCITY_DIAGNOSTIC=.FALSE.
-  LOGICAL            :: REVERT_VERTICAL_RECON_AND_TRANSPOSED=.FALSE.  
+  LOGICAL            :: REVERT_VERTICAL_RECON_AND_TRANSPOSED=.FALSE.
   LOGICAL            :: INCLUDE_SLOPE_SQUARED_IMPLICIT=.TRUE.
   !Parameters for tapering schemes
   LOGICAL  :: GMRedi_usesRelativeMaxSlopes = .true. ! the slopes are defined relatively the the grid slopes: dz/dx
@@ -673,8 +698,8 @@ MODULE mo_ocean_nml
     & SLOPE_CALC_VIA_TEMPERTURE_SALINITY,&
     & BOLUS_VELOCITY_DIAGNOSTIC,         &
     & REVERT_VERTICAL_RECON_AND_TRANSPOSED,&
-    & INCLUDE_SLOPE_SQUARED_IMPLICIT 
-  
+    & INCLUDE_SLOPE_SQUARED_IMPLICIT
+
   INTEGER  :: EOS_TYPE              = 2          ! 1=linear EOS,2=(nonlinear, from MPIOM)
                                                  ! 3=nonlinear Jacket-McDoudgall-formulation (not yet recommended)
                                                  ! 10 = EOS10, note that the GMRedo needs to be updated to use the EOS10
@@ -685,17 +710,21 @@ MODULE mo_ocean_nml
   REAL(wp) :: ReferencePressureIndbars
 
   !$ACC DECLARE CREATE(eos_type)
+  !$ACC DECLARE CREATE(fillvalue)
   !$ACC DECLARE CREATE(OceanReferenceDensity)
   !$ACC DECLARE CREATE(LinearThermoExpansionCoefficient)
   !$ACC DECLARE CREATE(LinearHalineContractionCoefficient)
-  
+
   ! ist : todo move into different nml
   LOGICAL  :: lhamocc=.FALSE.
   LOGICAL  :: lbgcadv=.FALSE.
   LOGICAL  :: lsediment_only=.FALSE.
-  INTEGER  :: nbgctra, nbgcadv 
-                                 
-  
+  INTEGER  :: nbgctra, nbgcadv
+  LOGICAL  :: l_couple_icon_waves = .FALSE.
+  REAL(wp) :: sp_thermal_coefficient = 2.5E-4 ! used in EOS for Stuhne and Peltier test case
+
+  !$ACC DECLARE CREATE(sp_thermal_coefficient)
+
   NAMELIST/ocean_physics_nml/&
     &  EOS_TYPE                    , &
     &  i_sea_ice                   , &
@@ -703,15 +732,17 @@ MODULE mo_ocean_nml
     &  LinearThermoExpansionCoefficient,  &
     &  LinearHalineContractionCoefficient,&
     &  OceanReferenceDensity,       &
-    &  lhamocc, lbgcadv, lsediment_only
+    &  lhamocc, lbgcadv, lsediment_only, &
+    &  sp_thermal_coefficient, &
+    &  l_couple_icon_waves
 
   ! ------------------------------------------------------------------------
   ! FORCING {
   ! iforc_oce: parameterized forcing for ocean model:
   INTEGER, PARAMETER :: No_Forcing                = 10
   INTEGER, PARAMETER :: Analytical_Forcing        = 11
-  INTEGER, PARAMETER :: OMIP_FluxFromFile         = 12  ! OMIP or NCEP type forcing
-  INTEGER, PARAMETER :: Atmo_FluxFromFile         = 13  ! not yet
+  INTEGER, PARAMETER :: OMIP_FluxFromFile         = 12  ! OMIP or NCEP type forcing from File
+  INTEGER, PARAMETER :: ERA5_provider             = 13  ! ERA5 from python reader
   INTEGER, PARAMETER :: Coupled_FluxFromAtmo      = 14  ! parameter for a coupled atmosphere-ocean run
   INTEGER, PARAMETER :: Coupled_FluxFromFile      = 15  ! not yet
   INTEGER            :: iforc_oce                 =  0  ! index of parameterized forcing
@@ -785,7 +816,7 @@ MODULE mo_ocean_nml
   !!$LOGICAL  :: ice_vtk_output = .FALSE.
   !!$INTEGER  :: vtk_int = 60*60*24*30
 
-  LOGICAL  :: lfb_bgc_oce = .FALSE.   !chlorophyll determines optical properties of sea water  
+  LOGICAL  :: lfb_bgc_oce = .FALSE.   !chlorophyll determines optical properties of sea water
   LOGICAL  :: lswr_jerlov = .TRUE.
   REAL(wp)  :: jerlov_atten = 0.08_wp
   REAL(wp)  :: jerlov_bluefrac = 0.36_wp
@@ -801,16 +832,16 @@ MODULE mo_ocean_nml
 ! jerlov_atten is taken from figure 2 ; jerlov_bluefrac
 ! is taken from figure 3
 !
-!   - Namelist (default Type IB) 
+!   - Namelist (default Type IB)
 
   LOGICAL      :: use_tides  = .FALSE.
   INTEGER      :: tides_mod = 1 !1: tidal potential by Logemann, HZG 2020. 2: tidal potential from MPI-OM.
-! CHARACTER*16 :: tide_startdate = '2001-01-01 00:00' ! date when tidal spin-up (over 30 days) should start                                                              
+! CHARACTER*16 :: tide_startdate = '2001-01-01 00:00' ! date when tidal spin-up (over 30 days) should start
   REAL(wp)     :: tides_esl_damping_coeff = 0.69_wp
 
   INTEGER, PARAMETER :: wind_stress_from_file = 0
   INTEGER, PARAMETER :: wind_stress_type_noocean = 1
-  INTEGER, PARAMETER :: wind_stress_type_ocean = 2  
+  INTEGER, PARAMETER :: wind_stress_type_ocean = 2
   INTEGER :: bulk_wind_stress_type = wind_stress_from_file
 
 
@@ -904,6 +935,14 @@ MODULE mo_ocean_nml
 
   !----------------------------------------------------------------------------
   ! initial conditions
+
+  ! Variables of that type contain a list of all mandatory input fields
+  ! This list can include a subset or the entire set of mandatory fields.
+
+  TYPE t_check_input_oce
+    CHARACTER(LEN=vname_len) :: list(max_var_ml)
+  END TYPE t_check_input_oce
+
   LOGICAL  :: use_file_initialConditions  = .false.
   REAL(wp) :: initial_temperature_top     = 16.0_wp    ! reference temperature used for initialization in testcase 46
   REAL(wp) :: initial_temperature_bottom  = 16.0_wp    ! reference temperature used for initialization in testcase 46
@@ -922,6 +961,8 @@ MODULE mo_ocean_nml
   INTEGER  :: sea_surface_height_type     = 0          ! >= 200 sea_surface_height
   INTEGER  :: initial_salinity_type       = 0
   INTEGER  :: initial_temperature_type    = 0
+  INTEGER  :: initial_age_type            = 0
+  INTEGER  :: initial_green_type          = 0
   CHARACTER(LEN= max_char_length) :: initial_sst_type = 'sst1'
   INTEGER  :: initial_velocity_type       = 0
   REAL(wp) :: initial_velocity_amplitude  = 0.0_wp
@@ -934,9 +975,40 @@ MODULE mo_ocean_nml
   INTEGER  :: smooth_initial_height_iterations = 0
   INTEGER  :: smooth_initial_velocity_iterations = 0
   REAL(wp) :: smooth_initial_velocity_weights(2)  = 0.0_wp   ! if > 0, initial height is smoothed by these weights, 1st=this, 2nd=neigbors
-  REAL(wp) :: initial_perturbation_waveNumber = 2.0_wp 
-  REAL(wp) :: initial_perturbation_max_ratio  = 0.05_wp 
+  REAL(wp) :: initial_perturbation_waveNumber = 2.0_wp
+  REAL(wp) :: initial_perturbation_max_ratio  = 0.05_wp
   LOGICAL  :: initialize_fromRestart = .false.
+  LOGICAL  :: use_fillValue          = .false.         ! should _FillValue attribute be set
+  LOGICAL  :: fg_apply_fillValues = .false. !If initicon-o, add fillvalues after reading in. Only use at initialization from file without fillvalues
+  LOGICAL  :: use_initicono = .false. !true if data assimilation is used or first guess file is read
+  REAL(wp) :: dt_iau_oce = 0._wp !Time window for incr. analysis update
+  REAL(wp) :: dt_ana_oce = 0._wp !Time window for assimilation cycle
+  REAL(wp) :: dt_shift_oce = 0._wp ! Offset for incr. analysis update
+  CHARACTER(len=max_datetime_str_len) :: iau_reference_date = ''
+  TYPE(datetime), POINTER :: iau_reference_time
+  INTEGER :: type_iau_wgt_oce = 1 !IAU weighting function (const.)
+  CHARACTER(LEN= max_char_length) :: ana_filename = "<path>dwdana_R<nroot>B<jlev>_DOM<idom>_oce.grb" !analysis file
+  CHARACTER(LEN= max_char_length) :: fg_filename = "<path>dwdFG_R<nroot>B<jlev>_DOM<idom>_oce.grb"!first-guess file
+  INTEGER  :: init_mode_oce = 1
+  LOGICAL  :: lread_ana_oce = .false.
+  LOGICAL  :: lconsistency_checks_oce = .true.
+  TYPE(t_check_input_oce) :: check_ana_oce(max_dom)   ! list of mandatory analysis fields.
+                                             ! This list can include a subset or the
+                                             ! entire set of default analysis fields.
+
+  TYPE(t_check_input_oce) :: check_fg_oce(max_dom)   ! All first guess input fields are declared 'optional'
+                                            ! in ICON-O. By adding them to this list, they will become
+                                            ! mandatory, meaning that the model aborts if any of these
+                                            ! fields is missing. On default this list is empty, meaning
+                                            ! that optional first guess fields experience a cold-start
+                                            ! initialization if they are missing. The model does not abort.
+  CHARACTER(LEN= max_char_length) :: ana_varnames_map_file_oce = " "
+  INTEGER  :: evaluation_point = 1 ! where to evaluate initial conditions (1 barycenter, 2 centroid) for gaussian wave test
+  ! parameters for density front tests
+  INTEGER :: sp_density_front_num_sines = 10 ! number of full waves sines
+  REAL(wp) :: sp_density_front_sine_amp = 1  ! degrees
+  REAL(wp) :: sp_press_equilibrium_depth = 3000.0_wp ! depth at which pressure of different density regions is in equilibrium
+
 
   ! test cases for ocean model; for the index see run scripts
   INTEGER            :: itestcase_oce  = 0
@@ -952,6 +1024,8 @@ MODULE mo_ocean_nml
     & initial_salinity_bottom    , &
     & initial_salinity_type      , &
     & initial_temperature_type   , &
+    & initial_age_type           , &
+    & initial_green_type         , &
     & initial_sst_type           , &
     & initial_velocity_type      , &
     & initial_velocity_amplitude , &
@@ -968,10 +1042,33 @@ MODULE mo_ocean_nml
     & smooth_initial_velocity_iterations, &
     & smooth_initial_velocity_weights, &
     & initial_temperature_scale_depth, &
-    & initial_perturbation_waveNumber, & 
+    & initial_perturbation_waveNumber, &
     & initial_perturbation_max_ratio,  &
-    & initialize_fromRestart
-  !----------------------------------------------------------------------------
+    & initialize_fromRestart     , &
+    & use_fillValue              , &
+    & fg_apply_fillValues        , &
+    & use_initicono              , &
+    & dt_iau_oce                 , &
+    & dt_ana_oce                 , &
+    & dt_shift_oce               , &
+    & type_iau_wgt_oce           , &
+    & iau_reference_date         , &
+    & ana_filename               , &
+    & fg_filename                , &
+    & init_mode_oce              , &
+    & lread_ana_oce              , &
+    & lconsistency_checks_oce    , &
+    & check_fg_oce               , &
+    & check_ana_oce              , &
+    & ana_varnames_map_file_oce  , &
+    & evaluation_point           , &
+    & sp_density_front_num_sines , &
+    & sp_density_front_sine_amp  , &
+    & sp_press_equilibrium_depth
+
+
+    !----------------------------------------------------------------------------
+
   ! vertex list of throughflows
   INTEGER :: denmark_strait(100)         = -1
   INTEGER :: gibraltar(100)              = -1
@@ -989,13 +1086,36 @@ MODULE mo_ocean_nml
   LOGICAL :: diagnose_for_horizontalVelocity = .false.
 
   ! by_nils age tracer
-  LOGICAL  :: use_age_tracer = .FALSE.            ! switch for age tracer
-  INTEGER  :: n_age_tracer = 1
+  LOGICAL  :: use_age_tracer = .FALSE.          ! switch for age tracer
+  LOGICAL  :: diagnose_age = .FALSE.
+  LOGICAL  :: diagnose_green = .FALSE.
+  INTEGER  :: age_idx = 0
+  INTEGER  :: green_idx = 0
+  INTEGER  :: n_age_tracer = 0
+  CHARACTER(len=max_datetime_str_len) :: greenStartDate      = ''
+  CHARACTER(len=max_datetime_str_len) :: greenStopDate       = ''
+
+  TYPE(datetime),  POINTER :: green_start_date, green_stop_date
+  TYPE(timedelta) :: green_duration_td
+  REAL(wp) :: green_duration
+
+  REAL(wp) :: Green_tracer_width = 365._wp * 24._wp * 60._wp * 60._wp  ! Tracer impulse duration in seconds
+
   REAL(wp) :: age_tracer_inv_relax_time = 1._wp/864000.0_wp    ! 1 / (10 days)
   LOGICAL  :: l_relaxage_ice        = .TRUE.     ! TRUE: relax age tracer below sea ice
-  
+
+  ! layers package ! by_nils
+  LOGICAL :: use_layers = .FALSE.                ! switch for layer package
+  INTEGER :: n_dlev = 5                          ! number of density layers
+  INTEGER :: mode_layers = 1                     ! mode to derive layer transport
+  REAL(wp) :: rho_lev_in(max_allocated_levels)   ! density levels rho_lev_in(n_dlev+1)
+
+  ! vorticity on cells diagnostics
+  LOGICAL :: do_vort_on_cells = .FALSE.                ! switch for vorticity on cells diagnostics
+
   ! run eddy diagnostics
   LOGICAL  :: eddydiag             = .FALSE.
+  LOGICAL  :: do_ts_budget         = .FALSE. ! by_nils
   LOGICAL  :: diagnose_for_tendencies = .false.
   LOGICAL  :: diagnose_for_heat_content = .false.
 
@@ -1015,13 +1135,64 @@ MODULE mo_ocean_nml
     & agulhas_longer, &
     & diagnose_for_horizontalVelocity, &
     & eddydiag, &
+    & do_ts_budget, & ! by_nils
+    & do_vort_on_cells, & ! by_nils
     & diagnose_for_tendencies, &
     & diagnose_for_heat_content, &
-    & use_age_tracer, & ! by_nils
-    & n_age_tracer, & ! by_nils
+    & diagnose_age, &
+    & diagnose_green, &
     & age_tracer_inv_relax_time, &
     & l_relaxage_ice, & ! by_fraser
+    & use_layers, &   ! by_nils
+    & n_dlev, &       ! by_nils
+    & mode_layers, &  ! by_nils
+    & rho_lev_in, &  ! by_nils
+    & greenStartDate, greenStopDate, &
+    & Green_tracer_width, &
     & check_total_volume
+
+  !----------------------------------------------------------------------------
+  ! ocean limited area mode (LAM) parameters
+  INTEGER :: ocean_latbc_bnd_intp_width = 4  ! number of cell rows for boundary interpolation zone
+  INTEGER :: ocean_latbc_nudg_width     = 8  ! number of cell rows for nudging zone
+  INTEGER :: ocean_max_refin_c_ctrl     = 12 ! maximum value of the refin_c_ctrl variable in the grid file
+                                             ! this cannot be hard coded, and there has to be some checking.
+                                             ! we assume the max value of refin_e_ctrl is double of that
+  INTEGER :: ocean_latbc_itype     = 1       ! 0 - constant BCs, 1 - time dependent BCs
+  INTEGER :: ocean_latbc_nudg_func = 1       ! 1 - discrete parabolic sigmoid, 2 - exponential decay
+  REAL(wp) :: ocean_latbc_exp_const_A = 1.65 ! amplitude of nudging function 2 (exponential decay)
+  REAL(wp) :: ocean_latbc_exp_const_b = 0.55 ! decay rate of nudging function 2 (exponential decay)
+  REAL(wp) :: ocean_latbc_dtime    = -1.0_wp ! time difference between two consecutive latbc files
+  CHARACTER(LEN=max_datetime_str_len) :: ocean_latbc_start_datetime_str = ''
+                                             ! date and time from which latbcs start. it cannot
+                                             ! be after the end of the first timestep. if empty,
+                                             ! will default to experiment start
+  CHARACTER(LEN=filename_max) :: ocean_latbc_filepattern = &  ! pattern of the latbc filenames
+    & "BC_oce_R<nroot>B<jlev>_<y><m><d><h>.nc"
+  CHARACTER(LEN=filename_max) :: ocean_latbc_path = "./latbc" ! path to the latbc files
+  LOGICAL :: ocean_latbc_async_io           ! use asynchronous io for lateral boundary data
+  LOGICAL :: ocean_latbc_is_sparse          ! use sparse lateral boundary data
+  LOGICAL :: ocean_latbc_from_vn = .false.  ! test option to initialize latbc velocities directly
+                                            ! from vn instead u,v. works only when LAM and global
+                                            ! have the same resolution
+
+  NAMELIST/ocean_limarea_nml/&
+    & ocean_latbc_bnd_intp_width,     &
+    & ocean_latbc_nudg_width,         &
+    & ocean_max_refin_c_ctrl,         &
+    & ocean_latbc_itype,              &
+    & ocean_latbc_nudg_func,          &
+    & ocean_latbc_exp_const_A,        &
+    & ocean_latbc_exp_const_b,        &
+    & ocean_latbc_dtime,              &
+    & ocean_latbc_start_datetime_str, &
+    & ocean_latbc_filepattern,        &
+    & ocean_latbc_path,               &
+    & ocean_latbc_async_io,           &
+    & ocean_latbc_is_sparse,          &
+    & ocean_latbc_from_vn
+
+
   ! ------------------------------------------------------------------------
   ! 3.0 Namelist variables and auxiliary parameters for octst_nml
   !     This namelists mainly exists during the development of the ocean model
@@ -1066,8 +1237,13 @@ MODULE mo_ocean_nml
 
   ! NAMELIST/ocean_run_nml/ ignore_land_points
 
-  INTEGER :: i_status, istat
+  INTEGER :: i_status, istat, jg
   INTEGER :: iunit
+  INTEGER :: z_go_init(2)   ! for consistency check
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
+  !Dummy variable needed for a workaround for namelist reading issue on LUMI
+  LOGICAL :: l_dummy
+#endif
 
   CHARACTER(*), PARAMETER :: &
           method_name = 'mo_ocean_nml/read_ocean_namelist:'
@@ -1082,6 +1258,7 @@ MODULE mo_ocean_nml
 
     n_zlev            = -1 ! 5
     dzlev_m(:)        = -1.0_wp
+    rho_lev_in(:) = -1.0_wp ! by_nils
 
     !dzlev_m(1:n_zlev) =  (/ 50.0_wp, 150.0_wp, 500.0_wp, 1300.0_wp, 2500.0_wp  /)
     !  lower level of layers:  50       200       700       2000       4500
@@ -1090,6 +1267,14 @@ MODULE mo_ocean_nml
     ! maximal diffusion coefficient for tracer used in implicit vertical tracer diffusion,
     !   if stability criterion is met
     tracer_convection_MixingCoefficient  = 100.0_wp * Temperature_VerticalDiffusion_background
+
+    ! HACK for backward compatibility: PLEASE REMOVE SOON !!!
+    ! The deprecated Namelist switch initialize_fromRestart is initialized with my_model_do_restart.
+    ! my_model_do_restart will be overwritten again in mo_ocean_model:ocean_model
+    ! by initialize_fromRestart. In doing so, initialize_fromRestart can still be used
+    ! to control the initialization behavior of the ocean model, which ensures
+    ! viability of existing runscripts.
+    initialize_fromRestart = (my_model_do_restart == INIT_FROM_RESTART)
 
     !------------------------------------------------------------
     ! 5.0 Read ocean_nml namelist
@@ -1107,6 +1292,22 @@ MODULE mo_ocean_nml
       iunit = temp_defaults()
       WRITE(iunit, ocean_dynamics_nml) ! write defaults to temporary text file
     END IF
+
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
+    ! The WRITE below is never supposed to happen, it's there just to keep the
+    ! compiler from optimizing the INQUIRE call out. The problem we are trying
+    ! to solve here is at least partly site-specific; it manifests itself on
+    ! LUMI when a large number of ranks try to read the same namelist file
+    ! simultaneously. Adding the INQUIRE seems to help. It possibly serializes
+    ! accesses so that some race condition is avoided. This is a temporary
+    ! workaround until we make only one rank read and then broadcast the values
+    ! to others.
+    INQUIRE(nnml, opened=l_dummy)
+    IF (.NOT. l_dummy) THEN
+      WRITE(0,*) "FATAL: This message is not supposed to be ever emitted!"
+    ENDIF
+#endif
+
     SELECT CASE (i_status)
     CASE (positioned)
       READ (nnml, ocean_dynamics_nml)                         ! overwrite default settings
@@ -1203,7 +1404,7 @@ MODULE mo_ocean_nml
         WRITE(iunit, ocean_tracer_transport_nml)    ! write settings to temporary text file
       END IF
     END SELECT
-    
+
     CALL position_nml ('ocean_forcing_nml', status=i_status)
     IF (my_process_is_stdio()) THEN
       iunit = temp_defaults()
@@ -1220,7 +1421,12 @@ MODULE mo_ocean_nml
 
     use_bc_SAL_potential = use_tides_SAL
     CALL message(method_name, "use_bc_SAL_potential acitvated")
-    
+
+    DO jg=1,max_dom
+    check_fg_oce(jg)%list(:) = ''
+    check_ana_oce(jg)%list(:) = ''
+    ENDDO
+
     CALL position_nml ('ocean_initialConditions_nml', status=i_status)
     IF (my_process_is_stdio()) THEN
       iunit = temp_defaults()
@@ -1249,18 +1455,66 @@ MODULE mo_ocean_nml
       END IF
     END SELECT
 
+    IF (diagnose_age .OR. diagnose_green) THEN
+      use_age_tracer = .TRUE.
+      IF (diagnose_age .AND. diagnose_green) THEN
+        n_age_tracer = 2
+        age_idx = 3
+        green_idx = 4
+      ELSEIF (diagnose_age) THEN
+        n_age_tracer = 1
+        age_idx = 3
+        green_idx = 0
+      ELSEIF (diagnose_green) THEN
+        n_age_tracer = 1
+        age_idx = 0
+        green_idx = 3
+      END IF
+
+      IF (diagnose_green) THEN
+        IF (greenStartDate /= "") THEN
+          IF (greenStopDate /= "") THEN
+            green_start_date => newDatetime(TRIM(greenStartDate))
+            green_stop_date => newDatetime(TRIM(greenStopDate))
+            green_duration_td = getTimeDeltaFromDateTime(green_stop_date, green_start_date)
+            green_duration = REAL(getTotalSecondsTimeDelta(green_duration_td, green_start_date))
+          ELSE
+            CALL finish(method_name, "using the Green's tracer and green_start_date or green_stop_date are not set")
+          END IF
+        END IF
+      END IF
+    END IF
+
+    IF (is_ocean_limited_area) THEN
+      CALL position_nml ('ocean_limarea_nml', status=i_status)
+      IF (my_process_is_stdio()) THEN
+        iunit = temp_defaults()
+        WRITE(iunit, ocean_limarea_nml)   ! write defaults to temporary text file
+      END IF
+      SELECT CASE (i_status)
+      CASE (positioned)
+        READ (nnml, ocean_limarea_nml)    ! overwrite default settings
+        IF (my_process_is_stdio()) THEN
+          iunit = temp_settings()
+          WRITE(iunit, ocean_limarea_nml) ! write settings to temporary text file
+        END IF
+      CASE DEFAULT
+        CALL finish(method_name, 'Ocean LAM activated in grid_nml but not defined')
+      END SELECT
+    END IF
+
     !------------------------------------------------------------
     ! 6.0 check the consistency of the parameters
     !------------------------------------------------------------
-    
+
     ! adjust wind mixxing coefficient as in MPIOM
     tracer_TopWindMixing   = tracer_TopWindMixing / (6.0_wp**3)
     velocity_TopWindMixing = velocity_TopWindMixing / (6.0_wp**3)
-    
+
     If (laplacian_form /= 1 .and. laplacian_form /= 2) THEN
       CALL finish(method_name, 'wrong laplacian_form parameter')
     ENDIF
-      
+
     !$ACC UPDATE DEVICE(n_zlev) ASYNC(1)
     !$ACC WAIT(1) ! can be removed when all ACC compute regions are ASYNC(1)
     IF( n_zlev < 1 ) &
@@ -1308,15 +1562,15 @@ MODULE mo_ocean_nml
           &.AND.fct_limiter_horz/=fct_limiter_horz_posdef)THEN
           CALL finish(method_name, 'wrong parameter for limiter in horizontal fct')
         ENDIF
-    
+
       ENDIF
-    !consistency check for horizontal advection in cell_based configuration       
+    !consistency check for horizontal advection in cell_based configuration
     ELSEIF(.NOT.l_edge_based)THEN
       CALL message(TRIM(method_name),'You are using the CELL_BASED discretization')
       IF( flux_calculation_horz > horz_flux_twisted_vec_recon&
        & .OR. flux_calculation_horz <upwind.OR.flux_calculation_horz==lax_friedrichs ) THEN
         CALL finish(TRIM(method_name), 'wrong parameter for horizontal advection scheme; use 1-5 without 3')
-      ENDIF     
+      ENDIF
       IF( flux_calculation_horz == horz_flux_twisted_vec_recon) THEN
         !high and low order flux check
         IF(fct_low_order_flux/=upwind .AND. fct_low_order_flux/=miura_order1)THEN
@@ -1329,10 +1583,10 @@ MODULE mo_ocean_nml
           &.AND.fct_limiter_horz/=fct_limiter_horz_minmod &
           &.AND.fct_limiter_horz/=fct_limiter_horz_posdef)THEN
           CALL finish(method_name, 'wrong parameter for limiter in horizontal fct')
-        ENDIF     
-      ENDIF     
+        ENDIF
+      ENDIF
     ENDIF
-    
+
     !check for vertical advection
     IF(      flux_calculation_vert/=upwind        &
       &.AND.flux_calculation_vert/=fct_vert_ppm  &
@@ -1357,23 +1611,6 @@ MODULE mo_ocean_nml
         &  'bottom boundary condition for velocity currently not supported: choose = 0, 1, 2')
     ENDIF
 
-    ! Check age tracer settings
-    IF (use_age_tracer .AND. GMRedi_configuration/=0) THEN
-      CALL finish(method_name, &
-        & 'age tracer incompatible with GM parameterisation: choose use_age_tracer=.false. or GMRedi_configuration=0')
-    ENDIF 
-
-
-!      IF(no_tracer == 1 .OR. no_tracer < 0 .OR. no_tracer > 2) THEN
-!        IF(no_tracer == 1) THEN
-!          CALL message(method_name, 'WARNING - You have chosen tracer temperature only')
-!          CALL message(method_name, ' - this generates error in mo_varlist/mo_ocean_state')
-!          CALL finish(method_name,  'no_tracer=1 not supported - choose =0 or =2')
-!        ENDIF
-!        CALL finish(method_name,  'no_tracer not supported - choose =0 or =2')
-!      ENDIF
-
-
 !     IF (solver_start_tolerance <= 0.0_wp) THEN
 !       solver_start_tolerance = solver_tolerance
 !       solver_tolerance_decrease_ratio  = 0.1_wp ! must be < 1
@@ -1388,8 +1625,51 @@ MODULE mo_ocean_nml
       CALL message(method_name,'WARNING, forcing_set_runoff_to_zero is .TRUE. - forcing with river runoff is set to zero')
     END IF
 
-#ifndef __NO_ICON_ATMO__
-    IF ( is_coupled_to_atmo() ) THEN
+    IF (is_ocean_limited_area) THEN
+#ifdef _OPENACC
+      CALL finish(method_name,'LAM: ocean limited area does not yet support ACC computations')
+#endif
+
+      IF (ocean_latbc_async_io) &
+        & CALL finish(method_name, 'LAM: asynchronous latbcs not implemented')
+
+      IF (ocean_latbc_is_sparse) &
+        & CALL finish(method_name, 'LAM: sparse latbcs not implemented')
+
+      IF (ocean_latbc_itype /= 0 .AND. ocean_latbc_itype /= 1) &
+        & CALL finish(method_name,'LAM: ocean latbc type can be either 0 or 1')
+
+      IF (ocean_latbc_itype == 0 .AND. ocean_latbc_is_sparse) &
+        & CALL finish(method_name,'LAM: sparse latbcs optimization not supported with constant latbcs')
+
+      IF (ocean_latbc_itype > 0 .AND. ocean_latbc_dtime < 0) &
+        & CALL finish(method_name,'LAM: (positive) time difference between latbcs is required')
+
+      IF (ocean_latbc_itype > 0 .AND. ocean_latbc_dtime > 86400._wp) &
+        & CALL finish(method_name, &
+        & 'LAM: ocean_latbc_dtime (ocean_limarea_nml) too large for mtime conversion')
+
+      IF (ocean_latbc_bnd_intp_width < 4) &
+        & CALL finish(method_name, 'LAM: width of boundary interpolation zone must be at least 4')
+
+      IF (ocean_latbc_nudg_width < 4) &
+        & CALL finish(method_name, 'LAM: width of nudging zone must be at least 4')
+
+      IF (ocean_latbc_bnd_intp_width + ocean_latbc_nudg_width > ocean_max_refin_c_ctrl) &
+        & CALL finish(method_name, &
+        & 'LAM: sum of widths of boundary interpolation zone and nudging zone cant exceed maximum of refin_c_ctrl')
+
+      IF (ocean_latbc_nudg_func <= 0 .OR. ocean_latbc_nudg_func >= 3) &
+        & CALL finish(method_name, &
+        & 'LAM: ocean_latbc_nudg_func has to be either 1 or 2')
+
+      IF (ocean_latbc_exp_const_A < 0 .OR. ocean_latbc_exp_const_b < 0) &
+        & CALL finish(method_name, &
+        & 'LAM: constants in the exponential decay nudging function have to be positive')
+    END IF
+
+#ifdef YAC_coupling
+    IF ( is_coupled_to_atmo() .AND. iforc_oce /= Coupled_FluxFromAtmo ) THEN
       iforc_oce = Coupled_FluxFromAtmo
       CALL message(method_name,'WARNING, iforc_oce set to 14 for coupled experiment')
  !!!  limiters can now be set by namelist
@@ -1400,10 +1680,40 @@ MODULE mo_ocean_nml
     END IF
 #endif
 
+  ! make sure that dt_shift is negative or 0.
+IF ( dt_shift_oce > 0._wp ) THEN
+  WRITE(message_text,'(a,f8.2,a)') 'dt_shift_oce=', dt_shift_oce, &
+    ' not allowed. Must be NEGATIVE or 0.'
+  CALL finish(method_name,message_text)
+ELSE
+  CALL set_tc_timeshift(dt_shift_oce)
+ENDIF
+
+IF ( use_initicono ) THEN
+  z_go_init = (/MODE_DWDANA_OCE,MODE_IAU_OCE/)
+  IF (ALL(z_go_init /= init_mode_oce)) THEN
+    CALL finish( TRIM(method_name),                         &
+      &  'Invalid initialization mode. init_mode_oce must be 1 or 2')
+  ENDIF
+
+  ! Check whether an analysis file is provided, if lread_ana=.TRUE.
+  IF (lread_ana_oce) THEN
+    IF (ana_filename ==' ') THEN
+    CALL finish( TRIM(method_name),                         &
+      &  'oce_ana_filename required, but missing.')
+    ENDIF
+  ENDIF
+
+  IF(init_mode_oce .EQ. MODE_IAU_OCE) THEN
+    type_iau_wgt = type_iau_wgt_oce
+    IF(iau_reference_date /= '') iau_reference_time => newDatetime(TRIM(iau_reference_date))
+  ENDIF
+ENDIF
+
     ! write the contents of the namelist to an ASCII file
     IF(my_process_is_stdio()) THEN
       WRITE(nnml_output,nml=ocean_dynamics_nml)
-      WRITE(nnml_output,nml=ocean_physics_nml) 
+      WRITE(nnml_output,nml=ocean_physics_nml)
       WRITE(nnml_output,nml=ocean_horizontal_diffusion_nml)
       WRITE(nnml_output,nml=ocean_vertical_diffusion_nml)
       WRITE(nnml_output,nml=ocean_tracer_transport_nml)
@@ -1411,6 +1721,7 @@ MODULE mo_ocean_nml
       WRITE(nnml_output,nml=ocean_forcing_nml)
       WRITE(nnml_output,nml=ocean_initialConditions_nml)
       WRITE(nnml_output,nml=ocean_diagnostics_nml)
+      WRITE(nnml_output,nml=ocean_limarea_nml)
     ENDIF
     !------------------------------------------------------------
     ! 6.0 Read octst_nml namelist
@@ -1418,7 +1729,7 @@ MODULE mo_ocean_nml
     ! (done so far by all MPI processes)
 
     ! 3-char string with marked processes to be printed out for debug purposes
-    str_proc_tst =  (/  & 
+    str_proc_tst =  (/  &
       &  'all', &  ! initiate print messages in all method_names
       &  'abm', &  ! main timestepping method_names       in mo_ocean_ab_timestepping (mimetic/rbf)
       &  'vel', &  ! velocity advection and diffusion in mo_ocean_velocity_advection
@@ -1446,21 +1757,25 @@ MODULE mo_ocean_nml
     tracer_threshold_max(2) = threshold_max_S
     namelist_tracer_name(1) = "Temperature"
     namelist_tracer_name(2) = "Salinity"
-     
+
     use_omip_windstress = ( forcing_windstress_u_type == 1 ) .AND. (forcing_windstress_v_type == 1)
     use_omip_fluxes     = ( forcing_fluxes_type == 1 )
     use_omip_forcing    = use_omip_windstress .OR. use_omip_fluxes
 
     nbgctra = 0
     nbgcadv = 0
-    if(lhamocc) then 
+    if(lhamocc) then
        nbgctra = n_bgctra
        if(lbgcadv) nbgcadv =  ntraad
     endif
 
+    ! get fillvalue from cdi
+    IF (use_fillValue) fillValue = REAL(cdiInqMissval(), KIND=wp)
     !$ACC UPDATE &
     !$ACC   DEVICE(eos_type) &
+    !$ACC   DEVICE(fillValue) &
     !$ACC   DEVICE(OceanReferenceDensity) &
+    !$ACC   DEVICE(sp_thermal_coefficient) &
     !$ACC   DEVICE(LinearThermoExpansionCoefficient) &
     !$ACC   DEVICE(LinearHalineContractionCoefficient) &
     !$ACC   ASYNC(1)

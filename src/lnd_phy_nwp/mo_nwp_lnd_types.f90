@@ -1,16 +1,15 @@
-! Data type definition for land surface scheme (TERRA)
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Data type definition for land surface scheme (TERRA)
 
 MODULE mo_nwp_lnd_types
 
@@ -39,8 +38,6 @@ MODULE mo_nwp_lnd_types
     &  t_g            (:,:)     , & ! weighted surface temperature                  (  K  )
     &  t_g_t          (:,:,:)   , & ! weighted surface temperature on tiles         (  K  )
     &  w_i_t          (:,:,:)   , & ! water content of interception water           (m H2O)
-    &  w_p_t          (:,:,:)   , & ! water content of pond interception water      (m H2O)
-    &  w_s_t          (:,:,:)   , & ! water content of interception snow            (m H2O)
     &  t_so_t         (:,:,:,:) , & ! soil temperature (main level)                 (  K  )
     &  w_so_t         (:,:,:,:) , & ! total water content (ice + liquid water)      (m H20)
     &  w_so_ice_t     (:,:,:,:) , & ! ice content                                   (m H20)
@@ -57,13 +54,11 @@ MODULE mo_nwp_lnd_types
     TYPE(t_ptr_2d3d), ALLOCATABLE :: t_snow_mult_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: t_s_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: t_sk_ptr(:)
-    TYPE(t_ptr_2d3d), ALLOCATABLE :: t_gt_ptr(:) 
-    TYPE(t_ptr_2d3d), ALLOCATABLE :: w_snow_ptr(:) 
+    TYPE(t_ptr_2d3d), ALLOCATABLE :: t_gt_ptr(:)
+    TYPE(t_ptr_2d3d), ALLOCATABLE :: w_snow_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: rho_snow_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: rho_snow_mult_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: w_i_ptr(:)
-    TYPE(t_ptr_2d3d), ALLOCATABLE :: w_p_ptr(:)
-    TYPE(t_ptr_2d3d), ALLOCATABLE :: w_s_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: t_so_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: w_so_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: w_so_ice_ptr(:)
@@ -90,11 +85,11 @@ MODULE mo_nwp_lnd_types
     &  t_mnw_lk     (:,:)   , & ! mean temperature of the water column   (  K  )
     &  t_wml_lk     (:,:)   , & ! temperature of the mixed-layer         (  K  )
     &  h_ml_lk      (:,:)   , & ! thickness of the mixed-layer           (  m  )
-    &  t_bot_lk     (:,:)   , & ! temperature at the water-bottom sediment interface  (  K  ) 
+    &  t_bot_lk     (:,:)   , & ! temperature at the water-bottom sediment interface  (  K  )
     &  c_t_lk       (:,:)   , & ! shape factor with respect to the       (  -  )
                                 ! temperature profile in lake thermocline
-    &  t_b1_lk      (:,:)   , & ! temperature at the bottom of the       (  K  ) 
-                                ! upper layer of the sediments 
+    &  t_b1_lk      (:,:)   , & ! temperature at the bottom of the       (  K  )
+                                ! upper layer of the sediments
     &  h_b1_lk      (:,:)       ! thickness of the upper layer of the    (  K  )
                                 ! sediments
   END TYPE t_wtr_prog
@@ -109,9 +104,9 @@ MODULE mo_nwp_lnd_types
     &  t_s          (:,:)   , & ! temperature of the ground surface             (  K  )
     &  t_sk         (:,:)   , & ! skin temperature                              (  K  )
     &  t_seasfc     (:,:)   , & ! temperature of the sea surface                (  K  )
+    &  sst_warm_layer(:,:)  , & ! SST warm layer increment                      (  K  )
+    &  sst_cold_skin(:,:)   , & ! SST cold skin increment                       (  K  )
     &  w_i          (:,:)   , & ! water content of interception water           (m H2O)
-    &  w_p          (:,:)   , & ! water content of pond interception water      (m H2O)
-    &  w_s          (:,:)   , & ! water content of interception snow            (m H2O)
     &  t_so         (:,:,:) , & ! soil temperature (main level)                 (  K  )
     &  w_so         (:,:,:) , & ! total water content (ice + liquid water)      (m H20)
     &  w_so_ice     (:,:,:) , & ! ice content                                   (m H20)
@@ -138,8 +133,8 @@ MODULE mo_nwp_lnd_types
     &  t_snow       (:,:)   , & ! temperature of the snow-surface               (  K  )
     &  rho_snow     (:,:)   , & ! snow density                                  (kg/m**3)
     &  w_snow       (:,:)   , & ! snow water equivalent                         (m H2O)
-    &  h_snow       (:,:)   , & ! snow height                                   (  m  ) 
-    &  h_snow_t     (:,:,:) , & ! snow height                                   (  m  ) 
+    &  h_snow       (:,:)   , & ! snow height                                   (  m  )
+    &  h_snow_t     (:,:,:) , & ! snow height                                   (  m  )
     &  freshsnow    (:,:)   , & ! indicator for age of snow in top of snow layer(  -  )
     &  freshsnow_t  (:,:,:) , & ! indicator for age of snow in top of snow layer(  -  )
     &  snow_age     (:,:)   , & ! duration of snow cover period                 (  d  )
@@ -173,6 +168,7 @@ MODULE mo_nwp_lnd_types
     TYPE(t_ptr_2d3d), ALLOCATABLE :: runoff_s_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: runoff_g_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: resid_wso_ptr(:)
+    TYPE(t_ptr_2d3d), ALLOCATABLE :: resid_wso_inst_ptr(:)
     TYPE(t_ptr_2d3d), ALLOCATABLE :: snow_melt_ptr(:)
 
   END TYPE t_lnd_diag
@@ -188,6 +184,6 @@ MODULE mo_nwp_lnd_types
     TYPE(t_lnd_diag)               :: diag_lnd
     TYPE(t_var_list_ptr)               :: lnd_diag_nwp_list
   END TYPE t_lnd_state
- 
+
 
 END MODULE mo_nwp_lnd_types

@@ -1,19 +1,18 @@
-! This module contains subroutines that update the prep_adv state
-! with meaningful values for standalone advection runs.
-! Note that in real case runs, the prep_adv state is updated by the
-! dynamical core (nh_solve).
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains subroutines that update the prep_adv state
+! with meaningful values for standalone advection runs.
+! Note that in real case runs, the prep_adv state is updated by the
+! dynamical core (nh_solve).
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -40,7 +39,7 @@ CONTAINS
 
   !--------------------------------------------------------------------------
   !>
-  !! Diagnose mass fluxes and trajectory-velocities for the 
+  !! Diagnose mass fluxes and trajectory-velocities for the
   !! standalone tracer transport scheme.
   !!
   !! Note that upper boundary fluxes (when using horizontal/vertical nesting)
@@ -118,7 +117,9 @@ CONTAINS
         DO je = i_startidx, i_endidx
 
           ! trajectory-velocity
-          p_vn_traj(je,jk,jb) = 0.5_wp * ( p_now%vn(je,jk,jb) + p_new%vn(je,jk,jb) )
+          ! It is assumed that p_new%vn contains the velocity field
+          ! centered in time at n+1/2
+          p_vn_traj(je,jk,jb) = p_new%vn(je,jk,jb)
 
           ! mass flux
           p_mass_flx_me(je,jk,jb) = p_nh_diag%mass_fl_e(je,jk,jb)
@@ -188,4 +189,3 @@ CONTAINS
   END SUBROUTINE prepare_tracer
 
 END MODULE mo_prepadv_util
-

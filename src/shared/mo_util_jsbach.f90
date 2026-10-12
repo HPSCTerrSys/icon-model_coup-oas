@@ -1,16 +1,15 @@
-! Contains modules that provide interfaces to ICON infrastructure for JSBACH4
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains modules that provide interfaces to ICON infrastructure for JSBACH4
 
 #ifndef __NO_JSBACH__
 
@@ -169,7 +168,7 @@ CONTAINS
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':get_blk_start'
 
-    get_blk_start = patch%cells%start_blk(grf_bdywidth_c + 1, 1)
+    get_blk_start = patch%cells%start_block(grf_bdywidth_c + 1)
 
   END FUNCTION get_blk_start
 
@@ -179,7 +178,7 @@ CONTAINS
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':get_blk_end'
 
-    get_blk_end = patch%cells%end_blk(min_rlcell_int, MAX(1, patch%n_childdom))
+    get_blk_end = patch%cells%end_block(min_rlcell_int)
 
   END FUNCTION get_blk_end
 
@@ -296,15 +295,15 @@ CONTAINS
 END MODULE mo_jsb_namelist_iface
 
 !------------------------------------------------------------------------------------------------------------
-!> Contains interface to reading of generic ICON infrastructure namelists (for standalone JSBACH)
+!> Contains interface to reading of generic ICON infrastructure namelists (for standalone ICON-Land)
 !
 MODULE mo_read_namelists_iface
 
-  PUBLIC :: read_infrastructure_namelists_for_jsbach
+  PUBLIC :: read_infrastructure_namelists_for_icon_land, print_infrastructure_namelists_for_icon_land
 
 CONTAINS
 
-  SUBROUTINE read_infrastructure_namelists_for_jsbach(jsb_namelist_filename, shr_namelist_filename)
+  SUBROUTINE read_infrastructure_namelists_for_icon_land(jsb_namelist_filename, shr_namelist_filename)
 
     USE mo_time_nml,              ONLY: read_time_namelist
 
@@ -322,6 +321,7 @@ CONTAINS
 
     USE mo_aes_phy_nml,           ONLY: process_aes_phy_nml
     USE mo_aes_rad_nml,           ONLY: process_aes_rad_nml
+    USE mo_nwp_phy_nml,           ONLY: read_nwp_phy_namelist
 
     CHARACTER(LEN=*), INTENT(in) :: jsb_namelist_filename
     CHARACTER(LEN=*), INTENT(in) :: shr_namelist_filename
@@ -356,8 +356,56 @@ CONTAINS
 
     CALL process_aes_phy_nml             (jsb_namelist_filename)
     CALL process_aes_rad_nml             (jsb_namelist_filename)
+    CALL read_nwp_phy_namelist           (jsb_namelist_filename)
 
-  END SUBROUTINE read_infrastructure_namelists_for_jsbach
+  END SUBROUTINE read_infrastructure_namelists_for_icon_land
+
+  !>
+  !! Print some configuration for ICON-Land standalone simulation
+  !!
+  !! Currently, only some relevant parameters from radiation config are printed
+  !!
+  SUBROUTINE print_infrastructure_namelists_for_icon_land(ng)
+
+    USE mo_exception,      ONLY: message, print_value
+    USE mo_aes_rad_config, ONLY: aes_rad_config
+
+    INTEGER, INTENT(in) :: ng
+
+    INTEGER :: jg
+    CHARACTER(LEN=2) :: cg
+
+    CALL message    ('','')
+    CALL message    ('','========================================================================')
+    CALL message    ('','')
+    CALL message    ('','ICON-Land radiation configuration')
+    CALL message    ('','=================================')
+    CALL message    ('','')
+
+    DO jg = 1,ng
+      !
+      WRITE(cg,'(i0)') jg
+      !
+      IF (ng > 1) THEN ! is only the case for site-level setup
+        CALL message    ('','For site '//cg)
+        CALL message    ('','------------')
+      END IF
+      CALL message    ('','')
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% l_orbvsop87   ',aes_rad_config(jg)% l_orbvsop87   )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% cecc          ',aes_rad_config(jg)% cecc          )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% cobld         ',aes_rad_config(jg)% cobld         )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% clonp         ',aes_rad_config(jg)% clonp         )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% lyr_perp      ',aes_rad_config(jg)% lyr_perp      )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% yr_perp       ',aes_rad_config(jg)% yr_perp       )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% nmonth        ',aes_rad_config(jg)% nmonth        )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% icosmu0       ',aes_rad_config(jg)% icosmu0       )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% ldiur         ',aes_rad_config(jg)% ldiur         )
+      CALL print_value('    aes_rad_config('//TRIM(cg)//')% l_sph_symm_irr',aes_rad_config(jg)% l_sph_symm_irr)
+      CALL message    ('','')
+
+    END DO
+
+  END SUBROUTINE
 
 END MODULE mo_read_namelists_iface
 
@@ -377,20 +425,24 @@ MODULE mo_jsb_time_iface
     &                                  divisionquotienttimespan, getDayOfYearFromDateTime,           &
     &                                  getNoOfDaysInMonthDateTime, getNoOfDaysInYearDateTime,        &
     &                                  no_of_sec_in_a_day,                                           &
-    &                                  getNoOfSecondsElapsedInDayDateTime, getTotalSecondsTimeDelta, &
-    &                                  divideDatetimeDifferenceInSeconds !, isCurrentEventActive,      &
+    &                                  getNoOfSecondsElapsedInDayDateTime, getTotalMilliSecondsTimeDelta, &
+    &                                  divideDatetimeDifferenceInSeconds !, isCurrentEventActive
   USE mo_time_config,            ONLY: time_config !configure_time
   USE mo_time_nml,               ONLY: read_time_namelist
   USE mo_bcs_time_interpolation, ONLY: t_time_interpolation_weights,              &
     &                                  calculate_time_interpolation_weights
-  USE mo_aes_phy_config,         ONLY: aes_phy_tc, dt_zero
+  USE mo_aes_phy_config,         ONLY: aes_phy_tc
   USE mo_atm_phy_nwp_config,     ONLY: atm_phy_nwp_config
   USE mo_run_config,             ONLY: l_timer_host => ltimer, iforcing
   USE mo_impl_constants,         ONLY: inwp, itrad
   USE mo_master_config,          ONLY: isRestart
+  USE mo_fortran_tools,          ONLY: set_acc_async_queue
 
   IMPLICIT NONE
   PRIVATE
+
+  TYPE(t_time_interpolation_weights) :: current_time_interpolation_weights
+  !$ACC DECLARE CREATE(current_time_interpolation_weights)
 
   PUBLIC :: t_datetime, deallocateDatetime
   PUBLIC :: get_year_length, get_month_length, get_day_length, get_year_day
@@ -402,6 +454,7 @@ MODULE mo_jsb_time_iface
   PUBLIC :: start_timestep, finish_timestep
   PUBLIC :: configure_time_and_events
   PUBLIC :: get_date_components
+  PUBLIC :: cache_time_interpolation_weights
   PUBLIC :: get_time_interpolation_weights
   PUBLIC :: get_asselin_coef
   PUBLIC :: l_timer_host
@@ -427,32 +480,35 @@ CONTAINS
   !!
   !! Function returns the length of the integration time step
   !!
-  REAL(wp) FUNCTION get_time_dt(model_id)
+  REAL(wp) FUNCTION get_time_dt(model_id, is_standalone)
 
     INTEGER, INTENT(in) :: model_id
+    LOGICAL, INTENT(in) :: is_standalone
 
     TYPE(t_datetime), POINTER :: reference_datetime
     REAL(wp) :: ztime
+    INTEGER  :: dt_in_ms
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':get_time_dt'
 
-    IF (iforcing == inwp) THEN
+    IF (iforcing == inwp .AND. .NOT. is_standalone) THEN
       ztime = atm_phy_nwp_config(model_id)%dt_fastphy
     ELSE
       ztime = -1._wp
-
+      dt_in_ms = -1._wp
       reference_datetime => newDatetime("1979-01-01T00:00:00.000") ! 1980-06-01T00:00:00.000
 
-      ! First try to get time step from the vertical diffusion config in a coupled experiment
-      IF (ASSOCIATED(aes_phy_tc(model_id)%dt_vdf)) THEN
-        ztime = REAL(getTotalSecondsTimeDelta(aes_phy_tc(model_id)%dt_vdf, reference_datetime), wp)
+      IF (is_standalone) THEN
+        ! Use "modeltimestep" from run_nml for standalone run (same for all model_id's!)
+        dt_in_ms = getTotalMilliSecondsTimeDelta(time_config%tc_dt_model, reference_datetime)
+      ELSE
+        ! Try to get time step from the vertical diffusion config in a coupled experiment
+        IF (ASSOCIATED(aes_phy_tc(model_id)%dt_vdf)) THEN
+          dt_in_ms = getTotalMilliSecondsTimeDelta(aes_phy_tc(model_id)%dt_vdf, reference_datetime)
+        END IF
       END IF
 
-      IF (ztime <= 0._wp) THEN
-        ! This should only happen for an ICON-Land standalone experiment;
-        ! Use "modeltimestep" from run_nml in this case (same for all model_id's!)
-        ztime = REAL(getTotalSecondsTimeDelta(time_config%tc_dt_model, reference_datetime), wp)
-      END IF
+      ztime = REAL(dt_in_ms, wp) / 1000._wp
 
       CALL deallocateDatetime(reference_datetime)
     END IF
@@ -526,6 +582,7 @@ CONTAINS
 
     CHARACTER(len=max_timedelta_str_len) :: dstring
 
+    ! Note: fractional seconds supported up to a precision of 3 digits
     CALL getPTStringFromSeconds(dt, dstring)
     dt_mtime => newTimedelta(dstring)
 
@@ -548,6 +605,7 @@ CONTAINS
 
     CHARACTER(len=max_timedelta_str_len) :: dstring
 
+    ! Note: fractional seconds supported up to a precision of 3 digits
     CALL getPTStringFromSeconds(dt, dstring)
     dt_mtime => newTimedelta(dstring)
 
@@ -566,55 +624,57 @@ CONTAINS
   ! If radiation is not used at all in the current time window set result to true so
   ! that JSBACH calculates albedo every time step.
   !
-  FUNCTION is_time_ltrig_rad_m1(current, dt, model_id) RESULT(ltrig_rad_m1)
+  FUNCTION is_time_ltrig_rad_m1(current, dt, model_id, is_standalone) RESULT(ltrig_rad_m1)
 
     TYPE(t_datetime), POINTER, INTENT(in) :: current
     REAL(wp),                  INTENT(in) :: dt
     INTEGER,                   INTENT(in) :: model_id
+    LOGICAL,                   INTENT(in) :: is_standalone
+
     LOGICAL                               :: ltrig_rad_m1
 
     TYPE(t_datetime), POINTER       :: datetime_next
     TYPE(timedelta),  POINTER, SAVE :: dt_zero => NULL()
-    INTEGER                         :: dt_rad
     LOGICAL                         :: luse_rad
+    REAL(wp)                        :: dt_rad, seconds_in_day
+
+    CHARACTER(len=*), PARAMETER :: routine = modname//':is_time_ltrig_rad_m1'
 
     IF (.NOT. ASSOCIATED(dt_zero)) dt_zero => newTimedelta('PT0S')
 
-    datetime_next => get_time_next(current, dt)
-
-    SELECT CASE (iforcing)
-    CASE(inwp)
+    IF (iforcing == inwp .AND. .NOT. is_standalone) THEN
       ltrig_rad_m1 = atm_phy_nwp_config(model_id)%lcall_phy(itrad)
-
-    CASE DEFAULT
+    ELSE
       ltrig_rad_m1 = .TRUE.
       IF (ASSOCIATED(aes_phy_tc(model_id)%dt_rad)) THEN
         IF (aes_phy_tc(model_id)%dt_rad > dt_zero) THEN
-          dt_rad = getTotalSecondsTimeDelta(aes_phy_tc(model_id)%dt_rad, datetime_next)
-          ltrig_rad_m1 = MOD(getNoOfSecondsElapsedInDayDateTime(datetime_next), dt_rad) == 0
-          ! Why doesn't this work? It somehow messes up the radiation calculation time step.
+          datetime_next => get_time_next(current, dt)
+          dt_rad = getTotalMilliSecondsTimeDelta(aes_phy_tc(model_id)%dt_rad, datetime_next) / 1000._wp
+          seconds_in_day = getNoOfSecondsElapsedInDayDateTime(datetime_next) + REAL(datetime_next%time%ms,wp)/1000._wp
+          ltrig_rad_m1 = MOD(seconds_in_day, dt_rad) == 0
+          ! TODO This doesn't work and messes up the radiation calculation time step.
           ! ltrig_rad_m1 = isCurrentEventActive(aes_phy_tc(model_id)%ev_rad, datetime_next)
           luse_rad  = (aes_phy_tc(model_id)%sd_rad <= datetime_next) .AND. &
             &         (aes_phy_tc(model_id)%ed_rad >  datetime_next)
           ltrig_rad_m1 = ltrig_rad_m1 .AND. luse_rad
+          CALL deallocateDatetime(datetime_next)
         ELSE
           ltrig_rad_m1 = .TRUE.
         END IF
       END IF
-    END SELECT
+    END IF
 
   END FUNCTION is_time_ltrig_rad_m1
 
   LOGICAL FUNCTION is_time_experiment_start(current)
 
-    USE mo_initicon_config, ONLY: timeshift
     USE mo_master_control,  ONLY: get_my_process_name
 
     TYPE(t_datetime), POINTER, INTENT(in) :: current
 
     ! take care of possibe IAU-Timeshift
-    IF (TRIM(get_my_process_name()) == 'atm' .AND. timeshift%dt_shift < 0._wp) THEN
-      is_time_experiment_start = current == time_config%tc_exp_startdate + timeshift%mtime_shift
+    IF (TRIM(get_my_process_name()) == 'atm' .AND. time_config%timeshift%dt_shift < 0._wp) THEN
+      is_time_experiment_start = current == time_config%tc_exp_startdate + time_config%timeshift%mtime_shift
     ELSE
       is_time_experiment_start = current == time_config%tc_exp_startdate
     ENDIF
@@ -660,10 +720,10 @@ CONTAINS
 
   END SUBROUTINE finish_timestep
 
-  SUBROUTINE get_date_components(this_datetime, year, month, day, hour, minute, second)
+  SUBROUTINE get_date_components(this_datetime, year, month, day, hour, minute, second, ms)
 
     TYPE(t_datetime),  POINTER, INTENT(in)  :: this_datetime
-    INTEGER, OPTIONAL,          INTENT(out) :: year, month, day, hour, minute, second
+    INTEGER, OPTIONAL,          INTENT(out) :: year, month, day, hour, minute, second, ms
 
     IF (PRESENT(year))   year   = this_datetime%date%year
     IF (PRESENT(month))  month  = this_datetime%date%month
@@ -671,6 +731,7 @@ CONTAINS
     IF (PRESENT(hour))   hour   = this_datetime%time%hour
     IF (PRESENT(minute)) minute = this_datetime%time%minute
     IF (PRESENT(second)) second = this_datetime%time%second
+    IF (PRESENT(ms))     ms     = this_datetime%time%ms
 
   END SUBROUTINE get_date_components
 
@@ -728,29 +789,34 @@ CONTAINS
     ! t_datetime points to mtimes datetime
     TYPE(t_datetime), POINTER, INTENT(in)  :: date
 
-    get_year_day = REAL(getDayOfYearFromDateTime(date), wp) &
-         &        +REAL(getNoOfSecondsElapsedInDayDateTime(date),wp) &
-         &        /REAL(no_of_sec_in_a_day,wp)
+    get_year_day =    REAL(getDayOfYearFromDateTime(date), wp)                                          &
+         &         + (REAL(getNoOfSecondsElapsedInDayDateTime(date), wp) + REAL(date%time%ms, wp) / 1000._wp) &
+         &           / REAL(no_of_sec_in_a_day,wp)
 
   END FUNCTION get_year_day
 
-  SUBROUTINE  get_time_interpolation_weights(w1, w2, n1, n2)
+  SUBROUTINE  cache_time_interpolation_weights()
+    current_time_interpolation_weights = calculate_time_interpolation_weights(time_config%tc_current_date)
+    !$ACC UPDATE DEVICE(current_time_interpolation_weights)
+  END SUBROUTINE cache_time_interpolation_weights
+
+  SUBROUTINE  get_time_interpolation_weights(w1, w2, n1, n2, opt_acc_async_queue)
 
     REAL(wp), INTENT(out) :: w1, w2
     INTEGER, INTENT(out)  :: n1, n2
+    INTEGER, INTENT(IN), OPTIONAL :: opt_acc_async_queue
+    INTEGER :: acc_async_queue
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':get_time_interpolation_weights'
 
-    TYPE(t_time_interpolation_weights) :: current_time_interpolation_weights
+    CALL set_acc_async_queue(acc_async_queue, opt_acc_async_queue)
 
-!    CALL message('', '')
-!    CALL message(routine, 'generate time interpolation weights.')
-!    CALL message('', '')
-    current_time_interpolation_weights = calculate_time_interpolation_weights(time_config%tc_current_date)
+    !$ACC SERIAL PRESENT(w1, w2, n1, n2, current_time_interpolation_weights) ASYNC(acc_async_queue)
     w1 = current_time_interpolation_weights%weight1
     w2 = current_time_interpolation_weights%weight2
     n1 = current_time_interpolation_weights%month1_index
     n2 = current_time_interpolation_weights%month2_index
+    !$ACC END SERIAL
 
   END SUBROUTINE get_time_interpolation_weights
 
@@ -874,7 +940,7 @@ MODULE mo_jsb_io_netcdf_iface
   USE mo_io_units,           ONLY: filename_max
   USE mo_jsb_domain_iface,   ONLY: t_patch
   USE mo_jsb_parallel_iface, ONLY: my_process_is_mpi_parallel, my_process_is_stdio, p_bcast, p_io, mpi_comm
-  USE mo_read_interface,     ONLY: read_1D, read_2D, read_2D_time, read_2D_1lev_1time, read_2D_extdim, read_2D_int, &
+  USE mo_read_interface,     ONLY: read_1D, read_2D, read_3D, read_2D_time, read_2D_1lev_1time, read_2D_extdim, read_2D_int, &
     &                              openInputFile, closeFile, on_cells, t_stream_id, read_netcdf_broadcast_method
   USE mo_netcdf_errhandler,  ONLY: nf
   USE mo_netcdf
@@ -892,6 +958,7 @@ MODULE mo_jsb_io_netcdf_iface
     PROCEDURE :: Close          => netcdf_close_file
     PROCEDURE :: Read_1d        => netcdf_read_real_1d
     PROCEDURE :: Read_2d        => netcdf_read_real_2d
+    PROCEDURE :: Read_3d        => netcdf_read_real_3d
     PROCEDURE :: Read_2d_time   => netcdf_read_real_2d_time
     PROCEDURE :: Read_2d_1lev_1time   => netcdf_read_real_2d_1lev_1time
     PROCEDURE :: Read_2d_extdim => netcdf_read_real_2d_extdim
@@ -984,11 +1051,20 @@ CONTAINS
     REAL(wp), POINTER                  :: netcdf_read_real_1d(:)
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':netcdf_read_real_1d'
+    REAL(wp), ALLOCATABLE :: arr(:)
 
     NULLIFY(netcdf_read_real_1d)
 
     IF (input_file%type == 1) THEN
-      CALL read_1D(input_file%file_id, TRIM(variable_name), fill_array, netcdf_read_real_1d)
+      IF (PRESENT(fill_array)) THEN
+        CALL read_1D(input_file%file_id, TRIM(variable_name), fill_array)
+        netcdf_read_real_1d => fill_array
+      ELSE
+        CALL read_1D(input_file%file_id, TRIM(variable_name), alloc_array=arr)
+        ALLOCATE(netcdf_read_real_1d(SIZE(arr, 1)))
+        netcdf_read_real_1d(:) = arr(:)
+        DEALLOCATE(arr)
+      END IF
     ELSE IF (input_file%type == 2) THEN
       CALL finish(TRIM(routine), 'Incompatible input file type')
     ELSE
@@ -1005,11 +1081,20 @@ CONTAINS
     REAL(wp), POINTER                 :: netcdf_read_real_2d(:,:)
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':netcdf_read_real_2d'
+    REAL(wp), ALLOCATABLE :: arr(:,:)
 
     NULLIFY(netcdf_read_real_2d)
 
     IF (input_file%type == 1) THEN
-      CALL read_2D(input_file%stream_id, on_cells, TRIM(variable_name), fill_array, netcdf_read_real_2d)
+      IF (PRESENT(fill_array)) THEN
+        CALL read_2D(input_file%stream_id, on_cells, TRIM(variable_name), fill_array)
+        netcdf_read_real_2d => fill_array
+      ELSE
+        CALL read_2D(input_file%stream_id, on_cells, TRIM(variable_name), alloc_array=arr)
+        ALLOCATE(netcdf_read_real_2d(SIZE(arr, 1), SIZE(arr, 2)))
+        netcdf_read_real_2d(:,:) = arr(:,:)
+        DEALLOCATE(arr)
+      END IF
     ELSE IF (input_file%type == 2) THEN
       CALL finish(TRIM(routine), 'Incompatible input file type')
     ELSE
@@ -1017,6 +1102,36 @@ CONTAINS
     END IF
 
   END FUNCTION netcdf_read_real_2d
+
+  FUNCTION netcdf_read_real_3d(input_file, variable_name, fill_array)
+
+    CLASS(t_input_file), INTENT(inout) :: input_file
+    CHARACTER(LEN=*),   INTENT(in)    :: variable_name
+    REAL(wp), TARGET, OPTIONAL        :: fill_array(:,:,:)
+    REAL(wp), POINTER                 :: netcdf_read_real_3d(:,:,:)
+
+    CHARACTER(len=*), PARAMETER :: routine = modname//':netcdf_read_real_2d'
+    REAL(wp), ALLOCATABLE :: arr(:,:,:)
+
+    NULLIFY(netcdf_read_real_3d)
+
+    IF (input_file%type == 1) THEN
+      IF (PRESENT(fill_array)) THEN
+        CALL read_3D(input_file%stream_id, on_cells, TRIM(variable_name), fill_array)
+        netcdf_read_real_3d => fill_array
+      ELSE
+        CALL read_3D(input_file%stream_id, on_cells, TRIM(variable_name), alloc_array=arr)
+        ALLOCATE(netcdf_read_real_3d(SIZE(arr, 1), SIZE(arr, 2), SIZE(arr, 3)))
+        netcdf_read_real_3d(:,:,:) = arr(:,:,:)
+        DEALLOCATE(arr)
+      END IF
+    ELSE IF (input_file%type == 2) THEN
+      CALL finish(TRIM(routine), 'Incompatible input file type')
+    ELSE
+      CALL finish(TRIM(routine), 'Input file type not recognized.')
+    END IF
+
+  END FUNCTION netcdf_read_real_3d
 
   FUNCTION netcdf_read_real_2d_time(input_file, variable_name, fill_array, &
     start_time_step, end_time_step)
@@ -1043,9 +1158,17 @@ CONTAINS
     REAL(wp), POINTER                 :: netcdf_read_real_2d_1lev_1time(:,:)
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':netcdf_read_real_2d_1lev_1time'
+    REAL(wp), ALLOCATABLE :: arr(:,:)
 
-    CALL read_2D_1lev_1time( &
-      & input_file%stream_id, on_cells, TRIM(variable_name), fill_array,  netcdf_read_real_2d_1lev_1time)
+    IF (PRESENT(fill_array)) THEN
+      CALL read_2D_1lev_1time(input_file%stream_id, on_cells, TRIM(variable_name), fill_array)
+      netcdf_read_real_2d_1lev_1time => fill_array
+    ELSE
+      CALL read_2D_1lev_1time(input_file%stream_id, on_cells, TRIM(variable_name), alloc_array=arr)
+      ALLOCATE(netcdf_read_real_2d_1lev_1time(SIZE(arr, 1), SIZE(arr, 2)))
+      netcdf_read_real_2d_1lev_1time(:,:) = arr(:,:)
+      DEALLOCATE(arr)
+    END IF
 
   END FUNCTION netcdf_read_real_2d_1lev_1time
 
@@ -1060,12 +1183,22 @@ CONTAINS
     REAL(wp), POINTER                         :: netcdf_read_real_2d_extdim(:,:,:)
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':netcdf_read_real_2d_extdim'
+    REAL(wp), ALLOCATABLE :: arr(:,:,:)
 
     NULLIFY(netcdf_read_real_2d_extdim)
 
     IF (input_file%type == 1) THEN
-      CALL read_2D_extdim(input_file%stream_id, on_cells, TRIM(variable_name), fill_array, netcdf_read_real_2d_extdim, &
-                          start_extdim=start_extdim, end_extdim=end_extdim, extdim_name=extdim_name)
+      IF (PRESENT(fill_array)) THEN
+        CALL read_2D_extdim(input_file%stream_id, on_cells, TRIM(variable_name), fill_array, &
+                            start_extdim=start_extdim, end_extdim=end_extdim, extdim_name=extdim_name)
+        netcdf_read_real_2d_extdim => fill_array
+      ELSE
+        CALL read_2D_extdim(input_file%stream_id, on_cells, TRIM(variable_name), alloc_array=arr, &
+                            start_extdim=start_extdim, end_extdim=end_extdim, extdim_name=extdim_name)
+        ALLOCATE(netcdf_read_real_2d_extdim(SIZE(arr, 1), SIZE(arr, 2), SIZE(arr, 3)))
+        netcdf_read_real_2d_extdim(:,:,:) = arr(:,:,:)
+        DEALLOCATE(arr)
+      END IF
     ELSE IF (input_file%type == 2) THEN
       CALL finish(TRIM(routine), 'Incompatible input file type')
     ELSE
@@ -1082,11 +1215,20 @@ CONTAINS
     INTEGER, POINTER                   :: netcdf_read_int_2d(:,:)
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':netcdf_read_int_2d'
+    INTEGER, ALLOCATABLE :: arr(:,:)
 
     NULLIFY(netcdf_read_int_2d)
 
     IF (input_file%type == 1) THEN
-      CALL read_2D_int(input_file%stream_id, on_cells, TRIM(variable_name), fill_array, netcdf_read_int_2d)
+      IF (PRESENT(fill_array)) THEN
+        CALL read_2D_int(input_file%stream_id, on_cells, TRIM(variable_name), fill_array)
+        netcdf_read_int_2d => fill_array
+      ELSE
+        CALL read_2D_int(input_file%stream_id, on_cells, TRIM(variable_name), alloc_array=arr)
+        ALLOCATE(netcdf_read_int_2d(SIZE(arr, 1), SIZE(arr, 2)))
+        netcdf_read_int_2d(:,:) = arr(:,:)
+        DEALLOCATE(arr)
+      END IF
     ELSE IF (input_file%type == 2) THEN
       CALL finish(TRIM(routine), 'Incompatible input file type')
     ELSE
@@ -1234,11 +1376,13 @@ END MODULE mo_jsb_grid_iface
 MODULE mo_jsb_utils_iface
 
   USE mo_fortran_tools, ONLY: assign_if_present, assign_if_present_allocatable
+  USE mo_util_string,   ONLY: toupper, tolower, int2string, real2string, logical2string, separator, one_of_str => one_of
 
   IMPLICIT NONE
   PRIVATE
 
   PUBLIC :: assign_if_present, assign_if_present_allocatable
+  PUBLIC :: toupper, tolower, int2string, real2string, logical2string, separator, one_of_str
 
 END MODULE mo_jsb_utils_iface
 
@@ -1360,7 +1504,7 @@ CONTAINS
     INTEGER,              INTENT(in), OPTIONAL :: isteptype           ! type of statistical processing
     REAL(wp),             INTENT(in), OPTIONAL :: resetval_r          ! reset value (after accumulation)
     LOGICAL,              INTENT(in), OPTIONAL :: lmiss               ! missing value flag
-    REAL(dp),             INTENT(in), OPTIONAL :: missval_r           ! missing value
+    REAL(wp),             INTENT(in), OPTIONAL :: missval_r           ! missing value
     INTEGER,              INTENT(in), OPTIONAL :: tlev_source         ! actual TL for TL dependent vars
     TYPE(t_var_metadata), POINTER,    OPTIONAL :: info                ! returns reference to metadata
     REAL(wp),             TARGET, CONTIGUOUS, OPTIONAL :: p5(:,:,:,:,:)       ! provided pointer
@@ -1431,7 +1575,7 @@ CONTAINS
     INTEGER,              INTENT(in), OPTIONAL :: isteptype           ! type of statistical processing
     REAL(wp),             INTENT(in), OPTIONAL :: resetval_r          ! reset value (after accumulation)
     LOGICAL,              INTENT(in), OPTIONAL :: lmiss               ! missing value flag
-    REAL(dp),             INTENT(in), OPTIONAL :: missval_r           ! missing value
+    REAL(wp),             INTENT(in), OPTIONAL :: missval_r           ! missing value
     INTEGER,              INTENT(in), OPTIONAL :: tlev_source         ! actual TL for TL dependent vars
     TYPE(t_var_metadata), POINTER,    OPTIONAL :: info                ! returns reference to metadata
     REAL(wp),             TARGET, CONTIGUOUS, OPTIONAL :: p5(:,:,:,:,:)       ! provided pointer
@@ -1500,7 +1644,7 @@ CONTAINS
     INTEGER,              INTENT(in), OPTIONAL :: isteptype           ! type of statistical processing
     REAL(wp),             INTENT(in), OPTIONAL :: resetval_r          ! reset value (after accumulation)
     LOGICAL,              INTENT(in), OPTIONAL :: lmiss               ! missing value flag
-    REAL(dp),             INTENT(in), OPTIONAL :: missval_r           ! missing value
+    REAL(wp),             INTENT(in), OPTIONAL :: missval_r           ! missing value
     INTEGER,              INTENT(in), OPTIONAL :: tlev_source         ! actual TL for TL dependent vars
     TYPE(t_var_metadata), POINTER,    OPTIONAL :: info                ! returns reference to metadata
     REAL(wp),             TARGET, CONTIGUOUS, OPTIONAL :: p5(:,:,:,:,:)       ! provided pointer
@@ -1546,7 +1690,7 @@ END MODULE mo_jsb_varlist_iface
 !
 MODULE mo_jsb_vertical_axes_iface
 
-  USE mo_kind, ONLY: wp !, dp
+  USE mo_kind, ONLY: wp, dp
   USE mo_name_list_output_zaxes_types, ONLY: t_verticalAxis, t_verticalAxisList
   USE mo_zaxis_type,                   ONLY: zaxisTypeList
 
@@ -1576,9 +1720,9 @@ CONTAINS
     CALL verticalAxisList%append( &
       & t_verticalAxis(zaxisTypeList%getEntry(zaxis_id), &
       &                length,                           &
-      &                zaxisLevels   = levels,           &
-      &                zaxisLbounds  = lbounds,          &
-      &                zaxisUbounds  = ubounds,          &
+      &                zaxisLevels   = REAL(levels, dp), &
+      &                zaxisLbounds  = REAL(lbounds,dp), &
+      &                zaxisUbounds  = REAL(ubounds,dp), &
       &                zaxisUnits    = units,            &
       &                zaxisName     = name,             &
       &                zaxisLongname = longname          &
@@ -1647,35 +1791,227 @@ MODULE mo_physical_constants_iface
 END MODULE mo_physical_constants_iface
 
 !------------------------------------------------------------------------------------------------------------
-!> Contains interfaces to ICON convect_tables
-!
-MODULE mo_jsb_convect_tables_iface
-
-  USE mo_kind,                 ONLY: wp
-  USE mo_aes_convect_tables,   ONLY: init_convect_tables, tlucua, jptlucu1, jptlucu2
-
-  IMPLICIT NONE
-  PRIVATE
-
-  PUBLIC :: init_convect_tables, tlucua, jptlucu1, jptlucu2
-
-  CHARACTER(len=*), PARAMETER :: modname = 'mo_jsb_convect_tables_iface'
-
-! CONTAINS
-
-END MODULE mo_jsb_convect_tables_iface
-
-!------------------------------------------------------------------------------------------------------------
-!> Contains interfaces to thermodynamic functions from ICON
-!
+!> Thermodynamic function interfaces for JSBACH
+!>
+!> This module provides thermodynamic function interfaces that allow ICON-Land to access
+!> thermodynamic functions from different atmospheric physics packages (NWP or AES) in a unified way.
+!>
+!> The module serves as an abstraction layer that:
+!> - Allows runtime switching between NWP and AES physics implementations
+!> - Maintains compatibility with different atmospheric forcing configurations
+!> - Provides GPU-accelerated thermodynamic calculations
+!> - Ensures consistency between land and atmosphere thermodynamic calculations
+!>
+!> Note for `sat_pres_mixed`: If the input temperature is outside the valid range, the function returns -1.0_wp.
 MODULE mo_jsb_thermo_iface
 
-  USE mo_aes_thermo, ONLY: potential_temperature, sat_pres_water, sat_pres_ice, specific_humidity
+  USE mo_kind, ONLY: wp
+  USE mo_impl_constants, ONLY: iaes, inwp
+  USE mo_physical_constants, ONLY: tmelt, rdv
+  USE mo_run_config, ONLY: iforcing
+  USE mo_aes_thermo, ONLY:                        &
+    & potential_temperature,                      &
+    & sat_pres_water_aes    => sat_pres_water,    &
+    & sat_pres_ice_aes      => sat_pres_ice,      &
+    & specific_humidity_aes => specific_humidity
+  USE mo_aes_convect_tables, ONLY: init_aes_convect_tables => init_convect_tables, tlucua, jptlucu1, jptlucu2
+  USE mo_lookup_tables_constants, ONLY: init_satpres_coeffs
+  USE mo_atm_phy_nwp_config,   ONLY: configure_atm_phy_nwp, atm_phy_nwp_config
+  USE mo_thdyn_functions, ONLY:                   &
+    & sat_pres_water_nwp    => sat_pres_water,    &
+    & sat_pres_ice_nwp      => sat_pres_ice,      &
+    & specific_humidity_nwp => spec_humi
+  USE mo_aes_vdf_config, ONLY: aes_vdf_config
+  USE mo_grid_config, ONLY: n_dom
+  USE mo_util_string, ONLY: int2string
+  USE mo_exception, ONLY: finish, message
 
   IMPLICIT NONE
-  PUBLIC
+  PUBLIC :: iaes, inwp, init_jsb_thermo_iface, &
+    &       potential_temperature, &
+    &       sat_pres_water, sat_pres_ice, sat_pres_mixed, specific_humidity
+
+  INTEGER :: i_atmo_physics = 0             !< Atmospheric physics package in use for thermodynamic functions (iaes or inwp)
+  LOGICAL :: l_aes_convect_tables = .FALSE. !< Use convection tables for AES physics?
+
+  !$ACC DECLARE COPYIN(i_atmo_physics, l_aes_convect_tables)
 
   CHARACTER(len=*), PARAMETER :: modname = 'mo_jsb_thermo_iface'
+
+CONTAINS
+
+  !> Initialize the thermodynamic interface
+  !>
+  !> This subroutine initializes the thermodynamic interface by determining
+  !> which atmospheric physics package to use for thermodynamic calculations.
+  !> It sets the internal i_atmo_physics flag and updates GPU device memory
+  !> for OpenACC acceleration.
+  !>
+  !> is_standalone Flag to indicate standalone mode. If .TRUE., the standalone model will use
+  !>               the thermodynamic functions from NWP physics by default.
+  !>               Set `iforcing = iaes = 2` in `run_nml` to switch to AES functions.
+  !>               If, for standalone runs, `iforcing` is not set in the namelist (i.e. = 0 = default)
+  !>               or is anything else than iaes=2 for standalone runs, the NWP functions will be used.
+  !>
+  !> This subroutine must be called before using any thermodynamic functions
+  !> Terminates execution with error for unsupported forcing types
+  !>
+  SUBROUTINE init_jsb_thermo_iface(is_standalone)
+
+    LOGICAL, INTENT(IN) :: is_standalone
+
+    INTEGER :: iforcing_local
+
+    CHARACTER(len=*), PARAMETER :: routine = modname//':init_jsb_thermo_iface'
+
+    IF (is_standalone) THEN
+      SELECT CASE (iforcing)
+      CASE (iaes)
+        iforcing_local = iaes
+      CASE (inwp)
+        iforcing_local = inwp
+      CASE DEFAULT
+        iforcing_local = inwp
+      END SELECT
+      iforcing = 0 ! Reset iforcing to 0 (default; no atmosphere) for standalone model
+    ELSE
+      iforcing_local = iforcing
+    END IF
+
+    IF (iforcing_local /= inwp .AND. iforcing_local /= iaes) THEN
+        CALL finish(routine, 'Unsupported value of iforcing_local: '//TRIM(int2string(iforcing_local))// &
+          & '. Supported values are '//TRIM(int2string(inwp))//' (NWP physics) and '// &
+          & TRIM(int2string(iaes))//' (AES physics).')
+    END IF
+
+    IF (iforcing_local == inwp) THEN
+      i_atmo_physics = inwp ! NWP physics
+      l_aes_convect_tables = .FALSE.
+      IF (is_standalone) THEN
+        CALL init_satpres_coeffs(atm_phy_nwp_config(1)%itype_satpres_coeffs)
+      END IF
+      CALL message(routine, 'Using thermodynamic functions from NWP physics')
+      IF (atm_phy_nwp_config(1)%itype_satpres_coeffs == 1) THEN
+        CALL message(routine, '... using old coefficients inherited from the COSMO model')
+      ELSE IF (atm_phy_nwp_config(1)%itype_satpres_coeffs == 2) THEN
+        CALL message(routine, '... using more accurate coefficients used in IFS')
+      ELSE
+        CALL finish(routine, 'Unsupported value for itype_satpres_coeffs:'// &
+          & TRIM(int2string(atm_phy_nwp_config(1)%itype_satpres_coeffs)))
+      END IF
+    ELSE IF (iforcing_local == iaes) THEN
+      i_atmo_physics = iaes ! AES physics
+      l_aes_convect_tables = .NOT. aes_vdf_config(1)%use_tmx ! Don't use convect_tables with tmx
+      IF (n_dom >= 2) THEN
+        IF (ANY(aes_vdf_config(2:n_dom)%use_tmx .EQV. l_aes_convect_tables)) THEN
+          CALL finish(routine, 'Inconsistent aes_vdf_config%use_tmx across domains')
+        END IF
+      END IF
+      IF (l_aes_convect_tables) THEN
+        CALL message(routine, 'Using thermodynamic functions from AES physics (with convect_tables)')
+        IF (is_standalone) THEN
+          CALL init_aes_convect_tables()
+        END IF
+      ELSE
+        CALL message(routine, 'Using thermodynamic functions from AES physics (with aes_thermo)')
+      END IF
+    ELSE
+      CALL finish(routine, 'Unsupported value of iforcing: '//TRIM(int2string(iforcing_local)))
+    END IF
+
+    ! Update device copies of i_atmo_physics and l_aes_convect_tables so that GPU-accelerated routines
+    ! use the correct atmospheric physics configuration and convection table flag.
+    !$ACC UPDATE DEVICE(i_atmo_physics, l_aes_convect_tables)
+
+  END SUBROUTINE init_jsb_thermo_iface
+
+#ifndef _OPENACC
+ELEMENTAL &
+#endif
+  FUNCTION sat_pres_water(temp) RESULT(esat)
+
+    REAL(wp), INTENT(IN) :: temp ! Temperature [K]
+    REAL(wp) :: esat             ! Saturation vapor pressure over water [Pa]
+
+    !$ACC ROUTINE SEQ
+
+    IF (i_atmo_physics == inwp) THEN
+      esat = sat_pres_water_nwp(temp)
+    ELSE IF (i_atmo_physics == iaes) THEN
+      esat = sat_pres_water_aes(temp)
+    END IF
+
+  END FUNCTION sat_pres_water
+
+#ifndef _OPENACC
+ELEMENTAL &
+#endif
+  FUNCTION sat_pres_ice(temp) RESULT(esat)
+
+    REAL(wp), INTENT(IN) :: temp !< Temperature [K]
+    REAL(wp) :: esat             !< Saturation vapor pressure over ice [Pa]
+
+    !$ACC ROUTINE SEQ
+
+    IF (i_atmo_physics == inwp) THEN
+      esat = sat_pres_ice_nwp(temp)
+    ELSE IF (i_atmo_physics == iaes) THEN
+      esat = sat_pres_ice_aes(temp)
+    END IF
+
+  END FUNCTION sat_pres_ice
+
+#ifndef _OPENACC
+ELEMENTAL &
+#endif
+  FUNCTION sat_pres_mixed(temp) RESULT(esat)
+
+    REAL(wp), INTENT(IN) :: temp !< Temperature [K]
+    REAL(wp) :: esat             !< Saturation vapor pressure over water/ice [Pa]
+
+    INTEGER :: it
+
+    !$ACC ROUTINE SEQ
+
+    IF (l_aes_convect_tables) THEN
+      it = NINT(temp * 1000._wp)
+      ! NOTE convection tables work within [50,400] Kelvin
+
+      IF (it >= jptlucu1 .AND. it <= jptlucu2) THEN
+        esat = tlucua(it) / rdv
+      ELSE
+        esat = -1.0_wp ! Return a clearly invalid value
+      END IF
+    ELSE
+      IF (temp >= tmelt .AND. temp <= 400._wp) THEN
+        esat = sat_pres_water(temp)
+      ELSE IF (temp < tmelt .AND. temp >= 50._wp) THEN
+        esat = sat_pres_ice(temp)
+      ELSE
+        esat = -1.0_wp ! Return a clearly invalid value
+      END IF
+    END IF
+
+  END FUNCTION sat_pres_mixed
+
+#ifndef _OPENACC
+ELEMENTAL &
+#endif
+  FUNCTION specific_humidity(pvapor, ptotal)
+
+    REAL (wp), INTENT(IN)  :: ptotal            !< Total pressure [Pa]
+    REAL (wp), INTENT(IN)  :: pvapor            !< Vapor pressure [Pa]
+    REAL (wp)              :: specific_humidity !< Specific humidity [kg/kg]
+
+    !$ACC ROUTINE SEQ
+
+    IF (i_atmo_physics == inwp) THEN
+      specific_humidity = specific_humidity_nwp(pvapor, ptotal)
+    ELSE IF (i_atmo_physics == iaes) THEN
+      specific_humidity = specific_humidity_aes(pvapor, ptotal)
+    END IF
+
+  END FUNCTION specific_humidity
 
 END MODULE mo_jsb_thermo_iface
 
@@ -1705,47 +2041,51 @@ CONTAINS
     USE mtime,           ONLY: datetime
     USE mo_model_domain, ONLY: t_patch
 
-    TYPE(datetime), POINTER :: this_datetime
-    TYPE(t_patch), INTENT(in) :: patch
-    REAL(wp), INTENT(out) :: cos_zenith_angle(:,:)
+    TYPE(datetime), POINTER    :: this_datetime
+    TYPE(t_patch), INTENT(in)  :: patch
+    REAL(wp),      INTENT(out) :: cos_zenith_angle(:,:)
 
     REAL(wp) :: daylight_frc(SIZE(cos_zenith_angle,1),SIZE(cos_zenith_angle,2))
     REAL(wp), POINTER :: cecc, cobld, clonp
     LOGICAL,  POINTER :: l_orbvsop87
-    LOGICAL  :: lyr_perp
-    INTEGER  :: yr_perp
-    INTEGER  :: icosmu0
+    LOGICAL,  POINTER :: lyr_perp
+    INTEGER,  POINTER :: yr_perp
+    INTEGER,  POINTER :: icosmu0
+    LOGICAL,  POINTER :: ldiur, l_sph_symm_irr
     REAL(wp) :: dt_ext
-    LOGICAL  :: ldiur, l_sph_symm_irr
     REAL(wp) :: time_of_day, orbit_date, rasc_sun, decl_sun, dist_sun
+    INTEGER  :: jg
 
-    l_orbvsop87   => aes_rad_config(1)% l_orbvsop87 ! Default: .TRUE.
-    lyr_perp = .FALSE.
-    yr_perp  = -99999
+    jg = patch%id
+
+    l_orbvsop87   => aes_rad_config(jg)%l_orbvsop87 ! Default: .TRUE.
+    lyr_perp      => aes_rad_config(jg)%lyr_perp    ! Default: .FALSE.
+    yr_perp       => aes_rad_config(jg)%yr_perp     ! Default: -99999
     CALL get_orbit_times(l_orbvsop87, this_datetime, lyr_perp, yr_perp, & ! in
       &                  time_of_day, orbit_date)                         ! out
 
     IF (l_orbvsop87) THEN
       CALL orbit_vsop87(orbit_date, rasc_sun, decl_sun, dist_sun) ! in, out, out, out
     ELSE
-      cecc  => aes_rad_config(1)% cecc
-      cobld => aes_rad_config(1)% cobld
-      clonp => aes_rad_config(1)% clonp
+      cecc  => aes_rad_config(jg)%cecc   ! Default: 0.016715
+      cobld => aes_rad_config(jg)%cobld  ! Default: 23.441
+      clonp => aes_rad_config(jg)%clonp  ! Default: 282.7
       CALL orbit_kepler(cecc, cobld, clonp, orbit_date, & ! in
         &               rasc_sun, decl_sun, dist_sun)     ! out
     END IF
 
     dt_ext         = 0.0_wp
-    icosmu0        = 0        ! not used for dt_ext=0
-    ldiur          = .TRUE.
-    l_sph_symm_irr = .FALSE.
+    icosmu0        => aes_rad_config(jg)%icosmu0        ! Default: 3 ; not used for dt_ext=0
+    ldiur          => aes_rad_config(jg)%ldiur          ! Default: .TRUE.
+    l_sph_symm_irr => aes_rad_config(jg)%l_sph_symm_irr ! Default: .FALSE.
 
     CALL solar_parameters(decl_sun,         time_of_day,     & ! in
       &                   icosmu0,          dt_ext,          & ! in
       &                   ldiur,            l_sph_symm_irr,  & ! in
       &                   patch,                             & ! in
       &                   cos_zenith_angle(:,:),             & ! out
-      &                   daylight_frc(:,:))                   ! out
+      &                   daylight_frc(:,:),                 & ! out
+      &                   lacc=.FALSE.                       ) ! in
 
     cos_zenith_angle(:,:) = cos_zenith_angle(:,:) * daylight_frc(:,:)
 
@@ -1756,6 +2096,7 @@ END MODULE mo_jsb_orbit_solar_iface
 !------------------------------------------------------------------------------------------------------------
 !> Contains the function to compute surface exchange coefficients for tmx from JSBACH
 !
+#ifndef __NO_AES__
 MODULE mo_jsb_surface_exchange_iface
 
   USE mo_vdf_diag_smag, ONLY: sfc_exchange_coefficients
@@ -1763,6 +2104,7 @@ MODULE mo_jsb_surface_exchange_iface
   PUBLIC :: sfc_exchange_coefficients
 
 END MODULE mo_jsb_surface_exchange_iface
+#endif
 
 !------------------------------------------------------------------------------------------------------------
 #else

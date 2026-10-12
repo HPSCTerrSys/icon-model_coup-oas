@@ -1,0 +1,121 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/utils/git.yml
+
+# Implements a before_script that installs the required PIP packages using the
+# GitLab CI caching.
+#
+# Jobs that extend the template must ensure that their runtime environments
+# provide the Python3 interpreter with the PIP module.
+#
+.utils:pip:
+  extends: .utils:git:ignore
+  variables:
+    # Space-separated list of paths to PIP requirement files:
+    ICON_CI_UTILS_PIP_REQUIREMENT: null
+
+    # Space-separated list of packages to intall with PIP:
+    ICON_CI_UTILS_PIP_PACKAGES: null
+
+    # Python3 interpreter to install the packages for:
+    ICON_CI_UTILS_PIP_PYTHON: python3
+
+    # Boolean that controls whether the PIP module is upgraded before the
+    # installation of other packages:
+    ICON_CI_UTILS_PIP_UPGRADE: false
+
+    # Path inside $CI_PROJECT_DIR to the PIP cache directory:
+    #   Hint: to disable caching, nullify this variable and the cache parameter, i.e.
+    #     variables:
+    #       ICON_CI_UTILS_PIP_CACHE_PATH: null
+    #     cache: null
+    ICON_CI_UTILS_PIP_CACHE_PATH: ${ICON_CI_UTILS_GIT_IGNORE_PATH}/pip
+  before_script:
+    - |
+      # !reference [.utils:pip, before_script]
+      icon_ci_log_section_start 'Installing PIP packages'
+      (
+        set -u
+
+        test -z "${ICON_CI_UTILS_PIP_PACKAGES-}${ICON_CI_UTILS_PIP_REQUIREMENT-}" && {
+          icon_ci_log_info_msg \
+            'ICON_CI_UTILS_PIP_REQUIREMENT and ICON_CI_UTILS_PIP_PACKAGES are empty: nothing to install'
+          # Drop the cache if the list of required packages is empty:
+          test -z "${ICON_CI_UTILS_PIP_CACHE_PATH-}" || (
+            set -x
+            rm -rf "${ICON_CI_UTILS_PIP_CACHE_PATH}"
+          )
+        } || {
+          "${ICON_CI_UTILS_PIP_PYTHON}" --version
+
+          PIP_REQUIREMENT=
+          PIP_BREAK_SYSTEM_PACKAGES=${PIP_BREAK_SYSTEM_PACKAGES:-true}
+          PIP_ROOT_USER_ACTION=${PIP_ROOT_USER_ACTION:-ignore}
+          export PIP_REQUIREMENT PIP_BREAK_SYSTEM_PACKAGES PIP_ROOT_USER_ACTION
+
+          # Upgrade the PIP module if required:
+          test false = "${ICON_CI_UTILS_PIP_UPGRADE}" || (
+            set -x
+            "${ICON_CI_UTILS_PIP_PYTHON}" \
+              -m pip --no-cache-dir install --upgrade pip
+          )
+
+          "${ICON_CI_UTILS_PIP_PYTHON}" -m pip --version
+
+          test -z "${ICON_CI_UTILS_PIP_CACHE_PATH-}" && {
+            icon_ci_log_info_msg \
+              'ICON_CI_UTILS_PIP_CACHE_PATH is empty: the caching is disabled'
+            set dummy --no-cache-dir; shift
+          } || {
+            cache_path="${ICON_CI_UTILS_PIP_CACHE_PATH}/pip-cache"
+            set dummy --cache-dir "${cache_path}"; shift
+
+            # Invalidate the cache if the versions of Python and PIP or the list
+            # of required packages have changed:
+            cache_key="$("${ICON_CI_UTILS_PIP_PYTHON}" -c \
+      'import sys, pip; print("python:", sys.version, "\npip:", pip.__version__)')
+      ${ICON_CI_UTILS_PIP_PACKAGES-}
+      $(for r in ${ICON_CI_UTILS_PIP_REQUIREMENT-}; do
+          cat "${r}" 2>/dev/null || continue
+        done)"
+            cache_key_path="${ICON_CI_UTILS_PIP_CACHE_PATH}/pip-cache-key"
+
+            echo "${cache_key}" | diff - "${cache_key_path}" >/dev/null 2>&1 && (
+              icon_ci_log_info_msg "Using cache from '${cache_path}'..."
+              set -x
+              "${ICON_CI_UTILS_PIP_PYTHON}" -m pip "$@" cache info || {
+                set +x
+              } 2>/dev/null
+            ) || (
+              icon_ci_log_info_msg "Initializing cache in '${cache_path}'..."
+              set -x
+              # Fully reset the cache:
+              rm -rf "${cache_path}"
+              mkdir -p "${cache_path}"
+              echo "${cache_key}" > "${cache_key_path}"
+            )
+          }
+
+          set -x
+          # Install the required packages:
+          PIP_REQUIREMENT=${ICON_CI_UTILS_PIP_REQUIREMENT-}
+          export PIP_REQUIREMENT
+          "${ICON_CI_UTILS_PIP_PYTHON}" -m pip "$@" install \
+            ${ICON_CI_UTILS_PIP_PACKAGES-}
+        }
+      ) 2>&1
+      icon_ci_log_section_end
+  cache:
+    - key: pip-${CI_RUNNER_TAGS}-${CI_JOB_IMAGE}-${CI_JOB_NAME_SLUG}
+      paths:
+        - ${ICON_CI_UTILS_PIP_CACHE_PATH}

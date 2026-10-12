@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -39,7 +39,7 @@ puts usedFunx.join("\n")
 # EDIT FILES {{{
 options = {};
 unless rest.nil? then
-  k,v = rest.split('='); 
+  k,v = rest.split('=');
   options[k] = v
 end
 if options.has_key?('ACTION') and options['ACTION'] == 'edit' then
@@ -57,4 +57,3 @@ end
 # }}}
 #
 # vim:fdm=marker
-

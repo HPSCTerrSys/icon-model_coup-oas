@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -17,14 +17,14 @@
 set -eu
 
 # clear all modules and load Stage and modules for all dependencies
-MODULES='Stages/2023 imkl/2022.1.0 GCCcore/.11.3.0 CMake/3.26.3 Intel/2022.1.0  ParaStationMPI/5.8.0-1 netCDF-Fortran ecCodes libfyaml'
+MODULES='Stages/2023 imkl/2022.1.0 GCCcore/.11.3.0 CMake/3.26.3 Intel/2022.1.0  ParaStationMPI/5.8.0-1 netCDF-Fortran ecCodes libfyaml git'
 BUILD_ENV="module --force purge; export USERINSTALLATIONS=/p/usersoftware/slmet/easybuild/stages/2023/; module load ${MODULES}; module list;"
 
 # set directory name for out of source builds
 SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
 ICON_DIR=$(cd "${SCRIPT_DIR}/../.."; pwd)
 
-SOFWAREROOT='/p/software/juwels'
+SOFTWAREROOT='/p/software/juwels'
 
 ### Libraries
 ROOT_ECCODES=${SOFTWAREROOT}/stages/2023/software/ecCodes/2.27.0-ipsmpi-2022a
@@ -43,7 +43,7 @@ NETCDFF_LIBS='-lnetcdff'
 NETCDF_LIBS='-lnetcdf'
 PNETCDF_LIBS='-lpnetcdf'
 XML2_LIBS='-lxml2'
-MKL_CFLAGS='-qmkl=sequential'  
+MKL_CFLAGS='-qmkl=sequential'
 MKL_FCFLAGS='-qmkl=sequential'
 #MKL_LDFLAGS="-L${MKL_ROOT}/mkl/2022.1.0/lib/intel64 -Wl,-rpath -Wl,${MKL_ROOT}/mkl/2022.1.0/lib/intel64"
 MKL_LDFLAGS="-L${ROOT_IMKL}/mkl/2022.1.0/lib/intel64"
@@ -100,10 +100,16 @@ done
 # Copy runscript-related files when building out-of-source:
 if test $(pwd) != $(cd "${ICON_DIR}"; pwd); then
   echo "Copying runscript input files from the source directory..."
-  rsync -uavz ${ICON_DIR}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*'
-  ln -sf -t run/ ${ICON_DIR}/run/standard_*
-  ln -sf set-up.info run/SETUP.config
-  rsync -uavz ${ICON_DIR}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='rrtmgp*.nc' --exclude='*.mod' --exclude='*.o'
+  rsync -uavz ${ICON_DIR}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${ICON_DIR}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${ICON_DIR}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${ICON_DIR}/make_runscripts .
   ln -sf ${ICON_DIR}/data
   ln -sf ${ICON_DIR}/utils

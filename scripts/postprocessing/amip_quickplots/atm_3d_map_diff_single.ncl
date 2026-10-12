@@ -1,15 +1,15 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
 ; SPDX-License-Identifier: BSD-3-Clause
 ; ------------------------------------------
 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl" 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl" 
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 
@@ -39,10 +39,10 @@ begin
   txres@txFontHeightF = 0.014                   ; font smaller. default big
   gsn_text_ndc(wks,pltdate,0.85,0.1,txres)
   gsn_text_ndc(wks,comment,0.1,0.1,txres)
-  txres@txFontHeightF = 0.016 
+  txres@txFontHeightF = 0.016
   gsn_text_ndc(wks,statV,0.5,0.22,txres)
 end
-;***end procedure 
+;***end procedure
 ;---------------------------------------
 ;-- function attach_labelbar
 ;---------------------------------------
@@ -70,7 +70,7 @@ begin
 
   return(map)
 end
-;***end procedure 
+;***end procedure
 
 undef("plot_cont")
  procedure plot_cont  ( wks,var,x,y,cArea,res_in,pltName,\
@@ -91,8 +91,8 @@ begin
 
     res@tiMainString         = mainTitle
     res@gsnCenterString      = subTitle
-    res@gsnLeftString        = " " 
-    res@gsnRightString       = " " 
+    res@gsnLeftString        = " "
+    res@gsnRightString       = " "
     res=res_in
 
     res@mpCenterLonF         = 0         ; center of map
@@ -153,7 +153,7 @@ begin
   res@sfYArray             =  y            ;-- transform y to mesh scalar field
   res@sfXCellBounds        =  vlon         ;-- needed if cnFillMode= "CellFill"
   res@sfYCellBounds        =  vlat         ;-- needed if cnFillMod = "CellFill"
-  
+
   res@lbLabelBarOn         =  False        ;-- don't draw a labelbar yet
 
   res@mpFillOn             =  False                    ;?-- fill map grey
@@ -163,17 +163,17 @@ begin
   res@mpMinLatF            =  latMin        ;-- sub-region minimum latitude
   res@mpMaxLatF            =  latMax        ;-- sub-region maximum latitude
   res@mpGreatCircleLinesOn =  False         ;-- important: v6.2.0 False !!
-  res@gsnSpreadColors      =  False  
-    
+  res@gsnSpreadColors      =  False
+
   res@tiMainString         =  mainTitle
   res@gsnCenterString      =  subTitle
-  res@gsnLeftString        = " " 
-  res@gsnRightString       = " " 
+  res@gsnLeftString        = " "
+  res@gsnRightString       = " "
 
 
   res=cnres_in
 
-;***create the contour plot, but don't draw it. 
+;***create the contour plot, but don't draw it.
 ;***We need it to get the colors of the data values
   plot = gsn_csm_contour_map(wks,var,res)
 
@@ -189,7 +189,7 @@ begin
   nlevels = dimsizes(levels)        ;-- number of levels
 
 ;***clear plot, but keep all the information
-  plot = setColorContourClear(plot,min(var),max(var)) 
+  plot = setColorContourClear(plot,min(var),max(var))
 print("min: "+min(var)+" max: "+max(var))
 ;***attach a labelbar to the plot
     plot = attach_labelbar(wks,plot,levels+"",colors)
@@ -215,7 +215,7 @@ print("min: "+min(var)+" max: "+max(var))
 ;***set colors for all cells in between var_min and var_max
   do i = 1, dimsizes(levels) - 1
 ;    get the indices of 'middle' values
-     vind := ind(var .ge. levels(i-1) .and. var .lt. levels(i))  
+     vind := ind(var .ge. levels(i-1) .and. var .lt. levels(i))
      if (.not. all(ismissing(vind))) then
         gscolors(vind) = colors(i)                  ;-- choose the colors
         ntri_calc = ntri_calc + dimsizes(vind)      ;-- number of triangles
@@ -237,7 +237,7 @@ print("min: "+min(var)+" max: "+max(var))
   pres@gsColors        = gscolors       ; set colors for polygons
   pres@gsSegments      = ispan(0,dimsizes(var) * 3,3)  ; assign segments array
 ;***draw all triangles
-  polygon = gsn_add_polygon(wks,plot,ndtooned(vlon),ndtooned(vlat),pres)  
+  polygon = gsn_add_polygon(wks,plot,ndtooned(vlon),ndtooned(vlat),pres)
 
 ;***do the complete plot
   draw(plot)        ;-- draw the map
@@ -263,7 +263,7 @@ begin
   print(meantime)
   print(workdir)
   print(nlati)
- 
+
 
 ;***define plot
    pltType = "png"                        ; x11, eps, ps, pdf, png
@@ -281,7 +281,7 @@ begin
   cArea = GridInfoFile->cell_area   ; area of grid cell
 
 ; note: clon and clat are longitude and latitude of triangle centers.
-;       Locations of the cell corners are given by 
+;       Locations of the cell corners are given by
 ;       clon_vertices and clat_vertices in the nc file.
 
 
@@ -302,30 +302,30 @@ print (datei)
 ;***setings
     Cvar="ta"
     fili    = workdir+"/Ubusy_d"+Cvar+"_lola.nc"
-print(fili)    
+print(fili)
     mainTitle = "Temperature [C] 850 hPa "+typ
     subTitle  = meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
-               
+
 if (isfilepresent(fili)) then
 
 ;***read code ta
-    File       = addfile (fili , "r") 
+    File       = addfile (fili , "r")
     var     = File->$Cvar$(time|0,ncells|:,lev|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
@@ -353,17 +353,17 @@ end if
     mainTitle = "Geopotential height [dam] 500 hPa "+typ
     subTitle  = meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
-             
+
 if (isfilepresent(fili)) then
-       
-;***read 
+
+;***read
     File       = addfile (fili , "r")
-    var     = File->$Cvar$(time|0,lev|0,ncells|:)  
+    var     = File->$Cvar$(time|0,lev|0,ncells|:)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 

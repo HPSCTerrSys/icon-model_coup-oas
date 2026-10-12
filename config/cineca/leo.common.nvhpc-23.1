@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -72,7 +72,7 @@ CPPFLAGS="-I${MPI_ROOT}/include -I${HDF5_ROOT}/include -I${NETCDF_ROOT}/include 
 # The compiler fails to process some of the EMVORADO and DACE source files with
 # the default optimization level:
 ICON_WORKAROUND1_FCFLAGS="-O1 "
-ICON_WORKAROUND1_PATH='externals/dace_icon/src_for_icon/mo_rad.f90:src/data_assimilation/interfaces/radar_interface.f90'
+ICON_WORKAROUND1_PATH='externals/dace/fetch/src/src_for_icon/mo_rad.f90:src/data_assimilation/interfaces/radar_interface.f90'
 
 MPI_LAUNCH="${MPI_ROOT}/bin/mpirun ${LEO_GPU_MPIRUN_FLAGS}"
 
@@ -116,12 +116,17 @@ done
 # Copy runscript-related files when building out-of-source:
 if test $(pwd) != $(cd "${ICON_DIR}"; pwd); then
   echo "Copying runscript input files from the source directory..."
-  rsync -uavz ${ICON_DIR}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*'
-  ln -sf -t run/ ${ICON_DIR}/run/standard_*
-  ln -sf set-up.info run/SETUP.config
-  rsync -uavz ${ICON_DIR}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  rsync -uavz ${ICON_DIR}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${ICON_DIR}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${ICON_DIR}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${ICON_DIR}/make_runscripts .
   ln -sf ${ICON_DIR}/data
   ln -sf ${ICON_DIR}/vertical_coord_tables
 fi
-

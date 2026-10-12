@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Module to provide interface to radiation routines.
 !
 ! Remarks
@@ -11,22 +22,10 @@
 !
 ! Origin
 !     This code is based on a former rte_rrtmgp implementation.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_rte_rrtmgp_radiation
 
   USE mo_kind,                ONLY: wp, i8
-  USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_model_domain,        ONLY: t_patch
 
   USE mo_physical_constants,  ONLY: rae
@@ -40,18 +39,20 @@ MODULE mo_rte_rrtmgp_radiation
                                      ssi_cmip5_picontrol, ssi_cmip6_picontrol, &
                                      ssi_RCEdiurnOn, ssi_RCEdiurnOff,          &
                                      ssi_radt, tsi_radt, ssi_RCEmip_analytical,&
-                                     psctm,                                    &  
+                                     psctm,                                    &
                                      ssi_factor
   USE mo_solar_parameters,    ONLY: solar_parameters
-  USE mo_cloud_gas_profiles,  ONLY: gas_profiles, cloud_profiles, snow_profiles
+  USE mo_cloud_gas_profiles,  ONLY: gas_profiles, cloud_profiles
   USE mo_radiation_general,   ONLY: nbndsw
 
   USE mo_rte_rrtmgp_interface,ONLY : rte_rrtmgp_interface
 
   USE mtime, ONLY: datetime, getTotalSecondsTimeDelta !, datetimeToString
 
+  USE mo_timer,               ONLY: ltimer, timer_start, timer_stop, timer_rte_rrtmgp_rad
+
   IMPLICIT NONE
-  
+
   PRIVATE
 
   PUBLIC :: pre_rte_rrtmgp_radiation, rte_rrtmgp_radiation
@@ -67,9 +68,10 @@ MODULE mo_rte_rrtmgp_radiation
   ! Prepares information for radiation call
 
     TYPE(t_patch),           INTENT(in) :: p_patch
-    TYPE(datetime), POINTER, INTENT(in) :: datetime_radiation, & !< date and time of radiative transfer calculation
+    TYPE(datetime), INTENT(in) :: datetime_radiation, & !< date and time of radiative transfer calculation
          &                                 current_datetime       !< current time step
-    LOGICAL,                 INTENT(in) :: ltrig_rad !< .true. if SW radiative transfer calculation has to be done at current time step
+    LOGICAL,                 INTENT(in) :: ltrig_rad !< .true. if SW radiative transfer calculation has
+                                                     !< to be done at current time step
     REAL(wp),                INTENT(out) :: amu0_x(:,:), rdayl_x(:,:), &
          &                                  amu0m_x(:,:), rdaylm_x(:,:)
 
@@ -122,7 +124,7 @@ MODULE mo_rte_rrtmgp_radiation
 
 
     ! Compute the orbital parameters of Earth for "orbit_date_rt".
-    IF (l_orbvsop87) THEN 
+    IF (l_orbvsop87) THEN
       CALL orbit_vsop87 (             orbit_date_rt, rasc_sun, decl_sun, dist_sun)
     ELSE
       CALL orbit_kepler (cecc, cobld, clonp, orbit_date_rt, rasc_sun, decl_sun, dist_sun)
@@ -142,20 +144,21 @@ MODULE mo_rte_rrtmgp_radiation
     ! In both cases use the orbit parameters "decl_sun" and "dist_sun" valid for
     ! the "orbit_date_rt".
     !
-    !DA TODO: move to the GPU?
     SELECT CASE (icosmu0)
     CASE (0)
        CALL solar_parameters(decl_sun,        time_of_day_rt,  &
             &                icosmu0,         dt_ext,          &
             &                ldiur,           l_sph_symm_irr,  &
             &                p_patch,                          &
-            &                amu0_x,          rdayl_x          )
+            &                amu0_x,          rdayl_x,         &
+            &                lacc=.TRUE.                       )
     CASE (1:4)
        CALL solar_parameters(decl_sun,        time_of_day,     &
             &                icosmu0,         dt_ext,          &
             &                ldiur,           l_sph_symm_irr,  &
             &                p_patch,                          &
-            &                amu0_x,          rdayl_x          )
+            &                amu0_x,          rdayl_x,         &
+            &                lacc=.TRUE.                       )
     CASE DEFAULT
        CALL finish('mo_rte_rrtmgp_radiation/pre_rte_rrtmgp_radiation','invalid icosmu0, must be in 0:4')
     END SELECT
@@ -184,21 +187,24 @@ MODULE mo_rte_rrtmgp_radiation
            &                icosmu0,         dt_ext,           &
            &                ldiur,           l_sph_symm_irr,   &
            &                p_patch,                           &
-           &                amu0m_x,         rdaylm_x          )
+           &                amu0m_x,         rdaylm_x,         &
+           &                lacc=.TRUE.                        )
       !
       ! Consider curvature of the atmosphere for high zenith angles:
       ! The atmospheric path for a zenith angle mu0 through a spherical shell of
       ! thickness H and an inner radius R (and ratio rae=H/R) is shorter than
       ! a path at equal zenith angle through a plane parallel layer of thickness H.
       !
-      WHERE (rdaylm_x == 1.0_wp) 
+      !$ACC KERNELS DEFAULT(PRESENT)
+      WHERE (rdaylm_x(:,:) == 1.0_wp)
          amu0m_x(:,:)  = rae/(SQRT(amu0m_x(:,:)**2+rae*(rae+2.0_wp))-amu0m_x(:,:))
       END WHERE
+      !$ACC END KERNELS
 
       !++jsr&hs
       ! 3.0 Prepare possibly time dependent total solar and spectral irradiance
       ! --------------------------------
-      ! ATTENTION: 
+      ! ATTENTION:
       ! This part requires some further work. Currently, a solar constant of
       ! 1361.371 is used as default. This is the TSI averaged over the
       ! years 1979 to 1988, and should be used for AMIP type runs. If lcouple is
@@ -276,7 +282,6 @@ MODULE mo_rte_rrtmgp_radiation
     & loglac         ,&!< in  fraction of land covered by glaciers
     & this_datetime  ,&!< in  actual time step
     & pcos_mu0       ,&!< in  cosine of solar zenith angle
-    & daylght_frc    ,&!< in  daylight fraction; with diurnal cycle 0 or 1, with zonal mean in [0,1]
     & alb_vis_dir    ,&!< in  surface albedo for visible range, direct
     & alb_nir_dir    ,&!< in  surface albedo for near IR range, direct
     & alb_vis_dif    ,&!< in  surface albedo for visible range, diffuse
@@ -288,16 +293,14 @@ MODULE mo_rte_rrtmgp_radiation
     & dz             ,&!< in  geometric height thickness of layer [m]
     & pp_hl          ,&!< in  pressure at half levels at t-dt [Pa]
     & pp_fl          ,&!< in  pressure at full levels at t-dt [Pa]
-    & rad_2d         ,&!< inout arbitrary 2d field in radiation for output
+    & lts            ,&!< out lower troposheric stability  [K]
+    & cinhoml        ,&!< out cloud liquid water inhomogeneity
     & tk_fl          ,&!< in  tk_fl  = temperature at full level at t-dt
     & xm_air         ,&!< in  air mass in layer [kg/m2]
     & xq_trc         ,&!< in  tracer  mass fraction [kg/kg]
     & xv_ozn         ,&!< out ozone volume mixing ratio [mol/mol]
     !
     & reff_ice       ,&!< inout  effective radius of cloud ice (Fu needles) [m]
-    & tau_ice        ,&!< inout  cloud ice optical depth, integrated over all bands
-    & reff_snow      ,&!< inout  effective radius of snow (Fu needles) [m]
-    & tau_snow       ,&!< inout  snow optical depth, integrated over all bands 
     & cdnc           ,&!< in  cloud droplet number concentration
     !
     & lw_dnw_clr     ,&!< out clear-sky downward longwave  at all levels
@@ -334,11 +337,10 @@ MODULE mo_rte_rrtmgp_radiation
     & loland(:),           & !< land mask
     & loglac(:)              !< glacier mask
 
-    TYPE(datetime), POINTER :: this_datetime !< actual time step
+    TYPE(datetime) :: this_datetime !< actual time step
 
     REAL(wp), INTENT(IN)    :: &
     & pcos_mu0(:),         & !< cosine of solar zenith angle
-    & daylght_frc(:),      & !< daylight fraction; with diurnal cycle 0 or 1, with zonal mean in [0,1]
     & alb_vis_dir(:),      & !< surface albedo for visible range and direct light
     & alb_nir_dir(:),      & !< surface albedo for NIR range and direct light
     & alb_vis_dif(:),      & !< surface albedo for visible range and diffuse light
@@ -355,11 +357,9 @@ MODULE mo_rte_rrtmgp_radiation
     & xq_trc(:,:,:),    & !< tracer mass fraction [kg/kg]
     & cdnc(:,:)           !< Cloud drop number concentration
     REAL(wp), INTENT(INOUT) :: &
-    & rad_2d(:),        & !< arbitrary 2d field in radiation for output
+    & lts(:),           & !< lower troposheric stability  [K]
+    & cinhoml(:),       & !< cloud liquid water inhomogeneity
     & reff_ice(:,:),    & !< effective radius of cloud ice [m]
-    & tau_ice(:,:),     & !< optical depth of cloud ice, integraded over all bands     
-    & reff_snow(:,:),   & !< effective radius of snow [m]
-    & tau_snow(:,:),    & !< optical depth snow, integrated over all bands     
     & xv_ozn(:,:)         !< ozone volume mixing ratio  [mol/mol]
 
     REAL(wp), TARGET, INTENT(INOUT)   :: &
@@ -373,13 +373,13 @@ MODULE mo_rte_rrtmgp_radiation
     & sw_upw(:,:)       !< All-sky   upward   shortwave at all levels
 
     REAL (wp), INTENT (INOUT) :: &
-    & vis_dn_dir_sfc(:)    , & !< Diffuse downward flux surface visible radiation 
+    & vis_dn_dir_sfc(:)    , & !< Diffuse downward flux surface visible radiation
     & par_dn_dir_sfc(:)    , & !< Diffuse downward flux surface PAR
     & nir_dn_dir_sfc(:)    , & !< Diffuse downward flux surface near-infrared radiation
-    & vis_dn_dff_sfc(:)    , & !< Direct  downward flux surface visible radiation 
+    & vis_dn_dff_sfc(:)    , & !< Direct  downward flux surface visible radiation
     & par_dn_dff_sfc(:)    , & !< Direct  downward flux surface PAR
     & nir_dn_dff_sfc(:)    , & !< Direct  downward flux surface near-infrared radiation
-    & vis_up_sfc    (:)    , & !< Upward  flux surface visible radiation 
+    & vis_up_sfc    (:)    , & !< Upward  flux surface visible radiation
     & par_up_sfc    (:)    , & !< Upward  flux surface PAR
     & nir_up_sfc    (:)    , & !< Upward  flux surface near-infrared radiation
     & aer_aod_533   (:,:)  , & !< aerosol optical density at 533 nm
@@ -397,7 +397,6 @@ MODULE mo_rte_rrtmgp_radiation
     & xvmr_vap(nproma,klev),           & !< water vapor volume mixing ratio
     & xm_liq(nproma,klev),             & !< cloud water mass in layer [kg/m2]
     & xm_ice(nproma,klev),             & !< cloud ice   mass in layer [kg/m2]
-    & xm_snw(nproma,klev),             & !< snow        mass in layer [kg/m2]
     & xvmr_co2(nproma,klev),           & !< CO2 volume mixing ratio
     & xvmr_o3(nproma,klev),            & !< O3  volume mixing ratio
     & xvmr_o2(nproma,klev),            & !< O2  volume mixing ratio
@@ -413,9 +412,11 @@ MODULE mo_rte_rrtmgp_radiation
     INTEGER   :: jl, jk
 
     !$ACC DATA PRESENT(xv_ozn) &
-    !$ACC   CREATE(pp_sfc, tk_hl, xm_liq, xm_ice, xc_frc, xm_snw) &
+    !$ACC   CREATE(pp_sfc, tk_hl, xm_liq, xm_ice, xc_frc) &
     !$ACC   CREATE(xvmr_vap, xvmr_co2, xvmr_o3, xvmr_o2, xvmr_ch4) &
     !$ACC   CREATE(xvmr_n2o, xvmr_cfc)
+
+    IF (ltimer) CALL timer_start(timer_rte_rrtmgp_rad)
 
     CALL calculate_temperature_pressure(jcs, jce, nproma, klev, &
       pp_hl(:,:), pp_fl(:,:), tk_fl(:,:), tk_sfc(:), pp_sfc, tk_hl)
@@ -440,22 +441,20 @@ MODULE mo_rte_rrtmgp_radiation
          &                klev,         xq_trc, xm_air,                   &
          &                xm_liq,       xm_ice,         xc_frc            )
 
-    CALL snow_profiles  ( jg,           jcs,            jce,              &
-         &                klev,         xq_trc, xm_air, xm_snw            )
-
     CALL rte_rrtmgp_interface(jg, jb, jcs, jce, nproma, klev             ,&
-      aes_rad_config(jg)%irad_aero, is_coupled_to_aero()                 ,&
+      aes_rad_config(jg)%irad_aero                                       ,&
+      aes_rad_config(jg)%lrad_aero_diag   ,is_coupled_to_aero()          ,&
       psctm(jg), ssi_factor, loland, loglac, this_datetime               ,&
-      pcos_mu0        ,daylght_frc                                       ,&
+      pcos_mu0                                                           ,&
       alb_vis_dir     ,alb_nir_dir     ,alb_vis_dif     ,alb_nir_dif     ,&
       emissivity                                                         ,&
       zf              ,zh              ,dz                               ,&
       pp_sfc          ,pp_fl           ,pp_hl                            ,&
       tk_sfc          ,tk_fl           ,tk_hl                            ,&
-      rad_2d                                                             ,&
+      lts             ,cinhoml                                           ,&
       xvmr_vap        ,xm_liq          ,xm_ice                           ,&
-      reff_ice        ,tau_ice         ,reff_snow       ,tau_snow        ,&
-      cdnc            ,xc_frc          ,xm_snw                           ,&
+      reff_ice                                                           ,&
+      cdnc            ,xc_frc                                            ,&
       xvmr_co2        ,xvmr_ch4        ,xvmr_n2o        ,xvmr_cfc        ,&
       xvmr_o3         ,xvmr_o2                                           ,&
       lw_upw          ,lw_upw_clr      ,lw_dnw          ,lw_dnw_clr      ,&
@@ -465,10 +464,12 @@ MODULE mo_rte_rrtmgp_radiation
       vis_up_sfc      ,par_up_sfc      ,nir_up_sfc                       ,&
       aer_aod_533     ,aer_ssa_533     ,aer_asy_533                      ,&
       aer_aod_2325    ,aer_ssa_2325    ,aer_asy_2325                     ,&
-      aer_aod_9731                                                       ) 
+      aer_aod_9731                                                       )
     !$ACC WAIT
     !$ACC END DATA
     !-------------------------------------------------------------------
+
+    IF (ltimer) CALL timer_stop(timer_rte_rrtmgp_rad)
 
   END SUBROUTINE rte_rrtmgp_radiation
   !---------------------------------------------------------------------
@@ -486,24 +487,24 @@ MODULE mo_rte_rrtmgp_radiation
       & pp_sfc        ,& ! out
       & tk_hl   )
 
-  
+
     INTEGER, INTENT(in) :: &
       & jcs               ,&
       & jce               ,&
       & kbdim             ,&
-      & klev              
-    ! in 
+      & klev
+    ! in
     REAL(wp), INTENT(in) :: &
       & pp_hl(kbdim,klev+1),&
       & pp_fl(kbdim,klev)  ,&
       & tk_fl(kbdim,klev)  ,&
       & tk_sfc(kbdim)
 
-    !out      
+    !out
     REAL(wp), INTENT(inout) :: &
       & pp_sfc (kbdim)        ,&
-      & tk_hl  (kbdim,klev+1)  
-    
+      & tk_hl  (kbdim,klev+1)
+
     ! local counters
     INTEGER              :: jk, jl
     !
@@ -511,7 +512,7 @@ MODULE mo_rte_rrtmgp_radiation
     !
     ! 1.0 calculate variable input parameters (location and state variables)
     ! --------------------------------
-    ! 
+    !
     ! --- Pressure (surface and distance between half levels)
     !
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1)
@@ -542,7 +543,7 @@ MODULE mo_rte_rrtmgp_radiation
     !$ACC END PARALLEL LOOP
 
     !$ACC END DATA
-  END SUBROUTINE calculate_temperature_pressure 
+  END SUBROUTINE calculate_temperature_pressure
   !-------------------------------------------------------------------
 
   END MODULE mo_rte_rrtmgp_radiation

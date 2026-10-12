@@ -1,19 +1,18 @@
-! Initialization routines for the terminator 'toy' chemistry as used in DCMIP2016.
-!
-! Literature
-! Dynamical Core Model Intercomparison Project (DCMIP2016) Test Case Document
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Initialization routines for the terminator 'toy' chemistry as used in DCMIP2016.
+!
+! Literature
+! Dynamical Core Model Intercomparison Project (DCMIP2016) Test Case Document
 
 MODULE mo_nh_dcmip_terminator
 
@@ -43,7 +42,7 @@ MODULE mo_nh_dcmip_terminator
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_nh_dcmip_terminator'
 
   TYPE(event), POINTER       :: chem_event, cpl_event
-  TYPE(t_var_action_element) :: chem_action, cpl_action 
+  TYPE(t_var_action_element) :: chem_action, cpl_action
 
   ! time rate of change of cl and cl2
   REAL(wp), ALLOCATABLE, SAVE :: ddtcl (:,:,:), &
@@ -114,7 +113,7 @@ CONTAINS
       CALL finish(routine, 'Testcase requires allocation of 2 passive tracers')
     ENDIF
 
-    ! sanity checks for diagnostics 
+    ! sanity checks for diagnostics
     ! make sure that a minimum number of extra_2d fields are allocated
     !
     IF (.NOT. ASSOCIATED(p_nh_diag%extra_2d)) THEN
@@ -175,7 +174,7 @@ CONTAINS
             &                            cl2 = zcl2  ) !out
 
           p_nh_prog(nnow_rcf(jg))%tracer(jc,1:nlev,jb,toy_chem%id_cl)  = zcl
-          p_nh_prog(nnow_rcf(jg))%tracer(jc,1:nlev,jb,toy_chem%id_cl2) = zcl2 
+          p_nh_prog(nnow_rcf(jg))%tracer(jc,1:nlev,jb,toy_chem%id_cl2) = zcl2
       ENDDO  ! jc
     ENDDO  ! jb
 !$OMP END DO
@@ -315,14 +314,14 @@ CONTAINS
             CALL tendency_Terminator( lat   = zlat,             &  !in
               &                       lon   = zlon,             &  !in
               &                       cl    = p_nh_prog(nnew_rcf(jg))%tracer(jc,jk,jb,toy_chem%id_cl),  & !in
-              &                       cl2   = p_nh_prog(nnew_rcf(jg))%tracer(jc,jk,jb,toy_chem%id_cl2), & !in 
+              &                       cl2   = p_nh_prog(nnew_rcf(jg))%tracer(jc,jk,jb,toy_chem%id_cl2), & !in
               &                       dt    = toy_chem%dt_chem, &  !in
               &                       cl_f  = ddtcl(jc,jk,jb),  &  !out
               &                       cl2_f = ddtcl2(jc,jk,jb)  )  !out
           ENDDO  ! jc
         ENDDO  ! jk
       ENDIF  ! chem_event_isactive
-    
+
       ! apply tracer tendencies
       IF (cpl_event_isactive) THEN
         DO jk = 1, nlev
@@ -407,8 +406,8 @@ CONTAINS
 
       ! pre-computation of rho * \Delta z
       DO jk = 1, nlev
-        DO jc = i_startidx, i_endidx 
-          rhodz(jc,jk) = dz(jc,jk,jb) * rho(jc,jk,jb)  
+        DO jc = i_startidx, i_endidx
+          rhodz(jc,jk) = dz(jc,jk,jb) * rho(jc,jk,jb)
         ENDDO
       ENDDO
 
@@ -416,12 +415,12 @@ CONTAINS
 
       DO jk = 1, nlev
 
-        DO jc = i_startidx, i_endidx 
+        DO jc = i_startidx, i_endidx
 
           ! vertical intergal of Cl
           p_nh_diag%extra_2d(jc,jb,1) = p_nh_diag%extra_2d(jc,jb,1)  &
             &                + rhodz(jc,jk) * tracer(jc,jk,jb,toy_chem%id_cl)
- 
+
           ! vertical intergal of Cl2
           p_nh_diag%extra_2d(jc,jb,2) = p_nh_diag%extra_2d(jc,jb,2)  &
             &                + rhodz(jc,jk) * tracer(jc,jk,jb,toy_chem%id_cl2)
@@ -549,4 +548,3 @@ CONTAINS
 
 
 END MODULE mo_nh_dcmip_terminator
-

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -26,7 +26,7 @@
 #=============================================================================
 set +x
 
-# Start Aurora DKRZ 
+# Start Aurora DKRZ
 source $MODULESHOME/init/bash
 module load vh/gcc/12.2.0 ve/mpi/3.4.0 ve/ncc/5.0.1 ve/nfort/5.0.1
 
@@ -34,7 +34,7 @@ module load vh/gcc/12.2.0 ve/mpi/3.4.0 ve/ncc/5.0.1 ve/nfort/5.0.1
 export VE_TRACEBACK="VERBOSE"
 NMPI_VE_TRACEBACK=ON
 export tasks_per_node=8 # 128 for Levante
-# End 
+# End
 
 #=============================================================================
 #
@@ -175,9 +175,8 @@ author_list="Monika Esch, Rene Redler, Daniel Klocke"
 #
 # ocean -> atmosphere:
 # . sea_surface_temperature
-# . eastward_sea_water_velocity
-# . northward_sea_water_velocity
 # . ocean_sea_ice_bundle
+# . surface_velocity_bundle
 #
 # currently not activated for coupling:
 # . co2_mixing_ratio
@@ -189,7 +188,7 @@ author_list="Monika Esch, Rene Redler, Daniel Klocke"
 # (0) Basic model configuration
 # -----------------------------
 
-atmos_gridID="0043"
+atmos_gridID="0049"
 atmos_refinement="R02B04"
 
 ocean_gridID="0036"
@@ -221,7 +220,7 @@ atmTimeStep="PT15M"              # atmosphere time step:   84 time steps per day
                                  #                         30 time steps per couplingTimeStep
 oceTimeStep="PT30M"              # ocean time step:       480 time steps per day
                                  #                          5 time steps per couplingTimeStep
-couplingTimeStep="PT30M"         # coupling time step:      1 time step  per radTimeStep 
+couplingTimeStep="PT30M"         # coupling time step:      1 time step  per radTimeStep
 
 #--------------------------------------------------------------------------------------------------
 
@@ -280,9 +279,9 @@ oce_3d_top_level_output_interval="PT3H"
 
 # namelist files
 # --------------
-atm_namelist=NAMELIST_${EXPNAME}_atm
+atmo_namelist=NAMELIST_${EXPNAME}_atm
 jsbach_namelist=NAMELIST_${EXPNAME}_lnd
-oce_namelist=NAMELIST_${EXPNAME}_oce
+ocean_namelist=NAMELIST_${EXPNAME}_oce
 
 #--------------------------------------------------------------------------------------------------
 
@@ -302,8 +301,10 @@ lcarbon=$([ "${jsbach_with_carbon:=yes}" == yes ] && echo .TRUE. || echo .FALSE.
 
 if [[ $jsbach_usecase == *pfts* ]]
 then
-  pft_file_tag="11pfts_"
+  npft=12
+  pft_file_tag="${npft}pfts_"
 else
+  npft=0
   pft_file_tag=""
 fi
 
@@ -325,10 +326,10 @@ mpi_oce_io_procs=0                 # for ocean (not working yet)
 #
 # output_<xyz>=yes : yes --> output files for <xyz>, any other value --> no files for <xyz>
 
-output_atm_vgrid=no                # produces 1 atm file 
-output_atm_debug=no                # produces 1 atm file 
-output_atm_3d=yes                  # produces 6 atm file 
-output_atm_2d=yes                  # produces 1 atm file 
+output_atm_vgrid=no                # produces 1 atm file
+output_atm_debug=no                # produces 1 atm file
+output_atm_3d=yes                  # produces 6 atm file
+output_atm_2d=yes                  # produces 1 atm file
 output_phy_3d=no                   # produces 1 atm file
                                    # Note: "yes" increases the output volume significantly!
 
@@ -348,7 +349,7 @@ output_oce_fx=no                   # produces 1 oce file
 #--------------------------------------------------------------------------------------------------
 
 if [ $mpi_total_procs -lt 2 ] ; then
-  check_error 0 "This setup requires at least 2 mpi processes. Exit"
+  check_error 1 "This setup requires at least 2 mpi processes. Exit"
 fi
 
 # I.1 Split the number of total procs and assign to each component
@@ -363,14 +364,14 @@ atm_inc_rank=1
 # I.2 Fill model list
 # -------------------
 #
-namelist_list[0]="$atm_namelist"
+namelist_list[0]="$atmo_namelist"
 modelname_list[0]="atmo"
 modeltype_list[0]=1
 minrank_list[0]=$atm_min_rank
 maxrank_list[0]=$atm_max_rank
 incrank_list[0]=$atm_inc_rank
 #
-namelist_list[1]="$oce_namelist"
+namelist_list[1]="$ocean_namelist"
 modelname_list[1]="ocean"
 modeltype_list[1]=2
 minrank_list[1]=$oce_min_rank
@@ -405,22 +406,23 @@ predef:
   time_config: &time_config
     coupling_period: ${couplingTimeStep}
     time_reduction: average
+    src_lag: 1
+    tgt_lag: 1
+  components:
+    atm: &atm
+      component: ${modelname_list[0]}
+      grid: icon_atmos_grid
+    oce: &oce
+      component: ${modelname_list[1]}
+      grid: icon_ocean_grid
   component_configs:
     atm2ocn: &atm2ocn
-      src_component: atmo
-      src_grid: icon_atmos_grid
-      src_lag: 1
-      tgt_component: ocean
-      tgt_grid: icon_ocean_grid
-      tgt_lag: 1
+      source: *atm
+      target: *oce
       <<: [ *time_config ]
     ocn2atm: &ocn2atm
-      src_component: ocean
-      src_grid: icon_ocean_grid
-      src_lag: 1
-      tgt_component: atmo
-      tgt_grid: icon_atmos_grid
-      tgt_lag: 1
+      source: *oce
+      target: *atm
       <<: [ *time_config ]
 
 timestep_unit: ISO_format
@@ -439,10 +441,9 @@ coupling:
       - sea_level_pressure
  # OCN -> ATM
   - <<: [ *ocn2atm, *nn1_fixed ]
-    field: 
+    field:
       - sea_surface_temperature
-      - eastward_sea_water_velocity
-      - northward_sea_water_velocity
+      - surface_velocity_bundle
       - ocean_sea_ice_bundle
 EOF
 #
@@ -458,7 +459,7 @@ add_required_file ${basedir}/run/coupling_${EXPNAME}.yaml         ./coupling.yam
 
 # atmosphere namelist
 # -------------------
-cat > ${atm_namelist} << EOF
+cat > ${atmo_namelist} << EOF
 !
 &coupling_mode_nml
  coupled_to_ocean  = .TRUE.
@@ -484,7 +485,7 @@ cat > ${atm_namelist} << EOF
  iforcing          = 2           ! 0: none, 1: HS, 2: ECHAM, 3: NWP
  output            = 'nml'
  profiling_output  = 2           ! aggregated: 1; detailed: 2; in files: 3
- msg_level         = 12          ! level of details report during integration 
+ msg_level         = 12          ! level of details report during integration
  restart_filename  = "${EXPNAME}_restart_atm_<rsttime>.mfr"
  activate_sync_timers = .TRUE.
 /
@@ -583,8 +584,9 @@ cat > ${atm_namelist} << EOF
  aes_cop_config(1)%cn1sea     =  50.0
  aes_cop_config(1)%cn2sea     = 100.0
  aes_cop_config(1)%cinhomi    =   1.0
- aes_cop_config(1)%cinhoms    =   1.0
- aes_cop_config(1)%cinhoml    =   1.0
+ aes_cop_config(1)%cinhoml_cfl=   1.0
+ aes_cop_config(1)%cinhoml_cfo=   1.0
+ aes_cop_config(1)%cinhoml_sf =   1.0
 /
 &cloud_mig_nml
  cloud_mig_config(1)%mu_rain        = 0.5
@@ -604,9 +606,10 @@ EOF
 cat > ${jsbach_namelist} << EOF
 &jsb_model_nml
   usecase              = "${jsbach_usecase}"
+  npft                 = ${npft}
   use_lakes            = ${llake}            ! TRUE if jsbach_with_lakes=yes
   fract_filename       = 'bc_land_frac.nc'
-  enforce_water_budget = .FALSE.         ! True: stop in case of water conservation problem
+  enforce_water_budget = 'ignore'        ! Error: stop in case of water conservation problem
 /
 &jsb_seb_nml
   bc_filename          = 'bc_land_phys.nc'
@@ -626,7 +629,6 @@ cat > ${jsbach_namelist} << EOF
   l_heat_cond_map      = .FALSE.
   l_heat_cap_dyn       = .TRUE.
   l_heat_cond_dyn      = .TRUE.
-  l_snow               = .TRUE.
   l_dynsnow            = .TRUE.
   l_freeze             = .FALSE.
   l_supercool          = .FALSE.
@@ -635,6 +637,7 @@ cat > ${jsbach_namelist} << EOF
 /
 &jsb_hydro_nml
   l_socmap             = .FALSE.
+  l_organic            = .FALSE.
   bc_filename          = 'bc_land_soil.nc'
   ic_filename          = 'ic_land_soil.nc'
   bc_sso_filename      = 'bc_land_sso.nc'
@@ -689,7 +692,7 @@ add_link_file ${basedir}/data/ECHAM6_CldOptProps_rrtmgp_sw.nc              ./rrt
 
 # namelist files
 # --------------
-add_required_file ${basedir}/run/${atm_namelist}                           ./
+add_required_file ${basedir}/run/${atmo_namelist}                           ./
 add_required_file ${basedir}/run/${jsbach_namelist}                        ./
 
 # dictionary file for output variable names
@@ -753,7 +756,7 @@ add_link_file ${datadir}/swflux_14band_cmip6_1850-2299-v3.2.nc             ./bc_
 #
 # - land parameters
 #
-datadir=${icon_data_poolFolder}/${atmos_gridID}-${ocean_gridID}/land/r0002
+datadir=${icon_data_poolFolder}/${atmos_gridID}-${ocean_gridID}/land/r0100
 #
 add_link_file ${datadir}/ic_land_soil_1979.nc                              ./ic_land_soil.nc
 add_link_file ${datadir}/bc_land_soil_1979.nc                              ./bc_land_soil.nc
@@ -767,12 +770,9 @@ add_link_file ${basedir}/externals/jsbach/data/lctlib_nlct21.def           ./lct
 #
 # - HD files
 #
-datadir=${atmo_data_InputFolder}/land/r0003
+datadir=${icon_data_poolFolder}/${atmos_gridID}-${ocean_gridID}/land/r0100
 #
-add_link_file ${datadir}/hdrestart_R02B04_013_G_210120_1334_with_grid_file_mask.nc ./ic_land_hd.nc
-add_link_file ${datadir}/hdpara_icon_r2b4_013_using_grid_lsmask.nc                 ./bc_land_hd.nc
-#add_link_file ${datadir}/hdpara_icon_r2b4_013_using_grid_lsmask.nc                ./hd_mask.nc
-add_link_file ${atmo_grid_folder}/${atmo_dyn_grid}                                 ./hd_mask.nc
+add_link_file ${datadir}/hdpara_r2b4_${atmos_gridID}_${ocean_gridID}_sc_hfrac_s_v1.nc ./bc_land_hd.nc
 #
 # - the atmosphere grid itself (the grid copy section below from $HGRIDDIR is ignored)
 #
@@ -785,7 +785,7 @@ add_link_file ${atmo_grid_folder}/${atmo_dyn_grid}                         ./
 
 # Parameters for all output files
 # -------------------------------
-cat >> ${atm_namelist} << EOF
+cat >> ${atmo_namelist} << EOF
 &io_nml
  output_nml_dict    = "${dict_file}"
  netcdf_dict        = "${dict_file}"
@@ -802,7 +802,7 @@ EOF
 #
 if [[ "$output_atm_debug" == "yes" ]]; then
   #
-  cat >> ${atm_namelist} << EOF
+  cat >> ${atmo_namelist} << EOF
 &output_nml
  output_filename  = "${EXPNAME}_atm_debug"
  filename_format  = "<output_filename>_<levtype_l>_<datetime2>"
@@ -829,7 +829,7 @@ fi
 #
 if [[ "$output_atm_vgrid" == "yes" ]]; then
   #
-  cat >> ${atm_namelist} << EOF
+  cat >> ${atmo_namelist} << EOF
 &output_nml
  output_filename  = "${EXPNAME}_atm_vgrid"
  filename_format  = "<output_filename>_<levtype_l>"
@@ -850,7 +850,7 @@ if [[ "$output_atm_3d" == "yes" ]]; then
   #
   # split file in high number of files for speedup
   #
-  cat >> ${atm_namelist} << EOF
+  cat >> ${atmo_namelist} << EOF
 &output_nml
  output_filename  = "${EXPNAME}_atm_3d_1"
  filename_format  = "<output_filename>_<levtype_l>_<datetime2>"
@@ -941,7 +941,7 @@ fi
 
 if [[ "$output_atm_2d" == "yes" ]]; then
   #
-  cat >> ${atm_namelist} << EOF
+  cat >> ${atmo_namelist} << EOF
 &output_nml
  output_filename  = "${EXPNAME}_atm_2d"
  filename_format  = "<output_filename>_<levtype_l>_<datetime2>"
@@ -976,7 +976,7 @@ fi
 
 if [[ "$output_phy_3d" == "yes" ]]; then
   #
-  cat >> ${atm_namelist} << EOF
+  cat >> ${atmo_namelist} << EOF
 &output_nml
  output_filename  = "${EXPNAME}_phy_3d"
  filename_format  = "<output_filename>_<levtype_l>_<datetime2>"
@@ -1007,7 +1007,7 @@ fi
 # for more jsbach output see exp.atm_amip_les
 #
 if [[ "$output_lnd" == "yes" ]]; then
-  cat >> ${atm_namelist} << EOF
+  cat >> ${atmo_namelist} << EOF
 &output_nml
  output_filename  = "${EXPNAME}_lnd"
  filename_format  = "<output_filename>_<levtype_l>_<datetime2>"
@@ -1031,7 +1031,7 @@ fi
 
 if [[ "$output_dyamond" == "yes" ]]; then
   #
-  cat >> ${atm_namelist} << EOF
+  cat >> ${atmo_namelist} << EOF
 &output_nml
  output_filename              = "${EXPNAME}_atm_3d_u"
  filename_format              = "<output_filename>_<levtype_l>_<datetime2>"
@@ -1162,7 +1162,7 @@ if [[ "$output_dyamond" == "yes" ]]; then
  output_end                   = "${end_date}"
  remap                        = 0                         ! 1: latlon,  0: native grid
  include_last                 = .FALSE.
- ml_varlist                   = 'prw' , 'cllvi' , 'clivi' , 'qgvi' , 'qrvi' , 'qsvi' 
+ ml_varlist                   = 'prw' , 'cllvi' , 'clivi' , 'qgvi' , 'qrvi' , 'qsvi'
  output_grid                  = .FALSE.
 /
 &output_nml
@@ -1236,7 +1236,7 @@ EOF
 fi
 
 #-----------------------------------------------------------------------------
-# III. OCEAN and SEA-ICE (and HAMOCC) 
+# III. OCEAN and SEA-ICE (and HAMOCC)
 #-----------------------------------------------------------------------------
 
 ocean_grid="icon_grid_${ocean_gridID}_${ocean_refinement}_O.nc"
@@ -1248,7 +1248,7 @@ ocean_data_InputFolder="${icon_data_poolFolder}/${ocean_gridID}/ocean"
 # ocean namelist
 # --------------
 
-cat > ${oce_namelist} << EOF
+cat > ${ocean_namelist} << EOF
 !
 &coupling_mode_nml
  coupled_to_atmo             = .TRUE.
@@ -1282,7 +1282,7 @@ EOF
 #
 if [[ "$output_oce_2d_1h" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   filetype                   = 5
   output_filename            = "${EXPNAME}_ocean2D_1h"
@@ -1320,7 +1320,7 @@ fi
 #
 if [[ "$output_oce_2d_6h" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   filetype                   = 5
   output_filename            = "${EXPNAME}_ocean2D_3h"
@@ -1342,7 +1342,7 @@ fi
 #
 if [[ "$output_oce_3d_top_level" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   filetype                   = 5
   output_filename            = "${EXPNAME}_ocean3D_top_level"
@@ -1358,14 +1358,14 @@ if [[ "$output_oce_3d_top_level" == "yes" ]]; then
   filename_format            = "<output_filename>_<datetime2>"
   operation                  = "mean"
   m_levels                   = "1"
-  ml_varlist                 = 'to', 'so', 'u', 'v', 'vort' 
+  ml_varlist                 = 'to', 'so', 'u', 'v', 'vort'
 /
 EOF
 fi
 #
 if [[ "$output_oce_3d_24h" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   filetype                   = 5
   output_filename            = "${EXPNAME}_ocean3D_24h"
@@ -1381,13 +1381,13 @@ if [[ "$output_oce_3d_24h" == "yes" ]]; then
   filename_format            = "<output_filename>_<datetime2>"
   operation                  = "mean"
   ml_varlist                 = 'to', 'so', 'u', 'v', 'w',
-                               'A_tracer_v_to', 'A_veloc_v', 'tke', 'vort' 
+                               'A_tracer_v_to', 'A_veloc_v', 'tke', 'vort'
 /
 EOF
 fi
 if [[ "$output_oce_fx" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   filetype                   = 5
   output_filename            = "${EXPNAME}_ocean_fx"
@@ -1407,7 +1407,7 @@ EOF
 fi
 if [[ "$output_oce_3d_upper_levels" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   filetype                   = 5
   output_filename            = "${EXPNAME}_ocean3D_u200m"
@@ -1424,14 +1424,14 @@ if [[ "$output_oce_3d_upper_levels" == "yes" ]]; then
   operation                  = "mean"
   m_levels                   = "1...14"
   ml_varlist                 = 'to', 'so', 'u', 'v', 'w',
-                               'A_tracer_v_to', 'A_veloc_v', 'tke', 'vort' 
+                               'A_tracer_v_to', 'A_veloc_v', 'tke', 'vort'
 /
 EOF
 fi
 #
 if [[ "$output_oce_monitor" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   output_start               = "${start_date}"
   output_end                 = "${end_date}"
@@ -1446,7 +1446,7 @@ if [[ "$output_oce_monitor" == "yes" ]]; then
 EOF
 fi
 #
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 &dbg_index_nml
   idbg_mxmn                  = 0                                ! initialize MIN/MAX  debug output
   idbg_val                   = 0                                ! initialize one cell debug output
@@ -1468,13 +1468,13 @@ cat >> ${oce_namelist} << EOF
   l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
   l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
 
-  select_solver                   = 4         ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4         ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                               ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .TRUE.
   solver_tolerance                = 1.0E-10   ! this may further be reduced
   select_lhs                      = 2         ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .TRUE.    ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2         ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .TRUE.    ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2         ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
   solver_max_restart_iterations   = 100       ! outer (restart solver)
 
@@ -1572,7 +1572,7 @@ cat >> ${oce_namelist} << EOF
 /
 &ocean_physics_nml
   i_sea_ice                                  = 1                ! 0 = no sea ice; 1 = sea ice model on; default=1
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                                = 1                ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
   i_ice_dyn                                  = 1                ! 1/0=switch on/off AWI ice dynamics
@@ -1610,7 +1610,7 @@ EOF
 #
 if [[ "$initialiseOcean" == "fromRestart" ]]; then
   #
-  cat >> ${oce_namelist} << EOF
+  cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 0                ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 0                ! 0: none, 1: read T from initial_state.nc
@@ -1619,7 +1619,7 @@ if [[ "$initialiseOcean" == "fromRestart" ]]; then
 EOF
 #
 else
-  cat >> ${oce_namelist} << EOF
+  cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 1                ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 1                ! 0: none, 1: read T from initial_state.nc
@@ -1628,7 +1628,7 @@ else
 EOF
 fi
 #
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 &ocean_diagnostics_nml
   diagnostics_level                          = 1
   diagnose_for_horizontalVelocity            = .FALSE.
@@ -1641,7 +1641,7 @@ cat >> ${oce_namelist} << EOF
 /
 EOF
 
-add_required_file ${basedir}/run/${oce_namelist} ./
+add_required_file ${basedir}/run/${ocean_namelist} ./
 
 #-----------------------------------------------------------------------------
 #
@@ -1674,7 +1674,7 @@ fi
 #!/bin/ksh
 #=============================================================================
 #
-# This section of the run script prepares and starts the model integration. 
+# This section of the run script prepares and starts the model integration.
 #
 # MODEL and START must be defined as environment variables or
 # they must be substituted with appropriate values.
@@ -1746,7 +1746,7 @@ if [ x$namelist_list = x ]; then
     modeltype_list[0]=99
   else
     check_error 1 "No namelist is defined"
-  fi 
+  fi
 fi
 
 #-----------------------------------------------------------------------------
@@ -1808,7 +1808,7 @@ for gridfile in ${all_grids}; do
   ls -l ${HGRIDDIR}/$gridfile
   check_error $? "${HGRIDDIR}/$gridfile does not exist."
   add_link_file ${HGRIDDIR}/${gridfile} ./
-  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then    
+  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then
     add_link_file ${HGRIDDIR}/${grfinfofile} ./
   fi
 done
@@ -2006,7 +2006,9 @@ ldd ${MODEL}
 # start experiment
 #
 
-rm -f finish.status
+rm -f finish_atmo.status
+rm -f finish_ocean.status
+
 #
 date
 set -x
@@ -2022,7 +2024,7 @@ echo ${LD_RUN_PATH}
 set +x
 date
 #
-if [ -r finish.status ] ; then
+if [ -r finish_atmo.status ] && [ -r finish_ocean.status ] ; then
   check_final_status 0 "${START} ${MODEL}"
 else
   check_final_status -1 "${START} ${MODEL}"
@@ -2030,10 +2032,17 @@ fi
 #
 #-----------------------------------------------------------------------------
 #
-finish_status=`cat finish.status`
-echo $finish_status
+#Read the finish_status files and cut off whitespaces.
+finish_status_atm=`cat finish_atmo.status`
+finish_status_atm="${finish_status_atm# }"
+finish_status_oce=`cat finish_ocean.status`
+finish_status_oce="${finish_status_oce# }"
+
+echo $finish_status_atm
+echo $finish_status_oce
 echo "============================"
-echo "Script run successfully: $finish_status"
+echo "Script run (atmo) successfully: $finish_status_atm"
+echo "Script run (oce) successfully: $finish_status_oce"
 echo "============================"
 
 #-----------------------------------------------------------------------------
@@ -2053,7 +2062,7 @@ namelist_list=""
 #-----------------------------------------------------------------------------
 # check if we have to restart, ie resubmit
 #   Note: this is a different mechanism from checking the restart
-if [ $finish_status = "RESTART" ] ; then
+if [ "${finish_status_atm}" = "RESTART" ] || [ "${finish_status_oce}" = "RESTART" ] ; then
   echo "restart next experiment..."
   this_script="${RUNSCRIPTDIR}/${job_name}"
   echo 'this_script: ' "$this_script"
@@ -2080,7 +2089,7 @@ cd $RUNSCRIPTDIR
 
 #-----------------------------------------------------------------------------
 
-	
+
 # exit 0
 #
 # vim:ft=sh

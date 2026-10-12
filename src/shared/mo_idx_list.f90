@@ -1,16 +1,15 @@
-! Basic derived types for blocked and non-blocked 1D index lists.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Basic derived types for blocked and non-blocked 1D index lists.
 
 MODULE mo_idx_list
 
@@ -131,14 +130,12 @@ CONTAINS
       &  routine = 'mo_idx_list: idx_list1D__finalize'
   !----------------------------------------------------------
 
-    !$ACC EXIT DATA DELETE(obj%idx) IF(obj%lopenacc)
+    !$ACC WAIT(1)
+    !$ACC EXIT DATA DELETE(obj%idx, obj%ncount) IF(obj%lopenacc)
     !$ACC EXIT DATA DELETE(obj) IF(obj%lopenacc)
 
     CALL DO_DEALLOCATE(obj%idx)
     obj%ncount = 0
-
-    !$ACC WAIT(1)
-    !$ACC EXIT DATA DELETE(obj%idx, obj%ncount) IF(obj%lopenacc)
 
   END SUBROUTINE idx_list1D__finalize
 
@@ -218,14 +215,12 @@ CONTAINS
       &  routine = 'mo_idx_list: finalize'
   !----------------------------------------------------------
 
+    !$ACC WAIT(1)
     !$ACC EXIT DATA DELETE(obj%idx, obj%ncount) IF(obj%lopenacc)
     !$ACC EXIT DATA DELETE(obj) IF(obj%lopenacc)
 
     CALL DO_DEALLOCATE(obj%idx)
     CALL DO_DEALLOCATE(obj%ncount)
-
-    !$ACC WAIT(1)
-    !$ACC EXIT DATA DELETE(obj%idx, obj%ncount) IF(obj%lopenacc)
 
   END SUBROUTINE idx_list_blocked__finalize
 
@@ -248,14 +243,14 @@ CONTAINS
   !----------------------------------------------------------
     cnt = 0
     DO jb=1,SIZE(obj%ncount)
-      !     
+      !
       IF (obj%ncount(jb) == 0) CYCLE
       !
       DO ic=1,obj%ncount(jb)
         cnt = cnt + 1
-        jc = obj%idx(ic,jb) 
+        jc = obj%idx(ic,jb)
         list1D%idx(cnt) = idx_1d(jc,jb)
-      ENDDO 
+      ENDDO
     ENDDO
     list1D%ncount = cnt
 
@@ -297,7 +292,7 @@ CONTAINS
 
 
   !-------------------------------------------------------------------------
-  !! Copies traditional blocked index list (consisting of 2 integer arrays) 
+  !! Copies traditional blocked index list (consisting of 2 integer arrays)
   !! to blocked list of type t_idx_list_blocked
   !!
   SUBROUTINE copy_list_blocked(source_list, source_count, target_list)
@@ -324,8 +319,8 @@ CONTAINS
 
 
   !-------------------------------------------------------------------------
-  !! Compares 2 sorted lists of type t_idx_list1D and groups  
-  !! the elements into the following three sublists 
+  !! Compares 2 sorted lists of type t_idx_list1D and groups
+  !! the elements into the following three sublists
   !! list_intersect: elements which exist in both lists
   !! list1_only    : elements which exist in list 1 only
   !! list2_only    : elements which exist in list 2 only
@@ -390,8 +385,8 @@ CONTAINS
     END DO
 
 
-    ! we reached the end of at least one list. 
-    ! Check if there are exist remaining elements in the lists 
+    ! we reached the end of at least one list.
+    ! Check if there are exist remaining elements in the lists
     ! and group them.
     IF (fall_off_list1 .AND. fall_off_list2) THEN
       ! nothing to do
@@ -423,11 +418,11 @@ CONTAINS
 
 
   !-------------------------------------------------------------------------
-  !! Wrapper routine for compare_sorted_1Dlists, which reads and writes 
+  !! Wrapper routine for compare_sorted_1Dlists, which reads and writes
   !! blocked lists and performs sorting.
   !!
-  !! Compares 2 blocked lists of type t_idx_list_blocked and groups  
-  !! the elements into the following three blocked sublists 
+  !! Compares 2 blocked lists of type t_idx_list_blocked and groups
+  !! the elements into the following three blocked sublists
   !! list_intersect: elements which exist in both lists
   !! list1_only    : elements which exist in list 1 only
   !! list2_only    : elements which exist in list 2 only
@@ -453,7 +448,7 @@ CONTAINS
   !----------------------------------------------------------
 
     ! transform blocked lists into unblocked 1D lists
-    ! 
+    !
     CALL list1_1d%construct(p_patch%n_patch_cells)
     CALL list2_1d%construct(p_patch%n_patch_cells)
     !
@@ -502,4 +497,3 @@ CONTAINS
 
 
 END MODULE mo_idx_list
-

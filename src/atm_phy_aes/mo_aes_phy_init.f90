@@ -1,17 +1,15 @@
-!
-! Contains subroutines for initializing the AES physics package.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains subroutines for initializing the AES physics package.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -45,9 +43,9 @@ MODULE mo_aes_phy_init
   ! test cases
   USE mo_nh_testcases_nml,     ONLY: nh_test_name, ape_sst_case, th_cbl, tpe_temp
   USE mo_ape_params,           ONLY: ape_sst
-  USE mo_physical_constants,   ONLY: tmelt, Tf, albedoW, amd, amo3, zemiss_def
+  USE mo_physical_constants,   ONLY: tmelt, albedoW, amd, amo3, zemiss_def, amco2
 
-  USE mo_sea_ice_nml,          ONLY: albi
+  USE mo_sea_ice_nml,          ONLY: albi, Tf
 
   ! aes physics
   USE mo_aes_phy_config,       ONLY: eval_aes_phy_config, eval_aes_phy_tc, print_aes_phy_config, &
@@ -72,14 +70,17 @@ MODULE mo_aes_phy_init
   USE mo_ext_data_types,       ONLY: t_external_data
 
   ! carbon cycle
-  USE mo_ccycle_config,        ONLY: print_ccycle_config, ccycle_config
+  USE mo_ccycle_config,        ONLY: print_ccycle_config, ccycle_config, CCYCLE_MODE_INTERACTIVE
 
   ! cumulus convection
   USE mo_convect_tables,       ONLY: init_convect_tables
   USE mo_aes_convect_tables,   ONLY: init_aes_convect_tables => init_convect_tables
 
   ! cloud optical properties
-  USE mo_aes_cop_config,       ONLY: print_aes_cop_config, aes_cop_config
+  USE mo_aes_cop_config,       ONLY: eval_aes_cop_config, print_aes_cop_config
+
+  ! "graupel" cloud microphysics
+  USE mo_cloud_mig_config,    ONLY: cloud_mig_config, print_cloud_mig_config
 
   ! two-moment bulk microphysics
   USE mo_2mom_mcrph_driver,    ONLY: two_moment_mcrph_init
@@ -97,12 +98,12 @@ MODULE mo_aes_phy_init
   USE mo_bcs_time_interpolation, ONLY: t_time_interpolation_weights, calculate_time_interpolation_weights
   USE mo_bc_sst_sic,           ONLY: read_bc_sst_sic, bc_sst_sic_time_interpolation
   USE mo_bc_greenhouse_gases,  ONLY: read_bc_greenhouse_gases, bc_greenhouse_gases_time_interpolation, &
-    &                                bc_greenhouse_gases_file_read
-  USE mo_bc_aeropt_splumes,    ONLY: setup_bc_aeropt_splumes
+       &                                bc_greenhouse_gases_file_read
+  USE mo_bc_aeropt_splumes_opt,ONLY: setup_bc_aeropt_splumes_opt
 
   ! for 6hourly sst and ice data
   USE mo_reader_sst_sic,       ONLY: t_sst_sic_reader
-  USE mo_interpolate_time,     ONLY: t_time_intp
+  USE mo_interpolate_time,     ONLY: t_time_intp_transient
 
 #ifndef __NO_RTE_RRTMGP__
   USE mo_rte_rrtmgp_setup,     ONLY: rte_rrtmgp_basic_setup
@@ -110,6 +111,10 @@ MODULE mo_aes_phy_init
 #endif
   USE mo_lcariolle,            ONLY: lcariolle_init_o3, lcariolle_init, &
     &l_cariolle_initialized_o3, t_avi, t_time_interpolation
+  USE mo_time_config,          ONLY: time_config
+  USE mo_sync,                 ONLY: sync_patch_array, sync_c
+  USE mo_fortran_tools,        ONLY: init
+  USE mo_nonhydro_types,       ONLY: t_nh_prog
 
   IMPLICIT NONE
 
@@ -117,14 +122,15 @@ MODULE mo_aes_phy_init
 
   PUBLIC  :: init_aes_phy_params, init_aes_phy_external, init_aes_phy_field
   PUBLIC  :: init_o3_lcariolle
-  PUBLIC  :: sst_intp, sic_intp, sst_sic_reader
+  PUBLIC  :: sst_intp, sic_intp
 
-  CHARACTER(len=*), PARAMETER :: modname = 'mo_aes_phy_init'
-  TYPE(t_sst_sic_reader), TARGET :: sst_sic_reader
-  TYPE(t_time_intp)      :: sst_intp
-  TYPE(t_time_intp)      :: sic_intp
-  REAL(wp), ALLOCATABLE  :: sst_dat(:,:,:,:)
-  REAL(wp), ALLOCATABLE  :: sic_dat(:,:,:,:)
+  CHARACTER(len=*)      , PARAMETER           :: modname = 'mo_aes_phy_init'
+  TYPE(t_sst_sic_reader),      ALLOCATABLE, TARGET :: sst_reader(:)
+  TYPE(t_time_intp_transient), ALLOCATABLE         :: sst_intp(:)
+  TYPE(t_sst_sic_reader),      ALLOCATABLE, TARGET :: sic_reader(:)
+  TYPE(t_time_intp_transient), ALLOCATABLE         :: sic_intp(:)
+  REAL(wp),                    ALLOCATABLE         :: sst_dat(:,:,:,:)
+  REAL(wp),                    ALLOCATABLE         :: sic_dat(:,:,:,:)
 
 CONTAINS
   !>
@@ -155,17 +161,17 @@ CONTAINS
 
     ! Diagnostics (all time steps)
     ! ----------------------------
-    
+
     ! For surface processes
     ! nsfc_type, iwtr, etc. are set in this subroutine.
     ! See mo_sfc_indices.f90 for further details.
     !
     CALL init_sfc_indices( nh_test_name )
-    
+
     ! Lookup tables for saturation vapour pressure
     !
     CALL init_convect_tables
-    CALL init_aes_convect_tables 
+    CALL init_aes_convect_tables
 
 
     ! AES physics time control
@@ -201,13 +207,12 @@ CONTAINS
       CALL print_aes_rad_config(ng)
       !
       ! Cloud optical properties
+      CALL  eval_aes_cop_config(ng)
       CALL print_aes_cop_config(ng)
 #ifndef __NO_RTE_RRTMGP__
       !
-      ! Radiation constants for gas and cloud optics
-      CALL rte_rrtmgp_basic_setup(nproma, nlev, pressure_scale, droplet_scale,          &
-        &                         aes_cop_config(1)%cinhoml, aes_cop_config(1)%cinhomi, &
-        &                         aes_cop_config(1)%cinhoms)
+      ! Radiation constants for gas
+      CALL rte_rrtmgp_basic_setup
 #endif
     END IF
 
@@ -232,7 +237,7 @@ CONTAINS
       ! indices in the range [iqt,ntracer].
       !
       ! Precipitating hydrometeors (rain, snow, graupel) are not diffused
-      ! 
+      !
       nhydromet = 2              ! diffuse two hydro meteor specied: cloud water and ice
       ntrac = ntracer - iqt + 1  ! and ntrac further species
       !
@@ -244,14 +249,14 @@ CONTAINS
 #ifndef __NO_JSBACH__
       IF (ilnd <= nsfc_type .AND. ANY(aes_phy_config(:)%ljsb)) THEN
         DO jg=1,ng
-          IF (aes_phy_config(jg)%ljsb) THEN 
+          IF (aes_phy_config(jg)%ljsb) THEN
             CALL jsbach_init(jg)
           END IF
         END DO ! jg
         ! IF (aes_vdf_config(1)%use_tmx) THEN
         !   CALL register_exchange_coefficients_procedure(sfc_exchange_coefficients)
         ! END IF
-      END IF ! 
+      END IF !
 #endif
 
     ENDIF
@@ -260,9 +265,16 @@ CONTAINS
     !
     CALL print_ccycle_config
 
+    !
     ! cloud microphysics (mig - graupel)
     !
-    ! No setting of parameters necessary - nothing to do
+    lany=.FALSE.
+    DO jg = 1,ng
+       lany = lany .OR. (aes_phy_tc(jg)%dt_mig > dt_zero)
+    END DO
+    IF (lany) THEN
+      CALL print_cloud_mig_config(ng)
+    END IF
     !
     ! cloud microphysics (two moment bulk microphysics)
     !
@@ -302,6 +314,14 @@ CONTAINS
                    &'Cariolle initialization not ready for ng>1')
       END IF
       CALL lcariolle_init()
+    END IF
+
+    ! Allocate memory for 6hourly-prescribed sst and sic data
+    IF (ANY(aes_phy_config(:)%lsstice)) THEN
+      ALLOCATE(sst_reader(ng))
+      ALLOCATE(sic_reader(ng))
+      ALLOCATE(sst_intp(ng))
+      ALLOCATE(sic_intp(ng))
     END IF
 
     IF (timers_level > 1) CALL timer_stop(timer_prep_aes_phy)
@@ -500,6 +520,8 @@ CONTAINS
 
   SUBROUTINE init_aes_phy_external( p_patch, ext_data, mtime_current)
 
+   USE mo_sea_ice_nml,        ONLY: Tf
+
     TYPE(t_patch), TARGET,   INTENT(in) :: p_patch(:)
     TYPE(t_external_data),   INTENT(in) :: ext_data(:)
     TYPE(datetime), POINTER, INTENT(in) :: mtime_current !< Date and time information
@@ -508,6 +530,7 @@ CONTAINS
     LOGICAL :: lany
     TYPE(t_stream_id) :: stream_id
 
+    CHARACTER(LEN=30)     :: filename
     CHARACTER(len=26+2+3) :: land_frac_fn
     CHARACTER(len=26+2+3) :: land_phys_fn
 
@@ -622,9 +645,6 @@ CONTAINS
 
     END DO ! jg
 
-    ! external data:
-
-
     ! for radiation
     !
     ! Read file for simple plumes aerosol distributions
@@ -637,14 +657,15 @@ CONTAINS
       !
       ! parameterized simple plumes of tropospheric aerosols
       !
-      IF (ANY(aes_rad_config(:)%irad_aero == 18) .OR. &
-        & ANY(aes_rad_config(:)%irad_aero == 19)) THEN
-        CALL setup_bc_aeropt_splumes
+      ! Currently, there is no option 18 (Kinne background + simple plumes +
+      ! stratospheric volcanic aerosols)
+       IF (ANY(aes_rad_config(:)%irad_aero == 18) .OR. &
+        &  ANY(aes_rad_config(:)%irad_aero == 19) ) THEN
+         CALL setup_bc_aeropt_splumes_opt
       END IF
 
       !
     END IF
-
 
     ! for radiation and carbon cycle
     !
@@ -679,7 +700,7 @@ CONTAINS
       !
     END IF
 
-    
+
     ! for radiation and vertical diffusion
     !
     ! Read sea surface temperature, sea ice concentration and depth
@@ -687,9 +708,9 @@ CONTAINS
     !
     IF (iwtr <= nsfc_type .AND. iice <= nsfc_type) THEN
       !
-      IF (.NOT. isrestart()) THEN
+      IF (.NOT.  ANY(aes_phy_config(:)%lsstice)) THEN
         !
-        IF (.NOT.  ANY(aes_phy_config(:)%lsstice)) THEN
+        IF (.NOT. isrestart()) THEN
           !
           ! interpolation weights for linear interpolation of monthly means to the current time
           current_time_interpolation_weights = calculate_time_interpolation_weights(mtime_current)
@@ -712,32 +733,48 @@ CONTAINS
             !
           END DO
           !
-          !
-        ELSE
-          !
-          ! READ 6-hourly sst values (dyamond+- setup, preliminary)
-          CALL sst_sic_reader%init(p_patch(1), 'sst-sic-runmean_G.nc')
-          CALL sst_intp%init(sst_sic_reader, mtime_current, "SST")
-          CALL sst_intp%intp(mtime_current, sst_dat)
-          WHERE (sst_dat(:,1,:,1) > 0.0_wp)
-            prm_field(1)%ts_tile(:,:,iwtr) = sst_dat(:,1,:,1)
-          END WHERE
-          !
-          CALL sic_intp%init(sst_sic_reader, mtime_current, "SIC")
-          CALL sic_intp%intp(mtime_current, sic_dat)
-          prm_field(1)%seaice(:,:) = sic_dat(:,1,:,1)
-          prm_field(1)%seaice(:,:) = MERGE(0.99_wp, prm_field(1)%seaice(:,:), prm_field(1)%seaice(:,:) > 0.99_wp)
-          prm_field(1)%seaice(:,:) = MERGE(0.0_wp, prm_field(1)%seaice(:,:), prm_field(1)%seaice(:,:) <= 0.01_wp)
-
-          ! set ice thickness
-          WHERE (prm_field(1)%seaice(:,:) > 0.0_wp)
-            prm_field(1)%siced(:,:) = MERGE(2.0_wp, 1.0_wp, p_patch(1)%cells%center(:,:)%lat > 0.0_wp)
-          ELSEWHERE
-            prm_field(1)%siced(:,:) = 0.0_wp
-          ENDWHERE
-        !
         END IF
         !
+      ELSE
+        !
+        ! READ 6-hourly sst values (dyamond+- setup, preliminary)
+        ! Update to account for nested domains. The original ng=1 filename is kept as is to avoid conflicts.
+        ! Note: this still needs to be initialized for restart runs.
+        DO jg = 1, ng
+          IF (ng > 1) THEN
+            WRITE(filename, '(A,I2.2,A)') 'sst-sic-runmean_DOM', jg, '.nc'
+          ELSE
+            filename = 'sst-sic-runmean_G.nc'
+          END IF
+
+          CALL sst_reader(jg)%init(p_patch(jg), filename)
+          CALL sic_reader(jg)%init(p_patch(jg), filename)
+
+          CALL sst_intp(jg)%init(sst_reader(jg), mtime_current, "SST")
+          CALL sst_intp(jg)%intp(mtime_current, sst_dat, lacc=.FALSE.)
+
+          ! set sea surface temperature
+          WHERE (sst_dat(:,1,:,1) > 0.0_wp)
+            prm_field(jg)%ts_tile(:,:,iwtr) = sst_dat(:,1,:,1)
+          END WHERE
+
+          CALL sic_intp(jg)%init(sic_reader(jg), mtime_current, "SIC")
+          CALL sic_intp(jg)%intp(mtime_current, sic_dat, lacc=.FALSE.)
+          prm_field(jg)%seaice(:,:) = MERGE(sic_dat(:,1,:,1), 0.0_wp, &
+            &                               (prm_field(jg)%lsmask(:,:) + prm_field(jg)%alake(:,:) < 1._wp))
+          prm_field(jg)%seaice(:,:) = MERGE(0.99_wp, prm_field(jg)%seaice(:,:), prm_field(jg)%seaice(:,:) > 0.99_wp)
+          prm_field(jg)%seaice(:,:) = MERGE(0.0_wp, prm_field(jg)%seaice(:,:), prm_field(jg)%seaice(:,:) <= 0.01_wp)
+
+          prm_field(jg)%ts_tile(:,:,iwtr) = MERGE(Tf+273.15_wp, MAX(prm_field(jg)%ts_tile(:,:,iwtr), Tf+273.15_wp), &
+              &                                   prm_field(jg)%seaice(:,:) > 0.0_wp)
+          ! set ice thickness
+          WHERE (prm_field(jg)%seaice(:,:) > 0.0_wp)
+            prm_field(jg)%siced(:,:) = MERGE(2.0_wp, 1.0_wp, p_patch(jg)%cells%center(:,:)%lat > 0.0_wp)
+          ELSEWHERE
+            prm_field(jg)%siced(:,:) = 0.0_wp
+          ENDWHERE
+        END DO
+      !
       END IF
       !
     END IF
@@ -753,40 +790,43 @@ CONTAINS
   !! of the state vectors "prm_field" and "prm_tend".
   !!
   SUBROUTINE init_aes_phy_field( p_patch        ,&
-    &                              temp           )
+    &                              temp         ,&
+    &                              pres         ,&
+    &                              p_prog_now_rcf  )
 
 !FIXME: PGI + OpenMP produce error in this routine... check correctness of parallel code
 
-    TYPE(t_patch)    ,INTENT(in) :: p_patch
-    REAL(wp)         ,INTENT(in) :: temp          (:,:,:)
+    TYPE(t_patch)    ,INTENT(in)    :: p_patch
+    REAL(wp)         ,INTENT(in)    :: temp       (:,:,:)
+    REAL(wp)         ,INTENT(in)    :: pres       (:,:,:)
+    TYPE(t_nh_prog)  ,INTENT(inout) :: p_prog_now_rcf
 
     ! local variables and pointers
 
     INTEGER  :: jg, ncd, rls, rle, jb, jbs, jbe, jc, jcs, jce
     REAL(wp) :: zlat
 
+    CHARACTER(len=*), PARAMETER :: routine = modname//':init_aes_phy_field'
+
     TYPE(t_aes_phy_field),POINTER :: field => NULL()
     TYPE(t_aes_phy_tend) ,POINTER :: tend  => NULL()
 
       jg = p_patch%id
-    
+
       field => prm_field(jg)
       tend  => prm_tend (jg)
 
       ! Inquire current grid level and the total number of grid cells
       ncd = MAX(1,p_patch%n_childdom)
-      rls = grf_bdywidth_c+1
+      rls = 1 ! we need to intiialize also the boundary in the lam case
       rle = min_rlcell_int
-      
+
       jbs     = p_patch%cells%start_blk(rls,  1)
       jbe     = p_patch%cells%  end_blk(rle,ncd)
 
       ! Assign initial values for some components of the "field" and
       ! "tend" state vectors.
-#ifndef __PGI
-!FIXME: PGI + OpenMP produce error in this routine... check correctness of parallel code
 !$OMP PARALLEL WORKSHARE
-#endif
       !
       ! constant-in-time fields
       ! initial and re-start
@@ -796,9 +836,7 @@ CONTAINS
       field% areacella(:,  :) = p_patch% cells%   area(:,:)
       field%    coriol(:,  :) = p_patch% cells%    f_c(:,:)
       !
-#ifndef __PGI
 !$OMP END PARALLEL WORKSHARE
-#endif
       ! in case of restart, reset output fields of unused parameterizations,
       ! to their intial value
       !
@@ -914,19 +952,55 @@ CONTAINS
         END IF
         !
       END IF
+      IF (.NOT. isrestart() .AND. p_patch%ldom_active) THEN
+        ! CO2 and O3 tracer fields intialization
+        IF (ccycle_config(jg)%iccycle == CCYCLE_MODE_INTERACTIVE) THEN
+          IF (ASSOCIATED(p_prog_now_rcf%tracer_ptr(ico2)%p_3d)) THEN
+            !
+            ! CO2 tracer
+            IF ( iqt <= ico2 .AND. ico2 <= ntracer) THEN
+  !$OMP PARALLEL
+              CALL init(p_prog_now_rcf%tracer(:,:,:,ico2),aes_rad_config(jg)% vmr_co2*amco2/amd, lacc=.FALSE.)
+  !$OMP END PARALLEL
+              CALL print_value('CO2 tracer initialized with constant vmr', &
+                &              aes_rad_config(jg)% vmr_co2*amco2/amd,    &
+                &              routine=routine)
+            END IF
+          END IF
+        END IF
+        !
+        ! O3 tracer
+        IF ( iqt <= io3 .AND. io3 <= ntracer) THEN
+          IF (aes_phy_tc(jg)%dt_car > dt_zero) THEN
+            CALL init_o3_lcariolle( time_config%tc_current_date                          ,&
+              &                     p_patch                                              ,&
+              &                     pres ,&
+              &                     p_prog_now_rcf%tracer(:,:,:,io3)  )
+            CALL sync_patch_array ( sync_c,p_patch                                       ,&
+              &                     p_prog_now_rcf%tracer(:,:,:,io3), lacc=.FALSE.)
+            CALL message(routine,'o3 tracer is initialized by the Cariolle lin. o3 scheme')
+          ELSE
+  !$OMP PARALLEL
+            CALL init(p_prog_now_rcf%tracer(:,:,:,io3),0.0_wp, lacc=.FALSE.)
+  !$OMP END PARALLEL
+            CALL message(routine,'o3 tracer is initialized to zero, check setup')
+          END IF
+        END IF
+      END IF ! isrestart()
 
       ! For idealized test cases
 
       SELECT CASE (nh_test_name)
 
-      CASE('APE','APE_aes','RCEhydro','RCE_glb','RCE_Tconst','RCE_Tprescr','aes_bubble','CBL_flxconst','RCEMIP_analytical')
+      CASE('APE','APE_aes','RCEhydro','RCE_glb','RCE_Tconst','RCE_Tprescr','aes_bubble','aes_cbl','CBL_flxconst','RCEMIP_analytical', &
+        &  'dcmip_tc_52')
         ! Note that there is only one surface type in this case !!!
         !
 !$OMP PARALLEL DO PRIVATE(jb,jc,jcs,jce,zlat) ICON_OMP_DEFAULT_SCHEDULE
         DO jb = jbs,jbe
           !
           CALL get_indices_c( p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-          IF (jcs>jce) CYCLE 
+          IF (jcs>jce) CYCLE
           !
           IF (.NOT. isrestart()) THEN
             DO jc = jcs,jce
@@ -950,7 +1024,7 @@ CONTAINS
 
 #ifndef __NO_JSBACH__
         !
-        IF (.NOT. aes_phy_config(jg)%ljsb) THEN 
+        IF (.NOT. aes_phy_config(jg)%ljsb) THEN
           CALL finish('mo_aes_phy_init:init_aes_phy_field', 'aes_bubble_land testcase but JSBACH not activated (ljsb)')
         END IF
 
@@ -967,7 +1041,7 @@ CONTAINS
         DO jb = jbs,jbe
           !
           CALL get_indices_c( p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-          IF (jcs>jce) CYCLE 
+          IF (jcs>jce) CYCLE
 
           IF (.NOT. isrestart()) THEN
             DO jc = jcs,jce
@@ -1007,7 +1081,7 @@ CONTAINS
         DO jb = jbs,jbe
           !
           CALL get_indices_c( p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-          IF (jcs>jce) CYCLE 
+          IF (jcs>jce) CYCLE
           !
           IF (.NOT. isrestart()) THEN
             DO jc = jcs,jce
@@ -1034,7 +1108,7 @@ CONTAINS
         DO jb = jbs,jbe
           !
           CALL get_indices_c( p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-          IF (jcs>jce) CYCLE 
+          IF (jcs>jce) CYCLE
           !
           IF (.NOT. isrestart()) THEN
             DO jc = jcs,jce
@@ -1073,7 +1147,7 @@ CONTAINS
           field% albvisdif_ice(:,:,:) = albi    ! albedo in the visible range for diffuse radiation
           field% albnirdif_ice(:,:,:) = albi    ! albedo in the NIR range for diffuse radiation
         END IF
-       
+
       CASE('APEc','APEc_nh')
         ! The same as APEi, except we initialize with no ice and don't modify the surface
         ! temperature. This is meant for a coupled run.
@@ -1082,7 +1156,7 @@ CONTAINS
         DO jb = jbs,jbe
           !
           CALL get_indices_c( p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-          IF (jcs>jce) CYCLE 
+          IF (jcs>jce) CYCLE
           !
           IF (.NOT. isrestart()) THEN
             DO jc = jcs,jce
@@ -1113,14 +1187,14 @@ CONTAINS
           field% albvisdif_ice(:,:,:) = albi  ! albedo in the visible range for diffuse radiation
           field% albnirdif_ice(:,:,:) = albi  ! albedo in the NIR range for diffuse radiation
         END IF
-     
+
       CASE('TPEc', 'TPEo') !Note that there is only one surface type (ilnd) in this case
         !
 !$OMP PARALLEL DO PRIVATE(jb,jc,jcs,jce,zlat) ICON_OMP_DEFAULT_SCHEDULE
         DO jb = jbs,jbe
           !
           CALL get_indices_c( p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-          IF (jcs>jce) CYCLE 
+          IF (jcs>jce) CYCLE
           !
           ! initial and re-start
           field% lsmask(jcs:jce,jb) = 1._wp   ! land fraction = 1
@@ -1143,7 +1217,7 @@ CONTAINS
         DO jb = jbs,jbe
           !
           CALL get_indices_c( p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-          IF (jcs>jce) CYCLE 
+          IF (jcs>jce) CYCLE
           !
           ! Set the surface temperature to the same value as the lowest model
           ! level above surface. For this test case, currently we assume
@@ -1171,7 +1245,7 @@ CONTAINS
       DO jb = jbs,jbe
         !
         CALL get_indices_c( p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-        IF (jcs>jce) CYCLE 
+        IF (jcs>jce) CYCLE
         !
         ! Set surface tiling fractions, wrt. the cell area
         DO jc = jcs,jce
@@ -1223,7 +1297,7 @@ CONTAINS
   !-------------
   !>
   !! Initialize the O3 tracer from the Cariolle initial ozone field.
-  !! Initialize ozone mass mixing ratios for Cariolle scheme. 
+  !! Initialize ozone mass mixing ratios for Cariolle scheme.
   !! An approximative initialization that considers the atmosphere as being dry is enough.
   !!
   SUBROUTINE init_o3_lcariolle( mtime_current  ,&
@@ -1265,7 +1339,7 @@ CONTAINS
     DO jb = jbs,jbe
       !
       CALL get_indices_c(p_patch, jb,jbs,jbe, jcs,jce, rls,rle)
-      IF (jcs>jce) CYCLE 
+      IF (jcs>jce) CYCLE
       !
       pfull(:,:)          =  pres (:,:,jb)
       avi%pres            => pfull

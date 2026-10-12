@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! This module is the interface between ICON:nwp_radiation to the radiation scheme ecRad
 !
 ! - There are two interfaces within this module: nwp_ecrad_radiation and
@@ -17,19 +27,6 @@
 ! - The transfer of data from ICON to ecRad and vice versa is performed within
 !   routines from mo_nwp_ecrad_utilities and mo_nwp_ecrad_prep_aerosol, independent of
 !   the choice to use a reduced radiation grid or not.
-!
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -37,13 +34,13 @@
 
 MODULE mo_nwp_ecrad_interface
 
-  USE mo_kind,                   ONLY: wp
+  USE mo_kind,                   ONLY: wp, rp
   USE mo_exception,              ONLY: finish, message
   USE mo_math_constants,         ONLY: pi
   USE mo_model_domain,           ONLY: t_patch, p_patch_local_parent
   USE mo_impl_constants,         ONLY: min_rlcell_int, n_camsaermr
   USE mo_impl_constants_grf,     ONLY: grf_bdywidth_c, grf_ovlparea_start_c, grf_fbk_start_c
-  USE mo_fortran_tools,          ONLY: init, assert_acc_device_only,t_ptr_2d
+  USE fortran_support,           ONLY: init, assert_acc_device_only,t_ptr_2d_wp
   USE mo_parallel_config,        ONLY: nproma, nproma_sub, nblocks_sub
   USE mo_loopindices,            ONLY: get_indices_c
   USE mo_grid_config,            ONLY: l_limited_area, nexlevs_rrg_vnest
@@ -54,11 +51,14 @@ MODULE mo_nwp_ecrad_interface
   USE mo_physical_constants,     ONLY: rhoh2o
   USE mo_run_config,             ONLY: msg_level, iqv, iqi, iqc, iqr, iqs, iqg
   USE mo_atm_phy_nwp_config,     ONLY: atm_phy_nwp_config
-  USE mo_radiation_config,       ONLY: irad_aero, ssi_radt,                                   &
+  USE mo_radiation_config,       ONLY: irad_aero, ssi_radt, fsd_background,                   &
                                    &   iRadAeroNone, iRadAeroConst, iRadAeroTegen,            &
                                    &   iRadAeroART, iRadAeroConstKinne, iRadAeroKinne,        &
                                    &   iRadAeroVolc, iRadAeroKinneVolc,  iRadAeroKinneVolcSP, &
-                                   &   iRadAeroKinneSP, iRadAeroCAMSclim, iRadAeroCAMStd
+                                   &   iRadAeroKinneSP, iRadAeroCAMSclim, iRadAeroCAMStd,     &
+                                   &   iRadAeroExternal, ecrad_check_input, lcalculate_fsd,   &
+                                   &   irad_h2o, irad_o3, irad_co2, irad_o2,                  &
+                                   &   irad_cfc11, irad_cfc12, irad_n2o, irad_ch4
   USE mo_phys_nest_utilities,    ONLY: t_upscale_fields, upscale_rad_input, downscale_rad_output
   USE mtime,                     ONLY: datetime
 #ifdef __ECRAD
@@ -68,11 +68,12 @@ MODULE mo_nwp_ecrad_interface
                                    &   t_ecrad_thermodynamics_type,              &
                                    &   t_ecrad_gas_type, t_ecrad_flux_type,      &
                                    &   t_ecrad_cloud_type, t_opt_ptrs,           &
-                                   &   ecrad_hyd_list,                           &   
-                                   &   ecrad_iqr, ecrad_iqs, ecrad_iqg          
+                                   &   ecrad_hyd_list,                           &
+                                   &   ecrad_iqr, ecrad_iqs, ecrad_iqg
 
   USE mo_nwp_ecrad_prep_aerosol, ONLY: nwp_ecrad_prep_aerosol
-  USE mo_nwp_ecrad_utilities,    ONLY: ecrad_set_single_level,                   &
+  USE mo_nwp_ecrad_utilities,    ONLY: ecrad_check_input_fields,                 &
+                                   &   ecrad_set_single_level,                   &
                                    &   ecrad_set_thermodynamics,                 &
                                    &   ecrad_set_clouds,                         &
                                    &   ecrad_set_gas,                            &
@@ -117,23 +118,23 @@ CONTAINS
     TYPE(t_patch), TARGET,   INTENT(in)    :: pt_patch         !< Current domain info
     TYPE(t_external_data),   INTENT(in)    :: ext_data         !< External data container
 
-    REAL(wp),                INTENT(in)    ::             &
-      & zaeq1(nproma,pt_patch%nlev,pt_patch%nblks_c),     & !< Climatological aerosol (Tegen)
-      & zaeq2(nproma,pt_patch%nlev,pt_patch%nblks_c),     & !< Climatological aerosol (Tegen)
-      & zaeq3(nproma,pt_patch%nlev,pt_patch%nblks_c),     & !< Climatological aerosol (Tegen)
-      & zaeq4(nproma,pt_patch%nlev,pt_patch%nblks_c),     & !< Climatological aerosol (Tegen)
-      & zaeq5(nproma,pt_patch%nlev,pt_patch%nblks_c)        !< Climatological aerosol (Tegen)
-    REAL(wp), TARGET, ALLOCATABLE, INTENT(in) ::          &
-      & od_lw (:,:,:,:)                             ,     & !< LW aerosol optical thickness
-      & od_sw (:,:,:,:)                             ,     & !< SW aerosol optical thickness
-      & g_sw  (:,:,:,:)                             ,     & !< SW aerosol asymmetry factor
-      & ssa_sw(:,:,:,:)                                     !< SW aerosol single scattering albedo
+    REAL(wp), ALLOCATABLE, TARGET, INTENT(in) :: &
+      & zaeq1 (:,:,:),    & !< Climatological aerosol (Tegen)
+      & zaeq2 (:,:,:),    & !< Climatological aerosol (Tegen)
+      & zaeq3 (:,:,:),    & !< Climatological aerosol (Tegen)
+      & zaeq4 (:,:,:),    & !< Climatological aerosol (Tegen)
+      & zaeq5 (:,:,:)       !< Climatological aerosol (Tegen)
+    REAL(wp), POINTER, INTENT(in) :: &
+      & od_lw (:,:,:,:),  & !< LW aerosol optical thickness
+      & od_sw (:,:,:,:),  & !< SW aerosol optical thickness
+      & g_sw  (:,:,:,:),  & !< SW aerosol asymmetry factor
+      & ssa_sw(:,:,:,:)     !< SW aerosol single scattering albedo
 
     TYPE(t_nh_diag), TARGET, INTENT(in)         :: pt_diag       !< ICON diagnostic variables
     TYPE(t_nwp_phy_diag), TARGET, INTENT(inout) :: prm_diag      !< ICON physics diagnostics
     TYPE(t_nh_prog), TARGET, INTENT(in)         :: pt_prog        !< ICON dyn prog vars
     TYPE(t_lnd_prog),        INTENT(inout)      :: lnd_prog      !< ICON prognostic land state
-    
+
     REAL(wp),                INTENT(in)         ::   zsct        !< Time-dependent solar constant
 
     TYPE(t_ecrad_conf),      INTENT(in)         :: ecrad_conf    !< ecRad configuration object
@@ -153,6 +154,8 @@ CONTAINS
       &  ecrad_flux                        !< ecRad flux information (output)
     TYPE(t_opt_ptrs),ALLOCATABLE      :: &
       &  opt_ptrs_lw(:), opt_ptrs_sw(:)    !< Contains pointers to aerosol optical properties
+    TYPE(t_ptr_2d_wp), ALLOCATABLE    :: &
+      &  ptr_camsaermr(:)                  !< Pointer to CAMS aerosol mass mixing ratios
     REAL(wp)                 :: &
       &  fact_reffc               !< Factor in the calculation of cloud droplet effective radius
     INTEGER                  :: &
@@ -170,6 +173,8 @@ CONTAINS
       &  jcs, jce                 !< raw start and end index of subblock in nproma with boundaries
     LOGICAL, ALLOCATABLE     :: &
       &  cosmu0mask(:)            !< Mask if cosmu0 > 0
+    LOGICAL                  :: &
+      &  is_bad                   !< Return value of ecRad-internal physical consistency checks
     REAL(wp), ALLOCATABLE    :: &
       &  zlwflx_up(:,:),        & !< longwave upward flux
       &  zlwflx_dn(:,:),        & !< longwave downward flux
@@ -180,15 +185,16 @@ CONTAINS
       &  zswflx_up_clr(:,:),    & !< shortave upward clear-sky flux
       &  zswflx_dn_clr(:,:)       !< shortave downward clear-sky flux
     REAL(wp), DIMENSION(:,:),  POINTER :: &
-      &  ptr_clc => NULL(),                                                   &
-      &  ptr_acdnc => NULL(),                                                 &
-      &  ptr_qr => NULL(),      ptr_qs => NULL(),      ptr_qg => NULL(),      &
+      &  ptr_clc => NULL(), ptr_acdnc => NULL(), &
+      &  ptr_qr => NULL(), ptr_qs => NULL(), ptr_qg => NULL(), &
       &  ptr_reff_qc => NULL(), ptr_reff_qi => NULL(), ptr_reff_qr => NULL(), &
-      &  ptr_reff_qs => NULL(), ptr_reff_qg => NULL()
+      &  ptr_reff_qs => NULL(), ptr_reff_qg => NULL(), ptr_fsd => NULL(), &
+      &  ptr_qvrad_ext => NULL(), ptr_o3rad_ext => NULL(), ptr_co2rad_ext => NULL(), &
+      &  ptr_o2rad_ext => NULL(), ptr_cfc11rad_ext => NULL(), ptr_cfc12rad_ext => NULL(), &
+      &  ptr_n2orad_ext => NULL(), ptr_ch4rad_ext => NULL()
     REAL(wp), DIMENSION(:),    POINTER :: &
       &  ptr_fr_glac => NULL(), ptr_fr_land => NULL()
 
-    TYPE(t_ptr_2d), ALLOCATABLE :: ptr_camsaermr(:)
 
     CALL assert_acc_device_only(routine, lacc)
 
@@ -204,17 +210,29 @@ CONTAINS
     IF (msg_level >= 7) &
       &       CALL message(routine, 'ecrad radiation on full grid')
 
-    rl_start = grf_bdywidth_c+1
-    rl_end   = min_rlcell_int
-
+    rl_start   = grf_bdywidth_c+1
+    rl_end     = min_rlcell_int
     i_startblk = pt_patch%cells%start_block(rl_start)
     i_endblk   = pt_patch%cells%end_block(rl_end)
 
 !$OMP PARALLEL PRIVATE(cosmu0mask, opt_ptrs_lw, opt_ptrs_sw, jw, ptr_camsaermr, jt,  &
 !$OMP                  zlwflx_up,     zlwflx_dn,     zswflx_up,     zswflx_dn,       &
-!$OMP                  zlwflx_up_clr, zlwflx_dn_clr, zswflx_up_clr, zswflx_dn_clr,   &
-!$OMP                  ecrad_aerosol,ecrad_single_level, ecrad_thermodynamics,       &
+!$OMP                  zlwflx_up_clr, zlwflx_dn_clr, zswflx_up_clr, zswflx_dn_clr)   &
+!$OMP     FIRSTPRIVATE(ecrad_aerosol,ecrad_single_level, ecrad_thermodynamics,       &
 !$OMP                  ecrad_gas, ecrad_cloud, ecrad_flux)
+
+    IF (ecrad_check_input) THEN ! Check input fields for physical consistency
+!$OMP DO PRIVATE(jb, i_startidx, i_endidx), &
+!$OMP ICON_OMP_GUIDED_SCHEDULE
+      DO jb = i_startblk, i_endblk
+        CALL get_indices_c(pt_patch, jb, i_startblk, i_endblk, &
+          &                i_startidx, i_endidx, rl_start, rl_end)
+        CALL ecrad_check_input_fields('ecRadInputCheck::fullgrid::start',             &
+          &                           i_startidx, i_endidx, nlev,                     &
+          &                           pt_diag%pres(:,:,jb), pt_diag%pres_ifc(:,:,jb))
+      ENDDO
+!$OMP END DO
+    ENDIF
 
     ALLOCATE( cosmu0mask   (nproma_sub)     )
     ALLOCATE( zlwflx_up    (nproma_sub,nlevp1), zlwflx_dn    (nproma_sub,nlevp1) )
@@ -223,7 +241,7 @@ CONTAINS
     ALLOCATE( zswflx_up_clr(nproma_sub,nlevp1), zswflx_dn_clr(nproma_sub,nlevp1) )
     ALLOCATE( opt_ptrs_lw(ecrad_conf%n_bands_lw), opt_ptrs_sw(ecrad_conf%n_bands_sw) )
     !$ACC ENTER DATA CREATE(cosmu0mask, zlwflx_up, zlwflx_dn, zswflx_up, zswflx_dn, zlwflx_up_clr, zlwflx_dn_clr) &
-    !$ACC   CREATE(zswflx_up_clr, zswflx_dn_clr) ASYNC(1)
+    !$ACC   CREATE(zswflx_up_clr, zswflx_dn_clr, opt_ptrs_lw, opt_ptrs_sw) ASYNC(1)
 
     CALL ecrad_single_level%allocate(nproma_sub, 2, 1, .true.) !< use_sw_albedo_direct, 2 bands
     ecrad_single_level%solar_irradiance = 1._wp            !< Obtain normalized fluxes which corresponds to the
@@ -250,8 +268,7 @@ CONTAINS
       CALL ecrad_cloud%allocate(nproma_sub, nlev)
     END IF
     ! Currently hardcoded values for FSD
-    !$ACC WAIT
-    CALL ecrad_cloud%create_fractional_std(nproma_sub, nlev, 1._wp)
+    CALL ecrad_cloud%create_fractional_std(nproma_sub, nlev, fsd_background)
 
     IF ( ecrad_conf%use_aerosols ) THEN
       ! Allocate aerosol container
@@ -265,12 +282,15 @@ CONTAINS
 
     CALL ecrad_flux%allocate(ecrad_conf, 1, nproma_sub, nlev)
 
-!$OMP DO PRIVATE(jb, jc, i_startidx, i_endidx,                   &
-!$OMP            jb_rad, jcs, jce, i_startidx_sub, i_endidx_sub, &
-!$OMP            i_startidx_rad, i_endidx_rad,                   &
-!$OMP            ptr_clc, ptr_acdnc, ptr_fr_land, ptr_fr_glac,   &
-!$OMP            ptr_reff_qc, ptr_reff_qi, ptr_qr, ptr_reff_qr,  &
-!$OMP            ptr_qs, ptr_reff_qs, ptr_qg, ptr_reff_qg),      &
+!$OMP DO PRIVATE(jb, jc, i_startidx, i_endidx,                      &
+!$OMP            jb_rad, jcs, jce, i_startidx_sub, i_endidx_sub,    &
+!$OMP            i_startidx_rad, i_endidx_rad,                      &
+!$OMP            ptr_clc, ptr_acdnc, ptr_fr_land, ptr_fr_glac,      &
+!$OMP            ptr_reff_qc, ptr_reff_qi, ptr_qr, ptr_reff_qr,     &
+!$OMP            ptr_qs, ptr_reff_qs, ptr_qg, ptr_reff_qg, ptr_fsd, &
+!$OMP            ptr_qvrad_ext, ptr_o3rad_ext, ptr_co2rad_ext,      &
+!$OMP            ptr_o2rad_ext, ptr_cfc11rad_ext, ptr_cfc12rad_ext, &
+!$OMP            ptr_n2orad_ext, ptr_ch4rad_ext),                   &
 !$OMP ICON_OMP_GUIDED_SCHEDULE
     DO jb = i_startblk, i_endblk
       CALL get_indices_c(pt_patch, jb, i_startblk, i_endblk, &
@@ -287,7 +307,12 @@ CONTAINS
         IF (i_startidx_rad > i_endidx_rad) CYCLE
 
         NULLIFY(ptr_clc, ptr_acdnc,ptr_fr_land,ptr_fr_glac,ptr_reff_qc,ptr_reff_qi,    &
-                ptr_qr, ptr_reff_qr, ptr_qs, ptr_reff_qs,ptr_qg, ptr_reff_qg)
+                ptr_qr, ptr_reff_qr, ptr_qs, ptr_reff_qs,ptr_qg, ptr_reff_qg, ptr_fsd)
+
+        !use cloud horizontal fractional standard deviation from convection scheme
+        IF (lcalculate_fsd) THEN
+          ptr_fsd => prm_diag%cloud_fsd(jcs:jce, :, jb)
+        ENDIF
 
         ! Decide which field for cloud cover has to be used:
         IF (atm_phy_nwp_config(jg)%luse_clc_rad) THEN
@@ -320,6 +345,15 @@ CONTAINS
           IF (iqg > 0) ptr_reff_qg => prm_diag%reff_qg(jcs:jce,:,jb)
         END IF
 
+        IF (irad_h2o == -1)   ptr_qvrad_ext    => prm_diag%qvrad_ext(jcs:jce,:,jb)
+        IF (irad_o3 == -1)    ptr_o3rad_ext    => prm_diag%o3rad_ext(jcs:jce,:,jb)
+        IF (irad_co2 == -1)   ptr_co2rad_ext   => prm_diag%co2rad_ext(jcs:jce,:,jb)
+        IF (irad_o2 == -1)    ptr_o2rad_ext    => prm_diag%o2rad_ext(jcs:jce,:,jb)
+        IF (irad_cfc11 == -1) ptr_cfc11rad_ext => prm_diag%cfc11rad_ext(jcs:jce,:,jb)
+        IF (irad_cfc12 == -1) ptr_cfc12rad_ext => prm_diag%cfc12rad_ext(jcs:jce,:,jb)
+        IF (irad_n2o == -1)   ptr_n2orad_ext   => prm_diag%n2orad_ext(jcs:jce,:,jb)
+        IF (irad_ch4 == -1)   ptr_ch4rad_ext   => prm_diag%ch4rad_ext(jcs:jce,:,jb)
+
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR
 #ifdef COUP_OAS_ECLM
@@ -338,7 +372,6 @@ CONTAINS
 #endif
         !$ACC END PARALLEL
 
-        !$ACC DATA PRESENT(cosmu0mask)
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR
         do jc = 1, nproma_sub
@@ -353,10 +386,8 @@ CONTAINS
           ENDIF
         ENDDO
         !$ACC END PARALLEL
-        !$ACC END DATA
 
 ! Fill single level configuration type
-        !$ACC WAIT
         CALL ecrad_set_single_level(ecrad_single_level, current_datetime, pt_patch%cells%center(jcs:jce,jb),           &
           &                         prm_diag%cosmu0(jcs:jce,jb), prm_diag%tsfctrad(jcs:jce,jb),                        &
           &                         prm_diag%albvisdif(jcs:jce,jb), prm_diag%albnirdif(jcs:jce,jb),                    &
@@ -370,7 +401,9 @@ CONTAINS
 
 ! Fill gas configuration type
         CALL ecrad_set_gas(ecrad_gas, ecrad_conf, ext_data%atm%o3(jcs:jce,:,jb), prm_diag%tot_cld(jcs:jce,:,jb,iqv), &
-          &                pt_diag%pres(jcs:jce,:,jb), i_startidx_rad, i_endidx_rad, nlev, lacc=.TRUE.)
+          &                pt_diag%pres(jcs:jce,:,jb), ptr_qvrad_ext, ptr_o3rad_ext, ptr_co2rad_ext, &
+          &                ptr_o2rad_ext, ptr_cfc11rad_ext, ptr_cfc12rad_ext, ptr_n2orad_ext, ptr_ch4rad_ext, &
+          &                i_startidx_rad, i_endidx_rad, nlev, lacc=.TRUE.)
 
 ! Fill clouds configuration type
         CALL ecrad_set_clouds(ecrad_cloud, ecrad_thermodynamics, prm_diag%tot_cld(jcs:jce,:,jb,iqc),               &
@@ -378,23 +411,22 @@ CONTAINS
           &                   pt_diag%temp(jcs:jce,:,jb), pt_diag%pres(jcs:jce,:,jb),                              &
           &                   ptr_acdnc, ptr_fr_glac, ptr_fr_land,                                                 &
           &                   ptr_qr, ptr_qs, ptr_qg, ptr_reff_qc, ptr_reff_qi,                                    &
-          &                   ptr_reff_qr, ptr_reff_qs, ptr_reff_qg,                                               &
+          &                   ptr_reff_qr, ptr_reff_qs, ptr_reff_qg, ptr_fsd,                                      &
           &                   atm_phy_nwp_config(jg)%icpl_rad_reff,                                                &
           &                   fact_reffc, ecrad_conf%cloud_fraction_threshold,                                     &
-          &                   ecrad_conf%use_general_cloud_optics,                                                 & 
+          &                   ecrad_conf%use_general_cloud_optics,                                                 &
           &                   pt_patch%cells%center(jcs:jce,jb),                                                   &
           &                   nlev, i_startidx_rad, i_endidx_rad, &
           &                   lacc=.TRUE.)
-        ! $ACC WAIT
 
 !Set inverse cloud effective size for SPARTACUS
         IF (ecrad_conf%i_solver_lw == ISolverSpartacus .OR. ecrad_conf%i_solver_sw == ISolverSpartacus ) THEN
           ! We are using the SPARTACUS solver so need to specify cloud scale,
           ! and use Mark Fielding's parameterization based on ARM data
           CALL ecrad_cloud%param_cloud_effective_separation_eta( ncol=nproma_sub, nlev=nlev, &
-            &                 pressure_hl=pt_diag%pres_ifc(jcs:jce,:,jb),                    &
-            &                 separation_surf=2500.0_wp, separation_toa=14000.0_wp,          &
-            &                 power=3.5_wp, inhom_separation_factor=0.75_wp,                 &
+            &                 pressure_hl=ecrad_thermodynamics%pressure_hl(:,:),             &
+            &                 separation_surf=2500.0_rp, separation_toa=14000.0_rp,          &
+            &                 power=3.5_rp, inhom_separation_factor=0.75_rp,                 &
             &                 istartcol=i_startidx_rad, iendcol=i_endidx_rad )
         ENDIF
 
@@ -419,14 +451,17 @@ CONTAINS
             CALL nwp_ecrad_prep_aerosol(1, nlev, i_startidx_rad, i_endidx_rad,      &
               &                         ecrad_aerosol, ptr_camsaermr)
           CASE(iRadAeroConstKinne,iRadAeroKinne,iRadAeroVolc,iRadAeroKinneVolc,iRadAeroKinneVolcSP,iRadAeroKinneSP, &
-            &  iRadAeroART)
+            &  iRadAeroART, iRadAeroExternal)
             DO jw = 1, ecrad_conf%n_bands_lw
               opt_ptrs_lw(jw)%ptr_od  => od_lw(jcs:jce,:,jb,jw)
+              !$ACC ENTER DATA ATTACH(opt_ptrs_lw(jw)%ptr_od) ASYNC(1)
             ENDDO
             DO jw = 1, ecrad_conf%n_bands_sw
               opt_ptrs_sw(jw)%ptr_od  => od_sw(jcs:jce,:,jb,jw)
               opt_ptrs_sw(jw)%ptr_ssa => ssa_sw(jcs:jce,:,jb,jw)
               opt_ptrs_sw(jw)%ptr_g   => g_sw(jcs:jce,:,jb,jw)
+              !$ACC ENTER DATA ATTACH(opt_ptrs_sw(jw)%ptr_od, opt_ptrs_sw(jw)%ptr_ssa) &
+              !$ACC   ATTACH(opt_ptrs_sw(jw)%ptr_g) ASYNC(1)
             ENDDO
             CALL nwp_ecrad_prep_aerosol(1, nlev, i_startidx_rad, i_endidx_rad,   &
               &                         opt_ptrs_lw, opt_ptrs_sw,                &
@@ -434,6 +469,10 @@ CONTAINS
           CASE DEFAULT
             CALL finish(routine, 'irad_aero not valid for ecRad')
         END SELECT
+        IF (ecrad_check_input) THEN
+          is_bad = ecrad_aerosol%out_of_physical_bounds(istartcol=i_startidx_rad, iendcol=i_endidx_rad, do_fix=.FALSE.)
+          IF (is_bad) CALL finish(routine,'ecrad_aerosol out_of_physical_bounds check triggered')
+        ENDIF
 
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR
@@ -446,7 +485,6 @@ CONTAINS
 !---------------------------------------------------------------------------------------
 ! Call the radiation scheme ecRad
 !---------------------------------------------------------------------------------------
-        !$ACC WAIT
         CALL ecrad(nproma_sub, nlev,                        & !< Array and loop bounds (input)
           &        i_startidx_rad, i_endidx_rad,            & !< Array and loop bounds (input)
           &        ecrad_conf,                              & !< General ecRad configuration object (input)
@@ -455,7 +493,7 @@ CONTAINS
           &        ecrad_gas,                               & !< ecRad gas configuration object (input)
           &        ecrad_cloud,                             & !< ecRad cloud configuration object (input)
           &        ecrad_aerosol,                           & !< ecRad aerosol configuration object (input)
-          &        ecrad_flux                               ) !< ecRad fluxes in the longwave BUT flux/solar constant in the shortwave (output)
+          &        ecrad_flux                               ) !< ecRad fluxes in the LW BUT flux/solar constant in the SW (output)
 
 !---------------------------------------------------------------------------------------
 
@@ -491,7 +529,6 @@ CONTAINS
         ENDIF
 
         ! Add 3D contribution to diffuse radiation
-        !$ACC WAIT
         CALL add_3D_diffuse_rad(ecrad_flux, ptr_clc, pt_diag%pres(jcs:jce,:,jb),                                 &
           &                     pt_diag%temp(jcs:jce,:,jb), prm_diag%cosmu0(jcs:jce,jb),                         &
           &                     prm_diag%fr_nir_sfc_diff(jcs:jce,jb), prm_diag%fr_vis_sfc_diff(jcs:jce,jb),      &
@@ -511,7 +548,7 @@ CONTAINS
     IF ( ecrad_conf%use_aerosols ) CALL ecrad_aerosol%deallocate()
     CALL ecrad_flux%deallocate()
     !$ACC EXIT DATA DELETE(cosmu0mask, zlwflx_up, zlwflx_dn, zswflx_up, zswflx_dn, zlwflx_up_clr, zlwflx_dn_clr) &
-    !$ACC   DELETE(zswflx_up_clr, zswflx_dn_clr)
+    !$ACC   DELETE(zswflx_up_clr, zswflx_dn_clr, opt_ptrs_lw, opt_ptrs_sw)
     DEALLOCATE( cosmu0mask )
     DEALLOCATE( zlwflx_up,     zlwflx_dn,     zswflx_up,    zswflx_dn     )
     DEALLOCATE( zlwflx_up_clr, zlwflx_dn_clr, zswflx_up_clr,zswflx_dn_clr )
@@ -560,17 +597,17 @@ CONTAINS
     TYPE(t_patch), TARGET,   INTENT(in)    :: pt_par_patch     !< Parent domain info
     TYPE(t_external_data),   INTENT(in)    :: ext_data         !< External data container
 
-    REAL(wp),                INTENT(in)    ::             &
-      & zaeq1(nproma,pt_patch%nlev,pt_patch%nblks_c),     & !< Climatological aerosol (Tegen)
-      & zaeq2(nproma,pt_patch%nlev,pt_patch%nblks_c),     & !< Climatological aerosol (Tegen)
-      & zaeq3(nproma,pt_patch%nlev,pt_patch%nblks_c),     & !< Climatological aerosol (Tegen)
-      & zaeq4(nproma,pt_patch%nlev,pt_patch%nblks_c),     & !< Climatological aerosol (Tegen)
-      & zaeq5(nproma,pt_patch%nlev,pt_patch%nblks_c)        !< Climatological aerosol (Tegen)
-    REAL(wp), ALLOCATABLE,   INTENT(in)    ::             &
-      & od_lw (:,:,:,:)                             ,     & !< LW aerosol optical thickness
-      & od_sw (:,:,:,:)                             ,     & !< SW aerosol optical thickness
-      & g_sw  (:,:,:,:)                             ,     & !< SW aerosol asymmetry factor
-      & ssa_sw(:,:,:,:)                                     !< SW aerosol single scattering albedo
+    REAL(wp), ALLOCATABLE, TARGET, INTENT(in) :: &
+      & zaeq1 (:,:,:),    & !< Climatological aerosol (Tegen)
+      & zaeq2 (:,:,:),    & !< Climatological aerosol (Tegen)
+      & zaeq3 (:,:,:),    & !< Climatological aerosol (Tegen)
+      & zaeq4 (:,:,:),    & !< Climatological aerosol (Tegen)
+      & zaeq5 (:,:,:)       !< Climatological aerosol (Tegen)
+    REAL(wp), POINTER, INTENT(in) :: &
+      & od_lw (:,:,:,:),  & !< LW aerosol optical thickness
+      & od_sw (:,:,:,:),  & !< SW aerosol optical thickness
+      & g_sw  (:,:,:,:),  & !< SW aerosol asymmetry factor
+      & ssa_sw(:,:,:,:)     !< SW aerosol single scattering albedo
 
     TYPE(t_nh_diag), TARGET, INTENT(in)    :: pt_diag       !< ICON diagnostic variables
     TYPE(t_nwp_phy_diag),    INTENT(inout) :: prm_diag      !< ICON physics diagnostics
@@ -634,11 +671,6 @@ CONTAINS
       &  zrg_o3(:,:,:),              & !< Ozone mass mixing ratio on reduced grid
       &  zrg_tot_cld(:,:,:,:),       & !< Mass mixing ratio of water vapor, cloud water and cloud ice on reduced grid
       &  zrg_clc(:,:,:),             & !< Cloud cover on reduced grid
-      &  zrg_aeq1(:,:,:),            & !< Climatological aerosol on reduced grid
-      &  zrg_aeq2(:,:,:),            & !< Climatological aerosol on reduced grid
-      &  zrg_aeq3(:,:,:),            & !< Climatological aerosol on reduced grid
-      &  zrg_aeq4(:,:,:),            & !< Climatological aerosol on reduced grid
-      &  zrg_aeq5(:,:,:),            & !< Climatological aerosol on reduced grid
       &  zrg_trsolall(:,:,:),        & !< solar transmissivity, all sky, net down on reduced grid
       &  zrg_lwflxall(:,:,:),        & !< Terrestrial flux, all sky, net down on reduced grid
       &  zrg_lwflx_up_sfc(:,:),      & !< Longwave upward flux at surface on reduced grid
@@ -674,21 +706,30 @@ CONTAINS
     ! Indices and pointers of extra (optional) fields that are needed by radiation
     ! and therefore have to be aggregated to the radiation grid
     INTEGER :: irg_acdnc, irg_fr_glac, irg_fr_land,  irg_qr, irg_qs, irg_qg,  &
-      &        irg_reff_qr, irg_reff_qs, irg_reff_qg, irg_camsaermr(n_camsaermr)
+      &        irg_reff_qr, irg_reff_qs, irg_reff_qg, irg_camsaermr(n_camsaermr), &
+      &        irg_zaeq1, irg_zaeq2, irg_zaeq3, irg_zaeq4, irg_zaeq5, irg_fsd, &
+      &        irg_qvrad_ext, irg_o3rad_ext, irg_co2rad_ext, irg_o2rad_ext, &
+      &        irg_cfc11rad_ext, irg_cfc12rad_ext, irg_n2orad_ext, irg_ch4rad_ext
+
     INTEGER, DIMENSION (ecrad_conf%n_bands_lw) :: irg_od_lw
     INTEGER, DIMENSION (ecrad_conf%n_bands_sw) :: irg_od_sw, irg_ssa_sw, irg_g_sw
     REAL(wp), DIMENSION(:,:),  POINTER :: &
-      &  ptr_acdnc => NULL(),                                                 &
-      &  ptr_qr => NULL(),      ptr_qs => NULL(),      ptr_qg => NULL(),      &
-      &  ptr_reff_qc => NULL(), ptr_reff_qi => NULL(), ptr_reff_qr => NULL(), &
-      &  ptr_reff_qs => NULL(), ptr_reff_qg => NULL()
+      &  ptr_acdnc => NULL(),                                                             &
+      &  ptr_qr => NULL(),      ptr_qs => NULL(),      ptr_qg => NULL(),                  &
+      &  ptr_reff_qc => NULL(), ptr_reff_qi => NULL(), ptr_reff_qr => NULL(),             &
+      &  ptr_reff_qs => NULL(), ptr_reff_qg => NULL(),                                    &
+      &  ptr_aeq1 => NULL(), ptr_aeq2 => NULL(), ptr_aeq3 => NULL(),                      &
+      &  ptr_aeq4 => NULL(), ptr_aeq5 => NULL(), ptr_fsd => NULL(),                       &
+      &  ptr_qvrad_ext => NULL(), ptr_o3rad_ext => NULL(), ptr_co2rad_ext => NULL(),      &
+      &  ptr_o2rad_ext => NULL(), ptr_cfc11rad_ext => NULL(), ptr_cfc12rad_ext => NULL(), &
+      &  ptr_n2orad_ext => NULL(), ptr_ch4rad_ext => NULL()
 
     TYPE(t_opt_ptrs),ALLOCATABLE :: &
       &  opt_ptrs_lw(:), opt_ptrs_sw(:)    !< Contains pointers to aerosol optical properties
-    TYPE(t_ptr_2d), ALLOCATABLE :: &
+    TYPE(t_ptr_2d_wp), ALLOCATABLE :: &
       &  ptr_camsaermr(:)                  !< Contains pointers to cams mass mixing ratios
 
-    REAL(wp), DIMENSION(:),    POINTER :: &
+    REAL(wp), DIMENSION(:), POINTER :: &
       &  ptr_fr_glac => NULL(), ptr_fr_land => NULL()
 
     ! Some unused variables to be up- and downscaled (to not change the interface to up- and downscale)
@@ -700,11 +741,33 @@ CONTAINS
       &  zlp_tot_cld(:,:,:,:)
     LOGICAL, ALLOCATABLE          :: &
       &  cosmu0mask(:)                 !< Mask if cosmu0 > 0
+    LOGICAL                       :: &
+      &  is_bad                        !< Return value of ecRad-internal physical consistency checks
 
     jg         = pt_patch%id
     nlev       = pt_patch%nlev
 
     CALL assert_acc_device_only(routine, lacc)
+
+    rl_start   = 1 ! SR radiation is not set up to handle boundaries of nested domains
+    rl_end     = min_rlcell_int
+    i_startblk = pt_patch%cells%start_block(rl_start)
+    i_endblk   = pt_patch%cells%end_block(rl_end)
+
+    IF (ecrad_check_input) THEN
+!$OMP PARALLEL
+!$OMP DO PRIVATE(jb, i_startidx, i_endidx), &
+!$OMP ICON_OMP_GUIDED_SCHEDULE
+      DO jb = i_startblk, i_endblk
+        CALL get_indices_c(pt_patch, jb, i_startblk, i_endblk, &
+          &                i_startidx, i_endidx, rl_start, rl_end)
+        CALL ecrad_check_input_fields('ecRadInputCheck::redgrid::start',              &
+          &                           i_startidx, i_endidx, nlev,                     &
+          &                           pt_diag%pres(:,:,jb), pt_diag%pres_ifc(:,:,jb))
+      ENDDO
+!$OMP END DO
+!$OMP END PARALLEL
+    ENDIF
 
     fact_reffc = (3.0e-9_wp/(4.0_wp*pi*rhoh2o))**(1.0_wp/3.0_wp)
 
@@ -771,7 +834,7 @@ CONTAINS
       !$ACC   CREATE(zrg_trsol_nir_sfc, zrg_trsol_vis_sfc, zrg_trsol_par_sfc) &
       !$ACC   CREATE(zrg_fr_nir_sfc_diff, zrg_fr_vis_sfc_diff, zrg_fr_par_sfc_diff) &
       !$ACC   CREATE(zrg_trsol_dn_sfc_diff, zrg_trsol_clr_sfc) &
-      !$ACC   CREATE(zrg_lwflx_clr_sfc, aclcov) ASYNC(1)
+      !$ACC   CREATE(zrg_lwflx_clr_sfc, aclcov)
 
     ! Set dimensions for 3D radiative flux variables
     IF (atm_phy_nwp_config(jg)%l_3d_rad_fluxes) THEN
@@ -801,14 +864,8 @@ CONTAINS
     ALLOCATE(zrg_pres     (nproma,nlev_rg  ,nblks_par_c),   &
       &      zrg_temp     (nproma,nlev_rg  ,nblks_par_c),   &
       &      zrg_o3       (nproma,nlev_rg  ,nblks_par_c),   &
-      &      zrg_aeq1     (nproma,nlev_rg  ,nblks_par_c),   &
-      &      zrg_aeq2     (nproma,nlev_rg  ,nblks_par_c),   &
-      &      zrg_aeq3     (nproma,nlev_rg  ,nblks_par_c),   &
-      &      zrg_aeq4     (nproma,nlev_rg  ,nblks_par_c),   &
-      &      zrg_aeq5     (nproma,nlev_rg  ,nblks_par_c),   &
       &      zrg_clc      (nproma,nlev_rg  ,nblks_par_c))
-    !$ACC ENTER DATA CREATE(zrg_pres, zrg_temp, zrg_o3, zrg_aeq1, zrg_aeq2) &
-    !$ACC   CREATE(zrg_aeq3, zrg_aeq4, zrg_aeq5, zrg_clc) ASYNC(1)
+    !$ACC ENTER DATA CREATE(zrg_pres, zrg_temp, zrg_o3, zrg_clc) ASYNC(1)
 
     IF (atm_phy_nwp_config(jg)%icpl_rad_reff > 0) THEN
       ALLOCATE(zrg_reff_liq (nproma,nlev_rg,nblks_par_c),   &
@@ -842,35 +899,59 @@ CONTAINS
     irg_od_sw        = 0
     irg_ssa_sw       = 0
     irg_g_sw         = 0
+    irg_fsd          = 0
     irg_camsaermr(:) = 0
+    irg_zaeq1        = 0
+    irg_zaeq2        = 0
+    irg_zaeq3        = 0
+    irg_zaeq4        = 0
+    irg_zaeq5        = 0
+    irg_qvrad_ext    = 0
+    irg_o3rad_ext    = 0
+    irg_co2rad_ext   = 0
+    irg_o2rad_ext    = 0
+    irg_cfc11rad_ext = 0
+    irg_cfc12rad_ext = 0
+    irg_n2orad_ext   = 0
+    irg_ch4rad_ext   = 0
+
 
     CALL input_extra_flds%construct(nlev_rg)  ! Extra fields in upscaling routine: 3D fields with nlev_rg
     CALL input_extra_2D%construct(1)          ! Extra fields in upscaling routine: 2D fields
     CALL input_extra_reff%construct(nlev_rg)  ! Extra fields in upscaling routine: extra Reff
 
     SELECT CASE (atm_phy_nwp_config(jg)%icpl_rad_reff)
-    CASE (0)  ! Own calculation of reff inside ecrad_set_clouds()
-      CALL input_extra_flds%assign(prm_diag%acdnc, irg_acdnc)
-      CALL input_extra_2D%assign(ext_data%atm%fr_land, irg_fr_land)
-      CALL input_extra_2D%assign(ext_data%atm%fr_glac, irg_fr_glac)
-    CASE (2) ! Option to use all hydrometeors reff individually
-      ! Set extra hydrometeors and extra effective radius (in different array due to different interpolation)
-      IF (ANY(ecrad_iqr == ecrad_hyd_list) ) THEN
-        CALL input_extra_flds%assign(pt_prog%tracer(:,:,:,iqr), irg_qr)
-        CALL input_extra_reff%assign(prm_diag%reff_qr(:,:,:), irg_reff_qr, assoc_hyd = irg_qr )
-      ENDIF
-      IF (ANY(ecrad_iqs == ecrad_hyd_list) ) THEN
-        CALL input_extra_flds%assign(pt_prog%tracer(:,:,:,iqs), irg_qs)
-        CALL input_extra_reff%assign(prm_diag%reff_qs(:,:,:), irg_reff_qs, assoc_hyd = irg_qs )
-      ENDIF
-      IF ( iqg >0 .AND. ANY(ecrad_iqg == ecrad_hyd_list) ) THEN
-        CALL input_extra_flds%assign(pt_prog%tracer(:,:,:,iqg), irg_qg)
-        CALL input_extra_reff%assign(prm_diag%reff_qg(:,:,:), irg_reff_qg, assoc_hyd = irg_qg )
-      ENDIF
+      CASE (0)  ! Own calculation of reff inside ecrad_set_clouds()
+        CALL input_extra_flds%assign(prm_diag%acdnc, irg_acdnc)
+        CALL input_extra_2D%assign(ext_data%atm%fr_land, irg_fr_land)
+        CALL input_extra_2D%assign(ext_data%atm%fr_glac, irg_fr_glac)
+      CASE (2) ! Option to use all hydrometeors reff individually
+        ! Set extra hydrometeors and extra effective radius (in different array due to different interpolation)
+        IF (ANY(ecrad_iqr == ecrad_hyd_list) ) THEN
+          CALL input_extra_flds%assign(pt_prog%tracer(:,:,:,iqr), irg_qr)
+          CALL input_extra_reff%assign(prm_diag%reff_qr(:,:,:), irg_reff_qr, assoc_hyd = irg_qr )
+        ENDIF
+        IF (ANY(ecrad_iqs == ecrad_hyd_list) ) THEN
+          CALL input_extra_flds%assign(pt_prog%tracer(:,:,:,iqs), irg_qs)
+          CALL input_extra_reff%assign(prm_diag%reff_qs(:,:,:), irg_reff_qs, assoc_hyd = irg_qs )
+        ENDIF
+        IF ( iqg >0 .AND. ANY(ecrad_iqg == ecrad_hyd_list) ) THEN
+          CALL input_extra_flds%assign(pt_prog%tracer(:,:,:,iqg), irg_qg)
+          CALL input_extra_reff%assign(prm_diag%reff_qg(:,:,:), irg_reff_qg, assoc_hyd = irg_qg )
+        ENDIF
     END SELECT
 
-    IF (ANY( irad_aero == (/iRadAeroConstKinne,iRadAeroKinne,iRadAeroVolc,iRadAeroART,  &
-      &                     iRadAeroKinneVolc,iRadAeroKinneVolcSP,iRadAeroKinneSP/) )) THEN
+    IF (irad_aero == iRadAeroTegen) THEN
+      CALL input_extra_flds%assign(zaeq1(:,:,:), irg_zaeq1)
+      CALL input_extra_flds%assign(zaeq2(:,:,:), irg_zaeq2)
+      CALL input_extra_flds%assign(zaeq3(:,:,:), irg_zaeq3)
+      CALL input_extra_flds%assign(zaeq4(:,:,:), irg_zaeq4)
+      CALL input_extra_flds%assign(zaeq5(:,:,:), irg_zaeq5)
+    ENDIF
+
+    IF (ANY( irad_aero == (/iRadAeroConstKinne,iRadAeroKinne,iRadAeroVolc,iRadAeroART, &
+      &                     iRadAeroKinneVolc,iRadAeroKinneVolcSP,iRadAeroKinneSP, &
+      &                     iRadAeroExternal/) )) THEN
       ! Aerosol extra fields
       DO jw = 1, ecrad_conf%n_bands_lw
         CALL input_extra_flds%assign(od_lw(:,:,:,jw), irg_od_lw(jw))
@@ -880,13 +961,27 @@ CONTAINS
         CALL input_extra_flds%assign(ssa_sw(:,:,:,jw), irg_ssa_sw(jw))
         CALL input_extra_flds%assign(g_sw(:,:,:,jw), irg_g_sw(jw))
       ENDDO
-    END IF
+    ENDIF
 
-     IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
-       DO jt = 1, n_camsaermr
-         CALL input_extra_flds%assign(pt_diag%camsaermr(:,:,:,jt), irg_camsaermr(jt))
-       ENDDO
-     END IF
+    ! Assign external gases
+    IF (irad_h2o   == -1) CALL input_extra_flds%assign(prm_diag%qvrad_ext(:,:,:),   irg_qvrad_ext)
+    IF (irad_o3    == -1) CALL input_extra_flds%assign(prm_diag%o3rad_ext(:,:,:),   irg_o3rad_ext)
+    IF (irad_co2   == -1) CALL input_extra_flds%assign(prm_diag%co2rad_ext(:,:,:),  irg_co2rad_ext)
+    IF (irad_o2    == -1) CALL input_extra_flds%assign(prm_diag%o2rad_ext(:,:,:),   irg_o2rad_ext)
+    IF (irad_cfc11 == -1) CALL input_extra_flds%assign(prm_diag%cfc11rad_ext(:,:,:),irg_cfc11rad_ext)
+    IF (irad_cfc12 == -1) CALL input_extra_flds%assign(prm_diag%cfc12rad_ext(:,:,:),irg_cfc12rad_ext)
+    IF (irad_n2o   == -1) CALL input_extra_flds%assign(prm_diag%n2orad_ext(:,:,:),  irg_n2orad_ext)
+    IF (irad_ch4   == -1) CALL input_extra_flds%assign(prm_diag%ch4rad_ext(:,:,:),  irg_ch4rad_ext)
+
+    IF (lcalculate_fsd) THEN
+      CALL input_extra_flds%assign(prm_diag%cloud_fsd(:,:,:),irg_fsd)
+    ENDIF
+
+    IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
+      DO jt = 1, n_camsaermr
+        CALL input_extra_flds%assign(pt_diag%camsaermr(:,:,:,jt), irg_camsaermr(jt))
+      ENDDO
+    ENDIF
 
     !$ACC DATA COPYIN(input_extra_flds, input_extra_2D, input_extra_reff)
     CALL input_extra_flds%acc_attach()
@@ -901,55 +996,49 @@ CONTAINS
     IF ( input_extra_2D%ntot > 0 )  THEN
       ALLOCATE( zrg_extra_2D(nproma,nblks_par_c,input_extra_2D%ntot) )
       !$ACC ENTER DATA CREATE(zrg_extra_2D) ASYNC(1)
-    END IF
+    ENDIF
     IF ( input_extra_reff%ntot  > 0 ) THEN
       ALLOCATE( zrg_extra_reff(nproma,input_extra_reff%nlev_rg,nblks_par_c,input_extra_reff%ntot) )
       !$ACC ENTER DATA CREATE(zrg_extra_reff) ASYNC(1)
-    END IF
-
-
-    rl_start = 1 ! SR radiation is not set up to handle boundaries of nested domains
-    rl_end   = min_rlcell_int
-    i_startblk = pt_patch%cells%start_block(rl_start)
-    i_endblk   = pt_patch%cells%end_block(rl_end)
+    ENDIF
 
 !$OMP PARALLEL
 
     ! Initialize output fields
-    CALL init(zrg_trsolall(:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_lwflxall(:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_trsol_up_toa(:,:)     , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_trsol_up_sfc(:,:)     , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_trsol_nir_sfc(:,:)    , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_trsol_vis_sfc(:,:)    , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_trsol_par_sfc(:,:)    , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_fr_nir_sfc_diff(:,:)  , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_fr_vis_sfc_diff(:,:)  , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_fr_par_sfc_diff(:,:)  , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_trsol_dn_sfc_diff(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_trsol_clr_sfc(:,:)    , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_lwflx_up_sfc(:,:)     , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_lwflx_clr_sfc(:,:)    , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_aclcov(:,:)           , lacc=.TRUE., opt_acc_async=.TRUE.)
+    CALL init(zrg_trsolall(:,:,:), 0._wp, lacc=.TRUE.)
+    CALL init(zrg_lwflxall(:,:,:), 0._wp, lacc=.TRUE.)
+    CALL init(zrg_trsol_up_toa(:,:)     , lacc=.TRUE.)
+    CALL init(zrg_trsol_up_sfc(:,:)     , lacc=.TRUE.)
+    CALL init(zrg_trsol_nir_sfc(:,:)    , lacc=.TRUE.)
+    CALL init(zrg_trsol_vis_sfc(:,:)    , lacc=.TRUE.)
+    CALL init(zrg_trsol_par_sfc(:,:)    , lacc=.TRUE.)
+    CALL init(zrg_fr_nir_sfc_diff(:,:)  , lacc=.TRUE.)
+    CALL init(zrg_fr_vis_sfc_diff(:,:)  , lacc=.TRUE.)
+    CALL init(zrg_fr_par_sfc_diff(:,:)  , lacc=.TRUE.)
+    CALL init(zrg_trsol_dn_sfc_diff(:,:), lacc=.TRUE.)
+    CALL init(zrg_trsol_clr_sfc(:,:)    , lacc=.TRUE.)
+    CALL init(zrg_lwflx_up_sfc(:,:)     , lacc=.TRUE.)
+    CALL init(zrg_lwflx_clr_sfc(:,:)    , lacc=.TRUE.)
+    CALL init(zrg_aclcov(:,:)           , lacc=.TRUE.)
 #ifdef _OPENACC
-    CALL init(zrg_cosmu0                , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_tsfc                  , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_emis_rad              , lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(zrg_albdif                , lacc=.TRUE., opt_acc_async=.TRUE.)
+    CALL init(zrg_cosmu0                , lacc=.TRUE.)
+    CALL init(zrg_tsfc                  , lacc=.TRUE.)
+    CALL init(zrg_emis_rad              , lacc=.TRUE.)
+    CALL init(zrg_albdif                , lacc=.TRUE.)
 #endif
 
     IF (atm_phy_nwp_config(jg)%l_3d_rad_fluxes) THEN
-      CALL init(zrg_lwflx_up    (:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(zrg_lwflx_dn    (:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(zrg_swflx_up    (:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(zrg_swflx_dn    (:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(zrg_lwflx_up_clr(:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(zrg_lwflx_dn_clr(:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(zrg_swflx_up_clr(:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(zrg_swflx_dn_clr(:,:,:), 0._wp, lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init(zrg_lwflx_up    (:,:,:), 0._wp, lacc=.TRUE.)
+      CALL init(zrg_lwflx_dn    (:,:,:), 0._wp, lacc=.TRUE.)
+      CALL init(zrg_swflx_up    (:,:,:), 0._wp, lacc=.TRUE.)
+      CALL init(zrg_swflx_dn    (:,:,:), 0._wp, lacc=.TRUE.)
+      CALL init(zrg_lwflx_up_clr(:,:,:), 0._wp, lacc=.TRUE.)
+      CALL init(zrg_lwflx_dn_clr(:,:,:), 0._wp, lacc=.TRUE.)
+      CALL init(zrg_swflx_up_clr(:,:,:), 0._wp, lacc=.TRUE.)
+      CALL init(zrg_swflx_dn_clr(:,:,:), 0._wp, lacc=.TRUE.)
     END IF
 
-!$OMP DO PRIVATE(jb, i_startidx, i_endidx), ICON_OMP_GUIDED_SCHEDULE
+!$OMP DO PRIVATE(jb, jc, i_startidx, i_endidx), ICON_OMP_GUIDED_SCHEDULE
     DO jb = i_startblk, i_endblk
       CALL get_indices_c(pt_patch, jb, i_startblk, i_endblk, &
         &                       i_startidx, i_endidx, rl_start, rl_end)
@@ -974,31 +1063,28 @@ CONTAINS
 
 !$OMP END PARALLEL
 
-! Upscale ICON input fields from full grid to reduced radiation grid
+    ! Upscale ICON input fields from full grid to reduced radiation grid
+    CALL upscale_rad_input(pt_patch%id, pt_par_patch%id,                                 & ! in
+      &                    nlev_rg,                                                      & ! in
+      &                    prm_diag%lw_emiss, prm_diag%cosmu0,                           & ! in
+      &                    prm_diag%albvisdir, prm_diag%albnirdir, prm_diag%albvisdif,   & ! in
+      &                    prm_diag%albnirdif, prm_diag%albdif, prm_diag%tsfctrad,       & ! in
+      &                    prm_diag%ktype, pt_diag%pres_ifc, pt_diag%pres,               & ! in
+      &                    pt_diag%temp, prm_diag%tot_cld, ptr_clc,                      & ! in
+      &                    ext_data%atm%o3, zrg_emis_rad,                                & ! in, out
+      &                    zrg_cosmu0, zrg_albvisdir, zrg_albnirdir, zrg_albvisdif,      & ! out
+      &                    zrg_albnirdif, zrg_albdif, zrg_tsfc, zrg_rtype, zrg_pres_ifc, & ! out
+      &                    zrg_pres, zrg_temp,                                           & ! out
+      &                    zrg_tot_cld, zrg_clc, zrg_o3,                                 & ! out
+      &                    zlp_pres_ifc, zlp_tot_cld, prm_diag%buffer_rrg,               & ! out, out, in
+      &                    atm_phy_nwp_config(jg)%icpl_rad_reff,                         & ! in
+      &                    prm_diag%reff_qc, prm_diag%reff_qi,                           & ! in
+      &                    zrg_reff_liq, zrg_reff_frz,                                   & ! opt out
+      &                    input_extra_flds, zrg_extra_flds,                             & ! opt in, opt out
+      &                    input_extra_2D, zrg_extra_2D,                                 & ! opt in, opt out
+      &                    input_extra_reff, zrg_extra_reff, lacc=.TRUE.)                  ! opt in, opt out
 
-    CALL upscale_rad_input(pt_patch%id, pt_par_patch%id,                                 &
-      &                    nlev_rg,                                                      &
-      &                    prm_diag%lw_emiss, prm_diag%cosmu0,                           &
-      &                    prm_diag%albvisdir, prm_diag%albnirdir, prm_diag%albvisdif,   &
-      &                    prm_diag%albnirdif, prm_diag%albdif, prm_diag%tsfctrad,       &
-      &                    prm_diag%ktype, pt_diag%pres_ifc, pt_diag%pres,               &
-      &                    pt_diag%temp, prm_diag%tot_cld, ptr_clc,                      &
-      &                    ext_data%atm%o3, zaeq1, zaeq2, zaeq3, zaeq4, zaeq5,           &
-      &                    zrg_emis_rad,                                                 &
-      &                    zrg_cosmu0, zrg_albvisdir, zrg_albnirdir, zrg_albvisdif,      &
-      &                    zrg_albnirdif, zrg_albdif, zrg_tsfc, zrg_rtype, zrg_pres_ifc, &
-      &                    zrg_pres, zrg_temp,                                           &
-      &                    zrg_tot_cld, zrg_clc, zrg_o3,                                 &
-      &                    zrg_aeq1, zrg_aeq2, zrg_aeq3, zrg_aeq4, zrg_aeq5,             &
-      &                    zlp_pres_ifc, zlp_tot_cld, prm_diag%buffer_rrg,               &
-      &                    atm_phy_nwp_config(jg)%icpl_rad_reff,                         &
-      &                    prm_diag%reff_qc, prm_diag%reff_qi,                           &
-      &                    zrg_reff_liq, zrg_reff_frz,                                   &
-      &                    input_extra_flds, zrg_extra_flds,                             &
-      &                    input_extra_2D, zrg_extra_2D,                                 &
-      &                    input_extra_reff, zrg_extra_reff, lacc=.TRUE.)
-
-! Set indices for reduced grid loop
+    ! Set indices for reduced grid loop
     IF (jg == 1 .AND. l_limited_area) THEN
       rl_start = grf_fbk_start_c
     ELSE
@@ -1008,8 +1094,8 @@ CONTAINS
     i_startblk = ptr_pp%cells%start_block(rl_start)
     i_endblk   = ptr_pp%cells%end_block(rl_end)
 
-!$OMP PARALLEL PRIVATE(cosmu0mask, opt_ptrs_lw, opt_ptrs_sw, jw, jt, ptr_camsaermr, &
-!$OMP                  ecrad_aerosol, ecrad_single_level, ecrad_thermodynamics,     &
+!$OMP PARALLEL PRIVATE(cosmu0mask, opt_ptrs_lw, opt_ptrs_sw, jw, jt, ptr_camsaermr) &
+!$OMP     FIRSTPRIVATE(ecrad_aerosol, ecrad_single_level, ecrad_thermodynamics,     &
 !$OMP                  ecrad_gas, ecrad_cloud, ecrad_flux)
 
     CALL ecrad_single_level%allocate(nproma_sub, 2, 1, .true.) !< use_sw_albedo_direct, 2 bands
@@ -1038,8 +1124,7 @@ CONTAINS
     END IF
 
     ! Currently hardcoded values for FSD
-    !$ACC WAIT
-    CALL ecrad_cloud%create_fractional_std(nproma_sub, nlev_rg, 1._wp)
+    CALL ecrad_cloud%create_fractional_std(nproma_sub, nlev_rg, fsd_background)
 
     IF ( ecrad_conf%use_aerosols ) THEN
       ! Allocate aerosol container
@@ -1057,20 +1142,20 @@ CONTAINS
     !$ACC ENTER DATA CREATE(cosmu0mask) ASYNC(1)
     ALLOCATE(opt_ptrs_lw(ecrad_conf%n_bands_lw))
     ALLOCATE(opt_ptrs_sw(ecrad_conf%n_bands_sw))
-
-    !$ACC DATA PRESENT(cosmu0mask, zrg_cosmu0, zrg_tsfc) &
-    !$ACC   PRESENT(zrg_albvisdif, zrg_albnirdif, zrg_albvisdir, zrg_albnirdir) &
-    !$ACC   PRESENT(zrg_emis_rad, zrg_pres_ifc, zrg_temp, zrg_pres, zrg_o3) &
-    !$ACC   PRESENT(zrg_tot_cld, zrg_clc, zrg_aeq1, zrg_aeq2, zrg_aeq3, zrg_aeq4) &
-    !$ACC   PRESENT(zrg_aeq5)
+    !$ACC ENTER DATA CREATE(opt_ptrs_lw, opt_ptrs_sw) ASYNC(1)
 
 
-!$OMP DO PRIVATE(jb, jc, i_startidx, i_endidx,                  &
-!$OMP            jb_rad, jcs, jce, jnps, jnpe,                  &
-!$OMP            i_startidx_rad,i_endidx_rad,                   &
-!$OMP            ptr_acdnc, ptr_fr_land, ptr_fr_glac,           &
-!$OMP            ptr_reff_qc, ptr_reff_qi, ptr_qr, ptr_reff_qr, &
-!$OMP            ptr_qs, ptr_reff_qs, ptr_qg, ptr_reff_qg),     &
+!$OMP DO PRIVATE(jb, jc, i_startidx, i_endidx,                      &
+!$OMP            jb_rad, jcs, jce, jnps, jnpe,                      &
+!$OMP            i_startidx_rad,i_endidx_rad,                       &
+!$OMP            ptr_acdnc, ptr_fr_land, ptr_fr_glac,               &
+!$OMP            ptr_reff_qc, ptr_reff_qi, ptr_qr, ptr_reff_qr,     &
+!$OMP            ptr_qs, ptr_reff_qs, ptr_qg, ptr_reff_qg,          &
+!$OMP            ptr_aeq1, ptr_aeq2, ptr_aeq3, ptr_aeq4,            &
+!$OMP            ptr_aeq5,ptr_fsd, ptr_qvrad_ext, ptr_o3rad_ext,    &
+!$OMP            ptr_co2rad_ext, ptr_o2rad_ext, ptr_cfc11rad_ext,   &
+!$OMP            ptr_cfc12rad_ext, ptr_n2orad_ext, ptr_ch4rad_ext), &
+
 !$OMP ICON_OMP_GUIDED_SCHEDULE
     DO jb = i_startblk, i_endblk
       CALL get_indices_c(ptr_pp, jb, i_startblk, i_endblk, &
@@ -1113,6 +1198,23 @@ CONTAINS
         IF ( irg_reff_qs > 0 ) ptr_reff_qs => zrg_extra_reff(jcs:jce,:,jb,irg_reff_qs)
         IF ( irg_reff_qg > 0 ) ptr_reff_qg => zrg_extra_reff(jcs:jce,:,jb,irg_reff_qg)
 
+        IF (irad_aero == iRadAeroTegen) THEN
+          IF ( ALL((/irg_zaeq1, irg_zaeq2, irg_zaeq3, irg_zaeq4, irg_zaeq5/) > 0) ) THEN
+            ptr_aeq1 => zrg_extra_flds(jcs:jce,:,jb,irg_zaeq1)
+            !$ACC ENTER DATA ATTACH(ptr_aeq1) IF(ASSOCIATED(ptr_aeq1))
+            ptr_aeq2 => zrg_extra_flds(jcs:jce,:,jb,irg_zaeq2)
+            !$ACC ENTER DATA ATTACH(ptr_aeq2) IF(ASSOCIATED(ptr_aeq2))
+            ptr_aeq3 => zrg_extra_flds(jcs:jce,:,jb,irg_zaeq3)
+            !$ACC ENTER DATA ATTACH(ptr_aeq3) IF(ASSOCIATED(ptr_aeq3))
+            ptr_aeq4 => zrg_extra_flds(jcs:jce,:,jb,irg_zaeq4)
+            !$ACC ENTER DATA ATTACH(ptr_aeq4) IF(ASSOCIATED(ptr_aeq4))
+            ptr_aeq5 => zrg_extra_flds(jcs:jce,:,jb,irg_zaeq5)
+            !$ACC ENTER DATA ATTACH(ptr_aeq5) IF(ASSOCIATED(ptr_aeq5))
+          ELSE
+            CALL finish(routine, 'Upscaling of Tegen fields not successful')
+          ENDIF
+        ENDIF
+
         IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
           IF ( ALL(irg_camsaermr(:)  > 0) ) THEN
             DO jt = 1, n_camsaermr
@@ -1124,23 +1226,40 @@ CONTAINS
         IF ( ALL(irg_od_lw(:)  > 0) ) THEN
           DO jw = 1, ecrad_conf%n_bands_lw
             opt_ptrs_lw(jw)%ptr_od  => zrg_extra_flds(jcs:jce,:,jb,irg_od_lw(jw))
+            !$ACC ENTER DATA ATTACH(opt_ptrs_lw(jw)%ptr_od) ASYNC(1)
           ENDDO
         ENDIF
         IF ( ALL(irg_od_sw(:)  > 0) ) THEN
           DO jw = 1, ecrad_conf%n_bands_sw
             opt_ptrs_sw(jw)%ptr_od  => zrg_extra_flds(jcs:jce,:,jb,irg_od_sw(jw))
+            !$ACC ENTER DATA ATTACH(opt_ptrs_sw(jw)%ptr_od) ASYNC(1)
           ENDDO
         ENDIF
         IF ( ALL(irg_ssa_sw(:) > 0) ) THEN
           DO jw = 1, ecrad_conf%n_bands_sw
             opt_ptrs_sw(jw)%ptr_ssa => zrg_extra_flds(jcs:jce,:,jb,irg_ssa_sw(jw))
+            !$ACC ENTER DATA ATTACH(opt_ptrs_sw(jw)%ptr_ssa) ASYNC(1)
           ENDDO
         ENDIF
         IF ( ALL(irg_g_sw(:)   > 0) ) THEN
           DO jw = 1, ecrad_conf%n_bands_sw
             opt_ptrs_sw(jw)%ptr_g   => zrg_extra_flds(jcs:jce,:,jb,irg_g_sw(jw))
+            !$ACC ENTER DATA ATTACH(opt_ptrs_sw(jw)%ptr_g) ASYNC(1)
           ENDDO
         ENDIF
+
+        ! Externally specified gases
+        IF ( irg_qvrad_ext > 0 )    ptr_qvrad_ext    => zrg_extra_flds(jcs:jce,:,jb,irg_qvrad_ext)
+        IF ( irg_o3rad_ext > 0 )    ptr_o3rad_ext    => zrg_extra_flds(jcs:jce,:,jb,irg_o3rad_ext)
+        IF ( irg_co2rad_ext > 0 )   ptr_co2rad_ext   => zrg_extra_flds(jcs:jce,:,jb,irg_co2rad_ext)
+        IF ( irg_o2rad_ext > 0 )    ptr_o2rad_ext    => zrg_extra_flds(jcs:jce,:,jb,irg_o2rad_ext)
+        IF ( irg_cfc11rad_ext > 0 ) ptr_cfc11rad_ext => zrg_extra_flds(jcs:jce,:,jb,irg_cfc11rad_ext)
+        IF ( irg_cfc12rad_ext > 0 ) ptr_cfc12rad_ext => zrg_extra_flds(jcs:jce,:,jb,irg_cfc12rad_ext)
+        IF ( irg_n2orad_ext > 0 )   ptr_n2orad_ext   => zrg_extra_flds(jcs:jce,:,jb,irg_n2orad_ext)
+        IF ( irg_ch4rad_ext > 0 )   ptr_ch4rad_ext   => zrg_extra_flds(jcs:jce,:,jb,irg_ch4rad_ext)
+
+        ! Use cloud horizontal fractional standard deviation calculated in cover_koe scheme
+        IF ( irg_fsd > 0 ) ptr_fsd => zrg_extra_flds(jcs:jce,:,jb,irg_fsd)
 
 ! Fill single level configuration type
         CALL ecrad_set_single_level(ecrad_single_level, current_datetime, ptr_pp%cells%center(jcs:jce,jb),            &
@@ -1155,7 +1274,10 @@ CONTAINS
 
 ! Fill gas configuration type
         CALL ecrad_set_gas(ecrad_gas, ecrad_conf, zrg_o3(jcs:jce,:,jb), zrg_tot_cld(jcs:jce,:,jb,iqv), &
-          &                zrg_pres(jcs:jce,:,jb), i_startidx_rad, i_endidx_rad, nlev_rg, lacc=.TRUE.)
+          &                zrg_pres(jcs:jce,:,jb), ptr_qvrad_ext, ptr_o3rad_ext, &
+          &                ptr_co2rad_ext, ptr_o2rad_ext, ptr_cfc11rad_ext, &
+          &                ptr_cfc12rad_ext, ptr_n2orad_ext, ptr_ch4rad_ext, &
+          &                i_startidx_rad, i_endidx_rad, nlev_rg, lacc=.TRUE.)
 
 ! Fill clouds configuration type
         CALL ecrad_set_clouds(ecrad_cloud, ecrad_thermodynamics, zrg_tot_cld(jcs:jce,:,jb,iqc), &
@@ -1163,7 +1285,7 @@ CONTAINS
           &                   zrg_temp(jcs:jce,:,jb), zrg_pres(jcs:jce,:,jb), ptr_acdnc,        &
           &                   ptr_fr_glac, ptr_fr_land,                                         &
           &                   ptr_qr, ptr_qs, ptr_qg, ptr_reff_qc, ptr_reff_qi,                 &
-          &                   ptr_reff_qr, ptr_reff_qs, ptr_reff_qg,                            &
+          &                   ptr_reff_qr, ptr_reff_qs, ptr_reff_qg, ptr_fsd,                   &
           &                   atm_phy_nwp_config(jg)%icpl_rad_reff,                             &
           &                   fact_reffc, ecrad_conf%cloud_fraction_threshold,                  &
           &                   ecrad_conf%use_general_cloud_optics,                              &
@@ -1175,9 +1297,9 @@ CONTAINS
           ! We are using the SPARTACUS solver so need to specify cloud scale,
           ! and use Mark Fielding's parameterization based on ARM data
           CALL ecrad_cloud%param_cloud_effective_separation_eta( ncol=nproma_sub, nlev=nlev, &
-            &                 pressure_hl=zrg_pres_ifc(jcs:jce,:,jb),                        &
-            &                 separation_surf=2500.0_wp, separation_toa=14000.0_wp,          &
-            &                 power=3.5_wp, inhom_separation_factor=0.75_wp,                 &
+            &                 pressure_hl=ecrad_thermodynamics%pressure_hl(:,:),             &
+            &                 separation_surf=2500.0_rp, separation_toa=14000.0_rp,          &
+            &                 power=3.5_rp, inhom_separation_factor=0.75_rp,                 &
             &                 istartcol=i_startidx_rad, iendcol=i_endidx_rad )
         ENDIF
 
@@ -1193,22 +1315,24 @@ CONTAINS
           CASE(iRadAeroTegen)
             ! Fill aerosol configuration type with Tegen aerosol
             CALL nwp_ecrad_prep_aerosol(1, nlev_rg, i_startidx_rad, i_endidx_rad,         &
-              &                         zrg_aeq1(jcs:jce,:,jb), zrg_aeq2(jcs:jce,:,jb),   &
-              &                         zrg_aeq3(jcs:jce,:,jb), zrg_aeq4(jcs:jce,:,jb),   &
-              &                         zrg_aeq5(jcs:jce,:,jb),                           &
+              &                         ptr_aeq1, ptr_aeq2, ptr_aeq3, ptr_aeq4, ptr_aeq5, &
               &                         ecrad_conf, ecrad_aerosol, lacc=.TRUE.)
           CASE(iRadAeroCAMSclim,iRadAeroCAMStd)
             ! Fill aerosol configuration type with CAMS 3D climatology/forecasted aerosols
             CALL nwp_ecrad_prep_aerosol(1, nlev_rg, i_startidx_rad, i_endidx_rad,  &
-              &                         ecrad_aerosol, ptr_camsaermr)  
+              &                         ecrad_aerosol, ptr_camsaermr)
           CASE(iRadAeroConstKinne,iRadAeroKinne,iRadAeroVolc,iRadAeroKinneVolc,iRadAeroKinneVolcSP,iRadAeroKinneSP, &
-            &  iRadAeroART)
+            &  iRadAeroART, iRadAeroExternal)
             CALL nwp_ecrad_prep_aerosol(1, nlev_rg, i_startidx_rad, i_endidx_rad,         &
               &                         opt_ptrs_lw, opt_ptrs_sw,                         &
               &                         ecrad_conf, ecrad_aerosol, lacc=.TRUE.)
           CASE DEFAULT
             CALL finish(routine, 'irad_aero not valid for ecRad')
         END SELECT
+        IF (ecrad_check_input) THEN
+          is_bad = ecrad_aerosol%out_of_physical_bounds(istartcol=i_startidx_rad, iendcol=i_endidx_rad, do_fix=.FALSE.)
+          IF (is_bad) CALL finish(routine,'ecrad_aerosol out_of_physical_bounds check triggered')
+        ENDIF
 
         ! Reset output values
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1)
@@ -1218,10 +1342,15 @@ CONTAINS
         END DO
         !$ACC END PARALLEL LOOP
 
+        IF (ecrad_check_input) THEN
+          CALL ecrad_check_input_fields('ecRadInputCheck::redgrid::upscaled',  &
+            &                           i_startidx_rad, i_endidx_rad, nlev_rg, &
+            &                           zrg_pres(jcs:jce,:,jb), zrg_pres_ifc(:,:,jb))
+        ENDIF
+
 !---------------------------------------------------------------------------------------
 ! Call the radiation scheme ecRad
 !---------------------------------------------------------------------------------------
-        !$ACC WAIT
         CALL ecrad(nproma_sub, nlev_rg,                     & !< Array and loop bounds (input)
           &        i_startidx_rad, i_endidx_rad,            & !< Array and loop bounds (input)
           &        ecrad_conf,                              & !< General ecRad configuration object (input)
@@ -1249,7 +1378,6 @@ CONTAINS
           &                     cosmu0mask, zsct, i_startidx_rad, i_endidx_rad, nlev_rgp1, lacc=.TRUE.)
 
         ! Add 3D contribution to diffuse radiation
-        !$ACC WAIT
         CALL add_3D_diffuse_rad(ecrad_flux, zrg_clc(jcs:jce,:,jb), zrg_pres(jcs:jce,:,jb), zrg_temp(jcs:jce,:,jb),    &
           &                     zrg_cosmu0            (jcs:jce,jb), zrg_fr_nir_sfc_diff  (jcs:jce,jb),                &
           &                     zrg_fr_vis_sfc_diff   (jcs:jce,jb), zrg_fr_par_sfc_diff  (jcs:jce,jb),                &
@@ -1261,7 +1389,6 @@ CONTAINS
 
 ! CLEANUP
     !$ACC WAIT
-    !$ACC END DATA
     CALL ecrad_single_level%deallocate()
     CALL ecrad_thermodynamics%deallocate()
     CALL ecrad_gas%deallocate()
@@ -1276,12 +1403,12 @@ CONTAINS
     DO jw = 1, ecrad_conf%n_bands_sw
       CALL opt_ptrs_sw(jw)%finalize()
     ENDDO
+    !$ACC EXIT DATA DELETE(opt_ptrs_lw, opt_ptrs_sw)
     DEALLOCATE( opt_ptrs_lw, opt_ptrs_sw )
     IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) DEALLOCATE( ptr_camsaermr )
 !$OMP END PARALLEL
 
 ! Downscale radiative fluxes from reduced radiation grid to full grid
-    !$ACC WAIT
     CALL downscale_rad_output(pt_patch%id, pt_par_patch%id,                                         &
       &  nlev_rg, zrg_aclcov, zrg_lwflxall, zrg_trsolall, zrg_trsol_clr_sfc, zrg_lwflx_clr_sfc,     &
       &  zrg_lwflx_up_sfc, zrg_trsol_up_toa, zrg_trsol_up_sfc, zrg_trsol_nir_sfc, zrg_trsol_vis_sfc,&
@@ -1300,10 +1427,9 @@ CONTAINS
       &  lacc=.TRUE. )
 
     !$ACC WAIT
-    !$ACC END DATA
     !$ACC EXIT DATA DELETE(zrg_cosmu0, zrg_tsfc, zrg_emis_rad, zrg_albvisdir) &
     !$ACC   DELETE(zrg_albnirdir, zrg_albvisdif, zrg_albnirdif, zrg_pres_ifc, zrg_o3) &
-    !$ACC   DELETE(zrg_aeq1, zrg_aeq2, zrg_aeq3, zrg_clc, zrg_aeq4, zrg_aeq5) &
+    !$ACC   DELETE(zrg_clc) &
     !$ACC   DELETE(zrg_tot_cld, zrg_pres, zrg_temp, zrg_trsolall, zrg_lwflxall) &
     !$ACC   DELETE(zrg_lwflx_up_sfc, zrg_trsol_up_toa, zrg_trsol_up_sfc) &
     !$ACC   DELETE(zrg_trsol_dn_sfc_diff, zrg_trsol_clr_sfc, zrg_aclcov) &
@@ -1314,8 +1440,8 @@ CONTAINS
     !$ACC   DELETE(zrg_swflx_up, zrg_swflx_dn, zrg_lwflx_up_clr, zrg_lwflx_dn_clr) &
     !$ACC   DELETE(zrg_swflx_up_clr, zrg_swflx_dn_clr)
     DEALLOCATE (zrg_cosmu0, zrg_tsfc, zrg_emis_rad, zrg_albvisdir, zrg_albnirdir, zrg_albvisdif,   &
-      &         zrg_albnirdif, zrg_pres_ifc, zrg_o3, zrg_aeq1, zrg_aeq2, zrg_aeq3, zrg_clc,        &
-      &         zrg_aeq4, zrg_aeq5, zrg_tot_cld, zrg_pres, zrg_temp, zrg_trsolall, zrg_lwflxall,   &
+      &         zrg_albnirdif, zrg_pres_ifc, zrg_o3, zrg_clc,                                      &
+      &         zrg_tot_cld, zrg_pres, zrg_temp, zrg_trsolall, zrg_lwflxall,                       &
       &         zrg_lwflx_up_sfc, zrg_trsol_up_toa, zrg_trsol_up_sfc, zrg_trsol_dn_sfc_diff,       &
       &         zrg_trsol_clr_sfc, zrg_aclcov, zrg_trsol_nir_sfc, zrg_trsol_vis_sfc,               &
       &         zrg_trsol_par_sfc, zrg_fr_nir_sfc_diff, zrg_fr_vis_sfc_diff,                       &
@@ -1335,6 +1461,18 @@ CONTAINS
     !$ACC EXIT DATA DELETE(zrg_extra_reff) IF(input_extra_reff%ntot>0)
     IF (input_extra_reff%ntot > 0 ) DEALLOCATE(zrg_extra_reff)
 
+    !$ACC EXIT DATA DETACH(ptr_aeq1) IF(ASSOCIATED(ptr_aeq1))
+    NULLIFY(ptr_aeq1)
+    !$ACC EXIT DATA DETACH(ptr_aeq2) IF(ASSOCIATED(ptr_aeq2))
+    NULLIFY(ptr_aeq2)
+    !$ACC EXIT DATA DETACH(ptr_aeq3) IF(ASSOCIATED(ptr_aeq3))
+    NULLIFY(ptr_aeq3)
+    !$ACC EXIT DATA DETACH(ptr_aeq4) IF(ASSOCIATED(ptr_aeq4))
+    NULLIFY(ptr_aeq4)
+    !$ACC EXIT DATA DETACH(ptr_aeq5) IF(ASSOCIATED(ptr_aeq5))
+    NULLIFY(ptr_aeq5)
+
+    !$ACC END DATA ! input_extra_flds, input_extra_2D, input_extra_reff
     CALL input_extra_flds%destruct()
     CALL input_extra_2D%destruct()
     CALL input_extra_reff%destruct()

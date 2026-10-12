@@ -1,10 +1,10 @@
 {
-  "start_time": "2023-07-07T10:37:51",
-  "finish_time": "2023-07-07T11:33:25",
-  "revision": "106a8c8e3959fde57ddd318cf18e98051bff7ec9",
-  "branch": "performance_test_opr_BB",
+  "start_time": "2026-01-09T09:53:31",
+  "finish_time": "2026-01-09T10:39:34",
+  "revision": "icon-2025.04-dwd-4.0-101-g0f2651dde61beafafbd94d333f4dd57a1b1d179e-dirty",
+  "branch": null,
   "n_tables": 1,
   "entries": [
-    55
+    11
   ]
 }

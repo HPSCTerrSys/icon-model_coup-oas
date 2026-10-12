@@ -288,7 +288,7 @@ SUBROUTINE sso (                                                       &
 
       CALL set_acc_host_or_device(lzacc, lacc)
 
-      !Declaration of GPU arrays  
+      !Declaration of GPU arrays
       !$ACC DATA PRESENT(pt, pu, pv, pfif, pfis, pph, ppf, psso_stdh, psso_gamma, sfcfric_fac) &
       !$ACC   PRESENT(psso_theta, psso_sigma, pdv_sso, pdu_sso, pustr_sso, pvstr_sso, pvdis_sso, sso_lat_mask) &
       !$ACC   CREATE(mcrit, mkcrith, mknu, mknu2, lo_sso, lo_sso_gwd) &
@@ -1313,7 +1313,7 @@ SUBROUTINE gw_profil(                                    &
         !$ACC LOOP GANG VECTOR
         DO j1=istart,iend
 !     constant stress up to top of blocking layer
-!     ===========================================  
+!     ===========================================
           IF(lo_sso(j1)) THEN
             IF(j3.GE.kknu2(j1)) THEN
               ptau(j1,j3)=ztau1(j1)

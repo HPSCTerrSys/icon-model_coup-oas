@@ -1,16 +1,15 @@
-! Contains the main stepping method_name the 3-dim hydrostatic ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the main stepping method_name the 3-dim hydrostatic ocean model.
 
 MODULE mo_ocean_testbed_vertical_diffusion
   !-------------------------------------------------------------------------
@@ -56,9 +55,9 @@ MODULE mo_ocean_testbed_vertical_diffusion
 
   PUBLIC :: test_tracer_diffusion_vertical_implicit
   PUBLIC :: test_velocity_diffusion_vert_implicit
-  
+
   CHARACTER(len=12)           :: debug_string = 'testbed     '  ! Output of module for 1 line debug
-  
+
   !-------------------------------------------------------------------------
   INTEGER :: vertical_diffusion_resIterations = 0
 CONTAINS
@@ -78,14 +77,14 @@ CONTAINS
 !     REAL(wp) :: residual(1:nproma,1:n_zlev,1:patch_3D%p_patch_2D(1)%alloc_cell_blocks)
     REAL(wp) :: start_mean_tracer, mean_tracer, mean_diff
     REAL(wp) :: random_diff(1:nproma,1:n_zlev+1,1:patch_3D%p_patch_2D(1)%alloc_cell_blocks)
-    
+
     ocean_tracer => ocean_state(1)%p_prog(nold(1))%tracer_collection%tracer(1)
     cells_in_domain => patch_3d%p_patch_2D(1)%cells%in_domain
 
     !---------------------------------------------------------------------
     ! ocean_tracer%concentration(:,:,:) = 0.0_wp
     ! ocean_tracer%concentration(:,17,:) = 1.0_wp
- 
+
     CALL dbg_print('tracer', ocean_tracer%concentration,  debug_string, 1, in_subset=cells_in_domain)
 
 !    CALL fill_tracer_x_height(patch_3d, ocean_state(1))
@@ -109,13 +108,13 @@ CONTAINS
         CALL RANDOM_NUMBER(random_diff)
         random_diff = physics_parameters%A_tracer_v(:,:,:, 1) + 0.0001 * (random_diff - 0.5_wp)
         CALL tracer_diffusion_vertical_implicit( patch_3D, ocean_tracer, &
-          & random_diff,  ocean_state(1)%p_prog(nnew(1))%h)  
+          & random_diff,  ocean_state(1)%p_prog(nnew(1))%h)
       ENDDO
 
       WRITE(message_text,'(i6,a)') outer_iter, 'x1000 iter, tracer'
       CALL dbg_print(message_text, ocean_tracer%concentration,  debug_string, 1, in_subset=cells_in_domain)
       CALL dbg_print("tracer diffu", random_diff,  debug_string, 1, in_subset=cells_in_domain)
-      
+
       mean_tracer = total_mean(values=ocean_tracer%concentration, weights=patch_3d%p_patch_1d(1)%prism_volume, &
         & in_subset=cells_in_domain)
       WRITE(message_text,'(f18.10,", ", 2(E22.16,", "))') mean_tracer, mean_tracer-start_mean_tracer, &
@@ -381,7 +380,7 @@ CONTAINS
       END DO ! jc = start_index, end_index
     END DO ! jb = cells_in_domain%start_block, cells_in_domain%end_block
 
-    ! CALL sync_patch_array(SYNC_C, patch_2D, diff_column)
+    ! CALL sync_patch_array(SYNC_C, patch_2D, diff_column, lacc=.FALSE.)
 
   END SUBROUTINE tracer_diffusion_vertical_implicit_r1
   !------------------------------------------------------------------------
@@ -593,9 +592,9 @@ CONTAINS
   END SUBROUTINE tracer_diffusion_vertical_implicit_r0
   !------------------------------------------------------------------------
 
-  
+
   !-------------------------------------------------------------------------
-  !!Subroutine tests for vertical diffusion accuracy 
+  !!Subroutine tests for vertical diffusion accuracy
   !>
   !!
   !! The result ocean_tracer%concetration is calculated on domain_cells
@@ -615,14 +614,14 @@ CONTAINS
     REAL(wp) :: column_tracer(1:n_zlev)
     REAL(wp) :: dt_inv, diagonal_product
     REAL(wp) :: dt_mod, mu ! Testing dt and viscosity
-    REAL(wp) :: H, eta                                                   ! Stretching parameters 
-    REAL(wp) :: inv_stretch_z_i(1:n_zlev), inv_stretch_z_m(1:n_zlev)     ! Stretching parameters 
-    REAL(wp) :: inv_cart_thick(1:n_zlev), inv_cart_center_dist(1:n_zlev) ! Stretching parameters 
+    REAL(wp) :: H, eta                                                   ! Stretching parameters
+    REAL(wp) :: inv_stretch_z_i(1:n_zlev), inv_stretch_z_m(1:n_zlev)     ! Stretching parameters
+    REAL(wp) :: inv_cart_thick(1:n_zlev), inv_cart_center_dist(1:n_zlev) ! Stretching parameters
     REAL(wp), POINTER   :: field_column(:,:,:)
     INTEGER  :: bottom_level
     INTEGER :: jc, jk, jb
     INTEGER :: start_index, end_index
-    INTEGER :: test_diff 
+    INTEGER :: test_diff
     TYPE(t_subset_range), POINTER :: cells_in_domain
     TYPE(t_patch), POINTER         :: patch_2D
     !-----------------------------------------------------------------------
@@ -632,15 +631,15 @@ CONTAINS
     !-----------------------------------------------------------------------
     dt_inv = 1.0_wp/dtime
 
-    test_diff =  4 
+    test_diff =  4
 
-    field_column(:, :, :) = 0.; 
-    field_column(:,11, :) = 1.; 
+    field_column(:, :, :) = 0.;
+    field_column(:,11, :) = 1.;
     DO jb = cells_in_domain%start_block, cells_in_domain%end_block
       CALL get_index_range(cells_in_domain, jb, start_index, end_index)
       DO jc = start_index, end_index
-!    DO jb = 1, 1 
-!      DO jc = 1, 1 
+!    DO jb = 1, 1
+!      DO jc = 1, 1
         bottom_level = patch_3D%p_patch_1D(1)%dolic_c(jc,jb)
 
         ! FIXME: Are the following assumptions true
@@ -650,9 +649,9 @@ CONTAINS
         IF (bottom_level < 1 ) CYCLE
 
         DO jk=1,bottom_level
-            inv_stretch_z_i(jk) = H/( H + eta ) 
+            inv_stretch_z_i(jk) = H/( H + eta )
             inv_stretch_z_m(jk) = H/( H + eta )   ! Identical for z* co-ords
-         
+
             ! FIXME: Are the following assumptions true
             inv_cart_thick(jk)       = 1.0_wp/patch_3d%p_patch_1d(1)%del_zlev_m(jk)
             inv_cart_center_dist(jk) = 1.0_wp/patch_3d%p_patch_1d(1)%del_zlev_i(jk)
@@ -664,14 +663,14 @@ CONTAINS
           inv_prisms_center_distance(jk) = patch_3d%p_patch_1d(1)%inv_prism_center_dist_c(jc,jk,jb)
         ENDDO
 
-        SELECT CASE (test_diff)  !  
+        SELECT CASE (test_diff)  !
 
         CASE (1)
         !------------------------------------
         ! Test d2q/dz2 = f
         ! If we just remove the dt_inv terms the resulting matrix is singular
         ! because of the boundary terms
-        ! Therefore the boundary terms are modified to retain coercivity 
+        ! Therefore the boundary terms are modified to retain coercivity
         !------------------------------------
             !------------------------------------
             ! Fill triangular matrix
@@ -690,16 +689,16 @@ CONTAINS
                 & inv_prism_thickness(bottom_level) * inv_prisms_center_distance(bottom_level)
             b(bottom_level) = - 2.*a(bottom_level)
             c(bottom_level) = 0.0_wp
-    
+
             DO jk = 1, bottom_level
-               column_tracer(jk) = field_column(jc,jk,jb)* A_v(jc,bottom_level,jb) 
+               column_tracer(jk) = field_column(jc,jk,jb)* A_v(jc,bottom_level,jb)
             ENDDO
 
         CASE (2)
         !------------------------------------
         ! Test d2q/dz2 = f/dt
         !------------------------------------
-            dt_mod = 1.0_wp*dt_inv 
+            dt_mod = 1.0_wp*dt_inv
             mu     = 0.01
 
             !------------------------------------
@@ -711,7 +710,7 @@ CONTAINS
             b(1) = dt_mod - c(1)
             DO jk = 2, bottom_level-1
               a(jk) = - A_v(jc,jk,jb)   * inv_prism_thickness(jk) * inv_prisms_center_distance(jk)
-              c(jk) = - A_v(jc,jk+1,jb) * inv_prism_thickness(jk) * inv_prisms_center_distance(jk+1) 
+              c(jk) = - A_v(jc,jk+1,jb) * inv_prism_thickness(jk) * inv_prisms_center_distance(jk+1)
 
               b(jk) = dt_mod - a(jk) - c(jk)
             END DO
@@ -720,15 +719,15 @@ CONTAINS
                 & inv_prism_thickness(bottom_level) * inv_prisms_center_distance(bottom_level)
             b(bottom_level) = dt_mod - a(bottom_level)
             c(bottom_level) = 0.0_wp
-    
+
             DO jk = 1, bottom_level
-               column_tracer(jk) = field_column(jc,jk,jb) * dt_mod 
+               column_tracer(jk) = field_column(jc,jk,jb) * dt_mod
             ENDDO
 
         CASE (3)
         !------------------------------------
         ! Test d2q/dz2 = f
-        ! With stretched grid 
+        ! With stretched grid
         !------------------------------------
             !------------------------------------
             ! Fill triangular matrix
@@ -751,17 +750,17 @@ CONTAINS
                 & * inv_cart_center_dist(bottom_level)
             b(bottom_level) = - 2.*a(bottom_level)
             c(bottom_level) = 0.0_wp
-    
+
             DO jk = 1, bottom_level
-               column_tracer(jk) = field_column(jc,jk,jb)* A_v(jc,bottom_level,jb)  
+               column_tracer(jk) = field_column(jc,jk,jb)* A_v(jc,bottom_level,jb)
             ENDDO
 
         CASE (4)
         !------------------------------------
         ! Test d2q/dz2 = f/dt
-        ! With stretched grid 
+        ! With stretched grid
         !------------------------------------
-            dt_mod = 1.0_wp*dt_inv 
+            dt_mod = 1.0_wp*dt_inv
             mu     = 0.001
 
             !------------------------------------
@@ -788,18 +787,18 @@ CONTAINS
 
             b(bottom_level) = dt_mod - a(bottom_level)
             c(bottom_level) = 0.0_wp
-    
+
             DO jk = 1, bottom_level
-               column_tracer(jk) = field_column(jc,jk,jb) * dt_mod 
+               column_tracer(jk) = field_column(jc,jk,jb) * dt_mod
             ENDDO
 
 
 
-        END SELECT 
+        END SELECT
 
         !------------------------------------
         ! The below algorithm is generic and not format specific
-        ! 
+        !
 
         !------------------------------------
         ! solver from lapack

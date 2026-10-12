@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -143,7 +143,7 @@ START_MODEL_function()
                 remaining_cores=$(( remaining_cores - split_ve_procs ))
 
                 echo "Component $cc: Allocate $split_ve_procs procs on the split VE $split_ve"
-                start_options="$start_options : -venode -node $split_ve -np $split_ve_procs -env OMP_NUM_THREADS ${OMP_NUM_THREADS:-1} ${_VE_bin}"
+                start_options="$start_options : -venode -node $split_ve -nnp $split_ve_procs -np $split_ve_procs -env OMP_NUM_THREADS ${OMP_NUM_THREADS:-1} ${_VE_bin}"
             fi
 
             local ves=$(( (ve_procs_left + procs_per_ve - 1)/procs_per_ve ))

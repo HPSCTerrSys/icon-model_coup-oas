@@ -1,0 +1,176 @@
+#! %{JOB.python3} #%# -*- mode: python -*- vi: set ft=python :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# %{EXP_ID}.%{JOB.id}
+#
+# %{mkexp_input}
+#
+# $Id: run/mkexp/defaults/DEFAULT.diff_test.tmpl 1 2025-07-17 13:49:15Z m221078 $
+#
+#%include ['mkexp/environments/'+ENVIRONMENT+'.tmpl', 'mkexp/environments/DEFAULT.tmpl'] ignore missing
+
+'''\
+Compare final files for two variants of the same experiment
+'''
+
+#%#
+#%#-# Generate list of all active file definitions
+#%#-
+#%- set extension_map = {1: 'grb', 2: 'grb', 3: 'nc', 4: 'nc', 5: 'nc', 6: 'nc'}
+#%- set format_map = {'grb': 'grib', 'nc': 'netcdf'}
+#%- set file_infos = []
+#%  for namelist in namelists:
+#%-   set namelist_data = namelists[namelist]
+#%-   set remove_list = namelist_data['.remove']|d([])|list
+#%    for group in namelist_data.sections if group|match('^output_nml'):
+#%-     set group_data = namelist_data[group]
+#%-     set hidden = (group_data['.hide'] is set) or (group in remove_list)
+#%      if not hidden:
+#%#-      # Get level types from "_varlist" names, discard all but the last
+#%-       set level_types = []
+#%        for name in group_data.scalars if name|match('^(.+)_varlist$')
+#%          do level_types.append(name|match('^(.+)_varlist$'))
+#%        endfor
+#%-       set levtype_l = level_types[-1]
+#%#-
+#%-       set filename_format = group_data.filename_format
+#%-       set output_filename = group_data.output_filename
+#%-       set extension = extension_map[group_data.filetype|d(4)|int]
+#%-       set filename_tmpl = filename_format|replace('<output_filename>', output_filename)|replace('<levtype_l>', levtype_l)+'.'+extension
+#%        do file_infos.append(filename_tmpl)
+#%      endif
+#%    endfor
+#%  endfor
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+
+#% include 'mkexp/defaults/mtime.tmpl'
+#% include 'mkexp/defaults/logging.tmpl'
+
+# Process command line options
+
+def check_date(arg):
+    try:
+        value = mtime.DateTime(arg)
+    except ValueError as ve:
+        raise argparse.ArgumentTypeError(ve)
+    return value
+
+command_line = argparse.ArgumentParser(description=__doc__.split('\n', 1)[0])
+command_line.add_argument('start_date', type=check_date, help=
+    'first date of period (YYYY-MM-DD... or YYYYMMDD...)')
+command_line.add_argument('-O', '--other-dir', action='append', default=[],
+    help='subdirectory to take files to compare from')
+command_line.add_argument('-V', '--version', action='version', version="""
+$Id: run/mkexp/defaults/DEFAULT.diff_test.tmpl 1 2025-07-17 13:49:15Z m221078 $
+%{VERSIONS_|join('\n')}
+""")
+args = command_line.parse_args()
+
+if len(args.other_dir) == 0:
+    logging.critical("need at least one other directory to compare")
+    sys.exit(100)
+
+# Determine time stamp format conversion
+
+weed = re.compile(r'[-:]|\.\d+$') # for re-formatting of date/time stamps
+def data_stamp(date):
+    return re.sub(weed, '', str(date.date))
+def run_stamp(date):
+    return re.sub(weed, '', str(date))
+def work_stamp(date):
+    return run_stamp(date) + 'Z'
+
+# Do time computations using mtime and get base directory to read files from
+#
+# Assume a single restart run
+
+IGNORED = args.start_date # TODO
+
+start_date = mtime.DateTime("%{INITIAL_DATE}")
+next_date = mtime.DateTime("%{FINAL_DATE}")
+offset = mtime.TimeDelta('-%{namelists.NAMELIST_atm.run_nml.modeltimestep}')
+end_date = next_date + offset
+
+input_dir = '%{jobs.run.subdir}'.format(
+    start_stamp=run_stamp(start_date), end_stamp=run_stamp(end_date))
+
+# Start processing
+
+start_stamp = data_stamp(start_date)
+end_stamp = data_stamp(end_date)
+
+logging.info('%{JOB.id} process started for %s, %s-%s',
+    args.other_dir[0], start_stamp, end_stamp)
+
+# Define file metadata
+
+file_infos = [
+#%  for info in file_infos:
+    '%{info}',
+#%  endfor
+]
+
+os.chdir('%{JOB.work_dir}')
+logging.info("current working directory is '%s'", os.getcwd())
+logging.info("comparing directories '%s' and '%s'", input_dir,
+    "','".join(args.other_dir))
+
+status = 0
+
+for info in file_infos:
+
+    # Expand timestamps in file names
+    file_name = info.replace('<datetime2>', work_stamp(next_date))
+
+    file_path = os.path.join(input_dir, file_name)
+    other_path = None
+    try:
+        for current_dir in args.other_dir:
+            current_path = os.path.join(current_dir, file_name)
+            if os.path.exists(current_path):
+                other_path = current_path
+                break
+    except IndexError:
+        pass
+    if not os.path.exists(file_path):
+        if other_path:
+            logging.error("%s: first file is missing", file_name)
+            status += 1
+        else:
+            logging.warning("%s: both files are missing", file_name)
+    elif not other_path:
+        logging.error("%s: second file is missing", file_name)
+        status += 1
+    else:
+        command = f"%{JOB.cdo} -s diffn {file_path} {other_path}"
+        try:
+            subprocess.run(command, shell=True).check_returncode()
+            logging.info("%s: ok", file_name)
+        except subprocess.CalledProcessError:
+            logging.debug("'%s'", " ".join(command))
+            logging.error("%s: files differ", file_name)
+            status += 1
+
+if status:
+    sys.exit(status)
+
+# Finish processing
+
+logging.info('%{JOB.id} process finished for %s, %s-%s',
+    args.other_dir[0], start_stamp, end_stamp)
+
+#% include 'mkexp/defaults/trigger.tmpl'

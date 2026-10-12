@@ -1,0 +1,200 @@
+#!/bin/ksh
+
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+
+%manual
+  -------------------------------------------------
+  MODEL
+  -------------------------------------------------
+
+  This script is part of the ICON SMS suite
+  Initial implementation: F. Prill,   DWD (2012-05-07)
+  Conversion to ecFlow:   M. Koehler, DWD (2022-11)
+
+  Corresponding author:
+    Martin Koehler, DWD, mailto:martin.koehler@dwd.de
+
+  Task objectives:
+  - model run
+%end
+
+# include the header file for ICON jobs
+%include <head_hpc_model.h>
+
+# -------------------------------------------------
+
+stage=run
+
+arch='gnu'   # 'gnu' or 'intel'
+
+echo "MODEL"
+
+set -x
+module load python3
+
+
+## -------------------------------------------------
+# test IFS or ICON initial conditions for current month
+
+YYYYMM=`echo %YMD% | cut -c 1-6`
+MONTHS=`echo %MONTHS% | sed 's/_/ /g'`
+set -A MON_IFS_ICON `echo %MON_IFS_ICON% | sed 's/_/ /g'`
+iii=0
+for month in ${MONTHS[*]} ; do
+  if [[ ${YYYYMM} -eq ${month} ]]
+  then
+    echo "Calculate this month!"
+    ecflow_client --event=time_domonth
+    if [[ ${MON_IFS_ICON[${iii}]} = 'ifs' ]]
+    then
+      INI_IFS_ICON=1
+    else
+      INI_IFS_ICON=2
+    fi
+  fi
+  iii=`expr ${iii} + 1`
+done
+
+
+#-----------------------------------------------------------------------------
+
+# calculate and format starting date of simulation: ECF_DATE-  2 days, time: UTC 00
+INITIME=%YMD%%INIHOUR%
+
+if [[ %NENS% -gt 0 ]]
+  then DIRENS=/%NMEM%
+  else DIRENS=''
+fi
+if [[ %NENS% -gt 0 ]]
+  then TXTENS=_%NMEM%
+  else TXTENS=''
+fi
+
+# directory where the case setup is stored
+SETDIRTMP=%SCTEMP%/%SUITE%/%EXPNUM%/output/setup${DIRENS}
+# ifsdir for IFS initial condition
+ifsdir=%SCTEMP%/%SUITE%/%EXPNUM%/input/%YMD%%INIHOUR%${DIRENS}
+# base directory for external data
+inputdir=%INPUTDIR%
+# icon code directory
+sccodedir=%SCCODEDIR%
+# base directory for time dependent external data SST ansd CI data
+sstice_dir=%SCTEMP%/%SUITE%/%EXPNUM%/input/sstice
+# base directory for model output
+outbasedir=%SCTEMP%/%SUITE%/%EXPNUM%/output
+# base name for output and namelist files
+basename=%USER%_%EXPNUM%_%YMD%%INIHOUR%${TXTENS}
+
+res=%RES%
+resrad=%RESRAD%
+ndays=%NDAYS%
+dtime=%DTIME%
+cpuspertask=%CPUSPERTASK%
+nproma=%NPROMA%
+
+# -------------------------------------------------
+
+export OMP_STACKSIZE=128M
+#export OMP_PLACES=threads
+
+if [[ "${arch}" = "gnu" ]] ; then
+
+  echo "Loading GNU configuration - same as used for compilation"
+  module load prgenv/gnu
+  module load gcc/11.2.0
+  module load openmpi/4.1.1.1
+  module load hdf5/1.10.6
+  module load netcdf4/4.7.4
+  module load intel-mkl/19.0.5
+  module load ecmwf-toolbox/2021.08.3.0
+  module load aec/1.0.4
+
+else
+
+  echo "Loading intel configuration - same as used for compilation"
+  module load prgenv/intel
+  module load intel/2021.4.0
+  module load intel-mpi/2021.4.0
+# module load hpcx-openmpi        # output problems!
+  module load hdf5/1.10.6
+  module load netcdf4/4.7.4
+  module load ecmwf-toolbox/2021.12.0.0
+  module load aec/1.0.4
+  module load intel-mkl/19.0.5
+
+#  module load prgenv/intel
+#  module load hpcx-openmpi
+#  module load hdf5
+#  module load netcdf4
+#  module load ecmwf-toolbox
+#  module load aec
+#  module load intel-mkl
+
+fi
+
+module list
+
+ulimit -s unlimited
+
+# -------------------------------------------------
+
+# set the dump/restore flags according to the different phases.
+if [[ "${stage}" = "dump" ]] ; then
+    ldump_states=.TRUE.
+    lrestore_states=.FALSE.
+fi
+if [[ "${stage}" = "run" ]] ; then
+    ldump_states=.FALSE.
+    lrestore_states=.TRUE.
+fi
+if [[ "${stage}" = "total" ]] ; then
+    ldump_states=.FALSE.
+    lrestore_states=.FALSE.
+fi
+
+# include experiment parameters
+
+if [[ ${INI_IFS_ICON} -eq 1 ]] ; then   #IFS initial conditions
+  . ${SETDIRTMP}/case_setup_ifs
+else
+  . ${SETDIRTMP}/case_setup_icon
+fi
+
+
+echo "job::start"
+date
+export USE_SIGNAL_HANDLING=yes
+
+
+debug=0
+if [[ ${debug} = 1 ]] ; then                  # optional totalview debugging (max tasks: 256! better 64)
+  export DISPLAY=ecaccess.ecmwf.int:1631.0    # open nxclient on cca and get DISPLAY
+  totalview -searchpath='/perm/ms/de/dei2/icon-nwp-dev/src/atm_phy_edmf/,/perm/ms/de/dei2/icon-nwp-dev/src/lnd_phy_nwp/,/perm/ms/de/dei2/icon-nwp-dev/src/atm_phy_nwp/' \
+    poe -a ./icon.exe
+else
+
+  export ECCODES_DEFINITION_PATH=/perm/dwg/grib_api_def/ec-2.25.0/definitions.edzw:/perm/dwg/grib_api_def/ec-2.25.0/definitions
+# export OMP_NUM_THREADS=1
+  export HDF5_DISABLE_VERSION_CHECK=1
+
+  srun --cpus-per-task=%CPUSPERTASK% ${outbasedir}/bin/icon
+
+fi
+
+echo "job::end"
+date
+
+
+# model run completed -------------------------
+ecflow_client --event=model_complete
+
+
+# ---------------------------------------------
+
+# include the "tail" file for remote jobs
+%include <tail.h>

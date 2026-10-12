@@ -1,14 +1,15 @@
-#!/bin/ksh 
+#!/bin/ksh
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 function set_cluster {
  ##
@@ -16,9 +17,9 @@ function set_cluster {
  HPC=`(hostname || uname -n) 2>/dev/null | sed 1q`
  case x"$HPC" in #(
    xuc1*) :
-     echo "...UC1 at KIT"; CENTER="IMK" 
+     echo "...UC1 at KIT"; CENTER="IMK"
      input_folder="/lsdf/kit/imk/projects/icon/TESTSUITE"
-     FILETYPE="4" 
+     FILETYPE="4"
      output_folder="${WORK}/TESTSUITE_OUTPUT"
      icon_data_poolFolder=/lsdf/kit/imk/projects/icon/INPUT/AMIP/amip_input
      aer_opt="${icon_data_poolFolder}"
@@ -26,7 +27,7 @@ function set_cluster {
    xhk*) :
      echo "...HoreKa at KIT"; CENTER="IMK"
      input_folder="/lsdf/kit/imk/projects/icon/TESTSUITE"
-     FILETYPE="5" 
+     FILETYPE="5"
      ws=$(ws_list -s)
      if [[ "${ws}" == "" ]]; then
          echo "No workspaces found! Help how to create one: https://www.nhr.kit.edu/userdocs/horeka/filesystems/#create-workspace"
@@ -36,15 +37,16 @@ function set_cluster {
      fi
      WORK=/hkfs/work/workspace/scratch/$(whoami)-$ws_id
      output_folder="${WORK}/TESTSUITE_OUTPUT"
-     icon_data_poolFolder=/lsdf/kit/imk/projects/icon/INPUT/AMIP/amip_input
-     aer_opt="${icon_data_poolFolder}"
+     ECCODES_VERSION=2.32.0-2
+     ECCODES_BASE=/hkfs/home/dataset/datasets/icon/bacy_data/definitions/${ECCODES_VERSION}
+     ECCODES_DEFINITION_PATH=${ECCODES_BASE}/definitions.edzw:${ECCODES_BASE}/definitions
      ;;
    xxce*) :
      echo "...XCE at DWD"; CENTER="DWD"
          . /opt/modules/3.2.10.3/init/ksh
          input_folder="${SCRATCH}/TESTSUITE_INPUT/"
-         output_folder="${WORK}/TESTSUITE_OUTPUT" 
-	 FILETYPE="4" 
+         output_folder="${WORK}/TESTSUITE_OUTPUT"
+	 FILETYPE="4"
 	 if [[ ":${PE_ENV}" != ':CRAY' ]] ; then
           module unload libdwd grib_api
           module unload cray-netcdf netcdf perftools stat
@@ -59,14 +61,14 @@ function set_cluster {
        module load libdwd
        module load grib_api
        module list
-       ##       
+       ##
        ;;
    xlce*) :
      echo "...LCE at DWD"; echo "  ERROR: Testsuite has to be run and compiled on XCE !!!", exit 201 ;; #(
    xjuwels*) :
-     echo "...juwels at FZJ"; CENTER="FZJ" 
+     echo "...juwels at FZJ"; CENTER="FZJ"
      icon_data_poolFolder=/gpfs/homea/hka21/hka211/INPUT/AMIP/atm_amip_base/
-	 FILETYPE="4" 
+	 FILETYPE="4"
      output_folder="${WORK}/TESTSUITE_OUTPUT"
 	 ;; #(
    xlevante*|xl[1-5]*)
@@ -75,6 +77,9 @@ function set_cluster {
      FILETYPE="4"
      output_folder="${HOME/home/scratch}/TESTSUITE_OUTPUT"
      aer_opt="/pool/data/ICON/grids/public/mpim/independent"
+     LIBECCODES_PATH=$(/usr/bin/ldd ./../../bin/icon | grep libeccodes.so | awk '{print $3}')
+     ECCODES_BASE=$(strings $LIBECCODES_PATH | grep '/share/eccodes/definitions' | head -n1)
+     ECCODES_DEFINITION_PATH=${ECCODES_BASE}.mpim:${ECCODES_BASE}.edzw:${ECCODES_BASE}.ecmf_wmo
    ;;
    *) :
      echo "...unknown HPC" ; exit 202 ;; #(
@@ -93,7 +98,7 @@ function read_setup {
 #     { FS=" "; $0=$0; script[n]=$1; experiment[n]=$2;
 #		 print n $1 script[n];
 #
-#     }' 'setup_file.txt' 
+#     }' 'setup_file.txt'
 #awk -F '{ print $1, $2}' 'setup_file.txt' | read var1 var2
 #echo $var1 ' ' $var2
 i=0
@@ -164,9 +169,6 @@ cat > $output_script << EOF
 #!/bin/bash
 CENTER=$CENTER
 basedir=$ICON_FOLDER
-icon_data_poolFolder=$icon_data_poolFolder
-aer_opt=$aer_opt
-EXPNAME=atm_amip_test_kit
 OUTDIR=$complete_output_folder
 ICONFOLDER=$ICON_FOLDER
 ARTFOLDER=$ART_FOLDER
@@ -180,7 +182,6 @@ restart=.False.
 read_restart_namelists=.False.
 
 
-
 # Remove folder ${EXP} from OUTDIR for postprocessing output
 OUTDIR_PREFIX=`dirname \${OUTDIR}`
 
@@ -192,8 +193,13 @@ fi
 
 cd \$OUTDIR
 
-
 EOF
+
+# Conditionally add ECCODES export for selected experiments
+case "$EXPERIMENT" in ALLAERO*|DUST*|VOLAERO*)
+   echo "export ECCODES_DEFINITION_PATH=$ECCODES_DEFINITION_PATH" >> "$output_script"
+        ;;
+esac
 
 }
 function create_footer
@@ -201,13 +207,13 @@ function create_footer
 output_script=$ICON_FOLDER/run/checksuite.icon-kit/runscripts/$1.run
 
 cat >> $output_script << EOF
-	
+
 cp $ICON_FOLDER/bin/icon ./icon.exe
 EOF
  case x"$HPC" in #(
       xjuwels*)
 cat >> $output_script << EOF
-	
+
 cat > job_ICON << ENDFILE
 #!/bin/bash -x
 #SBATCH --nodes=4
@@ -235,7 +241,7 @@ EOF
 
    xhk*)
 cat >> $output_script << EOF
-	   
+
 cat > job_ICON << ENDFILE
 #!/bin/bash -x
 #SBATCH --$3
@@ -244,8 +250,7 @@ cat > job_ICON << ENDFILE
 #SBATCH --partition=$4
 #SBATCH -C LSDF
 
-
-$5 
+$5
 
 mpirun --bind-to core --map-by core --report-bindings ./icon.exe
 
@@ -291,7 +296,7 @@ ENDFILEDWD
       # submit the job
       qsub icon.job
 
-      ##       
+      ##
 EOF
 ;;
    xlevante*|xl[1-5]*)
@@ -333,9 +338,9 @@ srun -l --cpu_bind=cores --distribution=plane=64 \
         --propagate=STACK,CORE ./icon.exe
 
 ENDFILE
-                 
+
 chmod +x job_ICON
-sbatch job_ICON  
+sbatch job_ICON
 
 EOF
 ;;
@@ -356,7 +361,7 @@ function create_lart_loop_start
 {
 output_script=$ICON_FOLDER/run/checksuite.icon-kit/runscripts/$1.run
 cat >> $output_script << EOF
-	
+
 for iter in 1 2 ; do
 
 
@@ -398,8 +403,8 @@ EOF
 function check_action
 {
 output_script=runscripts/$2.run
-	
-	case x"$1" in 
+
+	case x"$1" in
 		xrun*)
           ./$output_script
 		  ;;
@@ -424,4 +429,3 @@ output="module load ${use_load_modules}"
 #done
 
  }
-

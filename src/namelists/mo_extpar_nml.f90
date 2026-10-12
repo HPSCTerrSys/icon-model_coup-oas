@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -93,7 +93,7 @@ CONTAINS
     extpar_varnames_map_file = " "
 
     !------------------------------------------------------------------
-    ! If this is a resumed integration, overwrite the defaults above 
+    ! If this is a resumed integration, overwrite the defaults above
     ! by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -133,8 +133,8 @@ CONTAINS
     !----------------------------------------------------
     ! Fill the configuration state
     !----------------------------------------------------
-    config_itopo              = itopo 
-    config_fac_smooth_topo    = fac_smooth_topo 
+    config_itopo              = itopo
+    config_fac_smooth_topo    = fac_smooth_topo
     config_n_iter_smooth_topo = n_iter_smooth_topo
     config_hgtdiff_max_smooth_topo = hgtdiff_max_smooth_topo
     config_itype_lwemiss      = itype_lwemiss

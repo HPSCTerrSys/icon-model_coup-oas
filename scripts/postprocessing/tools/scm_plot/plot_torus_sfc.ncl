@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -9,7 +9,7 @@
 ; ------------------------------------------
 
 ;----------------------------------------------------------------------
-; plot_torus_sfc.ncl 
+; plot_torus_sfc.ncl
 ;----------------------------------------------------------------------
 ; Plot torus time series.
 ;
@@ -19,7 +19,7 @@
 ;    varName=\"${var}\" expnum=\"${title}\"
 ;
 ; Required Parameters:
-; iFile         : input file 
+; iFile         : input file
 ; varName       : name of the variable to plot
 ;
 ; Optional Parameter:
@@ -31,7 +31,7 @@
 ;----------------------------------------------------------------------
 
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"  
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
 begin
@@ -49,7 +49,7 @@ begin
 ;----------------------------------------------------------------------
 ; read data
 ;----------------------------------------------------------------------
-  
+
   File  = addfile( iFile, "r" )
   times = File->time                 ; time      [time steps]
   var   = File->$varName$
@@ -66,8 +66,8 @@ begin
   res = True
   res@gsnCenterString        = expnum
   res@gsnCenterStringOrthogonalPosF = 0.08
-  res@gsnLeftString          = varlongname 
-  res@tiXAxisString          = "Time [h]" 
+  res@gsnLeftString          = varlongname
+  res@tiXAxisString          = "Time [h]"
   res@tiYAxisString          = "[" +  varunit + "]"
   res@tiXAxisFontHeightF     = 0.018
   res@tiYAxisFontHeightF     = 0.018
@@ -81,7 +81,7 @@ begin
   res@xyLineThicknessF       = 3.0
   res@xyLineColor            = "blue"       ; "red","green","blue","yellow"
 
-  wks = gsn_open_wks(oType,oFile) 
+  wks = gsn_open_wks(oType,oFile)
 
 ;---------------------------------------------------------------------
 ; Make the plot

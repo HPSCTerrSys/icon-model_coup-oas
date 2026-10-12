@@ -1,15 +1,15 @@
-! A CLASS that bundles all a patch's metadata together which IS relevant for restart purposes.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! A CLASS that bundles all a patch's metadata together which IS relevant for restart purposes.
 
 MODULE mo_restart_patch_description
   USE mo_communication, ONLY: t_comm_gather_pattern
@@ -24,9 +24,9 @@ MODULE mo_restart_patch_description
                   & my_process_is_mpi_workroot, p_comm_work_2_restart
   USE mo_packed_message, ONLY: t_PackedMessage, kPackOp, kUnpackOp
 #ifndef __NO_ICON_UPATMO__
-  USE mo_upatmo_flowevent_utils, ONLY: t_upatmoRestartAttributes, upatmoRestartAttributesAssign, upatmoRestartAttributesPack
+  USE mo_upatmo_interface, ONLY: t_upatmoRestartAttributes, upatmoRestartAttributesAssign, upatmoRestartAttributesPack
 #endif
-  USE mo_restart_util, ONLY: restartBcastRoot 
+  USE mo_restart_util, ONLY: restartBcastRoot
 
   IMPLICIT NONE
   PRIVATE
@@ -111,7 +111,7 @@ CONTAINS
 
   SUBROUTINE restartPatchDescription_update(me, patch, opt_pvct, opt_t_elapsed_phy, &
                                            &opt_ndyn_substeps, opt_jstep_adv_marchuk_order, opt_depth_lnd, &
-                                           &opt_nlev_snow, opt_nice_class, opt_ndom, & 
+                                           &opt_nlev_snow, opt_nice_class, opt_ndom, &
 #ifndef __NO_ICON_UPATMO__
                                            &opt_upatmo_restart_atts,                                    &
 #endif

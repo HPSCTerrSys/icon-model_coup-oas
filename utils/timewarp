@@ -3,16 +3,21 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ---------------------------------------------------------------
 
-from fileinput import input
 from datetime import datetime
+from fileinput import input
 
-for line in input():
-    print(datetime.now().strftime("%FT%T.%f")[:-3], line,
-          sep=': ', end='', flush=True)
+for line in input(mode="rb"):
+    print(
+        datetime.now().strftime("%FT%T.%f")[:-3],
+        line.decode(errors="replace"),
+        sep=": ",
+        end="",
+        flush=True,
+    )

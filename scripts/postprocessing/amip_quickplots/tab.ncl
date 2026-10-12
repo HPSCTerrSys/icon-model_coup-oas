@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -32,7 +32,7 @@ print(varnumbers)
  Vcode  = new((/maxnumber/),integer)
  Vindex = -1
  meanV  = 0.
-    
+
  strs = asciiread(varfil,-1,"string")
  delim = " "
  nfields = str_fields_count(strs(0), delim)   ; Count the fields separated
@@ -40,16 +40,16 @@ print(varnumbers)
 
  field = 1
  Varname = str_get_field(strs, field, delim)
-; print(Varname)              
+; print(Varname)
  field = 2
  Code = stringtointeger(str_get_field(strs, field, delim))
-; print(Code)              
+; print(Code)
  field = 3
  Factor = stringtofloat(str_get_field(strs, field, delim))
-; print(Factor)              
+; print(Factor)
  field = 4
  Offset = stringtofloat(str_get_field(strs, field, delim))
-; print(Offset)              
+; print(Offset)
 
   GridInfoFileName = systemfunc("echo $GrdInfoFile")
 ;  GridInfoFileName ="/pool/data/ICON/grids/private/r2b4_amip/r2b4_amip.nc"
@@ -64,7 +64,7 @@ print(varnumbers)
   cArea = GridInfoFile->cell_area   ; area of grid cell
 
 
-  File    = addfile (datfil , "r")  
+  File    = addfile (datfil , "r")
 
   i=-1
   do k=0,varnumbers-1
@@ -106,8 +106,8 @@ print(NoVar)
 
 print (sprintf("%9.4f",(Vmean(:NoVar)))+"  "+sprinti("%3.0i",(Vcode(:NoVar)))+"  "+(Vname(:NoVar)))
 Vstring(:NoVar)= (sprintf("%9.4f",(Vmean(:NoVar)))+"  "+sprinti("%3.0i",(Vcode(:NoVar)))+"  "+(Vname(:NoVar)))
-asciiwrite ("global.txt" , Vstring(:NoVar) )  
+asciiwrite ("global.txt" , Vstring(:NoVar) )
 
 exit
-  
+
 end

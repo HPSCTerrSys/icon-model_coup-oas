@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -146,7 +146,7 @@
 
 MODULE mo_pp_scheduler
 
-  USE mo_kind,                    ONLY: wp
+  USE mo_kind,                    ONLY: wp, dp, sp
   USE mo_exception,               ONLY: message, message_text, finish
   USE mo_impl_constants,          ONLY: SUCCESS, HINTP_TYPE_NONE, max_var_ml,               &
     &                                   max_var_pl, max_var_hl, max_var_il, TASK_NONE,      &
@@ -159,6 +159,7 @@ MODULE mo_pp_scheduler
     &                                   TASK_COMPUTE_TWATER, TASK_COMPUTE_Q_SEDIM,          &
     &                                   TASK_COMPUTE_DBZ850, TASK_COMPUTE_DBZCMAX,          &
     &                                   TASK_COMPUTE_DBZLMX_LOW,                            &
+    &                                   TASK_COMPUTE_DMH,                                   &
     &                                   TASK_COMPUTE_CEILING, TASK_COMPUTE_VIS,             &
     &                                   TASK_COMPUTE_WSHEAR_U, TASK_COMPUTE_WSHEAR_V,       &
     &                                   TASK_COMPUTE_LAPSERATE, TASK_COMPUTE_MCONV,         &
@@ -200,7 +201,7 @@ MODULE mo_pp_scheduler
   USE mo_zaxis_type,              ONLY: ZA_ALTITUDE, ZA_PRESSURE, ZA_ISENTROPIC, zaxisTypeList
   USE mo_pp_tasks,                ONLY: pp_task_lonlat, pp_task_sync, pp_task_ipzlev_setup, &
     &                                   pp_task_ipzlev, pp_task_compute_field,              &
-    &                                   pp_task_intp_msl, pp_task_edge2cell,                & 
+    &                                   pp_task_intp_msl, pp_task_edge2cell,                &
     &                                   t_simulation_status, t_job_queue, job_queue,        &
     &                                   HIGH_PRIORITY,                                      &
     &                                   DEFAULT_PRIORITY0, DEFAULT_PRIORITY1,               &
@@ -247,7 +248,7 @@ CONTAINS
 
     if (dbg_level > 5)  CALL message(routine, "Enter")
     !-------------------------------------------------------------
-    !--- setup of optional diagnostic fields updated by the 
+    !--- setup of optional diagnostic fields updated by the
     !    post-processing scheduler
 
     !- loop over model level variables
@@ -265,9 +266,10 @@ CONTAINS
           &   TASK_COMPUTE_HTOP_SC, TASK_COMPUTE_TWATER,  TASK_COMPUTE_Q_SEDIM, &
           &   TASK_COMPUTE_DBZ850,  TASK_COMPUTE_DBZCMAX, TASK_COMPUTE_SMI,     &
           &   TASK_COMPUTE_DBZLMX_LOW, TASK_COMPUTE_SDI2, TASK_COMPUTE_VIS,     &
+          &   TASK_COMPUTE_DMH,                                                 &
           &   TASK_COMPUTE_INVERSION, TASK_COMPUTE_LAPSERATE, TASK_COMPUTE_MCONV )
           CALL pp_scheduler_register(name=elem%info%name, jg=jg, p_out_var=elem, &
-            &    l_init_prm_diag=l_init_prm_diag, job_type=elem%info%l_pp_scheduler_task ) 
+            &    l_init_prm_diag=l_init_prm_diag, job_type=elem%info%l_pp_scheduler_task )
         CASE (TASK_INTP_MSL)
           ! mean sea level pressure
           ! find the standard pressure field:
@@ -317,7 +319,7 @@ CONTAINS
     TYPE(t_hor_interp_meta)  :: hor_interp_meta
 
     IF (dbg_level > 5)  CALL message(routine, "Enter")
-    
+
     ! initialize "new_element" pointer (cf. NEC compiler bugs DWD0121
     ! and DWD0123 for hybrid parallelization)
     new_elem => NULL()
@@ -330,7 +332,7 @@ CONTAINS
       jg = vl_iter%cur%p%patch_id
       SELECT CASE(lev_type)
       CASE (level_type_ml)
-        dst_varlist => p_nh_opt_diag(jg)%opt_diag_list         
+        dst_varlist => p_nh_opt_diag(jg)%opt_diag_list
         prefix = "m"
       CASE (level_type_pl)
         dst_varlist => p_nh_opt_diag(jg)%opt_diag_list_p
@@ -345,7 +347,7 @@ CONTAINS
       ! Do not inspect lists which are disabled for output
       IF (.NOT.vl_iter%cur%p%loutput) CYCLE
       ! loop only over model level variables
-      IF (vl_iter%cur%p%vlevel_type /= lev_type) CYCLE         
+      IF (vl_iter%cur%p%vlevel_type /= lev_type) CYCLE
       ! loop only over variables of where domain was requested
       IF (.NOT. lonlat_grids%list(ll_grid_id)%l_dom(jg)) CYCLE
 
@@ -406,7 +408,7 @@ CONTAINS
         task%data_input%p_nh_state          => NULL()
         task%data_input%prm_diag            => NULL()
         task%data_input%nh_pzlev_config     => NULL()
-        task%data_input%jg                  =  jg           
+        task%data_input%jg                  =  jg
         task%data_input%p_patch             => p_patch(jg)
         task%data_input%p_nh_opt_diag       => p_nh_opt_diag(jg)
         task%data_input%p_int_state         => p_int_state(jg)
@@ -435,7 +437,8 @@ CONTAINS
     TYPE (t_output_name_list), POINTER    :: p_onl
     TYPE(t_job_queue),         POINTER    :: task
     TYPE(t_var_list_ptr),      POINTER    :: p_opt_diag_list
-    REAL(wp), POINTER                     :: p_opt_field_r3d(:,:,:)
+    REAL(dp), POINTER                     :: p_opt_field_r3d(:,:,:)
+    REAL(sp), POINTER                     :: p_opt_field_s3d(:,:,:)
     INTEGER,  POINTER                     :: p_opt_field_i3d(:,:,:)
     TYPE(t_var), POINTER :: elem, new_elem
     CHARACTER(LEN=vname_len),  POINTER    :: varlist(:)
@@ -594,10 +597,10 @@ CONTAINS
           IF (TRIM(vname) /= tolower(get_var_name(info))) CYCLE VAR_LOOP
           IF (info%hgrid /= GRID_UNSTRUCTURED_CELL)  CYCLE VAR_LOOP
           ! Found it, add it to the variable list of optional
-          ! diagnostics       
+          ! diagnostics
           SELECT CASE(ll_varlevs(ivar))
           CASE (level_type_ml)
-            p_opt_diag_list => p_nh_opt_diag(jg)%opt_diag_list         
+            p_opt_diag_list => p_nh_opt_diag(jg)%opt_diag_list
             prefix = "m"
           CASE (level_type_pl)
             p_opt_diag_list => p_nh_opt_diag(jg)%opt_diag_list_p
@@ -668,7 +671,7 @@ CONTAINS
             END IF
             ! SINGLE PRECISION FLOAT fields
             IF (ASSOCIATED(elem%s_ptr)) THEN
-              CALL add_var( p_opt_diag_list, LONLAT_PREFIX//info%name, p_opt_field_r3d,          &
+              CALL add_var( p_opt_diag_list, LONLAT_PREFIX//info%name, p_opt_field_s3d,          &
                 &           GRID_REGULAR_LONLAT, info%vgrid, info%cf, info%grib2, &
                 &           ldims=var_shape, lrestart=.FALSE.,                    &
                 &           tracer_info=info_dyn%tracer,                          &
@@ -678,7 +681,7 @@ CONTAINS
                 &           vert_interp=info%vert_interp,                         &
                 &           post_op=info%post_op,                                 &
                 &           lmiss=info%lmiss,                                     &
-                &           missval=REAL(info%missval%sval,wp),                   &
+                &           missval=info%missval%sval,                            &
                 &           var_class=info%var_class,                             &
                 &           tlev_source=info%tlev_source, lopenacc=.TRUE.)
             END IF
@@ -689,14 +692,14 @@ CONTAINS
           CASE DEFAULT
             CALL finish(routine, "Unsupported grid type!")
           END SELECT
-          ! If actions have been defined for the source field, we define those actions 
+          ! If actions have been defined for the source field, we define those actions
           ! for the target field (lat-lon-field) as well.
-          ! Strictly speaking this is only necessary for the RESET action, but for the 
+          ! Strictly speaking this is only necessary for the RESET action, but for the
           ! the time being, we copy all (currently only the RESET action exists).
-          ! By this, we assure that for statistically processed fields the  start and end 
+          ! By this, we assure that for statistically processed fields the  start and end
           ! interval in the GRIB message is correct.
-          ! The drawback is, that the reset action is performed for lon-lat fields as well, 
-          ! even though it is not necessary. 
+          ! The drawback is, that the reset action is performed for lon-lat fields as well,
+          ! even though it is not necessary.
           IF (info%action_list%n_actions > 0 ) new_elem%info%action_list = info%action_list
           !-- create and add post-processing task
           task => pp_task_insert(DEFAULT_PRIORITY4)
@@ -707,7 +710,7 @@ CONTAINS
           task%data_input%p_nh_state      => NULL()
           task%data_input%prm_diag        => NULL()
           task%data_input%nh_pzlev_config => NULL()
-          task%data_input%jg              =  jg           
+          task%data_input%jg              =  jg
           task%data_input%p_patch         => p_patch(jg)
           task%data_input%p_nh_opt_diag   => p_nh_opt_diag(jg)
           task%data_input%p_int_state     => p_int_state(jg)
@@ -735,7 +738,7 @@ CONTAINS
       IF (dbg_level > 8) CALL message(routine, task%job_name)
       task%job_type = TASK_INTP_SYNC
       task%activity = new_activity_status(l_output_step=.TRUE.)
-      task%activity%check_dom_active = .FALSE. ! i.e. no domain-wise (in-)activity 
+      task%activity%check_dom_active = .FALSE. ! i.e. no domain-wise (in-)activity
       task%activity%i_timelevel      = ALL_TIMELEVELS
     END IF
     IF (dbg_level > 5)  CALL message(routine, "Done")
@@ -776,11 +779,11 @@ CONTAINS
         nml_varlist => p_onl%il_varlist
       END SELECT
 
-      IF (dbg_level >= 21)  WRITE (0,*) nml_varlist 
+      IF (dbg_level >= 21)  WRITE (0,*) nml_varlist
 
       l_jg_active = (jg == p_phys_patch(p_onl%dom)%logical_id)
-      
-      ! Selection criteria: 
+
+      ! Selection criteria:
       ! - domain is requested
       ! - "Z"/"P"/"I"-level interpolation is requested
       IF (l_jg_active .AND. (nml_varlist(1) /= ' ')) THEN
@@ -817,7 +820,7 @@ CONTAINS
     ! local variables
     CHARACTER(*), PARAMETER :: routine = modname//"::copy_variable"
     TYPE(t_var), POINTER :: e
-     
+
     ! find existing variable
     e => find_list_element(src_vl, TRIM(vname))
     IF (.NOT.ASSOCIATED(e)) CALL finish(routine, "Variable not found!")
@@ -877,7 +880,7 @@ CONTAINS
       ! Do not inspect lists which are disabled for output
       IF (.NOT.vl_iter%cur%p%loutput) CYCLE
       ! loop only over model level variables
-      IF (vl_iter%cur%p%vlevel_type /= level_type_ml) CYCLE         
+      IF (vl_iter%cur%p%vlevel_type /= level_type_ml) CYCLE
       ! loop only over variables of current domain
       IF (vl_iter%cur%p%patch_id /= jg) CYCLE
       DO iv = 1, vl_iter%cur%p%nvars
@@ -908,8 +911,8 @@ CONTAINS
         task%activity                    =  new_activity_status(l_output_step=.TRUE.)
         task%activity%check_dom_active   =  .TRUE.
         task%activity%i_timelevel        =  tl
-        task%data_input%jg               =  jg 
-        task%data_input%p_patch          => p_patch(jg)          
+        task%data_input%jg               =  jg
+        task%data_input%p_patch          => p_patch(jg)
         task%data_input%p_int_state      => p_int_state(jg)
         task%data_input%p_nh_state       => p_nh_state(jg)
         task%data_input%nh_pzlev_config  => nh_pzlev_config(jg)
@@ -917,7 +920,7 @@ CONTAINS
         IF (l_init_prm_diag) THEN
           task%data_input%prm_diag       => prm_diag(jg)
         ELSE
-          task%data_input%prm_diag       => NULL() 
+          task%data_input%prm_diag       => NULL()
         END IF
         task%data_input%var  => elem      ! set input variable
         task%data_output%var => vn_elem   ! set output variable
@@ -947,7 +950,7 @@ CONTAINS
         task%data_input%p_nh_state      => NULL()
         task%data_input%prm_diag        => NULL()
         task%data_input%nh_pzlev_config => NULL()
-        task%data_input%jg              =  jg           
+        task%data_input%jg              =  jg
         task%data_input%p_patch         => p_patch(jg)
         task%data_input%p_nh_opt_diag   => p_nh_opt_diag(jg)
         task%data_input%p_int_state     => p_int_state(jg)
@@ -967,7 +970,7 @@ CONTAINS
   !> Setup of i/p/z-level interpolation tasks.
   !  - collects lists of variables for i/p/z interpolation
   !  - adds variable fields where interpolation results will be stored
-  !  - creates "post-processing tasks", i.e. entries in a list 
+  !  - creates "post-processing tasks", i.e. entries in a list
   !    which is regularly traversed during the model run.
   !
   ! See SUBROUTINE pp_scheduler_init for further details.
@@ -1027,9 +1030,9 @@ CONTAINS
     shape3d(1) = nproma
     DOM_LOOP : DO jg=1,ndom
       IF (dbg_level > 8)  CALL message(routine, "DOM "//int2string(jg))
-      !-- check if any output name list requests p- or z- or i-level 
+      !-- check if any output name list requests p- or z- or i-level
       !-- interpolation for this domain, collect the list of variables
-      ! loop in search of pressure-level interpolation      
+      ! loop in search of pressure-level interpolation
       CALL collect_output_variables(jg, level_type_pl, max_var_pl, &                      ! in
         &                           nvars_pl, l_intp_p, pl_varlist, l_uv_vertical_intp_p) ! out
       ! loop in search of height-level interpolation
@@ -1111,14 +1114,14 @@ CONTAINS
 
         task => pp_task_insert(HIGH_PRIORITY)
         task%data_input%p_int_state      => p_int_state(jg)
-        task%data_input%jg               =  jg           
+        task%data_input%jg               =  jg
         task%data_input%p_patch          => p_patch(jg)
         task%data_input%p_nh_state       => p_nh_state(jg)
         task%data_input%p_nh_opt_diag    => p_nh_opt_diag(jg)
         IF (l_init_prm_diag) THEN
           task%data_input%prm_diag       => prm_diag(jg)
         ELSE
-          task%data_input%prm_diag       => NULL() 
+          task%data_input%prm_diag       => NULL()
         END IF
         task%data_input%nh_pzlev_config  => nh_pzlev_config(jg)
         task%activity     = new_activity_status(l_output_step=.TRUE.)
@@ -1139,10 +1142,10 @@ CONTAINS
       IF (dbg_level > 8) CALL message(routine, task%job_name)
       task%job_type     = TASK_FINALIZE_IPZ
       task%data_input%p_int_state      => NULL()
-      task%data_input%jg               =  jg           
+      task%data_input%jg               =  jg
       task%data_input%p_patch          => p_patch(jg)
       task%data_input%p_nh_state       => p_nh_state(jg)
-      task%data_input%prm_diag         => NULL() 
+      task%data_input%prm_diag         => NULL()
       task%data_input%nh_pzlev_config  => nh_pzlev_config(jg)
 
       ! remove already defined variables from list of requested output
@@ -1207,16 +1210,16 @@ CONTAINS
           IF (dbg_level > 8) &
             CALL message(routine, TRIM(prefix)//": Looking for input var '"//TRIM(varlist(ivar))//"'")
           found = .FALSE.
-        
+
           !- loop over model level variables
           ! Note that there may be several variables with different time levels,
-          ! we just add unconditionally all 
+          ! we just add unconditionally all
           ! TODO(HB): this is n(2) complexity... mabe try to overcome...
           DO WHILE(vl_iter%next())
             ! Do not inspect lists which are disabled for output
             IF (.NOT. vl_iter%cur%p%loutput) CYCLE
             ! loop only over model level variables
-            IF (vl_iter%cur%p%vlevel_type /= level_type_ml) CYCLE         
+            IF (vl_iter%cur%p%vlevel_type /= level_type_ml) CYCLE
             ! loop only over variables of current domain
             IF (vl_iter%cur%p%patch_id /= jg) CYCLE
 
@@ -1267,8 +1270,8 @@ CONTAINS
               task%activity                    =  new_activity_status(l_output_step=.TRUE.)
               task%activity%check_dom_active   =  .TRUE.
               task%activity%i_timelevel        =  get_var_timelevel(info%name)
-              task%data_input%jg               =  jg 
-              task%data_input%p_patch          => p_patch(jg)          
+              task%data_input%jg               =  jg
+              task%data_input%p_patch          => p_patch(jg)
               task%data_input%p_int_state      => p_int_state(jg)
               task%data_input%p_nh_state       => p_nh_state(jg)
               task%data_input%nh_pzlev_config  => nh_pzlev_config(jg)
@@ -1296,7 +1299,7 @@ CONTAINS
   END SUBROUTINE pp_scheduler_init_ipz
 
   !---------------------------------------------------------------
-  !> Register a new post-processing task for computing additional 
+  !> Register a new post-processing task for computing additional
   !  diagnostic fields (not for interpolation).
   !
   !  The new task will be added to the dynamic list of post-processing
@@ -1322,7 +1325,7 @@ CONTAINS
     LOGICAL                    :: l_accumulation_step
     INTEGER                    :: priority
     TYPE(t_job_queue), POINTER :: task
-    
+
     ! set default values
     l_output_step = .TRUE.
     l_accumulation_step = .TRUE.
@@ -1337,7 +1340,7 @@ CONTAINS
     IF (PRESENT(opt_p_in_var)) THEN
       task%data_input%var            => opt_p_in_var
     END IF
-    task%data_input%jg               =  jg           
+    task%data_input%jg               =  jg
     task%data_input%p_nh_state       => p_nh_state(jg)
     task%data_input%p_patch          => p_patch(jg)
     task%data_input%nh_pzlev_config  => nh_pzlev_config(jg)
@@ -1396,7 +1399,7 @@ CONTAINS
 
         ! perform horizontal interpolation:
       CASE ( TASK_INTP_HOR_LONLAT )
-        CALL pp_task_lonlat(ptr_task)
+        CALL pp_task_lonlat(ptr_task, lacc=.TRUE.)
 
         ! perform vertical interpolation:
       CASE ( TASK_INTP_VER_PLEV, TASK_INTP_VER_ZLEV, TASK_INTP_VER_ILEV )
@@ -1404,7 +1407,7 @@ CONTAINS
 
         ! synchronize halo regions:
       CASE ( TASK_INTP_SYNC )
-        CALL pp_task_sync(simulation_status)
+        CALL pp_task_sync(simulation_status,lacc=.TRUE.)
 
         ! compute mean sea level pressure:
       CASE ( TASK_INTP_MSL )
@@ -1415,15 +1418,16 @@ CONTAINS
         &    TASK_COMPUTE_LPI, TASK_COMPUTE_CEILING, TASK_COMPUTE_HBAS_SC, TASK_COMPUTE_HTOP_SC,   &
         &    TASK_COMPUTE_TWATER, TASK_COMPUTE_Q_SEDIM, TASK_COMPUTE_DBZ850, TASK_COMPUTE_DBZCMAX, &
         &    TASK_COMPUTE_DBZLMX_LOW, TASK_COMPUTE_SMI, TASK_COMPUTE_WSHEAR_U,                     &
+        &    TASK_COMPUTE_DMH,                                                                     &
         &    TASK_COMPUTE_WSHEAR_V, TASK_COMPUTE_SRH, TASK_COMPUTE_LAPSERATE, TASK_COMPUTE_VIS,    &
         &    TASK_COMPUTE_INVERSION, TASK_COMPUTE_MCONV)
         IF (timers_level >= 5) CALL timer_start(timer_opt_diag_atmo)
-        CALL pp_task_compute_field(ptr_task)
+        CALL pp_task_compute_field(ptr_task, lacc=.TRUE.)
         IF (timers_level >= 5) CALL timer_stop(timer_opt_diag_atmo)
 
         ! vector reconstruction on cell centers:
       CASE ( TASK_INTP_EDGE2CELL )
-        CALL pp_task_edge2cell(ptr_task)
+        CALL pp_task_edge2cell(ptr_task, lacc=.TRUE.)
 
       CASE DEFAULT
         CALL finish(routine, "Unknown post-processing job.")
@@ -1443,7 +1447,7 @@ CONTAINS
     CHARACTER(*), PARAMETER :: routine = modname//"::pp_scheduler_finalize"
     INTEGER                    :: ierrstat
     TYPE(t_job_queue), POINTER :: tmp
-    
+
     CALL message(routine, "")
     ! destroy linked list
     DO
@@ -1454,7 +1458,7 @@ CONTAINS
       IF (ierrstat /= SUCCESS) CALL finish (routine, 'DEALLOCATE failed.')
       job_queue => tmp
     END DO
-    
+
   END SUBROUTINE pp_scheduler_finalize
 
 
@@ -1462,7 +1466,7 @@ CONTAINS
 
   !---------------------------------------------------------------
   !> @return .TRUE. if given post-processing task is in active state.
-  ! 
+  !
   ! Tasks may be inactive, e.g. outside the output intervals.
   FUNCTION pp_task_is_active(ptr_task, sim_status)
     LOGICAL :: pp_task_is_active
@@ -1496,7 +1500,7 @@ CONTAINS
          CASE DEFAULT
             CALL finish(routine, 'Unsupported tlev_source')
          END SELECT
-         
+
          ! check, if current task matches the variable time level (TL1,
          ! TL2, ...) of the simulation status:
          IF  (ptr_task%activity%i_timelevel /= timelevel) THEN
@@ -1505,7 +1509,7 @@ CONTAINS
       END IF
     END IF
 
-  END FUNCTION pp_task_is_active  
+  END FUNCTION pp_task_is_active
 
 
   !---------------------------------------------------------------
@@ -1519,7 +1523,7 @@ CONTAINS
     INTEGER                    :: ierrstat
 
     IF (dbg_level > 5)  CALL message(routine, "Inserting pp task")
-    
+
     ! find the correct position in list:
     tmp     => job_queue
     nb_left => NULL()
@@ -1550,7 +1554,7 @@ CONTAINS
   !------------------------------------------------------------------------------------------------
   !
   ! Quasi-constructor for "t_simulation_status" variables
-  ! 
+  !
   ! Fills data structure with default values (unless set otherwise).
   FUNCTION new_simulation_status(l_output_step, l_first_step, l_last_step, l_accumulation_step,        &
     &                            l_dom_active, i_timelevel_dyn, i_timelevel_phy)  &
@@ -1595,7 +1599,7 @@ CONTAINS
   !------------------------------------------------------------------------------------------------
   !
   ! Quasi-constructor for "t_simulation_status" variables
-  ! 
+  !
   ! Fills data structure with default values (unless set otherwise).
   FUNCTION new_activity_status(l_output_step, l_first_step, l_last_step, l_accumulation_step, &
     &                          check_dom_active, i_timelevel)  &

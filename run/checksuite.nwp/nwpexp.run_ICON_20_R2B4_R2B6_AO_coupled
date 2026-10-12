@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -17,8 +17,8 @@
 # This basic coupled test case computes a few days up to years of a
 # global weather forecast (ICON-NWP) coupled to a global ocean (ICON-O).
 # The system is set up on the R2B4 atmospheric grid with reduced radiation
-# grid and the R2B6 ocean grid with zstar vertical coordinates.  
-# The land-sea-mask is interpolated from the ocean grid.  
+# grid and the R2B6 ocean grid with zstar vertical coordinates.
+# The land-sea-mask is interpolated from the ocean grid.
 # It is initialized at 1979-01-01.
 # The purpose is the technical testing of the coupled setup.
 #
@@ -36,7 +36,7 @@ ulimit -c 0
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -112,7 +112,7 @@ mpi_total_procs=${PPN}
 # default: half of requested nodes for ocean
 
 #((mpi_oce_procs=mpi_total_procs/2))
-mpi_oce_procs=24    # optimal: 8/16 for NE=4/8 dt=600/dt_rad=3600, 12 dt=450/dt_rad=3600, 8 dt=360/dt_rad=1800
+mpi_oce_procs=15    # optimum for this setup and non-multiple of 8 to test START_MODEL_function.
 ((mpi_atm_procs=PPN-mpi_oce_procs))
 
 echo $mpi_total_procs ${mpi_atm_procs} ${mpi_oce_procs}
@@ -183,8 +183,8 @@ ocean_refinement="R02B06"
 
 # namelist files
 # --------------
-atm_namelist=NAMELIST_${EXPNAME}_atm
-oce_namelist=NAMELIST_${EXPNAME}_ocean
+atmo_namelist=NAMELIST_${EXPNAME}_atm
+ocean_namelist=NAMELIST_${EXPNAME}_ocean
 
 #--------------------------------------------------------------------------------------------------
 #
@@ -267,7 +267,7 @@ output_oce_dbg=yes
 #--------------------------------------------------------------------------------------------------
 
 if [ $mpi_total_procs -lt 2 ] ; then
-  check_error 0 "This setup requires at least 2 mpi processes. Exit"
+  check_error 1 "This setup requires at least 2 mpi processes. Exit"
 fi
 
 # I.1 Split the number of total procs and assign to each component
@@ -282,14 +282,14 @@ oce_inc_rank=1
 # I.2 Fill model list
 # -------------------
 #
-namelist_list[0]="$atm_namelist"
+namelist_list[0]="$atmo_namelist"
 modelname_list[0]="atmo"
 modeltype_list[0]=1
 minrank_list[0]=$atm_min_rank
 maxrank_list[0]=$atm_max_rank
 incrank_list[0]=$atm_inc_rank
 #
-namelist_list[1]="$oce_namelist"
+namelist_list[1]="$ocean_namelist"
 modelname_list[1]="ocean"
 modeltype_list[1]=2
 minrank_list[1]=$oce_min_rank
@@ -313,19 +313,22 @@ oce_lag=1
 #
 cat > coupling_${EXPNAME}.yaml << EOF
 definitions:
+  components:
+    atm: &atm
+      component: ${modelname_list[0]}
+      grid: icon_atmos_grid
+    oce: &oce
+      component: ${modelname_list[1]}
+      grid: icon_ocean_grid
   atm2oce: &atm2oce
-    src_component: ${modelname_list[0]}
-    src_grid: icon_atmos_grid
-    tgt_component: ${modelname_list[1]}
-    tgt_grid: icon_ocean_grid
+    source: *atm
+    target: *oce
     time_reduction: average
     src_lag: ${atm_lag}
     tgt_lag: ${oce_lag}
   oce2atm: &oce2atm
-    src_component: ${modelname_list[1]}
-    src_grid: icon_ocean_grid
-    tgt_component: ${modelname_list[0]}
-    tgt_grid: icon_atmos_grid
+    source: *oce
+    target: *atm
     time_reduction: average
     src_lag: ${oce_lag}
     tgt_lag: ${atm_lag}
@@ -370,10 +373,6 @@ coupling:
     coupling_period: ${couplingTimeStep}
     field: [sea_surface_temperature,
             ocean_sea_ice_bundle]
-  - <<: [ *oce2atm, *conserv_interp_stack ]
-    coupling_period: ${longcouplingTimeStep}
-    field: [eastward_sea_water_velocity,
-            northward_sea_water_velocity]
 EOF
 
 #
@@ -414,8 +413,8 @@ INDIR=${DATAROOT}                   # /hpc/uwork/mkoehler/run-icon/coupled
 add_link_file $INDIR/new-extpar-withfract12-35.nc           extpar_atmo_${atmos_refinement}_DOM01.nc  # Stephan
 
 
-#add_link_file $INDIR/nn-0013-ifs2icon_R2B04.nc       ifs2icon_R2B04_DOM01.nc 
-#add_link_file $INDIR/ifs2icon_0013_r0002_20140601.nc ifs2icon_R2B04_DOM01.nc 
+#add_link_file $INDIR/nn-0013-ifs2icon_R2B04.nc       ifs2icon_R2B04_DOM01.nc
+#add_link_file $INDIR/ifs2icon_0013_r0002_20140601.nc ifs2icon_R2B04_DOM01.nc
 #add_link_file $INDIR/ifs2icon_1979010100_R02B04_G.nc  ifs2icon_R2B04_DOM01.nc
 add_link_file $INDIR/ifs2icon_2021010100_0012_R02B04_G.nc  ifs2icon_R2B04_DOM01.nc
 
@@ -429,7 +428,7 @@ ecRad_data_path=${basedir}'/externals/ecrad/data'
 datadir="${icon_data_poolFolder}/Checksuite_data/ICON-seamless"
 add_link_file ${datadir}/bc_aeropt_kinne_lw_b16_coa.nc      bc_aeropt_kinne_lw_b16_coa.nc
 add_link_file ${datadir}/bc_aeropt_kinne_sw_b14_coa.nc      bc_aeropt_kinne_sw_b14_coa.nc
-# 
+#
 # use time-dependent Kinne fine-mode aerosol  (irad_aero=13):
 add_link_file ${datadir}/bc_aeropt_kinne_sw_b14_fin_1978.nc bc_aeropt_kinne_sw_b14_fin_1978.nc
 add_link_file ${datadir}/bc_aeropt_kinne_sw_b14_fin_1979.nc bc_aeropt_kinne_sw_b14_fin_1979.nc
@@ -442,7 +441,7 @@ add_link_file ${datadir}/bc_aeropt_kinne_sw_b14_fin_1979.nc bc_aeropt_kinne_sw_b
 # If the model runs with mpi_procs=1, then this script exits without error:
 if [[ ${mpi_total_procs} = 1 ]]; then
   echo "This test must not be started if mpi_procs=1 --> exit test without error"
-  check_error 0 "exp.nat_jww_nwp_mpiomp"
+  check_error 1 "exp.nat_jww_nwp_mpiomp"
   exit 0
 fi
 
@@ -463,7 +462,7 @@ fi
 # For a complete list see Namelist_overview and Namelist_overview.pdf
 #
 
-cat > ${atm_namelist} << EOF
+cat > ${atmo_namelist} << EOF
 !
 &coupling_mode_nml
  coupled_to_ocean        = .TRUE.
@@ -498,7 +497,7 @@ cat > ${atm_namelist} << EOF
  iforcing                = ${iforcing}          !
  ntracer                 =  5                   ! number of tracers - default 0
  ltestcase               = .false.              ! initialize with real data
- ltimer                  = .true.               ! 
+ ltimer                  = .true.               !
  timers_level            = 20                   ! 10 useful and cheap
  msg_level               = 10                   ! detailed report during integration (7 or 13, > 10 expensive)
  output                  = 'nml'
@@ -547,7 +546,7 @@ cat > ${atm_namelist} << EOF
 &nwp_tuning_nml
  itune_albedo            = 0                         ! somewhat reduced albedo (w.r.t. MODIS data) over Sahara in order to reduce cold bias
  tune_zceff_min          = 0.025                     ! ** default value to be used for R3B7; use 0.025 for R2B6 in order to get similar temperature biases in upper troposphere **
- tune_gkdrag             = 0.075                     ! R2B6: 0.075  
+ tune_gkdrag             = 0.075                     ! R2B6: 0.075
  tune_gkwake             = 1.5                       ! R2B6: 1.5
  tune_gfrcrit            = 0.425                     ! R2B6: 0.425
  tune_dust_abs           = 0.
@@ -576,8 +575,8 @@ cat > ${atm_namelist} << EOF
  frcsmot                 = 0.2                       ! these 2 switches together apply vertical smoothing of the TKE source terms
  imode_frcsmot           = 2                         ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  itype_sher              = 3                         ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects
- ltkeshs                 = .true.                   
- a_hshr                  = 2.0	                    
+ ltkeshs                 = .true.
+ a_hshr                  = 2.0
  icldm_turb              = 1                         ! 2: Gauss clouds for turbulence    1: grid scale clouds
  icldm_tran              = 2                         ! 2: Gauss clouds for surface layer 1: grid scale clouds
 /
@@ -600,38 +599,38 @@ rbf_scale_mode_ll        = 2
  itime_scheme            = 4
  exner_expol             = 0.333
  vwind_offctr            = 0.2                       ! 0.2 for R2B6 and higher resolution, 0.3 for lower resolution
- damp_height             = 44000.                    
+ damp_height             = 44000.
  rayleigh_coeff          = 0.5
  divdamp_order           = 24                        ! 2 ass, 24 fc
  divdamp_type            = 32                        ! optional: 2 assimilation cycle, 32 forecast
  divdamp_fac             = 0.004                     ! 0.004 for R2B6; recommendation for R3B7: 0.003
- divdamp_trans_start     = 12500                     
- divdamp_trans_end       = 17500                     
- igradp_method           = 3	                     
- l_zdiffu_t              = .true.                    
- thslp_zdiffu            = 0.02	                     
- thhgtd_zdiffu           = 125.	                     
- htop_moist_proc         = 22500.                    
- hbot_qvsubstep          = 16000.                    
-/				                     
-&sleve_nml			                     
+ divdamp_trans_start     = 12500
+ divdamp_trans_end       = 17500
+ igradp_method           = 3
+ l_zdiffu_t              = .true.
+ thslp_zdiffu            = 0.02
+ thhgtd_zdiffu           = 125.
+ htop_moist_proc         = 22500.
+ hbot_qvsubstep          = 16000.
+/
+&sleve_nml
  min_lay_thckn           = 20.                       ! lowest level thickness (between half-levels)
  max_lay_thckn           = 400.                      ! maximum layer thickness below htop_thcknlimit
- htop_thcknlimit         = 14000.                    
- top_height              = 75000.                    
- stretch_fac             = 0.9	                     
- decay_scale_1           = 4000.                     
- decay_scale_2           = 2500.                     
- decay_exp               = 1.2	                     
- flat_height             = 16000.                    
+ htop_thcknlimit         = 14000.
+ top_height              = 75000.
+ stretch_fac             = 0.9
+ decay_scale_1           = 4000.
+ decay_scale_2           = 2500.
+ decay_exp               = 1.2
+ flat_height             = 16000.
 /
-&io_nml				                     
+&io_nml
  lflux_avg               = .FALSE.                   ! false: accumulated fluxes
  itype_pres_msl          = 5                         ! (1) 3: IFS-type extrapolation
  itype_rh                = 1                         ! (1) 2: mixed phase (water and ice)
 !dt_checkpoint           = 2592000.                  ! 30 days
- inextra_3d              = 2                         ! 3D extra variables 
- inextra_2d              = 10                        ! 2D extra variables 
+ inextra_3d              = 2                         ! 3D extra variables
+ inextra_2d              = 10                        ! 2D extra variables
 !lnetcdf_flt64_output    = .TRUE.                    ! 64 bit output in all files
 !lkeep_in_sync           = .TRUE.                    ! sync after each timestep
 /
@@ -659,12 +658,12 @@ rbf_scale_mode_ll        = 2
                            'pres_sfc', 'tot_prec', 't_seasfc', 'fr_seaice', 'frac_t_9',
                            'fr_land', 'fr_lake','frac_t_1', 'accsod_t'
                          ! 'thb_s','thb_t','sob_s','sob_t','shfl_s','lhfl_s',
-                         ! 'lsm_switch', 'lsm_ctr_c', 
+                         ! 'lsm_switch', 'lsm_ctr_c',
                          ! 'extra_2d1','extra_2d2','extra_2d3','extra_2d4','extra_2d5',
                          ! 'extra_2d6','extra_2d7','extra_2d8','extra_2d9','extra_2d10'
                          ! 't_so', 'extra_3d1',
  pl_varlist              = 'temp', 'u'
- p_levels                = 20000, 50000, 85000 
+ p_levels                = 20000, 50000, 85000
 !m_levels                = "5...(nlev+1)"
 /
 !--------------------------------------------------------------------------------
@@ -688,7 +687,7 @@ rbf_scale_mode_ll        = 2
                            'accumfl_s','accvmfl_s','tot_prec',
                            'lsm_switch', 'lsm_ctr_c', 'accsod_t'
  pl_varlist              = 'temp', 'u'
- p_levels                = 20000, 50000, 85000 
+ p_levels                = 20000, 50000, 85000
 /
 !--------------------------------------------------------------------------------
 ! native time-mean output
@@ -736,7 +735,7 @@ rbf_scale_mode_ll        = 2
  cwimax_ml               = 5.e-4
  c_soil                  = 1.25
  c_soil_urb              = 0.5
- sstice_mode             = 1                         ! 1 for coupled 
+ sstice_mode             = 1                         ! 1 for coupled
  lprog_albsi             = .true.
  hice_min                = 0.05                      ! default of nwp sea-ice model
  hice_max                = 4.8                       ! corresponding to 40% seaice_limit in icon-o
@@ -749,8 +748,8 @@ rbf_scale_mode_ll        = 2
  isolrad                 = 1                ! 1: Coddington Scaling correction (default NWP)
  albedo_type             = 2                ! Modis albedo
                          ! values for 2012    values for 1850 CE
- vmr_co2                 = 390.e-06         ! 284.3e-06 
- vmr_ch4                 = 1800.e-09        ! 808.2e-09  
+ vmr_co2                 = 390.e-06         ! 284.3e-06
+ vmr_ch4                 = 1800.e-09        ! 808.2e-09
  vmr_n2o                 = 322.0e-09        ! 273.0e-09
  vmr_o2                  = 0.20946
  vmr_cfc11               = 240.e-12         ! 0.0
@@ -759,7 +758,7 @@ rbf_scale_mode_ll        = 2
  direct_albedo_water     = 3
  albedo_whitecap         = 1
  ecRad_llw_cloud_scat    = .true.
- ecRad_data_path         = '${ecRad_data_path}' 
+ ecRad_data_path         = '${ecRad_data_path}'
  ecrad_isolver           = ${radiation_ecrad_isolver}
  ! Solver version. 2: McICA with OpenACC, 0: McICA
 /
@@ -819,7 +818,7 @@ fi
 
 ##LEV=L64
 
-if [ ${LEV} == L40 ] ; then 
+if [ ${LEV} == L40 ] ; then
 
     n_zlev=40
     dzlev_m="12.,10.,10.,10.,10.,10.,13.,15.,20.,25.,30.,35.,40.,45.,50.,55.,60.,70.,80.,90.,
@@ -891,14 +890,14 @@ elif [ ${LEV} == L128SMT ] ; then
     levidx_2000m=96
 
     minVerticalLevels=12
-    
+
 fi
 
 #-----------------------------------------------------------------------------
 # HAMOCC
 #
 
-use_hamocc=no  
+use_hamocc=no
 ocean_vertical_levels=$n_zlev
 
 if [  "x${use_hamocc}"  = "xyes" ]; then
@@ -928,7 +927,7 @@ fi
 # ocean namelist
 # --------------
 
-cat > ${oce_namelist} << EOF
+cat > ${ocean_namelist} << EOF
 !
 &coupling_mode_nml
   coupled_to_atmo            = .TRUE.
@@ -959,7 +958,7 @@ cat > ${oce_namelist} << EOF
 EOF
 
 # output of fixed geometry
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O fixed geometry
 !--------------------------------------------------------------------------------
@@ -983,7 +982,7 @@ cat >> ${oce_namelist} << EOF
 EOF
 
 if [[ "$output_oce_def" == "yes" ]]; then
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O 3D Output
 !--------------------------------------------------------------------------------
@@ -1005,7 +1004,7 @@ EOF
 fi
 
 if [[ "$output_oce_ice" == "yes" ]]; then
-  cat >> ${oce_namelist} <<EOF
+  cat >> ${ocean_namelist} <<EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O ice and snow output
 !--------------------------------------------------------------------------------
@@ -1028,7 +1027,7 @@ fi
 
 if [[ "$output_oce_grib" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   filetype                   = 2
   output_filename            = "${EXPNAME}_oce_grb"
@@ -1041,13 +1040,14 @@ if [[ "$output_oce_grib" == "yes" ]]; then
                                                                 ! 2: climate mode (absolute t-axis)
   include_last               = .FALSE.
   output_grid                = .TRUE.
-  ml_varlist                 = 'zos','to_k','so','u','v','hi','hs','conc','column_thick_c','rho','rhopot','delhi','ice_u','ice_v'
+  ml_varlist                 = 'zos','SWPT','so','u','v','hi','hs','conc','column_thick_c','rho','rhopot','delhi','ice_u','ice_v',
+                               'normal_velocity','stretch_c','mld','mlotst'
 /
 EOF
 fi
 
 if [[ "$output_oce_mon" == "yes" ]]; then
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O Output monitoring
 !--------------------------------------------------------------------------------
@@ -1069,7 +1069,7 @@ EOF
 fi
 
 if [[ "$output_oce_moc" == "yes" ]]; then
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O AMOC
 !--------------------------------------------------------------------------------
@@ -1091,7 +1091,7 @@ EOF
 fi
 
 if [[ "$output_oce_dbg" == "yes" ]]; then
-  cat >> ${oce_namelist} <<EOF
+  cat >> ${ocean_namelist} <<EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O Output debug
 !--------------------------------------------------------------------------------
@@ -1121,7 +1121,7 @@ fi
 
 ##############################################################
 
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 &dbg_index_nml
   idbg_mxmn                  = 4                                ! initialize MIN/MAX  debug output
   idbg_val                   = 0                                ! initialize one cell debug output
@@ -1145,13 +1145,13 @@ cat >> ${oce_namelist} << EOF
 !
   l_edge_based                               = .FALSE.     ! edge- or cell-based mimetic discretization
 ! l_partial_cells                            = .FALSE.     ! partial bottom cells=TRUE: local varying bottom depth
-  select_solver                              = 4           ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                              = 4           ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                                            ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance              = .TRUE.
   solver_tolerance                           = 1.0E-9      ! 1e-10 in omip-YVF - enlarged to 1e-9 (LL opt)
   select_lhs                             = ${select_lhs}   ! 1=operator based (default) 2=matrix based - 2=error?
   l_lhs_direct                           = ${l_lhs_direct} ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
-  solver_FirstGuess                          = 2           ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  solver_FirstGuess                          = 2           ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
 ! solver_max_iter_per_restart                = 14
 ! solver_max_restart_iterations              = 100         ! outer (restart solver)
@@ -1185,7 +1185,7 @@ cat >> ${oce_namelist} << EOF
 !
   HarmonicViscosity_scaling                  = 1
   HarmonicViscosity_reference                = 0.0         ! [m2/s] constant horizontal viscosity coefficient for velocity
-  HarmonicViscosity_background               = 0.0  
+  HarmonicViscosity_background               = 0.0
 !
   TracerHorizontalDiffusion_scaling          = 1
   Temperature_HorizontalDiffusion_Background = 0.0
@@ -1258,7 +1258,7 @@ cat >> ${oce_namelist} << EOF
   lhamocc                                    = ${lhamocc}
   lbgcadv                                    = ${lbgcadv}
   eos_type                                   = 2           ! 1=linear EOS,2=(nonlinear, from MPIOM)
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                                = 1           ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
   i_ice_dyn                                  = 1           ! 1/0=switch on/off AWI ice dynamics
@@ -1276,7 +1276,7 @@ cat >> ${oce_namelist} << EOF
 /
 EOF
 
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 &ocean_forcing_nml
   iforc_oce                                  = 14          ! ocean forcing: 14 from coupling via YAC
   type_surfRelax_Temp                        = -1          ! -1: use net surface heat flux from atmosphere
@@ -1298,7 +1298,7 @@ EOF
 #
 if [[ "$initialiseOcean" == "fromRestart" ]] || [[ "$initialiseOcean" == "fromRestartwithHamocc" ]]; then
   #
-  cat >> ${oce_namelist} << EOF
+  cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 0                ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 0                ! 0: none, 1: read T from initial_state.nc
@@ -1309,7 +1309,7 @@ EOF
 else
 #
   if [[ "$initialiseOcean" == "fromClimatology" ]]; then
-    cat >> ${oce_namelist} << EOF
+    cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 1                ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 1                ! 0: none, 1: read T from initial_state.nc
@@ -1318,7 +1318,7 @@ else
 EOF
   else
     if [[ "$initialiseOcean" == "coldStart" ]]; then
-      cat >> ${oce_namelist} << EOF
+      cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 200              ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 200              ! 0: none, 1: read T from initial_state.nc
@@ -1330,7 +1330,7 @@ EOF
 /
 EOF
     else
-      cat >> ${oce_namelist} << EOF
+      cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 0                ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 0                ! 0: none, 1: read T from initial_state.nc
@@ -1341,7 +1341,7 @@ EOF
   fi
 fi
 #
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 &ocean_diagnostics_nml
   diagnostics_level                          = 1
   diagnose_for_horizontalVelocity            = .FALSE.
@@ -1356,7 +1356,7 @@ cat >> ${oce_namelist} << EOF
 /
 EOF
 
-add_required_file ${basedir}/run/${oce_namelist} ./
+add_required_file ${basedir}/run/${ocean_namelist} ./
 
 #-----------------------------------------------------------------------------
 #
@@ -1406,7 +1406,7 @@ fi
 if [ $mpi_total_procs -lt `expr $mpi_oce_procs + 1` ] ; then
    echo "Too few mpi_total_procs for requested mpi_oce_procs."
    echo "-> check mpi_total_procs and mpi_oce_procs. Exiting."
-   check_error 0
+   check_error 1
    exit
 fi
 
@@ -1436,9 +1436,9 @@ if [ x$namelist_list = x ]; then
   minrank_list[0]=0
   maxrank_list[0]=65535
   incrank_list[0]=1
-  if [ x$atm_namelist != x ]; then
+  if [ x$atmo_namelist != x ]; then
     # this is the atmo model
-    namelist_list[0]="$atm_namelist"
+    namelist_list[0]="$atmo_namelist"
     modelname_list[0]="atmo"
     modeltype_list[0]=1
     run_atmo="true"
@@ -1464,7 +1464,7 @@ if [ x$namelist_list = x ]; then
     modeltype_list[0]=99
   else
     check_error 1 "No namelist is defined"
-  fi 
+  fi
 fi
 
 
@@ -1503,7 +1503,7 @@ fi
 # fill some checks
 
 run_atmo=${run_atmo="false"}
-if [ x$atm_namelist != x ]; then
+if [ x$atmo_namelist != x ]; then
   run_atmo="true"
 fi
 run_ocean=${run_ocean="false"}
@@ -1533,7 +1533,7 @@ for gridfile in ${all_grids}; do
   ls -l ${HGRIDDIR}/$gridfile
   check_error $? "${HGRIDDIR}/$gridfile does not exist."
   add_link_file ${HGRIDDIR}/${gridfile} ./
-  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then    
+  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then
     add_link_file ${HGRIDDIR}/${grfinfofile} ./
   fi
 done
@@ -1583,9 +1583,9 @@ cat > $master_namelist << EOF
  lrestart_write_last = .true.
 /
 &master_time_control_nml
- experimentStartDate  = "$start_date" 
- restartTimeIntval    = "$restart_interval" 
- checkpointTimeIntval = "$checkpoint_interval" 
+ experimentStartDate  = "$start_date"
+ restartTimeIntval    = "$restart_interval"
+ checkpointTimeIntval = "$checkpoint_interval"
 /
 &time_nml
  is_relative_time = .false.
@@ -1607,10 +1607,10 @@ cat > $master_namelist << EOF
 /
 &master_time_control_nml
  calendar             = "$calendar"
- checkpointTimeIntval = "$checkpoint_interval" 
- restartTimeIntval    = "$restart_interval" 
- experimentStartDate  = "$start_date" 
- experimentStopDate   = "$end_date" 
+ checkpointTimeIntval = "$checkpoint_interval"
+ restartTimeIntval    = "$restart_interval"
+ experimentStartDate  = "$start_date"
+ experimentStopDate   = "$end_date"
 /
 &time_nml
  is_relative_time = .false.
@@ -1624,14 +1624,14 @@ fi
 # add model component to master_namelist
 add_component_to_master_namelist()
 {
-    
+
   model_namelist_filename="$1"
   model_name=$2
   model_type=$3
   model_min_rank=$4
   model_max_rank=$5
   model_inc_rank=$6
-  
+
 cat >> $master_namelist << EOF
 &master_model_nml
   model_name="$model_name"
@@ -1668,7 +1668,8 @@ ICON_COMPONENT2_VH_procs=$mpi_oce_io_procs
 # run the model!
 # ----------------------------------------------------------------------
 
-rm -f finish.status
+rm -f finish_atmo.status
+rm -f finish_ocean.status
 date
 
 $START_MODEL
@@ -1681,7 +1682,7 @@ fi
 
 date
 
-if [ -r finish.status ] ; then
+if [ -r finish_atmo.status ] && [ -r finish_ocean.status ] ; then
   check_final_status 0
 else
   check_final_status -1
@@ -1689,10 +1690,18 @@ fi
 #
 #-----------------------------------------------------------------------------
 #
-finish_status=`cat finish.status`
-echo $finish_status
+#Read the finish_status files and cut off whitespaces.
+finish_status_atm=`cat finish_atmo.status`
+finish_status_atm="${finish_status_atm# }"
+finish_status_oce=`cat finish_ocean.status`
+finish_status_oce="${finish_status_oce# }"
+
+echo "${finish_status_atm}"
+echo "${finish_status_oce}"
+
 echo "============================"
-echo "Script run successfully: $finish_status"
+echo "Script run (atmo) successfully: $finish_status_atm"
+echo "Script run (oce) successfully: $finish_status_oce"
 echo "============================"
 
 #-----------------------------------------------------------------------------
@@ -1713,7 +1722,7 @@ namelist_list=""
 #-----------------------------------------------------------------------------
 # check if we have to restart, ie resubmit
 #   Note: this is a different mechanism from checking the restart
-if [ $finish_status = "RESTART" ] ; then
+if [ "${finish_status_atm}" = "RESTART" ] || [ "${finish_status_oce}" = "RESTART" ] ; then
   echo "restart next experiment..."
   this_script="${RUNSCRIPTDIR}/${job_name}"
   echo 'this_script: ' "$this_script"
@@ -1723,7 +1732,7 @@ if [ $finish_status = "RESTART" ] ; then
 else
   [[ -f ${restartSemaphoreFilename} ]] && rm ${restartSemaphoreFilename}
 fi
-# 
+#
 #-----------------------------------------------------------------------------
 # automatic call/submission of post processing if available
 # if [ "x${autoPostProcessing}" = "xtrue" ]; then
@@ -1743,36 +1752,40 @@ fi
 #-----------------------------------------------------------------------------
 # check if grib file have been written correctly
 #-----------------------------------------------------------------------------
-diff <(grib_ls -w level=0/108,stepRange=0 -p discipline,parameterCategory,parameterNumber coupleR2B4_R2B6_020_oce_grb_19790101T000000Z.grb | sed -r 's/( +)/ /g' | sed -r 's/ $//g' ) <(echo "coupleR2B4_R2B6_020_oce_grb_19790101T000000Z.grb
-discipline parameterCategory parameterNumber
-10 3 1
-10 4 18
-10 4 21
-10 4 23
-10 4 24
-10 2 1
-10 2 192
-10 2 0
-10 4 7
-10 4 16
-10 4 19
-10 2 6
-10 2 4
-10 2 5
-14 of 789 messages in coupleR2B4_R2B6_020_oce_grb_19790101T000000Z.grb
+diff <(grib_ls -w level=0/108,stepRange=0 -p discipline,parameterCategory,parameterNumber,typeOfFirstFixedSurface,scaleFactorOfFirstFixedSurface,scaledValueOfFirstFixedSurface coupleR2B4_R2B6_020_oce_grb_19790101T000000Z.grb | sed -r 's/( +)/ /g' | sed -r 's/ $//g' ) <(echo "coupleR2B4_R2B6_020_oce_grb_19790101T000000Z.grb
+discipline parameterCategory parameterNumber typeOfFirstFixedSurface scaleFactorOfFirstFixedSurface scaledValueOfFirstFixedSurface
+10 3 1 G 0 0
+10 4 18 160 1 1075
+10 4 21 160 1 1075
+10 4 23 160 1 1075
+10 4 24 160 1 1075
+10 2 1 G 0 0
+10 2 192 G 0 0
+10 2 0 G 0 0
+10 4 7 G 0 0
+10 4 16 160 1 1075
+10 4 19 160 1 1075
+10 2 6 G 0 0
+10 2 4 G 0 0
+10 2 5 G 0 0
+10 4 53 160 1 1075
+10 192 20 G 0 0
+10 4 52 169 3 125
+10 4 52 169 2 3
+18 of 923 messages in coupleR2B4_R2B6_020_oce_grb_19790101T000000Z.grb
 
-14 of 789 total messages in 1 files")
+18 of 923 total messages in 1 files")
 diffrc=$?
 if [ $diffrc -ne 0 ] ; then
   echo "GRIB triplets not written as expected"
-  finish_status="FAILED"
+  "${finish_status_oce}"="FAILED"
 else
   echo "GRIB file OK"
 fi
 
 #-----------------------------------------------------------------------------
 
-if [ ${finish_status} == 'OK' ]; then
+if [ "${finish_status_atm}" = 'OK' ] && [ "${finish_status_oce}" = 'OK' ] ; then
   EXIT_STATUS=0
 else
   EXIT_STATUS=1

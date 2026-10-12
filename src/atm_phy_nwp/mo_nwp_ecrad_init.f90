@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! In this module the configuration state for the ecRad radiation code is being set up.
 !
 ! - Setup information is stored inside the object ecrad_conf of the derived type t_ecrad_conf
@@ -7,25 +17,9 @@
 ! - ICON namelist settings are translated to ecRad conform settings, if unsupported values
 !   are provided via namelist, the user gets an error. (These values should already be
 !   checked by the nml_crosscheck)
-! - Currently, only the McICA Solver is supported.
 ! - Please note that only a subset of the available configuration options of ecRad is
-!   filled by this routine. E.g., options only connected to the SPARTACUS Solver are
-!   currently not changed from the default as the SPARTACUS Solver was not tested in
-!   ICON so far. For a full list of ecRad settings, please have a look at
+!   filled by this routine. For a full list of ecRad settings, please have a look at
 !   externals/ecrad/radiation/radiation_config.F90
-!
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -33,37 +27,37 @@
 
 MODULE mo_nwp_ecrad_init
 
-  USE mo_kind,                 ONLY: wp
+  USE mo_kind,                 ONLY: wp, rp
   USE mo_exception,            ONLY: finish, message, message_text
-  USE mtime,                   ONLY: datetime
-  USE mo_model_domain,         ONLY: t_patch
-  USE mo_radiation_config,     ONLY: icld_overlap, irad_aero, ecrad_data_path,           &
-                                 &   ecrad_isolver, ecrad_igas_model, isolrad,           &
-                                 &   ecrad_llw_cloud_scat, ecrad_iliquid_scat,           &
-                                 &   ecrad_iice_scat, ecrad_isnow_scat,                  &
-                                 &   ecrad_irain_scat, ecrad_igraupel_scat,              &
-                                 &   ecrad_use_general_cloud_optics,                     &
-                                 &   iRadAeroConst, iRadAeroTegen, iRadAeroART,          &
-                                 &   iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc,    &
-                                 &   iRadAeroKinneVolc,  iRadAeroKinneVolcSP,            &
-                                 &   iRadAeroKinneSP, iRadAeroNone,                      &
-                                 &   iRadAeroCAMSclim, iRadAeroCAMStd
+  USE mo_radiation_config,     ONLY: icld_overlap, irad_aero, ecrad_data_path,             &
+                                 &   ecrad_isolver, ecrad_igas_model, isolrad,             &
+                                 &   ecrad_llw_cloud_scat, ecrad_iliquid_scat,             &
+                                 &   ecrad_iice_scat, ecrad_isnow_scat,                    &
+                                 &   ecrad_irain_scat, ecrad_igraupel_scat,                &
+                                 &   ecrad_use_general_cloud_optics,                       &
+                                 &   iRadAeroConst, iRadAeroTegen, iRadAeroART,            &
+                                 &   iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc,      &
+                                 &   iRadAeroKinneVolc,  iRadAeroKinneVolcSP,              &
+                                 &   iRadAeroKinneSP, iRadAeroNone, iRadAeroExternal,      &
+                                 &   iRadAeroCAMSclim, iRadAeroCAMStd,                     &
+                                 &   ecrad_nbands_sw, ecrad_nbands_lw, ecrad_check_input
 #ifdef __ECRAD
-  USE mo_ecrad,                ONLY: t_ecrad_conf, ecrad_setup,                          &
-                                 &   ISolverHomogeneous, ISolverMcICA, ISolverMcICAACC, ISolverSpartacus, &
-                                 &   ISolverTripleclouds, ISolverCloudless,              &
-                                 &   IGasModelMonochromatic, IGasModelIFSRRTMG,          &
-                                 &   IGasModelECCKD,                                     &
-                                 &   ILiquidModelMonochromatic, ILiquidModelSOCRATES,    &
-                                 &   ILiquidModelSlingo, IIceModelMonochromatic,         &
-                                 &   IIceModelFu, IIceModelBaran,                        &
-                                 &   IIceModelBaran2016, IIceModelBaran2017, IIceModelYi,&
-                                 &   IOverlapMaximumRandom, IOverlapExponentialRandom,   &
-                                 &   IOverlapExponential,                                &
-                                 &   nweight_nir_ecrad, iband_nir_ecrad, weight_nir_ecrad,&
-                                 &   nweight_vis_ecrad, iband_vis_ecrad, weight_vis_ecrad,&
-                                 &   nweight_par_ecrad, iband_par_ecrad, weight_par_ecrad,&
-                                 &   ecrad_hyd_list,                                     &   
+  USE mo_ecrad,                ONLY: t_ecrad_conf, ecrad_setup,                            &
+                                 &   ISolverHomogeneous, ISolverMcICA, ISolverMcICAACC,    &
+                                 &   ISolverSpartacus,                                     &
+                                 &   ISolverTripleclouds, ISolverCloudless,                &
+                                 &   IGasModelMonochromatic, IGasModelIFSRRTMG,            &
+                                 &   IGasModelECCKD,                                       &
+                                 &   ILiquidModelMonochromatic, ILiquidModelSOCRATES,      &
+                                 &   ILiquidModelSlingo, IIceModelMonochromatic,           &
+                                 &   IIceModelFu, IIceModelBaran,                          &
+                                 &   IIceModelBaran2016, IIceModelBaran2017, IIceModelYi,  &
+                                 &   IOverlapMaximumRandom, IOverlapExponentialRandom,     &
+                                 &   IOverlapExponential,                                  &
+                                 &   nweight_nir_ecrad, iband_nir_ecrad, weight_nir_ecrad, &
+                                 &   nweight_vis_ecrad, iband_vis_ecrad, weight_vis_ecrad, &
+                                 &   nweight_par_ecrad, iband_par_ecrad, weight_par_ecrad, &
+                                 &   ecrad_hyd_list,                                       &
                                  &   ecrad_iqc, ecrad_iqi, ecrad_iqr, ecrad_iqs, ecrad_iqg
 #endif
 
@@ -83,19 +77,15 @@ CONTAINS
 
 
   !---------------------------------------------------------------------------------------
-  SUBROUTINE setup_ecrad ( p_patch, ecrad_conf, ini_date )
+  SUBROUTINE setup_ecrad ( ecrad_conf )
 
     CHARACTER(len=*), PARAMETER :: routine = modname//'::setup_ecrad'
 
-    TYPE(t_patch),TARGET,INTENT(in)    :: &
-      &  p_patch
     TYPE(t_ecrad_conf),  INTENT(inout) :: &
       &  ecrad_conf                         !< ecRad configuration state
-    TYPE(datetime), POINTER            :: &
-      &  ini_date                           !< current datetime (mtime)
 
     ! Local variables
-    REAL(wp)                  :: &
+    REAL(rp)                  :: &
       &  wavelength_bound_sw(1), & !< Wavelength bound between VIS and NIR albedo (m)
       &  wavelength_bound_lw(0)    !< Wavelength bound LW emissivity (m)
     INTEGER                   :: &
@@ -103,7 +93,7 @@ CONTAINS
       &  i_band_in_lw(1),        & !< The emissivity band indices corresponding to each interval
       &  cc_cloud                  !< counter for cloud_types
 
-    CALL message('', 'Setup of ecRad')
+    CALL message(routine, 'Setup of ecRad radiation')
 
     !---------------------------------------------------------------------------------------
     ! Checks
@@ -114,6 +104,9 @@ CONTAINS
       &  CALL finish(routine,'ICON working precision (wp) does not match ecRad precision.')
     IF (EPSILON(wavelength_bound_sw(1)) /= EPSILON(ecrad_conf%cloud_fraction_threshold)) &
       &  CALL finish(routine,'Smallest number in working precision (wp) is different from ecRad precision.')
+#if ( defined (__INTEL_COMPILER) || defined (__INTEL_LLVM_COMPILER) ) && defined (_OPENMP) && !defined __ENABLE_ECRAD_INTEL_OPENMP
+    CALL finish(routine,'Using Intel compiler with OpenMP for ecRad in ICON has known issues')
+#endif
 
     !---------------------------------------------------------------------------------------
     ! Configuration based on ICON namelist settings
@@ -131,15 +124,16 @@ CONTAINS
       CASE (5)
         ecrad_conf%i_overlap_scheme = IOverlapExponential
       CASE DEFAULT
-        CALL finish(routine, 'Only values of 1 (MAX-RAN), 2 (EXP-RAN) and 5 (EXP) are valid for icld_overlap')
+        CALL finish(routine, 'Only icld_overlap values of 1 (MAX-RAN), 2 (EXP-RAN) and 5 (EXP) are valid for ecRad')
     END SELECT
 
     ! Aerosol climatology
     SELECT CASE (irad_aero)
       CASE (iRadAeroNone) ! No aerosol
         ecrad_conf%use_aerosols = .false.
-      CASE (iRadAeroConst, iRadAeroTegen, iRadAeroCAMSclim, iRadAeroCAMStd, iRadAeroART, iRadAeroConstKinne,  &
-        &   iRadAeroKinne, iRadAeroVolc, iRadAeroKinneVolc,  iRadAeroKinneVolcSP, iRadAeroKinneSP)
+      CASE (iRadAeroConst, iRadAeroExternal, iRadAeroTegen, iRadAeroCAMSclim, iRadAeroCAMStd, &
+        &   iRadAeroART, iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc, iRadAeroKinneVolc, &
+        &   iRadAeroKinneVolcSP, iRadAeroKinneSP)
         ecrad_conf%use_aerosols = .true.
       CASE DEFAULT
         CALL finish(routine, 'irad_aero not valid for ecRad')
@@ -154,21 +148,21 @@ CONTAINS
     ! Radiation solver
     SELECT CASE (ecrad_isolver)
       CASE(0)
-        ecrad_conf%i_solver_sw  = ISolverMcICA !< Short-wave solver
-        ecrad_conf%i_solver_lw  = ISolverMcICA !< Long-wave solver
-        ecrad_conf%do_3d_effects = .false.     !< Do we include 3D effects?
+        ecrad_conf%i_solver_sw   = ISolverMcICA        !< Short-wave solver
+        ecrad_conf%i_solver_lw   = ISolverMcICA        !< Long-wave solver
+        ecrad_conf%do_3d_effects = .false.             !< Do we include 3D effects?
       CASE(1)
-        ecrad_conf%i_solver_sw  = ISolverTripleclouds !< Short-wave solver
-        ecrad_conf%i_solver_lw  = ISolverTripleclouds !< Long-wave solver
-        ecrad_conf%do_3d_effects = .false.     !< Do we include 3D effects?
+        ecrad_conf%i_solver_sw   = ISolverTripleclouds !< Short-wave solver
+        ecrad_conf%i_solver_lw   = ISolverTripleclouds !< Long-wave solver
+        ecrad_conf%do_3d_effects = .false.             !< Do we include 3D effects?
       CASE(2)
-        ecrad_conf%i_solver_sw  = ISolverMcICAACC !< Short-wave solver
-        ecrad_conf%i_solver_lw  = ISolverMcICAACC !< Long-wave solver
-        ecrad_conf%do_3d_effects = .false.     !< Do we include 3D effects?
+        ecrad_conf%i_solver_sw   = ISolverMcICAACC     !< Short-wave solver
+        ecrad_conf%i_solver_lw   = ISolverMcICAACC     !< Long-wave solver
+        ecrad_conf%do_3d_effects = .false.             !< Do we include 3D effects?
       CASE(3)
-        ecrad_conf%i_solver_sw  = ISolverSpartacus !< Short-wave solver
-        ecrad_conf%i_solver_lw  = ISolverSpartacus !< Long-wave solver
-        ecrad_conf%do_3d_effects = .true.     !< Do we include 3D effects?
+        ecrad_conf%i_solver_sw   = ISolverSpartacus    !< Short-wave solver
+        ecrad_conf%i_solver_lw   = ISolverSpartacus    !< Long-wave solver
+        ecrad_conf%do_3d_effects = .true.              !< Do we include 3D effects?
       CASE DEFAULT
         CALL finish(routine, 'ecrad_isolver not valid for ecRad')
     END SELECT
@@ -176,14 +170,13 @@ CONTAINS
     ! Gas model and spectral bands: RRTMG or ecckd
     SELECT CASE (ecrad_igas_model)
       CASE(0)
-        ecrad_conf%i_gas_model_sw = IGasModelIFSRRTMG  !< Use RRTM gas model
-        ecrad_conf%i_gas_model_lw = IGasModelIFSRRTMG  !< Use RRTM gas model
-        ! Although the following switches are meant for ecckd, we set them to false to prevent unexpected behavior when accessing these switches
+        ecrad_conf%i_gas_model_sw                  = IGasModelIFSRRTMG  !< Use RRTM gas model
+        ecrad_conf%i_gas_model_lw                  = IGasModelIFSRRTMG  !< Use RRTM gas model
         ecrad_conf%do_cloud_aerosol_per_lw_g_point = .false.
         ecrad_conf%do_cloud_aerosol_per_sw_g_point = .false.
       CASE(1)
-        ecrad_conf%i_gas_model_sw = IGasModelECCKD  !< Use ecckd gas model
-        ecrad_conf%i_gas_model_lw = IGasModelECCKD  !< Use ecckd gas model
+        ecrad_conf%i_gas_model_sw                  = IGasModelECCKD     !< Use ecckd gas model
+        ecrad_conf%i_gas_model_lw                  = IGasModelECCKD     !< Use ecckd gas model
         ecrad_conf%do_cloud_aerosol_per_lw_g_point = .true.
         ecrad_conf%do_cloud_aerosol_per_sw_g_point = .true.
       CASE DEFAULT
@@ -191,7 +184,6 @@ CONTAINS
     END SELECT
 
     ! Generalized hydrometeors
-    
     IF ( ecrad_conf%use_general_cloud_optics ) THEN
       ! Cont how many cloud types are.
       ecrad_conf%n_cloud_types   = 2
@@ -200,17 +192,16 @@ CONTAINS
       IF ( ecrad_igraupel_scat > -1 ) ecrad_conf%n_cloud_types = ecrad_conf%n_cloud_types + 1
 
       ALLOCATE (ecrad_hyd_list(ecrad_conf%n_cloud_types))
-      ecrad_hyd_list(:) = 0
-      cc_cloud = 0
 
-      cc_cloud = cc_cloud + 1
+      ecrad_hyd_list(:)        = 0
+      cc_cloud                 = 1
       ecrad_hyd_list(cc_cloud) = ecrad_iqc
 
       SELECT CASE (ecrad_iliquid_scat)
         CASE(0)
           ecrad_conf%cloud_type_name(cc_cloud) = "mie_droplet"
-        CASE DEFAULT                                                                   
-          CALL finish(routine, 'ecrad_iliquid_scat not valid for ecRad and use_general_cloud_optics = T')  
+        CASE DEFAULT
+          CALL finish(routine, 'ecrad_iliquid_scat not valid for ecRad and use_general_cloud_optics = T')
       END SELECT
 
       cc_cloud = cc_cloud + 1
@@ -223,8 +214,8 @@ CONTAINS
           ecrad_conf%cloud_type_name(cc_cloud) = "fu-muskatel_ice"
         CASE(11)
           ecrad_conf%cloud_type_name(cc_cloud) = "baum-general-habit-mixture_ice"
-        CASE DEFAULT                                                                   
-          CALL finish(routine, 'ecrad_iice_scat not valid for ecRad and use_general_cloud_optics = T')  
+        CASE DEFAULT
+          CALL finish(routine, 'ecrad_iice_scat not valid for ecRad and use_general_cloud_optics = T')
       END SELECT
 
       IF (ecrad_isnow_scat > -1) THEN ! Snow is optional for radiation
@@ -236,8 +227,8 @@ CONTAINS
             ecrad_conf%cloud_type_name(cc_cloud) = "fu-muskatel-rough_ice"
           CASE(10)
             ecrad_conf%cloud_type_name(cc_cloud) = "fu-muskatel_ice"
-          CASE DEFAULT                                                                   
-            CALL finish(routine, 'ecrad_isnow_scat not valid for ecRad and use_general_cloud_optics = T')  
+          CASE DEFAULT
+            CALL finish(routine, 'ecrad_isnow_scat not valid for ecRad and use_general_cloud_optics = T')
         END SELECT
       ENDIF
 
@@ -248,8 +239,8 @@ CONTAINS
         SELECT CASE (ecrad_irain_scat)
           CASE(0)
             ecrad_conf%cloud_type_name(cc_cloud) = "mie_rain"
-          CASE DEFAULT                                                                   
-            CALL finish(routine, 'ecrad_irain_scat not valid for ecRad and use_general_cloud_optics = T')  
+          CASE DEFAULT
+            CALL finish(routine, 'ecrad_irain_scat not valid for ecRad and use_general_cloud_optics = T')
           END SELECT
       ENDIF
 
@@ -262,13 +253,13 @@ CONTAINS
             ecrad_conf%cloud_type_name(cc_cloud) = "fu-muskatel-rough_ice"
           CASE(10)
             ecrad_conf%cloud_type_name(cc_cloud) = "fu-muskatel_ice"
-          CASE DEFAULT                                                                   
-            CALL finish(routine, 'ecrad_igraupel_scat not valid for ecRad and use_general_cloud_optics = T')  
+          CASE DEFAULT
+            CALL finish(routine, 'ecrad_igraupel_scat not valid for ecRad and use_general_cloud_optics = T')
         END SELECT
       ENDIF
-      
-    ELSE
-      
+
+    ELSE ! .not.ecrad_conf%use_general_cloud_optics
+
       ! Liquid cloud particle scattering properties
       SELECT CASE (ecrad_iliquid_scat)
         CASE(0)
@@ -278,7 +269,7 @@ CONTAINS
         CASE DEFAULT
           CALL finish(routine, 'ecrad_iliquid_scat not valid for ecRad and use_general_cloud_optics = F')
       END SELECT
-    
+
       ! Ice cloud particle scattering properties
       SELECT CASE (ecrad_iice_scat)
         CASE(0)
@@ -291,12 +282,12 @@ CONTAINS
           CALL finish(routine, 'ecrad_iice_scat not valid for ecRad and use_general_cloud_optics = F')
       END SELECT
 
-    END IF
+    END IF ! ecrad_conf%use_general_cloud_optics
 
     IF (ecrad_conf%i_gas_model_sw == IGasModelIFSRRTMG .AND. ecrad_conf%i_gas_model_lw == IGasModelIFSRRTMG) THEN
       ecrad_conf%do_setup_ifsrrtm = .true.
     ELSE IF (ecrad_conf%i_gas_model_sw .NE. ecrad_conf%i_gas_model_lw) THEN
-      CALL finish(routine, "Differing gas models for LW and SW are currently unsupported. ")
+      CALL finish(routine, "Differing gas models for LW and SW are currently unsupported by ICON.")
     ELSE
       ecrad_conf%do_setup_ifsrrtm = .false.
     ENDIF
@@ -311,7 +302,7 @@ CONTAINS
     !---------------------------------------------------------------------------------------
     ! Currently hardcoded configuration
     !---------------------------------------------------------------------------------------
-  
+
     ecrad_conf%do_lw                       = .true.       !< Do we compute longwave radiation?
     !
     ecrad_conf%do_sw                       = .true.       !< Do we compute shortwave radiation?
@@ -327,6 +318,10 @@ CONTAINS
     !
     ecrad_conf%iverbosesetup               = 0            !< Verbosity (0: none,     1: warning,  2: info,
     ecrad_conf%iverbose                    = 0            !<            3: progress, 4: detailed, 5: debug)
+    IF (ecrad_check_input) THEN
+      ecrad_conf%iverbosesetup             = 4
+      ecrad_conf%iverbose                  = 4
+    ENDIF
     !
     ecrad_conf%do_weighted_surface_mapping = .false.      !<Use spectral weighting method that was default before ecrad-1.5
     !
@@ -337,7 +332,7 @@ CONTAINS
                                                           !< ice optics producing better results than the fixed version
     !
     ecrad_conf%do_sw_delta_scaling_with_gases = .false.   !< Do SW delta-Eddington scaling on cloud-aerosol-gas mixture (.true.)
-                                                          !< More correct approach of separately scaling the cloud and aerosol 
+                                                          !< More correct approach of separately scaling the cloud and aerosol
                                                           !< scattering properties before merging with gases (.false.)
     !
     ecrad_conf%cloud_fraction_threshold    = 1.0e-6_wp    !< Cloud is present in a layer if cloud fraction exceeds this value
@@ -353,23 +348,42 @@ CONTAINS
     !
     ecrad_conf%max_cloud_od                = 20.0_wp      !< Maximum total optical depth of a cloudy region, for stability
 
-    ! Optical properties data is taken from aerosol_ifs_rrtm_46R1_with_NI_AM.nc :  
-    IF (irad_aero == iRadAeroCAMSclim .OR. irad_aero == iRadAeroCAMStd) THEN
+    IF (irad_aero == iRadAeroCAMStd) THEN
+      ! Optical properties data is taken from aerosol_ifs_49r2.nc, with type map indices corresponding to
+      ! prognostic CAMS IFS cycle 49r1
+      ecrad_conf%aerosol_optics_override_file_name  = 'aerosol_ifs_49R2.nc'
       ecrad_conf%use_aerosols              = .true.
       ecrad_conf%n_aerosol_types           = 11
       ecrad_conf%i_aerosol_type_map(1)     = -1           !< aermr01  Sea Salt Aerosol (0.03 - 0.5 um)   hydrophilic(1)
       ecrad_conf%i_aerosol_type_map(2)     = -2           !< aermr02  Sea Salt Aerosol (0.5 - 5 um)      hydrophilic(2)
       ecrad_conf%i_aerosol_type_map(3)     = -3           !< aermr03  Sea Salt Aerosol (5 - 20 um)       hydrophilic(3)
-      ecrad_conf%i_aerosol_type_map(4)     =  1           !< aermr04  Dust Aerosol (0.03 - 0.55 um)      hydrophobic(1)
-      ecrad_conf%i_aerosol_type_map(5)     =  2           !< aermr05  Dust Aerosol (0.55 - 0.9 um)       hydrophobic(2)
-      ecrad_conf%i_aerosol_type_map(6)     =  3           !< aermr06  Dust Aerosol (0.9 - 20 um)         hydrophobic(3)
-      ecrad_conf%i_aerosol_type_map(7)     = -4           !< aermr07  Hydrophilic Organic Matter Aerosol hydrophilic(4)
-      ecrad_conf%i_aerosol_type_map(8)     = 10           !< aermr08  Hydrophobic Organic Matter Aerosol hydrophobic(10)
+      ecrad_conf%i_aerosol_type_map(4)     = -14          !< aermr04  Dust Aerosol (0.03 - 0.55 um)      hydrophilic(14)
+      ecrad_conf%i_aerosol_type_map(5)     = -15          !< aermr05  Dust Aerosol (0.55 - 0.9 um)       hydrophilic(15)
+      ecrad_conf%i_aerosol_type_map(6)     = -16          !< aermr06  Dust Aerosol (0.9 - 20 um)         hydrophilic(16)
+      ecrad_conf%i_aerosol_type_map(7)     = -11          !< aermr07  Hydrophilic Organic Matter Aerosol hydrophilic(11)
+      ecrad_conf%i_aerosol_type_map(8)     = 18           !< aermr08  Hydrophobic Organic Matter Aerosol hydrophobic(18)
+      ecrad_conf%i_aerosol_type_map(9)     = 12           !< aermr09  Hydrophilic Black Carbon Aerosol   hydrophobic(12)
+      ecrad_conf%i_aerosol_type_map(10)    = 12           !< aermr10  Hydrophobic Black Carbon Aerosol   hydrophobic(12)
+      ecrad_conf%i_aerosol_type_map(11)    = -13          !< aermr11  Sulphate Aerosol                   hydrophilic(13)
+    ENDIF
+    IF (irad_aero == iRadAeroCAMSclim) THEN
+      ! Optical properties data is taken from aerosol_ifs_49r2.nc, with type map indices corresponding to
+      ! prognostic CAMS IFS cycle 38r1, and used operationally in the IFS forecast cycle 49r2
+      ecrad_conf%aerosol_optics_override_file_name  = 'aerosol_ifs_49R2.nc'
+      ecrad_conf%use_aerosols              = .true.
+      ecrad_conf%n_aerosol_types           = 11
+      ecrad_conf%i_aerosol_type_map(1)     = -1           !< aermr01  Sea Salt Aerosol (0.03 - 0.5 um)   hydrophilic(1)
+      ecrad_conf%i_aerosol_type_map(2)     = -2           !< aermr02  Sea Salt Aerosol (0.5 - 5 um)      hydrophilic(2)
+      ecrad_conf%i_aerosol_type_map(3)     = -3           !< aermr03  Sea Salt Aerosol (5 - 20 um)       hydrophilic(3)
+      ecrad_conf%i_aerosol_type_map(4)     =  15          !< aermr04  Dust Aerosol (0.03 - 0.55 um)      hydrophobic(15)
+      ecrad_conf%i_aerosol_type_map(5)     =  16          !< aermr05  Dust Aerosol (0.55 - 0.9 um)       hydrophobic(16)
+      ecrad_conf%i_aerosol_type_map(6)     =  17          !< aermr06  Dust Aerosol (0.9 - 20 um)         hydrophobic(17)
+      ecrad_conf%i_aerosol_type_map(7)     = -11          !< aermr07  Hydrophilic Organic Matter Aerosol hydrophilic(11)
+      ecrad_conf%i_aerosol_type_map(8)     = 18           !< aermr08  Hydrophobic Organic Matter Aerosol hydrophobic(18)
       ecrad_conf%i_aerosol_type_map(9)     = 11           !< aermr09  Hydrophilic Black Carbon Aerosol   hydrophobic(11)
       ecrad_conf%i_aerosol_type_map(10)    = 11           !< aermr10  Hydrophobic Black Carbon Aerosol   hydrophobic(11)
-      ecrad_conf%i_aerosol_type_map(11)    = -5           !< aermr11  Sulphate Aerosol                   hydrophilic(5)
+      ecrad_conf%i_aerosol_type_map(11)    = -13          !< aermr11  Sulphate Aerosol                   hydrophilic(13)
     ENDIF
-
     !---------------------------------------------------------------------------------------
     ! Call to ecRad setup routine. This also consolidates the configuration
     !---------------------------------------------------------------------------------------
@@ -382,13 +396,13 @@ CONTAINS
 
     ! Set up the near-IR, visible, and photosynthetically active radiation wavelength bounds.
     ! Bounds for nir and vis are from mo_nwp_phy_types.
-    CALL ecrad_conf%get_sw_weights(0.7e-6_wp, 5.0e-6_wp, &
+    CALL ecrad_conf%get_sw_weights(0.7e-6_rp, 5.0e-6_rp,       &
       &  nweight_nir_ecrad, iband_nir_ecrad, weight_nir_ecrad, &
       &  'near-IR radiation')
-    CALL ecrad_conf%get_sw_weights(0.3e-6_wp, 0.7e-6_wp, &
+    CALL ecrad_conf%get_sw_weights(0.3e-6_rp, 0.7e-6_rp,       &
       &  nweight_vis_ecrad, iband_vis_ecrad, weight_vis_ecrad, &
       &  'visible radiation')
-    CALL ecrad_conf%get_sw_weights(0.4e-6_wp, 0.7e-6_wp, &
+    CALL ecrad_conf%get_sw_weights(0.4e-6_rp, 0.7e-6_rp,       &
       &  nweight_par_ecrad, iband_par_ecrad, weight_par_ecrad, &
       &  'photosynthetically active radiation, PAR')
 
@@ -418,12 +432,32 @@ CONTAINS
     !$ACC   COPYIN(ecrad_conf%i_g_from_reordered_g_lw) &
     !$ACC   COPYIN(ecrad_conf%i_emiss_from_band_lw) &
     !$ACC   COPYIN(ecrad_conf%pdf_sampler) &
-    !$ACC   COPYIN(ecrad_conf%sw_albedo_weights)
+    !$ACC   COPYIN(ecrad_conf%sw_albedo_weights) &
+    !$ACC   COPYIN(ecrad_conf%gas_optics_sw)
     !$ACC ENTER DATA COPYIN(ecrad_conf%cloud_optics%liq_coeff_lw) &
     !$ACC   COPYIN(ecrad_conf%cloud_optics%liq_coeff_sw) &
     !$ACC   COPYIN(ecrad_conf%cloud_optics%ice_coeff_lw) &
     !$ACC   COPYIN(ecrad_conf%cloud_optics%ice_coeff_sw) &
-    !$ACC   COPYIN(ecrad_conf%pdf_sampler%val)
+    !$ACC   COPYIN(ecrad_conf%pdf_sampler%val) &
+    !$ACC   COPYIN(ecrad_conf%gas_optics_sw%spectral_def) &
+    !$ACC   COPYIN(ecrad_conf%gas_optics_sw%spectral_def)
+    !$ACC ENTER DATA COPYIN(ecrad_conf%gas_optics_sw%spectral_def%wavenumber1_band) &
+    !$ACC   COPYIN(ecrad_conf%gas_optics_sw%spectral_def%wavenumber2_band)
+
+    !---------------------------------------------------------------------------------------
+    ! Crosschecks
+    !---------------------------------------------------------------------------------------
+
+    IF (ecrad_nbands_lw /= ecrad_conf%n_bands_lw) THEN
+      WRITE (message_text, '(a,i2,a,i2)') &
+        &  "ecrad_nbands_lw /= ecrad_conf%n_bands_lw: ", ecrad_nbands_lw, " /= ", ecrad_conf%n_bands_lw
+      CALL finish(routine, message_text)
+    ENDIF
+    IF (ecrad_nbands_sw /= ecrad_conf%n_bands_sw) THEN
+      WRITE (message_text, '(a,i2,a,i2)') &
+        &  "ecrad_nbands_sw /= ecrad_conf%n_bands_sw: ", ecrad_nbands_sw, " /= ", ecrad_conf%n_bands_sw
+      CALL finish(routine, message_text)
+    ENDIF
 
 #ifdef _OPENACC
     CALL ecrad_openacc_crosscheck(ecrad_conf)
@@ -435,7 +469,7 @@ CONTAINS
 #ifdef _OPENACC
   !---------------------------------------------------------------------------------------
   ! This subroutine checks for unsupported openacc ecRad configurations on the ICON side.
-  ! This minimizes the diff inside ecRad, which is different from the usual openacc error 
+  ! This minimizes the diff inside ecRad, which is different from the usual openacc error
   ! handling approach in ICON where the finish is called when the unported code
   ! part is about to be called.
   SUBROUTINE ecrad_openacc_crosscheck ( ecrad_conf )
@@ -486,8 +520,7 @@ CONTAINS
         CALL finish(routine,'ecrad_conf%i_solver_sw == ISolverCloudless not ported to GPU')
     END SELECT
 
-
-    IF (ecrad_conf%use_aerosols == .FALSE.) THEN
+    IF (.NOT. ecrad_conf%use_aerosols) THEN
       CALL finish(routine,'ecrad_conf%use_aerosols == .FALSE. not ported to GPU.')
     ENDIF
 
@@ -575,6 +608,10 @@ CONTAINS
 
     IF ( ecrad_conf%use_general_cloud_optics ) THEN
       CALL finish(routine,'ecrad_conf%use_general_cloud_optics not ported to GPU')
+    ENDIF
+
+    IF (ecrad_check_input) THEN
+      CALL finish(routine,'ecrad_check_input not ported to GPU')
     ENDIF
 
   END SUBROUTINE ecrad_openacc_crosscheck

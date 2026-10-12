@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -21,7 +21,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
 ICON_DIR=$(cd "${SCRIPT_DIR}/../.."; pwd)
 
 # clear all modules and load Stage and modules for all dependencies
-MODULES='Stages/2023 NVHPC/23.1 CMake OpenMPI netCDF-Fortran ecCodes libfyaml' 
+MODULES='Stages/2023 NVHPC/23.1 CMake OpenMPI netCDF-Fortran ecCodes libfyaml git'
 BUILD_ENV="module --force purge; export USERINSTALLATIONS=/p/usersoftware/slmet/easybuild/stages/2023/; module load ${MODULES}; module list;"
 
 SOFTWAREROOT="/p/software/juwelsbooster"
@@ -48,13 +48,13 @@ BLAS_LAPACK_LIBS='-llapack -lblas'
 ################################################################################
 
 CC="${ROOT_OPENMPI}/bin/mpicc"
-CFLAGS='-g -O2' 
+CFLAGS='-g -O2'
 CPPFLAGS="-I${ROOT_HDF5}/include -I${ROOT_NETCDF}/include -I${ROOT_ECCODES}/include -I${ROOT_LIBFYAML}/include -I${ROOT_LIBXML2}/include/libxml2/libxml"
 
 FC="${ROOT_OPENMPI}/bin/mpif90"
 FCFLAGS="-I${ROOT_NETCDFMINFORTRAN}/include -g -O2 -Mrecursive -Mallocatable=03 -Mstack_arrays -Minfo=accel,inline -acc=verystrict,gpu -gpu=cc80"
 
-LDFLAGS="-c++libs -cuda -L${ROOT_HDF5}/lib -L${ROOT_NETCDF}/lib -L${ROOT_PNETCDF}/lib -L${ROOT_NETCDFMINFORTRAN}/lib -L${ROOT_ECCODES}/lib -L${ROOT_LIBXML2}/lib64"  
+LDFLAGS="-c++libs -cuda -L${ROOT_HDF5}/lib -L${ROOT_NETCDF}/lib -L${ROOT_PNETCDF}/lib -L${ROOT_NETCDFMINFORTRAN}/lib -L${ROOT_ECCODES}/lib -L${ROOT_LIBXML2}/lib64"
 
 LIBS="${XML2_LIBS} ${FYAML_LIBS} ${ECCODES_LIBS} ${BLAS_LAPACK_LIBS} ${NETCDFF_LIBS} ${NETCDF_LIBS} ${HDF5_LIBS}"
 
@@ -105,9 +105,15 @@ if test $(pwd) != $(cd "${ICON_DIR}"; pwd); then
   echo "Copying runscript input files from the source directory..."
   rsync -uavz ${ICON_DIR}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude='*.log'
   ln -sf -t run/ ${ICON_DIR}/run/standard_*
-  rsync -uavz ${ICON_DIR}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${ICON_DIR}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${ICON_DIR}/make_runscripts .
   ln -sf ${ICON_DIR}/data
   ln -sf ${ICON_DIR}/vertical_coord_tables
 fi
-

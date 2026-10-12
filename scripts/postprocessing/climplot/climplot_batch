@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -32,7 +32,7 @@
 #          Peter Bechtold  CY33R1 - verification against
 #          Martin Koehler           ERA Interim
 #          Peter Bechtold  CY38R1 - add wavenumber frequency statistics
-#                                   adjust scripts for equal start times 
+#                                   adjust scripts for equal start times
 
 #-------------------------------------------------------------------------#
 
@@ -93,7 +93,7 @@ if [[ $CLASSAN = "ei" ]] ; then
   expan=0001  # was 1112
 else
   eratext=ERA40
-  expan=1    
+  expan=1
 fi
 
 if [[ $errflg -ne 0 ]] ; then
@@ -145,7 +145,7 @@ esac
 #export MACRO_EXTRA_LIBS="$MACRO_EXTRA_LIBS $NAGLIB"
 #use 32bit version of NAGLIB for metview3
 #NAGPATH="/usr/local/apps/nag/21/ILP32/lib"
-#export MACRO_EXTRA_F90_FLAGS="-L$NAGPATH -lnag_nag -rpath $NAGPATH" 
+#export MACRO_EXTRA_F90_FLAGS="-L$NAGPATH -lnag_nag -rpath $NAGPATH"
 
 export MACRO_EXTRA_LIBS="-L/usr/local/apps/nag/22/LP64/lib -lnag"
 
@@ -297,7 +297,7 @@ if [[ $TASK = "getmeans" ]] ; then
     fi
     i=i+1
   done
- 
+
 #############################################################
 # --- read ERA data
 #
@@ -352,7 +352,7 @@ EOF
             time=$INITIMAN,
             levtype=ml,
             expver=1,
-            param=T/U/V/W/Q/CC/CLWC/CIWC, 
+            param=T/U/V/W/Q/CC/CLWC/CIWC,
             class=e4,
             date=${yearmonthera}01,
             type=cl,
@@ -399,7 +399,7 @@ EOF
 	        time=$INITIMAN,
 	        levtype=ml,
 	        expver=$expan,
-	        param=T/U/V/W/Q/CC/CLWC/CIWC, 
+	        param=T/U/V/W/Q/CC/CLWC/CIWC,
 	        class=$CLASSAN,
 	        date=${yearmonthera}01,
 	        type=an,
@@ -433,7 +433,7 @@ EOF
              >>  ${PLOTDATA}/mmean_ERA40_ml_climate_alldates.grb
           fi
         fi
-      fi 
+      fi
 
       rm -f ${PLOTDATA}/mmean_ERA40_*_ini*mon${yearmonthera}.grb
 
@@ -454,9 +454,9 @@ EOF
 # --- combine model data (cat)
 ###########################################################
 
-# this works for both SEAS and OPER since ini*mon wild card picks up 
+# this works for both SEAS and OPER since ini*mon wild card picks up
 # both kinds of ensemble lables...
-   
+
   mm_len1=${mm_len[${iperiod}]}
   mm_len2=${mm_len1}
   iniyearmonth2=$iniyearmonth
@@ -511,7 +511,7 @@ EOF
 # fix to set centre=98 for pressure level data
 #  mv  ${PLOTDATA}/mmean_${EXPVER}_pl_alldates.grb  ${PLOTDATA}/mmean_${EXPVER}_pl_alldates_centre78.grb
 #   grib_set -s centre=98 ${PLOTDATA}/mmean_${EXPVER}_pl_alldates_centre78.grb \
-#                         ${PLOTDATA}/mmean_${EXPVER}_pl_alldates.grb 
+#                         ${PLOTDATA}/mmean_${EXPVER}_pl_alldates.grb
 
 fi
 
@@ -541,11 +541,11 @@ if [[ $TASK = "plot_2d" ]] ; then
 # missing: BLH, TSRC, TTRC, optional: z500, sp
 
     set -A VARS    TCC LCC MCC HCC TP  CP  LSP SSHF SLHF SSR STR TSR TTR 2T  2D  SD 10SI 10U 10V SST SKT TCW TCWV Z   T   T   T   T   T   T   T   T   T  TCLW TCIW CAPE
-    set -A TYPE    ins ins ins ins ins ins ins ins  ins  ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins  ins  ins 
-    set -A NEXP     2   2   2   2   2   2   2   2    2    2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2    2    2  
-    set -A LEV      0   0   0   0   0   0   0   0    0    0   0   0   0   0   0   0   0   0   0   0   0   0   0  500 925 850 700 500 400 300 200 100 50   0    0    0  
-    set -A LEVTYPE sfc sfc sfc sfc sfc sfc sfc sfc  sfc  sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc pl  pl  pl  pl  pl  pl  pl  pl  pl  pl  sfc  sfc  sfc 
-    set -A STAT    avg avg avg avg avg avg avg avg  avg  avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg  avg  avg 
+    set -A TYPE    ins ins ins ins ins ins ins ins  ins  ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins ins  ins  ins
+    set -A NEXP     2   2   2   2   2   2   2   2    2    2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2   2    2    2
+    set -A LEV      0   0   0   0   0   0   0   0    0    0   0   0   0   0   0   0   0   0   0   0   0   0   0  500 925 850 700 500 400 300 200 100 50   0    0    0
+    set -A LEVTYPE sfc sfc sfc sfc sfc sfc sfc sfc  sfc  sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc sfc pl  pl  pl  pl  pl  pl  pl  pl  pl  pl  sfc  sfc  sfc
+    set -A STAT    avg avg avg avg avg avg avg avg  avg  avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg avg  avg  avg
 
 # --- loop over variables
 
@@ -568,7 +568,7 @@ if [[ $TASK = "plot_2d" ]] ; then
           $LSIGT $LCOL $LARTIC $model
       fi
 
-      let NNN=NNN+1 
+      let NNN=NNN+1
     done     # end of loop over variables
 
   fi # fcrange
@@ -583,7 +583,7 @@ fi
 if [[ $TASK = "plot_wind" ]] ; then
   if [[ ${FCRANGE} = -99 ]] ; then
     $metview -b wind_maps_clim.met $EXPVER ${DATESTR} ${iniyearmonth} ${mm_len[${iperiod}]} \
-                                   ${res} ${eratext} 
+                                   ${res} ${eratext}
   fi
 fi
 
@@ -625,7 +625,7 @@ if [[ $LWAVFREQ = 1 ]] ; then
      # only plotted for YEAR
      if [[ ${mm_len[${iperiod}]} -eq 12 ]] ; then
 
-        $metview -b marsretr_wavfreq.met $EXPVER fc $CLASS ${DATESTR} 365 ${INITIME} $steps 
+        $metview -b marsretr_wavfreq.met $EXPVER fc $CLASS ${DATESTR} 365 ${INITIME} $steps
 
 # convert from Grib to netcdf
        cd $PLOTDATA
@@ -640,7 +640,7 @@ if [[ $LWAVFREQ = 1 ]] ; then
 EOF
         done
         rm -f ${PLOTDATA}/*.fld2
-        
+
 # transform datestring to idl read format
         idldatestr=$( print ${DATESTR}|sed 's/\// /g' )
         set -A idldats $idldatestr
@@ -716,7 +716,7 @@ EOF
            i=i+1
          done
        # extract spectral truncation from Grib file
-         resol=$(grib_ls -p J  targx1 | awk -F" " '$1 ~ /^[0-9]/ &&  NF == 1 {print $0}' | uniq) 
+         resol=$(grib_ls -p J  targx1 | awk -F" " '$1 ~ /^[0-9]/ &&  NF == 1 {print $0}' | uniq)
        # create ensemble mean
          ./tcpackens.F90 $resol $nens
          pgf90 tcpackens.f90
@@ -756,12 +756,12 @@ if [[ $TASK = "plot_zon" ]] ; then
         set -A nplot   5
        else
          if [[ $LZONNOML = 0 ]] ; then
-           set -A LEVTYPE pl      pl      ml      pl      
+           set -A LEVTYPE pl      pl      ml      pl
            set -A EXP1    $EXPVER $EXPVER $EXPVER $EXPVER         # experiment
            set -A EXP2    ERA40   $EXPVER $EXPVER $EXPVER2        # control
            set -A nplot   4
          else
-           set -A LEVTYPE pl      pl      pl      
+           set -A LEVTYPE pl      pl      pl
            set -A EXP1    $EXPVER $EXPVER $EXPVER                 # experiment
            set -A EXP2    ERA40   $EXPVER $EXPVER2                # control
            set -A nplot   3
@@ -769,12 +769,12 @@ if [[ $TASK = "plot_zon" ]] ; then
        fi
       else
         if [[ $LZONNOML = 0 ]] ; then
-          set -A LEVTYPE pl      pl      ml      
+          set -A LEVTYPE pl      pl      ml
           set -A EXP1    $EXPVER $EXPVER $EXPVER                  # experiment
           set -A EXP2    ERA40   $EXPVER $EXPVER                  # control
           set -A nplot   3
         else
-          set -A LEVTYPE pl      pl      
+          set -A LEVTYPE pl      pl
           set -A EXP1    $EXPVER $EXPVER # experiment
           set -A EXP2    ERA40   $EXPVER # control
           set -A nplot   2
@@ -782,12 +782,12 @@ if [[ $TASK = "plot_zon" ]] ; then
       fi
     else
       if [[ $DOPLOTDIFF = 1 ]] ; then
-        set -A LEVTYPE pl      pl       pl       
+        set -A LEVTYPE pl      pl       pl
         set -A EXP1    $EXPVER $EXPVER  $EXPVER    # experiment
         set -A EXP2    ERA40   $EXPVER  $EXPVER2   # control
         set -A nplot   3
       else
-        set -A LEVTYPE pl      pl       
+        set -A LEVTYPE pl      pl
         set -A EXP1    $EXPVER $EXPVER                     # experiment
         set -A EXP2    ERA40   $EXPVER                     # control
         set -A nplot   2
@@ -821,22 +821,22 @@ fi
 #############################################################
 # index of fields, loop here to save metview memory
 # 1: lprecip
-# 2: lradn  
-# 3: ltcwv  
-# 4: ltclw  
-# 5: ltciw  
-# 6: lcc    
-# 7: lwinds 
-# 8: lsflux 
+# 2: lradn
+# 3: ltcwv
+# 4: ltclw
+# 5: ltciw
+# 6: lcc
+# 7: lwinds
+# 8: lsflux
 # 9: lciwc
 # 10: l2d2tsd
 
 TASK_A=`echo $TASK | cut -c 1-8`   # plot_obs_1 >>> plot_obs
 if [[ $TASK_A = "plot_obs" ]] ; then
 
-    plot=`echo $TASK | cut -c 10-`   # plot_obs_1 >>> 1       
+    plot=`echo $TASK | cut -c 10-`   # plot_obs_1 >>> 1
 
-#   Now run twice... 
+#   Now run twice...
     plotml=1
     if [[ $LMLDIF = 0 && $LZONNOML = 1 && $LDCYCLE = 0  ]]; then
       plotml=0

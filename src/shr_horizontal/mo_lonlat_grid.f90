@@ -1,10 +1,7 @@
-! Type definition and utility routines of lon-lat grids used in the model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,9 +9,11 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Type definition and utility routines of lon-lat grids used in the model.
+
 MODULE mo_lonlat_grid
 
-  USE mo_kind,              ONLY: wp
+  USE mo_kind,              ONLY: wp, dp, sp
   USE mo_mpi,               ONLY: p_bcast
   USE mo_exception,         ONLY: finish
 
@@ -61,7 +60,7 @@ MODULE mo_lonlat_grid
     REAL(wp) :: reg_lon_def(3)            ! start, increment OR grid points, end longitude in degrees
     REAL(wp) :: reg_lat_def(3)            ! start, increment OR grid points, end latitude in degrees
     REAL(wp) :: north_pole (2)            ! position of north pole (lon,lat) in degrees
-                                           
+
     INTEGER  :: lon_dim                   ! Number of points in lon direction
     INTEGER  :: lat_dim                   ! Number of points in lat direction
 
@@ -72,16 +71,21 @@ MODULE mo_lonlat_grid
       &  start_corner(2)                  ! south western corner of area (lon/lat), unit:rad
 
     ! Blocking information, computed from above values:
-    INTEGER  :: total_dim                 ! total number of grid points 
+    INTEGER  :: total_dim                 ! total number of grid points
     INTEGER  :: nblks, npromz             ! blocking info
-    
+
   END TYPE t_lon_lat_grid
 
   INTERFACE OPERATOR (==)
     MODULE PROCEDURE lonlat_grid_compare
   END INTERFACE OPERATOR(==)
 
-  
+  INTERFACE rotate_latlon_grid
+    MODULE PROCEDURE rotate_latlon_grid_dp
+    MODULE PROCEDURE rotate_latlon_grid_sp
+  END INTERFACE rotate_latlon_grid
+
+
 CONTAINS
 
   !---------------------------------------------------------------
@@ -152,7 +156,7 @@ CONTAINS
       IF (lonlat_grid%reg_lon_def(2) == 0._wp) THEN
         CALL finish(routine, "Invalid setting for reg_lon_def increment!")
       END IF
-      lonlat_grid%lon_dim  = INT( (lonlat_grid%reg_lon_def(3)-lonlat_grid%reg_lon_def(1))/lonlat_grid%reg_lon_def(2) ) + 1
+      lonlat_grid%lon_dim  = NINT( (lonlat_grid%reg_lon_def(3)-lonlat_grid%reg_lon_def(1))/lonlat_grid%reg_lon_def(2) ) + 1
       IF (lskip_last_lon .AND. (lonlat_grid%lon_dim > 0)) THEN
          lonlat_grid%lon_dim = lonlat_grid%lon_dim - 1
       END IF
@@ -171,7 +175,7 @@ CONTAINS
       IF (lonlat_grid%reg_lat_def(2) == 0._wp) THEN
         CALL finish(routine, "Invalid setting for reg_lat_def increment!")
       END IF
-      lonlat_grid%lat_dim  = INT( (lonlat_grid%reg_lat_def(3)-lonlat_grid%reg_lat_def(1))/lonlat_grid%reg_lat_def(2) ) + 1
+      lonlat_grid%lat_dim  = NINT( (lonlat_grid%reg_lat_def(3)-lonlat_grid%reg_lat_def(1))/lonlat_grid%reg_lat_def(2) ) + 1
     END IF
   END SUBROUTINE compute_lonlat_specs
 
@@ -183,11 +187,11 @@ CONTAINS
     REAL(wp) :: buf(12)
     INTEGER  :: int_buf(2)
 
-    !-- broadcast REAL data:    
+    !-- broadcast REAL data:
     buf = (/ lonlat_grid%delta(1),        lonlat_grid%delta(2),                                  &
       &      lonlat_grid%start_corner(1), lonlat_grid%start_corner(2),                           &
       &      lonlat_grid%reg_lon_def(1), lonlat_grid%reg_lon_def(2), lonlat_grid%reg_lon_def(3), &
-      &      lonlat_grid%reg_lat_def(1), lonlat_grid%reg_lat_def(2), lonlat_grid%reg_lat_def(3), & 
+      &      lonlat_grid%reg_lat_def(1), lonlat_grid%reg_lat_def(2), lonlat_grid%reg_lat_def(3), &
       &      lonlat_grid%north_pole(1), lonlat_grid%north_pole(2) /)
     CALL p_bcast(buf, source, comm)
     lonlat_grid%delta(1)        = buf( 1)
@@ -201,7 +205,7 @@ CONTAINS
     lonlat_grid%reg_lat_def(2)  = buf( 9)
     lonlat_grid%reg_lat_def(3)  = buf(10)
     lonlat_grid%north_pole(1)   = buf(11)
-    lonlat_grid%north_pole(2)   = buf(12)  
+    lonlat_grid%north_pole(2)   = buf(12)
     !-- broadcast INTEGER data:
     int_buf = (/ lonlat_grid%lon_dim, lonlat_grid%lat_dim /)
     CALL p_bcast(int_buf, source, comm)
@@ -231,7 +235,7 @@ CONTAINS
   !
   !  Description of the rotated spherical coordinates system:
   !  [ cf. COSMO User Guide, Part I - Dynamis and Numerics, p.21 ]
-  ! 
+  !
   !  "The origin of this new system is also located at the earth's
   !  centre, but the \tilde{Z}-axis is tilted against the Z-axis. By
   !  defining the \tilde{Z}-axis to point from the centre to a point
@@ -241,7 +245,7 @@ CONTAINS
   !  the north pole of the rotated coordinate system."
   !
   !  Transformation relations:
-  !  [ cf. COSMO User Guide, Part I - Dynamis and Numerics, p.25 ] 
+  !  [ cf. COSMO User Guide, Part I - Dynamis and Numerics, p.25 ]
   !
   !  To transform the geographical longitude/latitude (\lambda_g, \phi_g)
   !  to the rotated horizontal coordinates (\lambda,\phi):
@@ -257,15 +261,15 @@ CONTAINS
   !  equation (2) is equivalent to the formulation below, which is also
   !  given in the COSMO database description, appendices A.1, A.2.
   !
-  SUBROUTINE rotate_latlon_grid( lon_lat_grid, rotated_pts )
-    
-    TYPE (t_lon_lat_grid), INTENT(in)    :: lon_lat_grid
-    REAL(wp),              INTENT(inout) :: rotated_pts(:,:,:)
-    
-    ! Local parameters
-    REAL(wp), PARAMETER :: ZERO_TOL = 1.e-15_wp
+  SUBROUTINE rotate_latlon_grid_dp( lon_lat_grid, rotated_pts )
 
-    REAL(wp) :: sincos_pole(2,2),                   &  ! (lon/lat, sin/cos)
+    TYPE (t_lon_lat_grid), INTENT(in)    :: lon_lat_grid
+    REAL(dp),              INTENT(inout) :: rotated_pts(:,:,:)
+
+    ! Local parameters
+    REAL(dp), PARAMETER :: ZERO_TOL = EPSILON(1._dp)
+
+    REAL(dp) :: sincos_pole(2,2),                   &  ! (lon/lat, sin/cos)
       &         sincos_lon(lon_lat_grid%lon_dim,2), &
       &         sincos_lat(lon_lat_grid%lat_dim,2), &
       &         pi_180, npole_rad(2), arg1, arg2,   &
@@ -274,20 +278,20 @@ CONTAINS
     INTEGER  :: k, j
     LOGICAL  :: ltrivial_rotation
 
-    pi_180 = ATAN(1._wp)/45._wp   
+    pi_180 = ATAN(1._dp)/45._dp
 
     ! check for "trivial rotation" (no.pole at +90,0):
-    ltrivial_rotation  = ((ABS(90._wp - lon_lat_grid%north_pole(2)) < ZERO_TOL) .AND.  &
-      &                    ABS( 0._wp - lon_lat_grid%north_pole(1)) < ZERO_TOL)
+    ltrivial_rotation  = ((ABS(90._dp - lon_lat_grid%north_pole(2)) < ZERO_TOL) .AND.  &
+      &                    ABS( 0._dp - lon_lat_grid%north_pole(1)) < ZERO_TOL)
 
     ! compute the non-rotated lon/lat values
     DO k=1,lon_lat_grid%lon_dim
-      rlon(k)         = lon_lat_grid%start_corner(1) + REAL(k-1,wp)*lon_lat_grid%delta(1)
+      rlon(k)         = lon_lat_grid%start_corner(1) + REAL(k-1,dp)*lon_lat_grid%delta(1)
       sincos_lon(k,1) = SIN(rlon(k))
       sincos_lon(k,2) = COS(rlon(k))
     END DO
     DO k=1,lon_lat_grid%lat_dim
-      rlat(k)         = lon_lat_grid%start_corner(2) + REAL(k-1,wp)*lon_lat_grid%delta(2)
+      rlat(k)         = lon_lat_grid%start_corner(2) + REAL(k-1,dp)*lon_lat_grid%delta(2)
       sincos_lat(k,1) = SIN(rlat(k))
       sincos_lat(k,2) = COS(rlat(k))
     END DO
@@ -308,7 +312,7 @@ CONTAINS
       npole_rad(:) = lon_lat_grid%north_pole(:)*pi_180
 
       sincos_pole(:,1) = SIN(npole_rad(:))
-      sincos_pole(:,2) = COS(npole_rad(:))  
+      sincos_pole(:,2) = COS(npole_rad(:))
 
       DO j = 1, lon_lat_grid%lat_dim
         DO k = 1, lon_lat_grid%lon_dim
@@ -320,10 +324,10 @@ CONTAINS
 
           IF ((ABS(arg1) > ZERO_TOL) .OR. (ABS(arg2) > ZERO_TOL)) THEN
             ! rotated_pts(k,j,1) = ATAN2( arg1, arg2 ) + npole_rad(1)
-            rotated_pts(k,j,1) = ATAN2( -1._wp*sincos_pole(1,1)*arg2 - sincos_pole(1,2)*arg1 ,&
-              &                         -1._wp*sincos_pole(1,2)*arg2 + sincos_pole(1,1)*arg1 )
+            rotated_pts(k,j,1) = ATAN2( -1._dp*sincos_pole(1,1)*arg2 - sincos_pole(1,2)*arg1 ,&
+              &                         -1._dp*sincos_pole(1,2)*arg2 + sincos_pole(1,1)*arg1 )
           ELSE
-            rotated_pts(k,j,1) = 0.0_wp ! ATAN2(0,0) is undefined, so we just have to set something
+            rotated_pts(k,j,1) = 0.0_dp ! ATAN2(0,0) is undefined, so we just have to set something
           ENDIF
 
           ! ASIN( SIN(phi)*SIN(poleY) + COS(phi)*COS(lambda)*COS(poleY) )
@@ -334,8 +338,86 @@ CONTAINS
         ENDDO
       ENDDO
     END IF
-  END SUBROUTINE rotate_latlon_grid
+  END SUBROUTINE rotate_latlon_grid_dp
 
+  SUBROUTINE rotate_latlon_grid_sp( lon_lat_grid, rotated_pts )
+
+    TYPE (t_lon_lat_grid), INTENT(in)    :: lon_lat_grid
+    REAL(sp),              INTENT(inout) :: rotated_pts(:,:,:)
+
+    ! Local parameters
+    REAL(sp), PARAMETER :: ZERO_TOL = EPSILON(1._sp)
+
+    REAL(sp) :: sincos_pole(2,2),                   &  ! (lon/lat, sin/cos)
+      &         sincos_lon(lon_lat_grid%lon_dim,2), &
+      &         sincos_lat(lon_lat_grid%lat_dim,2), &
+      &         pi_180, npole_rad(2), arg1, arg2,   &
+      &         rlon(lon_lat_grid%lon_dim),         &
+      &         rlat(lon_lat_grid%lat_dim)
+    INTEGER  :: k, j
+    LOGICAL  :: ltrivial_rotation
+
+    pi_180 = ATAN(1._sp)/45._sp
+
+    ! check for "trivial rotation" (no.pole at +90,0):
+    ltrivial_rotation  = ((ABS(90._sp - lon_lat_grid%north_pole(2)) < ZERO_TOL) .AND.  &
+      &                    ABS( 0._sp - lon_lat_grid%north_pole(1)) < ZERO_TOL)
+
+    ! compute the non-rotated lon/lat values
+    DO k=1,lon_lat_grid%lon_dim
+      rlon(k)         = lon_lat_grid%start_corner(1) + REAL(k-1,sp)*lon_lat_grid%delta(1)
+      sincos_lon(k,1) = SIN(rlon(k))
+      sincos_lon(k,2) = COS(rlon(k))
+    END DO
+    DO k=1,lon_lat_grid%lat_dim
+      rlat(k)         = lon_lat_grid%start_corner(2) + REAL(k-1,sp)*lon_lat_grid%delta(2)
+      sincos_lat(k,1) = SIN(rlat(k))
+      sincos_lat(k,2) = COS(rlat(k))
+    END DO
+
+    ! special treatment for "trivial rotation" (no.pole at +90,0):
+    IF (ltrivial_rotation) THEN
+
+      DO j = 1, lon_lat_grid%lat_dim
+        DO k = 1, lon_lat_grid%lon_dim
+          rotated_pts(k,j,1) = rlon(k)
+          rotated_pts(k,j,2) = rlat(j)
+        END DO
+      END DO
+
+    ELSE
+
+      ! convert north pole: degree -> rad:
+      npole_rad(:) = lon_lat_grid%north_pole(:)*pi_180
+
+      sincos_pole(:,1) = SIN(npole_rad(:))
+      sincos_pole(:,2) = COS(npole_rad(:))
+
+      DO j = 1, lon_lat_grid%lat_dim
+        DO k = 1, lon_lat_grid%lon_dim
+
+          ! ATAN2(COS(phi)*SIN(lambda), SIN(poleY)*COS(phi)*COS(lambda) - SIN(phi)*COS(poleY)) + poleX
+
+          arg1 = sincos_lat(j,2)*sincos_lon(k,1)
+          arg2 = sincos_pole(2,1)*sincos_lat(j,2)*sincos_lon(k,2) - sincos_lat(j,1)*sincos_pole(2,2)
+
+          IF ((ABS(arg1) > ZERO_TOL) .OR. (ABS(arg2) > ZERO_TOL)) THEN
+            ! rotated_pts(k,j,1) = ATAN2( arg1, arg2 ) + npole_rad(1)
+            rotated_pts(k,j,1) = ATAN2( -1._sp*sincos_pole(1,1)*arg2 - sincos_pole(1,2)*arg1 ,&
+              &                         -1._sp*sincos_pole(1,2)*arg2 + sincos_pole(1,1)*arg1 )
+          ELSE
+            rotated_pts(k,j,1) = 0.0_sp ! ATAN2(0,0) is undefined, so we just have to set something
+          ENDIF
+
+          ! ASIN( SIN(phi)*SIN(poleY) + COS(phi)*COS(lambda)*COS(poleY) )
+          rotated_pts(k,j,2) = &
+            & ASIN( sincos_lat(j,1)*sincos_pole(2,1) + &
+            & sincos_lat(j,2)*sincos_lon(k,2)*sincos_pole(2,2) )
+
+        ENDDO
+      ENDDO
+    END IF
+  END SUBROUTINE rotate_latlon_grid_sp
 
   !-------------------------------------------------------------------------
   !> Compute normalized area weights for lon-lat grid
@@ -343,7 +425,7 @@ CONTAINS
   !! @return 1D array (index: latitude)
   !!
   SUBROUTINE latlon_compute_area_weights( grid, earth_radius, area )
-    
+
     TYPE (t_lon_lat_grid), INTENT(in)    :: grid
     REAL(wp),              INTENT(IN)    :: earth_radius
     REAL(wp),              INTENT(inout) :: area(:)
@@ -352,7 +434,7 @@ CONTAINS
       & pi_180, radius, rr_dlon, tot_area
     REAL(wp) :: latitude(grid%lat_dim)
     INTEGER :: k, pole1, pole2
-    
+
     radius = earth_radius ! earth's radius (average)
     pi_180 = ATAN(1._wp)/45._wp
     start_lat   = grid%reg_lat_def(1) * pi_180
@@ -360,7 +442,7 @@ CONTAINS
     delta_lat   = grid%reg_lat_def(2) * pi_180
     delta_lat_2 = delta_lat / 2._wp
     rr_dlon     = radius*radius * delta_lon
-    
+
     ! for each latitude, compute area of a grid box with a lon-lat
     ! point at its center
     DO k = 1, grid%lat_dim
@@ -370,8 +452,8 @@ CONTAINS
     ! treat the special case of the poles (compute area of "triangle"
     ! with one vertex at the pole and the opposite side with constant
     ! latitude)
-    pole1 = INT(( 90._wp - grid%reg_lat_def(1))/grid%reg_lat_def(2)) + 1
-    pole2 = INT((-90._wp - grid%reg_lat_def(1))/grid%reg_lat_def(2)) + 1
+    pole1 = NINT(( 90._wp - grid%reg_lat_def(1))/grid%reg_lat_def(2)) + 1
+    pole2 = NINT((-90._wp - grid%reg_lat_def(1))/grid%reg_lat_def(2)) + 1
     IF ((pole1 > 0) .AND. (pole1 <= grid%lat_dim)) THEN
       area(pole1) = rr_dlon*(1._wp-SIN(latitude(pole1)-delta_lat_2))
     END IF

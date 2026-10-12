@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -41,13 +41,13 @@
 #     ........................................
 #     qfl        accqhfl_s     ??
 #     lhf        acclhfl_s     slhf
-#     tot_prec   tot_prec      tp     
+#     tot_prec   tot_prec      tp
 #     tqv        tqv           tciwv
 #     tql        tqc           param69.1.0
 #     tqi        tqi           param70.1.0
 #     tqr        tqr           tcolr
-#     tqs        tqs           tcols 
-#                     
+#     tqs        tqs           tcols
+#
 # Martin Koehler, May 2014
 # -------------------------------------------------------
 
@@ -60,12 +60,12 @@ set -A date     `cdo infov ${ml_file} | grep -w "tqv" | awk '{print $3}'`
 set -A time     `cdo infov ${ml_file} | grep -w "tqv" | awk '{print $4}'`
 set -A lhf      `cdo output -fldmean -selname,acclhfl_s  ${ml_file}`
 set -A qfl      `cdo output -fldmean -selname,accqhfl_s  ${ml_file}`
-set -A tot_prec `cdo output -fldmean -selname,tot_prec   ${ml_file}`   
-set -A tqv      `cdo output -fldmean -selname,tqv        ${ml_file}`   
+set -A tot_prec `cdo output -fldmean -selname,tot_prec   ${ml_file}`
+set -A tqv      `cdo output -fldmean -selname,tqv        ${ml_file}`
 set -A tql      `cdo output -fldmean -selname,tqc        ${ml_file}`
 set -A tqi      `cdo output -fldmean -selname,tqi        ${ml_file}`
 set -A tqr      `cdo output -fldmean -selname,tqr        ${ml_file}`
-set -A tqs      `cdo output -fldmean -selname,tqs        ${ml_file}`  
+set -A tqs      `cdo output -fldmean -selname,tqs        ${ml_file}`
 
 float lhf1
 float pme
@@ -98,4 +98,3 @@ echo '__________________________________________________________________________
 
 
 exit
-

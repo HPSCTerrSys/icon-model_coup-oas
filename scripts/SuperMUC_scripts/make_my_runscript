@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -16,11 +16,11 @@
 #==============================================================================
 #==============================================================================
 # The basic command for creating an ICON experiment run script is
-#   
+#
 #  $make_runscript in_script=exp.<name> in_script=exec.iconrun EXPNAME=<name>
 #
 # By default the folder in use is ./run, and the run script is named exp.<name>.run.
-# 
+#
 # Basic optional parameters for the $make_runscript command are:
 #
 #    out_script=<output run script name>. By default is <in_script>.run
@@ -31,15 +31,15 @@
 #
 #    mpi_procs=<number of mpi processes>. In the case of MPI configuration,
 #       defines how many processes per node will be used.
-# 
+#
 #    no_of_nodes=<Number of nodes>. In the case of MPI configuration,
 #       defines how many nodes will be used.
-# 
+#
 #    openmp_threads=<Number of openmp threads>. In the case of OPENMP
 #       configuration, defines how many OPENMP threads will be used.
 #
 #    cpu_time=<wall time>. Defines the expected run wall time.
-#  
+#
 #    <free_variable>=<value> Free variables can be passed to the run script
 #       using this syntax. For example: EXPNAME=test, will result the
 #       definition of the variable EXPNAME=test in the run script.
@@ -87,7 +87,7 @@ $make_runscript                  \
   no-of-nodes=$no_of_nodes       \
   mpi-procs-pernode=$mpi_procs_pernode \
   openmp-threads=$openmp_threads \
-  cpu-time=$cpu_time              
+  cpu-time=$cpu_time
 }
 #==============================================================================
 

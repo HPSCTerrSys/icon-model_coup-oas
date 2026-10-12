@@ -1,12 +1,7 @@
-! This module provides a simple key value storage based on string comparisons
-! using the generic hash tables provided by mo_hash_table.
-! As method to calculate hash keys, the DJB algorithm is used.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,17 +9,18 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! This module provides a simple key value storage based on string comparisons
+! using the generic hash tables provided by mo_hash_table.
+! As method to calculate hash keys, the DJB algorithm is used.
+
 MODULE mo_key_value_store
   USE mo_exception,             ONLY: finish, message
   USE mo_hash_table,            ONLY: t_HashTable, hashTable_make, t_HashIterator
-  USE mo_kind,                  ONLY: wp
+  USE mo_kind,                  ONLY: dp, sp
   USE mo_mpi,                   ONLY: p_get_bcast_role
   USE mo_packed_message,        ONLY: t_PackedMessage
   USE mo_util_string,           ONLY: tolower
   USE mo_util_texthash,         ONLY: text_hash, text_isEqual, sel_char
-#ifdef __PGI
-  USE mo_util_texthash,         ONLY: t_char_workaround
-#endif
 
   IMPLICIT NONE
   PRIVATE
@@ -38,16 +34,18 @@ MODULE mo_key_value_store
     TYPE(t_HashTable), POINTER :: table => NULL()
   CONTAINS
     PROCEDURE, PRIVATE :: put_c => key_value_store_put_c
-    PROCEDURE, PRIVATE :: put_r => key_value_store_put_r
+    PROCEDURE, PRIVATE :: put_dp => key_value_store_put_dp
+    PROCEDURE, PRIVATE :: put_sp => key_value_store_put_sp
     PROCEDURE, PRIVATE :: put_i => key_value_store_put_i
     PROCEDURE, PRIVATE :: put_l => key_value_store_put_l
-    GENERIC, PUBLIC :: put => put_c, put_r, put_i, put_l
+    GENERIC, PUBLIC :: put => put_c, put_dp, put_sp, put_i, put_l
     PROCEDURE, PRIVATE :: put_internal => key_value_store_put_internal
     PROCEDURE, PRIVATE :: get_c => key_value_store_get_c
-    PROCEDURE, PRIVATE :: get_r => key_value_store_get_r
+    PROCEDURE, PRIVATE :: get_dp => key_value_store_get_dp
+    PROCEDURE, PRIVATE :: get_sp => key_value_store_get_sp
     PROCEDURE, PRIVATE :: get_i => key_value_store_get_i
     PROCEDURE, PRIVATE :: get_l => key_value_store_get_l
-    GENERIC, PUBLIC :: get => get_c, get_r, get_i, get_l
+    GENERIC, PUBLIC :: get => get_c, get_dp, get_sp, get_i, get_l
     PROCEDURE, PRIVATE :: get_internal => key_value_store_get_internal
     PROCEDURE, PRIVATE :: input_pmsg => key_value_store_input_pmsg
     GENERIC, PUBLIC :: input => input_pmsg
@@ -60,14 +58,14 @@ MODULE mo_key_value_store
   END TYPE t_key_value_store
 
   CHARACTER(*), PARAMETER :: modname = "mo_key_value_store"
-  INTEGER, PARAMETER :: dt_txt = 1, dt_int = 2, dt_log = 3, dt_flt = 4
+  INTEGER, PARAMETER :: dt_txt = 1, dt_int = 2, dt_log = 3, dt_dp = 4, dt_sp = 5
 
 CONTAINS
 
   SUBROUTINE key_value_store_init(me, cs)
     CLASS(t_key_value_store), INTENT(INOUT) :: me
     LOGICAL, INTENT(IN) :: cs
-    
+
     IF (me%is_init) THEN
       IF (cs .NEQV. me%lcase_sensitive .OR. me%table%getEntryCount() .GT. 0) &
         & CALL key_value_store_destruct(me)
@@ -91,19 +89,9 @@ CONTAINS
     IF (isDest) CALL key_value_store_input_pmsg(me, pmsg)
   END SUBROUTINE key_value_store_bcast
 
-#ifdef __PGI
-#define ALLOC_ASSIGN(__a) \
-    __a , POINTER :: val_p; CLASS(*), POINTER :: valObj; \
-    ALLOCATE(val_p); val_p = val; valObj => val_p
-#define ALLOC_ASSIGN_C \
-    TYPE(t_char_workaround), POINTER :: val_p; CLASS(*), POINTER :: valObj; \
-    ALLOCATE(val_p); ALLOCATE(CHARACTER(LEN=LEN_TRIM(val)) :: val_p%c); \
-    WRITE(val_p%c, "(a)") TRIM(val); valObj => val_p
-#else
 #define ALLOC_ASSIGN(__a) \
     CLASS(*), POINTER :: valObj; ALLOCATE(valObj , SOURCE=val)
 #define ALLOC_ASSIGN_C ALLOC_ASSIGN(xxxx)
-#endif
 
   SUBROUTINE key_value_store_put_internal(me, key, valObj)
     CLASS(t_key_value_store), INTENT(INOUT) :: me
@@ -121,16 +109,7 @@ CONTAINS
     SUBROUTINE put_actual(key)
       CHARACTER(*), INTENT(IN) :: key
       CLASS(*), POINTER :: keyObj
-#ifdef __PGI
-      TYPE(t_char_workaround), POINTER :: key_p
-
-      ALLOCATE(key_p)
-      ALLOCATE(CHARACTER(LEN=LEN(key)) :: key_p%c)
-      WRITE(key_p%c, "(a)") key
-      keyObj => key_p
-#else
       ALLOCATE(keyObj , SOURCE=key)
-#endif
       CALL me%table%setEntry(keyObj, valObj)
     END SUBROUTINE put_actual
   END SUBROUTINE key_value_store_put_internal
@@ -143,14 +122,23 @@ CONTAINS
     CALL key_value_store_put_internal(me, key, valObj)
   END SUBROUTINE key_value_store_put_c
 
-  SUBROUTINE key_value_store_put_r(me, key, val)
+  SUBROUTINE key_value_store_put_dp(me, key, val)
     CLASS(t_key_value_store), INTENT(INOUT) :: me
     CHARACTER(*), INTENT(IN) :: key
-    REAL(wp), INTENT(IN) :: val
+    REAL(dp), INTENT(IN) :: val
 
-    ALLOC_ASSIGN(REAL(wp))
+    ALLOC_ASSIGN(REAL(dp))
     CALL key_value_store_put_internal(me, key, valObj)
-  END SUBROUTINE key_value_store_put_r
+  END SUBROUTINE key_value_store_put_dp
+
+  SUBROUTINE key_value_store_put_sp(me, key, val)
+    CLASS(t_key_value_store), INTENT(INOUT) :: me
+    CHARACTER(*), INTENT(IN) :: key
+    REAL(sp), INTENT(IN) :: val
+
+    ALLOC_ASSIGN(REAL(sp))
+    CALL key_value_store_put_internal(me, key, valObj)
+  END SUBROUTINE key_value_store_put_sp
 
   SUBROUTINE key_value_store_put_i(me, key, val)
     CLASS(t_key_value_store), INTENT(INOUT) :: me
@@ -170,11 +158,12 @@ CONTAINS
     CALL key_value_store_put_internal(me, key, valObj)
   END SUBROUTINE key_value_store_put_l
 
-  SUBROUTINE key_value_store_get_internal(me, trimmed_key, opt_err, opt_c, opt_r, opt_i, opt_l)
+  SUBROUTINE key_value_store_get_internal(me, trimmed_key, opt_err, opt_c, opt_dp, opt_sp, opt_i, opt_l)
     CLASS(t_key_value_store), INTENT(IN) :: me
     CHARACTER(*), INTENT(IN) :: trimmed_key
     CHARACTER(:), INTENT(OUT), ALLOCATABLE, OPTIONAL :: opt_c
-    REAL(wp), INTENT(OUT), OPTIONAL :: opt_r
+    REAL(dp), INTENT(OUT), OPTIONAL :: opt_dp
+    REAL(sp), INTENT(OUT), OPTIONAL :: opt_sp
     INTEGER, INTENT(OUT), OPTIONAL :: opt_i, opt_err
     LOGICAL, INTENT(OUT), OPTIONAL :: opt_l
     CHARACTER(*), PARAMETER :: routine = modname//"get"
@@ -189,21 +178,18 @@ CONTAINS
     IF(ASSOCIATED(valObj)) THEN
       IF (PRESENT(opt_err)) opt_err = 0
       SELECT TYPE(valObj)
-#ifdef __PGI
-      TYPE IS(t_char_workaround)
-        IF (.NOT.PRESENT(opt_c)) &
-          & CALL finish(routine, "type mismatch '"//trimmed_key//"', isCHARACTER")
-        opt_c = valObj%c
-#else
       TYPE IS(CHARACTER(*))
         IF (.NOT.PRESENT(opt_c)) &
           &CALL finish(routine, "type mismatch '"//trimmed_key//"', isCHARACTER")
         opt_c = valObj
-#endif
-      TYPE IS(REAL(wp))
-         IF (.NOT.PRESENT(opt_r)) &
-           & CALL finish(routine, "type mismatch '"//trimmed_key//"', is REAL(wp)")
-        opt_r = valObj
+      TYPE IS(REAL(dp))
+         IF (.NOT.PRESENT(opt_dp)) &
+           & CALL finish(routine, "type mismatch '"//trimmed_key//"', is REAL(dp)")
+        opt_dp = valObj
+      TYPE IS(REAL(sp))
+         IF (.NOT.PRESENT(opt_sp)) &
+           & CALL finish(routine, "type mismatch '"//trimmed_key//"', is REAL(sp)")
+        opt_sp = valObj
       TYPE IS(INTEGER)
         IF (.NOT.PRESENT(opt_i)) &
           & CALL finish(routine, "type mismatch '"//trimmed_key//"', is INTEGER")
@@ -243,14 +229,23 @@ CONTAINS
     CALL key_value_store_get_internal(me, TRIM(key), opt_c = res, opt_err = opt_err)
   END SUBROUTINE key_value_store_get_c
 
-  SUBROUTINE key_value_store_get_r(me, key, res, opt_err)
+  SUBROUTINE key_value_store_get_dp(me, key, res, opt_err)
     CLASS(t_key_value_store), INTENT(IN) :: me
-    REAL(wp), INTENT(OUT) :: res
+    REAL(dp), INTENT(OUT) :: res
     CHARACTER(*), INTENT(IN) :: key
     INTEGER, INTENT(OUT), OPTIONAL :: opt_err
 
-    CALL key_value_store_get_internal(me, TRIM(key), opt_r = res, opt_err = opt_err)
-  END SUBROUTINE key_value_store_get_r
+    CALL key_value_store_get_internal(me, TRIM(key), opt_dp = res, opt_err = opt_err)
+  END SUBROUTINE key_value_store_get_dp
+
+  SUBROUTINE key_value_store_get_sp(me, key, res, opt_err)
+    CLASS(t_key_value_store), INTENT(IN) :: me
+    REAL(sp), INTENT(OUT) :: res
+    CHARACTER(*), INTENT(IN) :: key
+    INTEGER, INTENT(OUT), OPTIONAL :: opt_err
+
+    CALL key_value_store_get_internal(me, TRIM(key), opt_sp = res, opt_err = opt_err)
+  END SUBROUTINE key_value_store_get_sp
 
   SUBROUTINE key_value_store_get_i(me, key, res, opt_err)
     CLASS(t_key_value_store), INTENT(IN) :: me
@@ -274,7 +269,8 @@ CONTAINS
     CLASS(t_key_value_store), INTENT(INOUT) :: me
     TYPE(t_PackedMessage), INTENT(INOUT) :: pmsg
     INTEGER :: natt, i, attType, attLen, namLen, alnLen, alvLen, aInteger
-    REAL(wp) :: aDouble
+    REAL(dp) :: aDouble
+    REAL(sp) :: aSingle
     LOGICAL :: aLogical, lcase_sensitive
     CHARACTER(:), ALLOCATABLE :: attTxt, attName
 
@@ -293,9 +289,12 @@ CONTAINS
       CALL pmsg%unpack(attName)
       CALL pmsg%unpack(attType)
       SELECT CASE(attType)
-      CASE(dt_flt)
+      CASE(dt_dp)
         CALL pmsg%unpack(aDouble)
-        CALL key_value_store_put_r(me, attName, aDouble)
+        CALL key_value_store_put_dp(me, attName, aDouble)
+      CASE(dt_sp)
+        CALL pmsg%unpack(aSingle)
+        CALL key_value_store_put_sp(me, attName, aSingle)
       CASE(dt_int)
         CALL pmsg%unpack(aInteger)
         CALL key_value_store_put_i(me, attName, aInteger)
@@ -367,24 +366,22 @@ CONTAINS
 
     SUBROUTINE output_pmsg()
       INTEGER :: clen
-  
+
       clen = LEN_TRIM(ccKey)
       CALL pmsg%pack(clen)
       CALL pmsg%pack(ccKey(1:clen))
       SELECT TYPE(curVal)
-#ifdef __PGI
-      TYPE IS(t_char_workaround)
-        ccVal => curVal%c
-#else
       TYPE IS(CHARACTER(*))
         ccVal => curVal
-#endif
         CALL pmsg%pack(dt_txt)
         clen = LEN_TRIM(ccVal)
         CALL pmsg%pack(clen)
         CALL pmsg%pack(ccVal(1:clen))
-      TYPE IS(REAL(wp))
-        CALL pmsg%pack(dt_flt)
+      TYPE IS(REAL(dp))
+        CALL pmsg%pack(dt_dp)
+        CALL pmsg%pack(curVal)
+      TYPE IS(REAL(sp))
+        CALL pmsg%pack(dt_sp)
         CALL pmsg%pack(curVal)
       TYPE IS(INTEGER)
         CALL pmsg%pack(dt_int)
@@ -403,14 +400,11 @@ CONTAINS
       message_text = ''
       NULLIFY(ccVal)
       SELECT TYPE(curVal)
-#ifdef __PGI
-      TYPE IS(t_char_workaround)
-        ccVal => curVal%c
-#else
       TYPE IS(CHARACTER(*))
         ccVal => curVal
-#endif
-      TYPE IS(REAL(wp))
+      TYPE IS(REAL(dp))
+        WRITE(message_text, "(3a,e12.5,a)") "key = >", ccKey, "< val = >", curVal, "<"
+      TYPE IS(REAL(sp))
         WRITE(message_text, "(3a,e12.5,a)") "key = >", ccKey, "< val = >", curVal, "<"
       TYPE IS(INTEGER)
         WRITE(message_text, "(3a,i6,a)") "key = >", ccKey, "< val = >", curVal, "<"

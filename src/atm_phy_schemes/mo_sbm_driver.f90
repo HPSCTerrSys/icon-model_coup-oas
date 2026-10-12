@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 !------------------------------------------------------------------------------
 !
 ! Description:
@@ -9,17 +20,6 @@
 !   dependency of SBM results on 2mom parameters (PSD, particle geometry).
 !   A more consistent coupling that makes full use of the SBM particle
 !   distributions and calculating reff directly from SBM is planned.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_sbm_driver
 
@@ -32,34 +32,31 @@ MODULE mo_sbm_driver
 ! Microphysical constants and variables
 !------------------------------------------------------------------------------
 
-USE mo_kind,                 ONLY: wp
-
-USE mo_exception,            ONLY: finish, message, message_text
-USE mo_run_config,           ONLY: iqb_i, iqb_e
-
-USE mo_2mom_mcrph_driver,    ONLY: two_moment_mcrph
-USE mo_sbm_util,             ONLY: p_ff8i01,p_ff8i33
-
-USE mo_sbm_main,             ONLY: warm_sbm
+  USE mo_kind,                 ONLY: wp
+  USE mo_exception,            ONLY: finish, message, message_text
+  USE mo_2mom_mcrph_driver,    ONLY: two_moment_mcrph
+  USE mo_sbm_main,             ONLY: fast_sbm
 !==============================================================================
 
   IMPLICIT NONE
-  PUBLIC
+  PRIVATE
 
   CHARACTER(len=*), PARAMETER :: routine = 'mo_sbm_driver'
   INTEGER,          PARAMETER :: dbg_level = 25                   ! level for debug prints
 
+  PUBLIC :: sbm
+
 CONTAINS
-  
+
   !==============================================================================
   !
   ! SBM warm phase microphysics
   !
   ! qnx in SBM is in units of 1/kg
   ! qx  in SBM is in units of kg/kg
-  ! 
+  !
   !==============================================================================
-  SUBROUTINE sbm(            &              ! used to be two_moment_mcrph
+  SUBROUTINE sbm(                         &
                        isize,             & ! in: array size
                        ke,                & ! in: end level/array size
                        is,                & ! in: start index, optional
@@ -78,34 +75,24 @@ CONTAINS
                        qs, qns,           & ! inout: snow (kg/kg, 1/kg atm_dyn_iconam/mo_nonhydro_state.f90)
                        qg, qng,           & ! inout: graupel (kg/kg, 1/kg atm_dyn_iconam/mo_nonhydro_state.f90)
                        qh, qnh,           & ! inout: hail (kg/kg, 1/kg atm_dyn_iconam/mo_nonhydro_state.f90)
-!                      nccn,              & ! inout: ccn (1/kg atm_dyn_iconam/mo_nonhydro_state.f90)
-!                      ninpot,            & ! inout: potential ice nuclei
                        ninact,            & ! inout: activated ice nuclei
-                       tk,                & ! inout: temp 
-                       w,                 & ! inout: w
+                       tk,                & ! inout: temp
+                       w,                 & ! in:    w
                        prec_r,            & ! inout: precip rate rain
                        prec_i,            & ! inout: precip rate ice
                        prec_s,            & ! inout: precip rate snow
                        prec_g,            & ! inout: precip rate graupel
                        prec_h,            & ! inout: precip rate hail
                        qrsflux,           & ! inout: 3D total precipitation rate
-!                      dtemp,             & ! inout: opt. temp increment
                        msg_level,         & ! in: msg_level
-!                      l_cv,              & ! in: switch for cv/cp
                        ithermo_water,     & ! in: thermodynamic option - needed for 2M
                        qbin,              &
-                       qv_before_satad,   & 
-                       tk_before_satad,   & 
                        qv_old,            &
-                       temp_old,          & 
-!                      u,                 & ! in: u
-!                      v,                 & ! in: v
+                       temp_old,          &
                        exner,             & ! in: exner
-!                      fr_land,           & ! in: fr_land
-                       lsbm_warm_full)       !0-Piggy Backing with 2M, 1-full warm SBM
+                       lsbm_coupled)        ! FALSE: use 2M for feedback and run uncoupled SBM, TRUE: use SBM feedback
 
     ! Declare variables in argument list
-    
     INTEGER,            INTENT (IN)  :: isize, ke    ! grid sizes
     INTEGER,  OPTIONAL, INTENT (IN)  :: is, ie, ks   ! start/end indices
 
@@ -120,49 +107,34 @@ CONTAINS
     REAL(wp), DIMENSION(:,:), INTENT(IN), TARGET :: hhl
 
     REAL(wp), DIMENSION(:,:), INTENT(INOUT), TARGET :: tk
-!   REAL(wp), DIMENSION(:),   INTENT(IN), TARGET :: fr_land
-    REAL(wp), DIMENSION(:,:), INTENT(IN), TARGET :: qv_before_satad, tk_before_satad, temp_old, qv_old !, theta_v_old, exner_old
-!   REAL(KIND=wp), DIMENSION(:,:,:), OPTIONAL, INTENT(INOUT) :: extra_3d
+    REAL(wp), DIMENSION(:,:), INTENT(IN), TARGET :: temp_old, qv_old
     ! Microphysics variables
     REAL(wp), DIMENSION(:,:), INTENT(INOUT) , TARGET :: &
          qv, qc, qnc, qr, qnr, qi, qni, qs, qns, qg, qng, qh, qnh, ninact
     REAL(wp), DIMENSION(:,:,:), INTENT(INOUT) , TARGET :: &
          qbin
 
-!   REAL(wp), DIMENSION(:,:), INTENT(INOUT), TARGET, OPTIONAL :: &
-!        &               qgl, qhl
-
-!   REAL(wp), DIMENSION(:,:), INTENT(INOUT), TARGET, OPTIONAL :: &
-!        &               nccn, ninpot
-
     ! Precip rates, vertical profiles
     REAL(wp), DIMENSION(:), INTENT (INOUT) :: &
          &               prec_r, prec_i, prec_s, prec_g, prec_h
     REAL(wp), DIMENSION(:,:), INTENT (INOUT) :: qrsflux
-    
-!   REAL(wp), OPTIONAL, INTENT (INOUT)  :: dtemp(:,:)
-
     INTEGER,  INTENT (IN)             :: msg_level
-    LOGICAL,  OPTIONAL, INTENT (IN)   :: lsbm_warm_full
+    LOGICAL,  OPTIONAL, INTENT (IN)   :: lsbm_coupled
     INTEGER,  OPTIONAL,  INTENT (IN)  :: ithermo_water
 
-    REAL(wp), ALLOCATABLE, DIMENSION(:,:) ::        &
+    REAL(wp), DIMENSION(isize,ke) ::        &
          &  theta,         & ! potential temperature
          &  lh_rate,       &
          &  ce_rate,       &
          &  cldnucl_rate,  &
-         &  qna_nucl,      &
          &  nccn2,         &
-         &  theta_old,     &
          &  diag_satur_ba,diag_satur_aa,diag_satur_am,diag_supsat_out, &
          &  reff,reffc,reffr, &
-         &  qv_sbm,qc_sbm,qr_sbm,qnc_sbm,qnr_sbm
-    REAL(wp), ALLOCATABLE, DIMENSION(:) :: prec_r_sbm
+         &  qv_sbm,qc_sbm,qr_sbm,qi_sbm,qs_sbm,qg_sbm,qnc_sbm,qnr_sbm,qni_sbm,qns_sbm,qng_sbm
+    REAL(wp), DIMENSION(isize) :: prec_r_sbm,prec_s_sbm,prec_g_sbm
 
     INTEGER  :: its,ite,kts,kte
-    INTEGER  :: ii,kk    !,bin,n_chem
-
-!   CHARACTER(len=*), PARAMETER :: routine = 'mo_sbm_driver' !used to be: 'mo_2mom_mcrph_driver'
+    INTEGER  :: ii,kk
 
     ! start/end indices
     IF (PRESENT(is)) THEN
@@ -175,117 +147,110 @@ CONTAINS
     ELSE
       ite = isize
     END IF
-    
+
     kts = 1
     kte = ke
-    
-    ALLOCATE(theta_old(isize,ke))
-    ALLOCATE(theta(isize,ke))
-    ALLOCATE(nccn2(isize,ke))
-    ALLOCATE(qna_nucl(isize,ke))
-    ALLOCATE(lh_rate(isize,ke))
-    ALLOCATE(ce_rate(isize,ke))
-    ALLOCATE(cldnucl_rate(isize,ke))
-    ALLOCATE(diag_satur_ba(isize,ke))
-    ALLOCATE(diag_satur_aa(isize,ke))
-    ALLOCATE(diag_satur_am(isize,ke))
-    ALLOCATE(diag_supsat_out(isize,ke))
-    ALLOCATE(reff(isize,ke))
-    ALLOCATE(reffc(isize,ke))
-    ALLOCATE(reffr(isize,ke))
-    ALLOCATE(qv_sbm(isize,ke))
-    ALLOCATE(qc_sbm(isize,ke))
-    ALLOCATE(qr_sbm(isize,ke))
-    ALLOCATE(qnc_sbm(isize,ke))
-    ALLOCATE(qnr_sbm(isize,ke))
-    ALLOCATE(prec_r_sbm(isize))
 
-    DO ii = its, ite
-      DO kk = kts, kte
-
-        nccn2(ii,kk) = 0.0_wp   
-        qna_nucl(ii,kk) = 0.0_wp 
-        lh_rate(ii,kk) = 0.0_wp   
-        ce_rate(ii,kk) = 0.0_wp    
+    DO kk = kts, kte
+      DO ii = its, ite
+        nccn2(ii,kk) = 0.0_wp
+        lh_rate(ii,kk) = 0.0_wp
+        ce_rate(ii,kk) = 0.0_wp
         cldnucl_rate(ii,kk) = 0.0_wp
 
-        qv_sbm(ii,kk)=qv_before_satad(ii,kk)
-        theta(ii,kk) = tk_before_satad(ii,kk)/exner(ii,kk)
+        qv_sbm(ii,kk)=qv(ii,kk)
+        theta(ii,kk) = tk(ii,kk)/exner(ii,kk) !just initialisation, we can put zero
 
         qc_sbm(ii,kk) = 0.0_wp
         qr_sbm(ii,kk) = 0.0_wp
+        qi_sbm(ii,kk) = 0.0_wp
+        qs_sbm(ii,kk) = 0.0_wp
+        qg_sbm(ii,kk) = 0.0_wp
         qnc_sbm(ii,kk) = 0.0_wp
         qnr_sbm(ii,kk) = 0.0_wp
-             
+        qni_sbm(ii,kk) = 0.0_wp
+        qns_sbm(ii,kk) = 0.0_wp
+        qng_sbm(ii,kk) = 0.0_wp
+
         diag_satur_ba(ii,kk)=0.0_wp
         diag_satur_aa(ii,kk)=0.0_wp
         diag_satur_am(ii,kk)=0.0_wp
         diag_supsat_out(ii,kk)=0.0_wp
       END DO
+    END DO
+    DO ii = its, ite
       prec_r_sbm(ii) = 0.0_wp
+      prec_s_sbm(ii) = 0.0_wp
+      prec_g_sbm(ii) = 0.0_wp
     END DO
 
-    CALL WARM_SBM(dt=dt                &!in:    dt
+    CALL FAST_SBM(dt=dt                   &!in:    dt
                  ,dz8w=dz                 &!in:    vertical layer thickness
-!                ,xland=fr_land           &!in:    land fraction 
                  ,rho_phy=rho             &!in:    density
                  ,p_phy=pres              &!in:    pressure
                  ,pi_phy=exner            &!in:    exner
-                 ,w=w                     &!in:    velocities 
+                 ,w=w                     &!in:    velocities
                  ,qv_old=qv_old           &
                  ,th_phy=theta            &!inout: theta. Check how to update prognostic theta_v
                  ,qv=qv_sbm               &
                  ,chem_new=qbin           &!inout: 99 mass bins
-                 ,rainncv=prec_r_sbm      &!inout: 1 time step precipitation (mm/sec).    
-                 ,qc=qc_sbm               &!inout: cloud water: input: 0 
+                 ,prec_r_sbm=prec_r_sbm   &!inout: 1 time step precipitation (mm/sec).
+                 ,qc=qc_sbm               &!inout: cloud water: input: 0
                  ,qr=qr_sbm               &!inout: rain water:  input: 0
                  ,qnc=qnc_sbm             &!inout: cloud water concentration:input: 0
                  ,qnr=qnr_sbm             &!inout: rain water concentration: input: 0
                  ,qna=nccn2               &!inout: ccn concentration:   input: 0
-                 ,qna_nucl=qna_nucl       &!inout: nucleated ccn concentration: input:0
                  ,lh_rate=lh_rate         &!inout: rate 1:      input: 0, output can go further to the model
                  ,ce_rate=ce_rate         &!inout: rate 2:      input: 0, output can go further to the model
                  ,cldnucl_rate=cldnucl_rate &!inout: rate 3:    input: 0, output can go further to the model
-!                ,kde=kte &!in:    subdomain indeces
-!                ,kme=kte &!in:    subdomain indeces
                  ,its=its,ite=ite, kts=kts,kte=kte &!in:    subdomain indeces
-                 ,diag_satur_ba=diag_satur_ba          &
-                 ,diag_satur_aa=diag_satur_aa          &
-                 ,diag_satur_am=diag_satur_am          &
-                 ,temp_old=temp_old                    &
-                 ,temp_new=tk_before_satad             &
-                 ,reff=reff    &
-                 ,reffc=reffc  &
-                 ,reffr=reffr  &
-                 ,diag_supsat_out=diag_supsat_out) 
+                 ,diag_satur_ba=diag_satur_ba          & !inout: diagnostic supersaturation before advection
+                 ,diag_satur_aa=diag_satur_aa          & !inout: diagnostic supersaturation after advection
+                 ,diag_satur_am=diag_satur_am          & !inout: diagnostic supersaturation after microphysics
+                 ,diag_supsat_out=diag_supsat_out      & !inout: diagnostic supersaturation after cond_evap subroutines
+                 ,temp_old=temp_old       &
+                 ,temp_new=tk             &
+                 ,reff=reff               &
+                 ,reffc=reffc             &
+                 ,reffr=reffr             &
+                 ,qi=qi_sbm               &
+                 ,qs=qs_sbm               &
+                 ,qg=qg_sbm               &
+                 ,qni=qni_sbm             &
+                 ,qns=qns_sbm             &
+                 ,qng=qng_sbm             &
+                 ,prec_s_sbm=prec_s_sbm   &
+                 ,prec_g_sbm=prec_g_sbm)
 
-    IF (lsbm_warm_full) then ! if sbm only is used
-      DO ii = its, ite
-        DO kk = kts, kte
+    IF (lsbm_coupled) then ! use SBM feedback
+      DO kk = kts, kte
+        DO ii = its, ite
           qv(ii,kk)=qv_sbm(ii,kk)     !kg/kg
           qc(ii,kk)=qc_sbm(ii,kk)     !kg/kg
           qr(ii,kk)=qr_sbm(ii,kk)     !kg/kg
           qnc(ii,kk)=qnc_sbm(ii,kk)   !1/kg
           qnr(ii,kk)=qnr_sbm(ii,kk)   !1/kg
           tk(ii,kk)=theta(ii,kk)*exner(ii,kk)
-          qi(ii,kk)=0.0_wp  ! inout: ice ok
-          qni(ii,kk)=0.0_wp ! inout: ice ok
-          qs(ii,kk)=0.0_wp  ! inout: snow ok
-          qns(ii,kk)=0.0_wp ! inout: snow ok
-          qg(ii,kk)=0.0_wp  ! inout: graupel ok
-          qng(ii,kk)=0.0_wp ! inout: graupel ok
+          qi(ii,kk)=qi_sbm(ii,kk)     !kg/kg
+          qni(ii,kk)=qni_sbm(ii,kk)   !1/kg
+          qs(ii,kk)=qs_sbm(ii,kk)     !kg/kg
+          qns(ii,kk)=qns_sbm(ii,kk)   !1/kg
+          qg(ii,kk)=qg_sbm(ii,kk)     !kg/kg
+          qng(ii,kk)=qng_sbm(ii,kk)   !1/kg
           qh(ii,kk)=0.0_wp  ! inout: hail ok
           qnh(ii,kk)=0.0_wp ! inout: hail ok
         END DO
+      END DO
+      DO ii = its, ite
         prec_r(ii)=prec_r_sbm(ii)
         prec_i(ii)=0.0_wp
-        prec_s(ii)=0.0_wp
-        prec_g(ii)=0.0_wp
+        prec_s(ii)=prec_s_sbm(ii)
+        prec_g(ii)=prec_g_sbm(ii)
         prec_h(ii)=0.0_wp
       END DO
-    ELSE !Piggybacking (2mom-->dynamics, sbm-->output only)
-      CALL two_moment_mcrph(                       &
-                       isize  = isize, &!nproma,                &!in: array size
+    ELSE ! 2M-->dynamics, sbm-->output only
+      CALL two_moment_mcrph(           &
+                       isize  = isize, &!nproma,             &!in: array size
                        ke     = ke, &!nlev,                  &!in: end level/array size
                        is     = is, &!i_startidx,            &!in: start index
                        ie     = ie, &!i_endidx,              &!in: end index
@@ -310,7 +275,7 @@ CONTAINS
                        qh     = qh, &!ptr_tracer (:,:,jb,iqh), &!inout: hail
                        qnh    = qnh, &!ptr_tracer (:,:,jb,iqnh),&!inout: hail number
                        ninact = ninact, &!ptr_tracer (:,:,jb,ininact), &!inout: IN number
-                       tk     = tk, &!p_diag%temp(:,:,jb),            &!inout: temp 
+                       tk     = tk, &!p_diag%temp(:,:,jb),            &!inout: temp
                        w      = w, &!p_prog%w(:,:,jb),               &!inout: w
                        prec_r = prec_r, &!prm_diag%rain_gsp_rate (:,jb),  &!inout precp rate rain
                        prec_i = prec_i, &!prm_diag%ice_gsp_rate (:,jb),   &!inout precp rate ice
@@ -324,6 +289,6 @@ CONTAINS
 
     END IF
 
-  END SUBROUTINE sbm                 
+  END SUBROUTINE sbm
 
-END MODULE mo_sbm_driver ! used to be mo_2mom_mcrph_driver
+END MODULE mo_sbm_driver

@@ -1,19 +1,16 @@
-!
-! This module contains routines for the vertical interpolation of
-! atmospheric data provided by external analyses to the ICON grid
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains routines for the vertical interpolation of
+! atmospheric data provided by external analyses to the ICON grid
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -47,7 +44,7 @@ MODULE mo_nh_vert_interp_ipz
   USE mo_deepatmo,            ONLY: deepatmo_htrafo
 #ifdef _OPENACC
   USE openacc,                ONLY: acc_is_present
-#endif  
+#endif
 
   IMPLICIT NONE
   PRIVATE
@@ -149,8 +146,8 @@ CONTAINS
         &                       vcoeff_z%lin_cell%wfacpbl1,                                  & !out
         &                       lacc=.TRUE.)
       !$OMP PARALLEL
-      CALL init(vcoeff_z%lin_cell%kpbl2(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(vcoeff_z%lin_cell%wfacpbl2(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init(vcoeff_z%lin_cell%kpbl2(:,:), lacc=.TRUE.)
+      CALL init(vcoeff_z%lin_cell%wfacpbl2(:,:), lacc=.TRUE.)
       !$OMP END PARALLEL
     ELSE
       CALL prepare_extrap(p_metrics%z_mc, nblks_c, npromz_c, nlev,                           & !in
@@ -182,10 +179,10 @@ CONTAINS
     IF (jg > 1 .OR. l_limited_area) THEN ! copy outermost nest boundary row in order to avoid missing values
       i_endblk = p_patch%cells%end_blk(1,1)
       !$OMP PARALLEL
-      CALL copy(z_auxz(:,:,1:i_endblk), temp_z_out(:,:,1:i_endblk), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(z_auxz(:,:,1:i_endblk), temp_z_out(:,:,1:i_endblk), lacc=.TRUE.)
       !$OMP END PARALLEL
     ENDIF
-   
+
     CALL cell_avg(z_auxz, p_patch, p_int_state(jg)%c_bln_avg, temp_z_out, lacc=.TRUE.)
 
     ! Interpolate pressure on z-levels
@@ -202,7 +199,7 @@ CONTAINS
     IF (jg > 1 .OR. l_limited_area) THEN ! copy outermost nest boundary row in order to avoid missing values
       i_endblk = p_patch%cells%end_blk(1,1)
       !$OMP PARALLEL
-      CALL copy(z_auxz(:,:,1:i_endblk), pres_z_out(:,:,1:i_endblk), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(z_auxz(:,:,1:i_endblk), pres_z_out(:,:,1:i_endblk), lacc=.TRUE.)
       !$OMP END PARALLEL
     ENDIF
 
@@ -230,9 +227,9 @@ CONTAINS
     !--- Compute data for interpolation of edge-based fields
 
     ! Compute geometric height at edge points
-    CALL cells2edges_scalar(p_metrics%z_mc, p_patch, intp_hrz%c_lin_e, z_me, opt_fill_latbc=.TRUE., lacc=.TRUE.)
-    CALL cells2edges_scalar(p_z3d_out, p_patch, intp_hrz%c_lin_e, p_z3d_edge, opt_fill_latbc=.TRUE., lacc=.TRUE.)
-    CALL sync_patch_array_mult(SYNC_E,p_patch,2,z_me,p_z3d_edge)
+    CALL cells2edges_scalar(p_metrics%z_mc, p_patch, intp_hrz%c_lin_e, z_me, lacc=.TRUE., opt_fill_latbc=.TRUE.)
+    CALL cells2edges_scalar(p_z3d_out, p_patch, intp_hrz%c_lin_e, p_z3d_edge, lacc=.TRUE., opt_fill_latbc=.TRUE.)
+    CALL sync_patch_array_mult(SYNC_E, p_patch, 2, lacc=.TRUE., f3din1=z_me, f3din2=p_z3d_edge)
 
     CALL prepare_lin_intp(z_me, p_z3d_edge, nblks_e, npromz_e, nlev, nzlev,                 & !in
       &                   vcoeff_z%lin_edge%wfac_lin, vcoeff_z%lin_edge%idx0_lin,           & !out
@@ -336,7 +333,7 @@ CONTAINS
     IF (jg > 1 .OR. l_limited_area) THEN ! copy outermost nest boundary row in order to avoid missing values
       i_endblk = p_patch%cells%end_blk(1,1)
       !$OMP PARALLEL
-      CALL copy(z_auxp(:,:,1:i_endblk), gh_p_out(:,:,1:i_endblk), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(z_auxp(:,:,1:i_endblk), gh_p_out(:,:,1:i_endblk), lacc=.TRUE.)
       !$OMP END PARALLEL
     ENDIF
 
@@ -372,7 +369,7 @@ CONTAINS
     IF (jg > 1 .OR. l_limited_area) THEN ! copy outermost nest boundary row in order to avoid missing values
       i_endblk = p_patch%cells%end_blk(1,1)
       !$OMP PARALLEL
-      CALL copy(z_auxp(:,:,1:i_endblk), temp_p_out(:,:,1:i_endblk), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(z_auxp(:,:,1:i_endblk), temp_p_out(:,:,1:i_endblk), lacc=.TRUE.)
       !$OMP END PARALLEL
     ENDIF
 
@@ -399,9 +396,9 @@ CONTAINS
 
     !--- Compute data for interpolation of edge-based fields
 
-    CALL cells2edges_scalar(p_metrics%z_mc, p_patch, intp_hrz%c_lin_e, z_me, opt_fill_latbc=.TRUE., lacc=.TRUE.)
-    CALL cells2edges_scalar(gh_p_out, p_patch, intp_hrz%c_lin_e, gh_p_edge, opt_fill_latbc=.TRUE., lacc=.TRUE.)
-    CALL sync_patch_array_mult(SYNC_E,p_patch,2,z_me,gh_p_edge)
+    CALL cells2edges_scalar(p_metrics%z_mc, p_patch, intp_hrz%c_lin_e, z_me, lacc=.TRUE., opt_fill_latbc=.TRUE.)
+    CALL cells2edges_scalar(gh_p_out, p_patch, intp_hrz%c_lin_e, gh_p_edge, lacc=.TRUE., opt_fill_latbc=.TRUE.)
+    CALL sync_patch_array_mult(SYNC_E, p_patch, 2, lacc=.TRUE., f3din1=z_me, f3din2=gh_p_edge)
 
     CALL prepare_lin_intp(z_me, gh_p_edge, nblks_e, npromz_e, nlev, nplev,                   & !in
       &                   vcoeff_p%lin_edge%wfac_lin, vcoeff_p%lin_edge%idx0_lin,            & !out
@@ -524,9 +521,9 @@ CONTAINS
 
     !--- Compute data for interpolation of edge-based fields
 
-    CALL cells2edges_scalar(p_metrics%z_mc, p_patch, intp_hrz%c_lin_e, z_me, opt_fill_latbc=.TRUE., lacc=.TRUE.)
-    CALL cells2edges_scalar(gh_i_out, p_patch, intp_hrz%c_lin_e, gh_i_edge, opt_fill_latbc=.TRUE., lacc=.TRUE.)
-    CALL sync_patch_array_mult(SYNC_E,p_patch,2,z_me,gh_i_edge)
+    CALL cells2edges_scalar(p_metrics%z_mc, p_patch, intp_hrz%c_lin_e, z_me, lacc=.TRUE., opt_fill_latbc=.TRUE.)
+    CALL cells2edges_scalar(gh_i_out, p_patch, intp_hrz%c_lin_e, gh_i_edge, lacc=.TRUE., opt_fill_latbc=.TRUE.)
+    CALL sync_patch_array_mult(SYNC_E, p_patch, 2, lacc=.TRUE., f3din1=z_me, f3din2=gh_i_edge)
 
     CALL prepare_lin_intp(z_me, gh_i_edge, nblks_e, npromz_e, nlev, nilev,                   & !in
       &                   vcoeff_i%lin_edge%wfac_lin, vcoeff_i%lin_edge%idx0_lin,            & !out
@@ -634,8 +631,8 @@ CONTAINS
         & start_end_levels=[1,nlevs_ml], radius=grid_sphere_radius, trafo_type='z2zgpot', ierror=istat, lacc=lzacc)
       IF (istat /= SUCCESS) CALL finish(routine, 'deepatmo_htrafo failed')
       z_ml => zgpot_ml
-      ! Note: the heights above ground level, 'zpbl1', 'zpbl2', 'zextrap' and heights derived from them 
-      ! have relatively low values (~ 1 km), so no deep-atmosphere modification is applied to them. 
+      ! Note: the heights above ground level, 'zpbl1', 'zpbl2', 'zextrap' and heights derived from them
+      ! have relatively low values (~ 1 km), so no deep-atmosphere modification is applied to them.
       ! (Put another way: we regard 'zpbl1', 'zpbl2', and 'zextrap' to represent geopotential heights.)
     ENDIF
 
@@ -711,7 +708,7 @@ CONTAINS
         !$ACC END PARALLEL
 #ifdef _OPENACC
         lfound_all = .TRUE.
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc) REDUCTION(.AND.: lfound_all)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc) REDUCTION(.AND.: lfound_all) COPY(lfound_all)
         DO jc = 1, nlen
           lfound_all = lfound_all .AND. l_found(jc)
         ENDDO
@@ -1091,7 +1088,7 @@ CONTAINS
         !$ACC END PARALLEL
 #ifdef _OPENACC
         lfound_all = .TRUE.
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) REDUCTION(.AND.: lfound_all)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) REDUCTION(.AND.: lfound_all) COPY(lfound_all)
         DO jc = 1, nlen
           lfound_all = lfound_all .AND. l_found(jc)
         ENDDO

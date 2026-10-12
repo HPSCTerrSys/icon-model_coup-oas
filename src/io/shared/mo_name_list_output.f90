@@ -1,17 +1,16 @@
-! Module handling synchronous and asynchronous output; supporting
-! multiple I/O PEs and horizontal interpolation.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-! 
+
+! Module handling synchronous and asynchronous output; supporting
+! multiple I/O PEs and horizontal interpolation.
 !
 ! @todo In asynchronous I/O mode, windows are created but not freed
 !
@@ -28,7 +27,7 @@
 ! created in the other parts of the model: In general, variable
 ! fields are introduced in ICON through the "add_var" mechanism in
 ! the module "shared/mo_var_list". This mechanism allocates "r_ptr"
-! POINTERs for REAL(wp) variable fields, see the data structure in
+! POINTERs for REAL(dp) variable fields, see the data structure in
 ! "t_var_list_element" (mo_var_list_element.f90). The "p_nh_state"
 ! variables, for example, then point to the same location. In the
 ! output, however, there exists a data structure "t_var_desc"
@@ -69,7 +68,7 @@
 MODULE mo_name_list_output
 
   ! constants
-  USE mo_kind,                      ONLY: wp, i4, i8, dp, sp
+  USE mo_kind,                      ONLY: i4, i8, dp, sp
   USE mo_impl_constants,            ONLY: max_dom, SUCCESS, MAX_TIME_LEVELS,       &
     &                                     BOUNDARY_MISSVAL, nlat_moc
   USE mo_cdi_constants,             ONLY: GRID_REGULAR_LONLAT, GRID_UNSTRUCTURED_VERT,              &
@@ -96,7 +95,8 @@ MODULE mo_name_list_output
   USE mo_name_list_output_gridinfo, ONLY: write_grid_info_grb2, GRID_INFO_NONE
   USE mo_util_file,                 ONLY: util_rename, get_filename, get_path
   ! config
-  USE mo_master_control,            ONLY: my_process_is_ocean
+  USE mo_master_control,            ONLY: my_process_is_ocean, my_process_is_waves, &
+    &                                     my_process_is_hamocc, get_my_process_name
   USE mo_master_config,             ONLY: getModelBaseDir, isRestart
   USE mo_grid_config,               ONLY: n_dom, l_limited_area
   USE mo_run_config,                ONLY: msg_level
@@ -118,7 +118,7 @@ MODULE mo_name_list_output
     &                                     msg_io_meteogram_flush, &
     &                                     msg_io_shutdown, all_events, &
     &                                     t_var_desc, t_output_name_list, &
-    &                                     FILETYPE_YAC
+    &                                     FILETYPE_NONE
   USE mo_output_event_types,        ONLY: t_sim_step_info, t_par_output_event
   ! parallelization
   USE mo_communication,             ONLY: exchange_data, t_comm_gather_pattern,&
@@ -133,11 +133,10 @@ MODULE mo_name_list_output
     &                                     num_work_procs, p_pe, p_pe_work,                          &
     &                                     p_max, p_comm_work_2_io, mpi_request_null
 #ifdef NO_ASYNC_IO_RMA
-  USE mo_mpi,                       ONLY: p_io, p_wait_n, p_comm_work_io, get_my_global_mpi_id,     &
+  USE mo_mpi,                       ONLY: p_io, p_comm_work_io, get_my_global_mpi_id,               &
                                           num_test_procs
 #endif
 #ifdef _OPENACC
-  USE mo_mpi,                       ONLY: i_am_accel_node
   USE openacc
 #endif
   ! calendar operations
@@ -230,7 +229,7 @@ MODULE mo_name_list_output
 
   INTEGER,          PARAMETER                 :: iUNKNOWN = 0
   INTEGER,          PARAMETER                 :: iINTEGER = 1
-  INTEGER,          PARAMETER                 :: iREAL    = 2
+  INTEGER,          PARAMETER                 :: iREAL_dp = 2
   INTEGER,          PARAMETER                 :: iREAL_sp = 3
 
 #ifndef NOMPI
@@ -323,8 +322,8 @@ CONTAINS
     ELSE
       name_len = LEN_TRIM(filename)
       of%cdiFileID       = streamOpenWrite(filename(1:name_len), of%output_type)
-      IF (gribout_config(of%phys_patch_id)%lgribout_compress_ccsds) THEN
-        CALL streamDefCompType(of%cdiFileID, CDI_COMPRESS_SZIP)
+      IF (of%compression_type /= CDI_UNDEFID) THEN
+        CALL streamDefCompType(of%cdiFileID, of%compression_type)
       ENDIF
     ENDIF
 
@@ -601,7 +600,7 @@ CONTAINS
           &       .AND. p_pe_work == 0)
         ofile_has_first_write(i) = check_open_file(output_file(i)%out_event)
 
-        IF (ofile_is_assigned_here(i) .AND. output_file(i)%name_list%filetype /= FILETYPE_YAC) THEN
+        IF (ofile_is_assigned_here(i) .AND. output_file(i)%name_list%filetype /= FILETYPE_NONE) THEN
           ! -------------------------------------------------
           ! Check if files have to be closed
           ! -------------------------------------------------
@@ -634,7 +633,7 @@ CONTAINS
       io_proc_id = output_file(i)%io_proc_id
       lhas_output = lhas_output .OR. ofile_is_assigned_here(i)
 
-      IF (ofile_is_assigned_here(i) .AND. output_file(i)%name_list%filetype /= FILETYPE_YAC) THEN
+      IF (ofile_is_assigned_here(i) .AND. output_file(i)%name_list%filetype /= FILETYPE_NONE) THEN
         ! -------------------------------------------------
         ! Do the output
         ! -------------------------------------------------
@@ -720,7 +719,8 @@ CONTAINS
       ! hand-shake protocol: step finished!
       ! -------------------------------------------------
 #ifndef NOMPI
-      IF (do_sync .AND. output_file(i)%name_list%filetype /= FILETYPE_YAC) CALL streamsync(output_file(i)%cdiFileID)
+      IF (do_sync .AND. output_file(i)%name_list%filetype /= FILETYPE_NONE) &
+        & CALL streamsync(output_file(i)%cdiFileID)
 #endif
       CALL pass_output_step(output_file(i)%out_event)
     ENDDO OUTFILE_WRITE_LOOP
@@ -773,7 +773,7 @@ CONTAINS
 #endif
     IF (PRESENT(opt_lhas_output)) opt_lhas_output = lhas_output
     IF (ltimer) CALL timer_stop(timer_write_output)
-    IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": write_name_list_output done."
+    IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, ": write_name_list_output done."
   END SUBROUTINE write_name_list_output
 
   SUBROUTINE write_ready_files_cdipio
@@ -894,11 +894,11 @@ CONTAINS
     TYPE (t_var_metadata), POINTER              :: info
     TYPE (t_reorder_info), POINTER              :: p_ri
 
-    REAL(wp), ALLOCATABLE, TARGET :: r_ptr_m(:,:,:)
+    REAL(dp), ALLOCATABLE, TARGET :: r_ptr_m(:,:,:)
     REAL(sp), ALLOCATABLE, TARGET :: s_ptr_m(:,:,:)
     INTEGER, ALLOCATABLE, TARGET :: i_ptr_m(:,:,:)
 
-    REAL(wp), POINTER :: r_ptr(:,:,:)
+    REAL(dp), POINTER :: r_ptr(:,:,:)
     REAL(sp), POINTER :: s_ptr(:,:,:)
     INTEGER, POINTER :: i_ptr(:,:,:)
     TYPE(t_comm_gather_pattern), POINTER        :: p_pat
@@ -932,7 +932,7 @@ CONTAINS
 #ifndef NOMPI
     is_mpi_workroot = my_process_is_mpi_workroot()
     participate_in_async_io &
-      = use_async_name_list_io .AND. .NOT. is_test .AND. of%name_list%filetype /= FILETYPE_YAC
+      = use_async_name_list_io .AND. .NOT. is_test .AND. of%name_list%filetype /= FILETYPE_NONE
     lasync_io_metadata_prepare &
       = participate_in_async_io .AND. is_mpi_workroot
     ! In case of async IO: Lock own window before writing to it
@@ -966,7 +966,7 @@ CONTAINS
       CALL MPI_Win_unlock(p_pe_work, of%mem_win%mpi_win_metainfo, mpierr)
 #endif
     END IF
- 
+
 
     IF (participate_in_async_io) THEN
 #ifdef NO_ASYNC_IO_RMA
@@ -1049,7 +1049,7 @@ CONTAINS
       ! determine, if this is a REAL or an INTEGER variable:
       IF (ASSOCIATED(of%var_desc(iv)%r_ptr) .OR.  &
         & ASSOCIATED(of%var_desc(iv)%tlev_rptr(tl)%p)) THEN
-        idata_type = iREAL
+        idata_type = iREAL_dp
       ELSE IF (ASSOCIATED(of%var_desc(iv)%s_ptr) .OR.  &
         & ASSOCIATED(of%var_desc(iv)%tlev_sptr(tl)%p)) THEN
         idata_type = iREAL_sp
@@ -1059,7 +1059,7 @@ CONTAINS
       END IF
 
       CALL get_ptr_to_var_data(i_ptr, r_ptr, s_ptr, &
-        &                      tl, of%var_desc(iv), info)
+        &                      tl, of%var_desc(iv), info, lacc=lzacc)
 
       ! --------------------------------------------------------
       ! Perform post-ops (small arithmetic operations on fields)
@@ -1070,7 +1070,7 @@ CONTAINS
         = ipost_op_type == post_op_scale .OR. ipost_op_type == post_op_luc .OR. ipost_op_type == post_op_lin2dbz &
                            .OR. ipost_op_type == post_op_offset
       IF ( post_op_apply ) THEN
-        IF (idata_type == iREAL) THEN
+        IF (idata_type == iREAL_dp) THEN
           alloc_shape = SHAPE(r_ptr)
           IF (ALLOCATED(r_ptr_m)) THEN
             alloc_shape_op = SHAPE(r_ptr_m)
@@ -1149,16 +1149,7 @@ CONTAINS
         CALL finish(routine,'unknown grid type')
       END SELECT
 
-      IF (of%name_list%filetype == FILETYPE_YAC) THEN
-         IF (.NOT. isRestart() .AND. is_first_write) THEN
-            ! skip very first step for yac-coupled output
-         ELSE
-#ifdef YAC_coupling
-            CALL data_write_coupled(of, idata_type, r_ptr, s_ptr, i_ptr, iv, &
-              nlevs, info, i_dom)
-#endif
-         END IF
-      ELSE
+      IF (of%name_list%filetype /= FILETYPE_NONE) THEN
 #ifdef HAVE_CDI_PIO
          IF (pio_type == pio_type_cdipio .AND. .NOT. is_test) THEN
             CALL data_write_cdipio(of, idata_type, r_ptr, s_ptr, i_ptr, iv, &
@@ -1197,11 +1188,11 @@ CONTAINS
       IF(use_dp_mpi2io) THEN
         CALL mpi_isend(of%mem_win%mem_ptr_dp, SIZE(of%mem_win%mem_ptr_dp), p_real_dp, &
             num_test_procs + num_work_procs + of%io_proc_id, 2305 + file_idx, &
-            p_comm_work_io, req_send_data(file_idx))
+            p_comm_work_io, req_send_data(file_idx), mpierr)
       ELSE
         CALL mpi_isend(of%mem_win%mem_ptr_sp, SIZE(of%mem_win%mem_ptr_sp), p_real_sp, &
             num_test_procs + num_work_procs + of%io_proc_id, 2305 + file_idx, &
-            p_comm_work_io, req_send_data(file_idx))
+            p_comm_work_io, req_send_data(file_idx), mpierr)
       END IF
 #else
       ! In case of async IO: Done writing to memory window, unlock it
@@ -1243,22 +1234,26 @@ CONTAINS
     last_bdry_index = p_max(max_glb_idx, p_comm_work)
   END FUNCTION get_last_bdry_index
 
-  SUBROUTINE get_ptr_to_var_data(i_ptr, r_ptr, s_ptr, tl, var_desc, info)
+  SUBROUTINE get_ptr_to_var_data(i_ptr, r_ptr, s_ptr, tl, var_desc, info, lacc)
     TYPE (t_var_metadata), INTENT(in) :: info
-    REAL(wp), POINTER, INTENT(out) :: r_ptr(:,:,:)
+    REAL(dp), POINTER, INTENT(out) :: r_ptr(:,:,:)
     REAL(sp), POINTER, INTENT(out) :: s_ptr(:,:,:)
     INTEGER, POINTER, INTENT(out) :: i_ptr(:,:,:)
     INTEGER, INTENT(in) :: tl
     TYPE(t_var_desc), TARGET, INTENT(in) :: var_desc
+    LOGICAL, INTENT(in) :: lacc
 
-    REAL(wp), SAVE, TARGET :: r_dummy(1,1,1)
-    REAL(wp), POINTER :: r_ptr_t(:,:,:,:,:,:), r_ptr_5d(:,:,:,:,:)
+    REAL(dp), SAVE, TARGET :: r_dummy(1,1,1)
+    REAL(dp), POINTER :: r_ptr_t(:,:,:,:,:,:), r_ptr_5d(:,:,:,:,:)
     REAL(sp), SAVE, TARGET :: s_dummy(1,1,1)
     REAL(sp), POINTER :: s_ptr_t(:,:,:,:,:,:), s_ptr_5d(:,:,:,:,:)
     INTEGER, SAVE, TARGET :: i_dummy(1,1,1)
     INTEGER, POINTER :: i_ptr_t(:,:,:,:,:,:), i_ptr_5d(:,:,:,:,:)
     CHARACTER(LEN=*), PARAMETER :: routine = modname//"::get_ptr_to_var_data"
     INTEGER :: var_ref_pos, nindex
+    LOGICAL :: lzacc
+
+    CALL set_acc_host_or_device(lzacc, lacc)
 
     r_ptr => r_dummy
     s_ptr => s_dummy
@@ -1317,7 +1312,7 @@ CONTAINS
       IF (var_ref_pos < 1 .OR. var_ref_pos > 3) THEN
         WRITE (message_text, '(2a,i0)') TRIM(info%name), &
              ": internal error! var_ref_pos=", var_ref_pos
-        GO TO 999
+        CALL finish(routine,message_text)
       END IF
       IF      (ASSOCIATED(r_ptr_5d)) THEN
         SELECT CASE(var_ref_pos)
@@ -1372,7 +1367,7 @@ CONTAINS
       IF (var_ref_pos < 1 .OR. var_ref_pos > 4) THEN
         WRITE (message_text, '(2a,i0)') TRIM(info%name), &
              ": internal error! var_ref_pos=", var_ref_pos
-        GO TO 999
+        CALL finish(routine,message_text)
       END IF
 
       ! 3D fields: Here we could just set a pointer to the
@@ -1411,25 +1406,23 @@ CONTAINS
           i_ptr => i_ptr_5d(:,:,:,nindex,1)
         END SELECT
       END IF
+
     CASE DEFAULT
       WRITE (message_text, '(2a,i0)') TRIM(info%name), &
            ": internal error! unhandled info%ndims=", info%ndims
-      GO TO 999
+      CALL finish(routine,message_text)
     END SELECT
 
-    
+
 
     IF      (ASSOCIATED(r_ptr_5d)) THEN
-      !$ACC UPDATE HOST(r_ptr) ASYNC(1) IF(i_am_accel_node .AND. acc_is_present(r_ptr))
+      !$ACC UPDATE HOST(r_ptr) ASYNC(1) IF(lacc .AND. acc_is_present(r_ptr))
     ELSE IF (ASSOCIATED(s_ptr_5d)) THEN
-      !$ACC UPDATE HOST(s_ptr) ASYNC(1) IF(i_am_accel_node .AND. acc_is_present(s_ptr))
+      !$ACC UPDATE HOST(s_ptr) ASYNC(1) IF(lacc .AND. acc_is_present(s_ptr))
     ELSE IF (ASSOCIATED(i_ptr_5d)) THEN
-      !$ACC UPDATE HOST(i_ptr) ASYNC(1) IF(i_am_accel_node .AND. acc_is_present(i_ptr))
+      !$ACC UPDATE HOST(i_ptr) ASYNC(1) IF(lacc .AND. acc_is_present(i_ptr))
     ENDIF
-    !$ACC WAIT(1) IF(i_am_accel_node)
-
-    RETURN
-999 CALL finish(routine,message_text)
+    !$ACC WAIT(1) IF(lacc)
 
   END SUBROUTINE get_ptr_to_var_data
 
@@ -1446,9 +1439,9 @@ CONTAINS
     REAL(dp), ALLOCATABLE :: r_out_dp(:)
     INTEGER, ALLOCATABLE :: r_out_int(:)
     REAL(sp), ALLOCATABLE :: r_out_sp(:)
-    REAL(wp), ALLOCATABLE :: r_out_recv(:)
-    REAL(wp), PARAMETER :: SYNC_ERROR_PRINT_TOL = 1e-13_wp
-    REAL(wp) :: missval
+    REAL(dp), ALLOCATABLE :: r_out_recv(:)
+    REAL(dp), PARAMETER :: SYNC_ERROR_PRINT_TOL = 1e-13_dp
+    REAL(dp) :: missval
     CHARACTER(LEN=*), PARAMETER :: routine = modname//"::gather_on_workroot_and_write"
 
     TYPE(t_comm_gather_pattern), INTENT(in), POINTER :: pat
@@ -1469,7 +1462,7 @@ CONTAINS
     lwrite_single_precision =   (.NOT. use_dp_mpi2io) .AND. (.NOT. have_GRIB) &
       &                       .OR. idata_type == iREAL_sp
 
-    IF (idata_type == iREAL) THEN
+    IF (idata_type == iREAL_dp) THEN
       ALLOCATE(r_out_dp(MERGE(n_glb, 0, is_mpi_workroot)))
     END IF
     IF ((idata_type == iREAL_sp) .OR. lwrite_single_precision) THEN
@@ -1521,7 +1514,7 @@ CONTAINS
       ! gather the array on stdio PE and write it out there
       IF ( info%hgrid == GRID_LONLAT ) THEN
         IF (is_mpi_workroot) THEN
-          IF      (idata_type == iREAL ) THEN
+          IF      (idata_type == iREAL_dp ) THEN
             r_out_dp(:)  = r_ptr(:,1,1)
           ELSE IF (idata_type == iREAL_sp ) THEN
             r_out_sp(:)  = s_ptr(:,1,1)
@@ -1532,7 +1525,7 @@ CONTAINS
       ELSE IF ( info%hgrid == GRID_ZONAL ) THEN ! 1deg zonal grid
         lev_idx = lev
         IF (is_mpi_workroot) THEN
-          IF      (idata_type == iREAL ) THEN
+          IF      (idata_type == iREAL_dp ) THEN
             r_out_dp(:)  = r_ptr(1,lev_idx,:)
           ELSE IF (idata_type == iREAL_sp ) THEN
             r_out_sp(:)  = s_ptr(1,lev_idx,:)
@@ -1541,8 +1534,8 @@ CONTAINS
           END IF
         END IF
       ELSE
-        IF (idata_type == iREAL) THEN
-          r_out_dp(:)  = 0._wp
+        IF (idata_type == iREAL_dp ) THEN
+          r_out_dp(:)  = 0._dp
 
           lev_idx = lev
           ! handle the case that a few levels have been selected out of
@@ -1552,10 +1545,10 @@ CONTAINS
           END IF
           CALL exchange_data(in_array=r_ptr(:,lev_idx,:),                 &
             &                out_array=r_out_dp(:), gather_pattern=pat,   &
-            &                fill_value = BOUNDARY_MISSVAL)
+            &                fill_value = REAL(BOUNDARY_MISSVAL,dp))
 
         ELSE IF (idata_type == iREAL_sp) THEN
-          r_out_sp(:)  = 0._wp
+          r_out_sp(:)  = 0._sp
 
           lev_idx = lev
           ! handle the case that a few levels have been selected out of
@@ -1564,8 +1557,8 @@ CONTAINS
             lev_idx = of%level_selection%global_idx(lev_idx)
           END IF
           CALL exchange_data(in_array=s_ptr(:,lev_idx,:),                 &
-            &                out_array=r_out_sp(:), gather_pattern=pat)
-          ! FIXME: Implement and use fill_value!
+            &                out_array=r_out_sp(:), gather_pattern=pat,   &
+            &                fill_value = REAL(BOUNDARY_MISSVAL,sp))
         ELSE IF (idata_type == iINTEGER) THEN
           r_out_int(:) = 0
 
@@ -1576,15 +1569,15 @@ CONTAINS
             lev_idx = of%level_selection%global_idx(lev_idx)
           END IF
           CALL exchange_data(in_array=i_ptr(:,lev_idx,:),                  &
-            &                out_array=r_out_int(:), gather_pattern=pat)
-          ! FIXME: Implement and use fill_value!
+            &                out_array=r_out_int(:), gather_pattern=pat,   &
+            &                fill_value = INT(BOUNDARY_MISSVAL))
         END IF
       END IF ! n_glb
 
       IF (is_mpi_workroot) THEN
 
         SELECT CASE(idata_type)
-        CASE(iREAL)
+        CASE(iREAL_dp)
           !
           ! "r_out_dp" contains double precision data. If single precision
           ! output is desired, we need to perform a type conversion:
@@ -1724,7 +1717,7 @@ CONTAINS
       &              .AND. (info%ndims > 2)
 
     SELECT CASE(idata_type)
-    CASE (iREAL)
+    CASE (iREAL_dp)
       IF (make_level_selection) THEN
         IF (apply_missval) THEN
           CALL var_copy(buf, ioff, r_ptr, ri, nlevs, &
@@ -1815,7 +1808,7 @@ CONTAINS
       &              .AND. (info%ndims > 2)
 
     SELECT CASE(idata_type)
-    CASE (iREAL)
+    CASE (iREAL_dp)
       IF (make_level_selection) THEN
         IF (apply_missval) THEN
           CALL var_copy(buf, ioff, r_ptr, ri, nlevs, &
@@ -1873,15 +1866,18 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx,ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),dp)
+        buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),dp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_dp2dp
 
   SUBROUTINE var_copy_dp2dp_miss(buf, ioff, r, ri, nlevs, i_endblk, i_endidx, &
@@ -1892,20 +1888,23 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx,ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),dp)
+          buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),dp)
         ELSE
-          buf(ioff+i) = missval
+          buf(ioff_l+i) = missval
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_dp2dp_miss
 
   SUBROUTINE var_copy_dp2dp_ls(buf, ioff, r, ri, nlevs, level_selection)
@@ -1915,18 +1914,22 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx,ioff_l
+
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
+        buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_dp2dp_ls
 
   SUBROUTINE var_copy_dp2dp_ls_miss(buf, ioff, r, ri, nlevs, &
@@ -1937,23 +1940,26 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
+          buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
         ELSE
-          buf(ioff+i) = missval
+          buf(ioff_l+i) = missval
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_dp2dp_ls_miss
 
   SUBROUTINE var_copy_sp2dp(buf, ioff, r, ri, nlevs)
@@ -1963,15 +1969,18 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),dp)
+        buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),dp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_sp2dp
 
   SUBROUTINE var_copy_sp2dp_miss(buf, ioff, r, ri, nlevs, i_endblk, i_endidx, &
@@ -1983,20 +1992,23 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),dp)
+          buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),dp)
         ELSE
-          buf(ioff+i) = missval
+          buf(ioff_l+i) = missval
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_sp2dp_miss
 
   SUBROUTINE var_copy_sp2dp_ls(buf, ioff, r, ri, nlevs, level_selection)
@@ -2006,18 +2018,21 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
+        buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_sp2dp_ls
 
   SUBROUTINE var_copy_sp2dp_ls_miss(buf, ioff, r, ri, nlevs, &
@@ -2029,23 +2044,26 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
+          buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
         ELSE
-          buf(ioff+i) = missval
+          buf(ioff_l+i) = missval
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_sp2dp_ls_miss
 
   SUBROUTINE var_copy_i42dp(buf, ioff, r, ri, nlevs)
@@ -2055,15 +2073,18 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),dp)
+        buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),dp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_i42dp
 
   SUBROUTINE var_copy_i42dp_miss(buf, ioff, r, ri, nlevs, i_endblk, i_endidx, &
@@ -2075,20 +2096,23 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),dp)
+          buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),dp)
         ELSE
-          buf(ioff+i) = missval
+          buf(ioff_l+i) = missval
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_i42dp_miss
 
   SUBROUTINE var_copy_i42dp_ls(buf, ioff, r, ri, nlevs, level_selection)
@@ -2098,18 +2122,21 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
+        buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_i42dp_ls
 
   SUBROUTINE var_copy_i42dp_ls_miss(buf, ioff, r, ri, nlevs, &
@@ -2121,23 +2148,26 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
+          buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),dp)
         ELSE
-          buf(ioff+i) = missval
+          buf(ioff_l+i) = missval
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_i42dp_ls_miss
 
   SUBROUTINE var_copy_dp2sp(buf, ioff, r, ri, nlevs)
@@ -2147,15 +2177,18 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),sp)
+        buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),sp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_dp2sp
 
   SUBROUTINE var_copy_dp2sp_miss(buf, ioff, r, ri, nlevs, i_endblk, i_endidx, &
@@ -2166,20 +2199,23 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),sp)
+          buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),sp)
         ELSE
-          buf(ioff+i) = REAL(missval, sp)
+          buf(ioff_l+i) = REAL(missval, sp)
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_dp2sp_miss
 
   SUBROUTINE var_copy_dp2sp_ls(buf, ioff, r, ri, nlevs, level_selection)
@@ -2189,18 +2225,21 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
+        buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_dp2sp_ls
 
   SUBROUTINE var_copy_dp2sp_ls_miss(buf, ioff, r, ri, nlevs, &
@@ -2211,23 +2250,26 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
+          buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
         ELSE
-          buf(ioff+i) = missval
+          buf(ioff_l+i) = missval
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_dp2sp_ls_miss
 
   SUBROUTINE var_copy_sp2sp(buf, ioff, r, ri, nlevs)
@@ -2237,15 +2279,18 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),sp)
+        buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),sp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_sp2sp
 
   SUBROUTINE var_copy_sp2sp_miss(buf, ioff, r, ri, nlevs, i_endblk, i_endidx, &
@@ -2257,20 +2302,23 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),sp)
+          buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),sp)
         ELSE
-          buf(ioff+i) = REAL(missval, sp)
+          buf(ioff_l+i) = REAL(missval, sp)
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_sp2sp_miss
 
   SUBROUTINE var_copy_sp2sp_ls(buf, ioff, r, ri, nlevs, level_selection)
@@ -2280,18 +2328,21 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
+        buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_sp2sp_ls
 
   SUBROUTINE var_copy_sp2sp_ls_miss(buf, ioff, r, ri, nlevs, &
@@ -2303,23 +2354,26 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
+          buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
         ELSE
-          buf(ioff+i) = REAL(missval, sp)
+          buf(ioff_l+i) = REAL(missval, sp)
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_sp2sp_ls_miss
 
   SUBROUTINE var_copy_i42sp(buf, ioff, r, ri, nlevs)
@@ -2329,15 +2383,18 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),sp)
+        buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),sp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_i42sp
 
   SUBROUTINE var_copy_i42sp_miss(buf, ioff, r, ri, nlevs, i_endblk, i_endidx, &
@@ -2349,20 +2406,23 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, ri_blk, ri_idx
+    INTEGER :: i, jk, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       DO i = 1, ri%n_own
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,jk,ri_blk),sp)
+          buf(ioff_l+i) = REAL(r(ri_idx,jk,ri_blk),sp)
         ELSE
-          buf(ioff+i) = REAL(missval, sp)
+          buf(ioff_l+i) = REAL(missval, sp)
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_i42sp_miss
 
   SUBROUTINE var_copy_i42sp_ls(buf, ioff, r, ri, nlevs, level_selection)
@@ -2372,18 +2432,21 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
-        buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
+        buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_i42sp_ls
 
   SUBROUTINE var_copy_i42sp_ls_miss(buf, ioff, r, ri, nlevs, &
@@ -2395,23 +2458,26 @@ CONTAINS
     INTEGER, INTENT(inout) :: ioff
     INTEGER, INTENT(in) :: level_selection(:), nlevs, i_endblk, i_endidx
 
-    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx
+    INTEGER :: i, jk, lev_idx, ri_blk, ri_idx, ioff_l
+    !$OMP PARALLEL DO PRIVATE(i,lev_idx,ri_blk,ri_idx,ioff_l) SCHEDULE(STATIC) COLLAPSE(2)
     DO jk = 1, nlevs
       ! handle the case that a few levels have been selected out of
       ! the total number of levels:
-      lev_idx = level_selection(jk)
       DO i = 1, ri%n_own
+        lev_idx = level_selection(jk)
+        ioff_l = ioff + (jk-1)*ri%n_own
         ri_blk = ri%own_blk(i)
         ri_idx = ri%own_idx(i)
         IF (ri_blk > i_endblk &
              & .OR. ri_blk == i_endblk .AND. ri_idx > i_endidx) THEN
-          buf(ioff+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
+          buf(ioff_l+i) = REAL(r(ri_idx,lev_idx,ri_blk),sp)
         ELSE
-          buf(ioff+i) = REAL(missval, sp)
+          buf(ioff_l+i) = REAL(missval, sp)
         END IF
       END DO
-      ioff = ioff + ri%n_own
     END DO
+    !$OMP END PARALLEL DO
+    ioff = ioff + nlevs*ri%n_own
   END SUBROUTINE var_copy_i42sp_ls_miss
 
   SUBROUTINE set_boundary_mask_dp(buf, missval, i_endblk, i_endidx, ri)
@@ -2423,12 +2489,14 @@ CONTAINS
     INTEGER :: i, n
 
     n = ri%n_own
+    !$OMP PARALLEL DO SCHEDULE(STATIC)
     DO i = 1, n
       IF (ri%own_blk(i) < i_endblk .OR. &
         & (ri%own_blk(i) == i_endblk .AND. ri%own_idx(i) <= i_endidx)) THEN
         buf(i) = missval
       END IF
     END DO
+    !$OMP END PARALLEL DO
   END SUBROUTINE set_boundary_mask_dp
 
   SUBROUTINE set_boundary_mask_sp(buf, missval, i_endblk, i_endidx, ri)
@@ -2440,12 +2508,14 @@ CONTAINS
     INTEGER :: i, n
 
     n = ri%n_own
+    !$OMP PARALLEL DO SCHEDULE(STATIC)
     DO i = 1, n
       IF (ri%own_blk(i) < i_endblk .OR. &
         & (ri%own_blk(i) == i_endblk .AND. ri%own_idx(i) <= i_endidx)) THEN
         buf(i) = missval
       END IF
     END DO
+    !$OMP END PARALLEL DO
   END SUBROUTINE set_boundary_mask_sp
 
   FUNCTION get_bdry_missval(info, idata_type) RESULT(missval)
@@ -2455,7 +2525,7 @@ CONTAINS
     REAL(dp) :: missval
     missval = BOUNDARY_MISSVAL
     IF (info%lmiss) THEN
-      IF (idata_type == iREAL) THEN
+      IF (idata_type == iREAL_dp) THEN
         missval = info%missval%rval
       ELSE IF (idata_type == iINTEGER) THEN
         missval = REAL(info%missval%ival,dp)
@@ -2481,104 +2551,6 @@ CONTAINS
     CALL get_indices_c(ptr_patch, i_endblk, i_startblk, i_endblk, &
       &                i_startidx, i_endidx, rl_start, rl_end)
   END SUBROUTINE get_bdry_blk_idx
-
-#ifdef YAC_coupling
-  SUBROUTINE data_write_coupled(of, idata_type, r_ptr, s_ptr, i_ptr, iv, &
-       nlevs, info, i_dom)
-
-    USE mo_exception,           ONLY: message_text
-    USE mo_var_metadata,        ONLY: get_var_name
-    USE mo_yac_finterface,      ONLY: yac_fput, yac_fget_action, &
-      &                               yac_fupdate, YAC_ACTION_NONE, &
-      &                               YAC_ACTION_OUT_OF_BOUND, yac_dble_ptr
-
-    TYPE (t_output_file), INTENT(IN) :: of
-    INTEGER, INTENT(in) :: idata_type, iv, nlevs
-    REAL(dp), INTENT(in) :: r_ptr(:,:,:)
-    REAL(sp), INTENT(in) :: s_ptr(:,:,:)
-    INTEGER, INTENT(in) :: i_ptr(:,:,:)
-    TYPE(t_var_metadata), INTENT(in) :: info
-    INTEGER, INTENT(in) :: i_dom
-
-    CHARACTER(LEN=*), PARAMETER  :: routine = modname//"::data_write_coupled"
-    INTEGER :: action, ierror, nbr_hor_points
-    REAL(dp), ALLOCATABLE :: r_buf(:,:,:)
-    REAL(sp), ALLOCATABLE :: s_buf(:,:,:)
-    CHARACTER(len=:), ALLOCATABLE :: name
-    INTEGER :: var_shape(3)
-    INTEGER :: il
-
-    name = TRIM(of%name_list%output_filename) // "_" // TRIM(get_var_name(info))
-    IF (msg_level >= 18) &
-      CALL message(routine, "Handling " // name // " via yac-coupled output_nml", .TRUE.)
-
-    IF (i_dom /= 1) &
-      CALL finish(routine, "Yac-coupled output_nml only supported on ICON horizontal grid yet")
-
-    CALL yac_fget_action(info%cdiVarID, action)
-
-    IF (action == YAC_ACTION_NONE) THEN
-       CALL yac_fupdate(info%cdiVarID)
-    ELSE IF (action /= YAC_ACTION_OUT_OF_BOUND) THEN
-       IF (msg_level >= 15) &
-         CALL message(routine, "Handling " // name // " via yac-coupled output_nml", .TRUE.)
-
-       IF (info%hgrid .EQ. GRID_UNSTRUCTURED_CELL) THEN
-          nbr_hor_points = p_patch(i_dom)%n_patch_cells
-       ELSEIF (info%hgrid .EQ. GRID_UNSTRUCTURED_VERT) THEN
-          nbr_hor_points = p_patch(i_dom)%n_patch_verts
-       ELSE
-          CALL finish(routine, "Invalid hgrid for yac-coupled output_nml") ! TODO support other grids
-       END IF
-
-       SELECT CASE(idata_type)
-       CASE (iREAL)
-          var_shape = SHAPE(r_ptr)
-          IF (var_shape(1) /= nproma .OR. var_shape(2) /= nlevs .OR. var_shape(1) * var_shape(3) < nbr_hor_points) THEN
-             WRITE (message_text,'(a,3i7,a,i0,a,i0,a,i0)') 'var_shape=', var_shape, ' nproma=', nproma, ' nlevs=', nlevs, ' nbr_hor_points=', nbr_hor_points
-             CALL message(routine, message_text, .TRUE.)
-             CALL finish(routine, "Unexpected variable dimensions for yac-coupled output_nml")
-          END IF
-          ALLOCATE(r_buf(nbr_hor_points, 1, nlevs))
-          DO il = 1,nlevs
-             r_buf(:,1,il) = RESHAPE(r_ptr(:, il, :), (/ nbr_hor_points /))
-          END DO
-          CALL yac_fput(info%cdiVarID, nbr_hor_points, 1, nlevs, r_buf, action, ierror)
-          DEALLOCATE(r_buf)
-
-       CASE (iREAL_sp)
-          var_shape = SHAPE(s_ptr)
-          IF (var_shape(1) /= nproma .OR. var_shape(2) /= nlevs .OR. var_shape(1) * var_shape(3) < nbr_hor_points) THEN
-             WRITE (message_text,'(a,3i7,a,i0,a,i0,a,i0)') 'var_shape=', var_shape, ' nproma=', nproma, ' nlevs=', nlevs, ' nbr_hor_points=', nbr_hor_points
-             CALL message(routine, message_text, .TRUE.)
-             CALL finish(routine, "Unexpected variable dimensions for yac-coupled output_nml")
-          END IF
-          ALLOCATE(s_buf(nbr_hor_points, 1, nlevs))
-          DO il = 1,nlevs
-             s_buf(:,1,il) = RESHAPE(s_ptr(:, il, :), (/ nbr_hor_points /))
-          END DO
-          CALL yac_fput(info%cdiVarID, nbr_hor_points, 1, nlevs, s_buf, action, ierror)
-          DEALLOCATE(s_buf)
-
-       CASE (iINTEGER)
-          var_shape = SHAPE(i_ptr)
-          IF (var_shape(1) /= nproma .OR. var_shape(2) /= nlevs .OR. var_shape(1) * var_shape(3) < nbr_hor_points) THEN
-             WRITE (message_text,'(a,3i7,a,i0,a,i0,a,i0)') 'var_shape=', var_shape, ' nproma=', nproma, ' nlevs=', nlevs, ' nbr_hor_points=', nbr_hor_points
-             CALL message(routine, message_text, .TRUE.)
-             CALL finish(routine, "Unexpected variable dimensions for yac-coupled output_nml")
-          END IF
-          ALLOCATE(s_buf(nbr_hor_points, 1, nlevs))
-          DO il = 1,nlevs
-             s_buf(:,1,il) = RESHAPE(i_ptr(:, il, :), (/ nbr_hor_points /))
-          END DO
-          CALL yac_fput(info%cdiVarID, nbr_hor_points, 1, nlevs, s_buf, action, ierror)
-          DEALLOCATE(s_buf)
-
-       END SELECT
-
-    END IF
-  END SUBROUTINE data_write_coupled
-#endif
 
 #ifdef HAVE_CDI_PIO
   SUBROUTINE data_write_cdipio(of, idata_type, r_ptr, s_ptr, i_ptr, iv, &
@@ -2779,24 +2751,36 @@ CONTAINS
     INTEGER             :: oas_error
 #endif
     TYPE(t_par_output_event), POINTER :: ev
-    LOGICAL             :: is_ocean
+    LOGICAL             :: is_ocean, is_wave, is_hamocc
 
     is_io_root = my_process_is_mpi_ioroot()
     is_ocean   = my_process_is_ocean() ! FIXME: is that really sensible?
+    is_wave    = my_process_is_waves()
+    is_hamocc  = my_process_is_hamocc()
 
     ! define initial time stamp used as reference for output statistics
     CALL set_reference_time()
 
-    ! FIXME? ocean the other way round?
+    ! FIXME? ocean and waves the other way round?
     ! Initialize name list output, this is a collective call for all PEs
-    IF (.NOT. is_ocean) &
+    IF ( (.NOT. is_ocean)  .AND. (.NOT. is_wave) .AND. (.NOT. is_hamocc) ) &
       & CALL init_name_list_output(sim_step_info)
+
+    ! setup of meteogram output
+    DO jg =1,n_dom
+      IF (meteogram_output_config(jg)%lenabled) THEN
+        CALL meteogram_init(meteogram_output_config(jg), jg,    &
+          &                 grid_uuid=patch_info(jg)%grid_uuid, &
+          &                 number_of_grid_used=patch_info(jg)%number_of_grid_used)
+      END IF
+    END DO
 
     ! The initialisation of coupling needs to be called by all (!) MPI processes
     ! in MPI_COMM_WORLD.
-    ! construct_dummy_coupling needs to be called after init_name_list_output
-    ! due to calling sequence in subroutine atmo_model for other atmosphere
-    ! processes
+    ! For the atmo model construct_dummy_coupling needs to be called after
+    ! init_name_list_output due to calling sequence in subroutine atmo_model
+    ! for other atmosphere processes.
+    ! For ocean and wave it is the other way around!
     IF ( is_coupled_run() ) THEN
       CALL timer_start(timer_coupling)
       CALL construct_dummy_coupling("name_list_output")
@@ -2808,17 +2792,8 @@ CONTAINS
 #endif
 
     ! FIXME: Explain this braindead weirdnes.
-    IF (is_ocean) &
+    IF (is_ocean .OR. is_wave .OR. is_hamocc) &
       & CALL init_name_list_output(sim_step_info)
-
-    ! setup of meteogram output
-    DO jg =1,n_dom
-      IF (meteogram_output_config(jg)%lenabled) THEN
-        CALL meteogram_init(meteogram_output_config(jg), jg,    &
-          &                 grid_uuid=patch_info(jg)%grid_uuid, &
-          &                 number_of_grid_used=patch_info(jg)%number_of_grid_used)
-      END IF
-    END DO
 
 
     ! Append the chosen p-levels, z-levels, i-levels to the levels
@@ -2865,7 +2840,7 @@ CONTAINS
             l_complete = all_output_file_event_finished(output_file(:))
 
             IF (l_complete) THEN
-              IF (ldebug)   WRITE (0,*) p_pe, ": wait for fellow I/O PEs..."
+              IF (ldebug)   WRITE (0,*) TRIM(get_my_process_name()), p_pe, ": wait for fellow I/O PEs..."
               WAIT_FINAL : DO
                 CALL blocking_wait_for_irecvs(all_events)
                 ev => all_events
@@ -2883,7 +2858,7 @@ CONTAINS
                 END DO HANDLE_COMPLETE_STEPS
                 IF (l_complete) EXIT WAIT_FINAL
               END DO WAIT_FINAL
-              IF (ldebug)  WRITE (0,*) p_pe, ": Finalization sequence"
+              IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), p_pe, ": Finalization sequence"
             END IF
           END IF
         ELSE IF (action == msg_io_meteogram_flush) THEN
@@ -3095,7 +3070,7 @@ CONTAINS
 #ifdef NO_ASYNC_IO_RMA
     ! Get message from p_pe_work==0
     call mpi_recv(bufr_metainfo, size(bufr_metainfo), p_int, 0, 1103 + file_idx, &
-        p_comm_work_io, MPI_STATUS_IGNORE, mpierr)    
+        p_comm_work_io, MPI_STATUS_IGNORE, mpierr)
 #else ! ASYNC_IO_RMA
     ! Receive metadata from PE0
     CALL MPI_Win_lock(MPI_LOCK_SHARED, 0, MPI_MODE_NOCHECK, of%mem_win%mpi_win_metainfo, mpierr)
@@ -3108,7 +3083,7 @@ CONTAINS
     ! Go over all name list variables for this output file
 
     ioff(:) = 0_MPI_ADDRESS_KIND
-#ifdef NO_ASYNC_IO_RMA    
+#ifdef NO_ASYNC_IO_RMA
     ! For RMA, the window is locked to access the remote memory
     ! Here, we receive all the data that has been sent by the work PEs
     max_win_mem_size = recv_buffer_max_sizes(file_idx)
@@ -3256,7 +3231,7 @@ CONTAINS
           !handle request pool
           req_next = req_next + 1
           req_rampup = req_rampup .AND. req_next <= req_pool_size
-        
+
 #ifdef NO_ASYNC_IO_RMA
           ! Copy data from the receive buffer into the correct variables used by RMA
           ! FIXME: This is inefficient
@@ -3335,7 +3310,7 @@ CONTAINS
             END IF
           END IF
           IF (use_dp_mpi2io) THEN
-!$OMP DO PRIVATE(src_start, src_end)
+!$OMP DO PRIVATE(src_start, src_end) SCHEDULE(GUIDED)
             DO np = 0, num_work_procs-1
               src_start = p_ri%pe_off(np) * this_chunk_nlevs + (ilev-chunk_start)*p_ri%pe_own(np) + 1
               src_end   = p_ri%pe_off(np) * this_chunk_nlevs + (ilev-chunk_start+1)*p_ri%pe_own(np)
@@ -3346,7 +3321,7 @@ CONTAINS
           ELSE IF (have_GRIB) THEN
             ! ECMWF GRIB-API/CDI has only a double precision interface at the
             ! date of coding this
-!$OMP DO PRIVATE(src_start, src_end)
+!$OMP DO PRIVATE(src_start, src_end) SCHEDULE(GUIDED)
             DO np = 0, num_work_procs-1
               src_start = p_ri%pe_off(np) * this_chunk_nlevs &
                 + (ilev-chunk_start)*p_ri%pe_own(np) + 1
@@ -3357,7 +3332,7 @@ CONTAINS
             ENDDO
 !$OMP END DO NOWAIT
           ELSE
-!$OMP DO PRIVATE(src_start, src_end)
+!$OMP DO PRIVATE(src_start, src_end) SCHEDULE(GUIDED)
             DO np = 0, num_work_procs-1
               src_start = p_ri%pe_off(np) * this_chunk_nlevs &
                 + (ilev-chunk_start)*p_ri%pe_own(np) + 1
@@ -3376,7 +3351,7 @@ CONTAINS
           IF (use_dp_mpi2io .OR. have_GRIB) THEN
             ! Note for NetCDF: We have already enabled/disabled missing values via vlistDefVarMissVal, since
             !       it is impossible to introduce a FillValue here with nmiss here.
-            CALL streamWriteVarSlice(of%cdiFileID, info%cdiVarID, ilev-1, var3_dp, nmiss)
+            CALL streamWriteVarSlice (of%cdiFileID, info%cdiVarID, ilev-1, var3_dp, nmiss)
           ELSE
             CALL streamWriteVarSliceF(of%cdiFileID, info%cdiVarID, ilev-1, var3_sp, nmiss)
           ENDIF
@@ -3437,7 +3412,7 @@ CONTAINS
 
     DEALLOCATE(bufr_metainfo, STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish (routine, 'DEALLOCATE failed.')
- 
+
 #ifdef NO_ASYNC_IO_RMA
     ! Deallocate buffers used to receive data
     IF (use_dp_mpi2io) THEN
@@ -3448,7 +3423,7 @@ CONTAINS
         IF (ierrstat /= SUCCESS) CALL finish (routine, 'DEALLOCATE failed.')
     END IF
 #endif
- 
+
   END SUBROUTINE io_proc_write_name_list
 #endif
 
@@ -3474,7 +3449,8 @@ CONTAINS
     TYPE(t_par_output_event), POINTER :: ev
 
     IF (ldebug) &
-         & WRITE (0,*) "pe ", p_pe, ": async_io_send_handshake, jstep=", jstep
+         & WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+         &             ": async_io_send_handshake, jstep=", jstep
 
     ! --- Send a message from this I/O PE to the compute PE #0
     !
@@ -3486,7 +3462,8 @@ CONTAINS
     ! --- I/O PE #0  :  take care of ready files
     IF(p_pe_work == 0) THEN
       DO
-        IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": trigger, async_io_send_handshake"
+        IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+          &                      ": trigger, async_io_send_handshake"
         ev => all_events
         HANDLE_COMPLETE_STEPS : DO WHILE (ASSOCIATED(ev))
           IF (is_output_step_complete(ev) .AND.  &
@@ -3598,14 +3575,15 @@ CONTAINS
     ! Note: We only need to wait for those I/O PEs which are involved
     !       in the current step.
     IF (p_pe_work==0) THEN
-      IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": ", routine, ", jstep=",jstep
+      IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, ": ", &
+        &                      routine, ", jstep=",jstep
       wait_list(:) = -1
       nwait_list   =  0
       reqs = mpi_request_null
 
       ! Go over all output files, collect IO PEs
       OUTFILE_LOOP : DO i=1,SIZE(output_file)
-        IF (output_file(i)%name_list%filetype == FILETYPE_YAC) CYCLE
+        IF (output_file(i)%name_list%filetype == FILETYPE_NONE) CYCLE
         io_proc_id = output_file(i)%io_proc_id
         ! Skip this output file if it is not due for output!
 #if defined (__SX__) || defined (__NEC_VH__)
@@ -3619,7 +3597,8 @@ CONTAINS
         END IF
       END DO OUTFILE_LOOP
       DO i=1,nwait_list
-        IF (ldebug) WRITE (0,*) "pe ", p_pe, ": wait for PE ",  wait_list(i)
+        IF (ldebug) WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, ": wait for PE ", &
+          &                     wait_list(i)
         CALL p_irecv(msg(i), wait_list(i), 0, comm=p_comm_work_2_io, &
              request=reqs(i))
         ! Just for safety: Check if we got the correct tag
@@ -3630,9 +3609,11 @@ CONTAINS
            CALL finish(routine, 'Got illegal I/O tag')
     END IF
     ! Wait in barrier until message is here
-    IF (ldebug) WRITE (0,*) "pe ", p_pe, ": waiting in barrier ", routine
+    IF (ldebug) WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+      &                     ": waiting in barrier ", routine
     CALL p_barrier(comm=p_comm_work)
-    IF (ldebug) WRITE (0,*) "pe ", p_pe, ": barrier done ", routine
+    IF (ldebug) WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+      &                     ": barrier done ", routine
 
     IF (ltimer) CALL timer_stop(timer_wait_for_async_io)
 
@@ -3642,7 +3623,7 @@ CONTAINS
     CHARACTER(len=*), PARAMETER :: &
       routine = modname//'::compute_final_wait_for_async_io'
     IF (p_pe_work == 0) THEN
-      IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": ", routine
+      IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, ": ", routine
       CALL p_wait()
     END IF
   END SUBROUTINE compute_final_wait_for_async_io
@@ -3660,7 +3641,8 @@ CONTAINS
     INTEGER :: msg(2)
     INTEGER  :: i
 
-    IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": compute_start_async_io, jstep = ",jstep
+    IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+                   &         ": compute_start_async_io, jstep = ",jstep
     CALL p_barrier(comm=p_comm_work) ! make sure all are here
     msg(1) = msg_io_start
     msg(2) = jstep
@@ -3671,12 +3653,14 @@ CONTAINS
       ! the next step. Send a "start message" to all I/O PEs which are
       ! due for output.
       DO i=1,noutput_pe_list
-        IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": send signal to PE ",  output_pe_list(i)
+        IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+          &                      ": send signal to PE ",  output_pe_list(i)
         CALL p_isend(msg, output_pe_list(i), 0, comm=p_comm_work_2_io)
       END DO
       CALL p_wait()
     END IF
-    IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": compute_start_async_io done."
+    IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+      &                      ": compute_start_async_io done."
 
   END SUBROUTINE compute_start_async_io
 #endif
@@ -3690,9 +3674,11 @@ CONTAINS
     INTEGER :: msg(2)
     INTEGER :: pe, i, ierror
 
-    IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": compute_shutdown_async_io."
+    IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+      &                      ": compute_shutdown_async_io."
     CALL p_barrier(comm=p_comm_work) ! make sure all are here
-    IF (ldebug)  WRITE (0,*) "pe ", p_pe, ": compute_shutdown_async_io barrier done."
+    IF (ldebug)  WRITE (0,*) TRIM(get_my_process_name()), " pe ", p_pe, &
+      &                      ": compute_shutdown_async_io barrier done."
     msg(1) = msg_io_shutdown
     msg(2) = 0
     ! tell all I/O PEs about the shutdown
@@ -3703,9 +3689,9 @@ CONTAINS
     END IF
 
     DO i = 1, SIZE(output_file)
-      IF (output_file(i)%name_list%filetype == FILETYPE_YAC) CYCLE
+      IF (output_file(i)%name_list%filetype == FILETYPE_NONE) CYCLE
 #ifdef NO_ASYNC_IO_RMA
-      ! Make sure the buffer can be deallocated 
+      ! Make sure the buffer can be deallocated
       ! Wait on latest requests
       call p_wait(req_send_metainfo(i))
       call p_wait(req_send_data(i))

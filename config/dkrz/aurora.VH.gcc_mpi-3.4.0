@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -21,6 +21,8 @@ cmp_ver='12.3.0'
 mpi_ver='3.4.0'
 
 modules="vh/gcc/${cmp_ver} ve/mpi/${mpi_ver}"
+
+STDCPP_LIBS='-lstdc++'
 
 ZLIB_LIBS='-lz'
 
@@ -48,38 +50,40 @@ XML2_LIBS='-lxml2'
 
 ################################################################################
 
-BUILD_ENV=". ${MODULESHOME}/init/sh; module purge; save_CC=\$CC; save_CXX=\$CXX; save_FC=\$FC; save_F77=\$F77; module load ${modules}; CC=\$save_CC; CXX=\$save_CXX; FC=\$save_FC; F77=\$save_F77; export LD_LIBRARY_PATH=\"${HDF5_ROOT}/lib:${NETCDF_ROOT}/lib:${NETCDFF_ROOT}/lib:${BLAS_LAPACK_ROOT}/lib:${ECCODES_ROOT}/lib:${FYAML_ROOT}/lib:\${LD_LIBRARY_PATH-}\";"
+BUILD_ENV="save_CC=\$CC; save_CXX=\$CXX; save_FC=\$FC; save_F77=\$F77; . ${MODULESHOME}/init/sh; module purge; module load ${modules}; CC=\$save_CC; CXX=\$save_CXX; FC=\$save_FC; F77=\$save_F77; export LD_LIBRARY_PATH=\"${HDF5_ROOT}/lib:${NETCDF_ROOT}/lib:${NETCDFF_ROOT}/lib:${BLAS_LAPACK_ROOT}/lib:${ECCODES_ROOT}/lib:${FYAML_ROOT}/lib:\${LD_LIBRARY_PATH-}\";"
 
 CC='mpincc -vh'
-CFLAGS='-g1 -march=native -mpc64'
+CFLAGS='-g1 -march=native -mpc64 -shared-mpi'
 ICON_CFLAGS='-O3'
 ICON_BUNDLED_CFLAGS='-O2'
+
+CXX='g++'
+CXXFLAGS='-g1 -march=native -mpc64 -O2'
 
 CPPFLAGS="-I${HDF5_ROOT}/include -I${NETCDF_ROOT}/include -I${ECCODES_ROOT}/include -I${FYAML_ROOT}/include ${XML2_CPPFLAGS}"
 
 FC='mpinfort -vh'
-FCFLAGS="-I${HDF5_ROOT}/include -I${NETCDFF_ROOT}/include -I${ECCODES_ROOT}/include -g1 -fbacktrace -march=native -mpc64 -O2 -fmodule-private -fimplicit-none -fno-range-check -fmax-identifier-length=63 -fall-intrinsics -Wall -Wcharacter-truncation -Wunderflow -Wunused-parameter -Wno-surprising"
+FCFLAGS="-I${HDF5_ROOT}/include -I${NETCDFF_ROOT}/include -I${ECCODES_ROOT}/include -g1 -fbacktrace -march=native -mpc64 -O2 -fmodule-private -fimplicit-none -fno-range-check -fmax-identifier-length=63 -fall-intrinsics -Wall -Wcharacter-truncation -Wunderflow -Wunused-parameter -Wno-surprising -shared-mpi"
 
 ICON_FCFLAGS='-D__COMM_OPT__ -D__BLOCK_GET__ -D__NEC_VH__ -std=f2008 -fallow-argument-mismatch'
 
 ICON_DACE_FCFLAGS='-fallow-argument-mismatch'
-ICON_DACE_PATH='externals/dace_icon'
+ICON_DACE_PATH='externals/dace'
+
+ICON_OCEAN_FCFLAGS='-D__LVECTOR__'
+ICON_OCEAN_PATH='src/hamocc:src/ocean:src/sea_ice'
 
 ICON_BUNDLED_FCFLAGS='-std=f2008'
 
 ICON_ECRAD_FCFLAGS='-finline-functions'
 
-# The current version of MTIME in use does not apply the line length flag
-# automatically:
-ICON_MTIME_FCFLAGS='-std=f2008 -ffree-line-length-none'
+LDFLAGS="-L${HDF5_ROOT}/lib -L${NETCDF_ROOT}/lib -L${NETCDFF_ROOT}/lib -L${BLAS_LAPACK_ROOT}/lib -L${ECCODES_ROOT}/lib -L${FYAML_ROOT}/lib"
 
-LDFLAGS="-L${HDF5_ROOT}/lib -L${NETCDF_ROOT}/lib -L${NETCDFF_ROOT}/lib -L${BLAS_LAPACK_ROOT}/lib -L${ECCODES_ROOT}/lib -L${FYAML_ROOT}/lib -shared-mpi"
-
-LIBS="-Wl,--as-needed ${XML2_LIBS} ${FYAML_LIBS} ${ECCODES_LIBS} ${BLAS_LAPACK_LIBS} ${NETCDFF_LIBS} ${NETCDF_LIBS} ${HDF5_LIBS} ${ZLIB_LIBS}"
+LIBS="-Wl,--as-needed ${XML2_LIBS} ${FYAML_LIBS} ${ECCODES_LIBS} ${BLAS_LAPACK_LIBS} ${NETCDFF_LIBS} ${NETCDF_LIBS} ${HDF5_LIBS} ${ZLIB_LIBS} ${STDCPP_LIBS}"
 
 MPI_LAUNCH='mpirun -vh'
 
-EXTRA_CONFIG_ARGS='--enable-fcgroup-DACE --enable-active-target-sync --enable-mixed-precision --disable-loop-exchange --enable-grib2 --enable-mpi --disable-openmp --enable-ecrad --disable-art'
+EXTRA_CONFIG_ARGS='--enable-fcgroup-DACE --enable-active-target-sync --enable-mixed-precision --disable-loop-exchange --enable-grib2 --enable-mpi --disable-openmp --enable-ecrad --disable-art --enable-fcgroup-OCEAN'
 
 ################################################################################
 
@@ -88,6 +92,8 @@ BUILD_ENV="${BUILD_ENV}" \
 CC="${CC}" \
 CFLAGS="${CFLAGS}" \
 CPPFLAGS="${CPPFLAGS}" \
+CXX="${CXX}" \
+CXXFLAGS="${CXXFLAGS}" \
 FC="${FC}" \
 FCFLAGS="${FCFLAGS}" \
 ICON_BUNDLED_CFLAGS="${ICON_BUNDLED_CFLAGS}" \
@@ -97,7 +103,8 @@ ICON_DACE_FCFLAGS="${ICON_DACE_FCFLAGS}" \
 ICON_DACE_PATH="${ICON_DACE_PATH}" \
 ICON_ECRAD_FCFLAGS="${ICON_ECRAD_FCFLAGS}" \
 ICON_FCFLAGS="${ICON_FCFLAGS}" \
-ICON_MTIME_FCFLAGS="${ICON_MTIME_FCFLAGS}" \
+ICON_OCEAN_FCFLAGS="${ICON_OCEAN_FCFLAGS}" \
+ICON_OCEAN_PATH="${ICON_OCEAN_PATH}" \
 LDFLAGS="${LDFLAGS}" \
 LIBS="${LIBS}" \
 MPI_LAUNCH="${MPI_LAUNCH}" \
@@ -115,13 +122,18 @@ done
 # Copy runscript-related files when building out-of-source:
 if test $(pwd) != $(cd "${icon_dir}"; pwd); then
   echo "Copying runscript input files from the source directory..."
-  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*'
-  ln -sf -t run/ ${icon_dir}/run/standard_*
-  ln -sf set-up.info run/SETUP.config
-  rsync -uavz ${icon_dir}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${icon_dir}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${icon_dir}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${icon_dir}/make_runscripts .
   rsync -uavz ${icon_dir}/scripts .
   ln -sf ${icon_dir}/data
   ln -sf ${icon_dir}/vertical_coord_tables
 fi
-

@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Tracer transport module
 ! Contains solver for the tracer mass continuity equation(s)
 !
@@ -13,18 +24,6 @@
 ! @Literature:
 ! Reinert, D. (2020): A Mass Consistent Finite Volume Approach with Fractional Steps.
 !                     Reports on ICON, Issue 4
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -76,7 +75,7 @@ CONTAINS
   !
     TYPE(t_patch), TARGET, INTENT(IN) ::  &  !< patch on which computation
       &  p_patch                             !< is performed
-                                             
+
     TYPE(t_int_state), INTENT(IN) :: &  !< interpolation state
       &  p_int_state
 
@@ -84,7 +83,7 @@ CONTAINS
       &  p_metrics
 
     REAL(wp), INTENT(IN) ::          &  !< advective time step [s]
-      &  p_dtime  
+      &  p_dtime
 
     INTEGER,  INTENT(IN) ::          &  !< time step counter [1]
       &  k_step                         !< necessary for Strang Splitting
@@ -100,14 +99,14 @@ CONTAINS
 
     REAL(wp), INTENT(IN)  ::         &  !< horizontal velocity component at n+1/2
       &  p_vn_contra_traj(:,:,:)        !< for calculation of backward trajectories
-                                        !< [m/s] 
+                                        !< [m/s]
                                         !< dim: (nproma,nlev,nblks_e)
 
     REAL(wp), INTENT(INOUT)  ::      &  !< vertical mass flux (contravariant)
       &  p_mflx_contra_v(:,:,:)         !< NH: \rho*w     [kg/m**2/s]
                                         !< dim: (nproma,nlevp1,nblks_c)
 
-    REAL(wp), INTENT(IN) ::          &  !< NH: density weighted cell height at full levels 
+    REAL(wp), INTENT(IN) ::          &  !< NH: density weighted cell height at full levels
       &  p_rhodz_new(:,:,:)             !< at n+1 [kg/m**2]
                                         !< dim: (nproma,nlev,nblks_c)
 
@@ -122,7 +121,7 @@ CONTAINS
 
     REAL(wp), CONTIGUOUS, INTENT(INOUT) ::          &      !< tracer mixing ratios (specific concentrations)
       &  p_tracer_new(:,:,:,:)          !< at time level n+1 (after transport)
-                                        !< [kg/kg]  
+                                        !< [kg/kg]
                                         !< dim: (nproma,nlev,nblks_c,ntracer)
 
     REAL(wp), INTENT(INOUT)  ::  &      !< horizontal tracer mass flux at full level edges
@@ -135,16 +134,16 @@ CONTAINS
 
     REAL(vp), INTENT(IN), OPTIONAL:: &  !< density increment due to IAU
       &  rho_incr(:,:,:)                !< [kg/m**3]
-                                        ! Note that the OPTIONAL argument is only necessary 
-                                        ! due to co-use of step_advection by the hydrostatic 
-                                        ! model configuration. Can be removed once the hydrostatic 
+                                        ! Note that the OPTIONAL argument is only necessary
+                                        ! due to co-use of step_advection by the hydrostatic
+                                        ! model configuration. Can be removed once the hydrostatic
                                         ! model configuration is gone.
 
-    REAL(wp), INTENT(INOUT) :: &        !< tracer mass fraction at (nest) upper boundary 
+    REAL(wp), INTENT(INOUT) :: &        !< tracer mass fraction at (nest) upper boundary
       &  q_ubc(:,:,:)                   !< NH: [kg/kg]
                                         !< dim: (nproma,ntracer,nblks_c)
 
-    REAL(wp), INTENT(OUT)   :: &        !< tracer mass fraction at child nest interface level 
+    REAL(wp), INTENT(OUT)   :: &        !< tracer mass fraction at child nest interface level
       &  q_int(:,:,:)                   !< NH: [kg/kg]
                                         !< dim: (nproma,ntracer,nblks_c)
 
@@ -165,7 +164,7 @@ CONTAINS
     REAL(wp) ::  &                      !< intermediate density times cell thickness [ kg/m**2]
       &  rhodz_ast2(nproma,p_patch%nlev,p_patch%nblks_c)
                                         !< compared to rhodz_ast it additionally includes either
-                                        !< the horizontal or vertical advective density increment. 
+                                        !< the horizontal or vertical advective density increment.
 
     INTEGER  :: nlev                    !< number of full levels
     INTEGER  :: jb, jk, jt, jc, jg, nt            !< loop indices
@@ -218,26 +217,26 @@ CONTAINS
     !$ACC   IF(PRESENT(opt_ddt_tracer_adv))
 
 
-    ! This vertical mass flux synchronization is necessary, as vertical transport 
+    ! This vertical mass flux synchronization is necessary, as vertical transport
     ! includes all halo points (see below)
     IF (lvert_nest .AND. p_patch%nshift > 0) THEN ! vertical nesting
 
-      CALL sync_patch_array_mult(SYNC_C, p_patch, 2, p_mflx_contra_v, q_ubc, &
+      CALL sync_patch_array_mult(SYNC_C, p_patch, 2, lacc=.TRUE., f3din1=p_mflx_contra_v, f3din2=q_ubc, &
                                  opt_varname = 'step_advecvtion: p_mflx_contra_v,q_ubc')
     ELSE
-      ! note that in cases without vertical nesting q_ubc=0._wp is ensured, as 
+      ! note that in cases without vertical nesting q_ubc=0._wp is ensured, as
       ! * q_int = 0._wp
       ! * parent to child interpolation of q_int is constancy preserving
       !
-      CALL sync_patch_array(SYNC_C, p_patch, p_mflx_contra_v, opt_varname='step_advection: p_mflx_contra_v')
+      CALL sync_patch_array(SYNC_C, p_patch, p_mflx_contra_v, lacc=.TRUE., opt_varname='step_advection: p_mflx_contra_v')
     ENDIF
 
 
-    ! In order to achieve consistency with continuity we follow the method of 
-    ! Easter (1993) and (re-)integrate the air mass continuity equation in the 
+    ! In order to achieve consistency with continuity we follow the method of
+    ! Easter (1993) and (re-)integrate the air mass continuity equation in the
     ! same split manner as the tracer mass continuity equation.
     !
-    ! We start by accounting for any RHS. 
+    ! We start by accounting for any RHS.
     ! Currently, the only nonzero RHS occurs during the IAU phase.
 
     ! halo points must be included
@@ -275,7 +274,7 @@ CONTAINS
 
     ! Integrate tracer continuity equation.
     ! Separate treatment of horizontal and vertical directions via Strang splitting.
-    ! Hence the order of the horizontal and vertical transport operator 
+    ! Hence the order of the horizontal and vertical transport operator
     ! is reversed every second time step.
     !
     IF (lstep_even) THEN
@@ -283,7 +282,7 @@ CONTAINS
       ! Vertical transport precedes horizontal transport
       !
 
-      ! vertical transport includes all halo points in order to avoid 
+      ! vertical transport includes all halo points in order to avoid
       ! an additional synchronization step.
       ! nest boundary points are needed as well because the subsequent horizontal transport
       ! accesses part of them.
@@ -300,7 +299,7 @@ CONTAINS
         CALL get_indices_c( p_patch, jb, i_startblk, i_endblk,           &
           &                 i_startidx, i_endidx, i_rlstart, i_rlend)
 
-        ! compute intermediate density which accounts for the density increment 
+        ! compute intermediate density which accounts for the density increment
         ! due to vertical transport.
         !$ACC PARALLEL DEFAULT(PRESENT) PRESENT(rhodz_ast) ASYNC(1)
         !$ACC LOOP GANG VECTOR COLLAPSE(2)
@@ -322,7 +321,7 @@ CONTAINS
       CALL vert_adv(p_patch           = p_patch,                        & !in
         &           p_dtime           = p_dtime,                        & !in
         &           k_step            = k_step,                         & !in
-        &           p_mflx_contra_v   = p_mflx_contra_v(:,:,:),         & !inout
+        &           p_mflx_contra_v   = p_mflx_contra_v(:,:,:),         & !in
         &           p_cellhgt_mc_now  = p_metrics%ddqz_z_full(:,:,:),   & !in
         &           rhodz_now         = rhodz_ast(:,:,:),               & !in
         &           rhodz_new         = rhodz_ast2(:,:,:),              & !in
@@ -346,7 +345,7 @@ CONTAINS
         &          p_int_state     = p_int_state,                   & !in
         &          p_dtime         = p_dtime,                       & !in
         &          p_mflx_contra_h = p_mflx_contra_h(:,:,:),        & !in
-        &          p_vn            = p_vn_contra_traj(:,:,:),       & !in 
+        &          p_vn            = p_vn_contra_traj(:,:,:),       & !in
         &          rhodz_now       = rhodz_ast2(:,:,:),             & !in
         &          rhodz_new       = p_rhodz_new(:,:,:),            & !in
         &          tracer_now      = p_tracer_new(:,:,:,:),         & !in
@@ -373,13 +372,13 @@ CONTAINS
           &                 i_startidx, i_endidx, i_rlstart, i_rlend)
 
 
-        ! compute intermediate density which accounts for the density increment 
+        ! compute intermediate density which accounts for the density increment
         ! due to horizontal transport.
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR COLLAPSE(2)
         DO jk = 1, nlev
           DO jc = i_startidx, i_endidx
-            ! here we apply a security measure in order to ensure that 
+            ! here we apply a security measure in order to ensure that
             ! the cell is not fully emptied during horizontal transport.
             rhodz_ast2(jc,jk,jb) = MAX(0.1_wp*p_rhodz_new(jc,jk,jb),                                 &
                                      p_rhodz_new(jc,jk,jb) - p_dtime                                 &
@@ -402,7 +401,7 @@ CONTAINS
         &          p_int_state     = p_int_state,                   & !in
         &          p_dtime         = p_dtime,                       & !in
         &          p_mflx_contra_h = p_mflx_contra_h(:,:,:),        & !in
-        &          p_vn            = p_vn_contra_traj(:,:,:),       & !in 
+        &          p_vn            = p_vn_contra_traj(:,:,:),       & !in
         &          rhodz_now       = rhodz_ast(:,:,:),              & !in
         &          rhodz_new       = rhodz_ast2(:,:,:),             & !in
         &          tracer_now      = p_tracer_now(:,:,:,:),         & !in
@@ -421,7 +420,7 @@ CONTAINS
       CALL vert_adv(p_patch           = p_patch,                        & !in
         &           p_dtime           = p_dtime,                        & !in
         &           k_step            = k_step,                         & !in
-        &           p_mflx_contra_v   = p_mflx_contra_v(:,:,:),         & !inout
+        &           p_mflx_contra_v   = p_mflx_contra_v(:,:,:),         & !in
         &           p_cellhgt_mc_now  = p_metrics%ddqz_z_full(:,:,:),   & !in
         &           rhodz_now         = rhodz_ast2(:,:,:),              & !in
         &           rhodz_new         = p_rhodz_new(:,:,:),             & !in
@@ -436,10 +435,10 @@ CONTAINS
         &           q_int             = q_int(:,:,:)                    ) !out
 
     ENDIF  ! lstep_even
- 
 
 
-    ! For tracer fields which are not advected (neither horizontally nor vertically), 
+
+    ! For tracer fields which are not advected (neither horizontally nor vertically),
     ! we perform a copy from time level now to new.
     !
     IF ( trNotAdvect%len > 0 ) THEN
@@ -470,7 +469,7 @@ CONTAINS
 
         ENDDO  !nt
         !$ACC END PARALLEL
-       
+
       ENDDO  ! jb
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
@@ -521,22 +520,22 @@ CONTAINS
     ENDIF
 
 
-    ! Synchronize tracer array after update. This is only necessary, if 
-    ! the NWP physics package is NOT used. Otherwise, the SYNC-operation will 
+    ! Synchronize tracer array after update. This is only necessary, if
+    ! the NWP physics package is NOT used. Otherwise, the SYNC-operation will
     ! follow AFTER the call of NWP physics.
     ! For efficiency, the synchronization is applied for all tracers at once.
 
     IF (iforcing /= inwp) THEN
-      CALL sync_patch_array_mult(SYNC_C, p_patch, ntracer, f4din=p_tracer_new, opt_varname='ntracer and p_tracer_new')
+      CALL sync_patch_array_mult(SYNC_C, p_patch, ntracer, lacc=.TRUE., f4din=p_tracer_new, opt_varname='ntracer and p_tracer_new')
     ENDIF
 
 
     !
     ! store advective tracer tendencies
     !
-    ! If NWP physics are used, advective tendencies are only stored 
+    ! If NWP physics are used, advective tendencies are only stored
     ! for water vapour qv and turbulent kinetic energy TKE.
-    ! If any other or no physics package is used, advective tendencies 
+    ! If any other or no physics package is used, advective tendencies
     ! are stored for all advected tracers.
     IF ( PRESENT(opt_ddt_tracer_adv) ) THEN
 
@@ -560,7 +559,7 @@ CONTAINS
           iadv_slev_jt = advection_config(jg)%iadv_slev(jt)
 
           ! Store qv advection tendency for convection scheme.
-          ! Store TKE tendency, if TKE advection is turned on 
+          ! Store TKE tendency, if TKE advection is turned on
           !
           IF ( iforcing == inwp ) THEN
 
@@ -569,7 +568,7 @@ CONTAINS
               DO jk = iadv_slev_jt, nlev
                 DO jc = i_startidx, i_endidx
                   opt_ddt_tracer_adv(jc,jk,jb,jt) =                               &
-                    & (p_tracer_new(jc,jk,jb,jt)-p_tracer_now(jc,jk,jb,jt))/p_dtime           
+                    & (p_tracer_new(jc,jk,jb,jt)-p_tracer_now(jc,jk,jb,jt))/p_dtime
                 ENDDO
               ENDDO
             ENDIF  ! jt == iqv
@@ -579,7 +578,7 @@ CONTAINS
               DO jk = iadv_slev_jt, nlev
                 DO jc = i_startidx, i_endidx
                   opt_ddt_tracer_adv(jc,jk,jb,jt) =                               &
-                    & (p_tracer_new(jc,jk,jb,jt)-p_tracer_now(jc,jk,jb,jt))/p_dtime           
+                    & (p_tracer_new(jc,jk,jb,jt)-p_tracer_now(jc,jk,jb,jt))/p_dtime
                 ENDDO
               ENDDO
             ENDIF  ! jt == iqtke
@@ -592,7 +591,7 @@ CONTAINS
             DO jk = iadv_slev_jt, nlev
               DO jc = i_startidx, i_endidx
                 opt_ddt_tracer_adv(jc,jk,jb,jt) =                               &
-                  & (p_tracer_new(jc,jk,jb,jt)-p_tracer_now(jc,jk,jb,jt))/p_dtime   
+                  & (p_tracer_new(jc,jk,jb,jt)-p_tracer_now(jc,jk,jb,jt))/p_dtime
               ENDDO
             ENDDO
           ENDIF ! iforcing == inwp
@@ -604,8 +603,8 @@ CONTAINS
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
-      IF (iforcing /= inwp) THEN 
-        CALL sync_patch_array_mult(SYNC_C, p_patch, ntracer,  f4din=opt_ddt_tracer_adv, &
+      IF (iforcing /= inwp) THEN
+        CALL sync_patch_array_mult(SYNC_C, p_patch, ntracer, lacc=.TRUE., f4din=opt_ddt_tracer_adv, &
                &                   opt_varname='ntracer and opt_ddt_tracer_adv' )
       ENDIF
 
@@ -638,12 +637,12 @@ CONTAINS
   !>
   !! Vertical Transport
   !!
-  !! Computes vertical fluxes based on the prescribed mass flux 
-  !! and the current tracer mass fraction (tracer_now). 
-  !! Finally the vertical mass flux divergence is computed 
+  !! Computes vertical fluxes based on the prescribed mass flux
+  !! and the current tracer mass fraction (tracer_now).
+  !! Finally the vertical mass flux divergence is computed
   !! and the tracer mass fraction is updated (tracer_new).
   !!
-  !! If vertical transport is switched off, the tracer mass fraction is 
+  !! If vertical transport is switched off, the tracer mass fraction is
   !! kept constant, i.e. tracer_now is copied to tracer_new.
   !!
   SUBROUTINE vert_adv (p_patch, p_dtime, k_step, p_mflx_contra_v,          &
@@ -661,7 +660,7 @@ CONTAINS
     INTEGER,       INTENT(IN   )   ::  & !< timestep counter
       &  k_step
 
-    REAL(wp),      INTENT(INOUT)   ::  & !< vertical mass flux
+    REAL(wp),      INTENT(IN   )   ::  & !< vertical mass flux
       &  p_mflx_contra_v(:,:,:)          !< [kg/m**2/s]
 
     REAL(wp),      INTENT(IN   )   ::  & !< cell height defined at full levels
@@ -692,10 +691,10 @@ CONTAINS
     INTEGER,       INTENT(IN   )   ::  &
       &  i_rlstart, i_rlend
 
-    REAL(wp), INTENT(IN)           ::  & !< tracer mass fraction at (nest) upper boundary 
+    REAL(wp), INTENT(IN)           ::  & !< tracer mass fraction at (nest) upper boundary
       &  q_ubc(:,:,:)                    !< NH: [kg/kg]
 
-    REAL(wp), INTENT(OUT)          ::  & !< tracer mass fraction at child nest interface level 
+    REAL(wp), INTENT(OUT)          ::  & !< tracer mass fraction at child nest interface level
       &  q_int(:,:,:)                    !< NH: [kg/kg]
 
     ! local variables
@@ -717,15 +716,15 @@ CONTAINS
 
     jg = p_patch%id
 
-    ! compute and print vertical CFL number only every second time step, 
-    ! as the computational overhead is considerable. 
+    ! compute and print vertical CFL number only every second time step,
+    ! as the computational overhead is considerable.
     lprint_cfl = MOD( k_step, 2 ) == 0
 
     ! compute vertical tracer flux
     CALL vert_upwind_flux(                                                         &
       &              p_patch             = p_patch,                                & !in
       &              p_cc                = tracer_now(:,:,:,:),                    & !in
-      &              p_mflx_contra_v     = p_mflx_contra_v(:,:,:),                 & !inout
+      &              p_mflx_contra_v     = p_mflx_contra_v(:,:,:),                 & !in
       &              p_dtime             = p_dtime,                                & !in
       &              p_cellhgt_mc_now    = p_cellhgt_mc_now(:,:,:),                & !in
       &              p_cellmass_now      = rhodz_now(:,:,:),                       & !in
@@ -811,12 +810,12 @@ CONTAINS
   !>
   !! Horizontal Transport
   !!
-  !! Computes horizontal tracer mass fluxes based on the prescribed 
-  !! air mass flux and the current tracer mass fraction (tracer_now). 
-  !! Finally the horizontal mass flux divergence is computed and 
+  !! Computes horizontal tracer mass fluxes based on the prescribed
+  !! air mass flux and the current tracer mass fraction (tracer_now).
+  !! Finally the horizontal mass flux divergence is computed and
   !! the tracer mass fraction is updated (tracer_new).
   !!
-  !! If horizontal transport is switched off, the tracer mass fraction is 
+  !! If horizontal transport is switched off, the tracer mass fraction is
   !! kept constant, i.e. tracer_now is copied to tracer_new.
   !!
   SUBROUTINE hor_adv (p_patch, p_int_state, p_dtime, p_mflx_contra_h, p_vn, &
@@ -826,7 +825,7 @@ CONTAINS
     TYPE(t_patch), TARGET, INTENT(IN)  ::  & !< compute patch
       &  p_patch
 
-    TYPE(t_int_state), INTENT(IN)  ::  & !< interpolation state 
+    TYPE(t_int_state), INTENT(IN)  ::  & !< interpolation state
       &  p_int_state
 
     REAL(wp),      INTENT(IN   )   ::  & !< advective time step
@@ -837,7 +836,7 @@ CONTAINS
 
     REAL(wp), INTENT(IN)           ::  & !< horizontal velocity component at n+1/2
       &  p_vn(:,:,:)                     !< for calculation of backward trajectories
-                                         !< [m/s] 
+                                         !< [m/s]
 
     REAL(wp),      INTENT(IN   )   ::  & !< density times cell thickness (current value)
       &  rhodz_now(:,:,:)                !< [kg/m**2]
@@ -852,7 +851,7 @@ CONTAINS
     REAL(wp),      INTENT(INOUT)   ::  & !< tracer mass fraction (updated value)
       &  tracer_new(:,:,:,:)             !< [kg/kg]
 
-    REAL(wp),      INTENT(INOUT)   ::  & !< horizontal tracer mass flux at cell edge midpoints 
+    REAL(wp),      INTENT(INOUT)   ::  & !< horizontal tracer mass flux at cell edge midpoints
       &  p_mflx_tracer_h(:,:,:,:)        !< [kg/m**2/s]
 
     REAL(wp), INTENT(IN) ::            &  !< metrical modification factor for horizontal part of divergence at full levels
@@ -871,10 +870,10 @@ CONTAINS
     INTEGER :: i_startblk, i_endblk
     INTEGER :: i_startidx, i_endidx
     INTEGER :: iadv_slev_jt               ! tracer dependent vertical start level
-    INTEGER  :: nlev                      !< number of full levels   
+    INTEGER  :: nlev                      !< number of full levels
 
     REAL(vp) ::  &                        !< flux divergence at cell center
-      &  z_fluxdiv_c(nproma,p_patch%nlev) 
+      &  z_fluxdiv_c(nproma,p_patch%nlev)
 
     TYPE(t_trList), POINTER :: trAdvect   !< Pointer to tracer sublist
 

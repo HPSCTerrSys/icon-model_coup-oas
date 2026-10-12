@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -175,7 +175,7 @@ else
                 *) res_ifs=255  ;;
         esac
     fi
-    
+
     typeset cymdg_ifs=${cymdg}
     if [[ ${hstep} -gt 0 ]]; then
         cymdg_ifs=$(datconv -Cy ${cymdg} -d -${hstep}h)
@@ -215,8 +215,8 @@ fi
  if [[ -z "${SCRATCHDIR}" ]]; then
 #   Assume this is at DWD
     SCRATCHDIR=${TMPDIR}
-    dwd=''   
-    ecmwf='#'   
+    dwd=''
+    ecmwf='#'
 
 #   The following value for EC_* are not independent of each other
     EC_total_tasks=${EC_total_tasks:-6}
@@ -228,8 +228,8 @@ fi
     aprun_cmd="aprun -n $EC_total_tasks -N $EC_tasks_per_node -d $EC_threads_per_task -j $EC_hyperthreads -m 5g"
  else
 #   Assume this is at ECMWF
-    dwd='#'   
-    ecmwf=''   
+    dwd='#'
+    ecmwf=''
     EC_total_tasks=${EC_total_tasks:-4}
     EC_hyperthreads=${EC_hyperthreads:-2}
     EC_tasks_per_node=${EC_tasks_per_node:-4}
@@ -245,7 +245,7 @@ fi
     cuv=''
     cvn='!'
  fi
- 
+
  typeset job_file=${SCRATCHDIR}/ifs2icon${cymdg}.job$$
  typeset out_file=${IFS2ICON_OUTFILE:-ifs2icon${cymdg}.out}
 
@@ -299,7 +299,7 @@ cat > \${nml_file} << EOF
  in_filename       = "${ifs_file}"
  in_type           = 1
  out_grid_filename = "${grid_file_icon}"
- out_filename      = "${icon_file}"	
+ out_filename      = "${icon_file}"
  out_type          = 2
  l_have3dbuffer    = .false.
  out_filetype      = ${icon_filetype}  ! 2= GRIB2, 4=netCDF, 5=netCDF-4
@@ -309,35 +309,35 @@ cat > \${nml_file} << EOF
 ! DEFINITIONS FOR IFS INPUT DATA
 !
 &input_field_nml  ! temperature
- inputname      = "T"         
- outputname     = "T"          
- code           = 130          
+ inputname      = "T"
+ outputname     = "T"
+ code           = 130
  intp_method    = ${intp_method}
 /
 ${cvn}&input_field_nml  ! horiz. wind comp. u and v
-${cvn} inputname      = "U", "V"         
-${cvn} outputname     = "VN"  
+${cvn} inputname      = "U", "V"
+${cvn} outputname     = "VN"
 ${cvn} code           = 131,132
 ${cvn}/
 ${cuv}&input_field_nml  ! horiz. wind comp. U
 ${cuv} inputname      = "U",
-${cuv} outputname     = "U"  
+${cuv} outputname     = "U"
 ${cuv} code           = 131
 ${cuv}/
 ${cuv}&input_field_nml  ! horiz. wind comp. V
 ${cuv} inputname      = "V",
-${cuv} outputname     = "V"  
+${cuv} outputname     = "V"
 ${cuv} code           = 132
 ${cuv}/
 &input_field_nml  ! vertical velocity
- inputname      = "OMEGA" 
+ inputname      = "OMEGA"
  outputname     = "W"
  code           = 135
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! surface pressure
  inputname      = "LNSP"
- outputname     = "LNPS" 
+ outputname     = "LNPS"
  code           = 152
  intp_method    = ${intp_method}
 /
@@ -355,152 +355,152 @@ ${cuv}/
 /
 &input_field_nml  ! specific humidity
  inputname      = "QV"
- outputname     = "QV" 
+ outputname     = "QV"
  code           = 133
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! cloud liquid water content
  inputname      = "CLWC"
- outputname     = "QC" 
+ outputname     = "QC"
  code           = 246
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! cloud ice content
  inputname      = "CIWC"
- outputname     = "QI" 
- code           = 247 
+ outputname     = "QI"
+ code           = 247
  intp_method    = ${intp_method}
 /
 !&input_field_nml  ! ozone mixing ratio
 ! inputname      = "O3"
-! outputname     = "O3" 
+! outputname     = "O3"
 ! code           = 203
 ! intp_method    = ${intp_method}
 !/
 &input_field_nml  ! snow temperature
  inputname      = "TSN"
- outputname     = "T_SNOW" 
+ outputname     = "T_SNOW"
  code           = 238
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! water content of snow
  inputname      = "SD"
- outputname     = "W_SNOW" 
+ outputname     = "W_SNOW"
  code           = 141
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! density of snow
  inputname      = "RSN"
- outputname     = "RHO_SNOW" 
+ outputname     = "RHO_SNOW"
  code           = 33
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! snow albedo
  inputname      = "ASN"
- outputname     = "ALB_SNOW" 
+ outputname     = "ALB_SNOW"
  code           = 32
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! skin temperature
  inputname      = "SKT"
- outputname     = "SKT" 
+ outputname     = "SKT"
  code           = 235
  intp_method    = ${intp_method}
 /
 !&input_field_nml  ! sea surface temperature
 ! inputname      = "SST"
-! outputname     = "SST" 
+! outputname     = "SST"
 ! code           = 34
 ! intp_method    = ${intp_method}
 !/
 &input_field_nml  ! soil temperature level 1
  inputname      = "STL1"
- outputname     = "STL1" 
+ outputname     = "STL1"
  code           = 139
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! soil temperature level 2
  inputname      = "STL2"
- outputname     = "STL2" 
+ outputname     = "STL2"
  code           = 170
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! soil temperature level 3
  inputname      = "STL3"
- outputname     = "STL3" 
+ outputname     = "STL3"
  code           = 183
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! soil temperature level 4
  inputname      = "STL4"
- outputname     = "STL4" 
+ outputname     = "STL4"
  code           = 236
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! sea-ice cover
  inputname      = "CI"
- outputname     = "CI" 
+ outputname     = "CI"
  code           = 31
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! water cont. of interception storage
  inputname      = "SRC"
- outputname     = "W_I" 
- code           = 198 
+ outputname     = "W_I"
+ code           = 198
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! surface roughness
  inputname      = "${sr}"
- outputname     = "Z0" 
+ outputname     = "Z0"
  code           = 173
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! Land/sea mask
  inputname      = "LSM"
- outputname     = "LSM" 
+ outputname     = "LSM"
  intp_method    = ${intp_method}
- code           = 172 
+ code           = 172
 /
 &input_field_nml  ! soil moisture index layer 1
  inputname      = "SWVL1"
- outputname     = "SMIL1" 
+ outputname     = "SMIL1"
  code           = 39
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! soil moisture index layer 2
  inputname      = "SWVL2"
- outputname     = "SMIL2" 
+ outputname     = "SMIL2"
  code           = 40
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! soil moisture index layer 3
  inputname      = "SWVL3"
- outputname     = "SMIL3" 
+ outputname     = "SMIL3"
  code           = 41
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! soil moisture index layer 4
  inputname      = "SWVL4"
- outputname     = "SMIL4" 
+ outputname     = "SMIL4"
  code           = 42
  intp_method    = ${intp_method}
 /
 EOF
 
 # 80-83 changed to 39-42 for soil moisture index!!!
- 
+
 if [ ${cymdg_ifs} -ge 2010110912 ] ; then
 
 cat >> \${nml_file} << EOF
 &input_field_nml  ! rain water content
  inputname      = "CRWC"
- outputname     = "QR" 
- code           = 75 
+ outputname     = "QR"
+ code           = 75
  intp_method    = ${intp_method}
 /
 &input_field_nml  ! snow water content
  inputname      = "CSWC"
- outputname     = "QS" 
+ outputname     = "QS"
  code           = 76
  intp_method    = ${intp_method}
 /
@@ -521,12 +521,12 @@ fi
 
  print -- "\nNamelist \${nml_file} for iconremap:"
  cat \${nml_file}
-  
+
  integer rc
  set -x
 #aprun -N \$EC_tasks_per_node -n \$EC_total_tasks -d \$EC_threads_per_task -j \$EC_hyperthreads
  ${aprun_cmd} \${modul_iconremap} --remap_nml=\${nml_file} ${verbosity}
- rc=\$? 
+ rc=\$?
  if [[ \${rc} -ne 0 ]]; then
     print -- "Error \${rc} calling aprun  ... \${modul_iconremap}" >&2
     cat \${nml_file}

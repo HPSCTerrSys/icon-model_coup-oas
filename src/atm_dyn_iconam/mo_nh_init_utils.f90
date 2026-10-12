@@ -1,19 +1,18 @@
-!
-! This module contains utility routines needed for the initialization of the
-! NH model
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains utility routines needed for the initialization of the
+! NH model
+
+!----------------------------
 #include "omp_definitions.inc"
 !----------------------------
 
@@ -81,7 +80,7 @@ CONTAINS
 
     ! 1. Compute pressure and height of input data, using the IFS routines
 
-    ! If mask field is provided, fill data-void points (mask=.FALSE.) 
+    ! If mask field is provided, fill data-void points (mask=.FALSE.)
     ! with dummy value.
     IF (PRESENT(opt_lmask)) THEN
       !
@@ -135,25 +134,25 @@ CONTAINS
       ELSE
         nlen = p_patch%npromz_c
       ENDIF
-      
+
       ! Check if psfc is really psfc or LOG(psfc)
       IF (MAXVAL(psfc(1:nlen,jb)) <= 100._wp) THEN
         psfc(1:nlen,jb) = EXP(psfc(1:nlen,jb))
       ENDIF
-      
+
       CALL initicon%const%vct%half_level_pressure(psfc(:,jb), nproma, nlen, nlev_in, pres_ic)
-      
+
       CALL initicon%const%vct%full_level_pressure(pres_ic,nproma, nlen, nlev_in, initicon%atm_in%pres(:,:,jb))
-      
+
       CALL initicon%const%vct%auxhyb(pres_ic, nproma, nlen, nlev_in,     & ! in
         delp, rdelp, lnp_ic, rdlnpr, rdalpha) ! out
-      
+
       CALL geopot(temp_v_in(:,:,jb), rdlnpr, rdalpha, phi_sfc(:,jb), & ! in
         nproma, 1, nlen, nlev_in, geop_mc, geop_ic ) ! inout
-      
+
       ! Compute 3D height coordinate field
       initicon%const%z_mc_in(1:nlen,1:nlev_in,jb) = geop_mc(1:nlen,1:nlev_in)/grav
-      
+
     ENDDO
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
@@ -242,7 +241,7 @@ CONTAINS
     INTEGER , INTENT(IN) :: nblks      ! Number of blocks
     INTEGER , INTENT(IN) :: npromz     ! Length of last block
     INTEGER , INTENT(IN) :: nlev       ! Number of model levels
-    
+
     LOGICAL , INTENT(IN), OPTIONAL :: opt_lmask(:,:) ! logical mask of points to process
 
     ! LOCAL VARIABLES
@@ -448,7 +447,7 @@ CONTAINS
     ENDIF
 
     ! Compute slope at edges
-    CALL grad_fd_norm (z_ifc, p_patch, z_slope_e, 1, nlevp1)
+    CALL grad_fd_norm (z_ifc, p_patch, z_slope_e, lacc=.FALSE., opt_slev=1, opt_elev=nlevp1)
 
     ! slope cannot be computed at outer boundary edges
     i_startblk = p_patch%edges%start_blk(2,1)
@@ -464,8 +463,8 @@ CONTAINS
       ENDDO
     ENDDO
 
-    CALL edges2cells_scalar(z_wsfc_e,p_patch,p_int%e_inn_c,z_wsfc_c,&
-                            1,1,opt_rlstart=2)
+    CALL edges2cells_scalar(z_wsfc_e, p_patch, p_int%e_inn_c, z_wsfc_c, lacc=.FALSE., &
+                            opt_slev=1, opt_elev=1, opt_rlstart=2)
 
     i_startblk = p_patch%cells%start_blk(2,1)
 
@@ -542,7 +541,7 @@ CONTAINS
     ENDIF
 
     ! Compute slope at edges
-    CALL grad_fd_norm (z_ifc, p_patch, z_slope_e, 1, nlevp1)
+    CALL grad_fd_norm (z_ifc, p_patch, z_slope_e, lacc=.FALSE., opt_slev=1, opt_elev=nlevp1)
 
     ! slope cannot be computed at outer boundary edges
     i_startblk = p_patch%edges%start_blk(2,1)
@@ -558,8 +557,8 @@ CONTAINS
       ENDDO
     ENDDO
 
-    CALL edges2cells_scalar(z_wsfc_e,p_patch,p_int%e_inn_c,z_wsfc_c,&
-                            1,1,opt_rlstart=2)
+    CALL edges2cells_scalar(z_wsfc_e, p_patch, p_int%e_inn_c, z_wsfc_c, lacc=.FALSE., &
+                            opt_slev=1, opt_elev=1, opt_rlstart=2)
 
     i_startblk = p_patch%cells%start_blk(2,1)
 
@@ -606,11 +605,11 @@ CONTAINS
   !! Computes perturbation exner pressure by subtracting the
   !! exner reference state from the actual exner pressure.
   !!
-  SUBROUTINE compute_exner_pert(exner, exner_ref, exner_pr, use_acc)
+  SUBROUTINE compute_exner_pert(exner, exner_ref, exner_pr, lacc)
     REAL(wp), INTENT(IN)    :: exner(:,:,:)         !< exner pressure
     REAL(vp), INTENT(IN)    :: exner_ref(:,:,:)     !< exner reference state
     REAL(wp), INTENT(INOUT) :: exner_pr(:,:,:)      !< perturbation exner pressure
-    LOGICAL,  INTENT(IN)    :: use_acc              !< if True, use openACC
+    LOGICAL,  INTENT(IN)    :: lacc                 !< if True, use openACC
 
     INTEGER :: i,j,k,ie,je,ke
 
@@ -623,7 +622,7 @@ CONTAINS
 #else
 !$OMP DO COLLAPSE(3) PRIVATE(i,j,k)
 #endif
-    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(use_acc)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lacc)
     !$ACC LOOP GANG VECTOR COLLAPSE(3)
     DO k = 1, ke
       DO j = 1, je

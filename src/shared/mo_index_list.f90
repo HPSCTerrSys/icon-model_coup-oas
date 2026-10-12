@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,6 +12,7 @@
 MODULE mo_index_list
 
   USE mo_kind, ONLY: i1, i2, i4
+  USE mo_fortran_tools,      ONLY: assert_acc_device_only, assert_acc_host_only
 
 #ifdef _OPENACC
   USE openacc
@@ -75,7 +76,7 @@ MODULE mo_index_list
         &  conditions, cond_stride,                              &
         &  startid, endid,                                       &
         &  indices, idx_stride,                                  &
-        &  nvalid, data_size,                                    & 
+        &  nvalid, data_size,                                    &
         &  stream )                                              &
         & BIND(C, name="c_generate_index_list_gpu_batched")
 
@@ -103,18 +104,20 @@ MODULE mo_index_list
 
 ! Regular CPU implementation with a simple loop
 
-  SUBROUTINE generate_index_list_i1_cpu(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, opt_acc_copy_to_host, opt_use_acc)
+  SUBROUTINE generate_index_list_i1_cpu(conditions, indices, startid, endid, nvalid, lacc, opt_acc_async_queue, opt_acc_copy_to_host)
     INTEGER(i1), INTENT(in)           :: conditions(:)
     INTEGER,     INTENT(inout)        :: indices(:)
     INTEGER,     INTENT(in)           :: startid
     INTEGER,     INTENT(in)           :: endid
     INTEGER,     INTENT(out)          :: nvalid
-    ! These arguments are used in the OpenACC variant, but not in the CPU one 
+    LOGICAL,     INTENT(IN)           :: lacc
+    ! These arguments are used in the OpenACC variant, but not in the CPU one
     INTEGER,     INTENT(in), OPTIONAL :: opt_acc_async_queue
     LOGICAL,     INTENT(in), OPTIONAL :: opt_acc_copy_to_host
-    LOGICAL,     INTENT(in), OPTIONAL :: opt_use_acc
 
     INTEGER :: i, nvalid_loc
+
+    CALL assert_acc_host_only ('generate_index_list_i1_cpu', lacc)
 
     nvalid_loc = 0
     DO i = startid, endid
@@ -126,18 +129,20 @@ MODULE mo_index_list
     nvalid = nvalid_loc
   END SUBROUTINE generate_index_list_i1_cpu
 
-  SUBROUTINE generate_index_list_i4_cpu(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, opt_acc_copy_to_host, opt_use_acc)
+  SUBROUTINE generate_index_list_i4_cpu(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, lacc, opt_acc_copy_to_host)
     INTEGER(i4), INTENT(in)           :: conditions(:)
     INTEGER,     INTENT(inout)        :: indices(:)
     INTEGER,     INTENT(in)           :: startid
     INTEGER,     INTENT(in)           :: endid
     INTEGER,     INTENT(out)          :: nvalid
-    ! These arguments are used in the OpenACC variant, but not in the CPU one 
+    LOGICAL,     INTENT(IN)           :: lacc
+    ! These arguments are used in the OpenACC variant, but not in the CPU one
     INTEGER,     INTENT(in), OPTIONAL :: opt_acc_async_queue
     LOGICAL,     INTENT(in), OPTIONAL :: opt_acc_copy_to_host
-    LOGICAL,     INTENT(in), OPTIONAL :: opt_use_acc
 
     INTEGER :: i, nvalid_loc
+
+    CALL assert_acc_host_only ('generate_index_list_i4_cpu', lacc)
 
     nvalid_loc = 0
     DO i = startid, endid
@@ -149,46 +154,52 @@ MODULE mo_index_list
     nvalid = nvalid_loc
   END SUBROUTINE generate_index_list_i4_cpu
 
-  SUBROUTINE generate_index_list_batched_i1_cpu(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, opt_use_acc)
+  SUBROUTINE generate_index_list_batched_i1_cpu(conditions, indices, startid, endid, nvalid, lacc, opt_acc_async_queue)
     INTEGER(i1), INTENT(in)           :: conditions(:,:)
     INTEGER,     INTENT(inout)        :: indices(:,:)
     INTEGER,     INTENT(in)           :: startid
     INTEGER,     INTENT(in)           :: endid
     INTEGER,     INTENT(inout)        :: nvalid(:)
-    ! This argument is used in the OpenACC variant, but not in the GPU one 
+    LOGICAL,     INTENT(in)           :: lacc
+    ! This argument is used in the OpenACC variant, but not in the GPU one
     INTEGER,     INTENT(in), OPTIONAL :: opt_acc_async_queue
-    LOGICAL,     INTENT(IN), OPTIONAL :: opt_use_acc
 
     INTEGER :: i, batch, batch_size
+
+    CALL assert_acc_host_only ('generate_index_list_batched_i1_cpu', lacc)
+
     batch_size = size(conditions, 2)
     nvalid = 0
 
     DO batch = 1, batch_size
       CALL generate_index_list_i1_cpu(              &
         conditions(:,batch), indices(:, batch), &
-        startid, endid, nvalid(batch) )
+        startid, endid, nvalid(batch), lacc=.FALSE. )
     END DO
 
   END SUBROUTINE generate_index_list_batched_i1_cpu
 
-  SUBROUTINE generate_index_list_batched_i4_cpu(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, opt_use_acc)
+  SUBROUTINE generate_index_list_batched_i4_cpu(conditions, indices, startid, endid, nvalid, lacc, opt_acc_async_queue)
     INTEGER(i4), INTENT(in)           :: conditions(:,:)
     INTEGER,     INTENT(inout)        :: indices(:,:)
     INTEGER,     INTENT(in)           :: startid
     INTEGER,     INTENT(in)           :: endid
     INTEGER,     INTENT(inout)        :: nvalid(:)
+    LOGICAL,     INTENT(in)           :: lacc
     ! This argument is used in the OpenACC variant, but not in the GPU one
     INTEGER,     INTENT(in), OPTIONAL :: opt_acc_async_queue
-    LOGICAL,     INTENT(IN), OPTIONAL :: opt_use_acc
 
     INTEGER :: i, batch, batch_size
+
+    CALL assert_acc_host_only ('generate_index_list_batched_i4_cpu', lacc)
+
     batch_size = size(conditions, 2)
     nvalid = 0
 
     DO batch = 1, batch_size
       CALL generate_index_list_i4_cpu(              &
         conditions(:,batch), indices(:, batch), &
-        startid, endid, nvalid(batch) )
+        startid, endid, nvalid(batch), lacc=.FALSE. )
     END DO
 
   END SUBROUTINE generate_index_list_batched_i4_cpu
@@ -198,27 +209,21 @@ MODULE mo_index_list
   ! on the gpu call the cub library through c++
 
   ! 1 byte
-  SUBROUTINE generate_index_list_i1(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, opt_acc_copy_to_host, opt_use_acc)
+  SUBROUTINE generate_index_list_i1(conditions, indices, startid, endid, nvalid, lacc, opt_acc_async_queue, opt_acc_copy_to_host)
     INTEGER(i1), INTENT(IN)           :: conditions(:)
     INTEGER,     INTENT(INOUT)        :: indices(:)
     INTEGER,     INTENT(IN)           :: startid
     INTEGER,     INTENT(IN)           :: endid
     INTEGER,     INTENT(OUT)          :: nvalid
+    LOGICAL,     INTENT(IN)           :: lacc
     INTEGER,     INTENT(IN), OPTIONAL :: opt_acc_async_queue
-    LOGICAL,     INTENT(IN), OPTIONAL :: opt_use_acc
     LOGICAL,     INTENT(in), OPTIONAL :: opt_acc_copy_to_host
 
     INTEGER(acc_handle_kind) :: stream
-    LOGICAL :: use_acc, acc_copy_to_host
-
-    IF (PRESENT(opt_use_acc)) THEN
-      use_acc = opt_use_acc
-    ELSE
-      use_acc = .TRUE.
-    ENDIF
+    LOGICAL :: acc_copy_to_host
 
     ! run on GPU
-    IF (use_acc) THEN
+    IF (lacc) THEN
 
 #if !defined( __HIP__ )
       IF ( PRESENT(opt_acc_async_queue) ) THEN
@@ -236,7 +241,7 @@ MODULE mo_index_list
 
       !$ACC HOST_DATA USE_DEVICE(conditions, indices)
       !$ACC HOST_DATA USE_DEVICE(nvalid) IF(.not. acc_copy_to_host)
-      CALL generate_index_list_gpu_single(       &
+      CALL generate_index_list_gpu_single(        &
         & c_loc(conditions(1)),                   &
         & startid, endid,                         &
         & c_loc(indices(1)), c_loc(nvalid),       &
@@ -245,37 +250,31 @@ MODULE mo_index_list
       !$ACC END HOST_DATA
       !$ACC END HOST_DATA
 
-#ifdef __HIP__ 
+#ifdef __HIP__
       CALL acc_wait_all()
 #endif
     ELSE ! run on CPU
-      CALL generate_index_list_i1_cpu(conditions, indices, startid, endid, nvalid)
+      CALL generate_index_list_i1_cpu(conditions, indices, startid, endid, nvalid, lacc=.FALSE.)
     ENDIF
 
   END SUBROUTINE generate_index_list_i1
 
   ! 4 bytes
-  SUBROUTINE generate_index_list_i4(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, opt_acc_copy_to_host, opt_use_acc)
+  SUBROUTINE generate_index_list_i4(conditions, indices, startid, endid, nvalid, lacc, opt_acc_async_queue, opt_acc_copy_to_host)
     INTEGER(i4), INTENT(in)           :: conditions(:)
     INTEGER,     INTENT(inout)        :: indices(:)
     INTEGER,     INTENT(in)           :: startid
     INTEGER,     INTENT(in)           :: endid
     INTEGER,     INTENT(out)          :: nvalid
+    LOGICAL,     INTENT(in)           :: lacc
     INTEGER,     INTENT(in), OPTIONAL :: opt_acc_async_queue
     LOGICAL,     INTENT(in), OPTIONAL :: opt_acc_copy_to_host
-    LOGICAL,     INTENT(in), OPTIONAL :: opt_use_acc
 
     INTEGER(acc_handle_kind) :: stream
-    LOGICAL :: use_acc, acc_copy_to_host
-
-    IF (PRESENT(opt_use_acc)) THEN
-      use_acc = opt_use_acc
-    ELSE
-      use_acc = .TRUE.
-    ENDIF
+    LOGICAL :: acc_copy_to_host
 
     ! run on GPU
-    IF (use_acc) THEN
+    IF (lacc) THEN
 
 #if !defined( __HIP__ )
       IF ( PRESENT(opt_acc_async_queue) ) THEN
@@ -293,7 +292,7 @@ MODULE mo_index_list
 
       !$ACC HOST_DATA USE_DEVICE(conditions, indices)
       !$ACC HOST_DATA USE_DEVICE(nvalid) IF(.not. acc_copy_to_host)
-      CALL generate_index_list_gpu_single(       &
+      CALL generate_index_list_gpu_single(        &
         & c_loc(conditions),                      &
         & startid, endid,                         &
         & c_loc(indices), c_loc(nvalid),          &
@@ -302,11 +301,11 @@ MODULE mo_index_list
       !$ACC END HOST_DATA
       !$ACC END HOST_DATA
 
-#ifdef __HIP__ 
+#ifdef __HIP__
       CALL acc_wait_all()
 #endif
     ELSE ! run on CPU
-      CALL generate_index_list_i4_cpu(conditions, indices, startid, endid, nvalid)
+      CALL generate_index_list_i4_cpu(conditions, indices, startid, endid, nvalid, lacc=.FALSE.)
     ENDIF
   END SUBROUTINE generate_index_list_i4
 
@@ -315,7 +314,7 @@ MODULE mo_index_list
   !
 
   ! 1 byte
-  SUBROUTINE generate_index_list_batched_i1(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, opt_use_acc)
+  SUBROUTINE generate_index_list_batched_i1(conditions, indices, startid, endid, nvalid, lacc, opt_acc_async_queue)
     ! Attention: all the values, including nvalid (!!)
     !  are updated asynchronously on device ONLY
     INTEGER(i1), INTENT(in)           :: conditions(:,:)
@@ -323,25 +322,18 @@ MODULE mo_index_list
     INTEGER,     INTENT(in)           :: startid
     INTEGER,     INTENT(in)           :: endid
     INTEGER,     INTENT(out)          :: nvalid(:)
+    LOGICAL,     INTENT(in)           :: lacc
     INTEGER,     INTENT(in), OPTIONAL :: opt_acc_async_queue
-    LOGICAL,     INTENT(in), OPTIONAL :: opt_use_acc
 
     INTEGER(acc_handle_kind) :: stream
     INTEGER :: i
     INTEGER :: batch_size
     INTEGER :: cond_stride, idx_stride
-    LOGICAL :: use_acc
-
-    IF (PRESENT(opt_use_acc)) THEN
-      use_acc = opt_use_acc
-    ELSE
-      use_acc = .TRUE.
-    ENDIF
 
     batch_size = size(conditions, 2)
 
     ! run on GPU
-    IF (use_acc) THEN
+    IF (lacc) THEN
 
 #if !defined( __HIP__ )
       IF ( PRESENT(opt_acc_async_queue) ) THEN
@@ -358,7 +350,7 @@ MODULE mo_index_list
       END IF
 
       !$ACC HOST_DATA USE_DEVICE(conditions, indices, nvalid)
-      CALL generate_index_list_gpu_batched(         &
+      CALL generate_index_list_gpu_batched(          &
           & batch_size,                              &
           & c_loc(conditions(1,1)), cond_stride,     &
           & startid, endid,                          &
@@ -366,16 +358,17 @@ MODULE mo_index_list
           & c_loc(nvalid(1)), 1, stream )
       !$ACC END HOST_DATA
 
-#ifdef __HIP__ 
+#ifdef __HIP__
       CALL acc_wait_all()
 #endif
     ELSE ! run on CPU
-      CALL generate_index_list_batched_i1_cpu(conditions, indices, startid, endid, nvalid)
+      CALL generate_index_list_batched_i1_cpu(conditions, indices, startid, &
+        &   endid, nvalid, lacc=.FALSE.)
     ENDIF
   END SUBROUTINE generate_index_list_batched_i1
 
   ! 4 bytes
-  SUBROUTINE generate_index_list_batched_i4(conditions, indices, startid, endid, nvalid, opt_acc_async_queue, opt_use_acc)
+  SUBROUTINE generate_index_list_batched_i4(conditions, indices, startid, endid, nvalid, lacc, opt_acc_async_queue)
     ! Attention: all the values, including nvalid (!!)
     !  are updated asynchronously on device ONLY
     INTEGER(i4), INTENT(in)           :: conditions(:,:)
@@ -383,25 +376,18 @@ MODULE mo_index_list
     INTEGER,     INTENT(in)           :: startid
     INTEGER,     INTENT(in)           :: endid
     INTEGER,     INTENT(out)          :: nvalid(:)
+    LOGICAL,     INTENT(in)           :: lacc
     INTEGER,     INTENT(in), OPTIONAL :: opt_acc_async_queue
-    LOGICAL,     INTENT(in), OPTIONAL :: opt_use_acc
 
     INTEGER(acc_handle_kind) :: stream
     INTEGER :: i
     INTEGER :: batch_size
     INTEGER :: cond_stride, idx_stride
-    LOGICAL :: use_acc
-
-    IF (PRESENT(opt_use_acc)) THEN
-      use_acc = opt_use_acc
-    ELSE
-      use_acc = .TRUE.
-    ENDIF
 
     batch_size = size(conditions, 2)
 
     ! run on GPU
-    IF (use_acc) THEN
+    IF (lacc) THEN
 
 #if !defined( __HIP__ )
       IF ( PRESENT(opt_acc_async_queue) ) THEN
@@ -418,7 +404,7 @@ MODULE mo_index_list
       END IF
 
       !$ACC HOST_DATA USE_DEVICE(conditions, indices, nvalid)
-      CALL generate_index_list_gpu_batched(         &
+      CALL generate_index_list_gpu_batched(          &
           & batch_size,                              &
           & c_loc(conditions(1,1)), cond_stride,     &
           & startid, endid,                          &
@@ -426,11 +412,12 @@ MODULE mo_index_list
           & c_loc(nvalid(1)), 4, stream )
       !$ACC END HOST_DATA
 
-#ifdef __HIP__ 
+#ifdef __HIP__
       CALL acc_wait_all()
 #endif
     ELSE ! run on CPU
-      CALL generate_index_list_batched_i4_cpu(conditions, indices, startid, endid, nvalid)
+      CALL generate_index_list_batched_i4_cpu(conditions, indices, startid, &
+        &   endid, nvalid, lacc=.FALSE.)
     ENDIF
   END SUBROUTINE generate_index_list_batched_i4
 

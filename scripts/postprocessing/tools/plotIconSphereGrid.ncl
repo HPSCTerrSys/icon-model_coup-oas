@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,7 +13,7 @@
 ; plots one grid, coloring the edges depending on given variable
 ;
 ; usage:
-; ncl plotIconSphereGrid.ncl 'grid="<grid file name>"' 'var="<edge var name>"' 'minValue=<min value>' 'maxValue=<max value>' 
+; ncl plotIconSphereGrid.ncl 'grid="<grid file name>"' 'var="<edge var name>"' 'minValue=<min value>' 'maxValue=<max value>'
 ;
 ; Leonidas Linardakis, MPI-M 2010-12-23
 ;
@@ -25,7 +25,7 @@
  load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
 ;---------------------------------------------------------------
- 
+
 ;---------------------------------------
 ; some parameters
  rad2deg = 57.295779513082323110286093015487255497
@@ -35,7 +35,7 @@
 ; set min-max cenetered at Lat=0, res@mpCenterLonF
 ;************************************************
 procedure getCenteredMap(res:logical, latRadius:float, lonRadius:float)
-begin 
+begin
   res@mpMinLatF      = res@mpCenterLatF - latRadius
   res@mpMaxLatF      = res@mpCenterLatF + latRadius
   res@mpMinLonF      = res@mpCenterLonF - lonRadius
@@ -61,21 +61,21 @@ begin
 ;  end if
 ;  inPointShift = 1 * abs(res@mpMaxLatF) + 1.0
   inPointShift = 2.0
- 
+
   if (lon .lt. (res@mpMinLonF - inPointShift)  ) then
      return(False)
   end if
   if (lon .gt. (res@mpMaxLonF + inPointShift)) then
      return(False)
   end if
-  
+
   if (lat .lt. (res@mpMinLatF - inPointShift) ) then
      return(False)
   end if
   if (lat .gt. (res@mpMaxLatF + inPointShift) ) then
      return(False)
   end if
-  
+
   return(True)
 
 end
@@ -93,9 +93,9 @@ end
   colormap  = "BlueDarkRed18"
   colormap  = "rainbow"
   colormap  = "ncview_default"
-  edgeThickness = 2.5 
+  edgeThickness = 2.5
   gridFolder=""
-  
+
   ; graphicsFormat="png"
   ; graphicsFormat@wkWidth = 1200
   ; graphicsFormat@wkHeight =1200
@@ -110,7 +110,7 @@ end
   if (.not. isvar("projection")) then
     projection = "Satellite"
   end if
-     
+
   if( isvar("folder")) then
      gridFileName = folder
   end if
@@ -119,11 +119,11 @@ end
      gridFileName = grid
   else
      print("grid is not given")
-     exit     
+     exit
   end if
-  
+
   gridFile = addfile(gridFolder+gridFileName+".nc", "r" )
-  
+
   if( isvar("stats")) then
      statsFileName = stats
      statsFile = addfile(gridFolder+statsFileName+".nc", "r" )
@@ -131,23 +131,23 @@ end
      statsFileName=gridFileName
      statsFile=gridFile
   end if
-  
+
   if( isvar("var")) then
      varName = var
   else
      varName="edge_length"
   end if
-  
+
   if( isvar("thickness")) then
      edgeThickness = thickness
   end if
 
-  graphicsFile  = statsFileName+"."+varName 
-  
+  graphicsFile  = statsFileName+"."+varName
+
   dims  = getfilevardims(statsFile,varName)
   sizes = filevardimsizes(statsFile,varName)
  ; plotVar = statsFile->$varName$(:)   ; dims: (cell)
-  
+
   ; Print variable information.
   print( "Plotting " + varName + ": " + dimsizes(sizes) + " Dimensions:")
   if(.not.any(ismissing(dims))) then
@@ -155,7 +155,7 @@ end
     print( j + ") " + dims(j) + ": " + sizes(j))
     end do
   end if
-   
+
 ;---------------------------------------------------------------
 ; make plot
 ;---------------------------------------------------------------
@@ -171,10 +171,10 @@ end
   wks = gsn_open_wks(graphicsFormat,graphicsFile)
   gsn_define_colormap(wks,colormap)
 ;  gsn_reverse_colormap(wks)
-  
-  setvalues wks            
-;    "wkColorMap"        : "gsltod"  
-;    "wkForegroundColor" : (/0.,0.,0./)  
+
+  setvalues wks
+;    "wkColorMap"        : "gsltod"
+;    "wkForegroundColor" : (/0.,0.,0./)
     "wkBackgroundColor" : (/1.,1.,1./)
 ;    "wkBackgroundColor" : (/-1.,-1.,-1./)
   end setvalues
@@ -190,12 +190,12 @@ end
   centerLon =  -40.0
   centerLat =  0.0
   latRadius = 90.0
-  lonRadius = 90.0    
+  lonRadius = 90.0
   res@mpCenterLonF   = centerLon         ; choose center lon
   res@mpCenterLatF   = centerLat         ; choose center lon
   getCenteredMap(res,latRadius,lonRadius)
   res@mpGreatCircleLinesOn = True
-   
+
   res@gsnFrame             = False
   res@gsnMaximize          = True
   ; res@gsnSpreadColors      = True
@@ -203,7 +203,7 @@ end
   res@gsnLeftString        = LeftString
   res@gsnCenterString      = CenterString
   res@gsnRightString       = RightString
-  
+
 ;  res@cnFillOn             = True
 ;  res@cnLinesOn            = False
 ;  res@cnInfoLabelOn        = False
@@ -224,16 +224,16 @@ end
   res@tiMainFontThicknessF = 4
   res@tiMainOffsetYF       = 0.02
   res@tiMainString         = TitleString
-   
+
   res@pmLabelBarHeightF        = 0.07
   res@pmLabelBarWidthF         = 0.7
   res@pmLabelBarOrthogonalPosF = 0.05
-  
+
   res@gsnDraw        = False             ; don't draw the plots
   res@gsnFrame       = False             ; don't advance the frame
-    
+
   plot = gsn_csm_map(wks,res)
-      
+
 ;************************************************
 ; prepare plot
   edgeVert1 = gridFile->edge_vertices(0,:)-1
@@ -243,7 +243,7 @@ end
   plotVar = gridFile->$varName$(:)
   res@cnLevelSelectionMode = "ManualLevels"
 
-  
+
   min_value =  new((/1/),"double")
   max_value =  new((/1/),"double")
   var_value =  new((/1/),"double")
@@ -284,14 +284,14 @@ end
   drawVertLon = new((/2/),"double")
   drawVertLat = new((/2/),"double")
   edgecolor=1
-  print("Writing "+noOfEdges(0)+" edges...") 
+  print("Writing "+noOfEdges(0)+" edges...")
   do i = 0 , noOfEdges-1
-        
+
     drawVertLon(0) = vertLon(edgeVert1(i))
     drawVertLon(1) = vertLon(edgeVert2(i))
     drawVertLat(0) = vertLat(edgeVert1(i))
-    drawVertLat(1) = vertLat(edgeVert2(i))      
-    
+    drawVertLat(1) = vertLat(edgeVert2(i))
+
     vert1in = pointIn(drawVertLon(0),drawVertLat(0),res)
     vert2in = pointIn(drawVertLon(1),drawVertLat(1),res)
     if (vert1in .or. vert2in) then
@@ -301,8 +301,8 @@ end
         var_value=max_value
       else if (var_value .lt. min_value) then
         var_value=min_value
-      end if 
-      end if 
+      end if
+      end if
       edgecolor = doubletointeger((var_value - min_value) * colorsDistr) + 2
 ;      if (edgecolor .lt. 2) then
 ;        edgecolor=2
@@ -313,9 +313,9 @@ end
       plot@$pdum$ = gsn_add_polyline(wks,plot,drawVertLon,drawVertLat,resp)
     end if
   end do
- 
+
 ;************************************************
-;  clean-up  
+;  clean-up
    delete(edgeVert1)
    delete(edgeVert2)
    delete(vertLon)
@@ -358,10 +358,10 @@ end
 ;   levels(i) = i+1
     levels(i) = (min_value) + (maxMinDiff/int2flt(numOfPlotColors)) * int2flt(i)
   end do
-  
+
   labels = "" + levels
   lbid = gsn_create_labelbar(wks,dimsizes(levels),labels,lbres)
-  
+
 ;
 ; Default was that labelbar appeared in center of plot.
 ;
@@ -372,15 +372,15 @@ end
   amres@amZone           = 1
   amres@amParallelPosF   = 0.5            ; Center labelbar.
   amres@amOrthogonalPosF = 0.0075            ; Move down, away from plot
-  
+
 ;  annoid = gsn_add_annotation(plot,lbid,False)
   annoid = gsn_add_annotation(plot,lbid,amres)
-  
+
 ;************************************************
-  
+
   draw(plot)
   frame(wks)
-    
+
   wallClockElapseTime(wcStrt, "create ocean plot", 0)
 
    print (graphicsFile+"."+graphicsFormat +" is created.")

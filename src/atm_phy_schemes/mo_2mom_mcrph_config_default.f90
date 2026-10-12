@@ -1,12 +1,7 @@
-!
-! Setup for 2-moment cloud microphysics scheme
-!
-! default configuration setup for synthetic radar data on the model grid
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,8 +9,12 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Setup for 2-moment cloud microphysics scheme
+!
+! default configuration setup for synthetic radar data on the model grid
+
 MODULE mo_2mom_mcrph_config_default
-  
+
   USE mo_kind, ONLY: wp
   USE mo_2mom_mcrph_config, ONLY: t_cfg_2mom
 
@@ -40,7 +39,7 @@ MODULE mo_2mom_mcrph_config_default
        &           -1, & ! ccn_type: 6,7,8,9; if not set by namelist, the ccn_type_gscp4 or ccn_type_gscp5 will win
        &   -999.99_wp, & ! CN concentration at ground; if > -900 will override Ncn0 of ccn_type, but will use other configs of ccn_type
        &       0.1_wp, & ! min updraft speed [m/s] for Segal&Khain cloud nucleation
-       
+
        ! .. Parameters for rain:
        !------------------------
        &            .FALSE.,  &   ! luse_mu_Dm_rain
@@ -83,7 +82,7 @@ MODULE mo_2mom_mcrph_config_default
        &            -999.99_wp, & ! bgeo_g for graupel, D = ageo*x^bgeo - in this case the background value in mo_2mom_mcrph_main.f90 will win
        &            -999.99_wp, & ! avel_g for graupel, v = avel*x^bvel - in this case the background value in mo_2mom_mcrph_main.f90 will win
        &            -999.99_wp, & ! bvel_g for graupel, v = avel*x^bvel - in this case the background value in mo_2mom_mcrph_main.f90 will win
-       &            1.0_wp,   &   ! melt_g_tune_fac: factor multiplying melting rate of graupel 
+       &            1.0_wp,   &   ! melt_g_tune_fac: factor multiplying melting rate of graupel
 
        !------------------------
        ! .. Parameters for hail:
@@ -94,6 +93,7 @@ MODULE mo_2mom_mcrph_config_default
        &            -999.99_wp, & ! bgeo_h for hail, D = ageo*x^bgeo - in this case the background value in mo_2mom_mcrph_main.f90 will win
        &            -999.99_wp, & ! avel_h for hail, v = avel*x^bvel - in this case the background value in mo_2mom_mcrph_main.f90 will win
        &            -999.99_wp, & ! bvel_h for hail, v = avel*x^bvel - in this case the background value in mo_2mom_mcrph_main.f90 will win
+       &            -999.99_wp, & ! x_max [kg] for hail - in this case the background value 5.00d-03 in mo_2mom_mcrph_main.f90 will win
        &            1.0_wp, &     ! melt_h_tune_fac: factor multiplying melting rate of hail
 
        !------------------------------------------
@@ -108,7 +108,7 @@ MODULE mo_2mom_mcrph_config_default
        &            75.0e-6_wp, & ! D_conv_ii: D-threshold for conversion to snow ice_selfcollection: newly created snowflakes have at least this mean mass diameter
        &            0.50e-3_wp, & ! D_rainfrz_ig
        &            1.25e-3_wp, & ! D_rainfrz_gh
-       &            0.10_wp,  &   ! Collision efficiency for graupel autoconversion (dry graupel) 
+       &            0.10_wp,  &   ! Collision efficiency for graupel autoconversion (dry graupel)
        &            0.40_wp,  &   ! Collision efficiency for graupel autoconversion (wet graupel)
        &            270.16_wp, &  ! Temperature threshold for switching to wet graupel autoconversion
        &            1, &          ! iicephase: (0) warm-phase 2M (1) mixed-phase 2M

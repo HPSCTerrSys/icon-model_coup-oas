@@ -1,0 +1,75 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/utils/icon.yml
+  - local: .gitlab/ci/common/dkrz.yml
+
+.unit:icon:levante:
+  extends:
+    - .common:dkrz:levante
+    - .utils:icon:build
+  stage: unit
+  needs: []
+  variables:
+    ICON_CI_COMMON_DKRZ_SLURM_NTASKS: 32
+    ICON_CI_COMMON_DKRZ_SLURM_TIMELIMIT: "05:00"
+    ICON_CI_UTILS_GIT_CLONE_PATH: ${ICON_CI_COMMON_DKRZ_SHMEM_PATH}/icon
+    ICON_CI_UTILS_GIT_SPARSE_PATTERNS: >-
+      /configure /utils/ /*.in /run/*.in /src/ /support/ /config/ /test/unit-tests/
+    ICON_CI_UTILS_ICON_SOURCE_PATH: ${ICON_CI_UTILS_GIT_CLONE_PATH}
+    ICON_CI_UTILS_ICON_BUILD_JOB_COUNT: ${ICON_CI_COMMON_DKRZ_SLURM_NTASKS}
+    ICON_CI_UTILS_ICON_CONFIG_EXTRA_ARGS: --disable-bundled-python
+    ICON_CI_UTILS_ICON_BUILD_TARGETS: check-icon
+    ICON_COLOR_TESTS: always
+    ICON_VERBOSE_TESTS: 1
+  before_script:
+    - !reference [.common:dkrz:levante, before_script]
+    - !reference [.utils:icon:build, before_script]
+  artifacts:
+    paths:
+      - "**/*.log"
+      - "**/CMakeCache.txt"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - !reference [.common:dkrz:levante, rules]
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+icon:gcc:
+  extends: .unit:icon:levante
+  variables:
+    ICON_CI_UTILS_ICON_CONFIG_REL_PATH: config/dkrz/levante.gcc
+
+icon:cpu:
+  extends: .unit:icon:levante
+  variables:
+    ICON_CI_UTILS_ICON_CONFIG_REL_PATH: config/dkrz/levante.intel
+    ICON_CI_UTILS_ICON_CONFIG_EXTRA_ARGS: >-
+      --disable-bundled-python --enable-openmp
+
+icon:nag:
+  extends: .unit:icon:levante
+  variables:
+    ICON_CI_UTILS_ICON_CONFIG_REL_PATH: config/dkrz/levante.nag
+
+icon:nag:serial:
+  extends: .unit:icon:levante
+  variables:
+    ICON_CI_UTILS_ICON_CONFIG_REL_PATH: config/dkrz/levante.nag
+    ICON_CI_UTILS_ICON_CONFIG_EXTRA_ARGS: --disable-mpi
+
+icon:gpu:
+  extends: .unit:icon:levante
+  variables:
+    ICON_CI_COMMON_DKRZ_SLURM_PARTITION: gpu
+    ICON_CI_COMMON_DKRZ_SLURM_GPUS_PER_NODE: 1
+    ICON_CI_UTILS_ICON_CONFIG_REL_PATH: config/dkrz/levante.gpu.nvhpc

@@ -1,10 +1,7 @@
-!
-! @brief Main program for the ICON atmospheric model
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,10 +9,18 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! @brief Testbed for communication. Triggered via name list parameter
+!     &testbed_nml :: testbed_model
+! See mo_icon_testbed_config.f90 for valid values of testbed_model.
+
+! @ warning: Run on only VE on NEC machines to avoid following error
+!      ! DEBUGGING: levante_aurora error
+!      !   FINISH PE:     2 sync_patch_array: Out of sync detected!
+
 MODULE mo_test_communication
 
-  USE mo_kind,                ONLY: wp, sp, dp, vp
-  USE mo_exception,           ONLY: message, message_text, finish
+  USE mo_kind,                ONLY: wp, vp, dp, sp
+  USE mo_exception,           ONLY: message, message_text, finish, warning
   USE mo_mpi,                 ONLY: work_mpi_barrier, p_n_work, p_pe_work, &
     &                               p_comm_work, p_comm_rank, p_comm_size, &
     &                               p_barrier
@@ -45,7 +50,7 @@ MODULE mo_test_communication
 
   USE mo_master_control,      ONLY: get_my_process_name
 
-  USE mo_model_domain,        ONLY: p_patch
+  USE mo_model_domain,        ONLY: p_patch, t_patch
   USE mo_atmo_model,          ONLY: construct_atmo_model, destruct_atmo_model
   USE mo_math_gradients,      ONLY: grad_fd_norm
 
@@ -54,15 +59,26 @@ MODULE mo_test_communication
   USE mo_atmo_nonhydrostatic, ONLY: construct_atmo_nonhydrostatic, destruct_atmo_nonhydrostatic
   USE mo_async_latbc_types,   ONLY: t_latbc_data
 
-  USE mo_parallel_config,    ONLY: iorder_sendrecv
-  USE mo_sync,               ONLY: SYNC_C, SYNC_E, SYNC_V, sync_patch_array, &
-    &                              sync_patch_array_mult, sync_patch_array_4de1
-  USE mo_icon_comm_lib
+  USE mo_parallel_config,     ONLY: iorder_sendrecv
+  USE mo_sync,                ONLY: SYNC_C, SYNC_E, SYNC_V, SYNC_C1, sync_patch_array, &
+    &                               sync_patch_array_mult, sync_patch_array_4de1, &
+    &                               cumulative_sync_patch_array, complete_cumulative_sync, &
+    &                               disable_sync_checks, enable_sync_checks, check_patch_array
+  USE mo_icon_comm_lib,       ONLy: is_ready, until_sync, new_icon_comm_variable, &
+    &                               delete_icon_comm_variable, icon_comm_var_is_ready, &
+    &                               icon_comm_sync, icon_comm_sync_all
 
   USE mo_icon_testbed_config, ONLY: testbed_model, test_halo_communication, &
     & testbed_iterations, calculate_iterations, test_gather_communication, &
-    & test_exchange_communication, test_bench_exchange_data_mult
-  USE mo_grid_config, ONLY: n_dom_start
+    & test_exchange_communication, test_bench_exchange_data_mult, &
+    & test_sync_exchange_communication
+  USE mo_grid_config,         ONLY: n_dom_start
+  USE mo_parallel_config,     ONLY: p_test_run
+  USE fortran_support,        ONLY: t_ptr_3d_dp, t_ptr_3d_sp, set_acc_host_or_device
+  USE mo_impl_constants,      ONLY: min_rlcell, min_rlcell_int, grf_bdywidth_c
+  USE mo_loopindices,         ONLY: get_indices_c
+
+#include "add_var_acc_macro.inc"
 
 !-------------------------------------------------------------------------
 IMPLICIT NONE
@@ -95,6 +111,7 @@ CONTAINS
     ltimer = .false.
     timers_level = 0
     activate_sync_timers = .false.
+    CALL disable_sync_checks()
     CALL construct_atmo_model(namelist_filename,shr_namelist_filename)
     CALL construct_atmo_nonhydrostatic(latbc)
     !---------------------------------------------------------------------
@@ -116,11 +133,22 @@ CONTAINS
       CALL gather_communication_testbed()
 
     CASE(test_exchange_communication)
+      CALL message("", "test_exchange_communication, test_gpu=.FALSE.")
       CALL exchange_communication_testbed()
       CALL exchange_communication_grf_testbed()
 #ifdef _OPENACC
+      CALL message("", "test_exchange_communication, test_gpu=.TRUE.")
       CALL exchange_communication_testbed(test_gpu=.TRUE.)
       CALL exchange_communication_grf_testbed(test_gpu=.TRUE.)
+#endif
+    CASE(test_sync_exchange_communication)
+      ! Enable sync_checks (disabled by default on GPU)
+      CALL enable_sync_checks()
+      CALL message("", "test_sync_exchange_communication, test_gpu=.FALSE.")
+      CALL sync_patch_array_testbed(test_gpu=.FALSE.)
+#ifdef _OPENACC
+      CALL message("", "test_sync_exchange_communication, test_gpu=.TRUE.")
+      CALL sync_patch_array_testbed(test_gpu=.TRUE.)
 #endif
 
     CASE(test_bench_exchange_data_mult)
@@ -149,8 +177,6 @@ CONTAINS
     CALL destruct_atmo_model()
 !     CALL destruct_icon_communication()
     CALL message(TRIM(method_name),'clean-up finished')
-
-
 
   END SUBROUTINE test_communication
   !-------------------------------------------------------------------------
@@ -321,20 +347,20 @@ CONTAINS
     pnt_3D_cells_4(:,:,:) = 0.0_wp
 
     timer_3D_cells_1  = new_timer  (timer_descr//"_3dcells_1")
-    CALL test_oldsync_3D(SYNC_C, var1=pnt_3D_cells_1, &
+    CALL test_oldsync_3D(SYNC_C, var1=pnt_3D_cells_1, & ! internal subroutine, uses lacc=.FALSE.
       & timer_id=timer_3D_cells_1)
 
     timer_3D_cells_2  = new_timer  (timer_descr//"_3dcells_2")
-    CALL test_oldsync_3D(SYNC_C, var1=pnt_3D_cells_1,var2=pnt_3D_cells_2, &
+    CALL test_oldsync_3D(SYNC_C, var1=pnt_3D_cells_1,var2=pnt_3D_cells_2, & ! internal subroutine, uses lacc=.FALSE.
       & timer_id=timer_3D_cells_2)
 
     timer_3D_cells_3  = new_timer  (timer_descr//"_3dcells_3")
-    CALL test_oldsync_3D(SYNC_C, var1=pnt_3D_cells_1,var2=pnt_3D_cells_2, &
+    CALL test_oldsync_3D(SYNC_C, var1=pnt_3D_cells_1,var2=pnt_3D_cells_2, & ! internal subroutine, uses lacc=.FALSE.
       & var3=pnt_3D_cells_3, &
       & timer_id=timer_3D_cells_3)
 
     timer_3D_cells_4  = new_timer  (timer_descr//"_3dcells_4")
-    CALL test_oldsync_3D(SYNC_C, var1=pnt_3D_cells_1,var2=pnt_3D_cells_2, &
+    CALL test_oldsync_3D(SYNC_C, var1=pnt_3D_cells_1,var2=pnt_3D_cells_2, & ! internal subroutine, uses lacc=.FALSE.
       & var3=pnt_3D_cells_3,var4=pnt_3D_cells_4, &
       & timer_id=timer_3D_cells_4)
 
@@ -356,7 +382,7 @@ CONTAINS
       END DO
       write (str_i, '(I4)') i
       timer_4DE1_cells = new_timer(timer_descr//"_4de1cells_"//ADJUSTL(TRIM(str_i)))
-      CALL test_oldsync_4DE1(SYNC_C, var=pnt_4D_cells, nfields=i, &
+      CALL test_oldsync_4DE1(SYNC_C, var=pnt_4D_cells, nfields=i, & ! has lacc=.FALSE.
         &                    timer_id=timer_4DE1_cells)
       DEALLOCATE(pnt_4D_cells)
     END DO
@@ -386,24 +412,24 @@ CONTAINS
 !     pnt_3D_edges_4(:,:,:) = 0.0_wp
 
     timer_3D_edges_1  = new_timer  (timer_descr//"_3dedges_1")
-    CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_2, &
+    CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_2, & ! internal subroutine uses lacc=.FALSE.
       & timer_id=timer_3D_edges_1)
 
 !    timer_3D_edges_1  = new_timer  (timer_descr//"_3dedges_1")
-!    CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_1, &
+!    CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_1, & ! internal subroutine uses lacc=.FALSE.
 !      & timer_id=timer_3D_edges_1)
 
 !    timer_3D_edges_2  = new_timer  (timer_descr//"_3dedges_2")
-!    CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_1,var2=pnt_3D_edges_2, &
+!    CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_1,var2=pnt_3D_edges_2, & ! internal subroutine uses lacc=.FALSE.
 !      & timer_id=timer_3D_edges_2)
 
 !    timer_3D_edges_3  = new_timer  (timer_descr//"_3dedges_3")
-!    CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_1,var2=pnt_3D_edges_2, &
+!    CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_1,var2=pnt_3D_edges_2, & ! internal subroutine uses lacc=.FALSE.
 !      & var3=pnt_3D_edges_3, &
 !      & timer_id=timer_3D_edges_3)
 
 !     timer_3D_edges_4  = new_timer  (timer_descr//"_3dedges_4")
-!     CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_1,var2=pnt_3D_edges_2, &
+!     CALL test_oldsync_3D(SYNC_E, var1=pnt_3D_edges_1,var2=pnt_3D_edges_2, & ! internal subroutine uses lacc=.FALSE.
 !       & var3=pnt_3D_edges_3,var4=pnt_3D_edges_4, &
 !       & timer_id=timer_3D_edges_4)
 
@@ -684,7 +710,7 @@ CONTAINS
     IF (.NOT. PRESENT(var2)) THEN
       DO i=1,testbed_iterations
         CALL timer_start(timer_id)
-        CALL sync_patch_array( comm_pattern, p_patch(n_dom_start), var1 )
+        CALL sync_patch_array( comm_pattern, p_patch(n_dom_start), var1, lacc=.FALSE. )
         CALL timer_stop(timer_id)
       ENDDO
       RETURN
@@ -693,20 +719,20 @@ CONTAINS
     IF (PRESENT(var4)) THEN
       DO i=1,testbed_iterations
         CALL timer_start(timer_id)
-        CALL sync_patch_array_mult(comm_pattern, p_patch(n_dom_start), 4, var1, var2, var3, var4)
+        CALL sync_patch_array_mult(comm_pattern, p_patch(n_dom_start), 4, lacc=.FALSE., f3din1=var1, f3din2=var2, f3din3=var3, f3din4=var4)
         CALL timer_stop(timer_id)
       ENDDO
 
    ELSEIF (PRESENT(var3)) THEN
       DO i=1,testbed_iterations
         CALL timer_start(timer_id)
-        CALL sync_patch_array_mult(comm_pattern, p_patch(n_dom_start), 3, var1, var2, var3)
+        CALL sync_patch_array_mult(comm_pattern, p_patch(n_dom_start), 3, lacc=.FALSE., f3din1=var1, f3din2=var2, f3din3=var3)
         CALL timer_stop(timer_id)
       ENDDO
    ELSE
       DO i=1,testbed_iterations
         CALL timer_start(timer_id)
-        CALL sync_patch_array_mult(comm_pattern, p_patch(n_dom_start), 2, var1, var2)
+        CALL sync_patch_array_mult(comm_pattern, p_patch(n_dom_start), 2, lacc=.FALSE., f3din1=var1, f3din2=var2)
         CALL timer_stop(timer_id)
       ENDDO
    ENDIF
@@ -727,7 +753,7 @@ CONTAINS
     CALL work_mpi_barrier()
     DO i=1,testbed_iterations
       CALL timer_start(timer_id)
-      CALL sync_patch_array_4de1(comm_pattern, p_patch(n_dom_start), nfields, var)
+      CALL sync_patch_array_4de1(comm_pattern, p_patch(n_dom_start), nfields, var, lacc=.FALSE.)
       CALL timer_stop(timer_id)
     ENDDO
 
@@ -745,8 +771,8 @@ CONTAINS
 
     CALL timer_start(timer)
     DO i=1,testbed_iterations
-      CALL sync_patch_array( comm_pattern, p_patch(n_dom_start), var )
-      CALL do_calculations()
+      CALL sync_patch_array( comm_pattern, p_patch(n_dom_start), var, lacc=.FALSE. )
+      CALL do_calculations(lacc=.FALSE.)
     ENDDO
     CALL timer_stop(timer)
   END SUBROUTINE test_sync_2D
@@ -761,9 +787,9 @@ CONTAINS
 
     CALL timer_start(timer)
     DO i=1,testbed_iterations
-      CALL sync_patch_array(SYNC_C , p_patch(n_dom_start), cell_var )
-      CALL sync_patch_array(SYNC_E , p_patch(n_dom_start), edge_var )
-      CALL sync_patch_array(SYNC_V , p_patch(n_dom_start), vert_var )
+      CALL sync_patch_array(SYNC_C , p_patch(n_dom_start), cell_var, lacc=.FALSE. )
+      CALL sync_patch_array(SYNC_E , p_patch(n_dom_start), edge_var, lacc=.FALSE. )
+      CALL sync_patch_array(SYNC_V , p_patch(n_dom_start), vert_var, lacc=.FALSE. )
     ENDDO
     CALL timer_stop(timer)
   END SUBROUTINE test_sync_2D_all
@@ -778,8 +804,8 @@ CONTAINS
 
     CALL timer_start(timer)
     DO i=1,testbed_iterations
-      CALL sync_patch_array( comm_pattern, p_patch(n_dom_start), var )
-      CALL do_calculations()
+      CALL sync_patch_array( comm_pattern, p_patch(n_dom_start), var, lacc=.FALSE. )
+      CALL do_calculations(lacc=.FALSE.)
     ENDDO
     CALL timer_stop(timer)
   END SUBROUTINE test_sync_3D
@@ -794,25 +820,27 @@ CONTAINS
 
     CALL timer_start(timer)
     DO i=1,testbed_iterations
-      CALL sync_patch_array(SYNC_C , p_patch(n_dom_start), cell_var )
-      CALL do_calculations()
-      CALL sync_patch_array(SYNC_E , p_patch(n_dom_start), edge_var )
-      CALL do_calculations()
-      CALL sync_patch_array(SYNC_V , p_patch(n_dom_start), vert_var )
-      CALL do_calculations()
+      CALL sync_patch_array(SYNC_C , p_patch(n_dom_start), cell_var, lacc=.FALSE. )
+      CALL do_calculations(lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_E , p_patch(n_dom_start), edge_var, lacc=.FALSE. )
+      CALL do_calculations(lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_V , p_patch(n_dom_start), vert_var, lacc=.FALSE. )
+      CALL do_calculations(lacc=.FALSE.)
     ENDDO
     CALL timer_stop(timer)
   END SUBROUTINE test_sync_3D_all
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
-  SUBROUTINE do_calculations()
+  SUBROUTINE do_calculations(lacc)
 
+    LOGICAL, INTENT(IN) :: lacc ! if TRUE, use OpenACC
     INTEGER :: i
 
     DO i=1,calculate_iterations
       CALL grad_fd_norm (p_nh_state(n_dom_start)%prog(1)%theta_v(:,:,:), &
-        & p_patch(n_dom_start), p_nh_state(n_dom_start)%prog(1)%vn(:,:,:))
+        & p_patch(n_dom_start), p_nh_state(n_dom_start)%prog(1)%vn(:,:,:), &
+        lacc=lacc)
     ENDDO
 
   END SUBROUTINE do_calculations
@@ -1018,6 +1046,600 @@ CONTAINS
 !     CALL delete_icon_comm_variable(comm_1)
     !---------------------------------------------------------------------
 
+  SUBROUTINE sync_patch_array_testbed(test_gpu)
+
+    LOGICAL, OPTIONAL, INTENT(IN) :: test_gpu
+
+    INTEGER :: i, n
+    !INTEGER, PARAMETER :: types(3) = (/ SYNC_C, SYNC_E, SYNC_V /) ! SYNC_C1
+    !INTEGER :: typ
+    LOGICAL :: lzacc
+
+    REAL(dp), ALLOCATABLE :: arr_dp_3d_1(:,:,:), ref_arr_dp_3d_1(:,:,:), &
+      &                      arr_dp_3d_2(:,:,:), ref_arr_dp_3d_2(:,:,:), &
+      &                      arr_dp_3d_3(:,:,:), ref_arr_dp_3d_3(:,:,:), &
+      &                      arr_dp_3d_4(:,:,:), ref_arr_dp_3d_4(:,:,:)
+    REAL(dp), ALLOCATABLE, TARGET :: arr_dp_4d(:,:,:,:), ref_arr_dp_4d(:,:,:,:) !
+    TYPE(t_ptr_3d_dp), ALLOCATABLE :: ptr_3d_arr_dp(:), ref_ptr_3d_arr_dp(:)
+    REAL(sp), ALLOCATABLE :: arr_sp_3d_1(:,:,:), ref_arr_sp_3d_1(:,:,:), &
+      &                      arr_sp_3d_2(:,:,:), ref_arr_sp_3d_2(:,:,:), &
+      &                      arr_sp_3d_3(:,:,:), ref_arr_sp_3d_3(:,:,:), &
+      &                      arr_sp_3d_4(:,:,:), ref_arr_sp_3d_4(:,:,:)
+    REAL(sp), ALLOCATABLE, TARGET :: arr_sp_4d(:,:,:,:), ref_arr_sp_4d(:,:,:,:) !
+    TYPE(t_ptr_3d_sp), ALLOCATABLE :: ptr_3d_arr_sp(:), ref_ptr_3d_arr_sp(:)
+#ifdef __PGI
+    REAL(wp), POINTER :: tmp_ptr_4d(:,:,:,:)
+#endif
+
+    CHARACTER(*), PARAMETER :: method_name = "mo_test_communication:sync_patch_array_testbed"
+    TYPE(t_patch), POINTER :: ptr_patch
+
+    CALL set_acc_host_or_device(lzacc, test_gpu)
+
+    IF (.NOT. p_test_run) THEN
+      CALL finish(method_name, "parallel_nml::p_test_run disabled")
+    END IF
+
+    ptr_patch => p_patch(n_dom_start)
+
+    ! dp and sp fields
+    IF (.NOT. ALLOCATED(p_nh_state))CALL finish(method_name,"p_nh_state")
+    IF (.NOT. ALLOCATED(p_nh_state(n_dom_start)%prog)) CALL finish(method_name,"p_nh_state%pro")
+    CALL init_arrays_from_pointer_3d(p_nh_state(n_dom_start)%prog(1)%w,       1, arr_dp_3d_1, ref_arr_dp_3d_1, &
+      &                                                                          arr_sp_3d_1, ref_arr_sp_3d_1)
+    CALL init_arrays_from_pointer_3d(p_nh_state(n_dom_start)%prog(1)%rho,     2, arr_dp_3d_2, ref_arr_dp_3d_2, &
+      &                                                                          arr_sp_3d_2, ref_arr_sp_3d_2)
+    CALL init_arrays_from_pointer_3d(p_nh_state(n_dom_start)%prog(1)%exner,   3, arr_dp_3d_3, ref_arr_dp_3d_3, &
+      &                                                                          arr_sp_3d_3, ref_arr_sp_3d_3)
+    CALL init_arrays_from_pointer_3d(p_nh_state(n_dom_start)%prog(1)%theta_v, 4, arr_dp_3d_4, ref_arr_dp_3d_4, &
+      &                                                                          arr_sp_3d_4, ref_arr_sp_3d_4)
+    !CALL init_arrays_from_pointer_3d(p_nh_state(n_dom_start)%prog(1)%tke, ! Not associated
+
+#ifdef __PGI
+    IF (.NOT. ASSOCIATED(p_nh_state(n_dom_start)%prog(1)%tracer)) THEN
+      WRITE(message_text,'(a,i0)') "tracer not associated, id:", 1
+      CALL finish(method_name, message_text)
+    ENDIF
+
+    tmp_ptr_4d => p_nh_state(n_dom_start)%prog(1)%tracer
+    ALLOCATE(    arr_dp_4d(SIZE(tmp_ptr_4d,1),SIZE(tmp_ptr_4d,2),SIZE(tmp_ptr_4d,3),SIZE(tmp_ptr_4d,4)), &
+      &          arr_sp_4d(SIZE(tmp_ptr_4d,1),SIZE(tmp_ptr_4d,2),SIZE(tmp_ptr_4d,3),SIZE(tmp_ptr_4d,4)), &
+      &      ref_arr_dp_4d(SIZE(tmp_ptr_4d,1),SIZE(tmp_ptr_4d,2),SIZE(tmp_ptr_4d,3),SIZE(tmp_ptr_4d,4)), &
+      &      ref_arr_sp_4d(SIZE(tmp_ptr_4d,1),SIZE(tmp_ptr_4d,2),SIZE(tmp_ptr_4d,3),SIZE(tmp_ptr_4d,4)))
+#endif
+    CALL init_arrays_from_pointer_4d(p_nh_state(n_dom_start)%prog(1)%tracer,  1, arr_dp_4d, ref_arr_dp_4d, &
+      &                                                                          arr_sp_4d, ref_arr_sp_4d)
+
+    ! DEBUGGING
+    IF (.FALSE.) THEN
+      CALL print_shape_3d(1, arr_dp_3d_1, arr_sp_3d_1)
+      CALL print_shape_3d(2, arr_dp_3d_2, arr_sp_3d_2)
+      CALL print_shape_3d(3, arr_dp_3d_3, arr_sp_3d_3)
+      CALL print_shape_3d(4, arr_dp_3d_4, arr_sp_3d_4)
+      CALL print_shape_4d(1, arr_dp_4d, arr_sp_4d)
+
+      !! DEBUGGING NVHPC - seems to be inconsistency I do not understand between normal-looking shapes printed by
+      !!             print_shape_4d(), versus just print shapes directly below. Directly below gives all sorts
+      !!             of just 0's, MAX_INT, etc in shape.
+      !IF (.NOT. ALLOCATED(arr_dp_4d)) CALL finish(method_name, "arr_dp_4d not allocated")
+      !WRITE(message_text,*) "SIZE(CUSTOM) dp: [",SIZE(arr_dp_4d,1),",",SIZE(arr_dp_4d,2),",",SIZE(arr_dp_4d,3),",",SIZE(arr_dp_4d,4), &
+      !  &                   "] - TOTAL: ", SIZE(arr_dp_4d)
+      !CALL warning(method_name,message_text)
+      !WRITE(message_text,*) "SIZE(CUSTOM) sp: [",SIZE(tmp_ptr_4d,1),",",SIZE(tmp_ptr_4d,2),",",SIZE(tmp_ptr_4d,3),",",SIZE(tmp_ptr_4d,4), &
+      !  &                   "] - TOTAL: ", SIZE(tmp_ptr_4d)
+      !CALL warning(method_name,message_text)
+    ENDIF
+
+    n = SIZE(arr_dp_4d,4)
+    ALLOCATE(ptr_3d_arr_dp(n), ref_ptr_3d_arr_dp(n), &
+      &      ptr_3d_arr_sp(n), ref_ptr_3d_arr_sp(n))
+    DO i=1,n
+      ptr_3d_arr_dp(i)%p => arr_dp_4d(:,:,:,i)
+      ptr_3d_arr_sp(i)%p => arr_sp_4d(:,:,:,i)
+      ref_ptr_3d_arr_dp(i)%p => ref_arr_dp_4d(:,:,:,i)
+      ref_ptr_3d_arr_sp(i)%p => ref_arr_sp_4d(:,:,:,i)
+    END DO
+
+    ! DO WORK:
+    CALL do_work_c_3d(ptr_patch, arr_dp_3d_1, ref_arr_dp_3d_1, arr_sp_3d_1, ref_arr_sp_3d_1)
+    CALL do_work_c_3d(ptr_patch, arr_dp_3d_2, ref_arr_dp_3d_2, arr_sp_3d_2, ref_arr_sp_3d_2)
+    CALL do_work_c_3d(ptr_patch, arr_dp_3d_3, ref_arr_dp_3d_3, arr_sp_3d_3, ref_arr_sp_3d_3)
+    CALL do_work_c_3d(ptr_patch, arr_dp_3d_4, ref_arr_dp_3d_4, arr_sp_3d_4, ref_arr_sp_3d_4)
+    DO i=1,n
+      ! Points to: arr_dp_4d, arr_sp_4d
+      CALL do_work_c_3d(ptr_patch, ptr_3d_arr_dp(i)%p, ref_ptr_3d_arr_dp(i)%p, ptr_3d_arr_sp(i)%p, ref_ptr_3d_arr_sp(i)%p)
+    END DO
+
+    CALL message(method_name, "SYNC_C") ! Only testing on data on cell centres
+
+    ! Calling on each 3d field, also to verify that field data is initialized as
+    !   expected for later checks
+    CALL check_sync_patch_array(SYNC_C, 1, arr_dp_3d_1, ref_arr_dp_3d_1, &
+      &                                    arr_sp_3d_1, ref_arr_sp_3d_1)
+    CALL check_sync_patch_array(SYNC_C, 2, arr_dp_3d_2, ref_arr_dp_3d_2, &
+      &                                    arr_sp_3d_2, ref_arr_sp_3d_2)
+    CALL check_sync_patch_array(SYNC_C, 3, arr_dp_3d_3, ref_arr_dp_3d_3, &
+      &                                    arr_sp_3d_3, ref_arr_sp_3d_3)
+    CALL check_sync_patch_array(SYNC_C, 4, arr_dp_3d_4, ref_arr_dp_3d_4, &
+      &                                    arr_sp_3d_4, ref_arr_sp_3d_4)
+    DO i=1,SIZE(ptr_3d_arr_dp)
+      CALL check_sync_patch_array(SYNC_C, 4+i, ptr_3d_arr_dp(i)%p, ref_ptr_3d_arr_dp(i)%p, &
+        &                                      ptr_3d_arr_sp(i)%p, ref_ptr_3d_arr_sp(i)%p)
+    END DO
+
+
+    CALL check_sync_patch_array_mult(SYNC_C, 1, &
+      &                              arr_dp_3d_1, ref_arr_dp_3d_1, &
+      &                              arr_sp_3d_1, ref_arr_sp_3d_1, &
+      &                              arr_dp_3d_2, ref_arr_dp_3d_2, &
+      &                              arr_sp_3d_2, ref_arr_sp_3d_2, &
+      &                              arr_dp_4d, ref_arr_dp_4d, &
+      &                              arr_sp_4d, ref_arr_sp_4d, &
+      &                              ptr_3d_arr_dp, ref_ptr_3d_arr_dp, &
+      &                              ptr_3d_arr_sp, ref_ptr_3d_arr_sp)
+
+    CALL check_cumulative_sync_patch_array(SYNC_C, 1, &
+      &                                    arr_dp_3d_1, ref_arr_dp_3d_1, &
+      &                                    arr_dp_3d_2, ref_arr_dp_3d_2, &
+      &                                    arr_sp_3d_1, ref_arr_sp_3d_1, &
+      &                                    arr_sp_3d_2, ref_arr_sp_3d_2 )
+
+    !CALL message(method_name, "SYNC_E") ! use edge fields
+    !CALL init_arrays_from_pointer_3d(p_nh_state(n_dom_start)%prog(1)%vn ! edges
+    !CALL message(method_name, "SYNC_V") ! use vertex fields
+
+    ! Deallocate all
+    DEALLOCATE(arr_dp_3d_1, ref_arr_dp_3d_1,    &
+      &        arr_dp_3d_2, ref_arr_dp_3d_2,    &
+      &        arr_dp_3d_3, ref_arr_dp_3d_3,    &
+      &        arr_dp_3d_4, ref_arr_dp_3d_4,    &
+      &        arr_dp_4d, ref_arr_dp_4d,        &
+      &        ptr_3d_arr_dp, ref_ptr_3d_arr_dp )
+    DEALLOCATE(arr_sp_3d_1, ref_arr_sp_3d_1,    &
+      &        arr_sp_3d_2, ref_arr_sp_3d_2,    &
+      &        arr_sp_3d_3, ref_arr_sp_3d_3,    &
+      &        arr_sp_3d_4, ref_arr_sp_3d_4,    &
+      &        arr_sp_4d, ref_arr_sp_4d,        &
+      &        ptr_3d_arr_sp, ref_ptr_3d_arr_sp )
+
+  CONTAINS
+
+    SUBROUTINE check_sync_patch_array(typ, call_id, &
+      &                               in_array_dp_3d, ref_in_array_dp_3d, &
+      &                               in_array_sp_3d, ref_in_array_sp_3d)
+
+      INTEGER, INTENT(IN) :: typ
+
+      REAL(dp), INTENT(INOUT) :: in_array_dp_3d(:,:,:)
+      REAL(dp), INTENT(IN   ) :: ref_in_array_dp_3d(:,:,:)
+      REAL(sp), INTENT(INOUT) :: in_array_sp_3d(:,:,:)
+      REAL(sp), INTENT(IN   ) :: ref_in_array_sp_3d(:,:,:)
+      INTEGER, INTENT(IN) :: call_id
+      CHARACTER(*), PARAMETER :: method_name = "mo_test_communication:check_sync_patch_array"
+
+
+      !$ACC DATA COPYIN(in_array_dp_3d, ref_in_array_dp_3d) ASYNC(1) IF(lzacc)
+      CALL sync_patch_array (typ=typ, p_patch=ptr_patch, arr=in_array_dp_3d, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=in_array_dp_3d, lacc=lzacc)
+      in_array_dp_3d(:,:,:) = ref_in_array_dp_3d(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC DATA COPYIN(in_array_sp_3d, ref_in_array_sp_3d) ASYNC(1) IF(lzacc)
+      CALL sync_patch_array (typ=typ, p_patch=ptr_patch, arr=in_array_sp_3d, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=in_array_sp_3d, lacc=lzacc)
+      in_array_sp_3d(:,:,:) = ref_in_array_sp_3d(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "sp passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC WAIT(1)
+
+    END SUBROUTINE check_sync_patch_array
+
+    SUBROUTINE check_sync_patch_array_mult(typ, call_id, &
+      &                                    arr_dp_3d_1, ref_arr_dp_3d_1, &
+      &                                    arr_sp_3d_1, ref_arr_sp_3d_1, &
+      &                                    arr_dp_3d_2, ref_arr_dp_3d_2, &
+      &                                    arr_sp_3d_2, ref_arr_sp_3d_2, &
+      &                                    arr_dp_4d, ref_arr_dp_4d, &
+      &                                    arr_sp_4d, ref_arr_sp_4d, &
+      &                                    ptr_3d_arr_dp, ref_ptr_3d_arr_dp, &
+      &                                    ptr_3d_arr_sp, ref_ptr_3d_arr_sp)
+
+      INTEGER, INTENT(IN) :: typ
+
+      REAL(dp), INTENT(INOUT) ::     arr_dp_3d_1(:,:,:),     arr_dp_3d_2(:,:,:), &
+        &                            arr_dp_4d(:,:,:,:)
+      REAL(sp), INTENT(INOUT) ::     arr_sp_3d_1(:,:,:),     arr_sp_3d_2(:,:,:), &
+        &                            arr_sp_4d(:,:,:,:)
+      REAL(dp), INTENT(IN   ) :: ref_arr_dp_3d_1(:,:,:), ref_arr_dp_3d_2(:,:,:), &
+        &                        ref_arr_dp_4d(:,:,:,:)
+      REAL(sp), INTENT(IN   ) :: ref_arr_sp_3d_1(:,:,:), ref_arr_sp_3d_2(:,:,:), &
+        &                        ref_arr_sp_4d(:,:,:,:)
+      TYPE(t_ptr_3d_dp), INTENT(INOUT) ::     ptr_3d_arr_dp(:)
+      TYPE(t_ptr_3d_dp), INTENT(IN   ) :: ref_ptr_3d_arr_dp(:)
+      TYPE(t_ptr_3d_sp), INTENT(INOUT) ::     ptr_3d_arr_sp(:)
+      TYPE(t_ptr_3d_sp), INTENT(IN   ) :: ref_ptr_3d_arr_sp(:)
+      INTEGER, INTENT(IN) :: call_id
+      ! Local vars
+      CHARACTER(*), PARAMETER :: method_name = "mo_test_communication:check_sync_patch_array_mult"
+      INTEGER :: i
+
+      ! 3d fields only
+      !$ACC DATA COPYIN(arr_dp_3d_1, arr_dp_3d_2, ref_arr_dp_3d_1, ref_arr_dp_3d_2) ASYNC(1) IF(lzacc)
+      CALL sync_patch_array_mult(typ=typ, p_patch=ptr_patch, nfields=2, lacc=lzacc,  &
+        &                        f3din1=arr_dp_3d_1, f3din2=arr_dp_3d_2)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp 3d fields passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC DATA COPYIN(arr_sp_3d_1, arr_sp_3d_2, ref_arr_sp_3d_1, ref_arr_sp_3d_2) ASYNC(1) IF(lzacc)
+      CALL sync_patch_array_mult(typ=typ, p_patch=ptr_patch, nfields=2, lacc=lzacc,  &
+        &                        f3din1=arr_sp_3d_1, f3din2=arr_sp_3d_2)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "sp 3d fields passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      ! 4d and 3d field
+      !$ACC DATA COPYIN(arr_dp_3d_1, arr_dp_3d_2, arr_dp_4d, ref_arr_dp_3d_1, ref_arr_dp_3d_2, ref_arr_dp_4d) &
+      !$ACC   ASYNC(1) IF(lzacc)
+      CALL sync_patch_array_mult(typ=typ, p_patch=ptr_patch, nfields=2+SIZE(arr_dp_4d,4), lacc=lzacc,  &
+        &                        f3din1=arr_dp_3d_1, f3din2=arr_dp_3d_2, f4din=arr_dp_4d)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_4d, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      arr_dp_4d(:,:,:,:) = ref_arr_dp_4d(:,:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp 4d+3d fields passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC DATA COPYIN(arr_sp_3d_1, arr_sp_3d_2, arr_sp_4d, ref_arr_sp_3d_1, ref_arr_sp_3d_2, ref_arr_sp_4d) &
+      !$ACC   ASYNC(1) IF(lzacc)
+      CALL sync_patch_array_mult(typ=typ, p_patch=ptr_patch, nfields=2+SIZE(arr_sp_4d,4), lacc=lzacc,  &
+        &                        f3din1=arr_sp_3d_1, f3din2=arr_sp_3d_2, f4din=arr_sp_4d)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_4d, lacc=lzacc)
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      arr_sp_4d(:,:,:,:) = ref_arr_sp_4d(:,:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "sp 4d+3d fields passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      ! 3d_arr and 3d field
+      !$ACC DATA COPYIN(arr_dp_3d_1, arr_dp_3d_2, ref_arr_dp_3d_1, ref_arr_dp_3d_2) ASYNC(1) IF(lzacc)
+      !$ACC ENTER DATA CREATE(ptr_3d_arr_dp, ref_ptr_3d_arr_dp) ASYNC(1) IF(lzacc)
+      DO i=1,SIZE(ptr_3d_arr_dp)
+        !$ACC ENTER DATA COPYIN(ptr_3d_arr_dp(i)%p, ref_ptr_3d_arr_dp(i)%p) ASYNC(1) IF(lzacc)
+        !$ACC WAIT(1)
+        __acc_attach(    ptr_3d_arr_dp(i)%p)
+        __acc_attach(ref_ptr_3d_arr_dp(i)%p)
+      END DO
+      CALL sync_patch_array_mult(typ=typ, p_patch=ptr_patch, nfields=2+SIZE(ptr_3d_arr_dp), lacc=lzacc,  &
+        &                        f3din1=arr_dp_3d_1, f3din2=arr_dp_3d_2, f3din_arr=ptr_3d_arr_dp)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      DO i=1,SIZE(ptr_3d_arr_dp)
+        CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=ptr_3d_arr_dp(i)%p, lacc=lzacc)
+        ptr_3d_arr_dp(i)%p(:,:,:) = ref_ptr_3d_arr_dp(i)%p(:,:,:) ! Restore input values
+      END DO
+      DO i=1,SIZE(ptr_3d_arr_dp)
+        !$ACC EXIT DATA DELETE(ptr_3d_arr_dp(i)%p, ref_ptr_3d_arr_dp(i)%p) ASYNC(1) IF(lzacc)
+      END DO
+      !$ACC EXIT DATA DELETE(ptr_3d_arr_dp, ref_ptr_3d_arr_dp) ASYNC(1) IF(lzacc)
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp 3d_arr+3d fields passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+
+      !$ACC DATA COPYIN(arr_sp_3d_1, arr_sp_3d_2, ref_arr_sp_3d_1, ref_arr_sp_3d_2) ASYNC(1) IF(lzacc)
+      !$ACC ENTER DATA CREATE(ptr_3d_arr_sp, ref_ptr_3d_arr_sp) ASYNC(1) IF(lzacc)
+      DO i=1,SIZE(ptr_3d_arr_sp)
+        !$ACC ENTER DATA COPYIN(ptr_3d_arr_sp(i)%p, ref_ptr_3d_arr_sp(i)%p) ASYNC(1) IF(lzacc)
+        !$ACC WAIT(1)
+        __acc_attach(    ptr_3d_arr_sp(i)%p)
+        __acc_attach(ref_ptr_3d_arr_sp(i)%p)
+      END DO
+      CALL sync_patch_array_mult(typ=typ, p_patch=ptr_patch, nfields=2+SIZE(ptr_3d_arr_sp), lacc=lzacc,  &
+        &                        f3din1=arr_sp_3d_1, f3din2=arr_sp_3d_2, f3din_arr=ptr_3d_arr_sp)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      DO i=1,SIZE(ptr_3d_arr_sp)
+        CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=ptr_3d_arr_sp(i)%p, lacc=lzacc)
+        ptr_3d_arr_sp(i)%p(:,:,:) = ref_ptr_3d_arr_sp(i)%p(:,:,:) ! Restore input values
+      END DO
+      DO i=1,SIZE(ptr_3d_arr_sp)
+        !$ACC EXIT DATA DELETE(ptr_3d_arr_sp(i)%p, ref_ptr_3d_arr_sp(i)%p) ASYNC(1) IF(lzacc)
+      END DO
+      !$ACC EXIT DATA DELETE(ptr_3d_arr_sp, ref_ptr_3d_arr_sp) ASYNC(1) IF(lzacc)
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "sp 3d_arr+3d fields passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC WAIT(1)
+
+    END SUBROUTINE check_sync_patch_array_mult
+
+    SUBROUTINE check_cumulative_sync_patch_array(typ, call_id, &
+      &                                          arr_dp_3d_1, ref_arr_dp_3d_1, &
+      &                                          arr_dp_3d_2, ref_arr_dp_3d_2, &
+      &                                          arr_sp_3d_1, ref_arr_sp_3d_1, &
+      &                                          arr_sp_3d_2, ref_arr_sp_3d_2 )
+
+      INTEGER, INTENT(IN) :: typ
+      INTEGER, INTENT(IN) :: call_id
+
+      ! TARGET attribute required for NAG compiler to keep cumul_sync_{dp,sp} pointer
+      !   after leaving scope of cumulative_sync_patch_array()
+      REAL(dp), TARGET, INTENT(INOUT) :: arr_dp_3d_1(:,:,:), &
+        &                                arr_dp_3d_2(:,:,:)
+      REAL(dp),         INTENT(IN   ) :: ref_arr_dp_3d_1(:,:,:), &
+        &                                ref_arr_dp_3d_2(:,:,:)
+      REAL(sp), TARGET, INTENT(INOUT) :: arr_sp_3d_1(:,:,:), &
+        &                                arr_sp_3d_2(:,:,:)
+      REAL(sp),         INTENT(IN   ) :: ref_arr_sp_3d_1(:,:,:), &
+        &                                ref_arr_sp_3d_2(:,:,:)
+      CHARACTER(*), PARAMETER :: method_name = "mo_test_communication:cumulative_sync_patch_array"
+
+      !$ACC DATA COPYIN(arr_dp_3d_1, arr_dp_3d_2, arr_sp_3d_1, arr_sp_3d_2) ASYNC(1) IF(lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_1, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_2, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_1, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_2, lacc=lzacc)
+      CALL complete_cumulative_sync(lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values (needed for lzacc=.FALSE.)
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp2sp2 passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC DATA COPYIN(arr_dp_3d_1, arr_dp_3d_2, arr_sp_3d_1, arr_sp_3d_2) ASYNC(1) IF(lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_1, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_2, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_1, lacc=lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_2, lacc=lzacc)
+      CALL complete_cumulative_sync(lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp2sp1 passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC DATA COPYIN(arr_dp_3d_1, arr_dp_3d_2, arr_sp_3d_1, arr_sp_3d_2) ASYNC(1) IF(lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_1, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_2, lacc=lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_1, lacc=lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_2, lacc=lzacc)
+      CALL complete_cumulative_sync(lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp2sp0 passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC DATA COPYIN(arr_dp_3d_1, arr_dp_3d_2, arr_sp_3d_1, arr_sp_3d_2) ASYNC(1) IF(lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_1, lacc=lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_2, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_1, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_2, lacc=lzacc)
+      CALL complete_cumulative_sync(lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp1sp2 passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC DATA COPYIN(arr_dp_3d_1, arr_dp_3d_2, arr_sp_3d_1, arr_sp_3d_2) ASYNC(1) IF(lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_1, lacc=lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_2, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_1, lacc=lzacc)
+      CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_2, lacc=lzacc)
+      CALL complete_cumulative_sync(lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp0sp2 passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC DATA COPY(arr_dp_3d_1, arr_dp_3d_2, arr_sp_3d_1, arr_sp_3d_2) ASYNC(1) IF(lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_1, lacc=lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_dp_3d_2, lacc=lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_1, lacc=lzacc)
+      !CALL cumulative_sync_patch_array(typ, ptr_patch, arr_sp_3d_2, lacc=lzacc)
+      CALL complete_cumulative_sync(lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_1, lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_dp_3d_2, lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_1, lacc=lzacc)
+      !CALL check_patch_array(typ=typ, p_patch=ptr_patch, arr=arr_sp_3d_2, lacc=lzacc)
+      arr_dp_3d_1(:,:,:) = ref_arr_dp_3d_1(:,:,:) ! Restore input values
+      arr_dp_3d_2(:,:,:) = ref_arr_dp_3d_2(:,:,:) ! Restore input values
+      arr_sp_3d_1(:,:,:) = ref_arr_sp_3d_1(:,:,:) ! Restore input values
+      arr_sp_3d_2(:,:,:) = ref_arr_sp_3d_2(:,:,:) ! Restore input values
+      !$ACC END DATA
+      WRITE(message_text,'(a,i0)') "dp0sp0 passed - call_id: ", call_id
+      CALL message(method_name, message_text)
+
+      !$ACC WAIT(1)
+
+    END SUBROUTINE check_cumulative_sync_patch_array
+
+    ! Helper function
+    SUBROUTINE init_arrays_from_pointer_3d(ptr_data, id, arr_dp, ref_arr_dp, &
+      &                                                  arr_sp, ref_arr_sp)
+      REAL(wp), POINTER, INTENT(INOUT) :: ptr_data(:,:,:) !< Data already allocated by ICON during setup
+      INTEGER, INTENT(IN) :: id
+      REAL(dp), ALLOCATABLE, INTENT(INOUT) :: arr_dp(:,:,:), ref_arr_dp(:,:,:)
+      REAL(sp), ALLOCATABLE, INTENT(INOUT) :: arr_sp(:,:,:), ref_arr_sp(:,:,:)
+      CHARACTER(*), PARAMETER :: method_name = "mo_test_communication:init_arrays_from_pointer_3d"
+
+      IF (.NOT. ASSOCIATED(ptr_data)) THEN
+        WRITE(message_text,'(a,i0)') "field not associated, id: ", id
+        CALL finish(method_name, message_text)
+      ENDIF
+      IF (SIZE(ptr_data)<1) THEN
+        WRITE(message_text,'(a,i0)') "zero field size, id: ", id
+        CALL finish(method_name, message_text)
+      ENDIF
+
+      ALLOCATE(arr_dp    (SIZE(ptr_data,1),SIZE(ptr_data,2),SIZE(ptr_data,3)), &
+        &      arr_sp    (SIZE(ptr_data,1),SIZE(ptr_data,2),SIZE(ptr_data,3)), &
+        &      ref_arr_dp(SIZE(ptr_data,1),SIZE(ptr_data,2),SIZE(ptr_data,3)), &
+        &      ref_arr_sp(SIZE(ptr_data,1),SIZE(ptr_data,2),SIZE(ptr_data,3)))
+      arr_dp = REAL(ptr_data, KIND=dp)
+      arr_sp = REAL(ptr_data, KIND=sp)
+      ref_arr_dp = arr_dp
+      ref_arr_sp = arr_sp
+
+    END SUBROUTINE init_arrays_from_pointer_3d
+
+    SUBROUTINE init_arrays_from_pointer_4d(ptr_data, id, arr_dp, ref_arr_dp, &
+      &                                                  arr_sp, ref_arr_sp)
+      REAL(wp), POINTER, INTENT(INOUT) :: ptr_data(:,:,:,:) !< Data already allocated by ICON during setup
+      INTEGER, INTENT(IN) :: id
+      REAL(dp), ALLOCATABLE, INTENT(INOUT) :: arr_dp(:,:,:,:), ref_arr_dp(:,:,:,:)
+      REAL(sp), ALLOCATABLE, INTENT(INOUT) :: arr_sp(:,:,:,:), ref_arr_sp(:,:,:,:)
+      ! Local vars
+      CHARACTER(*), PARAMETER :: method_name = "mo_test_communication:init_arrays_from_pointer_4d"
+      INTEGER :: ptr_shape(4)
+      INTEGER :: ierror
+
+      IF (.NOT. ASSOCIATED(ptr_data)) THEN
+        WRITE(message_text,'(a,i0)') "field not associated, id: ", id
+        CALL finish(method_name, message_text)
+      ENDIF
+
+      ! NVHPC BUG with nvhpc compilers when doing this allocate inside this subroutine.
+      !      now moved outside the subroutine as a workaround
+#ifndef __PGI
+      ptr_shape(1) = SIZE(ptr_data,1)
+      ptr_shape(2) = SIZE(ptr_data,2)
+      ptr_shape(3) = SIZE(ptr_data,3)
+      ptr_shape(4) = SIZE(ptr_data,4)
+
+      ALLOCATE(arr_dp    (ptr_shape(1),ptr_shape(2),ptr_shape(3),ptr_shape(4)), &
+        &      arr_sp    (ptr_shape(1),ptr_shape(2),ptr_shape(3),ptr_shape(4)), &
+        &      ref_arr_dp(ptr_shape(1),ptr_shape(2),ptr_shape(3),ptr_shape(4)), &
+        &      ref_arr_sp(ptr_shape(1),ptr_shape(2),ptr_shape(3),ptr_shape(4)), &
+        &      stat=ierror)
+      IF (ierror/=0) CALL finish(method_name, "allocate")
+#endif
+
+      arr_dp = REAL(ptr_data, KIND=dp)
+      arr_sp = REAL(ptr_data, KIND=sp)
+      ref_arr_dp = arr_dp
+      ref_arr_sp = arr_sp
+
+    END SUBROUTINE init_arrays_from_pointer_4d
+
+    ! Imitate update of cell centre stencils
+    SUBROUTINE do_work_c_3d(ptr_patch, arr_dp, ref_arr_dp, arr_sp, ref_arr_sp)
+      TYPE(t_patch), INTENT(IN) :: ptr_patch
+      REAL(dp), INTENT(INOUT) :: arr_dp(:,:,:), ref_arr_dp(:,:,:)
+      REAL(sp), INTENT(INOUT) :: arr_sp(:,:,:), ref_arr_sp(:,:,:)
+      ! Local vars
+      CHARACTER(*), PARAMETER :: method_name = "mo_test_communication:do_work_c_3d"
+      INTEGER :: i_startblk, i_endblk, i_startidx, slev, elev, i_endidx, rl_start, rl_end
+      INTEGER :: jb, jc, jk
+
+      slev = 1
+      elev = ptr_patch%nlev - 1
+
+      ! index bounds
+      rl_start = 1
+      rl_end   = min_rlcell ! all grid
+      !rl_end   = min_rlcell_int ! all owned grid
+      i_startblk = ptr_patch%cells%start_block(rl_start)
+      i_endblk   = ptr_patch%cells%end_block(rl_end)
+
+      DO jb = i_startblk, i_endblk
+        CALL get_indices_c(ptr_patch, jb, i_startblk, i_endblk, &
+          i_startidx, i_endidx, rl_start, rl_end)
+
+        DO jk = slev, elev
+          DO jc = i_startidx, i_endidx
+            arr_dp(jc,jk,jb) = arr_dp(jc,jk,jb) + arr_dp(jc,jk+1,jb) + 0.5_dp
+            ref_arr_dp(jc,jk,jb) = arr_dp(jc,jk,jb)
+
+            arr_sp(jc,jk,jb) = arr_sp(jc,jk,jb) + arr_sp(jc,jk+1,jb) + 0.5_sp
+            ref_arr_sp(jc,jk,jb) = arr_sp(jc,jk,jb)
+          ENDDO ! jc
+        ENDDO ! jk
+      ENDDO ! jb
+
+    END SUBROUTINE do_work_c_3d
+
+
+    SUBROUTINE print_shape_3d(id, arr_dp, arr_sp)
+      INTEGER,  INTENT(IN) :: id
+      REAL(dp), INTENT(IN) :: arr_dp(:,:,:)
+      REAL(sp), INTENT(IN) :: arr_sp(:,:,:)
+
+      WRITE(message_text,*) "SIZE(id=",id,") dp: ",SIZE(arr_dp,1),",",SIZE(arr_dp,2),",",SIZE(arr_dp,3)
+      CALL message(method_name,message_text)
+      WRITE(message_text,*) "SIZE(id=",id,") sp: ",SIZE(arr_sp,1),",",SIZE(arr_sp,2),",",SIZE(arr_sp,3)
+      CALL message(method_name,message_text)
+    END SUBROUTINE print_shape_3d
+
+    SUBROUTINE print_shape_4d(id, arr_dp, arr_sp)
+      INTEGER,  INTENT(IN) :: id
+      REAL(dp), INTENT(IN) :: arr_dp(:,:,:,:)
+      REAL(sp), INTENT(IN) :: arr_sp(:,:,:,:)
+
+      WRITE(message_text,*) "SIZE(id=",id,") dp: ",SIZE(arr_dp,1),",",SIZE(arr_dp,2),",",SIZE(arr_dp,3),",",SIZE(arr_dp,4)
+      CALL warning(method_name,message_text)
+      WRITE(message_text,*) "SIZE(id=",id,") sp: ",SIZE(arr_sp,1),",",SIZE(arr_sp,2),",",SIZE(arr_sp,3),",",SIZE(arr_sp,4)
+      CALL warning(method_name,message_text)
+    END SUBROUTINE print_shape_4d
+
+  END SUBROUTINE sync_patch_array_testbed
+
   SUBROUTINE exchange_communication_testbed(test_gpu)
 
     LOGICAL, OPTIONAL, INTENT(IN) :: test_gpu
@@ -1029,15 +1651,19 @@ CONTAINS
     CLASS(t_comm_pattern), POINTER :: comm_pattern
 
     INTEGER :: nlev
-    REAL(wp), ALLOCATABLE :: in_array_r_2d(:,:), in_array_r_3d(:,:,:)
+    REAL(dp), ALLOCATABLE :: in_array_dp_2d(:,:), in_array_dp_3d(:,:,:)
+    REAL(sp), ALLOCATABLE :: in_array_sp_2d(:,:), in_array_sp_3d(:,:,:)
     INTEGER, ALLOCATABLE ::  in_array_i_2d(:,:), in_array_i_3d(:,:,:)
     LOGICAL, ALLOCATABLE ::  in_array_l_2d(:,:), in_array_l_3d(:,:,:)
-    REAL(wp), ALLOCATABLE :: out_array_r_2d(:,:), out_array_r_3d(:,:,:)
+    REAL(dp), ALLOCATABLE :: out_array_dp_2d(:,:), out_array_dp_3d(:,:,:)
+    REAL(sp), ALLOCATABLE :: out_array_sp_2d(:,:), out_array_sp_3d(:,:,:)
     INTEGER, ALLOCATABLE ::  out_array_i_2d(:,:), out_array_i_3d(:,:,:)
     LOGICAL, ALLOCATABLE ::  out_array_l_2d(:,:), out_array_l_3d(:,:,:)
-    REAL(wp), ALLOCATABLE :: add_array_r_2d(:,:), add_array_r_3d(:,:,:)
+    REAL(dp), ALLOCATABLE :: add_array_dp_2d(:,:), add_array_dp_3d(:,:,:)
+    REAL(sp), ALLOCATABLE :: add_array_sp_2d(:,:), add_array_sp_3d(:,:,:)
     INTEGER, ALLOCATABLE ::  add_array_i_2d(:,:), add_array_i_3d(:,:,:)
-    REAL(wp), ALLOCATABLE :: ref_out_array_r_2d(:,:), ref_out_array_r_3d(:,:,:)
+    REAL(dp), ALLOCATABLE :: ref_out_array_dp_2d(:,:), ref_out_array_dp_3d(:,:,:)
+    REAL(sp), ALLOCATABLE :: ref_out_array_sp_2d(:,:), ref_out_array_sp_3d(:,:,:)
     INTEGER, ALLOCATABLE ::  ref_out_array_i_2d(:,:), ref_out_array_i_3d(:,:,:)
     LOGICAL, ALLOCATABLE ::  ref_out_array_l_2d(:,:), ref_out_array_l_3d(:,:,:)
     REAL(dp), ALLOCATABLE :: in_array_dp_4d(:,:,:,:), &
@@ -1090,45 +1716,60 @@ CONTAINS
 
     nlev = 7
 
-    ALLOCATE(in_array_r_2d(nproma, 10), in_array_r_3d(nproma, nlev, 10), &
+    ALLOCATE(in_array_dp_2d(nproma, 10), in_array_dp_3d(nproma, nlev, 10), &
+      &      in_array_sp_2d(nproma, 10), in_array_sp_3d(nproma, nlev, 10), &
       &      in_array_i_2d(nproma, 10), in_array_i_3d(nproma, nlev, 10), &
       &      in_array_l_2d(nproma, 10), in_array_l_3d(nproma, nlev, 10), &
-      &      out_array_r_2d(nproma, 16), out_array_r_3d(nproma, nlev, 16), &
+      &      out_array_dp_2d(nproma, 16), out_array_dp_3d(nproma, nlev, 16), &
+      &      out_array_sp_2d(nproma, 16), out_array_sp_3d(nproma, nlev, 16), &
       &      out_array_i_2d(nproma, 16), out_array_i_3d(nproma, nlev, 16), &
       &      out_array_l_2d(nproma, 16), out_array_l_3d(nproma, nlev, 16), &
-      &      add_array_r_2d(nproma, 16), add_array_r_3d(nproma, nlev, 16), &
+      &      add_array_dp_2d(nproma, 16), add_array_dp_3d(nproma, nlev, 16), &
+      &      add_array_sp_2d(nproma, 16), add_array_sp_3d(nproma, nlev, 16), &
       &      add_array_i_2d(nproma, 16), add_array_i_3d(nproma, nlev, 16), &
-      &      ref_out_array_r_2d(nproma, 16), &
-      &      ref_out_array_r_3d(nproma, nlev, 16), &
+      &      ref_out_array_dp_2d(nproma, 16), &
+      &      ref_out_array_dp_3d(nproma, nlev, 16), &
+      &      ref_out_array_sp_2d(nproma, 16), &
+      &      ref_out_array_sp_3d(nproma, nlev, 16), &
       &      ref_out_array_i_2d(nproma, 16), &
       &      ref_out_array_i_3d(nproma, nlev, 16), &
       &      ref_out_array_l_2d(nproma, 16), &
       &      ref_out_array_l_3d(nproma, nlev, 16))
 
-    in_array_r_2d = RESHAPE(glb_index_src, (/nproma, 10/))
+    in_array_dp_2d = RESHAPE(glb_index_src, (/nproma, 10/))
+    in_array_sp_2d = RESHAPE(glb_index_src, (/nproma, 10/))
     in_array_i_2d = RESHAPE(glb_index_src, (/nproma, 10/))
     in_array_l_2d = .TRUE.
     DO i = 1, nlev
-      in_array_r_3d(:,i,:) = in_array_r_2d + (i - 1) * global_size
+      in_array_dp_3d(:,i,:) = in_array_dp_2d + (i - 1) * global_size
+      in_array_sp_3d(:,i,:) = in_array_sp_2d + (i - 1) * global_size
       in_array_i_3d(:,i,:) = in_array_i_2d + (i - 1) * global_size
     END DO
     in_array_l_3d = .TRUE.
 
-    out_array_r_2d = -1
+    out_array_dp_2d = -1
+    out_array_sp_2d = -1
     out_array_i_2d = -1
     out_array_l_2d = .FALSE.
-    out_array_r_3d = -1
+    out_array_dp_3d = -1
+    out_array_sp_3d = -1
     out_array_i_3d = -1
     out_array_l_3d = .FALSE.
 
-    ref_out_array_r_2d = RESHAPE(MERGE(-1, glb_index_dst, &
+    ref_out_array_dp_2d = RESHAPE(MERGE(-1, glb_index_dst, &
+      &                                owner_local_dst == -1), (/nproma, 16/))
+    ref_out_array_sp_2d = RESHAPE(MERGE(-1, glb_index_dst, &
       &                                owner_local_dst == -1), (/nproma, 16/))
     ref_out_array_i_2d = RESHAPE(MERGE(-1, glb_index_dst, &
       &                                owner_local_dst == -1), (/nproma, 16/))
     ref_out_array_l_2d = RESHAPE(MERGE(.FALSE., .TRUE., owner_local_dst == -1), &
       &                          (/nproma, 16/))
     DO i = 1, nlev
-      ref_out_array_r_3d(:,i,:) = MERGE(-1._wp, ref_out_array_r_2d + &
+      ref_out_array_dp_3d(:,i,:) = MERGE(-1._dp, ref_out_array_dp_2d + &
+        &                               (i - 1) * global_size, &
+        &                               -1 == RESHAPE(owner_local_dst, &
+        &                                             (/nproma, 16/)))
+      ref_out_array_sp_3d(:,i,:) = MERGE(-1._sp, ref_out_array_sp_2d + &
         &                               (i - 1) * global_size, &
         &                               -1 == RESHAPE(owner_local_dst, &
         &                                             (/nproma, 16/)))
@@ -1139,43 +1780,59 @@ CONTAINS
       ref_out_array_l_3d(:,i,:) = ref_out_array_l_2d
     END DO
 
-    CALL check_exchange(in_array_r_2d = in_array_r_2d, &
-      &                 in_array_r_3d = in_array_r_3d, &
+    CALL check_exchange(in_array_dp_2d = in_array_dp_2d, &
+      &                 in_array_dp_3d = in_array_dp_3d, &
+      &                 in_array_sp_2d = in_array_sp_2d, &
+      &                 in_array_sp_3d = in_array_sp_3d, &
       &                 in_array_i_2d = in_array_i_2d, &
       &                 in_array_i_3d = in_array_i_3d, &
       &                 in_array_l_2d = in_array_l_2d, &
       &                 in_array_l_3d = in_array_l_3d, &
-      &                 out_array_r_2d = out_array_r_2d, &
-      &                 out_array_r_3d = out_array_r_3d, &
+      &                 out_array_dp_2d = out_array_dp_2d, &
+      &                 out_array_dp_3d = out_array_dp_3d, &
+      &                 out_array_sp_2d = out_array_sp_2d, &
+      &                 out_array_sp_3d = out_array_sp_3d, &
       &                 out_array_i_2d = out_array_i_2d, &
       &                 out_array_i_3d = out_array_i_3d, &
       &                 out_array_l_2d = out_array_l_2d, &
       &                 out_array_l_3d = out_array_l_3d, &
-      &                 ref_out_array_r_2d = ref_out_array_r_2d, &
-      &                 ref_out_array_r_3d = ref_out_array_r_3d, &
+      &                 ref_out_array_dp_2d = ref_out_array_dp_2d, &
+      &                 ref_out_array_dp_3d = ref_out_array_dp_3d, &
+      &                 ref_out_array_sp_2d = ref_out_array_sp_2d, &
+      &                 ref_out_array_sp_3d = ref_out_array_sp_3d, &
       &                 ref_out_array_i_2d = ref_out_array_i_2d, &
       &                 ref_out_array_i_3d = ref_out_array_i_3d, &
       &                 ref_out_array_l_2d = ref_out_array_l_2d, &
       &                 ref_out_array_l_3d = ref_out_array_l_3d, &
-      &                 comm_pattern = comm_pattern)
+      &                 comm_pattern = comm_pattern, &
+      &                 call_id = 1)
 
-    add_array_r_2d = MERGE(-1._wp, ref_out_array_r_2d, &
+    add_array_dp_2d = MERGE(-1._dp, ref_out_array_dp_2d, &
+      &                    -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
+    add_array_sp_2d = MERGE(-1._sp, ref_out_array_sp_2d, &
       &                    -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
     add_array_i_2d = MERGE(-1, ref_out_array_i_2d, &
       &                    -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
     DO i = 1, nlev
-      add_array_r_3d(:,i,:) = MERGE(-1._wp, ref_out_array_r_3d(:,i,:), &
+      add_array_dp_3d(:,i,:) = MERGE(-1._dp, ref_out_array_dp_3d(:,i,:), &
+        &                           -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
+      add_array_sp_3d(:,i,:) = MERGE(-1._sp, ref_out_array_sp_3d(:,i,:), &
         &                           -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
       add_array_i_3d(:,i,:) = MERGE(-1, ref_out_array_i_3d(:,i,:), &
         &                           -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
     END DO
 
-    ref_out_array_r_2d = MERGE(-1._wp, 2._wp * ref_out_array_r_2d, &
+    ref_out_array_dp_2d = MERGE(-1._dp, 2._dp * ref_out_array_dp_2d, &
+      &                        -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
+    ref_out_array_sp_2d = MERGE(-1._sp, 2._sp * ref_out_array_sp_2d, &
       &                        -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
     ref_out_array_i_2d = MERGE(-1, 2 * ref_out_array_i_2d, &
       &                    -1 == RESHAPE(owner_local_dst, (/nproma, 16/)))
     DO i = 1, nlev
-      ref_out_array_r_3d(:,i,:) = MERGE(-1._wp, 2._wp * ref_out_array_r_3d(:,i,:), &
+      ref_out_array_dp_3d(:,i,:) = MERGE(-1._dp, 2._dp * ref_out_array_dp_3d(:,i,:), &
+        &                               -1 == RESHAPE(owner_local_dst, &
+        &                               (/nproma, 16/)))
+      ref_out_array_sp_3d(:,i,:) = MERGE(-1._sp, 2._sp * ref_out_array_sp_3d(:,i,:), &
         &                               -1 == RESHAPE(owner_local_dst, &
         &                               (/nproma, 16/)))
       ref_out_array_i_3d(:,i,:) = MERGE(-1, 2 * ref_out_array_i_3d(:,i,:), &
@@ -1183,29 +1840,38 @@ CONTAINS
         &                               (/nproma, 16/)))
     END DO
 
-    CALL check_exchange(in_array_r_2d = in_array_r_2d, &
-      &                 in_array_r_3d = in_array_r_3d, &
+    CALL check_exchange(in_array_dp_2d = in_array_dp_2d, &
+      &                 in_array_dp_3d = in_array_dp_3d, &
+      &                 in_array_sp_2d = in_array_sp_2d, &
+      &                 in_array_sp_3d = in_array_sp_3d, &
       &                 in_array_i_2d = in_array_i_2d, &
       &                 in_array_i_3d = in_array_i_3d, &
       &                 in_array_l_2d = in_array_l_2d, &
       &                 in_array_l_3d = in_array_l_3d, &
-      &                 out_array_r_2d = out_array_r_2d, &
-      &                 out_array_r_3d = out_array_r_3d, &
+      &                 out_array_dp_2d = out_array_dp_2d, &
+      &                 out_array_dp_3d = out_array_dp_3d, &
+      &                 out_array_sp_2d = out_array_sp_2d, &
+      &                 out_array_sp_3d = out_array_sp_3d, &
       &                 out_array_i_2d = out_array_i_2d, &
       &                 out_array_i_3d = out_array_i_3d, &
       &                 out_array_l_2d = out_array_l_2d, &
       &                 out_array_l_3d = out_array_l_3d, &
-      &                 add_array_r_2d = add_array_r_2d, &
-      &                 add_array_r_3d = add_array_r_3d, &
+      &                 add_array_dp_2d = add_array_dp_2d, &
+      &                 add_array_dp_3d = add_array_dp_3d, &
+      &                 add_array_sp_2d = add_array_sp_2d, &
+      &                 add_array_sp_3d = add_array_sp_3d, &
       &                 add_array_i_2d = add_array_i_2d, &
       &                 add_array_i_3d = add_array_i_3d, &
-      &                 ref_out_array_r_2d = ref_out_array_r_2d, &
-      &                 ref_out_array_r_3d = ref_out_array_r_3d, &
+      &                 ref_out_array_dp_2d = ref_out_array_dp_2d, &
+      &                 ref_out_array_dp_3d = ref_out_array_dp_3d, &
+      &                 ref_out_array_sp_2d = ref_out_array_sp_2d, &
+      &                 ref_out_array_sp_3d = ref_out_array_sp_3d, &
       &                 ref_out_array_i_2d = ref_out_array_i_2d, &
       &                 ref_out_array_i_3d = ref_out_array_i_3d, &
       &                 ref_out_array_l_2d = ref_out_array_l_2d, &
       &                 ref_out_array_l_3d = ref_out_array_l_3d, &
-      &                 comm_pattern = comm_pattern)
+      &                 comm_pattern = comm_pattern, &
+      &                 call_id = 2)
 
     CALL delete_comm_pattern(comm_pattern)
 
@@ -1227,38 +1893,53 @@ CONTAINS
       &                     send_glb2loc_index, local_size_src, &
       &                     owner_local_src, glb_index_src, comm_pattern)
 
-    DEALLOCATE(out_array_r_2d, out_array_r_3d, out_array_i_2d, out_array_i_3d, &
-      &        out_array_l_2d, out_array_l_3d, add_array_r_2d, add_array_r_3d, &
-      &        add_array_i_2d, add_array_i_3d, ref_out_array_r_2d, &
-      &        ref_out_array_r_3d, ref_out_array_i_2d, ref_out_array_i_3d, &
+    DEALLOCATE(out_array_dp_2d, out_array_dp_3d, out_array_i_2d, out_array_i_3d, &
+      &        out_array_sp_2d, out_array_sp_3d, &
+      &        out_array_l_2d, out_array_l_3d, add_array_dp_2d, add_array_dp_3d, &
+      &        add_array_sp_2d, add_array_sp_3d, &
+      &        add_array_i_2d, add_array_i_3d, ref_out_array_dp_2d, &
+      &        ref_out_array_dp_3d, ref_out_array_i_2d, ref_out_array_i_3d, &
+      &        ref_out_array_sp_3d, ref_out_array_sp_2d, &
       &        ref_out_array_l_2d, ref_out_array_l_3d)
-    ALLOCATE(out_array_r_2d(nproma, 10), out_array_r_3d(nproma, nlev, 10), &
+    ALLOCATE(out_array_dp_2d(nproma, 10), out_array_dp_3d(nproma, nlev, 10), &
+      &      out_array_sp_2d(nproma, 10), out_array_sp_3d(nproma, nlev, 10), &
       &      out_array_i_2d(nproma, 10), out_array_i_3d(nproma, nlev, 10), &
       &      out_array_l_2d(nproma, 10), out_array_l_3d(nproma, nlev, 10), &
-      &      add_array_r_2d(nproma, 10), add_array_r_3d(nproma, nlev, 10), &
+      &      add_array_dp_2d(nproma, 10), add_array_dp_3d(nproma, nlev, 10), &
+      &      add_array_sp_2d(nproma, 10), add_array_sp_3d(nproma, nlev, 10), &
       &      add_array_i_2d(nproma, 10), add_array_i_3d(nproma, nlev, 10), &
-      &      ref_out_array_r_2d(nproma, 10), &
-      &      ref_out_array_r_3d(nproma, nlev, 10), &
+      &      ref_out_array_dp_2d(nproma, 10), &
+      &      ref_out_array_dp_3d(nproma, nlev, 10), &
+      &      ref_out_array_sp_2d(nproma, 10), &
+      &      ref_out_array_sp_3d(nproma, nlev, 10), &
       &      ref_out_array_i_2d(nproma, 10), &
       &      ref_out_array_i_3d(nproma, nlev, 10), &
       &      ref_out_array_l_2d(nproma, 10), &
       &      ref_out_array_l_3d(nproma, nlev, 10))
 
-    out_array_r_2d = -1
+    out_array_dp_2d = -1
+    out_array_sp_2d = -1
     out_array_i_2d = -1
     out_array_l_2d = .FALSE.
-    out_array_r_3d = -1
+    out_array_dp_3d = -1
+    out_array_sp_3d = -1
     out_array_i_3d = -1
     out_array_l_3d = .FALSE.
 
-    ref_out_array_r_2d = RESHAPE(MERGE(-1, glb_index_dst, &
+    ref_out_array_dp_2d = RESHAPE(MERGE(-1, glb_index_dst, &
+      &                                owner_local_dst == -1), (/nproma, 10/))
+    ref_out_array_sp_2d = RESHAPE(MERGE(-1, glb_index_dst, &
       &                                owner_local_dst == -1), (/nproma, 10/))
     ref_out_array_i_2d = RESHAPE(MERGE(-1, glb_index_dst, &
       &                                owner_local_dst == -1), (/nproma, 10/))
     ref_out_array_l_2d = RESHAPE(MERGE(.FALSE., .TRUE., owner_local_dst == -1), &
       &                          (/nproma, 10/))
     DO i = 1, nlev
-      ref_out_array_r_3d(:,i,:) = MERGE(-1._wp, ref_out_array_r_2d + &
+      ref_out_array_dp_3d(:,i,:) = MERGE(-1._dp, ref_out_array_dp_2d + &
+        &                               (i - 1) * global_size, &
+        &                               -1 == RESHAPE(owner_local_dst, &
+        &                                             (/nproma, 10/)))
+      ref_out_array_sp_3d(:,i,:) = MERGE(-1._sp, ref_out_array_sp_2d + &
         &                               (i - 1) * global_size, &
         &                               -1 == RESHAPE(owner_local_dst, &
         &                                             (/nproma, 10/)))
@@ -1269,43 +1950,59 @@ CONTAINS
       ref_out_array_l_3d(:,i,:) = ref_out_array_l_2d
     END DO
 
-    CALL check_exchange(in_array_r_2d = in_array_r_2d, &
-      &                 in_array_r_3d = in_array_r_3d, &
+    CALL check_exchange(in_array_dp_2d = in_array_dp_2d, &
+      &                 in_array_dp_3d = in_array_dp_3d, &
+      &                 in_array_sp_2d = in_array_sp_2d, &
+      &                 in_array_sp_3d = in_array_sp_3d, &
       &                 in_array_i_2d = in_array_i_2d, &
       &                 in_array_i_3d = in_array_i_3d, &
       &                 in_array_l_2d = in_array_l_2d, &
       &                 in_array_l_3d = in_array_l_3d, &
-      &                 out_array_r_2d = out_array_r_2d, &
-      &                 out_array_r_3d = out_array_r_3d, &
+      &                 out_array_dp_2d = out_array_dp_2d, &
+      &                 out_array_dp_3d = out_array_dp_3d, &
+      &                 out_array_sp_2d = out_array_sp_2d, &
+      &                 out_array_sp_3d = out_array_sp_3d, &
       &                 out_array_i_2d = out_array_i_2d, &
       &                 out_array_i_3d = out_array_i_3d, &
       &                 out_array_l_2d = out_array_l_2d, &
       &                 out_array_l_3d = out_array_l_3d, &
-      &                 ref_out_array_r_2d = ref_out_array_r_2d, &
-      &                 ref_out_array_r_3d = ref_out_array_r_3d, &
+      &                 ref_out_array_dp_2d = ref_out_array_dp_2d, &
+      &                 ref_out_array_dp_3d = ref_out_array_dp_3d, &
+      &                 ref_out_array_sp_2d = ref_out_array_sp_2d, &
+      &                 ref_out_array_sp_3d = ref_out_array_sp_3d, &
       &                 ref_out_array_i_2d = ref_out_array_i_2d, &
       &                 ref_out_array_i_3d = ref_out_array_i_3d, &
       &                 ref_out_array_l_2d = ref_out_array_l_2d, &
       &                 ref_out_array_l_3d = ref_out_array_l_3d, &
-      &                 comm_pattern = comm_pattern)
+      &                 comm_pattern = comm_pattern, &
+      &                 call_id = 3)
 
-    add_array_r_2d = MERGE(-1._wp, ref_out_array_r_2d, &
+    add_array_dp_2d = MERGE(-1._dp, ref_out_array_dp_2d, &
+      &                    -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
+    add_array_sp_2d = MERGE(-1._sp, ref_out_array_sp_2d, &
       &                    -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
     add_array_i_2d = MERGE(-1, ref_out_array_i_2d, &
       &                    -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
     DO i = 1, nlev
-      add_array_r_3d(:,i,:) = MERGE(-1._wp, ref_out_array_r_3d(:,i,:), &
+      add_array_dp_3d(:,i,:) = MERGE(-1._dp, ref_out_array_dp_3d(:,i,:), &
+        &                           -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
+      add_array_sp_3d(:,i,:) = MERGE(-1._sp, ref_out_array_sp_3d(:,i,:), &
         &                           -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
       add_array_i_3d(:,i,:) = MERGE(-1, ref_out_array_i_3d(:,i,:), &
         &                           -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
     END DO
 
-    ref_out_array_r_2d = MERGE(-1._wp, 2._wp * ref_out_array_r_2d, &
+    ref_out_array_dp_2d = MERGE(-1._dp, 2._dp * ref_out_array_dp_2d, &
+      &                        -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
+    ref_out_array_sp_2d = MERGE(-1._sp, 2._sp * ref_out_array_sp_2d, &
       &                        -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
     ref_out_array_i_2d = MERGE(-1, 2 * ref_out_array_i_2d, &
       &                    -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
     DO i = 1, nlev
-      ref_out_array_r_3d(:,i,:) = MERGE(-1._wp, 2._wp * ref_out_array_r_3d(:,i,:), &
+      ref_out_array_dp_3d(:,i,:) = MERGE(-1._dp, 2._dp * ref_out_array_dp_3d(:,i,:), &
+        &                               -1 == RESHAPE(owner_local_dst, &
+        &                               (/nproma, 10/)))
+      ref_out_array_sp_3d(:,i,:) = MERGE(-1._sp, 2._sp * ref_out_array_sp_3d(:,i,:), &
         &                               -1 == RESHAPE(owner_local_dst, &
         &                               (/nproma, 10/)))
       ref_out_array_i_3d(:,i,:) = MERGE(-1, 2 * ref_out_array_i_3d(:,i,:), &
@@ -1313,87 +2010,119 @@ CONTAINS
         &                               (/nproma, 10/)))
     END DO
 
-    CALL check_exchange(in_array_r_2d = in_array_r_2d, &
-      &                 in_array_r_3d = in_array_r_3d, &
+    CALL check_exchange(in_array_dp_2d = in_array_dp_2d, &
+      &                 in_array_dp_3d = in_array_dp_3d, &
+      &                 in_array_sp_2d = in_array_sp_2d, &
+      &                 in_array_sp_3d = in_array_sp_3d, &
       &                 in_array_i_2d = in_array_i_2d, &
       &                 in_array_i_3d = in_array_i_3d, &
       &                 in_array_l_2d = in_array_l_2d, &
       &                 in_array_l_3d = in_array_l_3d, &
-      &                 out_array_r_2d = out_array_r_2d, &
-      &                 out_array_r_3d = out_array_r_3d, &
+      &                 out_array_dp_2d = out_array_dp_2d, &
+      &                 out_array_dp_3d = out_array_dp_3d, &
+      &                 out_array_sp_2d = out_array_sp_2d, &
+      &                 out_array_sp_3d = out_array_sp_3d, &
       &                 out_array_i_2d = out_array_i_2d, &
       &                 out_array_i_3d = out_array_i_3d, &
       &                 out_array_l_2d = out_array_l_2d, &
       &                 out_array_l_3d = out_array_l_3d, &
-      &                 add_array_r_2d = add_array_r_2d, &
-      &                 add_array_r_3d = add_array_r_3d, &
+      &                 add_array_dp_2d = add_array_dp_2d, &
+      &                 add_array_dp_3d = add_array_dp_3d, &
+      &                 add_array_sp_2d = add_array_sp_2d, &
+      &                 add_array_sp_3d = add_array_sp_3d, &
       &                 add_array_i_2d = add_array_i_2d, &
       &                 add_array_i_3d = add_array_i_3d, &
-      &                 ref_out_array_r_2d = ref_out_array_r_2d, &
-      &                 ref_out_array_r_3d = ref_out_array_r_3d, &
+      &                 ref_out_array_dp_2d = ref_out_array_dp_2d, &
+      &                 ref_out_array_dp_3d = ref_out_array_dp_3d, &
+      &                 ref_out_array_sp_2d = ref_out_array_sp_2d, &
+      &                 ref_out_array_sp_3d = ref_out_array_sp_3d, &
       &                 ref_out_array_i_2d = ref_out_array_i_2d, &
       &                 ref_out_array_i_3d = ref_out_array_i_3d, &
       &                 ref_out_array_l_2d = ref_out_array_l_2d, &
       &                 ref_out_array_l_3d = ref_out_array_l_3d, &
-      &                 comm_pattern = comm_pattern)
+      &                 comm_pattern = comm_pattern, &
+      &                 call_id = 4)
 
-    out_array_r_2d = in_array_r_2d
+    out_array_dp_2d = in_array_dp_2d ! (nproma,16), (nproma,10) -
+                                   ! out_array_dp_2d now points to memory of in_array_dp_2d, do not deallocate both
+    out_array_sp_2d = in_array_sp_2d
     out_array_i_2d = in_array_i_2d
     out_array_l_2d = in_array_l_2d
-    out_array_r_3d = in_array_r_3d
+    out_array_dp_3d = in_array_dp_3d ! (nproma,nlev,16), (nproma,nlev,10)
+    out_array_sp_3d = in_array_sp_3d
     out_array_i_3d = in_array_i_3d
     out_array_l_3d = in_array_l_3d
 
-    ref_out_array_r_2d = RESHAPE(MERGE(glb_index_src, glb_index_dst, &
+    ref_out_array_dp_2d = RESHAPE(MERGE(glb_index_src, glb_index_dst, &
+      &                                owner_local_dst == -1), (/nproma, 10/))
+    ref_out_array_sp_2d = RESHAPE(MERGE(glb_index_src, glb_index_dst, &
       &                                owner_local_dst == -1), (/nproma, 10/))
     ref_out_array_i_2d = RESHAPE(MERGE(glb_index_src, glb_index_dst, &
       &                                owner_local_dst == -1), (/nproma, 10/))
     ref_out_array_l_2d = .TRUE.
     DO i = 1, nlev
-      ref_out_array_r_3d(:,i,:) = ref_out_array_r_2d + (i - 1) * global_size
+      ref_out_array_dp_3d(:,i,:) = ref_out_array_dp_2d + (i - 1) * global_size
+      ref_out_array_sp_3d(:,i,:) = ref_out_array_sp_2d + (i - 1) * global_size
       ref_out_array_i_3d(:,i,:) = ref_out_array_i_2d + (i - 1) * global_size
     END DO
     ref_out_array_l_3d = .TRUE.
 
-    CALL check_exchange(out_array_r_2d = out_array_r_2d, &
-      &                 out_array_r_3d = out_array_r_3d, &
+    CALL check_exchange(out_array_dp_2d = out_array_dp_2d, &
+      &                 out_array_dp_3d = out_array_dp_3d, &
+      &                 out_array_sp_2d = out_array_sp_2d, &
+      &                 out_array_sp_3d = out_array_sp_3d, &
       &                 out_array_i_2d = out_array_i_2d, &
       &                 out_array_i_3d = out_array_i_3d, &
       &                 out_array_l_2d = out_array_l_2d, &
       &                 out_array_l_3d = out_array_l_3d, &
-      &                 ref_out_array_r_2d = ref_out_array_r_2d, &
-      &                 ref_out_array_r_3d = ref_out_array_r_3d, &
+      &                 ref_out_array_dp_2d = ref_out_array_dp_2d, &
+      &                 ref_out_array_dp_3d = ref_out_array_dp_3d, &
+      &                 ref_out_array_sp_2d = ref_out_array_sp_2d, &
+      &                 ref_out_array_sp_3d = ref_out_array_sp_3d, &
       &                 ref_out_array_i_2d = ref_out_array_i_2d, &
       &                 ref_out_array_i_3d = ref_out_array_i_3d, &
       &                 ref_out_array_l_2d = ref_out_array_l_2d, &
       &                 ref_out_array_l_3d = ref_out_array_l_3d, &
-      &                 comm_pattern = comm_pattern)
+      &                 comm_pattern = comm_pattern, &
+      &                 call_id = 5)
 
-    out_array_r_2d = in_array_r_2d
+    out_array_dp_2d = in_array_dp_2d
+    out_array_sp_2d = in_array_sp_2d
     out_array_i_2d = in_array_i_2d
     out_array_l_2d = in_array_l_2d
-    out_array_r_3d = in_array_r_3d
+    out_array_dp_3d = in_array_dp_3d
+    out_array_sp_3d = in_array_sp_3d
     out_array_i_3d = in_array_i_3d
     out_array_l_3d = in_array_l_3d
 
-    add_array_r_2d = MERGE(-1._wp, ref_out_array_r_2d, &
+    add_array_dp_2d = MERGE(-1._dp, ref_out_array_dp_2d, &
+      &                    -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
+    add_array_sp_2d = MERGE(-1._sp, ref_out_array_sp_2d, &
       &                    -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
     add_array_i_2d = MERGE(-1, ref_out_array_i_2d, &
       &                    -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
     DO i = 1, nlev
-      add_array_r_3d(:,i,:) = MERGE(-1._wp, ref_out_array_r_3d(:,i,:), &
+      add_array_dp_3d(:,i,:) = MERGE(-1._dp, ref_out_array_dp_3d(:,i,:), &
+        &                           -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
+      add_array_sp_3d(:,i,:) = MERGE(-1._sp, ref_out_array_sp_3d(:,i,:), &
         &                           -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
       add_array_i_3d(:,i,:) = MERGE(-1, ref_out_array_i_3d(:,i,:), &
         &                           -1 == RESHAPE(owner_local_dst, (/nproma, 10/)))
     END DO
 
-    ref_out_array_r_2d = RESHAPE(MERGE(glb_index_src, 2 * glb_index_dst, &
+    ref_out_array_dp_2d = RESHAPE(MERGE(glb_index_src, 2 * glb_index_dst, &
+      &                                owner_local_dst == -1), (/nproma, 10/))
+    ref_out_array_sp_2d = RESHAPE(MERGE(glb_index_src, 2 * glb_index_dst, &
       &                                owner_local_dst == -1), (/nproma, 10/))
     ref_out_array_i_2d = RESHAPE(MERGE(glb_index_src, 2 * glb_index_dst, &
       &                                owner_local_dst == -1), (/nproma, 10/))
     DO i = 1, nlev
-      ref_out_array_r_3d(:,i,:) = MERGE(ref_out_array_r_3d(:,i,:), &
-        &                               2._wp * ref_out_array_r_3d(:,i,:), &
+      ref_out_array_dp_3d(:,i,:) = MERGE(ref_out_array_dp_3d(:,i,:), &
+        &                               2._dp * ref_out_array_dp_3d(:,i,:), &
+        &                               -1 == RESHAPE(owner_local_dst, &
+        &                               (/nproma, 10/)))
+      ref_out_array_sp_3d(:,i,:) = MERGE(ref_out_array_sp_3d(:,i,:), &
+        &                               2._sp * ref_out_array_sp_3d(:,i,:), &
         &                               -1 == RESHAPE(owner_local_dst, &
         &                               (/nproma, 10/)))
       ref_out_array_i_3d(:,i,:) = MERGE(ref_out_array_i_3d(:,i,:), &
@@ -1402,65 +2131,96 @@ CONTAINS
         &                               (/nproma, 10/)))
     END DO
 
-    CALL check_exchange(out_array_r_2d = out_array_r_2d, &
-      &                 out_array_r_3d = out_array_r_3d, &
+    CALL check_exchange(out_array_dp_2d = out_array_dp_2d, &
+      &                 out_array_dp_3d = out_array_dp_3d, &
+      &                 out_array_sp_2d = out_array_sp_2d, &
+      &                 out_array_sp_3d = out_array_sp_3d, &
       &                 out_array_i_2d = out_array_i_2d, &
       &                 out_array_i_3d = out_array_i_3d, &
       &                 out_array_l_2d = out_array_l_2d, &
       &                 out_array_l_3d = out_array_l_3d, &
-      &                 add_array_r_2d = add_array_r_2d, &
-      &                 add_array_r_3d = add_array_r_3d, &
+      &                 add_array_dp_2d = add_array_dp_2d, &
+      &                 add_array_dp_3d = add_array_dp_3d, &
+      &                 add_array_sp_2d = add_array_sp_2d, &
+      &                 add_array_sp_3d = add_array_sp_3d, &
       &                 add_array_i_2d = add_array_i_2d, &
       &                 add_array_i_3d = add_array_i_3d, &
-      &                 ref_out_array_r_2d = ref_out_array_r_2d, &
-      &                 ref_out_array_r_3d = ref_out_array_r_3d, &
+      &                 ref_out_array_dp_2d = ref_out_array_dp_2d, &
+      &                 ref_out_array_dp_3d = ref_out_array_dp_3d, &
+      &                 ref_out_array_sp_2d = ref_out_array_sp_2d, &
+      &                 ref_out_array_sp_3d = ref_out_array_sp_3d, &
       &                 ref_out_array_i_2d = ref_out_array_i_2d, &
       &                 ref_out_array_i_3d = ref_out_array_i_3d, &
       &                 ref_out_array_l_2d = ref_out_array_l_2d, &
       &                 ref_out_array_l_3d = ref_out_array_l_3d, &
-      &                 comm_pattern = comm_pattern)
+      &                 comm_pattern = comm_pattern, &
+      &                 call_id = 6)
 
     DO n = 1, 16
 
       ALLOCATE(in_array_dp_4d(n, nproma, nlev, 10), &
         &      out_array_dp_4d(n, nproma, nlev, 10), &
         &      ref_out_array_dp_4d(n, nproma, nlev, 10))
+      ALLOCATE(in_array_sp_4d(n, nproma, nlev, 10), &
+        &      out_array_sp_4d(n, nproma, nlev, 10), &
+        &      ref_out_array_sp_4d(n, nproma, nlev, 10))
+
+      out_array_dp_4d = -1
+      out_array_sp_4d = -1
 
       DO i = 1, nlev
         DO j = 1, n
           in_array_dp_4d(j,:,i,:) = RESHAPE(glb_index_src, (/nproma, 10/)) + &
-            &                               (i - 1) * global_size + 0.1_wp * j
+            &                               (i - 1) * global_size + 0.1_dp * j
+          in_array_sp_4d(j,:,i,:) = RESHAPE(glb_index_src, (/nproma, 10/)) + &
+            &                               (i - 1) * global_size + 0.1_sp * j
         END DO
       END DO
-      out_array_dp_4d = -1
       DO i = 1, nlev
         DO j = 1, n
           ref_out_array_dp_4d(j,:,i,:) = &
-            RESHAPE(MERGE(-1._wp, glb_index_dst + (i - 1) * global_size + &
-            &             0.1_wp * j, owner_local_dst == -1), (/nproma, 10/))
+            RESHAPE(MERGE(-1._dp, glb_index_dst + (i - 1) * global_size + &
+            &             0.1_dp * j, owner_local_dst == -1), (/nproma, 10/))
+          ref_out_array_sp_4d(j,:,i,:) = &
+            RESHAPE(MERGE(-1._sp, glb_index_dst + (i - 1) * global_size + &
+            &             0.1_sp * j, owner_local_dst == -1), (/nproma, 10/))
         END DO
       END DO
 
-      CALL check_exchange_4de1(in_array=in_array_dp_4d, &
-        &                      out_array=out_array_dp_4d, &
-        &                      ref_out_array=ref_out_array_dp_4d, &
-        &                      comm_pattern=comm_pattern)
+      CALL check_exchange_4de1(in_array_dp=in_array_dp_4d, &
+        &                      out_array_dp=out_array_dp_4d, &
+        &                      ref_out_array_dp=ref_out_array_dp_4d, &
+        &                      in_array_sp=in_array_sp_4d, &
+        &                      out_array_sp=out_array_sp_4d, &
+        &                      ref_out_array_sp=ref_out_array_sp_4d, &
+        &                      comm_pattern=comm_pattern, call_id=2*n)
 
       out_array_dp_4d = in_array_dp_4d
+      out_array_sp_4d = in_array_sp_4d
       DO i = 1, nlev
         DO j = 1, n
           ref_out_array_dp_4d(j,:,i,:) = &
             RESHAPE(MERGE(glb_index_src, glb_index_dst, &
             &             owner_local_dst == -1), (/nproma, 10/)) + &
-            &             (i - 1) * global_size + 0.1_wp * j
+            &             (i - 1) * global_size + 0.1_dp * j
+          ref_out_array_sp_4d(j,:,i,:) = &
+            RESHAPE(MERGE(glb_index_src, glb_index_dst, &
+            &             owner_local_dst == -1), (/nproma, 10/)) + &
+            &             (i - 1) * global_size + 0.1_sp * j
         END DO
       END DO
 
-      CALL check_exchange_4de1(out_array=out_array_dp_4d, &
-        &                      ref_out_array=ref_out_array_dp_4d, &
-        &                      comm_pattern=comm_pattern)
+      CALL check_exchange_4de1(in_array_dp=in_array_dp_4d, &
+        &                      out_array_dp=out_array_dp_4d, &
+        &                      ref_out_array_dp=ref_out_array_dp_4d, &
+        &                      in_array_sp=in_array_sp_4d, &
+        &                      out_array_sp=out_array_sp_4d, &
+        &                      ref_out_array_sp=ref_out_array_sp_4d, &
+        &                      comm_pattern=comm_pattern, call_id=1+2*n)
 
       DEALLOCATE(in_array_dp_4d, out_array_dp_4d, ref_out_array_dp_4d)
+      DEALLOCATE(in_array_sp_4d, out_array_sp_4d, ref_out_array_sp_4d)
+
     END DO
 
     ALLOCATE(in_array_dp_4d(nproma,nlev,10,20), &
@@ -1475,11 +2235,11 @@ CONTAINS
     DO n = 1, 20
       DO i = 1, nlev
         in_array_dp_4d(:,i,:,n) = &
-          RESHAPE(MERGE(-1._wp, glb_index_src + (i - 1) * global_size + &
-          &             n * 0.1_wp, -1 == owner_local_src), (/nproma, 10/))
+          RESHAPE(MERGE(-1._dp, glb_index_src + (i - 1) * global_size + &
+          &             n * 0.1_dp, -1 == owner_local_src), (/nproma, 10/))
         ref_out_array_dp_4d(:,i,:,n) = &
-          RESHAPE(MERGE(-1._wp, glb_index_dst + (i - 1) * global_size + &
-          &             n * 0.1_wp, -1 == owner_local_dst), (/nproma, 10/))
+          RESHAPE(MERGE(-1._dp, glb_index_dst + (i - 1) * global_size + &
+          &             n * 0.1_dp, -1 == owner_local_dst), (/nproma, 10/))
       END DO
     END DO
     in_array_sp_4d = in_array_dp_4d
@@ -1845,48 +2605,76 @@ CONTAINS
 
   CONTAINS
 
-    SUBROUTINE check_exchange(in_array_r_2d, in_array_r_3d, &
+    SUBROUTINE check_exchange(in_array_dp_2d, in_array_dp_3d, &
+      &                       in_array_sp_2d, in_array_sp_3d, &
       &                       in_array_i_2d, in_array_i_3d, &
       &                       in_array_l_2d, in_array_l_3d, &
-      &                       out_array_r_2d, out_array_r_3d, &
+      &                       out_array_dp_2d, out_array_dp_3d, &
+      &                       out_array_sp_2d, out_array_sp_3d, &
       &                       out_array_i_2d, out_array_i_3d, &
       &                       out_array_l_2d, out_array_l_3d, &
-      &                       add_array_r_2d, add_array_r_3d, &
+      &                       add_array_dp_2d, add_array_dp_3d, &
+      &                       add_array_sp_2d, add_array_sp_3d, &
       &                       add_array_i_2d, add_array_i_3d, &
-      &                       ref_out_array_r_2d, ref_out_array_r_3d, &
+      &                       ref_out_array_dp_2d, ref_out_array_dp_3d, &
+      &                       ref_out_array_sp_2d, ref_out_array_sp_3d, &
       &                       ref_out_array_i_2d, ref_out_array_i_3d, &
       &                       ref_out_array_l_2d, ref_out_array_l_3d, &
-      &                       comm_pattern)
+      &                       comm_pattern, call_id)
 
-      REAL(wp), OPTIONAL, INTENT(IN) :: in_array_r_2d(:,:), in_array_r_3d(:,:,:)
+      REAL(dp), OPTIONAL, INTENT(IN) :: in_array_dp_2d(:,:), in_array_dp_3d(:,:,:)
+      REAL(sp), OPTIONAL, INTENT(IN) :: in_array_sp_2d(:,:), in_array_sp_3d(:,:,:)
       INTEGER, OPTIONAL, INTENT(IN) ::  in_array_i_2d(:,:), in_array_i_3d(:,:,:)
       LOGICAL, OPTIONAL, INTENT(IN) ::  in_array_l_2d(:,:), in_array_l_3d(:,:,:)
-      REAL(wp), INTENT(INOUT) :: out_array_r_2d(:,:), out_array_r_3d(:,:,:)
+      REAL(dp), INTENT(INOUT) :: out_array_dp_2d(:,:), out_array_dp_3d(:,:,:)
+      REAL(sp), INTENT(INOUT) :: out_array_sp_2d(:,:), out_array_sp_3d(:,:,:)
       INTEGER, INTENT(INOUT) ::  out_array_i_2d(:,:), out_array_i_3d(:,:,:)
       LOGICAL, INTENT(INOUT) ::  out_array_l_2d(:,:), out_array_l_3d(:,:,:)
-      REAL(wp), OPTIONAL, INTENT(IN) :: add_array_r_2d(:,:), add_array_r_3d(:,:,:)
+      REAL(dp), OPTIONAL, INTENT(IN) :: add_array_dp_2d(:,:), add_array_dp_3d(:,:,:)
+      REAL(sp), OPTIONAL, INTENT(IN) :: add_array_sp_2d(:,:), add_array_sp_3d(:,:,:)
       INTEGER, OPTIONAL, INTENT(IN) ::  add_array_i_2d(:,:), add_array_i_3d(:,:,:)
-      REAL(wp), INTENT(IN) :: ref_out_array_r_2d(:,:), ref_out_array_r_3d(:,:,:)
+      REAL(dp), INTENT(IN) :: ref_out_array_dp_2d(:,:), ref_out_array_dp_3d(:,:,:)
+      REAL(sp), INTENT(IN) :: ref_out_array_sp_2d(:,:), ref_out_array_sp_3d(:,:,:)
       INTEGER, INTENT(IN) ::  ref_out_array_i_2d(:,:), ref_out_array_i_3d(:,:,:)
       LOGICAL, INTENT(IN) ::  ref_out_array_l_2d(:,:), ref_out_array_l_3d(:,:,:)
       CLASS(t_comm_pattern), POINTER, INTENT(INOUT) :: comm_pattern
+      INTEGER, INTENT(IN) ::  call_id
 
-      !$ACC DATA COPYIN(add_array_r_2d, in_array_r_2d) COPY(out_array_r_2d) IF(lzacc)
-      CALL exchange_data(p_pat=comm_pattern, lacc=lzacc, recv=out_array_r_2d, &
-        &                send=in_array_r_2d, add=add_array_r_2d, &
+      !$ACC DATA COPYIN(add_array_dp_2d, in_array_dp_2d) COPY(out_array_dp_2d) IF(lzacc)
+      CALL exchange_data(p_pat=comm_pattern, lacc=lzacc, recv=out_array_dp_2d, &
+        &                send=in_array_dp_2d, add=add_array_dp_2d, &
         &                l_recv_exists=.TRUE.)
       !$ACC END DATA
-      IF (ANY(out_array_r_2d /= ref_out_array_r_2d)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result r_2d"
+      IF (ANY(out_array_dp_2d /= ref_out_array_dp_2d)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result r_2d call_id=", call_id
         CALL finish(method_name, message_text)
       END IF
 
-      !$ACC DATA COPYIN(add_array_r_3d, in_array_r_3d) COPY(out_array_r_3d) IF(lzacc)
-      CALL exchange_data(p_pat=comm_pattern, lacc=lzacc, recv=out_array_r_3d, &
-        &                send=in_array_r_3d, add=add_array_r_3d)
+      !$ACC DATA COPYIN(add_array_dp_3d, in_array_dp_3d) COPY(out_array_dp_3d) IF(lzacc)
+      CALL exchange_data(p_pat=comm_pattern, lacc=lzacc, recv=out_array_dp_3d, &
+        &                send=in_array_dp_3d, add=add_array_dp_3d)
       !$ACC END DATA
-      IF (ANY(out_array_r_3d /= ref_out_array_r_3d)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result r_3d"
+      IF (ANY(out_array_dp_3d /= ref_out_array_dp_3d)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result r_3d call_id=", call_id
+        CALL finish(method_name, message_text)
+      END IF
+
+      !$ACC DATA COPYIN(add_array_sp_2d, in_array_sp_2d) COPY(out_array_sp_2d) IF(lzacc)
+      CALL exchange_data(p_pat=comm_pattern, lacc=lzacc, recv=out_array_sp_2d, &
+        &                send=in_array_sp_2d, add=add_array_sp_2d, &
+        &                l_recv_exists=.TRUE.)
+      !$ACC END DATA
+      IF (ANY(out_array_sp_2d /= ref_out_array_sp_2d)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result s_2d call_id=", call_id
+        CALL finish(method_name, message_text)
+      END IF
+
+      !$ACC DATA COPYIN(add_array_sp_3d, in_array_sp_3d) COPY(out_array_sp_3d) IF(lzacc)
+      CALL exchange_data(p_pat=comm_pattern, lacc=lzacc, recv=out_array_sp_3d, &
+        &                send=in_array_sp_3d, add=add_array_sp_3d)
+      !$ACC END DATA
+      IF (ANY(out_array_sp_3d /= ref_out_array_sp_3d)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result s_3d call_id=", call_id
         CALL finish(method_name, message_text)
       END IF
 
@@ -1896,7 +2684,7 @@ CONTAINS
         &                l_recv_exists=.TRUE.)
       !$ACC END DATA
       IF (ANY(out_array_i_2d /= ref_out_array_i_2d)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result i_2d"
+        WRITE(message_text,'(a,i0)') "Wrong exchange result i_2d call_id=", call_id
         CALL finish(method_name, message_text)
       END IF
 
@@ -1905,7 +2693,7 @@ CONTAINS
         &                send=in_array_i_3d, add=add_array_i_3d)
       !$ACC END DATA
       IF (ANY(out_array_i_3d /= ref_out_array_i_3d)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result i_3d"
+        WRITE(message_text,'(a,i0)') "Wrong exchange result i_3d call_id=", call_id
         CALL finish(method_name, message_text)
       END IF
 
@@ -1914,7 +2702,7 @@ CONTAINS
         &                send=in_array_l_2d, l_recv_exists=.TRUE.)
       !$ACC END DATA
       IF (ANY(out_array_l_2d .NEQV. ref_out_array_l_2d)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result l_2d"
+        WRITE(message_text,'(a,i0)') "Wrong exchange result l_2d call_id=", call_id
         CALL finish(method_name, message_text)
       END IF
 
@@ -1923,32 +2711,52 @@ CONTAINS
         &                send=in_array_l_3d)
       !$ACC END DATA
       IF (ANY(out_array_l_3d .NEQV. ref_out_array_l_3d)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result l_3d"
+        WRITE(message_text,'(a,i0)') "Wrong exchange result l_3d call_id=", call_id
         CALL finish(method_name, message_text)
       END IF
 
     END SUBROUTINE check_exchange
 
-    SUBROUTINE check_exchange_4de1(in_array, out_array, ref_out_array, &
-      &                            comm_pattern)
+    SUBROUTINE check_exchange_4de1(in_array_dp, out_array_dp, ref_out_array_dp, &
+      &                            in_array_sp, out_array_sp, ref_out_array_sp, &
+      &                            comm_pattern, call_id)
 
-      REAL(wp), OPTIONAL, INTENT(IN) :: in_array(:,:,:,:)
-      REAL(wp), INTENT(INOUT) :: out_array(:,:,:,:)
-      REAL(wp), INTENT(IN) :: ref_out_array(:,:,:,:)
+      REAL(dp), OPTIONAL, INTENT(IN) :: in_array_dp(:,:,:,:)
+      REAL(dp), INTENT(INOUT) :: out_array_dp(:,:,:,:)
+      REAL(dp), INTENT(IN) :: ref_out_array_dp(:,:,:,:)
+      REAL(sp), OPTIONAL, INTENT(IN) :: in_array_sp(:,:,:,:)
+      REAL(sp), INTENT(INOUT) :: out_array_sp(:,:,:,:)
+      REAL(sp), INTENT(IN) :: ref_out_array_sp(:,:,:,:)
       CLASS(t_comm_pattern), POINTER, INTENT(INOUT) :: comm_pattern
+      INTEGER, INTENT(IN) :: call_id
 
       INTEGER :: nfields, ndim2tot
 
-      nfields = SIZE(out_array, 1)
-      ndim2tot = nfields * SIZE(out_array, 3)
+      nfields = SIZE(out_array_dp, 1)
+      ndim2tot = nfields * SIZE(out_array_dp, 3)
 
-      !$ACC DATA COPY(out_array) COPYIN(in_array) IF(lzacc)
-      CALL exchange_data_4de1(comm_pattern, lzacc, nfields, ndim2tot, out_array, &
-        &                     in_array)
+      !$ACC DATA COPY(out_array_dp) COPYIN(in_array_dp) IF(lzacc)
+      CALL exchange_data_4de1(comm_pattern, lzacc, nfields, ndim2tot, out_array_dp, &
+        &                     in_array_dp)
       !$ACC END DATA
 
-      IF (ANY(out_array /= ref_out_array)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result 4de1"
+      IF (ANY(out_array_dp /= ref_out_array_dp)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result 4de1_dp call_id: ", call_id
+        CALL finish(method_name, message_text)
+      END IF
+
+      !$ACC DATA COPY(out_array_sp) COPYIN(in_array_sp) IF(lzacc)
+      CALL exchange_data_4de1(comm_pattern, lzacc, nfields, ndim2tot, out_array_sp, &
+        &                     in_array_sp)
+      !$ACC END DATA
+
+      IF (ANY(out_array_dp /= ref_out_array_dp)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result 4de1_dp call_id: ", call_id
+        CALL finish(method_name, message_text)
+      END IF
+
+      IF (ANY(out_array_sp /= ref_out_array_sp)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result 4de1_sp call_id: ", call_id
         CALL finish(method_name, message_text)
       END IF
 
@@ -2040,86 +2848,187 @@ CONTAINS
       INTEGER, OPTIONAL, INTENT(IN) :: nshift
       CLASS(t_comm_pattern), POINTER, INTENT(INOUT) :: comm_pattern
 
-      CALL check_exchange_mult( &
-        & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
-        & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
-        & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
-        & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
-        & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
-        & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
-        & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
-        & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
-        & nshift=nshift, comm_pattern=comm_pattern)
-      CALL check_exchange_mult( &
-        & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
-        & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
-        & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
-        & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
-        & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
-        & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
-        ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
-        & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
-        & nshift=nshift, comm_pattern=comm_pattern)
-      CALL check_exchange_mult( &
-        & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
-        & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
-        & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
-        & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
-        & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
-        ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
-        ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
-        & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
-        & nshift=nshift, comm_pattern=comm_pattern)
-      CALL check_exchange_mult( &
-        & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
-        & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
-        & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
-        & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
-        ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
-        ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
-        ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
-        & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
-        & nshift=nshift, comm_pattern=comm_pattern)
-      CALL check_exchange_mult( &
-        & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
-        & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
-        & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
-        ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
-        ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
-        ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
-        ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
-        & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
-        & nshift=nshift, comm_pattern=comm_pattern)
-      CALL check_exchange_mult( &
-        & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
-        & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
-        ! & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
-        ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
-        ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
-        ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
-        ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
-        & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
-        & nshift=nshift, comm_pattern=comm_pattern)
-      CALL check_exchange_mult( &
-        & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
-        ! & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
-        ! & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
-        ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
-        ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
-        ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
-        ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
-        & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
-        & nshift=nshift, comm_pattern=comm_pattern)
-      CALL check_exchange_mult( &
-        ! & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
-        ! & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
-        ! & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
-        ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
-        ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
-        ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
-        ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
-        & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
-        & nshift=nshift, comm_pattern=comm_pattern)
+      IF (PRESENT(out_array4d)) THEN
+        IF (PRESENT(out_array7)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array6)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array5)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array4)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array3)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array2)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          ! & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array1)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          ! & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          ! & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        CALL check_exchange_mult( &
+          ! & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          ! & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          ! & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          & out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+      ELSE
+        IF (PRESENT(out_array7)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          !& out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array6)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          !& out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array5)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          !& out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array4)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          !& out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array3)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          !& out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array2)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          ! & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          !& out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+        IF (PRESENT(out_array1)) THEN
+        CALL check_exchange_mult( &
+          & out_array1=out_array1, in_array1=in_array1, ref_out_array1=ref_out_array1, &
+          ! & out_array2=out_array2, in_array2=in_array2, ref_out_array2=ref_out_array2, &
+          ! & out_array3=out_array3, in_array3=in_array3, ref_out_array3=ref_out_array3, &
+          ! & out_array4=out_array4, in_array4=in_array4, ref_out_array4=ref_out_array4, &
+          ! & out_array5=out_array5, in_array5=in_array5, ref_out_array5=ref_out_array5, &
+          ! & out_array6=out_array6, in_array6=in_array6, ref_out_array6=ref_out_array6, &
+          ! & out_array7=out_array7, in_array7=in_array7, ref_out_array7=ref_out_array7, &
+          !& out_array4d=out_array4d, in_array4d=in_array4d, ref_out_array4d=ref_out_array4d, &
+          & nshift=nshift, comm_pattern=comm_pattern)
+        ENDIF
+      ENDIF
 
     END SUBROUTINE check_exchange_mult_dp
 
@@ -2167,13 +3076,13 @@ CONTAINS
       nfields = 0
       ndim2tot = 0
       IF (PRESENT(out_array4d)) THEN
-        ALLOCATE(tmp_out_array4d(SIZE(out_array4d,1),SIZE(out_array4d,2),&
-                                    SIZE(out_array4d,3),SIZE(out_array4d,4)))
-        tmp_out_array4d = out_array4d
-        nfields = nfields + SIZE(out_array4d, 4)
-        ndim2 = SIZE(out_array4d, 2)
-        ndim2tot = ndim2tot + &
-          &        MERGE(1, ndim2 - kshift, ndim2 == 1) * SIZE(out_array4d, 4)
+      ALLOCATE(tmp_out_array4d(SIZE(out_array4d,1),SIZE(out_array4d,2),&
+                                  SIZE(out_array4d,3),SIZE(out_array4d,4)))
+      tmp_out_array4d = out_array4d
+      nfields = nfields + SIZE(out_array4d, 4)
+      ndim2 = SIZE(out_array4d, 2)
+      ndim2tot = ndim2tot + &
+        &        MERGE(1, ndim2 - kshift, ndim2 == 1) * SIZE(out_array4d, 4)
       END IF
       IF (PRESENT(out_array1)) THEN
         ALLOCATE(tmp_out_array1(SIZE(out_array1,1),SIZE(out_array1,2),&
@@ -2237,19 +3146,149 @@ CONTAINS
       !$ACC   COPY(out_array1, out_array2, out_array3, out_array4) &
       !$ACC   COPY(out_array5, out_array6, out_array7, out_array4d) &
       !$ACC   IF(lzacc)
-      IF (nfields > 0) THEN
-        CALL exchange_data_mult( &
-          p_pat=comm_pattern, lacc=lzacc, &
-          nfields=nfields, ndim2tot=ndim2tot, &
-          recv1=out_array1, send1=in_array1, &
-          recv2=out_array2, send2=in_array2, &
-          recv3=out_array3, send3=in_array3, &
-          recv4=out_array4, send4=in_array4, &
-          recv5=out_array5, send5=in_array5, &
-          recv6=out_array6, send6=in_array6, &
-          recv7=out_array7, send7=in_array7, &
-          recv4d=out_array4d, send4d=in_array4d, &
-          nshift=kshift)
+      IF (PRESENT(out_array4d)) THEN
+        IF (PRESENT(out_array7)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4=out_array4, send4=in_array4, &
+            recv5=out_array5, send5=in_array5, &
+            recv6=out_array6, send6=in_array6, &
+            recv7=out_array7, send7=in_array7, &
+            recv4d=out_array4d, send4d=in_array4d, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array6)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4=out_array4, send4=in_array4, &
+            recv5=out_array5, send5=in_array5, &
+            recv6=out_array6, send6=in_array6, &
+            recv4d=out_array4d, send4d=in_array4d, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array5)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4=out_array4, send4=in_array4, &
+            recv5=out_array5, send5=in_array5, &
+            recv4d=out_array4d, send4d=in_array4d, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array4)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4=out_array4, send4=in_array4, &
+            recv4d=out_array4d, send4d=in_array4d, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array3)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4d=out_array4d, send4d=in_array4d, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array2)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv4d=out_array4d, send4d=in_array4d, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array1)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv4d=out_array4d, send4d=in_array4d, &
+            nshift=kshift)
+        ELSE
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv4d=out_array4d, send4d=in_array4d, &
+            nshift=kshift)
+        END IF
+      ELSE
+        IF (PRESENT(out_array7)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4=out_array4, send4=in_array4, &
+            recv5=out_array5, send5=in_array5, &
+            recv6=out_array6, send6=in_array6, &
+            recv7=out_array7, send7=in_array7, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array6)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4=out_array4, send4=in_array4, &
+            recv5=out_array5, send5=in_array5, &
+            recv6=out_array6, send6=in_array6, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array5)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4=out_array4, send4=in_array4, &
+            recv5=out_array5, send5=in_array5, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array4)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            recv4=out_array4, send4=in_array4, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array3)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            recv3=out_array3, send3=in_array3, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array2)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            recv2=out_array2, send2=in_array2, &
+            nshift=kshift)
+        ELSE IF (PRESENT(out_array1)) THEN
+          CALL exchange_data_mult( &
+            p_pat=comm_pattern, lacc=lzacc, &
+            nfields=nfields, ndim2tot=ndim2tot, &
+            recv1=out_array1, send1=in_array1, &
+            nshift=kshift)
+        END IF
       END IF
       !$ACC END DATA
 
@@ -3011,12 +4050,39 @@ CONTAINS
 
     INTEGER, ALLOCATABLE :: owner_local_src(:), owner_local_dst(:,:), &
       &                     glb_index_src(:), glb_index_dst(:)
-    REAL(wp), ALLOCATABLE :: ref_recv_add(:,:)
     INTEGER :: i, j, n, local_size_src, local_size_dst, global_size, count
     TYPE(t_glb2loc_index_lookup) :: send_glb2loc_index
     TYPE(t_p_comm_pattern) :: comm_pattern(4)
     CLASS(t_comm_pattern_collection), POINTER :: comm_pattern_collection
     LOGICAL :: lzacc
+
+    REAL(dp) :: ref_recv_add_dp(nproma,18)
+    real(dp) :: recv1_dp(nproma,2,18),  recv2_dp(nproma,4,18), &
+      &         recv3_dp(nproma,6,18),  recv4_dp(nproma,8,18), &
+      &         recv5_dp(nproma,10,18), recv6_dp(nproma,12,18), &
+      &         recv4d1_dp(nproma,4,18,6), recv4d2_dp(nproma,8,18,6)
+    real(dp) :: send1_dp(2,12*nproma,4),  send2_dp(4,12*nproma,4), &
+      &         send3_dp(6,12*nproma,4),  send4_dp(8,12*nproma,4), &
+      &         send5_dp(10,12*nproma,4), send6_dp(12,12*nproma,4), &
+      &         send4d1_dp(4,12*nproma,4,6), send4d2_dp(8,12*nproma,4,6)
+    real(dp) :: ref_recv1_dp(nproma,2,18),  ref_recv2_dp(nproma,4,18), &
+      &         ref_recv3_dp(nproma,6,18),  ref_recv4_dp(nproma,8,18), &
+      &         ref_recv5_dp(nproma,10,18), ref_recv6_dp(nproma,12,18), &
+      &         ref_recv4d1_dp(nproma,4,18,6), ref_recv4d2_dp(nproma,8,18,6)
+
+    REAL(sp) :: ref_recv_add_sp(nproma,18)
+    real(sp) :: recv1_sp(nproma,2,18),  recv2_sp(nproma,4,18), &
+      &         recv3_sp(nproma,6,18),  recv4_sp(nproma,8,18), &
+      &         recv5_sp(nproma,10,18), recv6_sp(nproma,12,18), &
+      &         recv4d1_sp(nproma,4,18,6), recv4d2_sp(nproma,8,18,6)
+    real(sp) :: send1_sp(2,12*nproma,4),  send2_sp(4,12*nproma,4), &
+      &         send3_sp(6,12*nproma,4),  send4_sp(8,12*nproma,4), &
+      &         send5_sp(10,12*nproma,4), send6_sp(12,12*nproma,4), &
+      &         send4d1_sp(4,12*nproma,4,6), send4d2_sp(8,12*nproma,4,6)
+    real(sp) :: ref_recv1_sp(nproma,2,18),  ref_recv2_sp(nproma,4,18), &
+      &         ref_recv3_sp(nproma,6,18),  ref_recv4_sp(nproma,8,18), &
+      &         ref_recv5_sp(nproma,10,18), ref_recv6_sp(nproma,12,18), &
+      &         ref_recv4d1_sp(nproma,4,18,6), ref_recv4d2_sp(nproma,8,18,6)
 
     IF (PRESENT(test_gpu)) THEN  ! enable test on GPU if requested, and compiled with openACC
       lzacc = test_gpu
@@ -3024,26 +4090,12 @@ CONTAINS
       lzacc = .FALSE.
     END IF
 
-    REAL(wp) :: recv1(nproma,2,18), recv2(nproma,4,18), &
-      &         recv3(nproma,6,18), recv4(nproma,8,18), &
-      &         recv5(nproma,10,18), recv6(nproma,12,18), &
-      &         recv4d1(nproma,4,18,6), recv4d2(nproma,8,18,6)
-    REAL(wp) :: send1(2,12*nproma,4), send2(4,12*nproma,4), &
-      &         send3(6,12*nproma,4), send4(8,12*nproma,4), &
-      &         send5(10,12*nproma,4), send6(12,12*nproma,4), &
-      &         send4d1(4,12*nproma,4,6), send4d2(8,12*nproma,4,6)
-    REAL(wp) :: ref_recv1(nproma,2,18), ref_recv2(nproma,4,18), &
-      &         ref_recv3(nproma,6,18), ref_recv4(nproma,8,18), &
-      &         ref_recv5(nproma,10,18), ref_recv6(nproma,12,18), &
-      &         ref_recv4d1(nproma,4,18,6), ref_recv4d2(nproma,8,18,6)
-
     !generate communication patterns
     local_size_src = 12 * nproma
     local_size_dst = 18 * nproma
     global_size = local_size_src * p_n_work
     ALLOCATE(owner_local_src(local_size_src), glb_index_src(local_size_src), &
-      &      owner_local_dst(local_size_dst,4), glb_index_dst(local_size_dst), &
-      &      ref_recv_add(nproma,18))
+      &      owner_local_dst(local_size_dst,4), glb_index_dst(local_size_dst))
 
     owner_local_src = p_pe_work
     owner_local_dst = -1
@@ -3072,143 +4124,277 @@ CONTAINS
 
     CALL setup_comm_pattern_collection(comm_pattern, comm_pattern_collection)
 
-    recv1 = -1
-    recv2 = -1
-    recv3 = -1
-    recv4 = -1
-    recv5 = -1
-    recv6 = -1
-    recv4d1 = -1
-    recv4d2 = -1
+    recv1_dp = -1._dp
+    recv2_dp = -1._dp
+    recv3_dp = -1._dp
+    recv4_dp = -1._dp
+    recv5_dp = -1._dp
+    recv6_dp = -1._dp
+    recv4d1_dp = -1._dp
+    recv4d2_dp = -1._dp
 
     count = 0
-    DO n = 1, SIZE(send1, 1)
+    DO n = 1, SIZE(send1_dp, 1)
       DO i = 1, local_size_src
-        send1(n,i,:) = (/0.1_wp, 0.2_wp, 0.3_wp, 0.4_wp/) + count + i + &
+        send1_dp(n,i,:) = (/0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp/) + count + i + &
           &            p_pe_work * local_size_src
       END DO
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(send2, 1)
+    DO n = 1, SIZE(send2_dp, 1)
       DO i = 1, local_size_src
-        send2(n,i,:) = (/0.1_wp, 0.2_wp, 0.3_wp, 0.4_wp/) + count + i + &
+        send2_dp(n,i,:) = (/0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp/) + count + i + &
           &            p_pe_work * local_size_src
       END DO
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(send3, 1)
+    DO n = 1, SIZE(send3_dp, 1)
       DO i = 1, local_size_src
-        send3(n,i,:) = (/0.1_wp, 0.2_wp, 0.3_wp, 0.4_wp/) + count + i + &
+        send3_dp(n,i,:) = (/0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp/) + count + i + &
           &            p_pe_work * local_size_src
       END DO
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(send4, 1)
+    DO n = 1, SIZE(send4_dp, 1)
       DO i = 1, local_size_src
-        send4(n,i,:) = (/0.1_wp, 0.2_wp, 0.3_wp, 0.4_wp/) + count + i + &
+        send4_dp(n,i,:) = (/0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp/) + count + i + &
           &            p_pe_work * local_size_src
       END DO
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(send5, 1)
+    DO n = 1, SIZE(send5_dp, 1)
       DO i = 1, local_size_src
-        send5(n,i,:) = (/0.1_wp, 0.2_wp, 0.3_wp, 0.4_wp/) + count + i + &
+        send5_dp(n,i,:) = (/0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp/) + count + i + &
           &            p_pe_work * local_size_src
       END DO
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(send6, 1)
+    DO n = 1, SIZE(send6_dp, 1)
       DO i = 1, local_size_src
-        send6(n,i,:) = (/0.1_wp, 0.2_wp, 0.3_wp, 0.4_wp/) + count + i + &
+        send6_dp(n,i,:) = (/0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp/) + count + i + &
           &            p_pe_work * local_size_src
       END DO
       count = count + local_size_src
     END DO
 
     count = 0
-    DO j = 1, SIZE(send4d1, 4)
-      DO n = 1, SIZE(send4d1, 1)
+    DO j = 1, SIZE(send4d1_dp, 4)
+      DO n = 1, SIZE(send4d1_dp, 1)
         DO i = 1, local_size_src
-          send4d1(n,i,:, j) = (/0.1_wp, 0.2_wp, 0.3_wp, 0.4_wp/) + count + i + &
+          send4d1_dp(n,i,:, j) = (/0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp/) + count + i + &
             &                 p_pe_work * local_size_src
         END DO
         count = count + local_size_src
       END DO
     END DO
-    DO j = 1, SIZE(send4d2, 4)
-      DO n = 1, SIZE(send4d2, 1)
+    DO j = 1, SIZE(send4d2_dp, 4)
+      DO n = 1, SIZE(send4d2_dp, 1)
         DO i = 1, local_size_src
-          send4d2(n,i,:, j) = (/0.1_wp, 0.2_wp, 0.3_wp, 0.4_wp/) + count + i + &
+          send4d2_dp(n,i,:, j) = (/0.1_dp, 0.2_dp, 0.3_dp, 0.4_dp/) + count + i + &
           &                   p_pe_work * local_size_src
         END DO
         count = count + local_size_src
       END DO
     END DO
 
-    ref_recv_add(1::4,:) = 0.1_wp
-    ref_recv_add(2::4,:) = 0.2_wp
-    ref_recv_add(3::4,:) = 0.3_wp
-    ref_recv_add(4::4,:) = 0.4_wp
+    ref_recv_add_dp(1::4,:) = 0.1_dp
+    ref_recv_add_dp(2::4,:) = 0.2_dp
+    ref_recv_add_dp(3::4,:) = 0.3_dp
+    ref_recv_add_dp(4::4,:) = 0.4_dp
 
     count = 0
-    DO n = 1, SIZE(ref_recv1, 2)
-      ref_recv1(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
-        &                ref_recv_add
+    DO n = 1, SIZE(ref_recv1_dp, 2)
+      ref_recv1_dp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_dp
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(ref_recv2, 2)
-      ref_recv2(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
-        &                ref_recv_add
+    DO n = 1, SIZE(ref_recv2_dp, 2)
+      ref_recv2_dp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_dp
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(ref_recv3, 2)
-      ref_recv3(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
-        &                ref_recv_add
+    DO n = 1, SIZE(ref_recv3_dp, 2)
+      ref_recv3_dp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_dp
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(ref_recv4, 2)
-      ref_recv4(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
-        &                ref_recv_add
+    DO n = 1, SIZE(ref_recv4_dp, 2)
+      ref_recv4_dp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_dp
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(ref_recv5, 2)
-      ref_recv5(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
-        &                ref_recv_add
+    DO n = 1, SIZE(ref_recv5_dp, 2)
+      ref_recv5_dp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_dp
       count = count + local_size_src
     END DO
-    DO n = 1, SIZE(ref_recv6, 2)
-      ref_recv6(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
-        &                ref_recv_add
+    DO n = 1, SIZE(ref_recv6_dp, 2)
+      ref_recv6_dp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_dp
       count = count + local_size_src
     END DO
 
     count = 0
-    DO i = 1, SIZE(ref_recv4d1, 4)
-      DO n = 1, SIZE(ref_recv4d1, 2)
-        ref_recv4d1(:,n,:,i) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
-        &                ref_recv_add
+    DO i = 1, SIZE(ref_recv4d1_dp, 4)
+      DO n = 1, SIZE(ref_recv4d1_dp, 2)
+        ref_recv4d1_dp(:,n,:,i) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_dp
         count = count + local_size_src
       END DO
     END DO
-    DO i = 1, SIZE(ref_recv4d2, 4)
-      DO n = 1, SIZE(ref_recv4d2, 2)
-        ref_recv4d2(:,n,:,i) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
-        &                ref_recv_add
+    DO i = 1, SIZE(ref_recv4d2_dp, 4)
+      DO n = 1, SIZE(ref_recv4d2_dp, 2)
+        ref_recv4d2_dp(:,n,:,i) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_dp
         count = count + local_size_src
       END DO
     END DO
 
-    CALL check_exchange_grf(comm_pattern_collection, recv1, send1, ref_recv1, &
-      &                     recv2, send2, ref_recv2, recv3, send3, ref_recv3, &
-      &                     recv4, send4, ref_recv4, recv5, send5, ref_recv5, &
-      &                     recv6, send6, ref_recv6, recv4d1, send4d1, &
-      &                     ref_recv4d1, recv4d2, send4d2, ref_recv4d2)
+    CALL check_exchange_grf_dp(comm_pattern_collection, recv1_dp, send1_dp, ref_recv1_dp, &
+      &                     recv2_dp, send2_dp, ref_recv2_dp, recv3_dp, send3_dp, ref_recv3_dp, &
+      &                     recv4_dp, send4_dp, ref_recv4_dp, recv5_dp, send5_dp, ref_recv5_dp, &
+      &                     recv6_dp, send6_dp, ref_recv6_dp, recv4d1_dp, send4d1_dp, &
+      &                     ref_recv4d1_dp, recv4d2_dp, send4d2_dp, ref_recv4d2_dp)
+
+
+    ! Repeat for single precision
+    recv1_sp = -1._sp
+    recv2_sp = -1._sp
+    recv3_sp = -1._sp
+    recv4_sp = -1._sp
+    recv5_sp = -1._sp
+    recv6_sp = -1._sp
+    recv4d1_sp = -1._sp
+    recv4d2_sp = -1._sp
+
+    count = 0
+    DO n = 1, SIZE(send1_sp, 1)
+      DO i = 1, local_size_src
+        send1_sp(n,i,:) = (/0.1_sp, 0.2_sp, 0.3_sp, 0.4_sp/) + count + i + &
+          &            p_pe_work * local_size_src
+      END DO
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(send2_sp, 1)
+      DO i = 1, local_size_src
+        send2_sp(n,i,:) = (/0.1_sp, 0.2_sp, 0.3_sp, 0.4_sp/) + count + i + &
+          &            p_pe_work * local_size_src
+      END DO
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(send3_sp, 1)
+      DO i = 1, local_size_src
+        send3_sp(n,i,:) = (/0.1_sp, 0.2_sp, 0.3_sp, 0.4_sp/) + count + i + &
+          &            p_pe_work * local_size_src
+      END DO
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(send4_sp, 1)
+      DO i = 1, local_size_src
+        send4_sp(n,i,:) = (/0.1_sp, 0.2_sp, 0.3_sp, 0.4_sp/) + count + i + &
+          &            p_pe_work * local_size_src
+      END DO
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(send5_sp, 1)
+      DO i = 1, local_size_src
+        send5_sp(n,i,:) = (/0.1_sp, 0.2_sp, 0.3_sp, 0.4_sp/) + count + i + &
+          &            p_pe_work * local_size_src
+      END DO
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(send6_sp, 1)
+      DO i = 1, local_size_src
+        send6_sp(n,i,:) = (/0.1_sp, 0.2_sp, 0.3_sp, 0.4_sp/) + count + i + &
+          &            p_pe_work * local_size_src
+      END DO
+      count = count + local_size_src
+    END DO
+
+    count = 0
+    DO j = 1, SIZE(send4d1_sp, 4)
+      DO n = 1, SIZE(send4d1_sp, 1)
+        DO i = 1, local_size_src
+          send4d1_sp(n,i,:, j) = (/0.1_sp, 0.2_sp, 0.3_sp, 0.4_sp/) + count + i + &
+            &                 p_pe_work * local_size_src
+        END DO
+        count = count + local_size_src
+      END DO
+    END DO
+    DO j = 1, SIZE(send4d2_sp, 4)
+      DO n = 1, SIZE(send4d2_sp, 1)
+        DO i = 1, local_size_src
+          send4d2_sp(n,i,:, j) = (/0.1_sp, 0.2_sp, 0.3_sp, 0.4_sp/) + count + i + &
+          &                   p_pe_work * local_size_src
+        END DO
+        count = count + local_size_src
+      END DO
+    END DO
+
+    ref_recv_add_sp(1::4,:) = 0.1_sp
+    ref_recv_add_sp(2::4,:) = 0.2_sp
+    ref_recv_add_sp(3::4,:) = 0.3_sp
+    ref_recv_add_sp(4::4,:) = 0.4_sp
+
+    count = 0
+    DO n = 1, SIZE(ref_recv1_sp, 2)
+      ref_recv1_sp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_sp
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(ref_recv2_sp, 2)
+      ref_recv2_sp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_sp
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(ref_recv3_sp, 2)
+      ref_recv3_sp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_sp
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(ref_recv4_sp, 2)
+      ref_recv4_sp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_sp
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(ref_recv5_sp, 2)
+      ref_recv5_sp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_sp
+      count = count + local_size_src
+    END DO
+    DO n = 1, SIZE(ref_recv6_sp, 2)
+      ref_recv6_sp(:,n,:) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_sp
+      count = count + local_size_src
+    END DO
+
+    count = 0
+    DO i = 1, SIZE(ref_recv4d1_sp, 4)
+      DO n = 1, SIZE(ref_recv4d1_sp, 2)
+        ref_recv4d1_sp(:,n,:,i) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_sp
+        count = count + local_size_src
+      END DO
+    END DO
+    DO i = 1, SIZE(ref_recv4d2_sp, 4)
+      DO n = 1, SIZE(ref_recv4d2_sp, 2)
+        ref_recv4d2_sp(:,n,:,i) = RESHAPE(glb_index_dst + count,(/nproma,18/)) + &
+        &                ref_recv_add_sp
+        count = count + local_size_src
+      END DO
+    END DO
+
+    CALL check_exchange_grf_sp(comm_pattern_collection, recv1_sp, send1_sp, ref_recv1_sp, &
+      &                     recv2_sp, send2_sp, ref_recv2_sp, recv3_sp, send3_sp, ref_recv3_sp, &
+      &                     recv4_sp, send4_sp, ref_recv4_sp, recv5_sp, send5_sp, ref_recv5_sp, &
+      &                     recv6_sp, send6_sp, ref_recv6_sp, recv4d1_sp, send4d1_sp, &
+      &                     ref_recv4d1_sp, recv4d2_sp, send4d2_sp, ref_recv4d2_sp)
 
     CALL delete_comm_pattern_collection(comm_pattern_collection)
 
     CONTAINS
 
-    SUBROUTINE check_exchange_grf( &
+    SUBROUTINE check_exchange_grf_dp( &
       p_pat_coll, recv1, send1, ref_recv1, recv2, send2, ref_recv2, recv3, &
       send3, ref_recv3, recv4, send4, ref_recv4, recv5, send5, ref_recv5, &
       recv6, send6, ref_recv6, recv4d1, send4d1, ref_recv4d1, recv4d2, &
@@ -3218,21 +4404,21 @@ CONTAINS
 
       ! recv3d (nproma,nlev,blk)
       ! recv4d (nproma,nlev,blk,nfield)
-      REAL(wp), INTENT(INOUT) :: recv1(:,:,:), recv2(:,:,:), recv3(:,:,:), &
+      REAL(dp), INTENT(INOUT) :: recv1(:,:,:), recv2(:,:,:), recv3(:,:,:), &
         &                        recv4(:,:,:), recv5(:,:,:), recv6(:,:,:), &
         &                        recv4d1(:,:,:,:), recv4d2(:,:,:,:)
       ! send3d (nlev,i,npat)
       ! send4d (nlev,i,npat,nfield)
-      REAL(wp), INTENT(IN) ::  send1(:,:,:), send2(:,:,:), send3(:,:,:), &
+      REAL(dp), INTENT(IN) ::  send1(:,:,:), send2(:,:,:), send3(:,:,:), &
         &                      send4(:,:,:), send5(:,:,:), send6(:,:,:), &
         &                      send4d1(:,:,:,:), send4d2(:,:,:,:)
 
-      REAL(wp), INTENT(IN) :: ref_recv1(:,:,:), ref_recv2(:,:,:), &
+      REAL(dp), INTENT(IN) :: ref_recv1(:,:,:), ref_recv2(:,:,:), &
         &                     ref_recv3(:,:,:), ref_recv4(:,:,:), &
         &                     ref_recv5(:,:,:), ref_recv6(:,:,:), &
         &                     ref_recv4d1(:,:,:,:), ref_recv4d2(:,:,:,:)
 
-      REAL(wp), ALLOCATABLE :: tmp_recv1(:,:,:), tmp_recv2(:,:,:), &
+      REAL(dp), ALLOCATABLE :: tmp_recv1(:,:,:), tmp_recv2(:,:,:), &
         &                      tmp_recv3(:,:,:), tmp_recv4(:,:,:), &
         &                      tmp_recv5(:,:,:), tmp_recv6(:,:,:), &
         &                      tmp_recv4d1(:,:,:,:), tmp_recv4d2(:,:,:,:)
@@ -3269,7 +4455,7 @@ CONTAINS
         &                    ndim2tot=ndim2tot, recv1=recv1, send1=send1)
       !$ACC END DATA
       IF (ANY(recv1 /= ref_recv1)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result grf", i
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_dp", i
         CALL finish(method_name, message_text)
       END IF
 
@@ -3284,7 +4470,7 @@ CONTAINS
         &                    recv2=recv2, send2=send2)
       !$ACC END DATA
       IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result grf", i
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_dp", i
         CALL finish(method_name, message_text)
       END IF
 
@@ -3303,7 +4489,7 @@ CONTAINS
       !$ACC END DATA
       IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2) .OR. &
         & ANY(recv3 /= ref_recv3)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result grf", i
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_dp", i
         CALL finish(method_name, message_text)
       END IF
 
@@ -3324,7 +4510,7 @@ CONTAINS
       !$ACC END DATA
       IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2) .OR. &
         & ANY(recv3 /= ref_recv3) .OR. ANY(recv4 /= ref_recv4)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result grf", i
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_dp", i
         CALL finish(method_name, message_text)
       END IF
 
@@ -3348,7 +4534,7 @@ CONTAINS
       IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2) .OR. &
         & ANY(recv3 /= ref_recv3) .OR. ANY(recv4 /= ref_recv4) .OR. &
         & ANY(recv5 /= ref_recv5)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result grf", i
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_dp", i
         CALL finish(method_name, message_text)
       END IF
 
@@ -3374,7 +4560,7 @@ CONTAINS
       IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2) .OR. &
         & ANY(recv3 /= ref_recv3) .OR. ANY(recv4 /= ref_recv4) .OR. &
         & ANY(recv5 /= ref_recv5) .OR. ANY(recv6 /= ref_recv6)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result grf", i
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_dp", i
         CALL finish(method_name, message_text)
       END IF
 
@@ -3388,7 +4574,7 @@ CONTAINS
         &                    send4d1=send4d1)
       !$ACC END DATA
       IF (ANY(recv4d1 /= ref_recv4d1)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result grf", i
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_dp", i
         CALL finish(method_name, message_text)
       END IF
 
@@ -3404,10 +4590,211 @@ CONTAINS
         &                    send4d1=send4d1, recv4d2=recv4d2, send4d2=send4d2)
       !$ACC END DATA
       IF (ANY(recv4d1 /= ref_recv4d1) .OR. ANY(recv4d2 /= ref_recv4d2)) THEN
-        WRITE(message_text,'(a,i0)') "Wrong exchange result grf", i
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_dp", i
         CALL finish(method_name, message_text)
       END IF
-    END SUBROUTINE check_exchange_grf
+    END SUBROUTINE check_exchange_grf_dp
+
+    SUBROUTINE check_exchange_grf_sp( &
+      p_pat_coll, recv1, send1, ref_recv1, recv2, send2, ref_recv2, recv3, &
+      send3, ref_recv3, recv4, send4, ref_recv4, recv5, send5, ref_recv5, &
+      recv6, send6, ref_recv6, recv4d1, send4d1, ref_recv4d1, recv4d2, &
+      send4d2, ref_recv4d2)
+
+      CLASS(t_comm_pattern_collection), POINTER, INTENT(INOUT) :: p_pat_coll
+
+      ! recv3d (nproma,nlev,blk)
+      ! recv4d (nproma,nlev,blk,nfield)
+      REAL(sp), INTENT(INOUT) :: recv1(:,:,:), recv2(:,:,:), recv3(:,:,:), &
+        &                        recv4(:,:,:), recv5(:,:,:), recv6(:,:,:), &
+        &                        recv4d1(:,:,:,:), recv4d2(:,:,:,:)
+      ! send3d (nlev,i,npat)
+      ! send4d (nlev,i,npat,nfield)
+      REAL(sp), INTENT(IN) ::  send1(:,:,:), send2(:,:,:), send3(:,:,:), &
+        &                      send4(:,:,:), send5(:,:,:), send6(:,:,:), &
+        &                      send4d1(:,:,:,:), send4d2(:,:,:,:)
+
+      REAL(sp), INTENT(IN) :: ref_recv1(:,:,:), ref_recv2(:,:,:), &
+        &                     ref_recv3(:,:,:), ref_recv4(:,:,:), &
+        &                     ref_recv5(:,:,:), ref_recv6(:,:,:), &
+        &                     ref_recv4d1(:,:,:,:), ref_recv4d2(:,:,:,:)
+
+      REAL(sp), ALLOCATABLE :: tmp_recv1(:,:,:), tmp_recv2(:,:,:), &
+        &                      tmp_recv3(:,:,:), tmp_recv4(:,:,:), &
+        &                      tmp_recv5(:,:,:), tmp_recv6(:,:,:), &
+        &                      tmp_recv4d1(:,:,:,:), tmp_recv4d2(:,:,:,:)
+
+      INTEGER :: nfields, ndim2tot, i
+
+
+      ALLOCATE(tmp_recv1(SIZE(recv1,1),SIZE(recv1,2),SIZE(recv1,3)), &
+        &      tmp_recv2(SIZE(recv2,1),SIZE(recv2,2),SIZE(recv2,3)), &
+        &      tmp_recv3(SIZE(recv3,1),SIZE(recv3,2),SIZE(recv3,3)), &
+        &      tmp_recv4(SIZE(recv4,1),SIZE(recv4,2),SIZE(recv4,3)), &
+        &      tmp_recv5(SIZE(recv5,1),SIZE(recv5,2),SIZE(recv5,3)), &
+        &      tmp_recv6(SIZE(recv6,1),SIZE(recv6,2),SIZE(recv6,3)), &
+        &      tmp_recv4d1(SIZE(recv4d1,1),SIZE(recv4d1,2),&
+        &                  SIZE(recv4d1,3),SIZE(recv4d1,4)), &
+        &      tmp_recv4d2(SIZE(recv4d2,1),SIZE(recv4d2,2),&
+        &                  SIZE(recv4d2,3),SIZE(recv4d2,4)))
+
+      tmp_recv1 = recv1
+      tmp_recv2 = recv2
+      tmp_recv3 = recv3
+      tmp_recv4 = recv4
+      tmp_recv5 = recv5
+      tmp_recv6 = recv6
+      tmp_recv4d1 = recv4d1
+      tmp_recv4d2 = recv4d2
+
+      i = 1
+      nfields = 1
+      ndim2tot = SIZE(recv1, 2)
+      recv1 = tmp_recv1
+      !$ACC DATA COPY(recv1) COPYIN(send1) IF(lzacc)
+      CALL exchange_data_grf(p_pat_coll=p_pat_coll, lacc=lzacc, nfields=nfields, &
+        &                    ndim2tot=ndim2tot, recv1=recv1, send1=send1)
+      !$ACC END DATA
+      IF (ANY(recv1 /= ref_recv1)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_sp", i
+        CALL finish(method_name, message_text)
+      END IF
+
+      i = i + 1
+      nfields = 2
+      ndim2tot = SIZE(recv1, 2) + SIZE(recv2, 2)
+      recv1 = tmp_recv1
+      recv2 = tmp_recv2
+      !$ACC DATA COPY(recv1, recv2) COPYIN(send1, send2) IF(lzacc)
+      CALL exchange_data_grf(p_pat_coll=p_pat_coll, lacc=lzacc, nfields=nfields, &
+        &                    ndim2tot=ndim2tot, recv1=recv1, send1=send1, &
+        &                    recv2=recv2, send2=send2)
+      !$ACC END DATA
+      IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_sp", i
+        CALL finish(method_name, message_text)
+      END IF
+
+      i = i + 1
+      nfields = 3
+      ndim2tot = SIZE(recv1, 2) + SIZE(recv2, 2) + SIZE(recv3, 2)
+      recv1 = tmp_recv1
+      recv2 = tmp_recv2
+      recv3 = tmp_recv3
+      !$ACC DATA COPY(recv1, recv2, recv3) &
+      !$ACC   COPYIN(send1, send2, send3) IF(lzacc)
+      CALL exchange_data_grf(p_pat_coll=p_pat_coll, lacc=lzacc, nfields=nfields, &
+        &                    ndim2tot=ndim2tot, recv1=recv1, send1=send1, &
+        &                    recv2=recv2, send2=send2, recv3=recv3, &
+        &                    send3=send3)
+      !$ACC END DATA
+      IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2) .OR. &
+        & ANY(recv3 /= ref_recv3)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_sp", i
+        CALL finish(method_name, message_text)
+      END IF
+
+      i = i + 1
+      nfields = 4
+      ndim2tot = SIZE(recv1, 2) + SIZE(recv2, 2) + SIZE(recv3, 2) + &
+        &        SIZE(recv4, 2)
+      recv1 = tmp_recv1
+      recv2 = tmp_recv2
+      recv3 = tmp_recv3
+      recv4 = tmp_recv4
+      !$ACC DATA COPY(recv1, recv2, recv3, recv4) &
+      !$ACC   COPYIN(send1, send2, send3, send4) IF(lzacc)
+      CALL exchange_data_grf(p_pat_coll=p_pat_coll, lacc=lzacc, nfields=nfields, &
+        &                    ndim2tot=ndim2tot, recv1=recv1, send1=send1, &
+        &                    recv2=recv2, send2=send2, recv3=recv3, &
+        &                    send3=send3, recv4=recv4, send4=send4)
+      !$ACC END DATA
+      IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2) .OR. &
+        & ANY(recv3 /= ref_recv3) .OR. ANY(recv4 /= ref_recv4)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_sp", i
+        CALL finish(method_name, message_text)
+      END IF
+
+      i = i + 1
+      nfields = 5
+      ndim2tot = SIZE(recv1, 2) + SIZE(recv2, 2) + SIZE(recv3, 2) + &
+        &        SIZE(recv4, 2) + SIZE(recv5, 2)
+      recv1 = tmp_recv1
+      recv2 = tmp_recv2
+      recv3 = tmp_recv3
+      recv4 = tmp_recv4
+      recv5 = tmp_recv5
+      !$ACC DATA COPY(recv1, recv2, recv3, recv4, recv5) &
+      !$ACC   COPYIN(send1, send2, send3, send4, send5) IF(lzacc)
+      CALL exchange_data_grf(p_pat_coll=p_pat_coll, lacc=lzacc, nfields=nfields, &
+        &                    ndim2tot=ndim2tot, recv1=recv1, send1=send1, &
+        &                    recv2=recv2, send2=send2, recv3=recv3, &
+        &                    send3=send3, recv4=recv4, send4=send4, &
+        &                    recv5=recv5, send5=send5)
+      !$ACC END DATA
+      IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2) .OR. &
+        & ANY(recv3 /= ref_recv3) .OR. ANY(recv4 /= ref_recv4) .OR. &
+        & ANY(recv5 /= ref_recv5)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_sp", i
+        CALL finish(method_name, message_text)
+      END IF
+
+      i = i + 1
+      nfields = 6
+      ndim2tot = SIZE(recv1, 2) + SIZE(recv2, 2) + SIZE(recv3, 2) + &
+        &        SIZE(recv4, 2) + SIZE(recv5, 2) + SIZE(recv6, 2)
+      recv1 = tmp_recv1
+      recv2 = tmp_recv2
+      recv3 = tmp_recv3
+      recv4 = tmp_recv4
+      recv5 = tmp_recv5
+      recv6 = tmp_recv6
+      !$ACC DATA COPY(recv1, recv2, recv3, recv4, recv5, recv6) &
+      !$ACC   COPYIN(send1, send2, send3, send4, send5, send6) IF(lzacc)
+      CALL exchange_data_grf(p_pat_coll=p_pat_coll, lacc=lzacc, nfields=nfields, &
+        &                    ndim2tot=ndim2tot, recv1=recv1, send1=send1, &
+        &                    recv2=recv2, send2=send2, recv3=recv3, &
+        &                    send3=send3, recv4=recv4, send4=send4, &
+        &                    recv5=recv5, send5=send5, recv6=recv6, &
+        &                    send6=send6)
+      !$ACC END DATA
+      IF (ANY(recv1 /= ref_recv1) .OR. ANY(recv2 /= ref_recv2) .OR. &
+        & ANY(recv3 /= ref_recv3) .OR. ANY(recv4 /= ref_recv4) .OR. &
+        & ANY(recv5 /= ref_recv5) .OR. ANY(recv6 /= ref_recv6)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_sp", i
+        CALL finish(method_name, message_text)
+      END IF
+
+      i = i + 1
+      nfields = SIZE(recv4d1, 4)
+      ndim2tot = SIZE(recv4d1, 4) * SIZE(recv4d1, 2)
+      recv4d1 = tmp_recv4d1
+      !$ACC DATA COPY(recv4d1) COPYIN(send4d1) IF(lzacc)
+      CALL exchange_data_grf(p_pat_coll=p_pat_coll, lacc=lzacc, nfields=nfields, &
+        &                    ndim2tot=ndim2tot, recv4d1=recv4d1, &
+        &                    send4d1=send4d1)
+      !$ACC END DATA
+      IF (ANY(recv4d1 /= ref_recv4d1)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_sp", i
+        CALL finish(method_name, message_text)
+      END IF
+
+      i = i + 1
+      nfields = 2 * SIZE(recv4d1, 4)
+      ndim2tot = SIZE(recv4d1, 4) * SIZE(recv4d1, 2) + &
+        &        SIZE(recv4d2, 4) * SIZE(recv4d2, 2)
+      recv4d1 = tmp_recv4d1
+      recv4d2 = tmp_recv4d2
+      !$ACC DATA COPY(recv4d1, recv4d2) COPYIN(send4d1, send4d2) IF(lzacc)
+      CALL exchange_data_grf(p_pat_coll=p_pat_coll, lacc=lzacc, nfields=nfields, &
+        &                    ndim2tot=ndim2tot, recv4d1=recv4d1, &
+        &                    send4d1=send4d1, recv4d2=recv4d2, send4d2=send4d2)
+      !$ACC END DATA
+      IF (ANY(recv4d1 /= ref_recv4d1) .OR. ANY(recv4d2 /= ref_recv4d2)) THEN
+        WRITE(message_text,'(a,i0)') "Wrong exchange result grf_sp", i
+        CALL finish(method_name, message_text)
+      END IF
+    END SUBROUTINE check_exchange_grf_sp
 
   END SUBROUTINE exchange_communication_grf_testbed
 
@@ -4106,7 +5493,6 @@ CONTAINS
       INTEGER, INTENT(in) :: line
       REAL(wp), OPTIONAL, INTENT(IN) :: fill_value_w
       INTEGER, OPTIONAL, INTENT(IN) :: fill_value_i
-      INTEGER :: i
 
       CALL exchange_data(in_array=in_array_r_1d, out_array=out_array_r_1d, &
         &                gather_pattern=gather_pattern, fill_value=fill_value_w)
@@ -4161,7 +5547,6 @@ CONTAINS
       INTEGER, INTENT(in) :: line
       REAL(wp), OPTIONAL, INTENT(IN) :: fill_value_w
       INTEGER, OPTIONAL, INTENT(IN) :: fill_value_i
-      INTEGER :: i
 
       CALL exchange_data(in_array=in_array_r_1d, out_array=out_array_r_1d, &
         &                allgather_pattern=allgather_pattern, &
@@ -4238,13 +5623,13 @@ CONTAINS
     ! warm-up
     nfields = 1
     DO i = 1, 16
-      CALL exchange_data(comm_pattern, var1)
+      CALL exchange_data(comm_pattern, lacc=.FALSE., recv=var1)
     END DO
     CALL work_mpi_barrier()
     CALL timer_start(timer_1var)
     ! benchmarking
     DO i = 1, testbed_iterations
-      CALL exchange_data(comm_pattern, var1)
+      CALL exchange_data(comm_pattern, lacc=.FALSE., recv=var1)
     END DO
     CALL work_mpi_barrier()
     CALL timer_stop(timer_1var)
@@ -4491,4 +5876,3 @@ CONTAINS
   END SUBROUTINE
 
 END MODULE mo_test_communication
-

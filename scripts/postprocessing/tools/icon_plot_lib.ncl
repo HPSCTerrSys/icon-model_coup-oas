@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -441,7 +441,7 @@ end
 ; get variable from a certain file
 undef("getVarFromFile")
 function getVarFromFile(varname,filename)
-begin 
+begin
   f = addfile(filename+".nc","r")
   var = f->$varname$
   return var
@@ -470,7 +470,7 @@ begin
 
   signMin  = sign(minVar)
   signMax  = sign(maxVar)
-  if (minVar.eq.0) then 
+  if (minVar.eq.0) then
     logfirst = 0.0
     first = 0.0
   else
@@ -495,7 +495,7 @@ begin
     levels = str_concat((/levels,delimiter,"0"/))
     ;array_append_record_proc(levels,0.0)
     print(levels)
-  end if 
+  end if
   current    = first
   if (current .lt. 0) then
     tics = tics4negative
@@ -1098,7 +1098,7 @@ end
 undef("setBaseString")
 procedure setBaseString(workstation,plot,resource,basestring)
 begin
-  resource@txFontHeightF = 0.01 ; if this is changed, please adjust 
+  resource@txFontHeightF = 0.01 ; if this is changed, please adjust
                                 ; the implementation of getLshiftForNDCString()
   gsn_text_ndc(workstation,basestring,getLshiftForNDCString(basestring),.01,resource)
 end

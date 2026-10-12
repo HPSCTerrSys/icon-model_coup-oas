@@ -1,0 +1,255 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+include:
+  - .gitlab/ci/cscs/remote.yml
+
+.setup_uenv:
+  script:
+    - export UENV_VERSION=$(cat config/cscs/SANTIS_ENV_TAG)
+    - uenv image pull ${UENV_VERSION}
+
+.setup_probtest_container:
+  script:
+    - export EDF_PATH=$(pwd)
+    - PROBTEST_TAG=$(cat $EDF_PATH/run/tolerance/PROBTEST_TAG)
+    - echo "image = 'c2sm/probtest:${PROBTEST_TAG}'" > probtest.toml
+    - echo "mounts = [ \"$(pwd)\" ]" >> probtest.toml
+    - echo "workdir = \"$(pwd)\"" >> probtest.toml
+    - echo "writable = true" >> probtest.toml
+
+.configure_with_uenv:
+  script:
+    - uenv run ${UENV_VERSION} -- ./config/cscs/${CONFIG}
+
+.setup_py_env:
+  script:
+    - export SQFS_PATH=/capstor/store/cscs/userlab/cws01/ci/python_image_icon25.2_v4/py_icon_ci.squashfs
+    - mkdir -p .venv
+
+.check_with_uenv:
+  script:
+    - !reference [.setup_py_env, script]
+    - uenv run ${UENV_VERSION},${SQFS_PATH}:$(pwd)/.venv --view modules,default -- bash -c '
+        source $(pwd)/.venv/bin/activate &&
+        ./check.${EXPERIMENT}.run 2>&1 | tee LOG.check.${EXPERIMENT}.run.o ;
+        exit_code=${PIPESTATUS[0]} ;
+        exit $exit_code'
+
+.run_probtest:
+  script:
+    - !reference [.setup_py_env, script]
+    - uenv run ${UENV_VERSION},${SQFS_PATH}:$(pwd)/.venv --view modules,default -- bash -c '
+        source $(pwd)/.venv/bin/activate &&
+        python3 scripts/cscs_ci/probtest_container_wrapper.py $PROBTEST_TASK $EXPERIMENT'
+
+.santis_create_common:
+  extends: .container-runner-lightweight-zen2
+  image: python:3.9
+  stage: .pre
+  timeout: 15m
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+  before_script:
+    - python3 -m venv .venv
+    - source .venv/bin/activate
+    - pip install pyyaml pandas click
+  script:
+    - |
+      if [ -n "${CSCS_CI_EXPERIMENTS}" ]; then
+        ./.gitlab/ci/cscs/cscs_ci_from_yml --tag ${TAG} --builder ${BUILDER} --experiment "${CSCS_CI_EXPERIMENTS}"
+      else
+        ./.gitlab/ci/cscs/cscs_ci_from_yml --tag ${TAG} --builder ${BUILDER}
+      fi
+  artifacts:
+    paths:
+      - pipeline.yml
+
+.trigger_common:
+  trigger:
+    include:
+      - artifact: pipeline.yml
+        job: create-pipeline
+    strategy: depend
+    forward:
+      pipeline_variables: true
+
+.build_common_santis:
+  extends: .baremetal-runner-santis-gh200
+  stage: build
+  timeout: 3h
+  after_script:
+    - cp build-linux-*/spack-build-out.txt .
+  artifacts:
+    paths:
+    - spack-build-out.txt
+    - config.log
+    - run/**/*
+    - scripts/**/*
+    - make_runscripts
+    - bin/icon
+    - externals/ecrad/data
+    - data/**/*
+    - config/cscs/SANTIS_ENV_TAG
+    when: always
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_SUBMODULE_STRATEGY: recursive
+    CSCS_REWRITE_RELATIVE_SUBMODULES: 'YES'
+    SLURM_TIMELIMIT: '00:45:00'
+    # needed for to pick correct header in collect.set-up.info
+    HOST: santis
+    # ICON configure fails to detect host
+    acx_cv_host_fqdn: santis
+
+.build_santis_cpu_nvhpc:
+  extends: .build_common_santis
+  variables:
+    CONFIG: santis.cpu.nvhpc
+    CSCS_OVERRIDE_BASE_DIR: '/dev/shm'
+  before_script:
+    - !reference [.setup_uenv, script]
+  script:
+    - !reference [.configure_with_uenv, script]
+
+.build_santis_gpu_nvhpc:
+  extends: .build_common_santis
+  variables:
+    CONFIG: santis.gpu.nvhpc
+    CSCS_OVERRIDE_BASE_DIR: '/dev/shm'
+  before_script:
+    - !reference [.setup_uenv, script]
+  script:
+    - !reference [.configure_with_uenv, script]
+
+.run_common_santis:
+  extends: .baremetal-runner-santis-gh200
+  timeout: 2h
+  stage: run
+  dependencies:
+    - Build ICON
+  before_script:
+    - !reference [.setup_probtest_container, script]
+    - !reference [.setup_uenv, script]
+  script:
+    - echo use_builddir=$(pwd) >> run/set-up.info
+    - ./run/make_target_runscript in_script=${CHECK} in_script=exec.iconrun out_script=check.${EXPERIMENT}.run EXPNAME=${EXPERIMENT}
+    - cd run
+    - !reference [.check_with_uenv, script]
+  variables:
+    GIT_STRATEGY: none
+    SLURM_TIMELIMIT: '00:10:00'
+  artifacts:
+    paths:
+      - run/LOG*
+    when: always
+
+.run_ensemble_member_santis:
+  extends: .baremetal-runner-santis-gh200
+  timeout: 1h
+  stage: run
+  dependencies:
+    - Build ICON
+  before_script:
+    - !reference [.setup_probtest_container, script]
+    - !reference [.setup_uenv, script]
+  script:
+    - echo use_builddir=$(pwd) >> run/set-up.info
+    - ./make_runscripts $EXPERIMENT
+    - !reference [.run_probtest, script]
+  variables:
+    GIT_STRATEGY: none
+    PROBTEST_TASK: ensemble-member
+    SLURM_TIMELIMIT: '00:15:00'
+  artifacts:
+    paths:
+    - stats_*.csv
+
+.create_tolerance_santis:
+  extends: .baremetal-runner-santis-gh200
+  timeout: 1h
+  stage: run
+  before_script:
+    - !reference [.setup_probtest_container, script]
+    - !reference [.setup_uenv, script]
+  script:
+    - !reference [.run_probtest, script]
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_SUBMODULE_STRATEGY: none
+    PROBTEST_TASK: tolerance
+    SLURM_TIMELIMIT: '00:15:00'
+  artifacts:
+    paths:
+    - "*_reference.csv"
+    - "*_tolerance.csv"
+
+.select_members_santis:
+  extends: .baremetal-runner-santis-gh200
+  timeout: 1h
+  stage: run
+  before_script:
+    - !reference [.setup_probtest_container, script]
+    - !reference [.setup_uenv, script]
+  script:
+    - echo use_builddir=$(pwd) >> run/set-up.info
+    - !reference [.run_probtest, script]
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_SUBMODULE_STRATEGY: none
+    PROBTEST_TASK: select-members
+    SLURM_TIMELIMIT: '00:30:00'
+  artifacts:
+    paths:
+    - "*_selected_members.csv"
+    - "*_reference.csv"
+    - "*_tolerance.csv"
+    - run/tolerance/pp.collect_selected_members
+
+.collect_tolerance_hashes_santis:
+  extends: .baremetal-runner-santis-gh200
+  timeout: 1h
+  stage: post
+  before_script:
+    - !reference [.setup_uenv, script]
+    - !reference [.setup_py_env, script]
+  script:
+    - echo use_builddir=$(pwd) >> run/set-up.info
+    - export script=pp.collect_tolerance_hashes
+    - ./run/make_target_runscript in_script=tolerance/$script out_script=$script.run
+    - uenv run ${UENV_VERSION},${SQFS_PATH}:$(pwd)/.venv --view modules,default -- bash -c '
+        source $(pwd)/.venv/bin/activate &&
+        ./run/$script.run'
+    - cp run/tolerance/hashes/new/santis_cpu_nvhpc .
+  when: always
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_SUBMODULE_STRATEGY: none
+    SLURM_TIMELIMIT: '00:10:00'
+  artifacts:
+    paths:
+    - santis_cpu_nvhpc
+
+.collect_selected_members_santis:
+  extends: .baremetal-runner-santis-gh200
+  timeout: 1h
+  stage: post
+  script:
+    - echo use_builddir=$(pwd) >> run/set-up.info
+    - script=pp.collect_selected_members
+    - ./run/make_target_runscript in_script=tolerance/$script out_script=$script.run
+    - ./run/$script.run
+  when: always
+  variables:
+    GIT_STRATEGY: none
+    SLURM_TIMELIMIT: '00:10:00'
+  artifacts:
+    paths:
+    - tests.yml

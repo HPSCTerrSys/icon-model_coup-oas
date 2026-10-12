@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -109,6 +109,10 @@ checkpoint="    864000.0 "
 nrest_procs="        1   "
 ofile_prfx="NWP-RST"
 
+# remove output files written after restart because existing output files are opened
+# in append mode in case of a restart (only relevant for manually executed tests)
+rm -f ${ofile_prfx}*.nc
+
 fi
 
 
@@ -150,7 +154,7 @@ num_io_procs_radar=0
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_NWP << EOF
 
@@ -190,7 +194,7 @@ cat > NAMELIST_NWP << EOF
  hdiff_order                 =                          5         ! order of nabla operator for diffusion
  itype_vn_diffu              =                          1         ! reconstruction method used for Smagorinsky diffusion
  itype_t_diffu               =                          2         ! discretization of temperature diffusion
- hdiff_efdt_ratio            =                         36.0       ! ratio of e-folding time to time step 
+ hdiff_efdt_ratio            =                         36.0       ! ratio of e-folding time to time step
  hdiff_smag_fac              =                          0.015     ! scaling factor for Smagorinsky diffusion
  lhdiff_vn                   =                      .TRUE.        ! diffusion on the horizontal wind field
  lhdiff_temp                 =                      .TRUE.        ! diffusion on the temperature field
@@ -266,11 +270,11 @@ cat > NAMELIST_NWP << EOF
 &nwp_phy_nml
  inwp_gscp                   =                          3         ! cloud microphysics and precipitation
  inwp_convection             =                          1         ! convection
- inwp_radiation              =                          1         ! radiation
+ inwp_radiation              =                          4         ! radiation
  inwp_cldcover               =                          3         ! cloud cover scheme for radiation
  inwp_turb                   =                          1         ! vertical diffusion and transfer
  inwp_satad                  =                          1         ! saturation adjustment
- inwp_sso                    =                          2         ! subgrid scale orographic drag
+ inwp_sso                    =                          1         ! subgrid scale orographic drag
  inwp_gwd                    =                          1         ! non-orographic gravity wave drag
  inwp_surface                =                          1         ! surface scheme
  latm_above_top              =              .FALSE.,.TRUE.        ! take into account atmosphere above model top for radiation computation
@@ -289,11 +293,11 @@ cat > NAMELIST_NWP << EOF
  output_filename             =             "${ofile_prfx}"        ! file name base
  output_grid                 =                      .TRUE.        ! flag whether grid information is added to output.
  !
- ml_varlist                  =  'u', 'v', 'w', 'temp', 'pres','topography_c', 'pres_msl', 
-                                'qv', 'qc', 'qi', 'qr', 'qs', 'tke',                      
-                                'tkvm', 'tkvh', 'group:pbl_vars',                         
-                                'group:precip_vars',  'group:additional_precip_vars',     
-                                'group:land_vars', 'group:land_tile_vars',                
+ ml_varlist                  =  'u', 'v', 'w', 'temp', 'pres','topography_c', 'pres_msl',
+                                'qv', 'qc', 'qi', 'qr', 'qs', 'tke',
+                                'tkvm', 'tkvh', 'group:pbl_vars',
+                                'group:precip_vars',  'group:additional_precip_vars',
+                                'group:land_vars', 'group:land_tile_vars',
                                 '-tkr'
 /
 
@@ -331,6 +335,7 @@ cat > NAMELIST_NWP << EOF
  irad_o3                     =                          7         ! ozone climatology
  irad_aero                   =                          6         ! aerosols
  albedo_type                 =                          2         ! type of surface albedo
+ ecrad_data_path             = '${basedir}/externals/ecrad/data'
 /
 
 ! transport_nml: tracer transport ---------------------------------------------
@@ -347,7 +352,7 @@ cat > NAMELIST_NWP << EOF
 &turbdiff_nml
  tkhmin                      =                          0.75      ! scaling factor for minimum vertical diffusion coefficient
  tkmmin                      =                          0.75      ! scaling factor for minimum vertical diffusion coefficient
- pat_len                     =                        100.0       ! 
+ pat_len                     =                        100.0       !
  c_diff                      =                          0.2       !
  rat_sea                     =                          0.8       !
 /

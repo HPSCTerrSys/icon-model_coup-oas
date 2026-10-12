@@ -1,18 +1,18 @@
-! Contains the implementation of the top and bottom ocean boundary conditions
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the implementation of the top and bottom ocean boundary conditions
+
 #include "omp_definitions.inc"
-!----------------------------
+
 MODULE mo_ocean_boundcond
   !-------------------------------------------------------------------------
   USE mo_kind,               ONLY: wp
@@ -39,16 +39,16 @@ MODULE mo_ocean_boundcond
   USE mo_fortran_tools,      ONLY: set_acc_host_or_device
 
   IMPLICIT NONE
-  
+
   PRIVATE
-   
-  
+
+
   PUBLIC :: bot_bound_cond_horz_veloc
   PUBLIC :: top_bound_cond_horz_veloc
   PUBLIC :: VelocityBottomBoundaryCondition_onBlock
   !PUBLIC :: bot_bound_cond_vert_veloc
   !PUBLIC :: top_bound_cond_vert_veloc
-  
+
   PUBLIC :: top_bound_cond_tracer
   PUBLIC :: bot_bound_cond_tracer
 
@@ -97,18 +97,18 @@ CONTAINS
   !! The forcing fluxes are provided by mo_ho_forcing
   !!
   !<Optimize:inUse>
-  SUBROUTINE top_bound_cond_horz_veloc_onEdges( patch_3D, ocean_state, p_op_coeff) 
+  SUBROUTINE top_bound_cond_horz_veloc_onEdges( patch_3D, ocean_state, p_op_coeff)
     !
     TYPE(t_patch_3D ),TARGET, INTENT(IN):: patch_3D
     TYPE(t_hydro_ocean_state), INTENT(inout)   :: ocean_state            ! ocean state variable
     TYPE(t_operator_coeff), INTENT(IN)         :: p_op_coeff
-    
+
     !Local variables
     INTEGER :: je, jb
     INTEGER :: start_index, end_index
     REAL(wp):: z_scale(nproma,patch_3D%p_patch_2D(1)%nblks_e)
     REAL(wp) :: smooth_coeff, u_diff, v_diff
-    TYPE(t_subset_range), POINTER :: all_edges   
+    TYPE(t_subset_range), POINTER :: all_edges
     TYPE(t_patch), POINTER        :: patch_2D
     !CHARACTER(len=max_char_length), PARAMETER :: &
     !& routine = ('mo_ocean_boundcond:top_bound_cond_veloc')
@@ -122,7 +122,7 @@ CONTAINS
       smooth_coeff = MIN(REAL(current_step, wp) / REAL(forcing_smooth_steps, wp), 1.0_wp)
       current_step = current_step + 1
     ENDIF
-    
+
     ! Modification of surface wind forcing according to surface boundary condition
 !ICON_OMP_PARALLEL
     IF(iswm_oce == 1)THEN
@@ -133,7 +133,7 @@ CONTAINS
             z_scale(je,jb) = 1.0_wp / (OceanReferenceDensity*ocean_state%p_diag%thick_e(je,jb))
         ENDDO
       ENDDO
-!ICON_OMP_END_DO 
+!ICON_OMP_END_DO
     ELSEIF(iswm_oce /= 1)THEN
 !ICON_OMP_DO ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_edges%start_block, all_edges%end_block
@@ -174,7 +174,7 @@ CONTAINS
     END SELECT
 !ICON_OMP_END_PARALLEL
 !     CALL map_cell2edges_3D( patch_3D, ocean_state%p_aux%bc_top_veloc_cc,ocean_state%p_aux%bc_top_vn,p_op_coeff,level=1)
-    ! CALL sync_patch_array(SYNC_E, patch_3D%p_patch_2D(1), ocean_state%p_aux%bc_top_vn)
+    ! CALL sync_patch_array(SYNC_E, patch_3D%p_patch_2D(1), ocean_state%p_aux%bc_top_vn, lacc=.FALSE.)
 
     !---------Debug Diagnostics-------------------------------------------
 !     idt_src=2  ! output print level (1-5, fix)
@@ -183,7 +183,7 @@ CONTAINS
     idt_src=3  ! output print level (1-5, fix)
     CALL dbg_print('top bound.cond. vn',ocean_state%p_aux%bc_top_vn,str_module,idt_src, in_subset=patch_2D%edges%owned)
     !---------------------------------------------------------------------
-    
+
   END SUBROUTINE top_bound_cond_horz_veloc_onEdges
   !-------------------------------------------------------------------------
 
@@ -385,7 +385,7 @@ CONTAINS
 
     CALL map_cell2edges_3D( patch_3D, ocean_state%p_aux%bc_top_veloc_cc,ocean_state%p_aux%bc_top_vn, &
       p_op_coeff,level=1,lacc=lzacc)
-    ! CALL sync_patch_array(SYNC_E, patch_3D%p_patch_2D(1), ocean_state%p_aux%bc_top_vn)
+    ! CALL sync_patch_array(SYNC_E, patch_3D%p_patch_2D(1), ocean_state%p_aux%bc_top_vn, lacc=lzacc)
 
     !---------Debug Diagnostics-------------------------------------------
     idt_src=2  ! output print level (1-5, fix)
@@ -404,7 +404,7 @@ CONTAINS
     & blockNo, start_edge_index, end_edge_index, &
     & vn_old, vn_pred, &
     & bc_bot_vn, lacc)
-      
+
     TYPE(t_patch_3D ),TARGET, INTENT(IN)     :: patch_3D
     INTEGER, INTENT(in)                      :: blockNo, start_edge_index, end_edge_index
     REAL(wp)                                 :: vn_old(:,:), vn_pred(:,:)
@@ -454,7 +454,7 @@ CONTAINS
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je = start_edge_index, end_edge_index
         bottom_level =  patch_3D%p_patch_1D(1)%dolic_e(je,blockNo)
-        IF ( bottom_level > 0 ) THEN  ! wet points only	
+        IF ( bottom_level > 0 ) THEN  ! wet points only
           !vn    = vn_pred(je,bottom_level)!
           vn    = vn_old(je,bottom_level)
           norm  = SQRT(vn * vn)
@@ -496,7 +496,7 @@ CONTAINS
     TYPE(t_ho_params), INTENT(in)            :: physics_parameters    ! physical parameters
     TYPE(t_operator_coeff), INTENT(IN)       :: p_op_coeff
     !REAL(wp), INTENT(in)                     :: div_coeff(:,:,:,:)
-    
+
     ! Local variables
     INTEGER :: start_index, end_index, bottom_level, jb, je
     REAL(wp) :: norm, vn
@@ -530,7 +530,7 @@ CONTAINS
 !       END DO
 
     CASE(1)!Bottom friction
- 
+
 !ICON_OMP_DO PRIVATE(start_index, end_index, je, bottom_level, vn, norm) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_edges%start_block, all_edges%end_block
         CALL get_index_range(all_edges, jb, start_index, end_index)
@@ -554,7 +554,7 @@ CONTAINS
 !             z_norm  = SQRT(2.0_wp * ocean_state%p_diag%kin(jc,bottom_level,jb))
 !             ocean_state%p_aux%bc_bot_veloc_cc(jc,jb)%x = &
 !               & physics_parameters%bottom_drag_coeff * z_norm * ocean_state%p_diag%p_vn(jc,bottom_level,jb)%x
-! 
+!
 !           END IF
 !         END DO
 !       END DO
@@ -562,50 +562,50 @@ CONTAINS
     CASE(2) !Bottom friction and topographic slope
       CALL message (TRIM(routine), &
         & 'TOPOGRAPHY_SLOPE bottom velocity boundary conditions not implemented yet')
-      CALL finish (TRIM(routine), 'TOPOGRAPHY_SLOPE bottom velocity boundary conditions not implemented yet') 
+      CALL finish (TRIM(routine), 'TOPOGRAPHY_SLOPE bottom velocity boundary conditions not implemented yet')
 ! !       DO jb = all_cells%start_block, all_cells%end_block
 ! !         CALL get_index_range(all_cells, jb, start_index, end_index)
 ! !         DO jc = start_index, end_index
-! !           
+! !
 ! !           !bottom_level = v_base%dolic_c(jc,jb)
 ! !           bottom_level = patch_3D%p_patch_1D(1)%dolic_c(jc,jb)
 ! !           IF ( bottom_level >= min_dolic ) THEN  ! wet points only
-! !             
+! !
 ! !             z_norm  = SQRT(2.0_wp*ocean_state%p_diag%kin(jc,bottom_level,jb))
-! !             
+! !
 ! !             ocean_state%p_aux%bc_bot_veloc_cc(jc,jb)%x =&
 ! !               & physics_parameters%bottom_drag_coeff*z_norm*ocean_state%p_diag%p_vn(jc,bottom_level,jb)%x
-! !             
+! !
 ! !             !Only for RBF relevant: there should be an if, PK
 ! !             ocean_state%p_aux%bc_bot_u(jc,jb)=&
 ! !               & physics_parameters%bottom_drag_coeff*z_norm*ocean_state%p_diag%u(jc,bottom_level,jb)
 ! !             ocean_state%p_aux%bc_bot_v(jc,jb)=&
 ! !               & physics_parameters%bottom_drag_coeff*z_norm*ocean_state%p_diag%v(jc,bottom_level,jb)
-! !             
+! !
 ! !           END IF
 ! !         END DO
 ! !       END DO
-! !       
+! !
 ! !       !z_depth(:,1,:)=ocean_state%p_diag%thick_e
 ! !       z_depth(:,1,:)=patch_3D%p_patch_1D(1)%prism_thick_flat_sfc_e(:,1,:)
 ! !       CALL div_oce_3d( z_depth, patch_2D, p_op_coeff%div_coeff, z_div_depth, opt_slev=1,opt_elev=1 )
-! ! 
-! !       
+! !
+! !
 ! !       ! LL: the whole loop seems to be doing nothing,
 ! !       !     no sync
 ! !       DO jb = edges_in_domain%start_block, edges_in_domain%end_block
 ! !         CALL get_index_range(edges_in_domain, jb, i_startidx_e, i_endidx_e)
 ! !         DO je = i_startidx_e, i_endidx_e
-! !           
+! !
 ! !           !Get indices of two adjacent triangles
 ! !           il_c1 = patch_2D%edges%cell_idx(je,jb,1)
 ! !           ib_c1 = patch_2D%edges%cell_blk(je,jb,1)
 ! !           il_c2 = patch_2D%edges%cell_idx(je,jb,2)
 ! !           ib_c2 = patch_2D%edges%cell_blk(je,jb,2)
-! !           
+! !
 ! !           !z_dolic_c1 = v_base%dolic_c(il_c1,ib_c1)
 ! !           !z_dolic_c2 = v_base%dolic_c(il_c2,ib_c2)
-! ! 
+! !
 ! !           z_dolic_c1 = patch_3D%p_patch_1D(1)%dolic_c(il_c1,ib_c1)
 ! !           z_dolic_c2 = patch_3D%p_patch_1D(1)%dolic_c(il_c2,ib_c2)
 ! !           ! LL: this is not used
@@ -616,19 +616,19 @@ CONTAINS
 ! !           ELSE
 ! !             z_grad_u(je,1,jb)%x = 0.0_wp
 ! !           ENDIF
-! ! 
+! !
 ! !           ! LL: this is not used
 ! !           z_e(je,1,jb) = &
 ! !             & DOT_PRODUCT(patch_2D%edges%primal_cart_normal(je,jb)%x,z_grad_u(je,1,jb)%x)
-! !           
+! !
 ! !         END DO
 ! !       END DO
-! !       
+! !
 ! !       CALL map_cell2edges_2d(patch_3D, ocean_state%p_aux%bc_bot_veloc_cc, ocean_state%p_aux%bc_bot_vn,p_op_coeff)
-! !       CALL sync_patch_array(SYNC_E, patch_2D, ocean_state%p_aux%bc_bot_v)
-! !       
+! !       CALL sync_patch_array(SYNC_E, patch_2D, ocean_state%p_aux%bc_bot_v, lacc=.FALSE.)
+! !
 ! !       !ocean_state%p_aux%bc_bot_vn(:,:) = ocean_state%p_aux%bc_bot_vn(:,:) - z_e(:,1,:)
-! !       
+! !
     CASE default
       CALL message (TRIM(routine),'choosen wrong bottom velocity boundary conditions')
     END SELECT
@@ -640,10 +640,10 @@ CONTAINS
     CALL dbg_print('bot bound.cond. vn'          ,ocean_state%p_aux%bc_bot_vn     ,str_module,idt_src, &
       in_subset=patch_2D%edges%owned)
     !---------------------------------------------------------------------
-    
+
   END SUBROUTINE bot_bound_cond_horz_veloc
   !-------------------------------------------------------------------------
-  
+
 ! !   !-------------------------------------------------------------------------
 ! !   !>
 ! !   !! Computes bottom boundary condition for vertical velocity.
@@ -673,28 +673,28 @@ CONTAINS
 ! !     INTEGER, DIMENSION(:,:),  POINTER :: p_dolic
 ! !     REAL(wp), DIMENSION(:,:,:),   POINTER :: p_bathy
 ! !     TYPE(t_cartesian_coordinates) :: z_grad_h_cc(nproma,1,patch_2D%alloc_cell_blocks)
-! ! 
-! !     TYPE(t_subset_range), POINTER :: edges_in_domain, all_cells    
+! !
+! !     TYPE(t_subset_range), POINTER :: edges_in_domain, all_cells
 ! !     !-----------------------------------------------------------------------
 ! !     edges_in_domain => patch_2D%edges%in_domain
 ! !     all_cells => patch_2D%cells%all
-! !         
+! !
 ! !     bot_bc_w(:,:) = 0.0_wp
 ! !     z_grad_h_cc(nproma,1,patch_2D%alloc_cell_blocks)%x = 0.0_wp
-! !     
+! !
 ! !     iidx      => patch_2D%edges%cell_idx
 ! !     iblk      => patch_2D%edges%cell_blk
 ! !     !p_bathy   => v_base%zlev_m
 ! !     !p_dolic   => v_base%dolic_c
-! !   
+! !
 ! !     p_bathy   => patch_3D%p_patch_1D(1)%prism_thick_flat_sfc_c
 ! !     p_dolic   => patch_3D%p_patch_1D(1)%dolic_c
-! ! 
+! !
 ! !     !----------------------------------------
 ! !     DO jb = edges_in_domain%start_block, edges_in_domain%end_block
 ! !       CALL get_index_range(edges_in_domain, jb, i_startidx_e, i_endidx_e)
 ! !       DO je = i_startidx_e, i_endidx_e
-! !       
+! !
 ! !         !i_dolic = v_base%dolic_e(je,jb)
 ! !         i_dolic =patch_3D%p_patch_1D(1)%dolic_e(je,jb)
 ! !         !IF ( v_base%lsm_e(je,i_dolic,jb) <= sea ) THEN
@@ -706,12 +706,12 @@ CONTAINS
 ! !         ELSE
 ! !           z_grad_h(je,1,jb) =  0.0_wp
 ! !         ENDIF
-! !         
+! !
 ! !       ENDDO
 ! !     END DO
-! !     CALL sync_patch_array(SYNC_E, patch_2D, z_grad_h(:,:,:))
+! !     CALL sync_patch_array(SYNC_E, patch_2D, z_grad_h(:,:,:), lacc=.FALSE.)
 ! !     !----------------------------------------
-! !     
+! !
 ! !     !----------------------------------------
 ! ! !     CALL map_edges2cell( patch_2D, &
 ! ! !       & z_grad_h,&
@@ -722,7 +722,7 @@ CONTAINS
 ! ! !       & z_grad_h_cc,&
 ! ! !       & opt_slev=1, opt_elev=1)
 ! !     !----------------------------------------
-! !     
+! !
 ! !     DO jb = all_cells%start_block, all_cells%end_block
 ! !       CALL get_index_range(all_cells, jb, start_index, end_index)
 ! !       DO jc = start_index, end_index
@@ -731,10 +731,10 @@ CONTAINS
 ! !           & ocean_state%p_diag%p_vn(jc,1,jb)%x)
 ! !       END DO
 ! !     END DO
-! !     
+! !
 ! !   END SUBROUTINE bot_bound_cond_vert_veloc
 ! !   !-------------------------------------------------------------------------
-! !   
+! !
 ! !   !-------------------------------------------------------------------------
 ! !   !>
 ! !   !! Computes top boundary condition for vertical velocity.
@@ -751,7 +751,7 @@ CONTAINS
 ! !     REAL(wp), INTENT(inout)           :: top_bc_w(nproma,patch_2D%alloc_cell_blocks)
 ! !     INTEGER                           :: timestep
 ! !     !TYPE(t_int_state),TARGET,INTENT(in), OPTIONAL :: p_int
-! !     
+! !
 ! !     ! Local variables
 ! !     INTEGER :: jb, jc
 ! !     INTEGER :: i_startblk, i_endblk, i_startidx, i_endidx
@@ -768,10 +768,10 @@ CONTAINS
 ! !     rl_end = min_rlcell
 ! !     i_startblk = patch_2D%cells%start_blk(rl_start,1)
 ! !     i_endblk   = patch_2D%cells%end_blk(rl_end,1)
-! !     
+! !
 ! !     top_bc_w(:,:) = 0.0_wp
 ! !  !  z_grad_h_cc_vec(nproma,1,patch_2D%alloc_cell_blocks)%x(:) = 0.0_wp
-! !     
+! !
 ! !     DO jb = i_startblk, i_endblk
 ! !       CALL get_indices_c(patch_2D, jb, i_startblk, i_endblk,&
 ! !         & i_startidx, i_endidx, rl_start, rl_end)
@@ -779,7 +779,7 @@ CONTAINS
 ! !         z_grad_h_cc_vec(nproma,1,patch_2D%alloc_cell_blocks)%x(:) = 0.0_wp
 ! !       END DO
 ! !     END DO
-! !     
+! !
 ! !     !calculate normal derivative of new height field
 ! !     !CALL grad_fd_norm_oce_2d(ocean_state%p_prog(nnew(1))%h, &
 ! !     !  & patch_2D,                 &
@@ -792,24 +792,24 @@ CONTAINS
 ! ! !          &                  p_patch_horz,                  &
 ! ! !          &                  p_op_coeff%grad_coeff(:,1,:),  &
 ! ! !          &                  z_gradh_e(:,1,:))
-! !     CALL sync_patch_array(SYNC_E, patch_2D, z_grad_h(:,1,:))
-! !     
+! !     CALL sync_patch_array(SYNC_E, patch_2D, z_grad_h(:,1,:), lacc=.FALSE.)
+! !
 ! !     IF(discretization_scheme==1)THEN
 ! ! !       CALL map_edges2cell( patch_2D,        &
 ! ! !         & z_grad_h,       &
 ! ! !         & z_grad_h_cc_vec,&
 ! ! !       !                         & ocean_state%p_diag%h_e,&
 ! ! !         & opt_slev=1,opt_elev=1 )
-! !       
+! !
 ! ! ! !     ELSEIF(discretization_scheme==2)THEN
-! ! ! !       
+! ! ! !
 ! ! ! !       CALL rbf_vec_interpol_cell( z_grad_h,&
 ! ! ! !         & patch_2D,    &
 ! ! ! !         & p_int,      &
 ! ! ! !         & grad_h_u,   &
 ! ! ! !         & grad_h_v,   &
 ! ! ! !         & opt_slev=1, opt_elev=1)
-! ! ! !       
+! ! ! !
 ! ! ! !       DO jb = i_startblk, i_endblk
 ! ! ! !         CALL get_indices_c(patch_2D, jb, i_startblk, i_endblk, i_startidx, i_endidx, &
 ! ! ! !           & rl_start, rl_end)
@@ -828,7 +828,7 @@ CONTAINS
 ! ! ! !         END DO
 ! ! ! !       END DO
 ! !     ENDIF
-! !     
+! !
 ! !     !CALL message (TRIM(routine),'ZERO bottom velocity boundary conditions chosen')
 ! !     IF(timestep>1)THEN
 ! !       DO jb = i_startblk, i_endblk
@@ -838,7 +838,7 @@ CONTAINS
 ! !           !calulate  Pu dot P (nabla h), this corresponds to continuous top boundary condition u dot nabla h
 ! !           !z_h_u(jc,1,jb)*z_u_v(jc,1,jb) + z_h_v(jc,1,jb)*z_v_v(jc,1,jb)
 ! !           z_u_times_gradh_c = DOT_PRODUCT(z_grad_h_cc_vec(jc,1,jb)%x,ocean_state%p_diag%p_vn(jc,1,jb)%x)
-! !           
+! !
 ! !           top_bc_w(jc,jb) = (ocean_state%p_prog(nnew(1))%h(jc,jb) - ocean_state%p_prog(nold(1))%h(jc,jb))/dtime&
 ! !             & + z_u_times_gradh_c
 ! !           !write(*,*)'top bc W:',jc,jb,ocean_state%p_diag%p_vn(jc,1,jb)%x
@@ -853,15 +853,15 @@ CONTAINS
 ! !         DO jc = i_startidx, i_endidx
 ! !           !calulate  Pu dot P (nabla h), this corresponds to continuous top boundary condition u dot nabla h
 ! !           !z_h_u(jc,1,jb)*z_u_v(jc,1,jb) + z_h_v(jc,1,jb)*z_v_v(jc,1,jb)
-! !           
+! !
 ! !           top_bc_w(jc,jb) = DOT_PRODUCT(z_grad_h_cc_vec(jc,1,jb)%x,ocean_state%p_diag%p_vn(jc,1,jb)%x)
-! !           
+! !
 ! !           !write(*,*)'top bc W:',jc,jb,top_bc_w(jc,jb)!ocean_state%p_diag%p_vn(jc,1,jb)%x
 ! !           !ocean_state%p_prog(nnew(1))%h(jc,jb), ocean_state%p_prog(nold(1))%h(jc,jb),&
 ! !           !          & z_u_times_gradh_c p_diag%p_vn(jc,1,jb)%x
 ! !         END DO
 ! !       END DO
-! !       
+! !
 ! !     ENDIF
 ! !   END SUBROUTINE top_bound_cond_vert_veloc
 ! !   !-------------------------------------------------------------------------
@@ -874,7 +874,7 @@ CONTAINS
   !!
 !<Optimize:inUse>
   SUBROUTINE top_bound_cond_tracer( patch_2D, pstate_oce, tracer_id, p_oce_sfc, top_bc_tracer)
-    
+
     TYPE(t_patch)    , TARGET, INTENT(in) :: patch_2D             ! patch on which computation is performed
     TYPE(t_hydro_ocean_state), INTENT(in) :: pstate_oce          ! ocean state variable
     INTEGER, INTENT(in)                   :: tracer_id
@@ -886,12 +886,12 @@ CONTAINS
     INTEGER :: start_index, end_index
 
     TYPE(t_subset_range), POINTER :: all_cells
-    
+
     ! CHARACTER(len=max_char_length), PARAMETER :: &
     !        & routine = ('mo_ocean_boundcond:top_bound_cond_tracer')
     !-----------------------------------------------------------------------
     all_cells => patch_2D%cells%all
-    
+
     IF (tracer_id == 1) THEN
 !ICON_OMP_PARALLEL_DO  PRIVATE(start_index, end_index, jc) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
@@ -914,7 +914,7 @@ CONTAINS
       END DO
 !ICON_OMP_END_PARALLEL_DO
     ELSE
-    
+
     !default is here a homogeneous boundary condition: thisis subject to change.
 !ICON_OMP_PARALLEL_DO  PRIVATE(start_index, end_index, jc) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
@@ -923,7 +923,7 @@ CONTAINS
           top_bc_tracer(jc,jb, tracer_id) = 0.0_wp!p_oce_sfc%TopBC_Temp_vdiff(jc,jb)
         END DO
       END DO
-!ICON_OMP_END_PARALLEL_DO    
+!ICON_OMP_END_PARALLEL_DO
       !CALL finish("top_bound_cond_tracer", "unknown boundary condition for tracer_id>2")
     END IF
 
@@ -931,7 +931,7 @@ CONTAINS
     idt_src=2  ! output print level (1-5, fix)
     CALL dbg_print('top bound.cond.tracer' ,top_bc_tracer(:,:,tracer_id), str_module, idt_src, in_subset=patch_2D%cells%owned)
     !---------------------------------------------------------------------
-    
+
   END SUBROUTINE top_bound_cond_tracer
   !-------------------------------------------------------------------------
 
@@ -943,19 +943,19 @@ CONTAINS
   !!  mpi parallelized LL (no sync required)
   !!
   SUBROUTINE bot_bound_cond_tracer( patch_2D, pstate_oce, tracer_id, bot_bc_tracer)
-    
+
     TYPE(t_patch)    , TARGET, INTENT(in) :: patch_2D              ! patch on which computation is performed
     TYPE(t_hydro_ocean_state), INTENT(in) :: pstate_oce           ! ocean state variable
     INTEGER, INTENT(in)                   :: tracer_id
     REAL(wp), INTENT(inout)                 :: bot_bc_tracer(:,:,:) !Bottom boundary condition at cells for all tracers
-    
+
     !Local variables
     INTEGER :: jc, jb
     INTEGER :: start_index, end_index
     TYPE(t_subset_range), POINTER :: all_cells
     !-----------------------------------------------------------------------
     all_cells => patch_2D%cells%all
-    
+
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, start_index, end_index)
       DO jc = start_index, end_index
@@ -964,5 +964,5 @@ CONTAINS
     END DO
   END SUBROUTINE bot_bound_cond_tracer
   !-------------------------------------------------------------------------
-  
+
 END MODULE mo_ocean_boundcond

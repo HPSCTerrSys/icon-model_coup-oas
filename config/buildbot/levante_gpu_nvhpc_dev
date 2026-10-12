@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+set -eu
+
+unset CDPATH
+script_dir=$(cd "$(dirname "$0")"; pwd)
+icon_dir=$(cd "${script_dir}/../.."; pwd)
+
+if test -n "${BB_NAME-}"; then
+  job_count=${SLURM_NTASKS:-22}
+  set MPI_LAUNCH='srun --exclusive'
+else
+  job_count=8
+  # Do not override arguments set in the wrapper:
+  set dummy; shift
+fi
+
+unset MAKEFLAGS
+makeflags="--jobs=${job_count} --no-print-directory --output-sync=target V=1"
+
+set -x
+
+${icon_dir}/config/dkrz/levante.gpu.nvhpc-24.11 --disable-openmp --enable-ecrad "$@"
+
+make ${makeflags}

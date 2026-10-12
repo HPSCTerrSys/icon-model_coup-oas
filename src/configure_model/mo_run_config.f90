@@ -1,18 +1,18 @@
-! Data type containing basic control variables for a model integration.
-!
-! Note that in a coupled simulation, each model component (e.g.,
-! atmosphere, ocean) will have its own run-configuration.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Data type containing basic control variables for a model integration.
+!
+! Note that in a coupled simulation, each model component (e.g.,
+! atmosphere, ocean) will have its own run-configuration.
 
 MODULE mo_run_config
 
@@ -22,7 +22,7 @@ MODULE mo_run_config
                                IMPIOM, INOFORCING, ILDF_DRY, MAX_CHAR_LENGTH,  &
                                TIMER_MODE_AGGREGATED, TIMER_MODE_DETAILED
   USE mtime,             ONLY: MAX_TIMEDELTA_STR_LEN
-  
+
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: ltestcase, ldynamics, iforcing, lforcing, logmaxrss, logmaxrss_all
@@ -37,9 +37,12 @@ MODULE mo_run_config
   PUBLIC :: loascplscheme_exchcoef
 #endif
   PUBLIC :: ltimer, timers_level, activate_sync_timers, msg_level
+  PUBLIC :: lmemman
   PUBLIC :: iqv, iqc, iqi, iqs, iqr, nqtendphy, iqt, ico2, ich4, in2o, io3
   PUBLIC :: iqni, iqg, iqm_max
-  PUBLIC :: iqh, iqnh, iqnr, iqns, iqng, iqnc, inccn, ininpot, ininact, iqgl, iqhl, iqbin, iqb_i, iqb_e, iqb_s
+  PUBLIC :: iqh, iqnh, iqnr, iqns, iqng, iqnc, inccn, ininpot, ininact, iqgl, iqhl
+  PUBLIC :: iqb_water_start, iqb_water_end, iqb_snow_start, iqb_snow_end
+  PUBLIC :: iqb_graupel_start, iqb_graupel_end, iqb_ccn_start, iqb_ccn_end, iqb_length, iqb_last, iqbin
   PUBLIC :: iqtke
   PUBLIC :: grid_generatingCenter     ! non-namelist variables
   PUBLIC :: grid_generatingSubcenter  ! non-namelist variables
@@ -53,6 +56,8 @@ MODULE mo_run_config
   PUBLIC :: profiling_output, TIMER_MODE_AGGREGATED, TIMER_MODE_DETAILED
   PUBLIC :: check_uuid_gracefully
   PUBLIC :: modelTimeStep
+  PUBLIC :: l_disable_print_gpu_mem
+  PUBLIC :: lmsgwam
 
     ! Namelist variables
     !
@@ -71,7 +76,7 @@ MODULE mo_run_config
 
     LOGICAL :: lvert_nest         !< switch for vertical nesting
     INTEGER :: num_lev  (MAX_DOM) !< number of full levels for each domain
-    INTEGER :: nshift   (MAX_DOM) !< half level of parent domain which coincides 
+    INTEGER :: nshift   (MAX_DOM) !< half level of parent domain which coincides
                                   !< with the upper boundary of the current domain jg
 
     INTEGER :: nsteps          !< number of time steps to integrate
@@ -80,14 +85,14 @@ MODULE mo_run_config
     INTEGER :: jstep0          !< restart time step
     LOGICAL :: loascplscheme_exchcoef !< use exchange-coefficient (vs. direct-flux) OASIS/eCLM coupling scheme
 #endif
-    
+
     LOGICAL :: ltimer          !< if .TRUE.,  the timer is switched on
     INTEGER :: timers_level    !< what level of timers to run
     LOGICAL :: activate_sync_timers
     INTEGER :: profiling_output = TIMER_MODE_AGGREGATED  !< switch defining the kind of timer output
 
     LOGICAL :: check_uuid_gracefully !< Flag. If .TRUE. then we give only warnings for non-matching UUIDs
-  
+
     INTEGER :: test_mode = 0   !< 0= run the model, /=0 run in test mode
     INTEGER :: debug_check_level = 10  ! Define debug checks level. This is not related to the debug output in
                                       ! mo_dbg_nml, it only controls the activation of internal checks
@@ -96,7 +101,9 @@ MODULE mo_run_config
     LOGICAL :: logmaxrss
     LOGICAL :: logmaxrss_all
 
- 
+    LOGICAL :: lmemman = .FALSE. !< switch for using memory manager; will later be enabled if needed
+    LOGICAL :: lmsgwam(MAX_DOM)  !< logical switch for MS-GWaM (instead of default GWD scheme)
+
     !> output mode (string)
     !  one or multiple of "none", "nml", "totint", "maxwinds"
     INTEGER, PARAMETER :: max_output_modes = 5
@@ -104,12 +111,12 @@ MODULE mo_run_config
 
     ! Non-Namelist variables
     ! These are read from the grid file in mo_model_domimp_patches/read_basic_patch
-    ! 
+    !
     INTEGER :: grid_generatingCenter   (0:MAX_DOM)      !< patch generating center
     INTEGER :: grid_generatingSubcenter(0:MAX_DOM)      !< patch generating subcenter
     INTEGER :: number_of_grid_used     (0:MAX_DOM)      !< Number of grid used (GRIB2 key)
     CHARACTER(len=MAX_CHAR_LENGTH) :: ICON_grid_file_uri(0:MAX_DOM)
-    
+
 
     ! Derived variables
     !
@@ -122,7 +129,7 @@ MODULE mo_run_config
     INTEGER :: iqs       = 0  !< snow
     INTEGER :: nqtendphy = 0  !< number of water species for which physical tendencies are stored
     INTEGER :: iqm_max   = 0  !< highest tracer index carrying a mass-related moisture variable
-  
+
     !For 2 moment microphysics
     INTEGER :: iqh       = 0  !<hail
     INTEGER :: iqnh      = 0  !<hail number
@@ -138,10 +145,17 @@ MODULE mo_run_config
     INTEGER :: iqhl      = 0  !<liquid on hail
 
     !For SBM microphysics
-    INTEGER :: iqb_s     = 33
-    INTEGER :: iqb_i     = 1
-    INTEGER :: iqb_e     = 66
-    INTEGER :: iqbin(1:66)= 0  ! water mass of bins
+    INTEGER :: iqb_water_start   = 1   !< first mass-bin of water PSD
+    INTEGER :: iqb_water_end     = 33  !< last mass-bin of water PSD
+    INTEGER :: iqb_snow_start    = 34  !< first mass-bin of snow PSD
+    INTEGER :: iqb_snow_end      = 66  !< last mass-bin of snow PSD
+    INTEGER :: iqb_graupel_start = 67  !< first mass-bin of graupel or hail PSD
+    INTEGER :: iqb_graupel_end   = 99  !< last mass-bin of graupel or hail PSD
+    INTEGER :: iqb_ccn_start     = 100 !< first mass-bin of CCN PSD
+    INTEGER :: iqb_ccn_end       = 132 !< last mass-bin of CCN PSD
+    INTEGER :: iqb_length        = 33  !< number of mass-bins in each PSD
+    INTEGER :: iqb_last          = 132 !< total number of mass-bins
+    INTEGER :: iqbin(1:132)      = 0   !< indeces of mass-bins tracers
 
     ! For TKE advection
     INTEGER :: iqtke     = 0  !< turbulent kinetic energy
@@ -175,19 +189,21 @@ MODULE mo_run_config
     !> namelist parameter (as raw character string):
     CHARACTER(len=max_timedelta_str_len) :: modelTimeStep
 
+    !> namelist parameter to disable printing of GPU memory usage
+    LOGICAL :: l_disable_print_gpu_mem
+
 CONTAINS
   !>
   !!
   !! Assign value to components of the run configuration state that have no
   !! corresponding namelist variable.
   !!
-  !! Exceptions: grid_generatingCenter, grid_generatingSubcenter, number_of_grid_used 
-  !!             and ICON_grid_file_uri are set in mo_model_domimp_patches/read_basic_patch 
+  !! Exceptions: grid_generatingCenter, grid_generatingSubcenter, number_of_grid_used
+  !!             and ICON_grid_file_uri are set in mo_model_domimp_patches/read_basic_patch
   !!
   SUBROUTINE configure_run( )
 
     CHARACTER(LEN=*),PARAMETER :: routine = 'mo_run_config:configure_run'
-    
 
     !----------------------------
     ! Number of vertical levels
@@ -218,45 +234,43 @@ CONTAINS
   END SUBROUTINE configure_run
   !-------------------------------------------------------------
 
- 
+
 !  !---------------------------------------
 !  !>
 !  LOGICAL FUNCTION get_ltestcase()
-!    get_ltestcase = ltestcase 
+!    get_ltestcase = ltestcase
 !  END FUNCTION get_ltestcase
 !  !---------------------------------------
 !  !>
 !  LOGICAL FUNCTION get_ldynamics()
-!    get_ldynamics = ldynamics 
+!    get_ldynamics = ldynamics
 !  END FUNCTION get_ldynamics
 !  !---------------------------------------
 !  !>
 !  LOGICAL FUNCTION get_ltransport()
-!    get_ltransport = ltransport 
+!    get_ltransport = ltransport
 !  END FUNCTION get_ltransport
 !  !---------------------------------------
 !  !>
 !  INTEGER FUNCTION get_ntracer()
-!    get_ntracer = ntracer 
+!    get_ntracer = ntracer
 !  END FUNCTION get_ntracer
 !  !---------------------------------------
 !  !>
 !  INTEGER FUNCTION get_iforcing()
-!    get_iforcing = iforcing 
+!    get_iforcing = iforcing
 !  END FUNCTION get_iforcing
 !  !---------------------------------------
 !  !>
 !  REAL(wp) FUNCTION get_dtime()
-!    get_dtime = dtime 
+!    get_dtime = dtime
 !  END FUNCTION get_dtime
 !  !---------------------------------------
 !  !>
 !  INTEGER FUNCTION get_nsteps()
-!    get_nsteps = nsteps 
+!    get_nsteps = nsteps
 !  END FUNCTION get_nsteps
 !  !---------------------------------------
 !
 
 END MODULE mo_run_config
-
-

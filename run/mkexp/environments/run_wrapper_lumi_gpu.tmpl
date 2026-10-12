@@ -1,0 +1,44 @@
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#%#-
+#-----------------------------------------------------------------------------
+# Binding mpi procs to numa domains, with one GPU per numa domain as per
+# topology diagram of MI250x (https://docs.lumi-supercomputer.eu/hardware/lumig/)
+#
+# $Id: run/mkexp/environments/run_wrapper_lumi_gpu.tmpl 1 2025-08-01 12:25:03Z k202204 $
+#
+rm -f run_model.sh
+
+cat > run_model.sh << EOF
+#! /usr/bin/bash
+
+lrank=\$SLURM_LOCALID%8
+
+numanode=(3 3 1 1 0 0 2 2)
+gpus=(0 1 2 3 4 5 6 7)
+reorder=(0 1 2 3 4 5 6 7)
+
+numanode_reorder=(\${numanode[\${reorder[0]}]}
+                  \${numanode[\${reorder[1]}]}
+                  \${numanode[\${reorder[2]}]}
+                  \${numanode[\${reorder[3]}]}
+                  \${numanode[\${reorder[4]}]}
+                  \${numanode[\${reorder[5]}]}
+                  \${numanode[\${reorder[6]}]}
+                  \${numanode[\${reorder[7]}]})
+
+export ROCR_VISIBLE_DEVICES=\${gpus[\${reorder[lrank]}]}
+numactl --cpunodebind=\${numanode_reorder[\$lrank]} --membind=\${numanode_reorder[\$lrank]} ${MODEL}
+
+EOF
+
+chmod 755 ./run_model.sh
+#-----------------------------------------------------------------------------

@@ -1,0 +1,53 @@
+#%# -*- mode: sh -*-
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# Setup for LUMI (SLURM)
+#
+# $Id: run/mkexp/environments/lumi.tmpl 2 2026-04-01 13:33:26Z m221078 $
+#
+#SBATCH --job-name=%{EXP_ID}.run
+#% if calling_from_run is defined
+#SBATCH --account=%{JOB.account|d(ACCOUNT)}
+#SBATCH --output=%{LOG_DIR}/%{EXP_ID}.run.%8j.log
+#% if JOB.qos is defined:
+#SBATCH --qos=%{JOB.qos}
+#% endif
+#SBATCH --nodes=%{JOB.nodes}
+#% if JOB.use_gpus is set:
+#SBATCH --gpus-per-node=%{JOB.gpus_per_node|d(JOB.default_gpus_per_node)}
+#% endif
+#SBATCH --mem=0
+#SBATCH --exclusive
+#SBATCH --time=%{JOB.time_limit}
+#SBATCH --partition=%{JOB.partition|d('standard')|join(',')}
+#% endif
+#%  if EMAIL is defined:
+#SBATCH --mail-type=FAIL,ARRAY_TASKS
+#SBATCH --mail-user=%{JOB.email|d(EMAIL)|join(',')}
+#%  endif
+#%  for var in JOB.batch|d({}):
+#%    set val = JOB.batch[var]|list|join(',')
+#%    if val|lower == 'true':
+#SBATCH --%{var}
+#%    elif ' ' in val:
+#SBATCH --%{var}='%{val}'
+#%    elif val:
+#SBATCH --%{var}=%{val}
+#%    endif
+#%  endfor
+#%#
+#%  if JOB.job_type == 'parallel':
+# Environment variables for the target system
+#%#
+#%-   set language = JOB.language|d("sh")
+#%    include 'mkexp/environments/DEFAULT.environment.'+language+'.tmpl'
+#%  endif

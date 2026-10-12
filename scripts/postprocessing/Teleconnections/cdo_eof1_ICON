@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -26,7 +26,7 @@ ${CDO} eof,1 anomw_file eval_file eof_file
 
 ${CDO} eofcoeff eof_file anomw_file pcoeff
 cdo infon anomw_file
-cdo infon eof_file 
+cdo infon eof_file
 cdo infon pcoeff00000.nc
 STD=`/pf/zmaw/m214003/local/bin/cdo output -timstd1 pcoeff00000.nc | sed  "s- --g"`
 echo "TIMSTD: $STD"/pf/zmaw/m214003/local/bin/cdo output -timstd1 pcoeff00000.nc
@@ -48,7 +48,7 @@ echo "EOF1              : $EOF1"
 echo ${EOF1}     > eof1var.txt
 #
 
-rm -f  anom_file anomw_file anomw_file eof_file eval_file select cellweights 
+rm -f  anom_file anomw_file anomw_file eof_file eval_file select cellweights
 rm -f  pcoeff00000.nc totvar1 totvar2
 #
 echo $EOF1

@@ -1,0 +1,418 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/utils/log.yml
+  - local: .gitlab/ci/utils/icon.yml
+  - local: .gitlab/ci/utils/pip.yml
+  - local: .gitlab/ci/common/any-image.yml
+  - local: .gitlab/ci/common/alpine.yml
+  - local: .gitlab/ci/common/pre-commit.yml
+  - local: .gitlab/ci/common/html.yml
+
+licenses:
+  stage: basic
+  extends: .common:pre-commit
+  script:
+    - |
+      # !reference [licenses, script]
+      icon_ci_log_section_start 'Checking licenses' 'collapsed=false'
+      (
+        set -ux
+        pre-commit run --color=always --hook-stage manual reuse || {
+          icon_ci_log_error_msg \
+            "You can reproduce this check locally with \`pre-commit run --hook-stage manual reuse\`.
+      See also ${CI_PAGES_URL}/contribute/guidelines/contribution_guidelines.html#coding-style."
+          exit 1
+        } 2>/dev/null
+        # The check_license.py script does not ignore git submodules:
+        git submodule --quiet deinit --force --all 2>/dev/null
+        "${CI_PROJECT_DIR}/scripts/ci_scripts/check_license.py"
+      ) 2>&1
+      icon_ci_log_section_end
+  rules:
+    - if: $CI_PROJECT_PATH == "icon/icon-model"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+style:coding:
+  stage: basic
+  extends: .common:pre-commit
+  variables:
+    STYLE_PATCH: style.patch
+  script:
+    - |
+      # !reference [style:coding, script]
+      icon_ci_log_section_start 'Checking coding style' 'collapsed=false'
+      (
+        set -ux
+        pre-commit run --color=always --all-files
+      ) 2>&1 || {
+        git diff --ignore-submodules --patch-with-raw > "${STYLE_PATCH}" && {
+          test -s "${STYLE_PATCH}" && {
+            icon_ci_log_error_msg "The issues can be resolved with the patch (see artifacts):
+        ${CI_JOB_URL}/artifacts/raw/${STYLE_PATCH}."
+          } || {
+            icon_ci_log_error_msg "The issues cannot be resolved with a patch."
+            rm -f "${STYLE_PATCH}"
+          }
+        } || {
+          icon_ci_log_error_msg "Failed to generate a patch file."
+          rm -f "${STYLE_PATCH}"
+        }
+        icon_ci_log_error_msg \
+          "You can reproduce this check locally with \`pre-commit run --all-files\`.
+      See also ${CI_PAGES_URL}/contribute/guidelines/contribution_guidelines.html#coding-style."
+        exit 1
+      }
+      icon_ci_log_section_end
+  artifacts:
+    paths:
+      - ${STYLE_PATCH}
+    when: on_failure
+    expire_in: 1 day
+  rules:
+    - if: $CI_PROJECT_PATH == "icon/icon-model"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+style:general:
+  stage: basic
+  extends: .common:alpine
+  variables:
+    GIT_SUBMODULE_STRATEGY: normal
+    # TODO: we should check all ICON source files, as well as all source files
+    # of the bundled libraries that are built as part of ICON:
+    #   - externals/art
+    #   - externals/emvorado
+    #   - externals/jsbach
+    #   - externals/msgwam
+    # However, we cannot currently do that because they will fail the tests.
+    # Therefore, we check as many of them as possible:
+    GIT_SUBMODULE_PATHS: externals/art externals/jsbach externals/msgwam
+    ICON_CI_UTILS_APK_PACKAGES: >-
+      bash findutils grep py3-click py3-numpy py3-pandas py3-yaml python3
+    ICON_SRC_PATHS: src support test/unit-tests
+  script:
+    - |
+      # !reference [style:general, script]
+      icon_ci_log_section_start 'Checking general style' 'collapsed=false'
+      (
+        set -ux
+        "${CI_PROJECT_DIR}/scripts/ci_scripts/check_encoding.sh" AUTHORS.TXT ${ICON_SRC_PATHS} ${GIT_SUBMODULE_PATHS}
+        "${CI_PROJECT_DIR}/scripts/ci_scripts/check_src_noexec.sh" ${ICON_SRC_PATHS} ${GIT_SUBMODULE_PATHS}
+        "${CI_PROJECT_DIR}/scripts/ci_scripts/check_fortran.py" ${ICON_SRC_PATHS} ${GIT_SUBMODULE_PATHS}
+        "${CI_PROJECT_DIR}/scripts/ci_scripts/check_granule_encapsulation.sh"
+        python3 "${CI_PROJECT_DIR}/scripts/experiments/yaml_experiment_test_processor.py"
+      ) 2>&1
+      icon_ci_log_section_end
+  rules:
+    - if: $CI_PROJECT_PATH == "icon/icon-model"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+style:static-analysis:
+  stage: basic
+  extends:
+    - .common:any-image
+    - .utils:icon:build
+  variables:
+    FF_DISABLE_UMASK_FOR_DOCKER_EXECUTOR: 1
+    DOCKER_AUTH_CONFIG: "{\"auths\":{\"registry.gitlab.dkrz.de\":{\"auth\":\"$CI_DOCKER_AUTH\"}}}"
+    REPORT_DIRECTORY: ${CI_PROJECT_DIR}/htmlReport
+    GIT_SUBMODULE_PATHS: >-
+      externals/cdi
+      externals/fortran-support
+      externals/iconmath
+      externals/jsbach
+      externals/memman
+      externals/mtime
+      externals/rte-rrtmgp
+      externals/yac
+      externals/yaxt
+    ICON_CI_UTILS_ICON_CONFIG_REL_PATH: config/generic/gcc
+    ICON_CI_UTILS_ICON_BUILD_COMMAND: bear -- make
+    FCFLAGS: -O0
+    CFLAGS: -O0
+    ICON_CI_UTILS_ICON_CONFIG_EXTRA_ARGS: >-
+      --disable-separate-mods
+      --enable-aes
+      --enable-atmo
+      --enable-coupling
+      --enable-jsbach
+      --enable-les
+      --enable-nwp
+      --enable-ocean
+      --enable-openmp
+      --enable-rte-rrtmgp
+      --enable-upatmo
+  image: registry.gitlab.dkrz.de/icon/ci-tooling/codee-check-container/codee:v2025.4.7
+  before_script:
+    - !reference [.utils:log, before_script]
+    - !reference [.utils:icon:build, before_script]
+  script:
+    - !reference [.utils:icon:build, script]
+    - |
+      icon_ci_log_section_start 'Running static analysis with codee' 'collapsed=false'
+      (
+        set -ux
+        codee checks --html "${REPORT_DIRECTORY}" --accept-eula \
+          --exclude "${ICON_CI_UTILS_ICON_SOURCE_PATH}/externals" \
+          --exclude "${ICON_CI_UTILS_ICON_BUILD_PATH}/externals" \
+          --check-id pwr007,pwr008,pwr063,pwr069,pwr072,pwr079 \
+          -p compile_commands.json
+      ) 2>&1
+      icon_ci_log_section_end
+      icon_ci_log_info_msg "${CI_ENVIRONMENT_URL}"
+      cat <<_EOF >"${CI_PROJECT_DIR}/annotation.json"
+      {
+        "section": [{
+          "external_link": {
+              "label": "Static analysis report",
+              "url": "${CI_ENVIRONMENT_URL}"
+          }
+        }]
+      }
+      _EOF
+  environment:
+    name: codee-report
+    url: https://${CI_PAGES_HOSTNAME}/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts/htmlReport/index.html
+  artifacts:
+    expire_in: 2week
+    paths:
+      - ${REPORT_DIRECTORY}
+    reports:
+      annotations: annotation.json
+  rules:
+    - if: $CI_PROJECT_PATH != "icon/icon-mpim"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - if: >-
+        $CI_PIPELINE_SOURCE == "schedule" &&
+          $ICON_CI_TEST_SCHEDULE == "weekly"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: never
+
+autoconf:
+  stage: basic
+  extends: .common:alpine
+  variables:
+    AUTOCONF_VERSION: "2.69"
+    AUTOCONF_SHA256: 954bd69b391edc12d6a4a51a2dd1476543da5c6bbf05a95b59dc0dd6fd4c2969
+    AUTOCONF_DIR: ${ICON_CI_UTILS_GIT_IGNORE_PATH}/autoconf
+    AUTOCONF_PATCH: autoconf.patch
+    ICON_CI_UTILS_APK_PACKAGES: automake curl git m4 make perl
+  before_script:
+    - !reference [.common:alpine, before_script]
+    - |
+      # !reference [autoconf, before_script]
+      icon_ci_log_section_start 'Fetching Autoconf'
+      test -f "${AUTOCONF_DIR}/autoconf-${AUTOCONF_VERSION}.tar.gz" && \
+      echo "${AUTOCONF_SHA256} ${AUTOCONF_DIR}/autoconf-${AUTOCONF_VERSION}.tar.gz" | sha256sum -c || (
+        set -ux
+        mkdir -p "${AUTOCONF_DIR}"
+        cd "${AUTOCONF_DIR}"
+        curl -OL --connect-timeout 10 "https://ftpmirror.gnu.org/gnu/autoconf/autoconf-${AUTOCONF_VERSION}.tar.gz" || \
+        curl -L -o "autoconf-${AUTOCONF_VERSION}.tar.gz" "https://mirror.spack.io/_source-cache/archive/${AUTOCONF_SHA256:0:2}/${AUTOCONF_SHA256}.tar.gz"
+        echo "${AUTOCONF_SHA256} autoconf-${AUTOCONF_VERSION}.tar.gz" | sha256sum -c
+      ) 2>&1 || {
+        icon_ci_log_error_msg "Failed to fetch Autoconf ${AUTOCONF_VERSION}."
+        exit 1
+      }
+      icon_ci_log_section_end
+      icon_ci_log_section_start 'Installing Autoconf'
+      (
+        set -ux
+        cd "${AUTOCONF_DIR}"
+        tar xfz autoconf-${AUTOCONF_VERSION}.tar.gz --strip-components=1
+        ./configure
+        make -j4 install
+      ) 2>&1 || {
+        icon_ci_log_error_msg "Failed to install Autoconf ${AUTOCONF_VERSION}."
+        exit 1
+      }
+      icon_ci_log_section_end
+  script:
+    - |
+      # !reference [autoconf, script]
+      icon_ci_log_section_start 'Checking consistency' 'collapsed=false'
+      set -u
+      ( set -x; autoreconf -fvi; ) 2>&1
+      git diff --ignore-submodules --patch-with-raw > "${AUTOCONF_PATCH}" || {
+        icon_ci_log_error_msg 'Failed to generate a patch file.'
+        rm -f "${AUTOCONF_PATCH}"
+        exit 1
+      }
+      test ! -s "${AUTOCONF_PATCH}" || {
+        icon_ci_log_error_msg \
+          "The automatically generated Autotools files (e.g. 'configure') \
+      are inconsistent with 'configure.ac' and/or Autoconf ${AUTOCONF_VERSION}.
+      The issue can be resolved with the patch (see artifacts):
+        ${CI_JOB_URL}/artifacts/raw/${AUTOCONF_PATCH}."
+          exit 1
+      }
+      icon_ci_log_section_end
+  cache:
+    - !reference [.common:alpine, cache]
+    - key: autoconf-${AUTOCONF_SHA256}
+      paths:
+        - ${AUTOCONF_DIR}/autoconf-${AUTOCONF_VERSION}.tar.gz
+  artifacts:
+    paths:
+      - ${AUTOCONF_PATCH}
+    when: on_failure
+    expire_in: 1 day
+  rules:
+    - if: $CI_PROJECT_PATH == "icon/icon-model"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - config.h.in
+        - configure
+        - configure.ac
+        - m4/**/*
+        - utils/config.guess
+        - utils/config.sub
+        - utils/install-sh
+
+iconbot:
+  stage: basic
+  extends:
+    - .utils:log
+    - .utils:pip
+  variables:
+    ICONBOT_GIT_REPOSITORY_URL: >-
+      https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.dkrz.de/icon/ci-tooling/iconbot.git
+    ICONBOT_GIT_BRANCH: production
+    ICONBOT_GIT_CLONE_PATH: ${CI_PROJECT_DIR}/iconbot
+    ICONBOT_CONFIG_REL_PATH: .gitlab/iconbot/notifier.yml
+    ICON_CI_UTILS_PIP_REQUIREMENT: ${ICONBOT_GIT_CLONE_PATH}/requirements/notifier/config.txt
+  before_script:
+    - !reference [.utils:log, before_script]
+    - |
+      # !reference [iconbot, before_script]
+      icon_ci_log_section_start 'Fetching Iconbot'
+      (
+        set -ux
+        git clone --branch "${ICONBOT_GIT_BRANCH}" --depth 1 \
+          "${ICONBOT_GIT_REPOSITORY_URL}" "${ICONBOT_GIT_CLONE_PATH}"
+      ) 2>&1
+      icon_ci_log_section_end
+    - !reference [.utils:pip, before_script]
+  script:
+    - |
+      # !reference [iconbot, script]
+      icon_ci_log_section_start 'Running Iconbot checks' 'collapsed=false'
+      (
+        set -ux
+        python3 "${ICONBOT_GIT_CLONE_PATH}/src/notifier/config.py" \
+          "${CI_PROJECT_DIR}/${ICONBOT_CONFIG_REL_PATH}"
+      ) 2>&1
+      icon_ci_log_section_end
+  tags:
+    # A random runner with Python3 and PIP:
+    - sphinx
+  rules:
+    - if: $CI_PROJECT_PATH == "icon/icon-model"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - ${ICONBOT_CONFIG_REL_PATH}
+
+doc:html:check:
+  stage: basic
+  extends: .common:html
+  environment:
+    name: review/${CI_COMMIT_REF_SLUG}
+    url: ${ICON_CI_COMMON_HTML_ARTIFACT_URL}
+  artifacts:
+    expire_in: 1 week
+  cache:
+    - !reference [.common:html, cache]
+    - key:
+        prefix: ${ICON_CI_COMMON_HTML_MERGE2RC_SCRIPT_REL_PATH}
+        files:
+          # CI/CD variables are not supported, but the reference works:
+          - !reference [.common:html, variables, ICON_CI_COMMON_HTML_MERGE2RC_SCRIPT_REL_PATH]
+      paths:
+        - ${ICON_CI_COMMON_HTML_MERGE2RC_OUTPUT_REL_PATH}
+  rules:
+    - if: $CI_PROJECT_PATH == "icon/icon-model"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    # Run the job for merge requests in icon/icon-nwp, regardless of whether
+    # they change the documentation:
+    - if: >-
+        $CI_PIPELINE_SOURCE == "merge_request_event" &&
+          $CI_MERGE_REQUEST_PROJECT_PATH == "icon/icon-nwp"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - .gitlab/ci/common/html.yml
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: !reference [.common:html, rules, changes]
+
+doc:html:publish:pages:
+  stage: basic
+  extends: .common:html
+  pages:
+    publish: ${ICON_CI_COMMON_HTML_OUTPUT_REL_PATH}
+  rules:
+    - if: $CI_PROJECT_PATH == "icon/icon-model"
+      when: never
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "push"
+      changes:
+        - .gitlab/ci/common/html.yml
+    - if: $CI_PIPELINE_SOURCE == "push"
+      changes: !reference [.common:html, rules, changes]
+  manual_confirmation: This job updates the GitLab Pages of the current project
+
+doc:html:publish:osr:
+  stage: basic
+  extends: .common:html
+  before_script:
+    - ICON_CI_UTILS_APK_PACKAGES="${ICON_CI_UTILS_APK_PACKAGES} rsync"
+    - !reference [.common:html, before_script]
+  script:
+    - !reference [.common:html, script]
+    - chmod 600 "${DEPLOY_KEY}"
+    - >-
+      rsync --delete --devices --group --links --recursive --specials
+      --rsh="ssh -i '${DEPLOY_KEY}' -o 'UserKnownHostsFile=${DEPLOY_HOST_KEYS}'"
+      "${ICON_CI_COMMON_HTML_OUTPUT_REL_PATH}/"
+      "${DEPLOY_USER}@${DEPLOY_HOST}:/var/www/${DEPLOY_USER}"
+  interruptible: false
+  rules:
+    - if: >-
+        $CI_PROJECT_PATH == "icon/icon-model" &&
+          ( $CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "web" ) &&
+          $CI_COMMIT_TAG && $CI_COMMIT_REF_PROTECTED == "true" &&
+          $CI_COMMIT_REF_NAME =~ "/icon-.*-public/"
+      when: manual
+  manual_confirmation: >-
+    This job updates the open-source release documentation at https://docs.icon-model.org

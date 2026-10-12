@@ -1,0 +1,1122 @@
+#!/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+# ----------------------------------------------------------------------------
+#
+# Coupled wave-ocean run with resolution R2B4 grids
+#
+# This basic coupled test case computes a few days of a global ocean model
+# (ICON-O) coupled to ICON-waves.
+# The system is set up on the R2B4 'water-only' grid initialized at 1979-01-01.
+# The purpose is the technical testing of the coupled setup.
+#
+# Mikhail Dobrynin, Christopher Higgins 19.05.2025
+#
+# Based on: exp.run_ICON_23_R2B4_atmo_waves_coupled
+#           exp.run_ICON_17_R2B4_AO_coupled
+#
+# PBS options: NE=1-64, CPE=8
+#
+
+ulimit -s 2097152
+ulimit -c 0
+
+#=============================================================================
+
+make_and_change_to_experiment_dir # function in ../add_run_routines
+
+# Combine START and MODEL if START_MODEL is not already set.
+# START_MODEL is used to ease the execution of a machine that uses a complex
+# mpirun command with multiple binaries
+START_MODEL="${START_MODEL:=$START $MODEL}"
+
+# set icon_data_poolFolder
+icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/buildbot_data/nwp"
+
+# environment variables for the experiment and the target system
+# --------------------------------------------------------------
+export EXPNAME="couple_waves_ocean_R2B4_30"
+
+# start and end date+time of experiment
+# -------------------------------------
+start_date=${start_date:="1979-01-01T00:00:00Z"}
+    end_date=${end_date:="1979-01-06T00:00:00Z"}
+
+# restart=checkpoint intervals (= file length)
+# --------------------------------------------
+restart_interval="P10Y"         #  no restart used for NWP
+checkpoint_interval="P10Y"      #  write checkpoint
+
+# file interval - not used, so select longer than restart-interval
+wave_file_interval="P100Y"
+oce_file_interval="P100Y"
+
+# output intervals
+# ----------------
+wave_output_interval="PT1H"       # "PT30M"
+oce_output_interval="PT1H"        # "PT1H"
+
+
+#=============================================================================
+#
+# OpenMP environment variables
+# ----------------------------
+export OMP_NUM_THREADS=1         # openMPI deactivated - best (needs compiling)
+export ICON_THREADS=1
+export OMP_SCHEDULE=dynamic,1
+export OMP_DYNAMIC="false"
+export OMP_STACKSIZE=200M
+export NMPI_PROGINF=DETAIL       # get performance details (Jens-Olaf Beismann)
+
+# Run information
+PPN=-1
+CPE=${CPE:-128}
+NE=${NE:-1}
+((PPN=CPE*NE/OMP_NUM_THREADS))
+((NE1=NE-1))
+echo "PPN etc. NE=$NE CPE=$CPE PPN=$PPN"
+
+#
+# MPI variables
+# -------------
+
+# NEC has PPN=NE*CPE mpi processes (OMP_NUM_THREADS=1)
+# they will be devided in ocean and atmosphere
+
+mpi_total_procs=${PPN}
+
+# at least one node for ocean and atmosphere each is necessary
+# default: half of requested nodes for ocean
+
+((mpi_oce_procs=mpi_total_procs/2))
+#mpi_waves_procs=8     # optimal: 8/16 for NE=4/8 dt=600/dt_rad=3600, 12 dt=450/dt_rad=3600, 8 dt=360/dt_rad=1800
+((mpi_waves_procs=PPN-mpi_oce_procs))
+
+echo $mpi_total_procs ${mpi_waves_procs} ${mpi_oce_procs}
+
+nproma_wave=$nproma
+nproma_oce=$nproma
+
+# asynchronous diagnostic output processes
+# ----------------------------------------
+
+# Note that "mpi_atm_io_procs" must match the number of output files
+mpi_waves_io_procs=1      # >0 for atmosphere plus land (not working for monitoring)
+mpi_oce_io_procs=1
+ICON_COMPONENT2_proc0_shift=0 #unsure whether proc_0shift works yet with WAVES
+
+#=============================================================================
+
+
+#=============================================================================
+
+# root directory for input data
+DATAROOT="${icon_data_poolFolder}/Checksuite_data/ICON-seamless"
+
+
+# base directory for ICON sources and binary:
+ICONDIR="$basedir" # basedir is provided by create_target_header
+
+# run script directory
+job_name="exp.run_ICON_30_R2B4_waves_ocean_coupled.run"    # name of run script
+RUNSCRIPTDIR=${ICONDIR}/run/checksuite.nwp                 # directory of run script
+
+rm -rf stdout.* stderr.*      # remove standard output from previous run
+
+#=============================================================================
+#
+# Basic test case for the ICON-waves coupled to the ICON-O.
+#
+# This section of the run script contains the specifications of the experiment.
+# The specifications are passed by namelist to the program.
+# For a complete list see Namelist_overview.pdf
+#
+# Initial revision: 2021-01-27, S. Lorenz, MPI-M
+# Adjusted for ICON-waves: 2025.05.19, M. Dobrynin, C. Higgins, DWD
+#
+#
+#-----------------------------------------------------------------------------
+#
+# Basic specifications of the simulation
+# --------------------------------------
+#
+# These variables are set in the header section of the completed run script:
+#
+# EXPNAME = experiment name
+# NPROMA  = array blocking length / inner loop length
+#-----------------------------------------------------------------------------
+
+# (0) Basic model configuration
+# -----------------------------
+
+ocean_gridID="0036"
+ocean_refinement="R02B04"
+
+#-----------------------------------------------------------------------------
+
+# namelist files
+# --------------
+wave_namelist=NAMELIST_${EXPNAME}_wave
+oce_namelist=NAMELIST_${EXPNAME}_ocean
+
+#--------------------------------------------------------------------------------------------------
+#
+# (1) Define the model time stepping
+# ----------------------------------
+#
+# NWP:                           # 360s or 450s for R2B4
+waveTimeStep="PT360S"            # wave time step
+oceTimeStep="PT360S"             # ocean time step (for coupler)
+couplingTimeStep="PT360S"         # coupling time step
+longcouplingTimeStep="P100Y"     # no coupling (long coupling period)
+
+#--------------------------------------------------------------------------------------------------
+
+# (2) unset some setting of create_target_header for mistral
+
+unset OMPI_MCA_coll_fca_enable
+unset OMPI_MCA_coll_fca_priority
+
+#--------------------------------------------------------------------------------------------------
+
+# (3) Set variables to configure the experiment:
+# ----------------------------------------------
+
+# use alternatively: full restart, init from (ocean) restart, init from climatology or false
+#  - set to false if ocean was already initialised
+# initialiseOcean="fromRestart"             # first run
+initialiseOcean="fromClimatology"           # from Levitus observations (current time, mean last 10 years)
+# initialiseOcean="fromRestartwithHamocc"
+
+# use both lines for atm/oce initialisation from other experiment
+#initialiseOcean="FALSE"                    # restart run (maybe copy from other run)
+#restart=.true.                             # deactivate semaphore mechanism
+
+# set initialiseOcean automatically to false via isRestart.sem
+#if [ -d "$basedir/experiments/$EXPNAME" ] ; then
+#  if [ -f "$basedir/experiments/$EXPNAME/isRestartRun.sem" ]; then
+#    initialiseOcean="FALSE"
+#  fi
+#fi
+if [ -d "$EXPDIR" ] ; then
+  if [ -f "$EXPDIR/isRestartRun.sem" ]; then
+    initialiseOcean="FALSE"
+  fi
+fi
+
+# output file selection
+# ---------------------
+#
+# output_<xyz>=yes : yes --> output files for <xyz>, any other value --> no files for <xyz>
+
+# monitoring output switches
+output_oce_mon=no
+output_oce_moc=no      #  calc_moc is called every timestep - switch off for high resolutions
+output_oce_def=no       #  annual mean is sufficient
+#oce_output_interval_def="P1Y"  # annual mean output for deep ocean
+oce_output_interval_def=$oce_output_interval
+oce_output_interval_mon=$oce_output_interval
+
+# sea ice, snow, SST and some deeper levels ocean output
+output_oce_ice=no
+
+# standard debug-flux arrays at surface
+#output_atm_dbg=no
+output_oce_dbg=no
+
+# output switches for large atm/oce files - set to "yes" if needed for standard quickplots
+#  - yes writes much output and needs more computing time at least in high resolution
+
+# output switches for HAMOCC files
+
+#--------------------------------------------------------------------------------------------------
+# I. coupling section
+#--------------------------------------------------------------------------------------------------
+
+if [ $mpi_total_procs -lt 2 ] ; then
+  check_error 0 "This setup requires at least 2 mpi processes. Exit"
+fi
+
+# I.1 Split the number of total procs and assign to each component
+# ----------------------------------------------------------------
+oce_min_rank=0
+oce_max_rank=$(( mpi_total_procs - mpi_waves_procs  + mpi_oce_io_procs + proc0_shift  - 1 ))
+oce_inc_rank=1
+wave_min_rank=$((oce_max_rank+1 ))
+wave_max_rank=$(( wave_min_rank + mpi_waves_procs + mpi_waves_io_procs + ICON_COMPONENT2_proc0_shift - 1 ))
+wave_inc_rank=1
+#
+
+echo "  oce_min_rank="$oce_min_rank  " oce_max_rank="$oce_max_rank
+echo " wave_min_rank="$wave_min_rank "wave_max_rank="$wave_max_rank
+
+
+
+# I.2 Fill model list
+# -------------------
+#
+namelist_list[0]="$oce_namelist"
+modelname_list[0]="ocean"
+modeltype_list[0]=2
+minrank_list[0]=$oce_min_rank
+maxrank_list[0]=$oce_max_rank
+incrank_list[0]=$oce_inc_rank
+
+namelist_list[1]="$wave_namelist"
+modelname_list[1]="wave"
+modeltype_list[1]=98
+minrank_list[1]=$wave_min_rank
+maxrank_list[1]=$wave_max_rank
+incrank_list[1]=$wave_inc_rank
+#
+
+
+
+# I.3 YAC coupling library configuration
+#-----------------------------------------------------------------------------
+
+wave_lag=1
+oce_lag=1
+
+# co2_flux and co2_mixing_ratio are listed as transients
+# below but are not configured for coupling in the couples
+# section. There fields are therefore not considered for
+# the search not for the data exchange even if yac_fget and
+# yac_fput are called for these fields.
+#
+# component names in coupling.yaml must (!) match with modelname_list[*]
+#
+cat > coupling_${EXPNAME}.yaml << EOF
+definitions:
+  components:
+    oce: &oce
+      component: ${modelname_list[0]}
+      grid: icon_ocean_grid
+    wave: &wave
+      component: ${modelname_list[1]}
+      grid: icon_waves_grid
+  oce2wave: &oce2wave
+    source: *oce
+    target: *wave
+    time_reduction: average
+    src_lag: ${oce_lag}
+    tgt_lag: ${wave_lag}
+  wave2oce: &wave2oce
+    source: *wave
+    target: *oce
+    time_reduction: average
+    src_lag: ${wave_lag}
+    tgt_lag: ${oce_lag}
+  interp_stacks:
+    hcsbb_interp_stack: &hcsbb_interp_stack
+      interpolation:
+        - bernstein_bezier
+        - nnn:
+            n: 4
+            weighted: arithmetic_average
+        - fixed:
+            user_value: -999.9
+    conserv_interp_stack: &conserv_interp_stack
+      interpolation:
+        - conservative:
+            order: 1
+            enforced_conservation: false
+            partial_coverage: true
+            normalisation: fracarea
+        - fixed:
+            user_value: -999.9
+timestep_unit: ISO_format
+calendar: proleptic-gregorian
+coupling:
+  - <<: [ *oce2wave, *hcsbb_interp_stack ]
+    coupling_period: ${couplingTimeStep}
+    field: [zonal_sea_surface_current,meridional_sea_surface_current,sea_surface_height,sea_surface_water_density]
+  - <<: [ *wave2oce, *hcsbb_interp_stack ]
+    coupling_period: ${couplingTimeStep}
+    field: [zonal_stokes_drift,meridional_stokes_drift,wave_stress,significant_wave_height,m2_wave_period,peak_wavenumber,zonal_wave_to_ocean_stress,meridional_wave_to_ocean_stress,wave_to_ocean_energy_flux]
+
+EOF
+
+#
+# yaml files for yac
+# ------------------
+#
+#add_required_file ${basedir}/run/coupling_${EXPNAME}.yaml     ./coupling.yaml
+add_required_file                 coupling_${EXPNAME}.yaml     ./coupling.yaml
+
+
+#-----------------------------------------------------------------------------
+# II. WAVES
+#-----------------------------------------------------------------------------
+DATAROOT="${icon_data_poolFolder}/Checksuite_data/ICON-waves"
+GRIDDIR_wave=${DATAROOT}
+EXTPARDIR_wave=${DATAROOT}
+# directory with forcing data:
+FORCINGDIR_wave=${DATAROOT}/exp_standalone
+
+
+#grid files
+ln -sf ${GRIDDIR_wave}/ocean_icon_waves_grid_0010_R02B04_G_DOM01.nc ocean_icon_waves_grid_0023_R02B04_G_DOM01.nc
+#external parameter (from ExtPar tool)
+ln -sf ${EXTPARDIR_wave}/extpar_ocean_icon_waves_grid_0010_R02B04_G_DOM01.nc extpar_ocean_icon_waves_grid_0023_R02B04_G_DOM01.nc
+
+# forcing files
+ln -sf ${FORCINGDIR_wave}/ocean_waves_R2B4_19790101T000000_wind.nc ocean_waves_R2B4_19790101T000000_wind.nc
+ln -sf ${FORCINGDIR_wave}/ocean_waves_R2B4_19790101T000000_ice.nc ocean_waves_R2B4_19790101T000000_ice.nc
+
+# ----------------------------------------------------------------------------
+# grid namelist settings
+# ----------------------------------------------------------------------------
+
+wave_grid=ocean_icon_waves_grid_0023_R02B04_G_DOM01.nc
+wave_extpar=extpar_ocean_icon_waves_grid_0023_R02B04_G_DOM01.nc
+dynamics_grid_filename=""
+for gridfile in ${wave_grid}; do
+	dynamics_grid_filename="${dynamics_grid_filename} '${gridfile}',"
+done
+
+# ocean vertical coordinates table, vertical cell interfaces
+cat > oce_vct << EOF
+21
+1      0.0
+2      2.0
+3      4.2
+4      6.7
+5      9.5
+6      12.6
+7      16.1
+8      20.0
+9      24.4
+10     29.3
+11     34.7
+12     40.6
+13     47.0
+14     54.1
+15     61.8
+16     70.2
+17     79.4
+18     89.5
+19     100.5
+20     112.5
+21     125.7
+EOF
+
+#-----------------------------------------------------------------------------
+# wave namelist
+#---------------
+#spectral resolution
+nd=12		# NUMBER OF DIRECTIONS
+nf=25		# NUMBER OF FREQUENCIES
+
+cat > ${wave_namelist} <<EOF
+&coupling_mode_nml
+ coupled_to_ocean     = .TRUE.
+/
+&run_nml
+ num_lev	        = 1
+ modelTimeStep		= "${waveTimeStep}"	! [s] timestep in ISO, dtime is legacy and should be avoided
+ ltimer			= .true.
+ timers_level		= 10
+ msg_level		= 15
+ ltestcase		= .FALSE.		! run testcase if TRUE
+ ldynamics		= .TRUE.
+ ltransport		= .TRUE.
+ ntracer		= $((${nd}*${nf}))
+ output			= "nml"
+/
+&parallel_nml
+ nproma			= ${nproma_wave}
+ p_test_run		= .false.
+ l_test_openmp		= .false.
+ l_log_checks		= .false.
+ num_io_procs		= ${mpi_waves_io_procs}
+ num_restart_procs	= 0 			! number of restart processors
+ num_prefetch_proc   	= 0			! number of processors for LBC prefetching
+ num_io_procs_radar     = 0
+ proc0_shift		= ${ICON_COMPONENT2_proc0_shift}
+ num_dist_array_replicas = 4
+ iorder_sendrecv	= 1
+/
+&grid_nml
+ dynamics_grid_filename	= ${dynamics_grid_filename}
+/
+&extpar_nml
+ itopo			 = 0
+ extpar_filename	 = '${wave_extpar}'
+/
+&wave_nml
+ ndirs                  = ${nd}                 ! number of directions
+ nfreqs                 = ${nf}                 ! number of frequencies
+ forc_file_prefix       = 'ocean_waves_R2B4_19790101T000000' ! prefix of forcing file name
+ oce_vct_filename = 'oce_vct' ! ocean vertical coordinates table (depth of interfaces)
+ stokes_depth  = 50.
+ stokes_method = 1
+ niter_smooth  = 4
+ depth_min     = 2.
+ depth_max     = 999.
+/
+&energy_propagation_nml
+ itype_limit  = 4     ! positive definite flux limiter
+/
+&output_nml
+ filetype		=  4
+ dom			= -1
+ output_start		= "${start_date}"
+ output_end		= "${end_date}"
+ output_interval	= "${wave_output_interval}"
+ mode			= 1			! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)
+ include_last		= .TRUE.		! flag whether to include the last time step
+ output_filename	= 'WAVE'		! file name base
+ file_interval		= "${wave_file_interval}" ! the file interval
+ output_grid		= .TRUE.		! flag whether grid information is added to output
+ ml_varlist		= 'kp','kp_sea','kp_swell','tauw','group:wave_forcing','hs'
+/
+&output_nml
+ filetype                =                          4         ! output format: 2=GRIB2, 4=NETCDFv2
+ dom                     =                         -1         ! write all domains
+ output_bounds           =       0., 10000000., 86400         ! output: start, end, increment
+ steps_per_file          =                      10000         ! number of output steps in one output file
+ mode                    =                          1         ! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)
+ include_last            =                      .TRUE.        ! flag whether to include the last time step
+ output_filename         =                    'Stokes'        ! file name base
+ output_grid             =                      .TRUE.        ! flag whether grid information is added to output.
+ ml_varlist              = 'u3d_stokes','v3d_stokes','u_stokes','v_stokes'
+/
+EOF
+
+
+#-----------------------------------------------------------------------------
+# III. OCEAN and SEA-ICE
+#-----------------------------------------------------------------------------
+ocean_vertical_levels=40
+ocean_grid_name="icon_grid_0036_R02B04_O"
+ocean_grid=${ocean_grid_name}.nc
+ocean_grid_folder=${DATAROOT}/exp_ocean_waves
+ocean_data_InputFolder=${DATAROOT}/exp_ocean_waves
+
+#-----------------------------------------------------------------------------
+# HAMOCC
+#
+
+use_hamocc=no
+
+if [  "x${use_hamocc}"  = "xyes" ]; then
+lhamocc=".TRUE."
+lbgcadv=".TRUE."
+nlev_eu=$ocean_vertical_levels
+# set nlev_eu to level belonging to approx 500m
+if [ "x$ocean_vertical_levels" = "x40" ];then
+nlev_eu=19
+fi
+if [ "x$ocean_vertical_levels" = "x64" ];then
+nlev_eu=26
+fi
+if [ "x$ocean_vertical_levels" = "x20" ];then
+nlev_eu=16
+fi
+else
+lhamocc=".FALSE."
+lbgcadv=".FALSE."
+fi
+l_init_bgc=".false." # Hamocc state variables are in restart
+if [[ "$initialiseOcean" == "fromRestart" ]] || [[ "$initialiseOcean" == "fromClimatology" ]]; then
+  l_init_bgc=".true." # initialize HAMOCC (HAMOCC state variables are not in restart)
+fi
+# ----------------------------------------------------------------------------
+
+#
+# ocean namelist
+# --------------
+cat > ${oce_namelist} << EOF
+&coupling_mode_nml
+ coupled_to_waves            = .TRUE.
+/
+&parallel_nml
+ nproma                      = ${nproma_oce}
+ num_io_procs                = ${mpi_oce_io_procs}
+ num_prefetch_proc           = 0
+ p_test_run                  = .FALSE.
+ l_fast_sum                  = .TRUE.
+ proc0_shift                 = ${proc0_shift}
+/
+&grid_nml
+ dynamics_grid_filename = "${ocean_grid}",
+ use_dummy_cell_closure = .true.
+ use_duplicated_connectivity = .false.
+/
+&dynamics_nml
+/
+&run_nml
+ modelTimeStep        = "${oceTimeStep}"       ! model timestep in seconds
+ output               = 'nml'        ! namelist controlled output scheme
+ activate_sync_timers = .TRUE.
+ profiling_output     = 1
+ msg_timestamp        = .FALSE.
+ timers_level         = 10
+ debug_check_level    = 0
+ restart_filename     = "${EXPNAME}_restart_oce_<rsttime>.nc"
+/
+&output_nml
+  filetype         =  5 ! output format: 2=GRIB2, 4=NETCDFv2, 5=NETCDFv4
+  output_filename  = "${EXPNAME}"
+  output_start     = "${start_date}"                  ! start in ISO-format
+  output_end       = "${end_date}"                    ! end in ISO-format
+  output_interval  = "${oce_output_interval}"
+  filename_format  = "<output_filename>_<datetime2>"
+  operation        = "mean"
+  file_interval    = "${oce_file_interval}"
+  mode             =  1                               ! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)
+  include_last     = .false.
+  output_grid      = .TRUE.
+  filename_format  = "<output_filename>_<datetime2>"
+  ml_varlist       = 'phioc','tauoc_x','tauoc_y','tau_w','u2d_stokes','v2d_stokes', 'swh', 'Tm2', 'ssh', 'kp'
+  !ml_varlist       = 'group:oce_default','group:oce_essentials', 'group:ice_default','group:oce_physics','tau_w','u2d_stokes','v2d_stokes'
+/
+&dbg_index_nml
+  idbg_mxmn=0                     ! initialize MIN/MAX  debug output
+  idbg_val =0                     ! initialize one cell debug output
+  idbg_slev=1                     ! initialize start level for debug output
+  idbg_elev=5                     ! initialize end level for debug output
+  dbg_lat_in=   30.0              ! latitude location of one cell debug output
+  dbg_lon_in=  -30.0              ! longitude location of one cell debug output
+  str_mod_tst='all'               ! define modules to print out in debug mode
+/
+&ocean_dynamics_nml
+! 40 unevenly spaced levels used by MPIOM/GR30
+ n_zlev             =   $ocean_vertical_levels
+ dzlev_m(1:40)      =   12.0,   10.0,   10.0,   10.0,   10.0,   10.0,   13.0,   15.0,   20.0,   25.0,
+                        30.0,   35.0,   40.0,   45.0,   50.0,   55.0,   60.0,   70.0,   80.0,   90.0,
+                       100.0,  110.0,  120.0,  130.0,  140.0,  150.0,  170.0,  180.0,  190.0,  200.0,
+                       220.0,  250.0,  270.0,  300.0,  350.0,  400.0,  450.0,  500.0,  500.0,  600.0
+  l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
+  l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
+
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
+                                            ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
+  use_absolute_solver_tolerance   = .true.
+  solver_tolerance                = 1.0E-10 ! this may further be reduced
+  select_lhs                      = 2       ! 1=operator based (default) 2=matrix based
+  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
+
+  solver_max_iter_per_restart     =  14
+  solver_max_restart_iterations   = 100       ! outer (restart solver)
+
+  fast_performance_level          = 200       ! performance level 12: for cell-based; 5: default
+  use_continuity_correction       = .TRUE.    ! height adjustment according to vertical velocity in dynamics
+  cfl_check                       = .FALSE.
+  cfl_write                       = .FALSE.
+
+  i_bc_veloc_top                  =   1
+  i_bc_veloc_bot                  =   1       ! 0: (def) bottom friction off, 1: on
+/
+&ocean_tracer_transport_nml
+  FLUX_CALCULATION_HORZ =  5 ! 5      ! 1=upwind, 2=central, 3=Lax-Friedrichs, 4=Miura, 5=FCT with Zalesak limiter (default)
+  FLUX_CALCULATION_VERT =  7 ! 7      ! 6=adpo; 7=upwind biased ppm (default); 8=FCT with zalesak limiter
+  ! define low and high order methods to be used in horizontal flux corrected transport methods (flux_calculation_horz=4,5)
+  fct_low_order_flux    = 1      ! horizontal low  order method: 1=upwind (def), no other implemented
+  fct_high_order_flux   = 5      ! horizontal high order method: 1=upwind, 2=central, 3=lax_friedrichs, 4=miura_order1
+  fct_limiter_horz      = 100    ! zalesak
+  threshold_min_T       = -2.0   ! to avoid abort
+/
+&ocean_horizontal_diffusion_nml
+  laplacian_form = 1                   ! 1=curlcurl-graddiv
+  VelocityDiffusion_order = 1          ! 21=biharmonic+laplacian (for the laplacian leith)
+
+  HarmonicViscosity_scaling     =  1
+  HarmonicViscosity_reference   =  3.0E+4  !  [m2/s] constant horizontal viscosity coefficient for velocity
+  HarmonicViscosity_background  =  0.0
+
+  TracerHorizontalDiffusion_scaling          = 1
+  Temperature_HorizontalDiffusion_Background = 0.0
+  Temperature_HorizontalDiffusion_Reference  = 0 !  40
+  Salinity_HorizontalDiffusion_Background    = 0.0
+  Salinity_HorizontalDiffusion_Reference     = 0 !  40
+/
+&ocean_vertical_diffusion_nml
+  vert_mix_type                            = 1 ! 1=PP, 2=TKE
+  PPscheme_type                            = 4
+  velocity_VerticalDiffusion_background    =   5.0E-5  ! [m2/s]  vertical background viscosity coefficient for velocity
+  Temperature_VerticalDiffusion_background =   1.0E-5  ! [m2/s]  vertical background diffusion coefficient for temperature
+  Salinity_VerticalDiffusion_background    =   1.0E-5  ! [m2/s]  vertical background diffusion coefficient for salinity
+  tracer_convection_MixingCoefficient =   0.1 ! max vertical tracer diffusion for convection used in case of instability
+  convection_InstabilityThreshold =  -1.0E-6  ! used in update_ho_params - default=-5e-8
+  RichardsonDiffusion_threshold   =   0.0     ! used in update_ho_params - default=+5e-8
+  tracer_RichardsonCoeff          =   2.0E-3  ! factor for vertical diffusion coefficient in PP scheme
+  velocity_RichardsonCoeff        =   2.0E-3  ! factor for vertical viscosity coefficient in PP scheme
+  bottom_drag_coeff               =   3.0E-3  ! default=2.5E-3; active for i_bc_veloc_bot=1
+  use_wind_mixing                 = .true.    ! true: use wind mixing scheme in MPIOM-type pp-scheme
+  lambda_wind                     = 0.03
+  tracer_TopWindMixing            = 0.5E-3 ! [m2/s] windmixing diffusivity in MPIOM-type pp-scheme
+  velocity_TopWindMixing          = 0.5E-3 ! [m2/s] windmixing viscosity in MPIOM-type pp-scheme
+/
+&ocean_GentMcWilliamsRedi_nml
+  GMRedi_configuration           =   1       ! 0=cartesian diffusion 1=GM-Redi: bolus advection + isopycnal diffusion
+  tapering_scheme=1
+  GMRedi_usesRelativeMaxSlopes = .false.
+  S_max=1.0e-3
+  S_d=0.0001                                 ! 1e-3 to 1e-4
+  k_tracer_GM_kappa_parameter     = 1000.0     !
+  k_tracer_isoneutral_parameter   = 1000.0     ! value for cell-based cartesian diffusion - mpiom: 1000/400km = 400/160km
+  k_tracer_dianeutral_parameter   = 0.0       !1.0E-5  !
+  SWITCH_OFF_DIAGONAL_VERT_EXPL          =.TRUE.
+  GMREDI_COMBINED_DIAGNOSTIC             =.FALSE.
+  SWITCH_ON_REDI_BALANCE_DIAGONSTIC      =.FALSE.
+  REVERT_VERTICAL_RECON_AND_TRANSPOSED   =.TRUE.
+  SLOPE_CALC_VIA_TEMPERTURE_SALINITY     =.TRUE.
+  INCLUDE_SLOPE_SQUARED_IMPLICIT         =.TRUE. !think of l_with_vert_tracer_diffusion
+  SWITCH_ON_TAPERING_HORIZONTAL_DIFFUSION=.TRUE.
+/
+&ocean_physics_nml
+  i_sea_ice                       =   1       ! 0 = no sea ice; 1 = sea ice model on; default=1
+/
+&sea_ice_nml
+  i_ice_therm                     =   1       ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
+  i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics
+! i_Qio_type                      =   3       ! 3 (default): energy of whole grid-area used for melting (MPIOM-type)
+! use_constant_tfreez             = .TRUE.    ! default: true
+! use_no_flux_gradients           = .FALSE.   ! default: true
+ leadclose_1                     =   0.25     ! default: 0.5 - value of MPIOM: 0.25
+ leadclose_2n                    =   0.666    ! default: 0.0 - value of MPIOM: 2/3
+ albedoW_sim  = 0.10         ! albedo of the ocean used in sea ice model
+ albs         = 0.80         ! Albedo of snow (not melting)
+ albsm        = 0.65         ! Albedo of snow (melting)
+ albi         = 0.70         ! Albedo of ice (not melting)
+ albim        = 0.65         ! Albedo of ice (melting)
+
+ !Pstar        = 40000
+/
+&ocean_forcing_nml
+  iforc_oce                       = 12        ! ocean forcing
+  forcing_timescale               = 365       ! length of ocean forcing data set, see above
+  forcing_frequency               = 86400.0
+  init_oce_relax                  = 1         ! read ocean surface relaxation file, see above
+  type_surfRelax_Temp             =   0       ! 0: no relaxation used
+                                              ! 1: relaxation switched on for reading (init_oce_relax=1) or some testcases only
+  para_surfRelax_Temp             =   1.0     ! strength of 2-dim relaxation for temperature (months)
+                                              ! this value is divided by number of seconds per month (=30*24*3600)
+  type_surfRelax_Salt             =   1       ! 2-dim relaxation of salinity - see temperature relaxation for type values
+  para_surfRelax_Salt             =   3.0     ! strength of 2-dim relaxation for salinity (months)
+  forcing_windstress_u_type       =   1       ! read from file
+  forcing_windstress_v_type       =   1       ! read from file
+  forcing_fluxes_type             =   1       ! read from file
+  bulk_wind_stress_type           =   0       ! 0: from file, 1: ocean at rest, 2: with ocean currents
+! forcing_enable_freshwater       = .TRUE.    ! apply freshwater forcing boundary condition (OMIP only)
+! forcing_set_runoff_to_zero      = .FALSE.   ! set runoff to zero for comparison to MPIOM; default: false
+! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false
+                                              ! salt-change due to internal fluxes only
+  limit_seaice                    = .TRUE.    ! default: true
+  seaice_limit                    =   0.8     ! hard limit set to 80% of upper layer for sea ice
+  limit_elevation                 = .TRUE.
+  atm_pressure_included_in_ocedyn = .FALSE.   ! use atm. pressure in the ocean dynamics
+  atm_pressure_included_in_icedyn = .FALSE.   ! use atm. pressure in the ice dynamics
+  use_tides                       = .FALSE.
+  tides_mod                       =  1        ! 1 Default 2 MPIOM
+  lswr_jerlov                     = .TRUE.    ! use jerlov water types for sw absorption
+  jerlov_atten                    = 0.08      ! jerlov water type IB
+  jerlov_bluefrac                 = 0.36      ! jerlov water type IB
+/
+&ocean_initialConditions_nml
+  initial_salinity_type           = 1         ! read from file
+  initial_temperature_type        = 1         ! read from file
+/
+&ocean_diagnostics_nml
+  diagnostics_level            = 1
+  diagnose_for_horizontalvelocity = .false.
+  diagnose_for_heat_content = .true.
+  diagnose_for_tendencies = .true.
+/
+&io_nml
+  restart_file_type = 5
+  write_last_restart = .true.
+!  lkeep_in_sync = .true.          ! sync after each timestep
+!  restart_write_mode = "joint procs multifile"
+/
+EOF
+#-----------------------------------------------------------------------------
+
+add_required_file ${basedir}/run/${oce_namelist} ./
+
+add_link_file $ocean_data_InputFolder/omip_icon_icon_grid_0036_R02B04_O_L0-daily.nc.new_rivers ocean-flux.nc
+add_link_file $ocean_data_InputFolder/ts_phc3.0_annual_icon_icon_grid_0036_R02B04_O_surf.nc ocean-relax.nc
+
+#-----------------------------------------------------------------------------
+#
+# Ocean initialisation input
+#
+if [[ "$initialiseOcean" == "fromRestart" ]]; then
+ # spun-up for 900 years
+ #add_link_file /work/mh0727/m300732/input/0036/ocean/restart/ler0656_restart_oce_30000101T000000Z.nc    restart_ocean_DOM01.nc
+# add_link_file /work/mh0727/m300732/icon-oes-hamocc/experiments/ler0863/ler0863_restart_oce_22000101T000000Z.nc init-restart-oce.nc
+  add_link_file ${ocean_data_InputFolder}/ler0863_restart_oce_22000101T000000Z.nc init-restart-oce.nc
+  add_link_file init-restart-oce.nc restart_ocean_DOM01.nc
+fi
+
+if [[ "$initialiseOcean" == "fromRestartwithHamocc" ]]; then
+  # Restart file like above + 1 year with Hamocc (initialized from basin averages)
+#  add_link_file /work/mh0727/m300732/input/0036/ocean/restart/ler0614_restart_oce_10010101T000000Z.nc init-restart-oce.nc
+  add_link_file ${ocean_data_InputFolder}/ler0614_restart_oce_10010101T000000Z.nc init-restart-oce.nc
+  add_link_file init-restart-oce.nc restart_ocean_DOM01.nc
+fi
+
+if [[ "$initialiseOcean" == "fromClimatology" ]]; then
+  # for initializing from Levitus:
+  #add_link_file ${ocean_data_InputFolder}/R2B4L40_initial_state.nc                                   initial_state.nc
+  #add_link_file ${ocean_data_InputFolder}/ts_phc3.0_annual_icon_icon_grid_0036_R02B04_G_L40.nc       initial_state.nc
+  add_link_file ${ocean_data_InputFolder}/ts_phc3.0_annual_icon_icon_grid_${ocean_gridID}_R02B04_O_L40.nc initial_state.nc
+fi
+
+# Ocean grid
+#
+add_link_file ${ocean_grid_folder}/${ocean_grid} ./
+
+#
+# HAMOCC forcing files
+#
+if [  "x${use_hamocc}"  = "xyes" ]; then
+  # FIXME: this is still a private path
+  datadir=/work/mh0727/m300732/input/0036/ocean/hamocc/
+  add_link_file $datadir/MAHOWALDDUST_icon_grid_0036_R02B04_O_remapbil1.nc           dust.nc  # iron deposition
+  add_link_file $datadir/ndepo_1-0_gr_185001-185012-clim_icon_grid_0036_R02B04_O.nc  nitrogen.nc  # nitrate deposition
+fi
+
+#-----------------------------------------------------------------------------
+
+if [ $mpi_total_procs -lt `expr $mpi_oce_procs + 1` ] ; then
+   echo "Too few mpi_total_procs for requested mpi_oce_procs."
+   echo "-> check mpi_total_procs and mpi_oce_procs. Exiting."
+   check_error 0
+   exit
+fi
+
+#-----------------------------------------------------------------------------
+#
+# directories definition
+#
+#RUNSCRIPTDIR=${basedir}/run
+if [ x$grids_folder = x ] ; then
+   HGRIDDIR=${basedir}/grids
+else
+   HGRIDDIR=$grids_folder
+fi
+
+#-----------------------------------------------------------------------------
+final_status_file=${EXPDIR}/${job_name}.final_status
+rm -f ${final_status_file}
+
+#-----------------------------------------------------------------------------
+# set up the model lists if they do not exist
+# this works for single model runs
+# for coupled runs the lists should be declared explicilty
+if [ x$namelist_list = x ]; then
+#  minrank_list=(        0           )
+#  maxrank_list=(     65535          )
+#  incrank_list=(        1           )
+  minrank_list[0]=0
+  maxrank_list[0]=65535
+  incrank_list[0]=1
+  if [ x$atm_namelist != x ]; then
+    # this is the wave model
+    namelist_list[0]="$atm_namelist"
+    modelname_list[0]="atmo"
+    modeltype_list[0]=98
+    run_atmo="false"
+  elif [ x$ocean_namelist != x ]; then
+    # this is the ocean model
+    namelist_list[0]="$ocean_namelist"
+    modelname_list[0]="oce"
+    modeltype_list[0]=2
+  elif [ x$psrad_namelist != x ]; then
+    # this is the psrad model
+    namelist_list[0]="$psrad_namelist"
+    modelname_list[0]="psrad"
+    modeltype_list[0]=3
+  elif [ x$hamocc_namelist != x ]; then
+    # this is the hamocc model
+    namelist_list[0]="$hamocc_namelist"
+    modelname_list[0]="hamocc"
+    modeltype_list[0]=4
+  elif [ x$wave_namelist != x]; then
+    # this is the wave model
+    namelist_list[0]="$wave_namelist"
+    modelname_list[0]="wave"
+    modeltype_list[0]=98
+  elif [ x$testbed_namelist != x ]; then
+    # this is the testbed model
+    namelist_list[0]="$testbed_namelist"
+    modelname_list[0]="testbed"
+    modeltype_list[0]=99
+  else
+    check_error 1 "No namelist is defined"
+  fi
+fi
+
+
+#-----------------------------------------------------------------------------
+# set some default values and derive some run parameteres
+restart=${restart:=".false."}
+restartSemaphoreFilename='isRestartRun.sem'
+#AUTOMATIC_RESTART_SETUP:
+if [ -f ${restartSemaphoreFilename} ]; then
+  restart=.true.
+  #  do not delete switch-file, to enable restart after unintended abort
+  #[[ -f ${restartSemaphoreFilename} ]] && rm ${restartSemaphoreFilename}
+else
+  if [[ "$initialiseOcean" == "FALSE" ]]; then
+#   add_link_file ${restart_dir}/${restart_exp}/${restart_exp}_restart_atm_${restart_yea}0101T000000Z.nc init-restart-atm.nc
+#   add_link_file ${restart_dir}/${restart_exp}/${restart_exp}_restart_oce_${restart_yea}0101T000000Z.nc init-restart-oce.nc
+
+#   add_link_file ${ocean_data_InputFolder}/slo1414_restart_atm_21000101T000000Z.nc  init-restart-atm.nc
+#   add_link_file ${ocean_data_InputFolder}/slo1414_restart_oce_21000101T000000Z.nc  init-restart-oce.nc
+
+#   add_link_file init-restart-atm.nc restart_atm_DOM01.nc
+#   add_link_file init-restart-oce.nc restart_ocean_DOM01.nc
+
+    add_link_file ${ocean_data_InputFolder}/slo1414_restart_oce_21000101T000000Z.nc restart_ocean_DOM01.nc
+  fi
+fi
+#END AUTOMATIC_RESTART_SETUP
+#
+# wait 5min to let GPFS finish the write operations
+if [ "x$restart" != 'x.false.' -a "x$submit" != 'x' ]; then
+  if [ x$(df -T ${EXPDIR} | cut -d ' ' -f 2) = gpfs ]; then
+    sleep 10;
+  fi
+fi
+# fill some checks
+
+run_atmo=${run_atmo="false"}
+if [ x$atm_namelist != x ]; then
+  run_atmo="true"
+fi
+run_ocean=${run_ocean="false"}
+if [ x$ocean_namelist != x ]; then
+  run_ocean="true"
+fi
+run_psrad=${run_psrad="false"}
+if [ x$psrad_namelist != x ]; then
+  run_psrad="true"
+fi
+run_hamocc=${run_hamocc="false"}
+if [ x$hamocc_namelist != x ]; then
+  run_hamocc="true"
+fi
+run_wave=${run_wave="false"}
+if [ x$wave_namelist != x ]; then
+  run_wave="true"
+fi
+
+#-----------------------------------------------------------------------------
+# add grids to required files
+all_grids="${wave_grids}  ${ocean_grids}"
+for gridfile in ${all_grids}; do
+  #
+  gridfile=${gridfile//\'/} # strip all ' in case ' is used to delimit the grid names
+  gridfile=${gridfile//\"/} # strip all " in case " is used to delimit the grid names
+  gridfile=${gridfile//\,/} # strip all , in case , is used to separate the grid names
+  #
+  grfinfofile=${gridfile%.nc}-grfinfo.nc
+  #
+  ls -l ${HGRIDDIR}/$gridfile
+  check_error $? "${HGRIDDIR}/$gridfile does not exist."
+  add_link_file ${HGRIDDIR}/${gridfile} ./
+  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then
+    add_link_file ${HGRIDDIR}/${grfinfofile} ./
+  fi
+done
+
+
+#-----------------------------------------------------------------------------
+# print_required_files
+copy_required_files
+link_required_files
+
+
+#-----------------------------------------------------------------------------
+# get restart files
+
+#if  [ x$restart_waves_from != "x" ] ; then
+#  rm -f restart_waves_     ?wave-REF_2ocean_DOM01_ML_0011.nc?
+#  ln -s ${basedir}/experiments/${restart_from_folder}/${restart_waves_from} ${EXPDIR}/restart_waves_DOM01.nc
+#  cp ${basedir}/experiments/${restart_from_folder}/${restart_waves_from} cp_restart_waves.nc
+#  ln -s cp_restart_waves.nc restart_waves_DOM01.nc
+#  restart=".true."
+#fi
+
+if  [ x$restart_ocean_from != "x" ] ; then
+  rm -f restart_oce.nc
+#  ln -s ${basedir}/experiments/${restart_from_folder}/${restart_ocean_from} ${EXPDIR}/restart_oce.nc
+  cp ${basedir}/experiments/${restart_from_folder}/${restart_ocean_from} cp_restart_oce_DOM01.nc
+  ln -s cp_restart_oce_DOM01.nc restart_oce_DOM01.nc
+  restart=".true."
+fi
+#-----------------------------------------------------------------------------
+
+
+read_restart_namelists=${read_restart_namelists:=".true."}
+
+#-----------------------------------------------------------------------------
+#
+# create ICON master namelist
+# ------------------------
+# For a complete list see Namelist_overview and Namelist_overview.pdf
+
+#-----------------------------------------------------------------------------
+# create master_namelist
+master_namelist=icon_master.namelist
+if [ x$end_date = x ]; then
+cat > $master_namelist << EOF
+&master_nml
+ lrestart            = $restart
+ lrestart_write_last = .true.
+/
+&master_time_control_nml
+ experimentStartDate  = "$start_date"
+ restartTimeIntval    = "$restart_interval"
+ checkpointTimeIntval = "$checkpoint_interval"
+/
+&time_nml
+ is_relative_time = .false.
+/
+EOF
+else
+if [ x$calendar = x ]; then
+  calendar='proleptic gregorian'
+  calendar_type=1
+else
+  calendar=$calendar
+  calendar_type=$calendar_type
+fi
+cat > $master_namelist << EOF
+&master_nml
+ lrestart            = $restart
+ lrestart_write_last = .true.
+ read_restart_namelists = $read_restart_namelists
+/
+&master_time_control_nml
+ calendar             = "$calendar"
+ checkpointTimeIntval = "$checkpoint_interval"
+ restartTimeIntval    = "$restart_interval"
+ experimentStartDate  = "$start_date"
+ experimentStopDate   = "$end_date"
+/
+&time_nml
+ is_relative_time = .false.
+/
+EOF
+fi
+#-----------------------------------------------------------------------------
+
+
+#-----------------------------------------------------------------------------
+# add model component to master_namelist
+add_component_to_master_namelist()
+{
+
+  model_namelist_filename="$1"
+  model_name=$2
+  model_type=$3
+  model_min_rank=$4
+  model_max_rank=$5
+  model_inc_rank=$6
+
+cat >> $master_namelist << EOF
+&master_model_nml
+  model_name="$model_name"
+  model_namelist_filename="$model_namelist_filename"
+  model_type=$model_type
+  model_min_rank=$model_min_rank
+  model_max_rank=$model_max_rank
+  model_inc_rank=$model_inc_rank
+/
+EOF
+
+}
+#-----------------------------------------------------------------------------
+
+
+no_of_models=${#namelist_list[*]}
+echo "no_of_models=$no_of_models"
+
+j=0
+while [ $j -lt ${no_of_models} ]
+do
+  add_component_to_master_namelist "${namelist_list[$j]}" "${modelname_list[$j]}" ${modeltype_list[$j]} ${minrank_list[$j]} ${maxrank_list[$j]} ${incrank_list[$j]}
+  j=`expr ${j} + 1`
+done
+
+
+# ----------------------------------------------------------------------
+# run the model!
+# ----------------------------------------------------------------------
+
+rm -f finish.status
+date
+
+#
+# configure START_MODEL_function
+#
+ICON_COMPONENT1_VH_procs=$mpi_oce_io_procs	# START_MODEL_function expects ICON_COMPONENT2_VE_procs
+ICON_COMPONENT2_VH_procs=0
+ICON_COMPONENT2_VE_procs=$mpi_waves_procs
+
+
+echo "mpi procs: total=$mpi_total_procs_waves=${ICON_COMPONENT2_VE_procs} oce=total-waves (will be computed implicitly)"
+
+# ----------------------------------------------------------------------
+# run the model!
+# ----------------------------------------------------------------------
+
+rm -f finish_ocean.status
+rm -f finish_waves.status
+date
+
+echo "START_MODEL: ${START_MODEL}"
+
+$START_MODEL
+EXIT_STATUS=$?
+
+if [ "$EXIT_STATUS" -ne "0" ]; then
+  echo "ICON EXIT_STATUS: $EXIT_STATUS"
+  exit $EXIT_STATUS
+fi
+
+date
+
+if [ -r finish_ocean.status -a -r finish_waves.status ] ; then
+  check_final_status 0
+else
+  check_final_status -1
+fi
+
+#-----------------------------------------------------------------------------
+#Read the finish_status files and cut off whitespaces.
+finish_status_oce=`cat finish_ocean.status`
+finish_status_oce="${finish_status_oce# }"
+finish_status_w=`cat finish_waves.status`
+finish_status_w="${finish_status_w# }"
+
+echo "${finish_status_oce}"
+echo "${finish_status_w}"
+echo "============================"
+echo "Script run (ocean) successfully: $finish_status_oce"
+echo "Script run (waves) successfully: $finish_status_w"
+echo "============================"
+
+if [ "${finish_status_oce}" = 'OK' -a "${finish_status_w}" = 'OK' ] ; then
+  EXIT_STATUS=0
+else
+  EXIT_STATUS=1
+fi
+
+echo "EXIT_STATUS: $EXIT_STATUS"
+exit $EXIT_STATUS

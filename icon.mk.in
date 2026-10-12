@@ -1,12 +1,13 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ------------------------------------------
+
 ################################# DIRECTORIES ##################################
 
 # Path to the root source directory:
@@ -15,116 +16,156 @@ srcdir:= @srcdir@
 # Relative paths to the directories with the ICON source code:
 subdirs:= src support
 
-# Relative paths to the directories of the Autoconf-based bundled packages:
-bundled_config_subdirs= @icon_bundled_config_subdirs@
+# Relative path to the directory with the source code of the test suite:
+test_subdir:= test/unit-tests
 
-# Relative paths to the directories of the CMake-based bundled packages:
-bundled_cmake_subdirs= @icon_bundled_cmake_subdirs@
+# Relative paths to directories with source code that is irrelevant to ICON and
+# its test suite:
+ignored_subdirs:=
 
-# Relative paths to the directories of all bundled packages:
-bundled_subdirs= $(bundled_config_subdirs) $(bundled_cmake_subdirs)
+# Relative paths to the root build directories of all bundled packages:
+bundled_builddirs:= @icon_bundled_builddirs@
+
+# Relative paths to the root build directories of the CMake-based bundled
+# packages:
+bundled_cmake_builddirs:= @icon_bundled_cmake_builddirs@
+
+# Relative paths to the root build directories of the Autoconf-based bundled
+# packages:
+bundled_config_builddirs:= $(filter-out $(bundled_cmake_builddirs),$(bundled_builddirs))
 
 # Relative path to the directory with the Fortran module files:
-moddir:= mod
+mod_builddir:= mod
 
 # When the two-step compilation is enabled, Fortran module files that are
 # generated together with the object file become an unwanted side effect. More
 # often than not, Fortran compilers do not have special flags to suppress the
 # generation of the module files. Therefore, we use the following directory as
 # a trash bin:
-@SEPARATE_MODS_ENABLED@moddir_null:= $(moddir)/null
+@SEPARATE_MODS_ENABLED@mod_builddir_null:= $(mod_builddir)/null
 
 # Relative path to the directory with the generated executables:
-bindir:= bin
+bin_builddir:= bin
 
 # Relative path to the directory with the generated archives:
-libdir:= lib
-
-# Paths to the installation directories:
-prefix:= @prefix@
-exec_prefix:= @exec_prefix@
+lib_builddir:= lib
 
 ########################### BUILDING TOOLS AND FLAGS ###########################
 
 # Compilers and utilities:
-SHELL= @SHELL@
-AR= @AR@
-ARFLAGS= @ARFLAGS@
-RANLIB= @RANLIB@
-CC= @CC@
-FC= @FC@
-CXX= @CXX@
-CUDACXX= @CUDACXX@
-HIPCXX= @HIPCXX@
-PYTHON= @PYTHON@
-PERL= @PERL@
-CMAKE= @CMAKE@
-DEPLIST= ${PYTHON} $(srcdir)/utils/mkhelper/deplist.py
-DEPGEN= ${PYTHON} $(srcdir)/utils/mkhelper/depgen.py
-MODCMP= ${PYTHON} $(srcdir)/utils/mkhelper/fortmodcmp.py
-DSL4JSB= ${PYTHON} $(srcdir)/externals/jsbach/scripts/dsl4jsb/dsl4jsb.py
-SB2PP= @SB2PP@
-FPP= @FPP@
-INSTALL= @INSTALL@
-MKDIR_P= @MKDIR_P@
+SHELL:= @SHELL@
+AR:= @AR@
+ARFLAGS:= @ARFLAGS@
+RANLIB:= @RANLIB@
+CC:= @CC@
+FC:= @FC@
+CXX:= @CXX@
+CUDACXX:= @CUDACXX@
+HIPCXX:= @HIPCXX@
+PYTHON:= @PYTHON@
+PVCS:= $(PYTHON) $(srcdir)/utils/pvcs.py
+DEPLIST:= $(PYTHON) $(srcdir)/utils/mkhelper/deplist.py
+DEPGEN:= $(PYTHON) $(srcdir)/utils/mkhelper/depgen.py
+MODCMP:= $(PYTHON) $(srcdir)/utils/mkhelper/fortmodcmp.py
+DSL4JSB:= $(PYTHON) $(srcdir)/externals/jsbach/scripts/dsl4jsb/dsl4jsb.py
+SB2PP:= @SB2PP@
+FPP:= @FPP@
+INSTALL:= @INSTALL@
+MKDIR_P:= @MKDIR_P@
+MPI_LAUNCH:= @MPI_LAUNCH@
+
+# Installation settings:
+TRANSFORM=@program_transform_name@
 
 # Fortran compiler flags:
-FCFLAGS= @FCFLAGS@
-make_FCFLAGS= @FC_MOD_IN@$(moddir)
-ICON_FCFLAGS= @ICON_FCFLAGS@
+FCFLAGS:= @FCFLAGS@
+make_FCFLAGS:= @FC_MOD_IN@$(mod_builddir)
+ICON_FCFLAGS:= @ICON_FCFLAGS@
 @ICON_FCGROUP_FLAGS@
-DEPGEN_FCFLAGS= @DEPGEN_FCFLAGS@
+DEPGEN_FCFLAGS:= @DEPGEN_FCFLAGS@
 
 # C compiler and preprocessor flags:
-CFLAGS= @CFLAGS@
-CPPFLAGS= -I. @DEFS@ @CPPFLAGS@
+CFLAGS:= @CFLAGS@
+CPPFLAGS:= -I. @DEFS@ @CPPFLAGS@
 
 # Secondary GPU compiler flags:
-CUDAFLAGS= @CUDAFLAGS@
-HIPFLAGS= @HIPFLAGS@
+CUDAFLAGS:= @CUDAFLAGS@
+HIPFLAGS:= @HIPFLAGS@
 
 # Linker flags and libraries:
-LDFLAGS= @LDFLAGS@
-BUNDLED_LIBFILES= @BUNDLED_LIBFILES@
-BUNDLED_EXTRA_LIBS= $(shell $(SHELL) ./collect.extra-libs)
-LIBS= @LIBS@
+LDFLAGS:= @LDFLAGS@ @ICON_LDFLAGS@
+BUNDLED_LIBFILES:= @BUNDLED_LIBFILES@
+LIBS:= @LIBS@
 
 ############################ SOURCE FILE COLLECTION ############################
 
 # Common infix for all preprocessed files:
 pp_infix:= .pp-
 
-# Auxiliary function. Receives a space-separated list of subdirectories inside
-# $(srcdir) and a space-separated list of shell-like wildcards. Returns a
-# space-separated list of relative (with respect to $(srcdir)) paths to files
-# residing in the given subdirectories and matching at least one of the given
-# patterns. Files, as well as the second and higher order subdirectories, with
-# names starting with a dot are ignored. Files containing the preprocessor
-# infix '*$(pp_infix)*' are ignored. Duplicates are eliminated.
-find_files= $(sort $(patsubst $(srcdir)/%,%, \
-                $(shell find $(addprefix $(srcdir)/,$(1)) \
-                    -name '.' -o -name '..' -o -name '.*' -prune \
-                    -o \! \( -type d -o -name '*$(pp_infix)*' \) \
-                    -a \( $(foreach p,$(2),-name $(p) -o) -false \) -print)))
+# Auxiliary function. Receives a base directory, a space-separated list of
+# subdirectories inside that base directory, a space-separated list of shell
+# patterns and a space-separated ignore list of subdirectories inside the base
+# directory. Returns a space-separated list of relative (with respect to the
+# base directory) paths to files residing in the given subdirectories and
+# matching at least one of the given patterns. Files residing in subdirectories
+# from the ignore list (i.e. the fourth argument) are ignored. Files, as well as
+# the second and higher order subdirectories, with names starting with a dot are
+# ignored. Files containing the preprocessor infix '*$(pp_infix)*' are ignored.
+# Duplicates are eliminated.
+find_files= $(sort $(patsubst $(1)/%,%, \
+                $(shell find $(addprefix $(1)/,$(2)) \
+                    \( $(foreach p,$(4),-path '$(1)/$(p)' -o) \
+                        -name '.' -o -name '..' -o -name '.*' \) \
+                    -prune -o \
+                    \( \! \( -type d -o -name '*$(pp_infix)*' \) -a \
+                        \( $(foreach p,$(3),-name $(p) -o) -false \) \) \
+                    -print )))
+
+# Auxiliary function. Receives a space-separated list of make patterns and a
+# space-separated list of paths. Returns a space-separated list of all paths
+# for which the non-directory part matches any of the patterns.
+filter_notdir_patterns= $(foreach v,$(2),$(if $(filter $(1),$(notdir $(v))),$(v)))
+
+# Auxiliary function. Receives a string and a space-separated list of paths.
+# Returns a space-separated list of all paths for which the non-directory part
+# contains the string as a substring.
+filter_notdir_substring= $(foreach v,$(2),$(if $(findstring $(1),$(notdir $(v))),$(v)))
 
 # All source files:
-all_files:= $(call find_files,$(subdirs),'*.f90' '*.inc' '*.incf' '*.c' '*.cu')
+all_files:= $(call find_files,$(srcdir),$(subdirs) $(test_subdir), \
+                '*.f90' '*.inc' '*.incf' '*.c' '*.cu' '*.hip.cc',$(ignored_subdirs))
+
+# Paths to the root source directories of all extra packages to be passed to the
+# version provenance collection tool:
+PVCS_bundled_srcdirs:= @icon_pvcs_bundled_srcdirs@
 
 # JSBACH sources (must be preprocessed with DSL4JSB):
 @JSBACH_ENABLED@JSBACH_subdir:= externals/jsbach/src
-@JSBACH_ENABLED@JSBACH_dsl_files:= $(call find_files,$(JSBACH_subdir),'*.f90')
+@JSBACH_ENABLED@JSBACH_dsl_files:= $(call find_files,$(srcdir),$(JSBACH_subdir),'*.f90')
+@JSBACH_ENABLED@PVCS_bundled_srcdirs+= $(srcdir)/externals/jsbach
 
-# DACE sources:
-@DACE_ENABLED@DACE_subdir:= externals/dace_icon/src_for_icon
-@DACE_ENABLED@all_files+= $(call find_files,$(DACE_subdir),'*.f90' '*.inc' '*.incf' '*.c')
+# DACE sources (fetched to the build directory):
+@DACE_ENABLED@DACE_subdir:= @icon_dace_subdir@/src_for_icon
+# Make sure the repository clone is up-to-date before searching for files:
+@DACE_ENABLED@include @icon_dace_fetchstamp@
+@DACE_ENABLED@DACE_all_files:= $(call find_files,.,$(DACE_subdir),'*.f90' '*.inc' '*.incf' '*.c')
+@DACE_ENABLED@DACE_inc_files:= $(filter %.inc %.incf,$(DACE_all_files))
+@DACE_ENABLED@all_files+= $(filter-out $(DACE_inc_files),$(DACE_all_files))
 
 # EMVORADO sources:
 @EMVORADO_ENABLED@EMVORADO_subdir:= externals/emvorado
-@EMVORADO_ENABLED@all_files+= $(call find_files,$(EMVORADO_subdir),'*.f90' '*.incf')
+@EMVORADO_ENABLED@all_files+= $(call find_files,$(srcdir),$(EMVORADO_subdir),'*.f90' '*.incf')
+@EMVORADO_ENABLED@PVCS_bundled_srcdirs+= $(srcdir)/$(EMVORADO_subdir)
 
 # ART sources:
 @ART_ENABLED@ART_subdir:= externals/art
-@ART_ENABLED@all_files+= $(call find_files,$(ART_subdir),'*.f90' '*.inc' '*.incf')
+@ART_ENABLED@all_files+= $(call find_files,$(srcdir),$(ART_subdir),'*.f90' '*.inc' '*.incf')
+@ART_ENABLED@PVCS_bundled_srcdirs+= $(srcdir)/$(ART_subdir)
+
+# MSGWAM sources:
+@MSGWAM_ENABLED@MSGWAM_subdir:= externals/msgwam
+@MSGWAM_ENABLED@all_files+= $(call find_files,$(srcdir),$(MSGWAM_subdir),'*.f90')
+@MSGWAM_ENABLED@PVCS_bundled_srcdirs+= $(srcdir)/$(MSGWAM_subdir)
 
 # Fortran '.f90' source files:
 f90_files:= $(filter %.f90,$(all_files))
@@ -132,14 +173,26 @@ f90_files:= $(filter %.f90,$(all_files))
 c_files:= $(filter %.c,$(all_files))
 # CUDA '.cu' source files:
 @CUDA_ENABLED@cu_files:= $(filter %.cu,$(all_files))
-# HIP '.cu' source files (TODO: change the extension for HIP files):
-@HIP_ENABLED@hip_files:= $(filter %.cu,$(all_files))
+# HIP '.hip.cc' source files:
+@HIP_ENABLED@hip_files:= $(filter %.hip.cc,$(all_files))
 
-# Relative paths to the directories with Fortran include files:
-inc_subdirs:= $(patsubst %/,%,$(sort $(dir $(filter %.inc %.incf,$(all_files)))))
+# Paths to the directories with Fortran include files:
+inc_dirs:= $(addprefix $(srcdir)/,$(patsubst %/,%,$(dir $(filter %.inc %.incf,$(all_files)))))
+@DACE_ENABLED@inc_dirs+= $(patsubst %/,%,$(dir $(DACE_inc_files)))
+# Eliminate duplicates:
+inc_dirs:= $(sort $(inc_dirs))
 
 # Extend Fortran compiler flags enabling the location of include files:
-make_FCFLAGS+= $(foreach d,$(inc_subdirs),@FC_INC_FLAG@$(srcdir)/$(d) @FC_INC_FLAG_PP_f90@$(srcdir)/$(d))
+make_FCFLAGS+= $(foreach d,$(inc_dirs),@FC_INC_FLAG@$(d) @FC_INC_FLAG_PP_f90@$(d))
+
+# Source files implementing test programs:
+test_prog_f90_files:= $(call filter_notdir_patterns,test_%,$(filter $(test_subdir)/%,$(f90_files)))
+
+# Source files implementing test programs that cannot be built in the current
+# configuration:
+test_skip_prog_f90_files:=
+@MPI_ENABLED@test_skip_prog_f90_files+= $(call filter_notdir_substring,.nompi.,$(test_prog_f90_files))
+@MPI_DISABLED@test_skip_prog_f90_files+= $(call filter_notdir_substring,.mpi.,$(test_prog_f90_files))
 
 ############################# PREPROCESSING CHAIN ##############################
 
@@ -176,20 +229,36 @@ dep_files:= $(addsuffix .d,$(f90_files) $(c_files) $(cu_files) $(hip_files)) c_b
 
 ############################ GENERATED EXECUTABLES #############################
 
-# Generated executable files:
-exec_files:=
-
 # Auxiliary function. Receives a space-separated list of relative paths to the
 # original Fortran '.f90' files and returns a space-separated list of paths to
 # the respective object files (not necessarily in the respective order though),
 # which change depending on the preprocessing steps applied to the original
 # source files.
-get_obj_names= $(patsubst %.f90,%.@OBJEXT@,$(filter $(foreach f,$(1),$(f:f90=)%f90),$(f90_files)))
+get_obj_names= $(patsubst %.f90,%.@OBJEXT@, \
+                   $(filter $(foreach f,$(1),$(f) $(f:.f90=$(pp_infix)%.f90)),$(f90_files)))
+
+# Auxiliary function. Receives a space-separated list of relative paths to the
+# original Fortran '.f90' files implementing the test programs and returns a
+# space-separated list of the respective test names.
+get_test_names= $(patsubst $(test_subdir)/%.f90,%,$(1))
+
+# Object files that must be injected into all executables:
+common_prog_obj_files:=
+
+# Main executable files:
+exec_files:=
 
 # ICON executable:
-ICON_exec_file:= $(bindir)/icon@EXEEXT@
-ICON_prog_obj_file:= $(call get_obj_names,src/drivers/icon.f90)
-exec_files+= $(ICON_exec_file)
+icon_exec_file:= $(bin_builddir)/icon@EXEEXT@
+icon_prog_obj_files:= $(call get_obj_names,src/drivers/icon.f90) version.@OBJEXT@
+exec_files+= $(icon_exec_file)
+
+# Test executable files:
+test_exec_files:= $(patsubst %.f90,%.x@EXEEXT@,$(filter-out $(test_skip_prog_f90_files),$(test_prog_f90_files)))
+test_prog_obj_files:= $(call get_obj_names,$(test_exec_files:.x@EXEEXT@=.f90))
+
+# List of tests to run by default in the current configuration:
+TESTS:= $(call get_test_names,$(test_prog_f90_files))
 
 ############################## GENERATED ARCHIVES ##############################
 
@@ -204,19 +273,28 @@ get_prereq_objs= $(filter-out $(1),$(filter %.@OBJEXT@, \
 
 # Common convenience library (holds prerequisite objects of the generated
 # executables):
-common_lib_file:= $(libdir)/libicon.a
-common_lib_prog_obj_files:= $(ICON_prog_obj_file)
+common_lib_file:= $(lib_builddir)/libicon.a
+common_lib_prog_obj_files:= $(icon_prog_obj_files) $(common_prog_obj_files)
 common_lib_obj_files:= $(call get_prereq_objs,$(common_lib_prog_obj_files))
 lib_files+= $(common_lib_file)
 
+# Convenience library for the tests (holds prerequisite objects of the test
+# executables):
+test_lib_file:= $(test_subdir)/libicontest.a
+test_lib_prog_obj_files:= $(test_prog_obj_files) $(common_prog_obj_files)
+test_lib_obj_files:= $(call get_prereq_objs,$(test_lib_prog_obj_files))
+lib_files+= $(test_lib_file)
+
 # Stamp files of the building subdirectories
 # (this finalizes the list of generated files):
-dir_files:= $(filter-out ./.dirstamp,$(addsuffix .dirstamp,$(sort $(dir $(dep_files) $(pp_files) $(exec_files) $(lib_files))) $(moddir)/))
+dir_files:= $(filter-out ./.dirstamp, \
+                $(addsuffix .dirstamp, \
+                    $(sort $(dir $(dep_files) $(pp_files) $(exec_files) $(test_exec_files) $(lib_files))) $(mod_builddir)/))
 
 ########################## PGI/NVIDIA INLINE LIBRARY ###########################
 
 # Name of the inline library (a directory):
-@PGI_INLIB_ENABLED@pgi_inlib_name:= $(libdir)/icon.il
+@PGI_INLIB_ENABLED@pgi_inlib_name:= $(lib_builddir)/icon.il
 
 # List of procedures to be inlined:
 @PGI_INLIB_ENABLED@pgi_inlib_procedures:=
@@ -239,15 +317,15 @@ join_comma= $(subst $() ,$(join_comma_symbol),$(strip $(1)))
 # Additional PGI/NVIDIA Fortran compiler flags enabling the inline library
 # generation and usage:
 @PGI_INLIB_ENABLED@pgi_inlib_common_arg:= lib:$(pgi_inlib_name),name:$(call join_comma,$(pgi_inlib_procedures))
-@PGI_INLIB_ENABLED@pgi_inlib_ex_FCFLAGS= -Mextract=$(pgi_inlib_common_arg)
-@PGI_INLIB_ENABLED@@SEPARATE_MODS_ENABLED@dir_files+= $(moddir_null)/icon.il/.dirstamp
-@PGI_INLIB_ENABLED@@SEPARATE_MODS_ENABLED@pgi_inlib_ex_FCFLAGS+= @FC_MOD_OUT@$(moddir_null)/icon.il
-@PGI_INLIB_ENABLED@@SEPARATE_MODS_DISABLED@pgi_inlib_ex_FCFLAGS+= @FC_MOD_OUT@$(moddir)
-@PGI_INLIB_ENABLED@pgi_inlib_in_FCFLAGS= -Minline=$(pgi_inlib_common_arg),reshape
+@PGI_INLIB_ENABLED@pgi_inlib_ex_FCFLAGS:= -Mextract=$(pgi_inlib_common_arg)
+@PGI_INLIB_ENABLED@@SEPARATE_MODS_ENABLED@dir_files+= $(mod_builddir_null)/icon.il/.dirstamp
+@PGI_INLIB_ENABLED@@SEPARATE_MODS_ENABLED@pgi_inlib_ex_FCFLAGS+= @FC_MOD_OUT@$(mod_builddir_null)/icon.il
+@PGI_INLIB_ENABLED@@SEPARATE_MODS_DISABLED@pgi_inlib_ex_FCFLAGS+= @FC_MOD_OUT@$(mod_builddir)
+@PGI_INLIB_ENABLED@pgi_inlib_in_FCFLAGS:= -Minline=$(pgi_inlib_common_arg),reshape
 
 # Additional flag limiting the GPU register usage (valid only if the inline
 # library is enabled):
-@PGI_INLIB_ENABLED@@GPU_ENABLED@pgi_inlib_reglim_FCFLAGS= -gpu=maxregcount:96
+@PGI_INLIB_ENABLED@@GPU_ENABLED@pgi_inlib_reglim_FCFLAGS:= -gpu=maxregcount:96
 
 ########################################
 
@@ -299,8 +377,15 @@ join_comma= $(subst $() ,$(join_comma_symbol),$(strip $(1)))
 
 ############################### MAKEFILE TWEAKS ################################
 
+# Issue warnings that command-line overrides of the installation prefixes are
+# not supported:
+$(foreach v,prefix exec_prefix bindir datarootdir datadir includedir libdir, \
+  $(if $(filter $(origin $(v)),command line), \
+    $(warning command-line override of the '$(v)' variable is not supported; \
+        the provided value '$($(v))' will be ignored)))
+
 # Silent rule prefixes:
-V= @DEFAULT_VERBOSITY@
+V:= @DEFAULT_VERBOSITY@
 ifeq ($(V),0)
 silent_AR=      @echo "  AR      " $@;
 silent_CC=      @echo "  CC      " $@;
@@ -322,24 +407,60 @@ silent_SB2=     @echo "  SB2PP   " $@;
 silent_none=    @
 endif
 
+# Sanitize the test colorization variable:
+ifeq ($(ICON_COLOR_TESTS),always)
+else ifeq ($(ICON_COLOR_TESTS),no)
+else
+override ICON_COLOR_TESTS:=
+endif
+
+# Test colorization and verbosity for the Automake-based packages:
+AM_COLOR_TESTS?= $(ICON_COLOR_TESTS)
+VERBOSE?= $(ICON_VERBOSE_TESTS)
+
+# Test colorization and verbosity for the Autotest-based packages (also skip
+# running the tests if requested):
+TESTSUITEFLAGS?= \
+  $(if $(ICON_COLOR_TESTS),--color=$(ICON_COLOR_TESTS)) \
+  $(if $(ICON_VERBOSE_TESTS),--verbose) \
+  $(if $(TESTS),,--keywords=_run_nothing_)
+
+# Test colorization and verbosity for the CMake-based packages (also skip
+# running the tests if requested):
+CLICOLOR_FORCE?= $(if $(filter always,$(ICON_COLOR_TESTS)),1,0)
+CLICOLOR?= $(if $(filter no,$(ICON_COLOR_TESTS)),0,1)
+CTEST_OUTPUT_ON_FAILURE?= $(if $(ICON_VERBOSE_TESTS),1,0)
+ARGS?= $(if $(TESTS),,--exclude-regex .)
+
+# Test colorization for the GTest-based packages:
+GTEST_COLOR?= \
+  $(if $(filter always,$(ICON_COLOR_TESTS)),1, \
+  $(if $(filter no,$(ICON_COLOR_TESTS)),0))
+
 # Disable built-in suffix rules:
 .SUFFIXES:
 # Delete partially updated files:
 .DELETE_ON_ERROR:
 # Targets not associated with files:
 .PHONY: all preprocess depend check install mostlyclean clean distclean \
-        config-bundled check-bundled dummy-depend force-create-version \
-        sanitize-mod-proxies
+        config-bundled bundled check-bundled check-icon dummy-depend \
+        $(bundled_builddirs) force-create-version sanitize-mod-proxies
+
+# Makefiles of the bundled packages:
+bundled_makefiles:= $(addsuffix /Makefile,$(bundled_builddirs))
 
 # Targets that do not need the dependency files:
 nodep_targets:= preprocess depend mostlyclean clean distclean config-bundled \
-                check-bundled dummy-depend $(bundled_subdirs) $(dep_files) \
-                $(pp_files)
+                bundled check-bundled dummy-depend $(bundled_builddirs) \
+                $(bundled_makefiles) version.c version.@OBJEXT@ \
+                run/SETUP.config.install $(dep_files) \
+                $(pp_files) $(BUNDLED_LIBFILES)
 
 # Selective search paths:
 vpath %.f90 $(srcdir)
 vpath %.c $(srcdir)
 vpath %.cu $(srcdir)
+vpath %.hip.cc $(srcdir)
 
 ################### PATTERN- AND TARGET-SPECIFIC ASSIGNMENTS ###################
 
@@ -373,7 +494,7 @@ vpath %.cu $(srcdir)
 #   in both cases. This means that, as long as we support older version of GNU
 #   Make, we have to declare the most general ASSIGNMENTS first and the most
 #   general RULES last.
-@ICON_FCGROUP_ASSIGNMENTS@
+@FCGROUP_ASSIGNMENTS@
 
 ############################# USER INTERFACE RULES #############################
 
@@ -389,10 +510,10 @@ depend: $(dep_files)
 # Generate a list of files that are going to be compiled in the current
 # configuration:
 srclist: $(dep_files)
-	$(silent_GEN)$(DEPLIST) -t $(ICON_prog_obj_file) -f $^ 2>/dev/null | sed '/\(\.@OBJEXT@\|\.@FC_MOD_FILE_EXT@\.proxy\|.@FC_SMOD_FILE_EXT@\.sproxy\)$$/d' | sort > $@
+	$(silent_GEN)$(DEPLIST) -t $(common_lib_prog_obj_files) -f $^ 2>/dev/null | sed '/\.@OBJEXT@$$/d;/\.@FC_MOD_FILE_EXT@\.proxy$$/d;/\.@FC_SMOD_FILE_EXT@\.sproxy$$/d' | sort > $@
 
 # Check rule:
-check: all check-bundled
+check: all check-bundled check-icon
 
 # A general rule for clean recipes is to delete only those files that have been
 # created explicitly, abandoning the idea of trying to delete all possible side
@@ -400,18 +521,20 @@ check: all check-bundled
 # Python's cache files, etc.
 
 # Delete the results of compilation and linking:
-mostlyclean: $(bundled_subdirs)
-	rm -f $(exec_files) $(lib_files) $(addsuffix .@OBJEXT@,$(basename $(f90_files) $(c_files) $(cu_files) $(hip_files))) version.@OBJEXT@
-	rm -f $(moddir)/*.@FC_MOD_FILE_EXT@ $(moddir)/*.@FC_MOD_FILE_EXT@.proxy
-	rm -f $(moddir)/*.@FC_SMOD_FILE_EXT@ $(moddir)/*.@FC_SMOD_FILE_EXT@.sproxy
-@SEPARATE_MODS_ENABLED@	rm -rf $(moddir_null) $(f90_files:.f90=$(pp_infix)modstamp.f90)
+mostlyclean: $(bundled_builddirs)
+	rm -f $(exec_files) $(test_exec_files) $(lib_files)
+	rm -f $(addsuffix .@OBJEXT@,$(basename $(f90_files) $(c_files) $(cu_files) $(hip_files))) version.@OBJEXT@
+	rm -f $(mod_builddir)/*.@FC_MOD_FILE_EXT@ $(mod_builddir)/*.@FC_MOD_FILE_EXT@.proxy
+	rm -f $(mod_builddir)/*.@FC_SMOD_FILE_EXT@ $(mod_builddir)/*.@FC_SMOD_FILE_EXT@.sproxy
+	rm -f $(patsubst %,$(test_subdir)/%.log,$(TESTS)) $(test_subdir)/test-suite.log
+@SEPARATE_MODS_ENABLED@	rm -rf $(mod_builddir_null) $(f90_files:.f90=$(pp_infix)modstamp.f90)
 @PGI_INLIB_ENABLED@	rm -rf $(pgi_inlib_name)
 
 # Delete files generated at the building stage (strictly speaking, we should
-# also translate 'clean' into 'distclean' for the bundled libraries when the
+# also translate 'clean' into 'distclean' for the bundled packages when the
 # delayed configuration is enabled but that would be counterproductive,
 # therefore, we do not do that):
-clean_files= srclist version.c $(pp_files)
+clean_files:= srclist version.c run/SETUP.config.install $(pp_files)
 
 # With all components and all preprocessing steps enabled, the list above
 # contains ~3k filenames, which might result into the following error if we
@@ -442,15 +565,15 @@ distclean: clean
 	rm -f run/collect.set-up.info run/set-up.info run/SETUP.config
 	rm -f $(dep_files)
 	rm -f $(dir_files)
-	test -z "$(bundled_cmake_subdirs)" || rm -rf $(bundled_cmake_subdirs)
-	@for dir in $(bindir) $(libdir) $(moddir); do \
+	test -z "$(bundled_cmake_builddirs)" || rm -rf $(bundled_cmake_builddirs)
+	@for dir in $(bin_builddir) $(lib_builddir) $(mod_builddir); do \
           if test -d "$$dir"; then \
             echo "find '$$dir' -type d -empty -delete"; \
             find "$$dir" -type d -empty -delete; \
           fi; \
 	done
 	@if test '.' != '$(srcdir)'; then \
-	  for dir in $(subdirs) externals run; do \
+	  for dir in $(subdirs) externals run test; do \
 	    if test -d "$$dir"; then \
 	      echo "find '$$dir' -type d -empty -delete"; \
 	      find "$$dir" -type d -empty -delete; \
@@ -460,41 +583,95 @@ distclean: clean
 	rm -f icon.mk
 
 # Installation rule:
-install: all
-	$(INSTALL) -d $(DESTDIR)@bindir@ && $(INSTALL) $(exec_files) $(DESTDIR)@bindir@
-@HD_ENABLED@	$(silent_none)$(MAKE) -C externals/hd $@ V=$(V)
+install: all run/SETUP.config.install
+@COMIN_SHARED_ENABLED@	$(silent_none)echo 'Installation of the shared COMIN library is currently not supported.' >&2; exit 1
+@COMIN_STATIC_ENABLED@	$(silent_none)$(MAKE) -C externals/comin/build $@ VERBOSE=$(filter-out 0,$(V))
+@HD_ENABLED@	$(silent_none)$(MAKE) -C externals/hd $@ V=$(V) exec_prefix='@exec_prefix@' bindir='bin'
+@MTIME_PYTHON_ENABLED@	$(silent_none)$(MAKE) -C externals/mtime/build/python $@ VERBOSE=$(filter-out 0,$(V))
+@YAC_PYTHON_ENABLED@	$(silent_none)$(MAKE) -C externals/yac/python $@ V=$(V) prefix='@exec_prefix@'
+	$(INSTALL) -d $(DESTDIR)@bindir@
+	@for f in $(exec_files); do \
+	  tf=`basename $$f | sed '$(TRANSFORM)'`; \
+	  echo "$(INSTALL) '$$f' '$(DESTDIR)@bindir@/$$tf'"; \
+	  $(INSTALL) "$$f" "$(DESTDIR)@bindir@/$$tf"; \
+	done
+	$(INSTALL) -d $(DESTDIR)@datadir@/run
+	$(INSTALL) run/SETUP.config.install $(DESTDIR)@datadir@/run/SETUP.config
 
-# Explicit bundled libraries configuration rule:
-config-bundled: $(addsuffix /Makefile,$(bundled_subdirs))
+# Explicit configuration rule for the bundled packages:
+config-bundled: $(bundled_makefiles)
 
-# Check rule for the bundled libraries (run the tests serially to make the
-# output readable and prevent from possible overloading due to multiple
-# simultaneous MPI runs):
-check-bundled: config-bundled $(bundled_cmake_subdirs) $(if $(filter check,$(MAKECMDGOALS)),all) # run the tests after 'all' when 'make check'
-	@test -z '$(bundled_subdirs)' && echo "The list of bundled libraries is empty: nothing to check." && exit 0; \
-	fail=; pass=; \
-	for d in $(bundled_config_subdirs); do \
-	  if $(MAKE) -C "$$d" check V=$(V); then pass="$$pass$$d "; \
-	  else fail="$$fail$$d "; fi; \
+# Explicit building rule for the bundled packages:
+bundled: $(bundled_builddirs)
+
+# Check rule for the bundled packages (run the tests serially to make the output
+# readable and prevent from possible overloading due to multiple simultaneous
+# MPI runs):
+check-bundled: $(bundled_makefiles) $(bundled_cmake_builddirs) $(if $(filter check,$(MAKECMDGOALS)),all) # run the tests after 'all' when 'make check'
+	@test -z '$(bundled_builddirs)' && echo "The list of bundled packages is empty: nothing to check." && exit 0; \
+	fail=; \
+	for d in $(bundled_builddirs); do \
+	  case ' $(bundled_cmake_builddirs) ' in \
+	    *" $$d "*) MAKEFLAGS='$(filter-out --jobserver-fds=% --jobserver-auth=%,$(MAKEFLAGS))' $(MAKE) -j1 -C "$$d" test VERBOSE=$(filter-out 0,$(V)) CLICOLOR_FORCE='$(CLICOLOR_FORCE)' CLICOLOR='$(CLICOLOR)' CTEST_OUTPUT_ON_FAILURE='$(CTEST_OUTPUT_ON_FAILURE)' GTEST_COLOR='$(GTEST_COLOR)' ARGS='$(ARGS)' || fail="$$fail$$d " ;; \
+	    *) $(MAKE) -C "$$d" check V=$(V) AM_COLOR_TESTS='$(AM_COLOR_TESTS)' VERBOSE='$(VERBOSE)' TESTSUITEFLAGS='$(TESTSUITEFLAGS)' || fail="$$fail$$d " ;; \
+	  esac; \
 	done; \
-	for d in $(bundled_cmake_subdirs); do \
-	  if $(MAKE) -C "$$d" test VERBOSE=$(filter-out 0,$(V)); then pass="$$pass$$d "; \
-	  else fail="$$fail$$d "; fi; \
-	done; \
-	test -n "$$pass" && echo "PASS: $$pass"; \
-	if test -n "$$fail"; then echo "FAIL: $$fail" && false; fi # exit code of the last command must be zero if $fail is empty
+	{ \
+	  test x"$(ICON_COLOR_TESTS)" = xalways || { \
+	    test x"$(ICON_COLOR_TESTS)" != xno && \
+	      test x"$$TERM" != xdumb && \
+	      { test -t 1; } 2>/dev/null; \
+	  }; \
+	} && { \
+	  red='[0;31m'; std='[m'; \
+	} || { \
+	  red=; std=; \
+	}; \
+	if test -n "$$fail"; then echo "$${red}Tests failed in the following build directories of the bundled packages: $$fail$${std}" && false; fi # exit code of the last command must be zero if $fail is empty
+
+# Run the test suite:
+check-icon: $(test_exec_files) | $(if $(filter check,$(MAKECMDGOALS)),check-bundled)
+	$(silent_none)$(PYTHON) $(srcdir)/utils/test_driver.py \
+	--tests $(TESTS) \
+	--skip-tests $(call get_test_names,$(test_skip_prog_f90_files)) \
+	--src-dir='$(srcdir)' \
+	--test-subdir='$(test_subdir)' \
+	--test-exec-ext='.x@EXEEXT@' \
+	--shell='$(SHELL)' \
+	--mpi-launch='$(MPI_LAUNCH)' \
+	--package-name-version='@PACKAGE_STRING@' $(if $(ICON_COLOR_TESTS),--colorize='$(ICON_COLOR_TESTS)') $(if $(ICON_VERBOSE_TESTS),--output-on-failure)
 
 ######################## COMPILATION AND LINKING RULES #########################
 
 # Dependencies of the ICON executable:
-$(ICON_exec_file): $(ICON_prog_obj_file) $(common_lib_file) $(BUNDLED_LIBFILES)
+$(icon_exec_file): $(icon_prog_obj_files) $(common_prog_obj_files) $(common_lib_file) $(BUNDLED_LIBFILES)
+
+# Dependencies of the test executables:
+$(foreach f,$(test_exec_files),$(eval $(f): $$(call get_obj_names,$(f:.x@EXEEXT@=.f90)) $$(common_prog_obj_files) $$(test_lib_file) $$(BUNDLED_LIBFILES)))
 
 # Common linking rule for the executables:
-$(exec_files): | $(dir_files)
-	$(silent_FCLD)$(FC) -o $@ $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) $(LDFLAGS) $+ $(BUNDLED_EXTRA_LIBS) $(LIBS)
+#   List of files to be passed to the linker:
+link_files= $+
+#   Replace the relative path to libcomin.a (set in configure.ac), which is a
+#   prerequisite of the linking rule and triggers the relinking when updated,
+#   with the list of paths to the object files that are put into the library:
+#     This is a portable (across different compilers) alternative to the
+#     -Wl,--whole-archive/-Wl,--no-whole-archive flags. The list of object files
+#     is generated by CMake when configuring COMIN via the wrapper
+#     (utils/cmake-wrapper/CMakeLists.txt). The list references files by paths
+#     that are relative to the build directory of COMIN, hence we prepend each
+#     element of the list with it. The variable is evaluated inside the recipe
+#     when COMIN is guaranteed to have been configured.
+@COMIN_STATIC_ENABLED@link_files= $(subst externals/comin/build/_icon/libcomin.a,$(addprefix externals/comin/build/, \
+@COMIN_STATIC_ENABLED@                $(shell cat ./externals/comin/build/CMakeFiles/icon-extra-libs.dir/link.txt)),$+)
+$(exec_files) $(test_exec_files): | $(dir_files)
+	$(silent_FCLD)$(FC) -o $@ $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) $(LDFLAGS) $(link_files) $(shell . ./collect.extra-libs) $(LIBS)
 
 # Dependencies of the common convenience library:
 $(common_lib_file): $(common_lib_obj_files)
+
+# Dependencies of the test convenience library:
+$(test_lib_file): $(test_lib_obj_files)
 
 # Common archive generation rule:
 $(lib_files): | $(dir_files)
@@ -517,18 +694,18 @@ $(lib_files): | $(dir_files)
 @PGI_INLIB_ENABLED@	$(silent_FCEX)rm -rf $(@D) && $(FC) $(pgi_inlib_ex_FCFLAGS) $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) @FCFLAGS_f90@ $(filter %.f90,$^)
 
 # Fortran compilation rule:
-@SEPARATE_MODS_ENABLED@%.@OBJEXT@: %.f90 | $(dir_files) $(bundled_subdirs) sanitize-mod-proxies
-@SEPARATE_MODS_ENABLED@	$(silent_FC)@MKDIR_P@ $(moddir_null)/$@ && $(FC) -o $@ -c @FC_MOD_OUT@$(moddir_null)/$@ $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) @FCFLAGS_f90@ $<
+@SEPARATE_MODS_ENABLED@%.@OBJEXT@: %.f90 | $(dir_files) $(bundled_builddirs) sanitize-mod-proxies
+@SEPARATE_MODS_ENABLED@	$(silent_FC)@MKDIR_P@ $(mod_builddir_null)/$@ && $(FC) -o $@ -c @FC_MOD_OUT@$(mod_builddir_null)/$@ $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) @FCFLAGS_f90@ $<
 
-@SEPARATE_MODS_DISABLED@%.@OBJEXT@: %.f90 | $(dir_files) $(bundled_subdirs) sanitize-mod-proxies
-@SEPARATE_MODS_DISABLED@	$(silent_FC)$(FC) -o $@ -c @FC_MOD_OUT@$(moddir) $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) @FCFLAGS_f90@ $<
+@SEPARATE_MODS_DISABLED@%.@OBJEXT@: %.f90 | $(dir_files) $(bundled_builddirs) sanitize-mod-proxies
+@SEPARATE_MODS_DISABLED@	$(silent_FC)$(FC) -o $@ -c @FC_MOD_OUT@$(mod_builddir) $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) @FCFLAGS_f90@ $<
 
 # Fortran module file generation rule:
-@SEPARATE_MODS_ENABLED@%$(pp_infix)modstamp.f90: %.f90 | $(dir_files) $(bundled_subdirs) sanitize-mod-proxies
-@SEPARATE_MODS_ENABLED@	$(silent_MOD)$(FC) -c @FC_MOD_OUT@$(moddir) $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) @FC_MOD_ONLY@ @FCFLAGS_f90@ $< && touch $@
+@SEPARATE_MODS_ENABLED@%$(pp_infix)modstamp.f90: %.f90 | $(dir_files) $(bundled_builddirs) sanitize-mod-proxies
+@SEPARATE_MODS_ENABLED@	$(silent_MOD)$(FC) -c @FC_MOD_OUT@$(mod_builddir) $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS) @FC_MOD_ONLY@ @FCFLAGS_f90@ $< && touch $@
 
 # Fortran module file tracking and recovery rule:
-$(moddir)/%.@FC_MOD_FILE_EXT@.proxy:| sanitize-mod-proxies
+$(mod_builddir)/%.@FC_MOD_FILE_EXT@.proxy:| sanitize-mod-proxies
 	@if test -n '$<'; then \
 	  if test ! -f '$(@:.proxy=)'; then rm -f '$<'; $(MAKE) -f icon.mk '$<'; fi; \
 	  if cmp '$@' '$(@:.proxy=)' >/dev/null 2>&1 || $(MODCMP) '$@' '$(@:.proxy=)' @FC_VENDOR@ 2>/dev/null; then :; \
@@ -536,7 +713,7 @@ $(moddir)/%.@FC_MOD_FILE_EXT@.proxy:| sanitize-mod-proxies
 	fi
 
 # Fortran submodule file tracking and recovery rule:
-$(moddir)/%.@FC_SMOD_FILE_EXT@.sproxy:| sanitize-mod-proxies
+$(mod_builddir)/%.@FC_SMOD_FILE_EXT@.sproxy:| sanitize-mod-proxies
 	@if test -z '$<'; then \
 	  echo "Cannot find Fortran source file providing submodule '$(basename $(@F:.sproxy=))'." >&2; \
 	else \
@@ -549,18 +726,18 @@ $(moddir)/%.@FC_SMOD_FILE_EXT@.sproxy:| sanitize-mod-proxies
 # (sub)module to be a proxy of, i.e. if <filename>.proxy exists but <filename>
 # does not, delete <filename>.proxy:
 sanitize-mod-proxies:
-	@rm -f $(filter-out $(addsuffix .proxy,$(wildcard $(moddir)/*.@FC_MOD_FILE_EXT@)),$(wildcard $(moddir)/*.@FC_MOD_FILE_EXT@.proxy)) $(filter-out $(addsuffix .sproxy,$(wildcard $(moddir)/*.@FC_SMOD_FILE_EXT@)),$(wildcard $(moddir)/*.@FC_SMOD_FILE_EXT@.sproxy))
+	@rm -f $(filter-out $(addsuffix .proxy,$(wildcard $(mod_builddir)/*.@FC_MOD_FILE_EXT@)),$(wildcard $(mod_builddir)/*.@FC_MOD_FILE_EXT@.proxy)) $(filter-out $(addsuffix .sproxy,$(wildcard $(mod_builddir)/*.@FC_SMOD_FILE_EXT@)),$(wildcard $(mod_builddir)/*.@FC_SMOD_FILE_EXT@.sproxy))
 
 # C compilation rule:
 %.@OBJEXT@: %.c | $(dir_files)
 	$(silent_CC)$(CC) -o $@ -c $(CFLAGS) $(CPPFLAGS) $<
 
 # CUDA compilation rule:
-@CUDA_ENABLED@%.@OBJEXT@: %.cu | $(dir_file)
+@CUDA_ENABLED@%.@OBJEXT@: %.cu | $(dir_files)
 @CUDA_ENABLED@	$(silent_CUDACXX)$(CUDACXX) -o $@ -c $(CUDAFLAGS) $<
 
 # HIP compilation rule:
-@HIP_ENABLED@%.@OBJEXT@: %.cu | $(dir_file)
+@HIP_ENABLED@%.@OBJEXT@: %.hip.cc | $(dir_files)
 @HIP_ENABLED@	$(silent_HIPCXX)$(HIPCXX) -o $@ -c $(HIPFLAGS) $<
 
 ######################### DSL4JSB PREPROCESSING RULES ##########################
@@ -578,60 +755,51 @@ sanitize-mod-proxies:
 @SB2_ENABLED@%$(SB2_infix).f90: %.f90  | $(dir_files)
 @SB2_ENABLED@	$(silent_SB2)$(SB2PP) -o $@ $<
 
-############################ BUNDLED LIBRARY RULES #############################
+############################ BUNDLED PACKAGE RULES #############################
 
-# Call make inside the subdirectories unconditionally:
-.PHONY: $(bundled_subdirs)
-
-# We need to tolerate the absence of makefiles in the bundled
-# libraries when running clean rules. If the delayed configuration is disabled,
-# we tolerate the absence of the makefiles for the 'distclean' target only.
-# Otherwise, we additionally enable the tolerance for the 'mostlyclean' and
-# 'clean' targets because they can be requested before the bundled directories
-# get configured:
+# We need to tolerate the absence of makefiles in the bundled packages when
+# running clean rules. If the delayed configuration is disabled, we tolerate the
+# absence of the makefiles for the 'distclean' target only. Otherwise, we
+# additionally enable the tolerance for the 'mostlyclean' and 'clean' targets
+# because they can be requested before the bundled packages are configured:
 nomakefile_bundled_targets:= distclean
 @DELAYED_CONFIG_ENABLED@nomakefile_bundled_targets+= mostlyclean clean
 
-# Make Autoconf-based bundled libraries:
-$(bundled_config_subdirs):
+# Make Autoconf-based bundled packages:
+$(bundled_config_builddirs):
 	@if test -f '$@/Makefile'; then \
-	  $(MAKE) -C $@ $(filter all mostlyclean clean distclean,$(MAKECMDGOALS)) V=$(V); \
+	  $(MAKE) -C $@ $(filter all mostlyclean clean distclean,$(MAKECMDGOALS)) V=$(V) bindir='bin'; \
 	else \
 	  test -z '$(filter-out $(nomakefile_bundled_targets),$(or $(MAKECMDGOALS),all))'; \
 	fi
 
-# Make CMake-based bundled libraries:
-$(bundled_cmake_subdirs):
+# Make CMake-based bundled packages:
+$(bundled_cmake_builddirs):
 	@if test -f '$@/Makefile'; then \
 	  $(MAKE) -C $@ $(filter all clean,$(MAKECMDGOALS) $(if $(filter mostlyclean distclean,$(MAKECMDGOALS)),clean)) VERBOSE=$(filter-out 0,$(V)); \
 	else \
 	  test -z '$(filter-out $(nomakefile_bundled_targets),$(or $(MAKECMDGOALS),all))'; \
 	fi
 
-# Build the bundled yaxt before configuring the bundled yac:
-externals/yac/Makefile:| @DELAYED_CONFIG_ENABLED@ $(filter externals/yaxt,$(bundled_subdirs))
-
-# Build the bundled mtime and yaxt before building the bundled yac:
-externals/yac: $(filter externals/mtime externals/yaxt,$(bundled_subdirs))
-
-# Build the bundled yaxt and ppm before building the bundled cdi:
-externals/cdi: $(filter externals/yaxt externals/ppm,$(bundled_subdirs))
-
-# Build the bundled yac before the bundled hd:
-externals/hd: $(filter externals/yac,$(bundled_subdirs))
-
-# Configure delayed bundled libraries:
-@ICON_DELAYED_CONFIG_RULES@
-
-# Relink executables if any of the source files of the bundled libraries
-# is updated (the semicolon is required to support parallel rebuild):
-$(BUNDLED_LIBFILES): $(bundled_subdirs);
+# The configuration and build order of the bundled packages:
+@BUNDLED_RULES@
 
 ############################### AUXILIARY RULES ################################
 
-# Version source file generation rule:
+# Version file generation rules:
+version.@OBJEXT@: config.h
 version.c: force-create-version
-	$(silent_GEN)$(PERL) $(srcdir)/utils/pvcs.pl --srcdir $(srcdir) --builddir .
+	$(silent_GEN)$(PVCS) --srcdir $(srcdir) --output $@ --bundled-srcdirs $(PVCS_bundled_srcdirs)
+
+# Installable version of SETUP.config
+run/SETUP.config.install: run/SETUP.config
+	$(silent_GEN):;{ \
+	  sed '/^abs_top_srcdir = /d' $< ; \
+	  echo ; \
+	  echo '# Install settings' ; \
+	  echo PREFIX = $(DESTDIR)@prefix@ ; \
+	  echo BIN_DIR = $(DESTDIR)@bindir@ ; \
+	} > $@
 
 # Directory creation rule:
 %/.dirstamp:
@@ -644,7 +812,7 @@ version.c: force-create-version
 
 # Fortran dependency generation rule:
 %.f90.d: %.f90 icon.mk depgen.f90.config | $(dir_files)
-	$(silent_DEPGEN)$(DEPGEN) @depgen.f90.config -o $@ --obj-name $(@:.f90.d=.@OBJEXT@) $(if @SEPARATE_MODS_DISABLED@,--fc-mod-stamp-name $(@:.f90.d=$(pp_infix)modstamp.f90)) -i $< -- $(DEPGEN_FCFLAGS) @FC_MOD_OUT@$(moddir) $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS)
+	$(silent_DEPGEN)$(DEPGEN) @depgen.f90.config -o $@ --obj-name $(@:.f90.d=.@OBJEXT@) $(if @SEPARATE_MODS_DISABLED@,--fc-mod-stamp-name $(@:.f90.d=$(pp_infix)modstamp.f90)) -i $< -- $(DEPGEN_FCFLAGS) @FC_MOD_OUT@$(mod_builddir) $(make_FCFLAGS) $(FCFLAGS) $(ICON_FCFLAGS)
 
 # C dependency generation rule:
 %.c.d: %.c icon.mk depgen.c.config | $(dir_files)
@@ -655,17 +823,15 @@ version.c: force-create-version
 @CUDA_ENABLED@	$(silent_DEPGEN)$(DEPGEN) @depgen.c.config --pp-inc-sys -o $@ --obj-name $(@:.cu.d=.@OBJEXT@) -i $< -- $(CUDAFLAGS)
 
 # HIP dependency generation rule:
-@HIP_ENABLED@%.cu.d: %.cu icon.mk depgen.c.config | $(dir_files)
-@HIP_ENABLED@	$(silent_DEPGEN)$(DEPGEN) @depgen.c.config --pp-inc-sys -o $@ --obj-name $(@:.cu.d=.@OBJEXT@) -i $< -- $(HIPFLAGS)
+@HIP_ENABLED@%.hip.cc.d: %.hip.cc icon.mk depgen.c.config | $(dir_files)
+@HIP_ENABLED@	$(silent_DEPGEN)$(DEPGEN) @depgen.c.config --pp-inc-sys -o $@ --obj-name $(@:.hip.cc.d=.@OBJEXT@) -i $< -- $(HIPFLAGS)
 
 # Dependency generation rule for Fortran-to-C bindings:
 c_binding.d: icon.mk
 	$(silent_DEPGEN):;{ \
 	  echo '$(call get_obj_names,src/io/restart/mo_c_restart_util.f90): #-hint support/util_multifile_restart.@OBJEXT@'; \
 	  echo '$(call get_obj_names,support/mo_util_uuid.f90): #-hint support/util_uuid.@OBJEXT@'; \
-	  echo '$(call get_obj_names,src/shared/mo_util_vcs.f90): #-hint version.@OBJEXT@'; \
-	  echo '@ART_ENABLED@$(call get_obj_names,$(ART_subdir)/shared/mo_art_util_vcs.f90): #-hint version.@OBJEXT@'; \
-	  echo '@GPU_ENABLED@$(call get_obj_names,src/shared/mo_index_list.f90): #-hint src/shared_cuda/index_list_cuda.@OBJEXT@'; \
+	  echo '@GPU_ENABLED@$(call get_obj_names,src/shared/mo_index_list.f90): #-hint support/index_list.@OBJEXT@'; \
 	  echo '@DACE_ENABLED@$(call get_obj_names,$(DACE_subdir)/mo_wigos.f90): #-hint $(DACE_subdir)/dace_md5_ifc.@OBJEXT@ $(DACE_subdir)/md5.@OBJEXT@'; \
 	} >$@
 

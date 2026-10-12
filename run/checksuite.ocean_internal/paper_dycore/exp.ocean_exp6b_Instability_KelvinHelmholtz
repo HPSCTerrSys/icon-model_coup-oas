@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -134,13 +134,13 @@ dzlev_m(1:20)      =   14.0,   12.0,   15.0,   18.0,   21.0,   25.0,   30.0,   4
   k_pot_temp_v         = 1.0E-5   ! [m/s]  vertical background diffusion coefficient for temperature
   MAX_VERT_DIFF_TRAC   = 0.1      ! max vertical tracer diffusion for convection used in case of instability
   !convection_InstabilityThreshold = -1.0e-11 ! default: -5.0e-8
-  k_tracer_dianeutral_parameter   = 1.0E-3  !dianeutral tracer diffusivity, used in GentMcWilliams-Redi parametrization   
-  k_tracer_isoneutral_parameter   = 400.0 !2.0E+3  !isoneutral tracer diffusivity, used in GentMcWilliams-Redi parametrization   
-  k_tracer_GM_kappa_parameter     = 400.0  !kappa parameter in GentMcWilliams parametrization     
+  k_tracer_dianeutral_parameter   = 1.0E-3  !dianeutral tracer diffusivity, used in GentMcWilliams-Redi parametrization
+  k_tracer_isoneutral_parameter   = 400.0 !2.0E+3  !isoneutral tracer diffusivity, used in GentMcWilliams-Redi parametrization
+  k_tracer_GM_kappa_parameter     = 400.0  !kappa parameter in GentMcWilliams parametrization
   leith_closure=2
   leith_closure_gamma=0.15
   biharmonic_const=2.5  !0.005
-  
+
 /
 &ocean_physics_nml
   i_sea_ice          =    0      ! 0 = no sea ice; 1 = Winton; 2 = Semtner
@@ -148,11 +148,11 @@ dzlev_m(1:20)      =   14.0,   12.0,   15.0,   18.0,   21.0,   25.0,   30.0,   4
   richardson_tracer  = 2.0e-3    ! factor for vertical diffusion coefficient in PP scheme
   ! use_constant_mixing  = .true.
   bottom_drag_coeff  = 5.5E-3
-  GMRedi_configuration  = 0  
+  GMRedi_configuration  = 0
 !  tapering_scheme=3 !default is 3 (Griffies)
 ! use_mpiom_pp_form  = .true.
 ! use_wind_mixing    = .false.   ! not yet ready
-!physics_parameters_type=2  !0=(no convection),1=ICON optimized, 2=MPIOM (default)  
+!physics_parameters_type=2  !0=(no convection),1=ICON optimized, 2=MPIOM (default)
 /
 &ocean_forcing_nml
   iforc_oce = 11
@@ -167,11 +167,11 @@ dzlev_m(1:20)      =   14.0,   12.0,   15.0,   18.0,   21.0,   25.0,   30.0,   4
 ! relax_temperature_max            = 0.0   ! equator temperature
 ! relax_temperature_min            = 0.0   ! poleward temperature
 ! forcing_temperature_poleLat      = 45.0  ! location of poleward minimum relaxation and init temperature
-/                                  
-&ocean_initialConditions_nml       
+/
+&ocean_initialConditions_nml
   initial_salinity_type            = 200    !  horizontally homogeneous
-  initial_salinity_top             = 35.0   
-  initial_salinity_bottom          = 35.0   
+  initial_salinity_top             = 35.0
+  initial_salinity_bottom          = 35.0
   initial_temperature_type         = 300    !  214: Abernathey temperature initialization
   initial_temperature_bottom       = 5.0    !  bottom and poleward temperature
   initial_temperature_top          = 7.0    !  equator temperature
@@ -183,7 +183,7 @@ dzlev_m(1:20)      =   14.0,   12.0,   15.0,   18.0,   21.0,   25.0,   30.0,   4
 &io_nml
   dt_checkpoint = ${dt_checkpoint}
   lkeep_in_sync = .TRUE.          ! sync after each timestep
-  ! use_set_event_to_simstep = .false. 
+  ! use_set_event_to_simstep = .false.
 /
 EOF
 #-----------------------------------------------------------------------------

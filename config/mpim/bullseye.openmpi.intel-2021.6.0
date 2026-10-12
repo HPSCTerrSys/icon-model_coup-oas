@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -42,18 +42,25 @@ fi
 
 BUILD_ENV=". \"${ENV}\";. \"${script_dir}/module_switcher\"; switch_for_module ${modules}; export PATH=\"${sw_root}/bin:\${PATH-}\"; export LD_LIBRARY_PATH=\"${sw_root}/lib:\${LD_LIBRARY_PATH-}\"; export PYTHONPATH=\"${sw_root}/python/pp_ser:\${PYTHONPATH-}\";"
 
+# Enable architecture-specific optimizations for Intel CPUs:
+case $(grep -m1 '^vendor_id' /proc/cpuinfo 2>/dev/null) in
+  *Intel*) march_flags='-march=native' ;;
+  *AMD*) march_flags='-march=core-avx2 -mtune=core-avx2' ;;
+  *) march_flags= ;;
+esac
+
 CC='mpicc'
-CFLAGS='-g -march=native -pc64 -ftz -fma -ip -qno-opt-dynamic-align'
+CFLAGS="-g ${march_flags} -pc64 -ftz -fma -ip -qno-opt-dynamic-align -gnu-prefix=/usr/bin/"
 ICON_CFLAGS='-O3'
 ICON_BUNDLED_CFLAGS='-O2'
 
 CXX=$(eval "${BUILD_ENV}" >/dev/null; mpicxx -show | sed 's: .*$::')
-CXXFLAGS='-g -march=native -pc64 -ftz -fma -ip -qno-opt-dynamic-align -O2'
+CXXFLAGS="-g ${march_flags} -pc64 -ftz -fma -ip -qno-opt-dynamic-align -O2 -gnu-prefix=/usr/bin/"
 
 CPPFLAGS="-I${sw_root}/include -I${sw_root}/include/libxml2"
 
 FC='mpif90'
-FCFLAGS="${RTTOV_FCFLAGS-} -I${sw_root}/include -g -march=native -pc64 -fp-model source"
+FCFLAGS="${RTTOV_FCFLAGS-} -I${sw_root}/include -g ${march_flags} -pc64 -fp-model source -gnu-prefix=/usr/bin/"
 
 ICON_FCFLAGS='-O3 -ftz -qoverride-limits -assume realloc_lhs -align array64byte -fma -ip'
 
@@ -63,12 +70,18 @@ ICON_OCEAN_PATH='src/hamocc:src/ocean:src/sea_ice'
 ICON_ECRAD_FCFLAGS='-qno-opt-dynamic-align -no-fma -fpe0'
 
 LDFLAGS="${RTTOV_LDFLAGS-} -L${sw_root}/lib -Wl,--disable-new-dtags"
-LIBS="-Wl,--as-needed -lxml2 -lfyaml -lSerialboxFortran -leccodes_f90 -leccodes ${RTTOV_LIBS-} -llapack -lblas -lnetcdff -lnetcdf -lhdf5_hl_fortran -lhdf5_fortran -lhdf5 -lz"
+LIBS="-Wl,--as-needed -lxml2 -lfyaml -lSerialboxFortran -leccodes_f90 -leccodes ${RTTOV_LIBS-} -llapack -lblas -lnetcdff -lnetcdf -lhdf5_hl_fortran -lhdf5_fortran -lhdf5 -lz -lstdc++"
 
 AR='xiar'
 MPI_LAUNCH='mpiexec --oversubscribe'
 
-EXTRA_CONFIG_ARGS='--enable-loop-exchange --enable-intel-consistency --enable-grib2 --enable-fcgroup-OCEAN'
+EXTRA_CONFIG_ARGS="\
+--enable-loop-exchange \
+--enable-intel-consistency \
+--enable-grib2 \
+--enable-fcgroup-OCEAN \
+--enable-bundled-python=mtime \
+"
 
 ################################################################################
 
@@ -105,11 +118,17 @@ done
 # Copy runscript-related files when building out-of-source:
 if test $(pwd) != $(cd "${icon_dir}"; pwd); then
   echo "Copying runscript input files from the source directory..."
-  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*'
-  ln -sf -t run/ ${icon_dir}/run/standard_*
-  rsync -uavz ${icon_dir}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${icon_dir}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${icon_dir}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${icon_dir}/make_runscripts .
   ln -sf ${icon_dir}/data
   ln -sf ${icon_dir}/vertical_coord_tables
 fi
-

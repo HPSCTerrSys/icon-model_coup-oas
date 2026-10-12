@@ -1,17 +1,16 @@
-! module *mo_vertical_coord_table* - *loop indices and surface-pressure independent
-! variables associated with the vertical finite-difference scheme.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! module *mo_vertical_coord_table* - *loop indices and surface-pressure independent
+! variables associated with the vertical finite-difference scheme.
 
 MODULE mo_vertical_coord_table
 
@@ -65,7 +64,7 @@ CONTAINS
 
     INTEGER,           INTENT(IN   ) :: klev
     CHARACTER(LEN=*),  INTENT(IN   ) :: vct_file
-    REAL(wp),          INTENT(INOUT) :: vct_a(:), vct_b(:)  
+    REAL(wp),          INTENT(INOUT) :: vct_a(:), vct_b(:)
 
     ! Local variables
     CHARACTER(len=max_char_length),PARAMETER :: routine  = &
@@ -128,12 +127,11 @@ CONTAINS
     ALLOCATE(vct_a(nlevp1), vct_b(nlevp1), STAT=error_status)
     !$ACC ENTER DATA CREATE(vct_a)
     IF (error_status/=SUCCESS) CALL finish (TRIM(routine), 'allocation of vct_a/vct_b failed')
-    
+
     ! Allocate input for derived variables of input
     ALLOCATE(vct(nlevp1*2), STAT=error_status)
     IF (error_status/=SUCCESS) CALL finish (TRIM(routine), 'allocation of vct failed')
-    
+
   END SUBROUTINE allocate_vct_atmo
 
 END MODULE mo_vertical_coord_table
-

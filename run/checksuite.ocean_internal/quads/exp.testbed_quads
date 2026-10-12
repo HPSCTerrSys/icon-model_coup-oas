@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,7 +24,7 @@ start_date="2001-01-01T00:00:00Z"
 (( days_restart =   1365))    # stop model for restart [days]
 (( dt_restart     = days_restart * day ))
 output_interval="P01D"
-steps_per_file="60" 
+steps_per_file="60"
 
 grids_folder="/scratch/mpi/CC/mh0287/oes/grids/Idealized"
 # ocean_grids="Ocean_Channel_1900x1650_10km.nc"
@@ -67,8 +67,8 @@ cat > ${ocean_namelist} << EOF
   output_interval  = "${output_interval}"
   steps_per_file   = ${steps_per_file}                ! error with ""
   output_grid      = .true.
-  ml_varlist       =  'group:oce_essentials', 'veloc_adv_horz_u', 'veloc_adv_horz_v', 
-    'laplacian_horz_u', 'laplacian_horz_v', 'div_mass_flx_c_acc', 'vort_acc', 'vn_u', 'vn_v', 'mass_flx_e_u', 'mass_flx_e_v', 
+  ml_varlist       =  'group:oce_essentials', 'veloc_adv_horz_u', 'veloc_adv_horz_v',
+    'laplacian_horz_u', 'laplacian_horz_v', 'div_mass_flx_c_acc', 'vort_acc', 'vn_u', 'vn_v', 'mass_flx_e_u', 'mass_flx_e_v',
     'h', 'u', 'v', 't', 'press_hyd', 'pressure_grad_u', 'pressure_grad_v'
 /
 &dbg_index_nml
@@ -90,14 +90,14 @@ cat > ${ocean_namelist} << EOF
   i_bc_veloc_bot     = 1              !  0/1=bottom friction off/on
   i_bc_veloc_top     = 1              ! 2 and 3 must be checked
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-13 ! this may further be reduced
 
   select_lhs                      = 1       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
   fast_performance_level        = 300
   use_continuity_correction     = .true.
@@ -117,7 +117,7 @@ cat > ${ocean_namelist} << EOF
   threshold_max_T       = 15.0   ! abort due to temperature maximum threshold
 /
 &ocean_diffusion_nml
-  HorizontalViscosity_type = 1        
+  HorizontalViscosity_type = 1
   HorizontalViscosity_SmoothIterations = 0
   HorizontalViscosity_SpatialSmoothFactor = 0.5
   HorizontalViscosityBackground_Biharmonic = ${HorizontalViscosityBackground_Biharmonic}
@@ -134,14 +134,14 @@ cat > ${ocean_namelist} << EOF
 /
 &ocean_physics_nml
   i_sea_ice          =    0      ! 0 = no sea ice; 1 = Winton; 2 = Semtner
-  physics_parameters_type = 4 
+  physics_parameters_type = 4
   richardson_veloc   = 3.2e-3    ! factor for vertical viscosity coefficient in PP scheme
   richardson_tracer  = 3.0e-3    ! factor for vertical diffusion coefficient in PP scheme
   bottom_drag_coeff  = 3.2E-3
 /
 &ocean_forcing_nml
   iforc_oce = 11
-  forcing_windstress_u_type        = 112   
+  forcing_windstress_u_type        = 112
   forcing_windStress_u_amplitude   = 0.05
   forcing_windstress_zonal_waveno  = 1.0
   forcing_windstress_v_type        = 0
@@ -151,12 +151,12 @@ cat > ${ocean_namelist} << EOF
   type_3dimRelax_Temp              = 4
   para_3dimRelax_Temp              = 0.1  ! time scale of 3d relaxation in months
   relax_width                      = 10.0
-/                                  
-&ocean_initialConditions_nml       
+/
+&ocean_initialConditions_nml
   initial_salinity_type            = 200    !  horizontally homogeneous
-  initial_salinity_top             = 35.0   
-  initial_salinity_bottom          = 35.0   
-  initial_temperature_type         = 218   
+  initial_salinity_top             = 35.0
+  initial_salinity_bottom          = 35.0
+  initial_temperature_type         = 218
   initial_temperature_north        = 12.0
   initial_temperature_south        = 1.0
   initial_temperature_bottom       = 0.0

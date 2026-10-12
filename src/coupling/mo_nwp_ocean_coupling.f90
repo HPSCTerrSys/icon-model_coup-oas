@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Interface between NWP physics and the ocean, through a coupler
 !
 ! Notes on openMP parallelisation:
@@ -14,18 +24,6 @@
 !          prm_field(jg)%ocv(n,i_blk) = buffer(nn+jc,1)
 !  It might also be necessary to synch the data before each loop passing data to the ocean.
 !      CALL sync_patch_array(sync_c, p_patch, prm_diag%swflxsfc_t (:,:,isub_water) )
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -38,9 +36,9 @@ MODULE mo_nwp_ocean_coupling
        & CCYCLE_MODE_NONE, CCYCLE_MODE_PRESCRIBED, CCYCLE_MODE_INTERACTIVE, &
        & CCYCLE_CO2CONC_CONST, CCYCLE_CO2CONC_FROMFILE
   USE mo_dbg_nml             ,ONLY: idbg_mxmn, idbg_val
-  USE mo_exception           ,ONLY: finish
+  USE mo_exception           ,ONLY: finish, message, message_text
   USE mo_ext_data_types      ,ONLY: t_external_data
-  USE mo_fortran_tools       ,ONLY: assert_acc_host_only, init
+  USE mo_fortran_tools       ,ONLY: init, set_acc_host_or_device
   USE mo_idx_list            ,ONLY: t_idx_list_blocked
   USE mo_impl_constants      ,ONLY: start_prog_cells, end_prog_cells
   USE mo_kind                ,ONLY: wp
@@ -54,12 +52,13 @@ MODULE mo_nwp_ocean_coupling
   USE mo_physical_constants  ,ONLY: vmr_to_mmr_co2, tmelt
   USE mo_util_dbg_prnt       ,ONLY: dbg_print
 
-  USE mo_atmo_ocean_coupling ,ONLY: &
-    & field_id_co2_flx, field_id_co2_vmr, field_id_freshflx, &
-    & field_id_heatflx, field_id_oce_u, field_id_oce_v, field_id_pres_msl, &
-    & field_id_seaice_atm, field_id_seaice_oce, field_id_sp10m, field_id_sst, &
-    & field_id_umfl, field_id_vmfl
-  USE mo_coupling_utils      ,ONLY: cpl_put_field, cpl_get_field
+  USE mo_atmo_ocean_coupling_common ,ONLY: out_field_ids, in_field_ids
+  USE mo_coupling_utils      ,ONLY: cpl_put_field, cpl_get_field, &
+                                  & cpl_get_field_datetime
+  USE mtime                  ,ONLY: datetime, OPERATOR(<)
+  USE mo_run_config          ,ONLY: msg_level
+  USE mo_time_config         ,ONLY: time_config
+
 
   IMPLICIT NONE
 
@@ -144,11 +143,20 @@ MODULE mo_nwp_ocean_coupling
     !> Sea-ice thickness [m].
     REAL(wp), CONTIGUOUS, POINTER :: h_ice(:,:) => NULL()
 
+    !> Snow-on-sea-ice thickness [m].
+    REAL(wp), CONTIGUOUS, POINTER :: h_snow(:,:) => NULL()
+
     !> Zonal ocean surface velocity (optional) [m/s].
     REAL(wp), CONTIGUOUS, POINTER :: ocean_u(:,:) => NULL()
 
     !> Meridional ocean surface velocity (optional) [m/s].
     REAL(wp), CONTIGUOUS, POINTER :: ocean_v(:,:) => NULL()
+
+    !> Zonal sea ice velocity (optional) [m/s].
+    REAL(wp), CONTIGUOUS, POINTER :: ice_u(:,:) => NULL()
+
+    !> Meridional sea ice velocity (optional) [m/s].
+    REAL(wp), CONTIGUOUS, POINTER :: ice_v(:,:) => NULL()
 
     !> CO2 surface flux [kg/m2/s].
     REAL(wp), CONTIGUOUS, POINTER :: flx_co2(:,:) => NULL()
@@ -191,9 +199,11 @@ CONTAINS
     INTEGER :: i_startblk, i_endblk, i_startidx, i_endidx
     INTEGER :: jb, jc
 
-    LOGICAL :: have_ice, have_hail, have_graupel
+    LOGICAL :: have_ice, have_hail, have_graupel, lzacc
 
-    CALL assert_acc_host_only('nwp_couple_ocean', lacc)
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    !$ACC DATA CREATE(rain_rate, snow_rate) ASYNC(1) IF(lzacc)
 
     ! include boundary interpolation zone of nested domains and halo points
     i_startblk = p_patch%cells%start_block(start_prog_cells)
@@ -208,6 +218,8 @@ CONTAINS
 
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx, i_endidx, start_prog_cells, end_prog_cells)
 
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      !$ACC LOOP GANG VECTOR
       DO jc = i_startidx, i_endidx
         rain_rate(jc,jb) = prm_diag%rain_con_rate_corr(jc,jb) + prm_diag%rain_gsp_rate(jc,jb)
         snow_rate(jc,jb) = prm_diag%snow_con_rate_corr(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)
@@ -216,6 +228,7 @@ CONTAINS
         IF (have_hail) snow_rate(jc,jb) = snow_rate(jc,jb) + prm_diag%hail_gsp_rate(jc,jb)
         IF (have_graupel) snow_rate(jc,jb) = snow_rate(jc,jb) + prm_diag%graupel_gsp_rate(jc,jb)
       END DO
+      !$ACC END PARALLEL
     END DO
 
     ! Send fields:
@@ -279,15 +292,21 @@ CONTAINS
     ! 1. lnd_diag%t_seasfc (:,:)   SST [K]
     ! 2. lnd_diag%fr_seaice(:,:)   Sea-ice fraction [m2(ice)/m2(ocean)]
     ! 3. wtr_prog_new%h_ice(:,:)   Sea-ice height [m]
+    ! 3. wtr_prog_new%h_snow_si(:,:) Snow-on-Sea-ice height [m]
 
     rx%t_seasfc => lnd_diag%t_seasfc(:,:)
     rx%fr_seaice => lnd_diag%fr_seaice(:,:)
     rx%h_ice => wtr_prog_new%h_ice(:,:)
+    rx%h_snow => wtr_prog_new%h_snow_si(:,:)
     rx%ocean_u => NULL()
     rx%ocean_v => NULL()
+    rx%ice_u => NULL()
+    rx%ice_v => NULL()
     rx%flx_co2 => NULL()
 
     CALL couple_ocean(p_patch, ext_data%atm%list_sea, tx, rx, lacc)
+
+    !$ACC END DATA
 
   END SUBROUTINE nwp_couple_ocean
 
@@ -320,12 +339,42 @@ CONTAINS
     REAL(wp), PARAMETER   :: csmall = 1.0E-5_wp    ! small number (security constant)
 
     LOGICAL :: received_data
+    LOGICAL :: lzacc
 
     REAL(wp) :: co2conc
 
     CHARACTER(LEN=*), PARAMETER :: routine = str_module // ':couple_ocean'
+    LOGICAL, SAVE :: lcheck_for_timelag = .TRUE.
+    TYPE(datetime)  :: curr_datetime_umfl
 
-    CALL assert_acc_host_only('couple_ocean', lacc)
+    IF(lcheck_for_timelag .AND. time_config%timeshift%dt_shift .eq. 0) &
+      lcheck_for_timelag = .FALSE.
+
+    ! A component may execute timesteps for dates before the actual
+    ! start of this simulation (e.g. due to IAU). These timesteps are currently
+    ! not considered for coupling, which is why they are skipped here.
+    ! The first actual coupling timestep usually is a start_date + lag * field_timestep.
+    IF (lcheck_for_timelag) THEN
+
+      ! query current timestamps of source/target fields
+      curr_datetime_umfl = cpl_get_field_datetime(routine, out_field_ids%umfl )
+
+      ! skip data exchange as long as the model timestamp lags behind the field timestamp.
+      lcheck_for_timelag = (time_config%tc_current_date < curr_datetime_umfl)
+
+      IF (lcheck_for_timelag) RETURN
+
+    ENDIF !lcheck_for_timelag
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    !$ACC UPDATE ASYNC(1) IF(lzacc) &
+    !$ACC   HOST(tx%frac_w, tx%frac_i, tx%umfl_s_w, tx%umfl_s_i, tx%vmfl_s_w, tx%vmfl_s_i) &
+    !$ACC   HOST(tx%qhfl_s_w, tx%qhfl_s_i, tx%shfl_s_w, tx%shfl_s_i, tx%lhfl_s_w, tx%lhfl_s_i) &
+    !$ACC   HOST(tx%chfl_i, tx%meltpot_i, tx%sp_10m, tx%pres_sfc, tx%swflxsfc_w, tx%swflxsfc_i) &
+    !$ACC   HOST(tx%lwflxsfc_w, tx%lwflxsfc_i, tx%rain_rate, tx%snow_rate, tx%q_co2)
+
+    !$ACC WAIT(1)
 
     ! As YAC does not touch masked data an explicit initialisation with zero
     ! is required as some compilers are asked to initialise with NaN
@@ -353,18 +402,29 @@ CONTAINS
     !
     ! Receive fields from ocean:
     !  "sea_surface_temperature"                  - SST
-    !  "eastward_sea_water_velocity"              - zonal velocity, u component of ocean surface current
-    !  "northward_sea_water_velocity"             - meridional velocity, v component of ocean surface current
     !  "ocean_sea_ice_bundle"                     - ice thickness, snow thickness, ice concentration
+    !  "surface_velocity_bundle"                  - u and v component of surface ocean and sea ice velocity
     !  "co2_flux"                                 - ocean co2 flux
     !-------------------------------------------------------------------------
 
     IF (.NOT. (SIZE(tx%umfl_s_w, 1) == nproma .AND. &
                SIZE(tx%umfl_s_w, 2) >= p_patch%nblks_c)) THEN
-      CALL finish ('couple_ocean', 'first field extent must be nproma and &
+      CALL finish (routine, 'first field extent must be nproma and &
           &field size has to be at least nproma*nblocks_c')
     END IF
 
+    ! ocean and sea ice velocity bundle
+    IF ((ASSOCIATED(rx%ocean_u) .NEQV. ASSOCIATED(rx%ocean_v)) .OR. &
+        (ASSOCIATED(rx%ocean_u) .NEQV. ASSOCIATED(rx%ice_u)) .OR. &
+        (ASSOCIATED(rx%ocean_u) .NEQV. ASSOCIATED(rx%ice_v))) THEN
+      CALL finish(routine, 'ocean and sea-ice velocities must either all be &
+          &present or absent.')
+    END IF
+
+    IF (ASSOCIATED(rx%ocean_u) .AND. in_field_ids(jg)%surface_velocity < 0) THEN
+      CALL finish(routine, 'ocean and sea ice velocities are expected but fields &
+          &have not been registered with YAC')
+    END IF
 
     !  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****
     !  Send fields from atmosphere to ocean
@@ -377,7 +437,7 @@ CONTAINS
     !------------------------------------------------
 
     CALL cpl_put_field( &
-      routine, field_id_umfl, 'u-stress', p_patch%n_patch_cells, &
+      routine, out_field_ids%umfl, 'u-stress', p_patch%n_patch_cells, &
       field_1=tx%umfl_s_w, field_2=tx%umfl_s_i)
 
     !------------------------------------------------
@@ -387,7 +447,7 @@ CONTAINS
     !------------------------------------------------
 
     CALL cpl_put_field( &
-      routine, field_id_vmfl, 'v-stress', p_patch%n_patch_cells, &
+      routine, out_field_ids%vmfl, 'v-stress', p_patch%n_patch_cells, &
       field_1=tx%vmfl_s_w, field_2=tx%vmfl_s_i)
 
     !------------------------------------------------
@@ -425,7 +485,7 @@ CONTAINS
     END IF
 
     CALL cpl_put_field( &
-      routine, field_id_freshflx, 'fresh water flux', p_patch%n_patch_cells, &
+      routine, out_field_ids%freshflx, 'fresh water flux', p_patch%n_patch_cells, &
       field_1=tx%rain_rate, field_2=tx%snow_rate, field_3=buf)
 
     !------------------------------------------------
@@ -435,7 +495,7 @@ CONTAINS
     !------------------------------------------------
 
     CALL cpl_put_field( &
-      routine, field_id_heatflx, 'heat flux', p_patch%n_patch_cells, &
+      routine, out_field_ids%heatflx, 'heat flux', p_patch%n_patch_cells, &
       field_1=tx%swflxsfc_w, field_2=tx%lwflxsfc_w, &
       field_3=tx%shfl_s_w, field_4=tx%lhfl_s_w)
 
@@ -446,7 +506,7 @@ CONTAINS
     !------------------------------------------------
 
     CALL cpl_put_field( &
-      routine, field_id_seaice_atm, 'atmos sea ice', p_patch%n_patch_cells, &
+      routine, out_field_ids%seaice_atm, 'atmos sea ice', p_patch%n_patch_cells, &
       field_1=tx%meltpot_i, field_2=tx%chfl_i)
 
     !------------------------------------------------
@@ -456,7 +516,7 @@ CONTAINS
     !------------------------------------------------
 
     CALL cpl_put_field( &
-      routine, field_id_sp10m, 'wind speed', p_patch%n_patch_cells, &
+      routine, out_field_ids%sp10m, 'wind speed', p_patch%n_patch_cells, &
       tx%sp_10m)
 
     !------------------------------------------------
@@ -469,7 +529,7 @@ CONTAINS
     !------------------------------------------------
 
     CALL cpl_put_field( &
-      routine, field_id_pres_msl, 'sea level pressure', p_patch%n_patch_cells, &
+      routine, out_field_ids%pres_msl, 'sea level pressure', p_patch%n_patch_cells, &
       tx%pres_sfc)
 
     !------------------------------------------------
@@ -522,7 +582,7 @@ CONTAINS
       END SELECT
 
       CALL cpl_put_field( &
-        routine, field_id_co2_vmr, 'co2 vmr', p_patch%n_patch_cells, buf)
+        routine, out_field_ids%co2_vmr, 'co2 vmr', p_patch%n_patch_cells, buf)
 
     ENDIF
 #endif /* ifndef __NO_ICON_OCEAN__ */
@@ -547,33 +607,18 @@ CONTAINS
     !------------------------------------------------
 
     CALL cpl_get_field( &
-      routine, field_id_sst, 'sst', p_patch%n_patch_cells, &
-      rx%t_seasfc, first_get=.TRUE.)
+      routine, in_field_ids(jg)%sst, 'sst', p_patch%n_patch_cells, &
+      rx%t_seasfc, first_get=.TRUE., received_data=received_data)
+    !$ACC UPDATE DEVICE(rx%t_seasfc) ASYNC(1) IF(lzacc .AND. received_data)
 
-    !------------------------------------------------
-    !  Receive zonal velocity
-    !    "eastward_sea_water_velocity"
-    !    - zonal velocity, u component of ocean surface current
-    !    RR: not used in NWP so far, not activated for exchange in coupling.xml
-    !------------------------------------------------
+    ! Check for errors with the coupling (enough if only done for sst as the time of all
+    ! fields was synchronized in construct_atmo_ocean_coupling_common_finalize)
 
-    IF (ASSOCIATED(rx%ocean_u)) &
-      CALL cpl_get_field( &
-        routine, field_id_oce_u, 'u velocity', p_patch%n_patch_cells, &
-        rx%ocean_u)
+    IF (msg_level >= 10) THEN
+      WRITE (message_text,'(a,l7)') 'received data oce to atm (sst): ', received_data
+      CALL message(routine, message_text)
+    ENDIF
 
-    !------------------------------------------------
-    !  Receive meridional velocity
-    !    "northward_sea_water_velocity"
-    !    - meridional velocity, v component of ocean surface current
-    !    RR: not used in NWP so far, not activated for exchange in
-    !        YAC configuration file
-    !------------------------------------------------
-
-    IF (ASSOCIATED(rx%ocean_v)) &
-      CALL cpl_get_field( &
-        routine, field_id_oce_v, 'v velocity', p_patch%n_patch_cells, &
-        rx%ocean_v)
 
     !------------------------------------------------
     !  Receive sea ice bundle
@@ -582,8 +627,8 @@ CONTAINS
     !------------------------------------------------
 
     CALL cpl_get_field( &
-      routine, field_id_seaice_oce, 'sea ice', p_patch%n_patch_cells, &
-      field_1=rx%h_ice, field_2=buf, field_3=rx%fr_seaice, &
+      routine, in_field_ids(jg)%seaice_oce, 'sea ice', p_patch%n_patch_cells, &
+      field_1=rx%h_ice, field_2=rx%h_snow, field_3=rx%fr_seaice, &
       received_data=received_data)
 
     IF (received_data) THEN
@@ -601,9 +646,25 @@ CONTAINS
         END DO
 
       ENDDO
+      !$ACC UPDATE DEVICE(rx%h_ice, rx%fr_seaice) ASYNC(1) IF(lzacc)
 
     END IF
 
+    !------------------------------------------------
+    !  Receive ocean and sea ice velocity bundle
+    !    "ocean and sea ice velocity bundle"
+    !    - u and v component of surface ocean velocity
+    !    - u and v component of sea ice velocity
+    !------------------------------------------------
+
+    IF (ASSOCIATED(rx%ocean_u)) THEN
+      CALL cpl_get_field( &
+        routine, in_field_ids(jg)%surface_velocity, 'ocean and sea ice velocity bundle', p_patch%n_patch_cells, &
+        field_1=rx%ocean_u, field_2=rx%ocean_v, field_3=rx%ice_u, field_4=rx%ice_v, &
+        received_data=received_data)
+      !$ACC UPDATE DEVICE(rx%ocean_u) ASYNC(1) IF(lzacc .AND. received_data)
+      !$ACC UPDATE DEVICE(rx%ocean_v) ASYNC(1) IF(lzacc .AND. received_data)
+    END IF
 
     !------------------------------------------------
     !  Receive co2 flux
@@ -611,11 +672,13 @@ CONTAINS
     !    - ocean co2 flux
     !------------------------------------------------
 
-    IF (ccycle_config(jg)%iccycle /= CCYCLE_MODE_NONE .AND. &
-        ASSOCIATED(rx%flx_co2)) &
+    IF (ccycle_config(jg)%iccycle /= CCYCLE_MODE_NONE .AND. ASSOCIATED(rx%flx_co2)) THEN
       CALL cpl_get_field( &
-        routine, field_id_co2_flx, 'CO2 flux', p_patch%n_patch_cells, &
-        rx%flx_co2)
+        routine, in_field_ids(jg)%co2_flx, 'CO2 flux', p_patch%n_patch_cells, &
+        rx%flx_co2, received_data=received_data)
+      !$ACC UPDATE DEVICE(rx%flx_co2) ASYNC(1) IF(lzacc .AND. received_data)
+    END IF
+
 
     !------------------------------------------------
     ! Debug outputs
@@ -658,8 +721,13 @@ CONTAINS
       CALL dbg_print('NWPOce: h_ice       ', rx%h_ice(:,:),      str_module, 4, in_subset=p_patch%cells%owned)
 
       IF (ASSOCIATED(rx%ocean_u) .AND. ASSOCIATED(rx%ocean_v)) THEN
-        CALL dbg_print('NWPOce: ocu         ', rx%ocean_u(:,:),  str_module, 3, in_subset=p_patch%cells%owned)
-        CALL dbg_print('NWPOce: ocv         ', rx%ocean_v(:,:),  str_module, 4, in_subset=p_patch%cells%owned)
+        CALL dbg_print('NWPOce: ocean_u     ', rx%ocean_u(:,:),  str_module, 3, in_subset=p_patch%cells%owned)
+        CALL dbg_print('NWPOce: ocean_v     ', rx%ocean_v(:,:),  str_module, 4, in_subset=p_patch%cells%owned)
+      END IF
+
+      IF (ASSOCIATED(rx%ice_u) .AND. ASSOCIATED(rx%ice_v)) THEN
+        CALL dbg_print('NWPOce: ice_u       ', rx%ice_u(:,:),  str_module, 3, in_subset=p_patch%cells%owned)
+        CALL dbg_print('NWPOce: ice_v       ', rx%ice_v(:,:),  str_module, 4, in_subset=p_patch%cells%owned)
       END IF
 
       IF (ASSOCIATED(rx%flx_co2)) THEN
@@ -674,6 +742,5 @@ CONTAINS
     END IF
 
   END SUBROUTINE couple_ocean
-
 
 END MODULE mo_nwp_ocean_coupling

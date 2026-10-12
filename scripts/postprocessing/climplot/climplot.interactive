@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -39,7 +39,7 @@
 # or redefine the defaults below
 #
 # examples:
-# * era40 annual mean: 
+# * era40 annual mean:
 #   ~/metview/climate/climplot.interactive -m 1 -l 60 -e era40 -c 1 -r 1 -f 9000 -i 19991230
 #
 #=========================================================================
@@ -47,13 +47,13 @@
 # MODIFIED SLEAK-N-SEXY VERSION  Adrian Tompkins 21 May    2004
 # MODIFIED FANCY ICON   VERSION  Martin Koehler  17 March  2011
 #=========================================================================
-  set -ex # 
+  set -ex #
 
   DIR=$SCRATCH  # default target location
 
   BRANCH=view_paw_CY29R1_climplot
 
-  MMEANS=0 : switch monthly means off # 
+  MMEANS=0 : switch monthly means off #
 #        1 : compute monthly means for EXPVER
 #        2 : compute monthly means for EXPVER2
 #        3 : compute monthly means for both EXPVER and EXPVER2
@@ -68,23 +68,23 @@
   INIENDDATE=20000803     # initial time (e.g. 1987050112 or 1987110112)
   INIBY=24                # interval between start dates [hours]
 # case: USE_DATES_LIST="yes"
-    INITIME=20000801/20000802/20000803   # set to datelist with "/" 
+    INITIME=20000801/20000802/20000803   # set to datelist with "/"
   FCLENGTH=9528           # forecast length
   FCRANGE=-99             # forecast range - !!!climate run set to -99 DO NOT CHANGE DEFAULT!!!
   LEVELS=91               # number of model levels (e.g. 50, 60 or 91)
   locclass1='rd'
 
-# PLOT LEVEL - three digits zero or ones: 
+# PLOT LEVEL - three digits zero or ones:
 #          x   - plot individual months(*)
-#           x  - plot seasons 
-#            x - plot experiment mean 
+#           x  - plot seasons
+#            x - plot experiment mean
   PLOT_OPT=001
-# (*) Note if you want to plot individual months you MUST 
-#     recompute the monthly mean files for both the control and the 
-#     sensivity experiment, since these are not done 
-#     automatically under SMS, and will not be on ECFS   
+# (*) Note if you want to plot individual months you MUST
+#     recompute the monthly mean files for both the control and the
+#     sensivity experiment, since these are not done
+#     automatically under SMS, and will not be on ECFS
 #     (unless you have already computed them with this script)
-#     call the script with 
+#     call the script with
 #     -m 1 : compute monthly means for EXPVER
 #     -m 2 : compute monthly means for EXPVER2
 #     -m 3 : compute monthly means for both EXPVER and EXPVER2
@@ -123,7 +123,7 @@ chmod u+x climplot_batch monmeans_clim_batch
 #
 export PLOTDATA=${DIR}/${EXPVER}    # working directory
 mkdir $DIR || true
-mkdir $PLOTDATA || true 
+mkdir $PLOTDATA || true
 cd $PLOTDATA
 
 unlimit || true                     # get more RAM
@@ -134,7 +134,7 @@ if (( $PLOT_OPT > 99 )) ; then
 echo "WRONG"
 else
 echo "====================================",$PLOT_OPT
-  MONMEAN=011 
+  MONMEAN=011
 fi
 
 exp=${EXPVER}
@@ -264,4 +264,3 @@ while (( ${i}+1 <= ${#INIDATE1[*]} )) ; do
   fi
   i=i+1
 done
-

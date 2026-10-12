@@ -1,21 +1,20 @@
-! Some utilities which are specific to the transport algorithm.
-!
-! Module contains some functions and procedures which are specifically related
-! to the transport schemes. These subroutines or functions are needed at
-! various places within the transport scheme. Therefore outsourcing these
-! routines protects from possible circular dependencies.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Some utilities which are specific to the transport algorithm.
+!
+! Module contains some functions and procedures which are specifically related
+! to the transport schemes. These subroutines or functions are needed at
+! various places within the transport scheme. Therefore outsourcing these
+! routines protects from possible circular dependencies.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -40,10 +39,20 @@ MODULE mo_advection_utils
   USE mo_var_groups,            ONLY: MAX_GROUPS
   USE mo_advection_config,      ONLY: t_advection_config
   USE mo_comin_config,          ONLY: comin_config
+  USE mo_run_config,            ONLY: ico2
 #ifndef __NO_ICON_COMIN__
-  USE comin_host_interface,     ONLY: comin_request_get_list_head,       &
-    &                                 t_var_request_list_item
+  USE iso_c_binding,            ONLY: c_ptr, c_f_pointer
+  USE comin_host_interface,     ONLY: comin_request_list_iterator_begin,  &
+    &                                 comin_request_list_iterator_delete, &
+    &                                 comin_request_list_iterator_is_end, &
+    &                                 comin_request_list_iterator_next,   &
+    &                                 comin_var_request_get_descriptor,   &
+    &                                 comin_var_request_get_metadata,     &
+    &                                 comin_metadata_get_or,              &
+    &                                 t_comin_var_metadata,               &
+    &                                 t_comin_var_descriptor
 #endif
+  USE mo_ccycle_config, ONLY: ccycle_config, CCYCLE_MODE_INTERACTIVE
 
   IMPLICIT NONE
 
@@ -117,7 +126,7 @@ CONTAINS
   !! used in conservative vertical advection routines.
   !! For passive advection, equivalent to any other first
   !! order upwind flux.
-  !! Applicable to height based vertical coordinate systems. 
+  !! Applicable to height based vertical coordinate systems.
   !!
   FUNCTION laxfr_upflux_v( p_w, p_psi1, p_psi2 )  RESULT(p_upflux)
     !
@@ -249,7 +258,7 @@ CONTAINS
     &                             iqh, iqnr, iqns, iqng, iqnh, iqnc,           &
     &                             iqgl, iqhl, inccn, ininact, ininpot,         &
     &                             iqtke, iqm_max, ntracer, nqtendphy, nclass_gscp, &
-    &                             iqbin, iqb_i, iqb_e, iqb_s)
+    &                             iqbin, iqb_length, iqb_last)
     INTEGER,                  INTENT(IN)    :: iforcing, n_dom
     LOGICAL,                  INTENT(IN)    :: ltransport
     INTEGER,                  INTENT(IN)    :: inwp_turb(:)
@@ -263,7 +272,7 @@ CONTAINS
       &                                        iqni, iqh, iqnr, iqns, iqng, iqnh, &
       &                                        iqnc, iqgl, iqhl, inccn,           &
       &                                        ininact, ininpot, iqtke,           &
-      &                                        iqb_i, iqb_e, iqb_s
+      &                                        iqb_length, iqb_last
     INTEGER, DIMENSION(:),    INTENT(INOUT) :: iqbin
     INTEGER,                  INTENT(INOUT) :: iqm_max
     INTEGER,                  INTENT(INOUT) :: ntracer
@@ -274,7 +283,10 @@ CONTAINS
     INTEGER  :: jg, name_len, itracer
     CHARACTER(len=MAX_CHAR_LENGTH) :: src_name_str
 #ifndef __NO_ICON_COMIN__
-    TYPE(t_var_request_list_item), POINTER :: ptr
+    TYPE(t_comin_var_metadata)   :: metadata
+    TYPE(t_comin_var_descriptor) :: descr
+    TYPE(c_ptr)                  :: it, req, cptr
+    LOGICAL                      :: tracer, tracer_conv, tracer_turb
 #endif
 
     INTEGER  :: iqb
@@ -292,7 +304,21 @@ CONTAINS
            &  'qbin049','qbin050','qbin051','qbin052','qbin053',&
            &  'qbin054','qbin055','qbin056','qbin057','qbin058',&
            &  'qbin059','qbin060','qbin061','qbin062','qbin063',&
-           &  'qbin064','qbin065','qbin066']
+           &  'qbin064','qbin065','qbin066',                    &
+           &  'qbin067','qbin068','qbin069','qbin070','qbin071',&
+           &  'qbin072','qbin073','qbin074','qbin075','qbin076',&
+           &  'qbin077','qbin078','qbin079','qbin080','qbin081',&
+           &  'qbin082','qbin083','qbin084','qbin085','qbin086',&
+           &  'qbin087','qbin088','qbin089','qbin090','qbin091',&
+           &  'qbin092','qbin093','qbin094','qbin095','qbin096',&
+           &  'qbin097','qbin098','qbin099',                    &
+           &  'qbin100','qbin101','qbin102','qbin103','qbin104',&
+           &  'qbin105','qbin106','qbin107','qbin108','qbin109',&
+           &  'qbin110','qbin111','qbin112','qbin113','qbin114',&
+           &  'qbin115','qbin116','qbin117','qbin118','qbin119',&
+           &  'qbin120','qbin121','qbin122','qbin123','qbin124',&
+           &  'qbin125','qbin126','qbin127','qbin128','qbin129',&
+           &  'qbin130','qbin131','qbin132']
 
     ! Check settings of ntracer
     !
@@ -479,13 +505,13 @@ CONTAINS
 
         ntracer = 14
 
-      CASE(8)
+      CASE(8) !SBM microphysics
 
         iqg     = 6  ; advection_config(:)%tracer_names(iqg)     = 'qg'
         iqh     = 7  ; advection_config(:)%tracer_names(iqh)     = 'qh'
 
 
-        DO iqb = iqb_i, iqb_e
+        DO iqb = 1, iqb_last
           iqbin(iqb) = 7+iqb
           DO jg=1,SIZE(advection_config)
             advection_config(jg)%tracer_names(iqbin(iqb)) = qbinname(iqb)
@@ -493,24 +519,26 @@ CONTAINS
         END DO
         !$ACC UPDATE DEVICE(iqbin) ASYNC(1)
 
-        iqni    = 7+iqb_e+1 ; advection_config(:)%tracer_names(iqni)    = 'qni'
-        iqnr    = 7+iqb_e+2 ; advection_config(:)%tracer_names(iqnr)    = 'qnr'
-        iqns    = 7+iqb_e+3 ; advection_config(:)%tracer_names(iqns)    = 'qns'
-        iqng    = 7+iqb_e+4 ; advection_config(:)%tracer_names(iqng)    = 'qng'
-        iqnh    = 7+iqb_e+5 ; advection_config(:)%tracer_names(iqnh)    = 'qnh'
-        iqnc    = 7+iqb_e+6 ; advection_config(:)%tracer_names(iqnc)    = 'qnc'
-        ininact = 7+iqb_e+7 ; advection_config(:)%tracer_names(ininact) = 'ninact'
+        iqni    = 7+iqb_last+1 ; advection_config(:)%tracer_names(iqni)    = 'qni'
+        iqnr    = 7+iqb_last+2 ; advection_config(:)%tracer_names(iqnr)    = 'qnr'
+        iqns    = 7+iqb_last+3 ; advection_config(:)%tracer_names(iqns)    = 'qns'
+        iqng    = 7+iqb_last+4 ; advection_config(:)%tracer_names(iqng)    = 'qng'
+        iqnh    = 7+iqb_last+5 ; advection_config(:)%tracer_names(iqnh)    = 'qnh'
+        iqnc    = 7+iqb_last+6 ; advection_config(:)%tracer_names(iqnc)    = 'qnc'
+        ininact = 7+iqb_last+7 ; advection_config(:)%tracer_names(ininact) = 'ninact'
 
-        nqtendphy = 3     !! number of water species for which
-                          !! convective and turbulent tendencies are
-                          !! stored
-        iqm_max = 7+iqb_s    !! stands for qv,qc,qr,qi,qs and defined before
-        iqt     = 7+iqb_e+8  !! start index of other tracers not related
+        nqtendphy = 7+2*iqb_length  !! number of water species for which
+                             !! convective and turbulent tendencies are
+                             !! stored
+                             !! currently 33 water + 33 ice-snow bins were added to vertical turbulent diffusion
+
+        iqm_max = 7          !! stands for qv,qc,qr,qi,qs and defined before
+        iqt     = 7+iqb_last+8  !! start index of other tracers not related
                              !! at all to moisture
 
-        ntracer = 7+iqb_e+7  !! total number of tracers. Theis order is the following:
-                             !! qv, qc, qi, qr, qs, qg, qh, 
-                             !! 33 mass bins for cloud droplets, 
+        ntracer = 7+iqb_last+7  !! total number of tracers. Theis order is the following:
+                             !! qv, qc, qi, qr, qs, qg, qh,
+                             !! 33 mass bins for cloud droplets,
                              !! 33 mass bins for aerosols,
                              !! qni, qnr, qns, qng, qnh, qnc, ninact
 
@@ -536,6 +564,14 @@ CONTAINS
           CALL finish(routine, message_text )
         ENDIF
       ENDIF
+
+      IF (ccycle_config(1)%iccycle == CCYCLE_MODE_INTERACTIVE) THEN
+        ntracer = ntracer + 1
+        ico2    = ntracer
+        advection_config(:)%tracer_names(ico2) = 'co2'
+        WRITE (message_text,'(a,i3)') 'Adding CO2 tracer, ico2 = ', ico2
+        CALL message(routine, message_text)
+      END IF
 
       ! Note: Indices for additional tracers are assigned automatically
       ! via add_tracer_ref in mo_nonhydro_state.
@@ -591,67 +627,48 @@ CONTAINS
     ! loop over the total list of additional requested tracer
     ! variables and add them to the `advection_config` data structure.
     !
-    ! Since ICON does not accept a domain-specifc number of tracers, we do this for domain jg=1 only.
-    jg=1
-    ptr => comin_request_get_list_head()
-    VAR_LOOP : DO WHILE (ASSOCIATED(ptr))
-      ASSOCIATE (comin_request_item => ptr%item_value)
-        ! skip if variable was not requested for this domain
-        IF (comin_request_item%descriptor%id /= jg) THEN
-          ptr => ptr%next()
-          CYCLE VAR_LOOP
-        END IF
+    ! Generally, we allow a domain-dependent specification of lturb and/or lconv.
+    it = comin_request_list_iterator_begin()
+    DO WHILE (.NOT. comin_request_list_iterator_is_end(it))
+      req = comin_request_list_iterator_next(it)
 
-        IF (.NOT. comin_request_item%metadata%tracer) THEN
-          ptr => ptr%next()
-          CYCLE VAR_LOOP
-        END IF
+      descr = comin_var_request_get_descriptor(req)
+      metadata = comin_var_request_get_metadata(req)
 
+      jg = descr%id
+      IF (jg < 1 .OR. jg > n_dom) CYCLE
+
+      CALL comin_metadata_get_or(metadata,"tracer",tracer,.FALSE.)
+      IF (.NOT. tracer) CYCLE
+
+      ! Since ICON does not accept a domain-specifc number of tracers, we do this for domain jg=1 only.
+      IF (jg == 1) THEN
         ntracer = ntracer + 1
-        advection_config(jg)%tracer_names(ntracer) = comin_request_item%descriptor%name
+        advection_config(jg)%tracer_names(ntracer) = descr%name
 
-        WRITE(message_text,*) 'Attention: ComIn active, adding tracer ', &
-          &                   TRIM(comin_request_item%descriptor%name)
+        WRITE(message_text,'(a,a)') 'Attention: ComIn active, adding tracer ', descr%name
         CALL message(routine,message_text)
+      END IF
 
-      END ASSOCIATE
-      ptr => ptr%next()
-    END DO VAR_LOOP
+      CALL comin_metadata_get_or(metadata,"tracer_turb",tracer_turb,.FALSE.)
+      IF (tracer_turb) THEN
+        comin_config%comin_icon_domain_config(jg)%nturb_tracer = &
+          &  comin_config%comin_icon_domain_config(jg)%nturb_tracer + 1
+      END IF
 
-    WRITE(message_text,'(a,i3)') 'Attention: ComIn active, '//&
-      &   'ntracer is increased to ',ntracer
+      CALL comin_metadata_get_or(metadata,"tracer_conv",tracer_conv,.FALSE.)
+      IF (tracer_conv) THEN
+        comin_config%comin_icon_domain_config(jg)%nconv_tracer = &
+          &  comin_config%comin_icon_domain_config(jg)%nconv_tracer + 1
+      END IF
+
+    END DO
+    CALL comin_request_list_iterator_delete(it)
+
+    WRITE(message_text,'(a,i3)') 'Attention: ComIn active, ntracer is increased to ', ntracer
     CALL message(routine,message_text)
 
-    ! Seperate loop for adding the tracer to turbulence/convection
-    ! Generally allowing a domain-dependent specification of lturb and/or lconv
     DOM_LOOP : DO jg = 1, n_dom
-      ptr => comin_request_get_list_head()
-      VAR_LOOP_TURB : DO WHILE (ASSOCIATED(ptr))
-        ASSOCIATE (comin_request_item => ptr%item_value)
-          ! skip if variable was not requested for this domain
-          IF (comin_request_item%descriptor%id /= jg) THEN
-            ptr => ptr%next()
-            CYCLE VAR_LOOP_TURB
-          END IF
-
-          IF (.NOT. comin_request_item%metadata%tracer) THEN
-            ptr => ptr%next()
-            CYCLE VAR_LOOP_TURB
-          END IF
-
-          IF (comin_request_item%metadata%tracer_turb) THEN
-            comin_config%comin_icon_domain_config(jg)%nturb_tracer = &
-              &  comin_config%comin_icon_domain_config(jg)%nturb_tracer + 1
-          END IF
-
-          IF (comin_request_item%metadata%tracer_conv) THEN
-            comin_config%comin_icon_domain_config(jg)%nconv_tracer = &
-              &  comin_config%comin_icon_domain_config(jg)%nconv_tracer + 1
-          END IF
-
-        END ASSOCIATE
-        ptr => ptr%next()
-      END DO VAR_LOOP_TURB
       WRITE (message_text,'(A,I2,A,I2,A)') "Domain ",jg," contains ",                              &
         &                                  comin_config%comin_icon_domain_config(jg)%nturb_tracer, &
         &                                  " comin tracer registered for turbulent transport"

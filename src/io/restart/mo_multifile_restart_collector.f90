@@ -1,16 +1,17 @@
-! Module for collecting the payload data onto the respective restart
-! processes.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module for collecting the payload data onto the respective restart
+! processes.
+
 #include "handle_mpi_error.inc"
 #include "omp_definitions.inc"
 MODULE mo_multifile_restart_collector
@@ -58,7 +59,7 @@ MODULE mo_multifile_restart_collector
     & typeMax, typeID, facTtoSP
   USE mo_timer, ONLY: timer_start, timer_stop, timer_restart_collector_setup, &
     & timer_restart_indices_setup, timers_level
-  USE mo_fortran_tools, ONLY: t_ptr_1d_int, t_ptr_1d_sp
+  USE fortran_support,  ONLY: t_ptr_1d_int, t_ptr_1d_sp
 
   IMPLICIT NONE
   PRIVATE
@@ -552,7 +553,7 @@ CONTAINS
     this%destPE = 0
 #ifndef NOMPI
     memBytes = tOffCl(4) * typeByte(2)
-! as of MPI3.0 standard the following MPI_Alloc_mem interface must be 
+! as of MPI3.0 standard the following MPI_Alloc_mem interface must be
 ! present, if the compiler provides ISO_C_BINDING
     CALL MPI_Alloc_mem(MAX(memBytes, 64_addr), MPI_INFO_NULL, cMemPtr, ierr)
     HANDLE_MPI_ERROR(ierr, 'MPI_Alloc_mem')

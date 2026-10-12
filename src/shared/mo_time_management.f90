@@ -1,14 +1,7 @@
-! This module contains routines to set start date, end date etc.
-!
-! These routines are necessary, since (for reasons of backward
-! compatibility) different naemlist settings may be used to specify
-! this date information.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -16,10 +9,16 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! This module contains routines to set start date, end date etc.
+!
+! These routines are necessary, since (for reasons of backward
+! compatibility) different naemlist settings may be used to specify
+! this date information.
+
 MODULE mo_time_management
 
   USE, INTRINSIC :: iso_c_binding, ONLY: c_int32_t
-  USE mo_kind,                     ONLY: wp, i8
+  USE mo_kind,                     ONLY: wp, dp, i8
   USE mo_master_config,            ONLY: lrestart_write_last
   USE mo_parallel_config,          ONLY: num_restart_procs
   USE mo_util_string,              ONLY: tolower, int2string
@@ -43,9 +42,12 @@ MODULE mo_time_management
     &                                    time_nml_icalendar => icalendar,                  &
     &                                    restart_calendar, restart_ini_datetime_string,    &
     &                                    set_calendar, set_is_relative_time,               &
-    &                                    set_tc_dt_model, calendar_index2string
+    &                                    set_tc_dt_model, set_tc_timeshift,                &
+    &                                    calendar_index2string
   USE mo_run_config,               ONLY: dtime, mtime_modelTimeStep => modelTimeStep
-  USE mo_master_control,           ONLY: atmo_process, get_my_process_type
+
+  USE mo_master_control,           ONLY: my_process_is_atmo, my_process_is_ocean, &
+    &                                    my_process_is_waves
   USE mo_impl_constants,           ONLY: max_dom,                                          &
     &                                    dtime_proleptic_gregorian => proleptic_gregorian, &
     &                                    dtime_cly360              => cly360,              &
@@ -57,7 +59,7 @@ MODULE mo_time_management
   USE mo_master_config,            ONLY: experimentReferenceDate,                          &
     &                                    experimentStartDate,                              &
     &                                    checkpointTimeIntval, restartTimeIntval,          &
-    &                                    experimentStopDate, isRestart,                    &
+    &                                    experimentStopDate, isRestart, isInitFromRestart, &
     &                                    master_nml_calendar => calendar_str
   USE mo_time_config,              ONLY: set_tc_exp_refdate, set_tc_exp_startdate,         &
     &                                    set_tc_exp_stopdate, set_tc_startdate,            &
@@ -67,19 +69,18 @@ MODULE mo_time_management
     &                                    end_datetime_string
   USE mo_restart_nml_and_att,      ONLY: getAttributesForRestarting
   USE mo_key_value_store,          ONLY: t_key_value_store
+  USE mo_compare_float,            ONLY: notEqual
 
 #ifndef __NO_ICON_ATMO__
   USE mo_nonhydrostatic_config,    ONLY: divdamp_order
   USE mo_atm_phy_nwp_config,       ONLY: atm_phy_nwp_config
-  USE mo_initicon_config,          ONLY: timeshift 
 #endif
-
 
   IMPLICIT NONE
 
   PUBLIC :: compute_timestep_settings
   PUBLIC :: compute_restart_settings
-  PUBLIC :: compute_date_settings  
+  PUBLIC :: compute_date_settings
 
   PRIVATE
 
@@ -87,8 +88,8 @@ MODULE mo_time_management
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_time_management'
 
   LOGICAL :: ldebug = .FALSE.
-  
-CONTAINS 
+
+CONTAINS
 
   !---------------------------------------------------------------------------------------
   !> Set time step for this run.
@@ -118,12 +119,12 @@ CONTAINS
     ! by the "modelTimeStep" parameter from the namelist "run_nml".
     !
     dtime_string = mtime_modelTimeStep
-    
+
     dtime_real = dtime
     IF (dtime_real > 0._wp) THEN
       dtime_ms   = NINT(dtime_real*1000, i8)
       CALL getPTStringFromMS(dtime_ms, dtime_str2)
-      
+
       IF (dtime_string == "") THEN
         dtime_string = dtime_str2
       ELSE
@@ -144,12 +145,12 @@ CONTAINS
     ! "grid_rescale_factor".
     !
     IF (lrescale_timestep .AND. grid_rescale_factor /= 1.0_wp) THEN
-      dtime1 = dtime1 * grid_rescale_factor
+      dtime1 = dtime1 * REAL(grid_rescale_factor, KIND=dp)
       CALL timedeltaToString(dtime1, dtime_string)
       IF (dtime_real > 0._wp)  dtime_real = dtime_real * grid_rescale_factor
 
 #ifndef __NO_ICON_ATMO__
-      IF (get_my_process_type() == atmo_process) THEN
+      IF (my_process_is_atmo()) THEN
         DO jg=1,max_dom
           atm_phy_nwp_config(jg)%dt_conv = &
             atm_phy_nwp_config(jg)%dt_conv * grid_rescale_factor
@@ -193,7 +194,7 @@ CONTAINS
     END IF
 
     CALL deallocateTimedelta( dtime1  )
-    
+
     ! --------------------------------------------------------------
     ! PART III: Print time step
     ! --------------------------------------------------------------
@@ -224,9 +225,9 @@ CONTAINS
       &                                     tmp_td1, tmp_td2
     TYPE(datetime), POINTER              :: reference_dt
     INTEGER                              :: jg
-    
+
     ! --------------------------------------------------------------
-    ! PART I: Collect the restart and checkpoint intervals 
+    ! PART I: Collect the restart and checkpoint intervals
     !         as ISO8601 strings
     ! --------------------------------------------------------------
 
@@ -243,11 +244,11 @@ CONTAINS
     !         TODO: The restart interval needs to be multiple of the model
     !               time steps.
     !
-    CALL set_tc_write_restart(.TRUE.)          
+    CALL set_tc_write_restart(.TRUE.)
     IF (.NOT. lrestart_write_last) THEN
       restartTimeIntval = 'PT0.000S'
       dt_restart = 0.0_wp
-      CALL set_tc_write_restart(.FALSE.)      
+      CALL set_tc_write_restart(.FALSE.)
       restart_intvl_string = restartTimeIntval
     ELSE
       IF (restartTimeIntval /= "") THEN
@@ -282,7 +283,7 @@ CONTAINS
     END IF
 
     mtime_dt_restart    => newTimedelta(restart_intvl_string)
-    
+
     ! --- --- CHECKPOINT INTERVAL:
     !
     !         This time interval specifies when the run is supposed to
@@ -303,7 +304,7 @@ CONTAINS
         checkpt_intvl_string = checkpt_intvl2
       ELSE
         tmp_td1 => newTimedelta(checkpt_intvl_string)
-        tmp_td2 => newTimedelta(checkpt_intvl2)        
+        tmp_td2 => newTimedelta(checkpt_intvl2)
         IF (.NOT. (tmp_td1 < tmp_td2) .AND. .NOT. (tmp_td2 < tmp_td1)) THEN
           checkpt_intvl_string = checkpt_intvl2
         ELSE
@@ -339,7 +340,7 @@ CONTAINS
     ! PART III: Print restart and checkpoint intervals
     ! --------------------------------------------------------------
 
-    CALL message('','')    
+    CALL message('','')
     WRITE(message_text,'(a,a)') 'Checkpoint interval      : ', checkpt_intvl_string
     CALL message('',message_text)
     WRITE(message_text,'(a,a)') 'Restart interval         : ', restart_intvl_string
@@ -347,7 +348,7 @@ CONTAINS
     CALL message('','')
 
     ! --------------------------------------------------------------
-    ! PART IV:  Consistency checks 
+    ! PART IV:  Consistency checks
     ! --------------------------------------------------------------
     !
     ! When increased sound-wave and gravity-wave damping is chosen
@@ -369,7 +370,7 @@ CONTAINS
       ENDIF
       CALL deallocateTimedelta(mtime_2_5h)
     ENDIF
-    CALL deallocateTimedelta(mtime_0h)    
+    CALL deallocateTimedelta(mtime_0h)
 #endif
 
     ! Writing a checkpoint file exactly at the start time of a nest is
@@ -401,8 +402,8 @@ CONTAINS
   !  this date information.
   !
   !  This subroutine checks for contradictory namelist settings and
-  !  finally creates 
-  !   - data objects of type "t_datetime" 
+  !  finally creates
+  !   - data objects of type "t_datetime"
   !   - data objects from  the mtime library.
   !   - the "nsteps" time loop count
   !
@@ -432,19 +433,19 @@ CONTAINS
       &                                       mtime_exp_stop,                &
       &                                       mtime_restart_stop,            &
       &                                       mtime_nsteps_stop,             &
-      &                                       tmp_dt1, tmp_dt2 
+      &                                       tmp_dt1, tmp_dt2,              &
+      &                                       mtime_cur_datetime
     TYPE(timedelta), POINTER              ::  mtime_dt_restart, mtime_dtime, &
       &                                       mtime_td
     TYPE(divisionquotienttimespan)        ::  mtime_quotient
     INTEGER                               ::  mtime_calendar, dtime_calendar,&
       &                                       errno, tlen1, tlen2
     CHARACTER(len=MAX_CALENDAR_STR_LEN)   ::  calendar1, calendar2, calendar
-    TYPE(t_key_value_store), POINTER ::  restartAttributes
-    CHARACTER(LEN=:), ALLOCATABLE :: start_datetime_string !< run start date
-#ifndef __NO_ICON_ATMO__
-    REAL(wp)                              :: zdt_shift            ! rounded dt_shift
-    CHARACTER(LEN=MAX_TIMEDELTA_STR_LEN)  :: dt_shift_string
-#endif
+    TYPE(t_key_value_store), POINTER      ::  restartAttributes
+    CHARACTER(LEN=:), ALLOCATABLE         ::  start_datetime_string !< run start date
+    TYPE(datetime), POINTER               ::  reference_dt
+    REAL(wp)                              ::  mtime_shift_in_sec    !< mtime_shift converted to seconds
+    REAL(wp)                              ::  zdt_shift             !< rounded dt_shift
 
     ! --------------------------------------------------------------
     ! PART I: Collect all the dates as ISO8601 strings
@@ -483,11 +484,11 @@ CONTAINS
     CASE ('proleptic gregorian')
       dtime_calendar  = dtime_proleptic_gregorian
       mtime_calendar  = mtime_proleptic_gregorian
-    CASE ('365 day year')  
+    CASE ('365 day year')
       dtime_calendar  = -1
       mtime_calendar  = mtime_year_of_365_days
       !      CALL finish(routine, "Year-of-365-days calendar unsupported by datetime module!")
-    CASE ('360 day year')  
+    CASE ('360 day year')
       dtime_calendar  = dtime_cly360
       mtime_calendar  = mtime_year_of_360_days
     CASE default
@@ -536,13 +537,13 @@ CONTAINS
     IF (ini_datetime1 /= "" .AND. LEN_TRIM(ini_datetime2) > 0) THEN
       ! both settings were used; we need to test for equality
       tmp_dt1 => newDatetime(ini_datetime1)
-      tmp_dt2 => newDatetime(ini_datetime2)      
+      tmp_dt2 => newDatetime(ini_datetime2)
       IF (.NOT. (tmp_dt1 == tmp_dt2)) THEN
         CALL finish(routine, "Inconsistent setting of experiment start date: " &
              &               //TRIM(ini_datetime1)//"/"//TRIM(ini_datetime2))
       END IF
       CALL deallocateDatetime(tmp_dt1)
-      CALL deallocateDatetime(tmp_dt2)      
+      CALL deallocateDatetime(tmp_dt2)
     END IF
     IF ( (ini_datetime1 == "")        .AND.  &
       &  (ini_datetime2 == "")        .AND.  &
@@ -575,13 +576,13 @@ CONTAINS
     IF (end_datetime1 /= "" .AND. end_datetime2 /= "") THEN
       ! both settings were used; we need to test for equality
       tmp_dt1 => newDatetime(end_datetime1)
-      tmp_dt2 => newDatetime(end_datetime2)      
+      tmp_dt2 => newDatetime(end_datetime2)
       IF (.NOT. (tmp_dt1 == tmp_dt2)) THEN
         CALL finish(routine, "Inconsistent setting of experiment stop date: " &
              &               //TRIM(end_datetime1)//"/"//TRIM(end_datetime2))
       END IF
       CALL deallocateDatetime(tmp_dt1)
-      CALL deallocateDatetime(tmp_dt2)      
+      CALL deallocateDatetime(tmp_dt2)
     END IF
     ! throw an error, if no start date has been specified at all
     !
@@ -626,7 +627,7 @@ CONTAINS
 
       IF ((restart_calendar /= dtime_calendar) .AND. &
         & (restart_calendar /= -1)) THEN
-        
+
         CALL message('','Restart calendar is not matching, fallback to experiment start date: '//&
           &int2string(restart_calendar)//' /= '//int2string(dtime_calendar))
         start_datetime_string = exp_start_datetime_string
@@ -646,6 +647,10 @@ CONTAINS
         ENDIF
       END IF
 
+    ELSE IF (isInitFromRestart()) THEN
+      CALL message('','Not a RESTART run but model is initialized from RESTART file ...')
+      start_datetime_string = exp_start_datetime_string
+
     ELSE
       CALL message('','This is not a RESTART run ...')
       start_datetime_string = exp_start_datetime_string
@@ -659,45 +664,66 @@ CONTAINS
     !
     cur_datetime_string = start_datetime_string
 
+    !
+    ! timeshift-operations for CURRENT DATE
+    !
 
-    IF (model_string == 'atm') THEN
-#ifndef __NO_ICON_ATMO__
+    IF (my_process_is_atmo() .OR. my_process_is_waves() &
+      & .OR. my_process_is_ocean() ) THEN
+
+      ! A timeshift can be used to shift the current model date, and thus
+      ! the actual start date by time_config%timeshift%dt_shift backwards in time.
+      ! This is required for the Incremental Analysis Update (IAU) procedure
+      ! which is used during the initialization phase of some component models,
+      ! in order to filter spurious noise.
       !
-      ! timeshift-operations for CURRENT DATE
+      ! check if timeshift%mtime_shift is set
       !
-      ! A timeshift will be used to shift the current model date, and thus 
-      ! the actual start date by timeshift%dt_shift backwards in time. 
-      ! This is required for the Incremental Analysis Update (IAU) procedure 
-      ! which is used during the initialization phase of the atmospheric 
-      ! model component, in order to filter spurious noise.
+      IF (.NOT.ASSOCIATED(time_config%timeshift%mtime_shift)) THEN
+        CALL finish(routine, "time_config%timeshift%mtime_shift is undefined")
+      ENDIF
+
+      ! If needed, round dt_shift to the nearest integer multiple of the
+      ! advection time step.
       !
-      !
-      ! Round dt_shift to the nearest integer multiple of the advection time step
-      !
-      IF (timeshift%dt_shift < 0._wp) THEN
-        zdt_shift = REAL(NINT(timeshift%dt_shift/dtime),wp)*dtime
-        IF (ABS((timeshift%dt_shift-zdt_shift)/zdt_shift) > 1.e-10_wp) THEN
+
+      IF (time_config%timeshift%dt_shift < 0._wp) THEN
+        zdt_shift = REAL(NINT(time_config%timeshift%dt_shift/dtime),wp)*dtime
+        IF (ABS((time_config%timeshift%dt_shift-zdt_shift)/zdt_shift) > 1.e-10_wp) THEN
+          CALL set_tc_timeshift(zdt_shift)
           WRITE(message_text,'(a,f10.3,a)') '*** WARNING: dt_shift adjusted to ', zdt_shift, &
             &                               ' s in order to be an integer multiple of dtime ***'
           CALL message('',message_text)
         ENDIF
-        timeshift%dt_shift = zdt_shift
       END IF
+
+      ! Check consistency of mtime_shift and dt_shift
       !
-      ! transform timeshift to mtime-format
-      !
-      CALL getPTStringFromSeconds(timeshift%dt_shift, dt_shift_string)
-      timeshift%mtime_shift => newTimedelta(dt_shift_string)
-      WRITE(message_text,'(a,a)') 'IAU time shift: ', TRIM(dt_shift_string)
-      !
-      CALL getPTStringFromSeconds(ABS(timeshift%dt_shift), dt_shift_string)
-      timeshift%mtime_absshift => newTimedelta(dt_shift_string)
-      CALL message('',message_text)
-#endif
-    ENDIF
+      reference_dt => newDatetime(TRIM(exp_start_datetime_string))
+      mtime_shift_in_sec = REAL(getTotalMilliSecondsTimeDelta(time_config%timeshift%mtime_shift, &
+        &                                                     reference_dt),wp)/1000._wp
+      CALL deallocateDatetime(reference_dt)
+
+      IF ( notEqual(mtime_shift_in_sec, time_config%timeshift%dt_shift) ) THEN
+        WRITE(message_text,'(a,2f10.3,a)') 'time_config%timeshift: mtime_shift and dt_shift differ:', &
+          &                               mtime_shift_in_sec, time_config%timeshift%dt_shift
+        CALL finish(routine, message_text)
+      ENDIF
 
 
-
+      IF (.NOT. isRestart()) THEN
+        IF (time_config%timeshift%dt_shift < 0._wp) THEN
+          mtime_cur_datetime => newDatetime(cur_datetime_string, errno)
+          IF (errno /= 0) THEN
+            CALL finish(routine, "Error in conversion of current datetime: "//cur_datetime_string)
+          ENDIF
+          ! apply timeshift to current date
+          mtime_cur_datetime = mtime_cur_datetime + time_config%timeshift%mtime_shift
+          CALL datetimeToString(mtime_cur_datetime, cur_datetime_string)
+          CALL deallocateDatetime(mtime_cur_datetime)
+        ENDIF
+      ENDIF
+    ENDIF  !my_process_is_atmo or ocean or waves
 
 
     ! --- --- STOP DATE:
@@ -714,7 +740,7 @@ CONTAINS
     NULLIFY(mtime_exp_stop)
     NULLIFY(mtime_restart_stop)
     NULLIFY(mtime_nsteps_stop)
-    
+
     ! dtime is always available, maybe the default only
     CALL getPTStringFromMS(INT(dtime*1000,i8), td_string)
     mtime_dtime => newTimeDelta(td_string)
@@ -738,8 +764,8 @@ CONTAINS
     ! in case the restart is not given, mtime_restart_stop is deallocated
 
     IF (mtime_restart_stop == mtime_start) CALL deallocateDatetime(mtime_restart_stop)
-    
-    IF (nsteps >= 0) THEN   
+
+    IF (nsteps >= 0) THEN
       mtime_nsteps_stop  => newDatetime(mtime_start, errno)
       IF (errno /= 0)  CALL finish(routine, "Error in initialization of nsteps stop date")
       mtime_nsteps_stop = mtime_nsteps_stop + mtime_dtime * INT(nsteps,c_int32_t)
@@ -753,13 +779,13 @@ CONTAINS
     IF (end_datetime_string /= "") THEN
       mtime_stop => newDatetime(end_datetime_string)
     ELSE
-    
+
       !  in case stop date not given, we could simply set      !
       !   mtime_stop => newDatetime(MIN(MIN(mtime_exp_stop, mtime_restart_stop), mtime_nsteps_stop))
       !
       ! but we need to check cases where one or two of these dates have
       ! not been specified by the user...
-      
+
       IF (ASSOCIATED(mtime_nsteps_stop)) THEN
 
         IF (ASSOCIATED(mtime_exp_stop)) THEN
@@ -803,7 +829,7 @@ CONTAINS
     END IF
 
     CALL datetimeToString(mtime_exp_stop, exp_stop_datetime_string)
-    
+
     ! consistency checks:
     !
     IF (mtime_stop < mtime_start) THEN
@@ -812,9 +838,9 @@ CONTAINS
     END IF
 
     CALL deallocateDatetime(mtime_start)
-    CALL deallocateDatetime(mtime_stop)    
+    CALL deallocateDatetime(mtime_stop)
     CALL deallocateTimedelta(mtime_dtime)
-    
+
     ! If a restart event occurs, check for unsupported combinations of
     ! namelist settings:
     IF (ASSOCIATED(mtime_nsteps_stop) .AND. ASSOCIATED(mtime_restart_stop)) THEN
@@ -843,7 +869,7 @@ CONTAINS
     !         specified in the namelist "run_nml", then this defines
     !         the end date (see above).
     !
-    IF (nsteps < 0) THEN   
+    IF (nsteps < 0) THEN
       ! User did not specified a value, we need to compute "nsteps" as
       ! (stop date - start date)/dtime:
       mtime_start => newDatetime(start_datetime_string)
@@ -866,7 +892,7 @@ CONTAINS
     END IF
 
     ! --------------------------------------------------------------
-    ! PART II: Convert ISO8601 strings into "mtime" and "t_datetime" 
+    ! PART II: Convert ISO8601 strings into "mtime" and "t_datetime"
     ! --------------------------------------------------------------
 
     ! --- Second, create date-time objects from the mtime library
@@ -878,16 +904,6 @@ CONTAINS
     CALL set_tc_exp_refdate  ( exp_ref_datetime_string   )
     CALL set_tc_current_date ( cur_datetime_string       )
 
-    IF (model_string == 'atm') THEN
-#ifndef __NO_ICON_ATMO__
-      ! add IAU time shift to current date
-      IF (.NOT. isRestart()) THEN
-        IF (timeshift%dt_shift < 0._wp) THEN
-          time_config%tc_current_date = time_config%tc_current_date + timeshift%mtime_shift
-        ENDIF
-      ENDIF
-#endif
-    ENDIF
 
 
     ! --- Finally, store the same information in a "t_datetime" data
@@ -902,21 +918,21 @@ CONTAINS
     IF (ldebug) THEN
 
       CALL message('DEBUG','')
-      CALL message('DEBUG','Calendar: '//TRIM(master_nml_calendar))      
+      CALL message('DEBUG','Calendar: '//TRIM(master_nml_calendar))
       CALL message('DEBUG','Calendar: '//TRIM(calendar_index2string(time_nml_icalendar))//' (deprecated interface)')
       CALL message('DEBUG','')
 
       WRITE(message_text,'(a,a)') 'Model time step         : ', TRIM(mtime_modelTimeStep)
       CALL message('DEBUG',message_text)
-      WRITE(message_text,'(a,g0,a)') 'Model time step         : ', dtime, ' (deprecated interface)' 
+      WRITE(message_text,'(a,g0,a)') 'Model time step         : ', dtime, ' (deprecated interface)'
       CALL message('DEBUG',message_text)
       WRITE(message_text,'(a,a)') 'Checkpoint time interval: ', TRIM(checkpointTimeIntval)
       CALL message('DEBUG',message_text)
-      WRITE(message_text,'(a,g0,a)') 'Checkpoint time interval: ', dt_checkpoint, ' (deprecated interface)' 
+      WRITE(message_text,'(a,g0,a)') 'Checkpoint time interval: ', dt_checkpoint, ' (deprecated interface)'
       CALL message('DEBUG',message_text)
       WRITE(message_text,'(a,a)') 'Restart time interval   : ', TRIM(restartTimeIntval)
       CALL message('DEBUG',message_text)
-      WRITE(message_text,'(a,g0,a)') 'Restart time interval   : ', dt_restart, ' (deprecated interface)' 
+      WRITE(message_text,'(a,g0,a)') 'Restart time interval   : ', dt_restart, ' (deprecated interface)'
       CALL message('DEBUG',message_text)
       CALL message('DEBUG','')
       WRITE(message_text,'(a,a)') 'Experiment reference date: ', TRIM(experimentReferenceDate)
@@ -926,7 +942,7 @@ CONTAINS
       WRITE(message_text,'(a,a)') 'Experiment stop date     : ', TRIM(experimentStopDate)
       CALL message('DEBUG',message_text)
       CALL message('DEBUG','')
-      
+
       CALL message('',message_text)
       IF (isRestart()) THEN
         WRITE(message_text,'(a,a,a)') 'Start date      : ', TRIM(start_datetime_string), ' (deduced, restart run)'
@@ -936,11 +952,11 @@ CONTAINS
       CALL message('DEBUG',message_text)
       WRITE(message_text,'(a,a)')     'Stop date       : ', TRIM(end_datetime_string)
       CALL message('DEBUG',message_text)
-      WRITE(message_text,'(a,i0,a)')  'Stop date, steps: ', nsteps, ' (deprecated interface)'  
+      WRITE(message_text,'(a,i0,a)')  'Stop date, steps: ', nsteps, ' (deprecated interface)'
       CALL message('DEBUG',message_text)
       CALL message('DEBUG','')
     END IF
-    
+
     CALL message('','')
     CALL calendarToString(dstring)
     CALL message('','Calendar: '//TRIM(dstring))
@@ -954,7 +970,6 @@ CONTAINS
     CALL message('',message_text)
     CALL message('','')
 
-    CALL message('',message_text)
     IF (isRestart()) THEN
       WRITE(message_text,'(a,a,a)') 'Start date    : ', TRIM(start_datetime_string), ' (restart run)'
     ELSE
@@ -963,8 +978,14 @@ CONTAINS
     CALL message('',message_text)
     WRITE(message_text,'(a,a)')     'Stop date     : ', TRIM(stop_datetime_string)
     CALL message('',message_text)
+    IF (time_config%timeshift%dt_shift < 0._wp .AND. .NOT. isRestart()) THEN
+      WRITE(message_text,'(a,a,a)')   'Current date  : ', TRIM(cur_datetime_string), ' (IAU run) '
+    ELSE
+      WRITE(message_text,'(a,a)')     'Current date  : ', TRIM(cur_datetime_string)
+    ENDIF
+    CALL message('',message_text)
     CALL message('','')
-    
+
   END SUBROUTINE compute_date_settings
- 
+
 END MODULE mo_time_management

@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -21,11 +21,11 @@ MODULE mo_ocean_solve_bicgStab
   USE mo_exception, ONLY: finish
   USE mo_ocean_solve_backend, ONLY: t_ocean_solve_backend
   USE mo_fortran_tools, ONLY: set_acc_host_or_device
- 
+
   IMPLICIT NONE
-  
+
   PRIVATE
- 
+
   PUBLIC :: t_ocean_solve_bicgStab
   CHARACTER(LEN=*), PARAMETER :: this_mod_name = 'mo_ocean_solve_bicgStab'
 
@@ -47,11 +47,11 @@ MODULE mo_ocean_solve_bicgStab
 
 CONTAINS
 
-! get solver arrays (alloc them, if not done so, yet) - wp-variant  
+! get solver arrays (alloc them, if not done so, yet) - wp-variant
   SUBROUTINE ocean_solve_bicgStab_recover_arrays_wp(this, x, b, &
       & r0, r, v, p, ta1, s, ta2)
     CLASS(t_ocean_solve_bicgStab), INTENT(INOUT), TARGET :: this
-    REAL(KIND=wp), INTENT(OUT), POINTER, DIMENSION(:,:) :: &
+    REAL(KIND=wp), INTENT(INOUT), POINTER, DIMENSION(:,:) :: &
       & x, b, r0, r, v, p, ta1, s, ta2
 
     IF (.NOT.ALLOCATED(this%r_wp)) THEN
@@ -84,7 +84,11 @@ CONTAINS
     REAL(KIND=wp) :: alpha, beta, omega, tol, tol2
     REAL(KIND=wp) :: rh_glob, rh_glob_o, r0v_glob, ts_glob, tt_glob, rn
     INTEGER :: nidx_e, nblk, iblk, k, m, k_final
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(KIND=wp), POINTER, DIMENSION(:,:) :: &
+#else
     REAL(KIND=wp), POINTER, DIMENSION(:,:), CONTIGUOUS :: &
+#endif
       & x, b, r0, r, v, p, ta1, s, ta2
     LOGICAL :: done, lzacc
 

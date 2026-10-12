@@ -1,17 +1,16 @@
-! Contains the setup of configuration of the
-! nonhydrostatic dynamical core
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the setup of configuration of the
+! nonhydrostatic dynamical core
 
 MODULE mo_nonhydrostatic_nml
 
@@ -32,6 +31,7 @@ MODULE mo_nonhydrostatic_nml
                                     & config_ndyn_substeps    => ndyn_substeps    , &
                                     & config_vcfl_threshold   => vcfl_threshold   , &
                                     & config_nlev_hcfl        => nlev_hcfl        , &
+                                    & config_cfl_monitoring_freq => cfl_monitoring_freq, &
                                     & config_lextra_diffu     => lextra_diffu     , &
                                     & config_divdamp_fac      => divdamp_fac      , &
                                     & config_divdamp_fac2     => divdamp_fac2     , &
@@ -71,16 +71,16 @@ MODULE mo_nonhydrostatic_nml
 
 CONTAINS
   !-------------------------------------------------------------------------
-  !! Read Namelist for nonhydrostatic core. 
+  !! Read Namelist for nonhydrostatic core.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for nonhydrostatic core
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)    
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_nonhydrostatic_namelist( filename )
 
@@ -108,6 +108,7 @@ CONTAINS
     REAL(wp):: vcfl_threshold          ! threshold for vertical advection CFL number at which the adaptive time step reduction
                                        ! (increase of ndyn_substeps w.r.t. the fixed fast-physics time step) is triggered
     INTEGER :: nlev_hcfl(max_dom)      ! number of model levels (counted from top) for which the horizontal CFL number is monitored in addition
+    INTEGER :: cfl_monitoring_freq     ! monitoring frequency for CFL number (in units of fast-physics time steps of domain 1)
     LOGICAL :: lextra_diffu            ! if true: apply additional diffusion at grid points close
     ! to the CFL stability limit for vertical advection
     REAL(wp):: divdamp_fac             ! Scaling factor for divergence damping at height divdamp_z and below
@@ -157,7 +158,7 @@ CONTAINS
          & thslp_zdiffu, thhgtd_zdiffu, divdamp_order, divdamp_type, &
          & rhotheta_offctr, lextra_diffu, veladv_offctr,             &
          & divdamp_trans_start, divdamp_trans_end, htop_aero_proc,   &
-         & vcfl_threshold, nlev_hcfl
+         & vcfl_threshold, nlev_hcfl, cfl_monitoring_freq
 
     !-----------------------
     ! 1. default settings
@@ -176,6 +177,9 @@ CONTAINS
 
     ! number of model levels (counted from top) for which the horizontal CFL number is monitored in addition
     nlev_hcfl(:) = 0
+
+    ! monitoring frequency for CFL number (in units of fast-physics time steps of domain 1)
+    cfl_monitoring_freq = 5
 
     ! apply additional horizontal diffusion on vn and w at grid points close to the stability
     ! limit for vertical advection
@@ -226,7 +230,7 @@ CONTAINS
     vwind_offctr      = 0.15_wp
     ! Off-centering for density and potential temperature at interface levels
     ! Specifying a negative value here reduces the amount of vertical wind off-centering needed for
-    ! stability of sound waves. 
+    ! stability of sound waves.
     rhotheta_offctr   = -0.1_wp
     ! Off-centering of velocity advection in corrector step
     veladv_offctr = 0.25_wp
@@ -241,12 +245,12 @@ CONTAINS
     ! arise from large-amplitude breaking gravity waves rather than sound wave reflections, values
     ! around 1/3 are better.
 #ifdef __INTEL_COMPILER
-    exner_expol       = 0.333333333333333_wp    
+    exner_expol       = 0.333333333333333_wp
 #else
     exner_expol       = 1._wp/3._wp
 #endif
 
-    ! dummy values for nested domains; will be reset to value of domain 1 
+    ! dummy values for nested domains; will be reset to value of domain 1
     ! if not specified explicitly in the namelist
     damp_height(2:max_dom)    = -1.0_wp
     rayleigh_coeff(2:max_dom) = -1.0_wp
@@ -257,7 +261,7 @@ CONTAINS
     thhgtd_zdiffu  = 200._wp  ! threshold for height difference between adjacent grid points 200 m
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -288,7 +292,7 @@ CONTAINS
     !--------------------------------------------------------------------
     ! Sanity and internal checks
     !--------------------------------------------------------------------
-    ! Reset values of rayleigh_coeff and damp_height to that of the 
+    ! Reset values of rayleigh_coeff and damp_height to that of the
     ! global domain if not specified
     SELECT CASE (itime_scheme)
     CASE (TRACER_ONLY, 3,4,5,6 ) !OK
@@ -367,6 +371,7 @@ CONTAINS
        config_ndyn_substeps     = ndyn_substeps
        config_vcfl_threshold    = vcfl_threshold
        config_nlev_hcfl         = nlev_hcfl
+       config_cfl_monitoring_freq = cfl_monitoring_freq
        config_lextra_diffu      = lextra_diffu
        config_divdamp_fac       = divdamp_fac
        config_divdamp_fac2      = divdamp_fac2

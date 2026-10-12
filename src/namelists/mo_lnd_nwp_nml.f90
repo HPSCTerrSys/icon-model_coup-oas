@@ -1,13 +1,7 @@
-! Namelist for surface physics
-!
-! these Subroutines are called by control model and construct the
-! surface scheme composition
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -15,11 +9,16 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Namelist for surface physics
+!
+! these Subroutines are called by control model and construct the
+! surface scheme composition
+
 MODULE mo_lnd_nwp_nml
 
   USE mo_kind,                ONLY: wp
-  USE mo_exception,           ONLY: finish
-  USE mo_impl_constants,      ONLY: SSTICE_ANA, max_nsoil
+  USE mo_exception,           ONLY: finish, message
+  USE mo_impl_constants,      ONLY: SSTICE_ANA, SSTICE_ANA_CLINC, max_nsoil
   USE mo_namelist,            ONLY: position_nml, positioned, open_nml, close_nml
   USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_io_units,            ONLY: nnml, nnml_output, filename_max
@@ -27,6 +26,9 @@ MODULE mo_lnd_nwp_nml
   USE mo_restart_nml_and_att, ONLY: open_tmpfile, store_and_close_namelist,  &
     &                               open_and_restore_namelist, close_tmpfile
   USE mo_nml_annotate,        ONLY: temp_defaults, temp_settings
+  USE mo_physical_constants,  ONLY: tf_salt_const
+  USE mtime,                  ONLY: max_timedelta_str_len
+
   USE mo_lnd_nwp_config,      ONLY: config_nlev_snow          => nlev_snow         , &
     &                               config_ntiles             => ntiles_lnd        , &
     &                               config_frlnd_thrhld       => frlnd_thrhld      , &
@@ -35,10 +37,17 @@ MODULE mo_lnd_nwp_nml
     &                               config_frsea_thrhld       => frsea_thrhld      , &
     &                               config_hice_min           => hice_min          , &
     &                               config_hice_max           => hice_max          , &
+    &                               config_tf_salt            => tf_salt           , &
+    &                               config_albsi_snow_max     => albsi_snow_max    , &
+    &                               config_albsi_snow_min     => albsi_snow_min    , &
+    &                               config_albsi_max          => albsi_max         , &
+    &                               config_albsi_min          => albsi_min         , &
     &                               config_lseaice            => lseaice           , &
     &                               config_lprog_albsi        => lprog_albsi       , &
     &                               config_lbottom_hflux      => lbottom_hflux     , &
     &                               config_llake              => llake             , &
+    &                               config_itype_oskin_warm   => itype_oskin_warm  , &
+    &                               config_itype_oskin_cold   => itype_oskin_cold  , &
     &                               config_lmelt              => lmelt             , &
     &                               config_lmelt_var          => lmelt_var         , &
     &                               config_lmulti_snow        => lmulti_snow       , &
@@ -66,17 +75,18 @@ MODULE mo_lnd_nwp_nml
     &                               config_lstomata           => lstomata          , &
     &                               config_l2tls              => l2tls             , &
     &                               config_itype_heatcond     => itype_heatcond    , &
-    &                               config_itype_interception => itype_interception, &
     &                               config_itype_hydbound     => itype_hydbound    , &
     &                               config_lana_rho_snow      => lana_rho_snow     , &
     &                               config_lsnowtile          => lsnowtile         , &
     &                               config_sstice_mode        => sstice_mode       , &
+    &                               config_sst_file_interval  => sst_file_interval , &
     &                               config_sst_td_filename    => sst_td_filename   , &
     &                               config_ci_td_filename     => ci_td_filename    , &
     &                               config_zml_soil           => zml_soil          , &
     &                               config_nlev_soil          => nlev_soil         , &
     &                               config_czbot_w_so         => czbot_w_so        , &
-    &                               config_lcuda_graph_lnd    => lcuda_graph_lnd
+    &                               config_lcuda_graph_lnd    => lcuda_graph_lnd   , &
+    &                               config_lsnow_on_seaice    => lsnow_on_seaice
 
   IMPLICIT NONE
 
@@ -88,16 +98,16 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   !
-  !! Read Namelist for NWP land physics. 
+  !! Read Namelist for NWP land physics.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for NWP land physics
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)    
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_nwp_lnd_namelist( filename )
 
@@ -122,6 +132,11 @@ CONTAINS
     REAL(wp)::  frsea_thrhld      !< fraction threshold for creating a sea grid point
     REAL(wp)::  hice_min          !< minimum sea-ice thickness [m]
     REAL(wp)::  hice_max          !< maximum sea-ice thickness [m]
+    REAL(wp)::  tf_salt           !< freezing temperature of seawater [K]
+    REAL(wp)::  albsi_snow_max    !< maximum albedo of snow over sea ice [-]
+    REAL(wp)::  albsi_snow_min    !< minimum albedo of snow over sea ice [-]
+    REAL(wp)::  albsi_max         !< maximum albedo of sea ice [-]
+    REAL(wp)::  albsi_min         !< minimum albedo of sea ice [-]
     LOGICAL ::  lbottom_hflux     !< use simple parameterization for heat flux through sea ice bottom
     REAL(wp)::  max_toplaydepth   !< maximum depth of uppermost snow layer for multi-layer snow scheme
     INTEGER ::  itype_trvg        !< type of vegetation transpiration parameterization
@@ -139,7 +154,7 @@ CONTAINS
                                   !< (see Schulz and Vogel 2020)
     REAL(wp)::  cskinc            !< skin conductivity (W/m**2/K)
     REAL(wp)::  tau_skin          !< relaxation time scale for the computation of the skin temperature
-    LOGICAL ::  lterra_urb        !< activate urban model TERRA_URB (see Schulz et al. 2023)
+    LOGICAL ::  lterra_urb        !< activate urban model TERRA_URB (see Schulz et al. 2022)
     LOGICAL ::  lurbalb           !< use urban albedo and emissivity
     INTEGER ::  itype_ahf         !< type of urban anthropogenic heat flux
     INTEGER ::  itype_kbmo        !< type of bluff-body thermal roughness length parameterisation
@@ -147,13 +162,16 @@ CONTAINS
     INTEGER ::  itype_hydbound    !< type of hydraulic lower boundary condition
     INTEGER ::  idiag_snowfrac    !< method for diagnosis of snow-cover fraction
     INTEGER ::  itype_snowevap    !< treatment of snow evaporation in the presence of vegetation
+    INTEGER ::  itype_oskin_warm  !> forecast with ocean warm layer
+    INTEGER ::  itype_oskin_cold  !> forecast with ocean cold skin
 
     CHARACTER(LEN=filename_max) :: sst_td_filename, ci_td_filename
+    CHARACTER(LEN=max_timedelta_str_len) :: sst_file_interval !< Interval covered by a single SST/SIC
+                                                              !< file from the sequence.
 
-
-    LOGICAL ::           &
+   LOGICAL ::           &
          lseaice,        & !> forecast with sea ice model
-         lprog_albsi,    & !> sea-ice albedo is computed prognostically 
+         lprog_albsi,    & !> sea-ice albedo is computed prognostically
          llake,          & !> forecast with lake model FLake
          lmelt     ,     & !> soil model with melting process
          lmelt_var ,     & !> freezing temperature dependent on water content
@@ -163,16 +181,19 @@ CONTAINS
          l2tls      ,    & !> forecast with 2-TL integration scheme
          lana_rho_snow,  & !> if .TRUE., take rho_snow-values from analysis file
          lsnowtile,      & !> if .TRUE., snow is considered as a separate tile
-         lcuda_graph_lnd   !> activate cuda graph
+         lcuda_graph_lnd,& !> activate cuda graph
+         lsnow_on_seaice
     !--------------------------------------------------------------------
     ! nwp forcing (right hand side)
     !--------------------------------------------------------------------
 
     NAMELIST/lnd_nml/ nlev_snow, zml_soil, ntiles                             , &
-         &               frlnd_thrhld, lseaice, lprog_albsi, llake, lmelt     , &
-         &               frlndtile_thrhld, frlake_thrhld                      , &
+         &               lseaice, lprog_albsi, llake, lmelt                   , &
+         &               itype_oskin_warm, itype_oskin_cold                   , &
+         &               frlnd_thrhld, frlndtile_thrhld, frlake_thrhld        , &
          &               frsea_thrhld, lmelt_var, lmulti_snow                 , &
-         &               hice_min, hice_max, lbottom_hflux                    , &
+         &               hice_min, hice_max, tf_salt, lbottom_hflux           , &
+         &               albsi_snow_max, albsi_snow_min, albsi_max, albsi_min , &
          &               itype_trvg, idiag_snowfrac, max_toplaydepth          , &
          &               itype_evsl                                           , &
          &               itype_lndtbl                                         , &
@@ -187,10 +208,11 @@ CONTAINS
          &               lana_rho_snow, l2lay_rho_snow                        , &
          &               lsnowtile, itype_snowevap                            , &
          &               sstice_mode                                          , &
+         &               sst_file_interval                                    , &
          &               sst_td_filename                                      , &
          &               ci_td_filename, cwimax_ml, c_soil, c_soil_urb        , &
          &               czbot_w_so, cr_bsmin, lcuda_graph_lnd                , &
-         &               rsmin_fac
+         &               rsmin_fac, lsnow_on_seaice
 
     CHARACTER(len=*), PARAMETER ::  &
       &  routine = 'mo_lnd_nwp_nml:read_nwp_lnd_namelist'
@@ -204,23 +226,29 @@ CONTAINS
                                ! is modified by the sea ice model
                                ! default names for the time dependent SST and CI ext param files
                                ! if sstice=SSTICE_CLIM, <year> is substituted by "CLIM"
+    sst_file_interval = "P1M"
     sst_td_filename = "<path>SST_<year>_<month>_<gridfile>"
     ci_td_filename = "<path>CI_<year>_<month>_<gridfile>"
 
 
     nlev_snow      = 2       ! 2 = default value for number of snow layers
     zml_soil(:)    = -1._wp
-    czbot_w_so     = 2.5_wp  ! default thickness of 2.5m for hydraulical active soil layer 
+    czbot_w_so     = 2.5_wp  ! default thickness of 2.5m for hydraulical active soil layer
     ntiles         = 1       ! 1 = default value for number of static surface types
     frlnd_thrhld   = 0.05_wp ! fraction threshold for creating a land grid point
 
     frlake_thrhld  = 0.05_wp ! fraction threshold for creating a lake grid point
 
     frsea_thrhld   = 0.05_wp ! fraction threshold for creating a sea grid point
-    frlndtile_thrhld = 0.05_wp ! fraction threshold for retaining the respective 
+    frlndtile_thrhld = 0.05_wp ! fraction threshold for retaining the respective
                              ! tile for a grid point
     hice_min       = 0.05_wp ! minimum sea-ice thickness [m]
     hice_max       = 3.0_wp  ! maximum sea-ice thickness [m]
+    tf_salt        = tf_salt_const ! freezing temperature of seawater [K]
+    albsi_snow_max = 0.80_wp ! Maximum albedo of snow over sea ice
+    albsi_snow_min = 0.50_wp ! Minimum albedo of snow over sea ice
+    albsi_max      = 0.70_wp ! Maximum albedo of sea ice
+    albsi_min      = 0.48_wp ! Minimum albedo of sea ice
     lbottom_hflux  = .FALSE. ! true: use simple parameterization for heat flux through sea ice bottom
     lmelt          = .TRUE.  ! soil model with melting process
     lmelt_var      = .TRUE.  ! freezing temperature dependent on water content
@@ -230,8 +258,14 @@ CONTAINS
                               ! (also used for simplified two-layer snow density scheme)
     lsnowtile      = .FALSE. ! if .TRUE., snow is considered as a separate tile
     idiag_snowfrac = 1       ! 1: old method based on SWE, 2: more advanced method used in operational system
-    itype_snowevap = 2       ! 1: old method, 2: empirical correction, 3: more advanced empirical correction 
-    !
+                             !20: same as, but with artificial reduction of snow-cover representing the effect
+                             !     of snow-free roughness elements
+    itype_snowevap = 2       ! 1: old method, 2: empirical correction, 3: more advanced empirical correction
+                             !Notes:
+                             !The empirical correction particularly aims on compensating an overestimation of mean
+                             ! snow-temperature, which is forced by the reduction of snow-albedo at the presence
+                             ! of snow-free rourghness elements.
+
     itype_trvg     = 2       ! type of vegetation transpiration parameterization
                              ! Note that this is currently the only available option!
     itype_evsl     = 2       ! type of bare soil evaporation parameterization
@@ -263,11 +297,12 @@ CONTAINS
     tau_skin      = 3600._wp ! relaxation time scale for the computation of the skin temperature
     !
     lterra_urb     = .FALSE. ! if .TRUE., activate urban model TERRA_URB by Wouters et al. (2016, 2017)
-                             ! (see Schulz et al. 2023)
+                             ! (see Schulz et al. 2022)
     lurbalb        = .TRUE.  ! if .TRUE., use urban albedo and emissivity (Wouters et al. 2016)
-    itype_ahf      = 2       ! if >0, use urban anthropogenic heat flux (Wouters et al. 2016)
-                             !  1: constant AHF, 2: AHF based on climatological T2M, 
-                             !  3: to be implemented (AHF based on time-filtered predicted T2M)
+    itype_ahf      = 2       ! type of urban anthropogenic heat flux (AHF) (Wouters et al. 2016)
+                             !  1: constant AHF
+                             !  2: AHF based on climatological 2-m temperature
+                             !  3: AHF based on time-filtered predicted 2-m temperature
     itype_kbmo     = 2       ! type of bluff-body thermal roughness length parameterisation
                              !  1: standard SAI-based turbtran (Raschendorfer 2001)
                              !  2: Brutsaert-Kanda parameterisation for bluff-body elements (kB-1)
@@ -280,17 +315,20 @@ CONTAINS
     !
     lstomata       = .TRUE.  ! map of minimum stomata resistance
     l2tls          = .TRUE.  ! forecast with 2-TL integration scheme
-    lana_rho_snow  = .TRUE.  ! if .TRUE., take rho_snow-values from analysis file 
+    lana_rho_snow  = .TRUE.  ! if .TRUE., take rho_snow-values from analysis file
 
     lseaice        = .TRUE.  ! .TRUE.: sea-ice model is used
-    lprog_albsi    = .FALSE. ! .TRUE.: sea-ice albedo is computed prognostically 
+    lsnow_on_seaice= .FALSE. ! .TRUE.: snow is considered on seaice
+    lprog_albsi    = .FALSE. ! .TRUE.: sea-ice albedo is computed prognostically
                              ! (only takes effect if "lseaice=.TRUE.")
     llake          = .TRUE.  ! .TRUE.: lake model is used
+    itype_oskin_warm = 0     ! 1: turn on SST warm layer
+    itype_oskin_cold = 0     ! 1: turn on SST cold skin
     !
     lcuda_graph_lnd = .FALSE. ! cuda graph deactivated by default
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -352,9 +390,8 @@ CONTAINS
 
     ! Reset prognostic sea-ice albedo switch if the sea-ice scheme is not used
     IF ( .NOT.lseaice ) THEN
-      lprog_albsi = .FALSE.  
+      lprog_albsi = .FALSE.
     ENDIF
-
 
     ! Number of actual soil layers
 
@@ -379,10 +416,23 @@ CONTAINS
     ENDIF
     !$ACC ENTER DATA COPYIN(config_zml_soil)
 
+    IF (frlnd_thrhld > 0.5_wp) THEN
+       frlnd_thrhld =  0.5_wp
+       CALL message(TRIM(routine), 'Warning: frlnd_thrhld is reset to 1/2.')
+    END IF
+
     ! Check if target GPU configuration is supported
 #ifdef _OPENACC
-    IF(lmulti_snow) CALL finish(routine, "GPU version not available for lmulti_snow == .TRUE.")
+    IF ( lmulti_snow ) THEN
+      CALL finish(routine, "GPU version not available for lmulti_snow == .TRUE.")
+    END IF
+
+    IF ( (itype_oskin_warm > 0) .OR. (itype_oskin_cold > 0) ) THEN
+      CALL finish(routine, "SST skin parameterization not available on GPU")
+    END IF
 #endif
+
+    IF (itype_interception /= 1) CALL finish(routine, "itype_interception = 2 has been removed.")
 
     ! deactivate cuda graph if no cpp key => make sure ACC WAIT is activated where needed
 #ifndef ICON_USE_CUDA_GRAPH
@@ -401,10 +451,17 @@ CONTAINS
     config_frsea_thrhld       = frsea_thrhld
     config_hice_min           = hice_min
     config_hice_max           = hice_max
+    config_albsi_snow_min     = albsi_snow_min
+    config_albsi_snow_max     = albsi_snow_max
+    config_albsi_min          = albsi_min
+    config_albsi_max          = albsi_max
     config_lbottom_hflux      = lbottom_hflux
     config_lseaice            = lseaice
-    config_lprog_albsi        = lprog_albsi 
+    config_tf_salt            = tf_salt
+    config_lprog_albsi        = lprog_albsi
     config_llake              = llake
+    config_itype_oskin_warm   = itype_oskin_warm
+    config_itype_oskin_cold   = itype_oskin_cold
     config_lmelt              = lmelt
     config_lmelt_var          = lmelt_var
     config_lmulti_snow        = lmulti_snow
@@ -426,7 +483,6 @@ CONTAINS
     config_lstomata           = lstomata
     config_l2tls              = l2tls
     config_itype_heatcond     = itype_heatcond
-    config_itype_interception = itype_interception
     config_cwimax_ml          = cwimax_ml
     config_c_soil             = c_soil
     config_c_soil_urb         = c_soil_urb
@@ -437,20 +493,23 @@ CONTAINS
     config_l2lay_rho_snow     = l2lay_rho_snow
     config_lsnowtile          = lsnowtile
     config_sstice_mode        = sstice_mode
+    config_sst_file_interval  = sst_file_interval
     config_sst_td_filename    = sst_td_filename
     config_ci_td_filename     = ci_td_filename
     config_nlev_soil          = nlev_soil
     config_czbot_w_so         = czbot_w_so
     config_lcuda_graph_lnd    = lcuda_graph_lnd
-    !$ACC UPDATE DEVICE(config_itype_interception) ASYNC(1)
+    config_lsnow_on_seaice    = lsnow_on_seaice
+    !$ACC UPDATE ASYNC(1) DEVICE(config_lsnow_on_seaice, config_albsi_min, config_albsi_max) &
+    !$ACC   DEVICE(config_albsi_snow_min, config_albsi_snow_max)
 
     !-----------------------------------------------------
     ! 6. Store the namelist for restart
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=lnd_nml)                    
-      CALL store_and_close_namelist(funit, 'lnd_nml') 
+      WRITE(funit,NML=lnd_nml)
+      CALL store_and_close_namelist(funit, 'lnd_nml')
     ENDIF
 
 
@@ -461,4 +520,3 @@ CONTAINS
 
 
 END MODULE mo_lnd_nwp_nml
-

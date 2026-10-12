@@ -1,16 +1,16 @@
-! @brief sediment pore water diffusion
-! routines: dipowa, powadi
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief sediment pore water diffusion
+! routines: dipowa, powadi
 
 MODULE mo_sedmnt_diffusion
 
@@ -19,12 +19,13 @@ MODULE mo_sedmnt_diffusion
  USE mo_bgc_memory_types, ONLY  : t_bgc_memory, t_sediment_memory
  USE mo_sedmnt, ONLY : zcoefsu,zcoeflo
  USE mo_fortran_tools, ONLY  : set_acc_host_or_device
- 
+
  IMPLICIT NONE
 
  PRIVATE
 
  PUBLIC:: dipowa, powadi
+ PUBLIC:: dipowa_ve
 
 
 CONTAINS
@@ -42,17 +43,16 @@ SUBROUTINE DIPOWA (local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
 !! diffusion coefficient : zcoefsu/zcoeflo for upper/lower
 !! sediment layer boundary.
 
-  USE mo_sedmnt, ONLY         : sedict, seddzi, seddw, &
-       &                        porwah
+  USE mo_sedmnt, ONLY         : seddw
 
   USE mo_control_bgc, ONLY    : dtbgc
 
   USE mo_param1_bgc, ONLY     : npowtra, ipowaox,  ioxygen,  &
   &                             ipowno3, ipowasi, iphosph, iano3, &
-  &                             isilica, ipowafe, iiron, ialkali, &  
+  &                             isilica, ipowafe, iiron, ialkali, &
   &                             isco212, igasnit, ipowaph, ipowaal, &
   &                             ipown2, ipowaic, ipowh2s, ih2s, &
-  &                             iammo, iano2, ipownh4, ipowno2 
+  &                             iammo, iano2, ipownh4, ipowno2
   USE mo_ocean_nml, ONLY      : lsediment_only
 
   IMPLICIT NONE
@@ -61,8 +61,8 @@ SUBROUTINE DIPOWA (local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
   TYPE(t_bgc_memory), POINTER :: local_bgc_mem
   TYPE(t_sediment_memory), POINTER :: local_sediment_mem
 
-  INTEGER, INTENT(in)  :: start_idx    !< start index for j loop (ICON cells, MPIOM lat dir)          
-  INTEGER, INTENT(in)  :: end_idx      !< end index  for j loop  (ICON cells, MPIOM lat dir) 
+  INTEGER, INTENT(in)  :: start_idx    !< start index for j loop (ICON cells, MPIOM lat dir)
+  INTEGER, INTENT(in)  :: end_idx      !< end index  for j loop  (ICON cells, MPIOM lat dir)
   LOGICAL, INTENT(IN), OPTIONAL :: lacc
 
   !! Local variables
@@ -70,7 +70,7 @@ SUBROUTINE DIPOWA (local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
   INTEGER :: j,k,l,iv
   INTEGER :: iv_oc                         !< index of local_bgc_mem%bgctra in local_sediment_mem%powtra loop
 
-  REAL(wp) :: sedb1(0:ks,npowtra)          !< 
+  REAL(wp) :: sedb1(0:ks,npowtra)          !<
   REAL(wp) :: tredsy(0:ks,3)               !< redsy for 'reduced system'
 
   REAL(wp) :: aprior                       !< start value of oceanic tracer in bottom layer
@@ -81,12 +81,12 @@ SUBROUTINE DIPOWA (local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
   !
   ! --------------------------------------------------------------------
   !
-  kbo => local_bgc_mem%kbo  
+  kbo => local_bgc_mem%kbo
 
   !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
   !$ACC LOOP GANG VECTOR PRIVATE(sedb1, tredsy)
   DO j = start_idx, end_idx
-        
+
     if(local_bgc_mem%bolay(j) > EPSILON(0.5_wp))then
         k = 0
 
@@ -117,9 +117,9 @@ SUBROUTINE DIPOWA (local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
 
           sedb1( k, iv) = 0._wp
            ! tracer_concentration(kbo) * dz(kbo)
-          sedb1(k,iv) = local_bgc_mem%bgctra(j,kbo(j),iv_oc) * local_bgc_mem%bolay(j) 
-   
-           
+          sedb1(k,iv) = local_bgc_mem%bgctra(j,kbo(j),iv_oc) * local_bgc_mem%bolay(j)
+
+
         END DO
 
         !$ACC LOOP SEQ
@@ -181,7 +181,7 @@ SUBROUTINE DIPOWA (local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
      ! sediment ocean interface
      !$ACC LOOP SEQ
      DO iv = 1, npowtra
-        ! 
+        !
         ! check mo_param1_bgc.f90 for consistency
         iv_oc = iv
         if(iv == ipowaox) iv_oc = ioxygen
@@ -218,6 +218,225 @@ SUBROUTINE DIPOWA (local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
 
 END SUBROUTINE DIPOWA
 
+SUBROUTINE DIPOWA_VE (local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
+!! @brief diffusion of pore water
+!!
+!! vertical diffusion of sediment pore water tracers
+!! calculate vertical diffusion of sediment pore water properties
+!! and diffusive flux through the ocean/sediment interface.
+!! integration.
+!!
+!! implicit formulation;
+!! constant diffusion coefficient : 1.e-9 set in mo_sedment.
+!! diffusion coefficient : zcoefsu/zcoeflo for upper/lower
+!! sediment layer boundary.
+
+  USE mo_sedmnt, ONLY         : seddw
+
+  USE mo_control_bgc, ONLY    : dtbgc
+
+  USE mo_param1_bgc, ONLY     : npowtra, ipowaox,  ioxygen,  &
+  &                             ipowno3, ipowasi, iphosph, iano3, &
+  &                             isilica, ipowafe, iiron, ialkali, &
+  &                             isco212, igasnit, ipowaph, ipowaal, &
+  &                             ipown2, ipowaic, ipowh2s, ih2s, &
+  &                             iammo, iano2, ipownh4, ipowno2
+  USE mo_ocean_nml, ONLY      : lsediment_only
+
+  IMPLICIT NONE
+
+  !! Arguments
+  TYPE(t_bgc_memory), POINTER :: local_bgc_mem
+  TYPE(t_sediment_memory), POINTER :: local_sediment_mem
+
+  INTEGER, INTENT(in)  :: start_idx    !< start index for j loop (ICON cells, MPIOM lat dir)
+  INTEGER, INTENT(in)  :: end_idx      !< end index  for j loop  (ICON cells, MPIOM lat dir)
+  LOGICAL, INTENT(IN), OPTIONAL :: lacc
+
+  !! Local variables
+  INTEGER,  POINTER  :: kbo(:)   !< k-index of bottom layer (2d)
+  INTEGER :: j,k,l,iv
+  INTEGER :: iv_oc                         !< index of local_bgc_mem%bgctra in local_sediment_mem%powtra loop
+
+  REAL(wp) :: sedb1(start_idx:end_idx, 0:ks, npowtra)          !<
+  REAL(wp) :: tredsy(start_idx:end_idx, 0:ks, 3)               !< redsy for 'reduced system'
+
+  REAL(wp) :: aprior                       !< start value of oceanic tracer in bottom layer
+  LOGICAL :: lzacc
+
+  !! Vectorization local variables
+  LOGICAL :: vmaskBolay(start_idx:end_idx)
+
+  CALL set_acc_host_or_device(lzacc, lacc)
+
+  !
+  ! --------------------------------------------------------------------
+  !
+  kbo => local_bgc_mem%kbo
+
+  DO j = start_idx, end_idx
+    IF( local_bgc_mem%bolay(j) > EPSILON(0.5_wp) ) THEN
+        vmaskBolay(j) = .TRUE.
+    ELSE
+        vmaskBolay(j) = .FALSE.
+    END IF
+  END DO
+
+  k = 0
+  !NEC$ nomove
+  DO j = start_idx, end_idx
+    IF(vmaskBolay(j)) THEN
+        tredsy(j, k, 1) = zcoefsu(k)
+        tredsy(j, k, 3) = zcoeflo(k)
+        ! dz(kbo) - diff upper - diff lower
+        tredsy(j, k, 2) =  local_bgc_mem%bolay(j) - tredsy(j, k, 1) - tredsy(j, k, 3)
+    END IF
+  END DO
+
+  !NEC$ nomove
+  DO iv = 1, npowtra      ! loop over pore water tracers
+    DO j = start_idx, end_idx
+        IF(vmaskBolay(j)) THEN
+
+            iv_oc = iv
+
+            if(iv == ipowaox) iv_oc = ioxygen
+            if(iv == ipowno3) iv_oc = iano3
+            if(iv == ipowasi) iv_oc = isilica
+            if(iv == ipowafe) iv_oc = iiron
+            if(iv == ipowaal) iv_oc = ialkali
+            if(iv == ipowaph) iv_oc = iphosph
+            if(iv == ipown2)  iv_oc = igasnit
+            if(iv == ipowaic) iv_oc = isco212
+            if(iv == ipowh2s) iv_oc = ih2s
+
+            IF (l_N_cycle) THEN
+                if(iv == ipownh4) iv_oc = iammo
+                if(iv == ipowno2) iv_oc = iano2
+            END IF
+
+            sedb1(j, k, iv) = 0._wp
+            ! tracer_concentration(kbo) * dz(kbo)
+            sedb1(j, k, iv) = local_bgc_mem%bgctra(j,kbo(j),iv_oc) * local_bgc_mem%bolay(j)
+        END IF
+    END DO
+  END DO
+
+  !NEC$ nomove
+  DO k = 1, ks
+    DO j = start_idx, end_idx
+        IF(vmaskBolay(j)) THEN
+            tredsy(j, k, 1) = zcoefsu(k)
+            tredsy(j, k, 3) = zcoeflo(k)
+            tredsy(j, k, 2) = seddw(k) * porwat(k) - tredsy(j, k, 1) - tredsy(j, k, 3)
+        END IF
+    END DO
+  END DO
+
+  !NEC$ nomove
+  DO iv = 1, npowtra
+    DO k = 1, ks
+        DO j = start_idx, end_idx
+            IF(vmaskBolay(j)) THEN
+                ! tracer_concentration(k[1:ks]) * porewater fraction(k) * dz(k)
+                sedb1(j, k, iv) = local_sediment_mem%powtra(j,k,iv) * porwat(k) * seddw(k)
+            END IF
+        END DO
+    END DO
+  END DO
+
+  !NEC$ nomove
+  DO k = 1, ks
+    DO j = start_idx, end_idx
+        IF(vmaskBolay(j)) THEN
+            ! this overwrites tredsy(k=0) for k=1
+            tredsy(j, k-1, 1) = tredsy(j, k, 1) / tredsy(j, k-1, 2)
+            !                 diff upper    / conc (k-1)
+            tredsy(j, k, 2)   = tredsy(j, k, 2)                      &
+            & - tredsy(j, k-1, 3) * tredsy(j, k, 1) / tredsy(j, k-1, 2)
+            !   concentration -diff lower     * diff upper    / conc(k-1)
+        END IF
+    END DO
+  END DO
+
+  ! diffusion from above
+  !NEC$ nomove
+  DO iv = 1, npowtra
+    DO k = 1, ks
+        DO j = start_idx, end_idx
+            IF(vmaskBolay(j)) THEN
+                sedb1(j, k, iv) = sedb1(j, k, iv)                        &
+                & - tredsy(j, k-1, 1) * sedb1(j, k-1, iv)
+            END IF
+        END DO
+    END DO
+  END DO
+
+  ! sediment bottom layer
+  k = ks
+  !NEC$ nomove
+  DO iv = 1, npowtra
+    DO j = start_idx, end_idx
+        IF(vmaskBolay(j)) THEN
+            local_sediment_mem%powtra(j, k, iv) = sedb1(j, k, iv) / tredsy(j, k, 2)
+        END IF
+    END DO
+  END DO
+
+  ! sediment column
+  !NEC$ nomove
+  DO iv = 1, npowtra
+    DO k = 1, ks-1
+        DO j = start_idx, end_idx
+            IF(vmaskBolay(j)) THEN
+                l = ks-k
+                local_sediment_mem%powtra(j,l,iv) = ( sedb1(j, l, iv)            &
+                & - tredsy(j, l, 3) * local_sediment_mem%powtra(j, l+1, iv) )    &
+                & / tredsy(j, l, 2)
+            END IF
+        END DO
+    END DO
+  END DO
+
+  ! sediment ocean interface
+  !NEC$ nomove
+  DO iv = 1, npowtra
+    DO j = start_idx, end_idx
+        IF(vmaskBolay(j)) THEN
+            !
+            ! check mo_param1_bgc.f90 for consistency
+            iv_oc = iv
+            if(iv == ipowaox) iv_oc = ioxygen
+            if(iv == ipowno3) iv_oc = iano3
+            if(iv == ipowasi) iv_oc = isilica
+            if(iv == ipowafe) iv_oc = iiron
+            if(iv == ipowaal) iv_oc = ialkali
+            if(iv == ipowaph) iv_oc = iphosph
+            if(iv == ipown2) iv_oc = igasnit
+            if(iv == ipowaic) iv_oc = isco212
+            if(iv == ipowh2s) iv_oc = ih2s
+
+            IF (l_N_cycle) THEN
+                if(iv == ipownh4) iv_oc = iammo
+                if(iv == ipowno2) iv_oc = iano2
+            END IF
+
+            l = 0
+
+            aprior = local_bgc_mem%bgctra(j,kbo(j),iv_oc)
+            local_bgc_mem%bgctra(j,kbo(j),iv_oc) =                                  &
+            & ( sedb1(j, l, iv) - tredsy(j, l, 3) * local_sediment_mem%powtra(j,l+1,iv) ) &
+            & / tredsy(j, l, 2)
+
+            local_bgc_mem%sedfluxo(j,iv) = (local_bgc_mem%bgctra(j,kbo(j),iv_oc)-aprior)*local_bgc_mem%bolay(j)/dtbgc
+
+            IF (lsediment_only) local_bgc_mem%bgctra(j,kbo(j),iv_oc) = aprior
+        END IF
+    END DO
+  END DO
+
+END SUBROUTINE DIPOWA_VE
+
 SUBROUTINE powadi (local_bgc_mem, j,  solrat, sedb1, sediso, bolven)
 !! @file powadi.f90
 !! @brief vertical diffusion with simultaneous dissolution,
@@ -241,7 +460,7 @@ SUBROUTINE powadi (local_bgc_mem, j,  solrat, sedb1, sediso, bolven)
 
   !! Local variables
 
-  INTEGER,  SAVE  :: k,l   
+  INTEGER,  SAVE  :: k,l
   REAL(wp) :: tredsy(0:ks,3)
   REAL(wp), SAVE :: asu,alo
   !

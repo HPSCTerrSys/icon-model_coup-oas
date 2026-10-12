@@ -1,4 +1,4 @@
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # SPDX-License-Identifier: CC0-1.0
 [submodule "externals/mtime"]
 	path = externals/mtime
@@ -27,9 +27,6 @@
 [submodule "externals/ecrad"]
 	path = externals/ecrad
 	url = ../../dwd-sw/libecrad.git
-[submodule "externals/dace_icon"]
-	path = externals/dace_icon
-	url = ../../dwd-sw/dace-icon-interface.git
 [submodule "externals/emvorado"]
 	path = externals/emvorado
 	url = ../../dwd-sw/emvorado-for-icon.git
@@ -38,19 +35,31 @@
 	url = https://github.com/MeteoSwiss/probtest.git
 [submodule "utils/mkexp"]
 	path = utils/mkexp
-	url = https://git.mpimet.mpg.de/public/mkexp
+	url = ../../esmenv/mkexp.git
 [submodule "externals/art"]
 	path = externals/art
-	url = ../../art/art.git
+	url = ../../art-public/art.git
 [submodule "externals/ppm"]
 	path = externals/ppm
-	url = ../../jahns/ppm.git
+	url = ../../dkrz-sw/ppm.git
+[submodule "externals/msgwam"]
+	path = externals/msgwam
+	url = ../../atmodynamics-goethe-universitaet-frankfurt/msgwam-release.git
 [submodule "externals/comin"]
 	path = externals/comin
 	url = ../../icon-comin/comin.git
 [submodule "externals/hd"]
 	path = externals/hd
-	url = https://gitlab.dkrz.de/hd-model/hd-couple.git
+	url = ../../hd-model/hd-couple.git
 [submodule "externals/fortran-support"]
 	path = externals/fortran-support
 	url = ../../icon-libraries/libfortran-support.git
+[submodule "externals/iconmath"]
+	path = externals/iconmath
+	url = ../../icon-libraries/libiconmath.git
+[submodule "externals/kokkos"]
+	path = externals/kokkos
+	url = https://github.com/kokkos/kokkos.git
+[submodule "externals/memman"]
+	path = externals/memman
+        url = ../../icon-libraries/memman.git

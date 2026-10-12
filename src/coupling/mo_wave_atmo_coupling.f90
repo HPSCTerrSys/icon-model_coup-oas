@@ -1,10 +1,7 @@
-! Interface between ocean surface waves and atmosphere, through a coupler
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,18 +9,27 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Interface between ocean surface waves and atmosphere, through a coupler
+
 MODULE mo_wave_atmo_coupling
 
   USE mo_kind,           ONLY: wp
+  USE mo_exception,      ONLY: message, message_text, finish
   USE mo_model_domain,   ONLY: t_patch
-  USE mo_coupling_utils, ONLY: cpl_def_field, cpl_put_field, cpl_get_field
+  USE mo_coupling_utils, ONLY: cpl_def_field, cpl_put_field, cpl_get_field, &
+    &                          cpl_get_field_datetime
   USE mo_sync,           ONLY: SYNC_C, sync_patch_array
+  USE mo_run_config,     ONLY: msg_level
+  USE mtime,             ONLY: datetime, OPERATOR(<), OPERATOR(==)
+  USE mo_time_config,    ONLY: time_config
 
   IMPLICIT NONE
 
   PRIVATE
 
-  PUBLIC :: construct_wave_atmo_coupling, couple_wave_to_atmo
+  PUBLIC :: construct_wave_atmo_coupling
+  PUBLIC :: construct_wave_atmo_coupling_finalize
+  PUBLIC :: couple_wave_to_atmo
 
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_wave_atmo_coupling'
 
@@ -62,6 +68,31 @@ CONTAINS
   END SUBROUTINE construct_wave_atmo_coupling
 
   !>
+  !! This subroutine ensures consistency in the coupling definition and is
+  !! called after the end of the coupling definition phase
+  SUBROUTINE construct_wave_atmo_coupling_finalize()
+
+    CHARACTER(len=*), PARAMETER ::  &
+      &  routine = modname//':construct_wave_atmo_coupling_finalize'
+
+    TYPE(datetime) :: curr_datetime_u10m
+    TYPE(datetime) :: curr_datetime_v10m
+    TYPE(datetime) :: curr_datetime_fr_seaice
+    TYPE(datetime) :: curr_datetime_z0
+
+    curr_datetime_u10m      = cpl_get_field_datetime(routine, field_id_u10m)
+    curr_datetime_v10m      = cpl_get_field_datetime(routine, field_id_v10m)
+    curr_datetime_fr_seaice = cpl_get_field_datetime(routine, field_id_fr_seaice)
+    curr_datetime_z0        = cpl_get_field_datetime(routine, field_id_z0)
+
+    IF (.NOT. ALL((/curr_datetime_u10m == curr_datetime_v10m, &
+                    curr_datetime_u10m == curr_datetime_fr_seaice, &
+                    curr_datetime_u10m == curr_datetime_z0/))) &
+      CALL finish(routine, "inconsistent definition of field datetime")
+
+  END SUBROUTINE construct_wave_atmo_coupling_finalize
+
+  !>
   !! Exchange fields between the wave model and the atmosphere model
   !!
   !! Send fields to atmosphere:
@@ -84,12 +115,29 @@ CONTAINS
     REAL(wp), CONTIGUOUS, TARGET, INTENT(INOUT) :: u10m(:,:)      !< zonal wind speed in 10m [m/s]
     REAL(wp), CONTIGUOUS, TARGET, INTENT(INOUT) :: v10m(:,:)      !< meridional wind speed in 10m [m/s]
     REAL(wp), CONTIGUOUS, TARGET, INTENT(INOUT) :: sea_ice_c(:,:) !< fraction_of_ocean_covered_by_sea_ice [1]
-
     LOGICAL :: received_data
+    LOGICAL, SAVE :: lcheck_for_timelag = .TRUE.
+    TYPE(datetime) :: curr_datetime_u10m
 
     !  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****
     !  Send fields from waves to atmosphere
     !  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****  *****
+
+    ! A component may execute timesteps for dates before the actual
+    ! start of this simulation (e.g. due to IAU). These timesteps are currently
+    ! not considered for coupling, which is why they are skipped here.
+    ! The first actual coupling timestep usually is at start_date + lag * field_timestep.
+    IF (lcheck_for_timelag) THEN
+
+      ! query current timestamps of source/target fields
+      curr_datetime_u10m = cpl_get_field_datetime(routine, field_id_u10m)
+
+      ! skip data exchange as long as the model timestamp lags behind the field timestamp.
+      lcheck_for_timelag = (time_config%tc_current_date < curr_datetime_u10m)
+
+      IF (lcheck_for_timelag) RETURN
+
+    ENDIF !lcheck_for_timelag
 
     ! --------------------------------------------
     !  Send roughness length z0 to the atmosphere
@@ -113,7 +161,12 @@ CONTAINS
       first_get=.TRUE., received_data=received_data)
     IF (received_data) &
       CALL sync_patch_array( &
-        SYNC_C, p_patch, u10m, opt_varname='u10m')
+        SYNC_C, p_patch, u10m, opt_varname='u10m', lacc=.FALSE.)
+
+    IF (msg_level >= 10) THEN
+      WRITE (message_text,'(a,l7)') 'received data u10m: ', received_data
+      CALL message(routine, message_text)
+    ENDIF
 
     ! ----------------------------------------------
     !  Receive 10m meridional wind v10m
@@ -125,7 +178,12 @@ CONTAINS
       received_data=received_data)
     IF (received_data) &
       CALL sync_patch_array( &
-        SYNC_C, p_patch, v10m, opt_varname='v10m')
+        SYNC_C, p_patch, v10m, opt_varname='v10m', lacc=.FALSE.)
+
+    IF (msg_level >= 10) THEN
+      WRITE (message_text,'(a,l7)') 'received data v10m: ', received_data
+      CALL message(routine, message_text)
+    ENDIF
 
     ! ------------------------------------------------------------------
     !  Receive fraction of sea ice
@@ -137,7 +195,12 @@ CONTAINS
       sea_ice_c, received_data=received_data)
     IF (received_data) &
       CALL sync_patch_array( &
-        SYNC_C, p_patch, sea_ice_c, opt_varname='sea_ice_c')
+        SYNC_C, p_patch, sea_ice_c, opt_varname='sea_ice_c', lacc=.FALSE.)
+
+    IF (msg_level >= 10) THEN
+      WRITE (message_text,'(a,l7)') 'received data sea_ice_c: ', received_data
+      CALL message(routine, message_text)
+    ENDIF
 
   END SUBROUTINE couple_wave_to_atmo
 

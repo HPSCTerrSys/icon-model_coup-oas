@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -19,7 +19,7 @@
 # The specifications are passed by namelist to the program.
 # For a complete list see Namelist_overview.pdf
 #
-# EXPNAME and NPROMA must be defined as environment variables or they must 
+# EXPNAME and NPROMA must be defined as environment variables or they must
 # be substituted with appropriate values.
 #
 # Initial revision: 2015-04-14, F. Prill, DWD
@@ -69,11 +69,10 @@ done
 #-----------------------------------------------------------------------------
 
 
-# If the model runs with mpi_procs=1, then this script exits without error:
 if [[ ${mpi_total_procs} = 1 ]]; then
   echo "This test must not be started if mpi_procs=1 --> exit test without error"
-  check_error 0 "exp.nat_jww_nwp_mpiomp"
-  exit 0
+  check_error 1 "exp.nat_jww_nwp_mpiomp"
+  exit 1
 fi
 
 # If running in parallel, mpi_procs*no_of_nodes must be bigger than 2:
@@ -132,7 +131,7 @@ cat > ${atmo_namelist} << EOF
  hdiff_order                 =                          5         ! order of nabla operator for diffusion
  itype_vn_diffu              =                          1         ! reconstruction method used for Smagorinsky diffusion
  itype_t_diffu               =                          2         ! discretization of temperature diffusion
- hdiff_efdt_ratio            =                         36.0       ! ratio of e-folding time to time step 
+ hdiff_efdt_ratio            =                         36.0       ! ratio of e-folding time to time step
  hdiff_smag_fac              =                          0.015     ! scaling factor for Smagorinsky diffusion
  lhdiff_vn                   =                      .TRUE.        ! diffusion on the horizontal wind field
  lhdiff_temp                 =                      .TRUE.        ! diffusion on the temperature field
@@ -207,7 +206,7 @@ cat > ${atmo_namelist} << EOF
 &nwp_phy_nml
  inwp_gscp                   =                          1         ! cloud microphysics and precipitation
  inwp_convection             =                          1         ! convection
- inwp_radiation              =                          1         ! radiation
+ inwp_radiation              =                          4         ! radiation
  inwp_cldcover               =                          1         ! cloud cover scheme for radiation
  inwp_turb                   =                          1         ! vertical diffusion and transfer
  inwp_satad                  =                          1         ! saturation adjustment
@@ -230,8 +229,8 @@ cat > ${atmo_namelist} << EOF
  output_filename             =                       'NWP'        ! file name base
  output_grid                 =                      .TRUE.        ! flag whether grid information is added to output.
  !
- ml_varlist                  =  'u', 'v', 'w', 'temp', 'pres','topography_c', 'pres_msl', 
-                                'qv', 'qc', 'qi', 'qr', 'qs', 'tke',                      
+ ml_varlist                  =  'u', 'v', 'w', 'temp', 'pres','topography_c', 'pres_msl',
+                                'qv', 'qc', 'qi', 'qr', 'qs', 'tke',
                                 'group:precip_vars', 'group:additional_precip_vars'
 /
 
@@ -248,8 +247,9 @@ cat > ${atmo_namelist} << EOF
 
 ! radiation_nml: radiation scheme ---------------------------------------------
 &radiation_nml
- irad_o3                     =                          6         ! ozone climatology
+ irad_o3                     =                          79        ! ozone climatology
  irad_aero                   =                          0         ! aerosols
+ ecrad_data_path             = '${basedir}/externals/ecrad/data'
 /
 
 ! transport_nml: tracer transport ---------------------------------------------
@@ -265,7 +265,7 @@ cat > ${atmo_namelist} << EOF
 &turbdiff_nml
  tkhmin                      =                          0.2       ! scaling factor for minimum vertical diffusion coefficient
  tkmmin                      =                          0.2       ! scaling factor for minimum vertical diffusion coefficient
- pat_len                     =                        100.0       ! 
+ pat_len                     =                        100.0       !
  c_diff                      =                          0.2       !
  rat_sea                     =                          0.8       !
 /

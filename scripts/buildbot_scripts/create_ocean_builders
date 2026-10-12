@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,7 +24,6 @@ fi
 
 ./create_all_builders $listname
 
-./set_builder_flags Inactive --builders "DAINT_CPU_cce DAINT_CPU_pgi DAINT_GPU_pgi DAINT_CPU_nvidia DAINT_GPU_nvidia" --list $listname
-./set_builder_flags Inactive --builders "DWD_nec DWD_nec_hybrid DWD_nec_yac2" --list $listname
+./set_builder_flags Inactive --builders "dwd_nec_oper dwd_nec_hybrid dwd_nec_coupling" --list $listname
 ./set_builder_flags Inactive --builders "levante_intel_hybrid_mixed levante_nag_serial levante_intel_pio levante_cpu_nvhpc levante_gpu_nvhpc" --list $listname
 ./set_builder_flags Inactive --builders "breeze_gcc breeze_gcc_openmp breeze_intel breeze_intel_openmp breeze_nag" --list $listname

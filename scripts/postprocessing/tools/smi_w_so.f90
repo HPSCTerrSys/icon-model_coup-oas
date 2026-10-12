@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -41,11 +41,11 @@ PROGRAM smi_w_so
 !     3         sand
 !     4         sandy loam
 !     5         loam
-!     6         clay loam 
-!     7         clay 
-!     8         peat       
-!     9         sea water  
-!    10         sea ice    
+!     6         clay loam
+!     7         clay
+!     8         peat
+!     9         sea water
+!    10         sea ice
 !
   CHARACTER :: ysoiltyp(nsoil)*10 =                                                    &
              (/ 'ice       ', 'rock      ', 'sand      ', 'sandyLoam ', 'loam      ',  &
@@ -243,7 +243,7 @@ PROGRAM smi_w_so
           SELECT CASE ( which_way)
           CASE ( 'smi2w_so')
 !           From SMI to W_SO
-            WHERE ( soiltyp(:) > 2 .AND. soiltyp(:) < 9 ) 
+            WHERE ( soiltyp(:) > 2 .AND. soiltyp(:) < 9 )
               zgrib(:) = d*( zgrib(:)*( Cfcap(soiltyp(:))-Cpwp(soiltyp(:)) ) + Cpwp(soiltyp(:)) )
             ELSE WHERE
               zgrib(:) = 0._ireals
@@ -252,7 +252,7 @@ PROGRAM smi_w_so
 
           CASE ( 'smi2w_solimit')
 !           From SMI to W_SO and limit W_SO by Cadp, Cporv
-            WHERE ( soiltyp(:) > 2 .AND. soiltyp(:) < 9 ) 
+            WHERE ( soiltyp(:) > 2 .AND. soiltyp(:) < 9 )
               zgrib(:) = MAX( d*Cadp(soiltyp(:)), MIN( d*Cporv(soiltyp(:)),  &
                               d*( zgrib(:)*( Cfcap(soiltyp(:))-Cpwp(soiltyp(:)) ) + Cpwp(soiltyp(:)) ) ))
             ELSE WHERE

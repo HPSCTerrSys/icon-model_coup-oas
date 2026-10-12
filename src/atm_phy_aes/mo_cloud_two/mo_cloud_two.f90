@@ -1,18 +1,17 @@
-!
-! Subroutine cloud_two calls the saturation adjustment
-! and the two-moment bulk microphysics by Seifert and Beheng (2006)
-!                  with prognostic cloud droplet number
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutine cloud_two calls the saturation adjustment
+! and the two-moment bulk microphysics by Seifert and Beheng (2006)
+!                  with prognostic cloud droplet number
 
 MODULE mo_cloud_two
 
@@ -184,6 +183,7 @@ CONTAINS
             &           te       = zta       (:,:) ,& !> inout
             &           qve      = zqv       (:,:) ,& !> inout
             &           qce      = zqc       (:,:) ,& !> inout
+            &           w        = wa        (:,:) ,& !> in
             &           rhotot   = rho       (:,:) )
           !
     ! Single moment cloud microphyiscs for water vapor,
@@ -204,16 +204,16 @@ CONTAINS
          &        tke     = tke     (:,:) ,& !<    in: TKE (on half levels, size nlev+1)
          &        qv      = zqv     (:,:) ,& !< inout: sp humidity
          &        qc      = zqc     (:,:) ,& !< inout: cloud water
-         &        qnc     = zqnc    (:,:) ,& !< inout: cloud droplet number 
+         &        qnc     = zqnc    (:,:) ,& !< inout: cloud droplet number
          &        qr      = zqr     (:,:) ,& !< inout: rain
-         &        qnr     = zqnr    (:,:) ,& !< inout: rain droplet number 
+         &        qnr     = zqnr    (:,:) ,& !< inout: rain droplet number
          &        qi      = zqi     (:,:) ,& !< inout: ice
          &        qni     = zqni    (:,:) ,& !< inout: cloud ice number
          &        qs      = zqs     (:,:) ,& !< inout: snow
          &        qns     = zqns    (:,:) ,& !< inout: snow number
          &        qg      = zqg     (:,:) ,& !< inout: graupel
          &        qng     = zqng    (:,:) ,& !< inout: graupel number
-         &        qh      = zqh     (:,:) ,& !< inout: hail 
+         &        qh      = zqh     (:,:) ,& !< inout: hail
          &        qnh     = zqnh    (:,:) ,& !< inout: hail number
          &        ninact  = zninact (:,:) ,& !< inout: IN number
          &        tk      = zta     (:,:) ,& !< inout: temp
@@ -243,6 +243,7 @@ CONTAINS
             &           te       = zta       (:,:) ,& !> inout
             &           qve      = zqv       (:,:) ,& !> inout
             &           qce      = zqc       (:,:) ,& !> inout
+            &           w        = wa        (:,:) ,& !> in
             &           rhotot   = rho       (:,:) )
     !
     ! Calculate tendencies and convert temperature tendency, as computed

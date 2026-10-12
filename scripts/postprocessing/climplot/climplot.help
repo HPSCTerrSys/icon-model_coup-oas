@@ -35,9 +35,9 @@ climplot version 37r3 (summer 2011)
 * settings:
   A few variables have to be set.
   -NCLIMPL now defines a lot of options (each digit has a meaning)
-  -also it will provide diurnal cycle stats (but not compare to Obs) 
-  but for that one need to store the hourly fields on model data which needs a modif in model. 
-  You could try this later and include in GME model what is done in ifs/phys-ec routine diga_dcycle.F90 
+  -also it will provide diurnal cycle stats (but not compare to Obs)
+  but for that one need to store the hourly fields on model data which needs a modif in model.
+  You could try this later and include in GME model what is done in ifs/phys-ec routine diga_dcycle.F90
   but for moment I suggest to switch it off-> LBUDCYCLE=FALSE
 
 * includes:

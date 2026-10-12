@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Module for reading multifile restart files
 !
 ! Note: The single file implementation of the restart input can be
@@ -8,18 +19,7 @@
 ! multifile. Each processor handles all domains of its horizontal
 ! "chunk", since the domain loop is located outside of this routine,
 ! in the calling "src/drivers" routine.
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
+
 #include "omp_definitions.inc"
 
 MODULE mo_load_multifile_restart
@@ -31,6 +31,7 @@ MODULE mo_load_multifile_restart
   USE mo_communication_factory,  ONLY: setup_comm_pattern
   USE mo_decomposition_tools,    ONLY: t_glb2loc_index_lookup, init_glb2loc_index_lookup, set_inner_glb_index, &
     &                                  deallocate_glb2loc_index_lookup
+  USE mo_master_config,          ONLY: isInitFromRestart
   USE mo_dynamics_config,        ONLY: nnow, nnow_rcf
   USE mo_exception,              ONLY: finish, warning
   USE mo_kind,                   ONLY: sp, dp
@@ -39,7 +40,7 @@ MODULE mo_load_multifile_restart
     &                                  p_sum, p_alltoall, p_alltoallv
   USE mo_multifile_restart_util, ONLY: multifilePayloadPath, rBuddy, rGroup, vNames_glbIdx
   USE mo_parallel_config,        ONLY: nproma, idx_no, blk_no, restart_load_scale_max
-  USE mo_restart_nml_and_att,    ONLY: getAttributesForRestarting, ocean_initFromRestart_OVERRIDE
+  USE mo_restart_nml_and_att,    ONLY: getAttributesForRestarting
   USE mo_key_value_store,        ONLY: t_key_value_store
   USE mo_restart_var_data,       ONLY: get_var_3d_ptr, has_valid_time_level
   USE mo_var,                    ONLY: t_var_ptr
@@ -133,7 +134,7 @@ CONTAINS
       INTEGER :: iG, ndim, dimid(4)
       CHARACTER(*), PARAMETER :: routine = modname//":payloadFile_init"
       CHARACTER(:), ALLOCATABLE :: pathname
-  
+
       IF(timers_level >= 7) CALL timer_start(timer_load_restart_io)
       CALL multifilePayloadPath(mfPath, dom, partId, pathname)
       CALL nf(nf90_open(pathname, NF90_NOWRITE, me%ncid), routine)
@@ -152,7 +153,7 @@ CONTAINS
   SUBROUTINE checkRedistributionPattern(pat, provGlbIdces, reqdGlbIdces)
     CLASS(t_comm_pattern), INTENT(IN), POINTER :: pat
     INTEGER, INTENT(IN) :: provGlbIdces(:), reqdGlbIdces(:)
-    INTEGER :: iSize, oSize, i, error 
+    INTEGER :: iSize, oSize, i, error
     CHARACTER(*), PARAMETER :: routine = modname//":checkRedistributionPattern"
     REAL(KIND=dp), ALLOCATABLE, DIMENSION(:,:) :: input, output
 
@@ -223,7 +224,7 @@ CONTAINS
         & iPk_s, iPk_c, iPk_i, iPk_o, nI_s, nI_c, nI_i, nI_o, oPk_i, oPk_o, oPk_c
       INTEGER :: i, j
 
-#ifdef DEBUG 
+#ifdef DEBUG
       ! consistency checks
       IF(1 > MINVAL(pIds,1)) &
         & CALL finish(routine, "global index out of RANGE (<1)")
@@ -415,7 +416,7 @@ CONTAINS
             max_r = MAX(max_r, MERGE(MAXVAL(files(:)%iCnts(hgrid),1)*lCnt, nblk, en_bloc))
             max_e = MAX(max_e, MERGE(nblk*lCnt, 1, en_bloc))
           ELSE
-            IF (ocean_initFromRestart_OVERRIDE .OR. vDat(iV)%p%info%lrestart_cont) THEN
+            IF (isInitFromRestart() .OR. vDat(iV)%p%info%lrestart_cont) THEN
               CALL warning(routine, "variable not found: "//TRIM(vDat(iV)%p%info%NAME))
             ELSE
               CALL finish(routine, "variable not found: "//TRIM(vDat(iV)%p%info%NAME))
@@ -438,7 +439,7 @@ CONTAINS
       en_bloc = load_var_at_once .AND. lCnt .GT. 1
       SELECT CASE(vDat(iV)%p%info%data_type)
       CASE(REAL_T)
-        CALL get_var_3d_ptr(vDat(iV)%p, ptr_3d_d)
+        CALL get_var_3d_ptr(vDat(iV)%p, ptr_3d_d, lacc=.TRUE.)
         CALL C_F_POINTER(cptr_r, buf_d, [MERGE(MAXVAL(pCt,1)*lCnt, nblk*nproma, en_bloc)])
         IF (en_bloc) CALL C_F_POINTER(cptr_e, buf_3d_d, [nproma,lcnt,nblk])
         DO llId = 1, MERGE(1, lCnt, en_bloc)
@@ -468,7 +469,7 @@ CONTAINS
           IF (timers_level >= 7) CALL timer_stop(timer_load_restart_communication)
         END DO
       CASE(SINGLE_T)
-        CALL get_var_3d_ptr(vDat(iV)%p, ptr_3d_s)
+        CALL get_var_3d_ptr(vDat(iV)%p, ptr_3d_s, lacc=.TRUE.)
         CALL C_F_POINTER(cptr_r, buf_s, [MERGE(MAXVAL(pCt,1)*lCnt, nblk*nproma, en_bloc)])
         IF (en_bloc) CALL C_F_POINTER(cptr_e, buf_3d_s, [nproma,lcnt,nblk])
         DO llId = 1, MERGE(1, lCnt, en_bloc)
@@ -498,7 +499,7 @@ CONTAINS
           IF (timers_level >= 7) CALL timer_stop(timer_load_restart_communication)
         END DO
       CASE(INT_T)
-        CALL get_var_3d_ptr(vDat(iV)%p, ptr_3d_i)
+        CALL get_var_3d_ptr(vDat(iV)%p, ptr_3d_i, lacc=.TRUE.)
         IF (int_is_int) THEN
           CALL C_F_POINTER(cptr_r, buf_i, [MERGE(MAXVAL(pCt,1)*lCnt, nblk*nproma, en_bloc)])
           IF (en_bloc) CALL C_F_POINTER(cptr_e, buf_3d_i, [nproma,MERGE(lcnt,1,en_bloc),nblk])
@@ -507,7 +508,7 @@ CONTAINS
           CALL C_F_POINTER(cptr_e, buf_3d_i, [nproma,MERGE(lcnt,1,en_bloc),nblk])
         END IF
         DO llId = 1, MERGE(1, lCnt, en_bloc)
-          ofs = 0 
+          ofs = 0
           st(:) = [1, llId, 1]
           IF(timers_level >= 7) CALL timer_start(timer_load_restart_io)
           DO fId = 1, SIZE(files)

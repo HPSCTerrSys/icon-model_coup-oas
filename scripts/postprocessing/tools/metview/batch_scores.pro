@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ---------------------------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -41,54 +41,43 @@
 
  outdate   = long(inidate) + step/24
  plotfile2 = strcompress(string(outdate),/remove_all)+'00.L1.ps'
- 
-; mean plots
 
- plotfile1 = direxp+'/scores.NWP.r2B06L90.'+expnum+'_vs_'+expref
+ ; mean plots
 
- scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'ml', 'mean'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.ml.'  + plotfile2
- 
- scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'pl', 'mean'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.pl.'  + plotfile2
+  plotfile1 = direxp+'/scores.NWP.r2B06L90.'+expnum+'_vs_'+expref
 
- scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'zl', 'mean'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.zl.'  + plotfile2
+  scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'ml', 'mean',plotfile1 + '.ml.'  + plotfile2
 
- scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'sfc', 'mean'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.sfc.' + plotfile2
+  scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'pl', 'mean',plotfile1 + '.pl.'  + plotfile2
 
-; RMS plots
+  scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'zl', 'mean',plotfile1 + '.zl.'  + plotfile2
 
- plotfile1 = direxp+'/scores.NWP.r2B06L90.'+expnum+'_rms_vs_'+expref
- 
- scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'ml', 'rms'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.ml.'  + plotfile2
- 
- scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'pl', 'rms'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.pl.'  + plotfile2
+  scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'sfc', 'mean', plotfile1 + '.sfc.' + plotfile2
 
- scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'zl', 'rms'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.zl.'  + plotfile2
+ ; RMS plots
 
- scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'sfc', 'rms'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.sfc.' + plotfile2
+  plotfile1 = direxp+'/scores.NWP.r2B06L90.'+expnum+'_rms_vs_'+expref
 
-; RMS time-mean plots
+  scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'ml', 'rms',plotfile1 + '.ml.'  + plotfile2
 
- step1=24
- stepx=24
+  scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'pl', 'rms',plotfile1 + '.pl.'  + plotfile2
 
- plotfile1 = direxp+'/scores.NWP.r2B06L90.'+expnum+'_rms_vs_'+expref
- outdate   = long(inidate) + step1/24
- plotfile2 = strcompress(string(outdate),/remove_all) + "-" + strmid(string(101+step/24,format='(I3)'),1,2) + '_00.L1.ps'
- 
- scores, direxp, dirref, expnum, expref, inidate, step1, step, nfor, 'ml', 'rms'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.ml.'  + plotfile2
- 
- scores, direxp, dirref, expnum, expref, inidate, step1, step, nfor, 'pl', 'rms'
- spawn,'\cp -f plot.ps ' + plotfile1 + '.pl.'  + plotfile2
+  scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'zl', 'rms',plotfile1 + '.zl.'  + plotfile2
 
+  scores, direxp, dirref, expnum, expref, inidate, step, step, nfor, 'sfc', 'rms',plotfile1 + '.sfc.' + plotfile2
+
+ ; RMS time-mean plots
+
+  step1=24
+  stepx=24
+
+  plotfile1 = direxp+'/scores.NWP.r2B06L90.'+expnum+'_rms_vs_'+expref
+
+  outdate   = long(inidate) + step1/24
+  plotfile2 = strcompress(string(outdate),/remove_all) + "-" + strmid(string(101+step/24,format='(I3)'),1,2) + '_00.L1.ps'
+
+  scores, direxp, dirref, expnum, expref, inidate, step1, step, nfor, 'ml', 'rms',plotfile1 + '.ml.'  + plotfile2
+
+  scores, direxp, dirref, expnum, expref, inidate, step1, step, nfor, 'pl', 'rms',plotfile1 + '.pl.'  + plotfile2
 
  exit
-

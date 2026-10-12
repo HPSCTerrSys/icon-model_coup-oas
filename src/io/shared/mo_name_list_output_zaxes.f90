@@ -1,18 +1,16 @@
-! Module handling the specification of vertical axes for the output
-! module.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
+
+! Module handling the specification of vertical axes for the output
+! module.
 !
 ! --------------------------------
 ! Details of the implementation
@@ -64,8 +62,9 @@ MODULE mo_name_list_output_zaxes
     &                                             ZA_PRES_FL_BOT_TOP,                                            &
     &                                             ZA_reference, ZA_reference_half, ZA_reference_half_hhl,        &
     &                                             ZA_sediment_bottom_tw_half, ZA_snow, ZA_snow_half, ZA_toa,     &
+    &                                             ZA_OCE_LAYER_INTERFACE, ZA_OCE_LAYER_CENTRE,                           &
     &                                             ZA_OCEAN_SEDIMENT, ZA_height_2m_layer, ZA_ECHOTOP,             &
-    &                                             ZA_TROPOPAUSE, ZA_WSHEAR, ZA_PRESSURE_LAPSERATE, ZA_SRH
+    &                                             ZA_TROPOPAUSE, ZA_WSHEAR, ZA_PRESSURE_LAPSERATE, ZA_SRH, ZA_SPG_GENERIC
   USE mo_level_selection_types,             ONLY: t_level_selection
   USE mo_util_vgrid_types,                  ONLY: vgrid_buffer
   USE mo_math_utilities,                    ONLY: set_zlev, t_value_set
@@ -75,10 +74,12 @@ MODULE mo_name_list_output_zaxes
   USE mo_io_config,                         ONLY: echotop_meta, wshear_uv_heights, srh_heights
   USE mo_nonhydrostatic_config,             ONLY: ivctype
   USE mo_lnd_nwp_config,                    ONLY: nlev_snow, zml_soil
+  USE mo_atm_phy_nwp_config,                ONLY: spg_num
 #endif
 #ifndef __NO_ICON_OCEAN__
   USE mo_ocean_nml,                         ONLY: dzlev_m,lhamocc, n_zlev
   USE mo_hamocc_nml,                        ONLY: ks, ksp, dzsed
+  USE mo_ocean_nml,                         ONLY: rho_lev_in, n_dlev, use_layers    ! by_nils
 #endif
 
   IMPLICIT NONE
@@ -167,7 +168,7 @@ CONTAINS
     CALL verticalAxisList%append(single_level_axis(ZA_lake_bottom_half, opt_unit="m"))
 
     ! for having ice variable in the atmosphere (like AMIP)
-    CALL verticalAxisList%append(t_verticalAxis(zaxisTypeList%getEntry(ZA_GENERIC_ICE), 1))
+    CALL verticalAxisList%append(single_level_axis(ZA_GENERIC_ICE, opt_grib2_level_type=152, opt_name="ice_class"))
 
     ! for having variable on the tropopause niveau
     CALL verticalAxisList%append(single_level_axis(ZA_TROPOPAUSE, opt_grib2_level_type=7))
@@ -217,9 +218,9 @@ CONTAINS
     n_echotop = echotop_meta(log_patch_id)%nechotop
     IF ( n_echotop > 0) THEN
       CALL verticalAxisList%append(t_verticalAxis(zaxisTypeList%getEntry(ZA_ECHOTOP), &
-                                   n_echotop, &
-                                   zaxisLevels=echotop_meta(log_patch_id)%dbzthresh(1:n_echotop), &
-                                   zaxisUnits="dBZ") )
+        &                                         n_echotop, &
+        &                                         zaxisLevels=REAL(echotop_meta(log_patch_id)%dbzthresh(1:n_echotop),dp), &
+        &                                         zaxisUnits="dBZ") )
     END IF
 
     ! --------------------------------------------------------------------------------------
@@ -229,13 +230,13 @@ CONTAINS
     n_wshear = COUNT(wshear_uv_heights > 0.0_wp)
     IF ( n_wshear > 0) THEN
       CALL verticalAxisList%append(t_verticalAxis(zaxisTypeList%getEntry(ZA_WSHEAR), &
-           &                                         n_wshear, &
-           &                                         zaxisLevels  = wshear_uv_heights(1:n_wshear), &
-           &                                         zaxisLbounds = wshear_uv_heights(1:n_wshear), &
-           &                                         zaxisUbounds = (/ (0.0_wp, k=1,n_wshear) /),  &
-           &                                         zaxisUnits="m"))
+        &                                         n_wshear, &
+        &                                         zaxisLevels  = REAL(wshear_uv_heights(1:n_wshear),dp), &
+        &                                         zaxisLbounds = REAL(wshear_uv_heights(1:n_wshear),dp), &
+        &                                         zaxisUbounds = (/ (0.0_dp, k=1,n_wshear) /),  &
+        &                                         zaxisUnits="m"))
     END IF
-    
+
     ! --------------------------------------------------------------------------------------
     ! Definitions for storm relative helicity
     !   (integral between a height AGL and GND)
@@ -243,13 +244,13 @@ CONTAINS
     n_srh = COUNT(srh_heights > 0.0_wp)
     IF ( n_srh > 0) THEN
       CALL verticalAxisList%append(t_verticalAxis(zaxisTypeList%getEntry(ZA_SRH), &
-           &                                         n_srh, &
-           &                                         zaxisLevels  = srh_heights(1:n_srh), &
-           &                                         zaxisLbounds = srh_heights(1:n_srh), &
-           &                                         zaxisUbounds = (/ (0.0_wp, k=1,n_srh) /),&
-           &                                         zaxisUnits="m"))
+        &                                         n_srh, &
+        &                                         zaxisLevels  = REAL(srh_heights(1:n_srh),dp), &
+        &                                         zaxisLbounds = REAL(srh_heights(1:n_srh),dp), &
+        &                                         zaxisUbounds = (/ (0.0_dp, k=1,n_srh) /),&
+        &                                         zaxisUnits="m"))
     END IF
-    
+
     ! Isobaric pressure layer 500 hPa - 850 hPa for the temperature lapse_rate:
     CALL verticalAxisList%append(single_layer_axis(ZA_pressure_lapserate, 500._dp, 850._dp, "hPa"))
 
@@ -316,6 +317,22 @@ CONTAINS
         &                                         zaxisUnits="mm"))
       DEALLOCATE(lbounds, ubounds, levels)
     ENDIF
+
+    ! --------------------------------------------------------------------------------------
+    ! Pseudo axis for stochastic patterns          -----------------------------------------
+    ! --------------------------------------------------------------------------------------
+
+    ! ZA_SPG_GENERIC
+    ! axis for 3D field of 2D stochastic patterns
+    IF (spg_num > 0) THEN
+      CALL verticalAxisList%append(vertical_axis(                                    &
+        &                           za_type          = ZA_SPG_GENERIC,               &
+        &                           in_nlevs         = spg_num,                      &
+        &                           levels           = (/(REAL(k,dp),k=1,spg_num)/), &
+        &                           level_selection  = level_selection,              &
+        &                           opt_name         = "pattern",                    &
+        &                           opt_unit         = "-"))
+    END IF
 
     ! --------------------------------------------------------------------------------------
     ! Axes for multi-layer snow model (ZAXIS_SNOW) -----------------------------------------
@@ -428,13 +445,14 @@ CONTAINS
   !> Setup of vertical axes for output module: Ocean component
   !
   SUBROUTINE setup_zaxes_oce(verticalAxisList, level_selection)
-  
+
     TYPE(t_verticalAxisList), INTENT(INOUT) :: verticalAxisList
     TYPE(t_level_selection),  INTENT(IN), POINTER :: level_selection
     ! local variables
-    REAL(wp), ALLOCATABLE             :: levels_i(:), levels_m(:)
-    REAL(wp), ALLOCATABLE             :: levels_s(:), levels_sp(:)
-    
+    REAL(dp), ALLOCATABLE             :: levels_i(:), levels_m(:)
+    REAL(dp), ALLOCATABLE             :: levels_s(:), levels_sp(:)
+    REAL(dp), ALLOCATABLE             :: layers_int(:), layers_cent(:)
+
 #ifndef __NO_ICON_OCEAN__
     ALLOCATE(levels_i(n_zlev+1), levels_m(n_zlev))
     CALL set_zlev(levels_i, levels_m, n_zlev, dzlev_m)
@@ -442,25 +460,38 @@ CONTAINS
     CALL verticalAxisList%append(single_level_axis(ZA_surface))
     CALL verticalAxisList%append(vertical_axis(ZA_depth_below_sea, &
       &                          n_zlev,                           &
-      &                          levels = REAL(levels_m,wp), &
+      &                          levels = levels_m, &
       &                          level_selection=level_selection))
     CALL verticalAxisList%append(vertical_axis(ZA_depth_below_sea_half, &
       &                          n_zlev+1,                              &
-      &                          levels = REAL(levels_i,wp),            &
+      &                          levels = levels_i,            &
       &                          level_selection=level_selection))
-    CALL verticalAxisList%append(single_level_axis(ZA_GENERIC_ICE))
-
     DEALLOCATE(levels_i, levels_m)
 
-    CALL verticalAxisList%append(t_verticalAxis(zaxisTypeList%getEntry(ZA_GENERIC_ICE), 1))
+    CALL verticalAxisList%append(single_level_axis(ZA_GENERIC_ICE, opt_grib2_level_type=152, opt_name="ice_class"))
     if(lhamocc)then
     ! ocean sediment
     ALLOCATE(levels_s(ks), levels_sp(ksp))
 
     CALL set_zlev(levels_sp, levels_s, ks, dzsed)
     CALL verticalAxisList%append(t_verticalAxis(zaxisTypeList%getEntry(ZA_OCEAN_SEDIMENT), ks, &
-      &                                         zaxisLevels=REAL(levels_s,dp)))
+      &                                         zaxisLevels=levels_s))
     DEALLOCATE(levels_s, levels_sp)
+    endif
+
+    if (use_layers) then
+    ALLOCATE(layers_int(1:n_dlev+1), layers_cent(1:n_dlev))
+    layers_int = REAL(rho_lev_in(1:n_dlev+1), KIND=dp)
+    layers_cent = 0.5_dp*(layers_int(1:n_dlev)+layers_int(2:n_dlev+1))
+    CALL verticalAxisList%append(vertical_axis(ZA_OCE_LAYER_INTERFACE, &
+      &                          n_dlev+1,                              &
+      &                          levels = layers_int,            &
+      &                          level_selection=level_selection))
+    CALL verticalAxisList%append(vertical_axis(ZA_OCE_LAYER_CENTRE, &
+      &                          n_dlev,                              &
+      &                          levels = layers_cent,            &
+      &                          level_selection=level_selection))
+    DEALLOCATE(layers_int, layers_cent)
     endif
 #endif
 
@@ -470,12 +501,14 @@ CONTAINS
   ! --------------------------------------------------------------------------------------
   !> Utility function: defines z-axis with a single level
   !
-  FUNCTION single_level_axis(za_type, opt_level_value, opt_unit, opt_grib2_level_type)
+  FUNCTION single_level_axis(za_type, opt_level_value, opt_unit, opt_grib2_level_type, opt_name)
     TYPE(t_verticalAxis) :: single_level_axis
     INTEGER,          INTENT(IN)           :: za_type               !< ICON-internal axis ID (see mo_zaxis_type)
     REAL(dp),         INTENT(IN), OPTIONAL :: opt_level_value       !< level value
     CHARACTER(LEN=*), INTENT(IN), OPTIONAL :: opt_unit              !< axis unit
     INTEGER,          INTENT(in), OPTIONAL :: opt_grib2_level_type  !< level type as defined in GRIB2
+    CHARACTER(LEN=*), INTENT(IN), OPTIONAL :: opt_name              !< axis name
+
     ! local variables
     REAL(dp) :: levels(1)
 
@@ -487,6 +520,7 @@ CONTAINS
          &                             zaxisDefLtype=opt_grib2_level_type)
 
     IF (PRESENT(opt_unit))  CALL single_level_axis%set(zaxisUnits=TRIM(opt_unit))
+    IF (PRESENT(opt_name)) CALL single_level_axis%set(zaxisName=TRIM(opt_name))
   END FUNCTION single_level_axis
 
 
@@ -516,7 +550,7 @@ CONTAINS
   !
   FUNCTION vertical_axis(za_type, in_nlevs, levels, level_selection,  &
     &                    opt_set_bounds, opt_set_ubounds_value,       &
-    &                    opt_name, opt_number, opt_nlevref,           &
+    &                    opt_name, opt_unit, opt_number, opt_nlevref, &
     &                    opt_uuid, opt_set_vct_as_levels,             &
     &                    opt_vct)  RESULT(axis)
 
@@ -529,6 +563,7 @@ CONTAINS
     LOGICAL,      INTENT(IN), OPTIONAL :: opt_set_bounds                !< Flag. Set lower/upper bounds if .TRUE.
     REAL(dp),     INTENT(IN), OPTIONAL :: opt_set_ubounds_value         !< Explicit value for ubounds
     CHARACTER(*), INTENT(IN), OPTIONAL :: opt_name                      !< Name of the zaxis
+    CHARACTER(*), INTENT(IN), OPTIONAL :: opt_unit                      !< Unit of the zaxis
     INTEGER,      INTENT(IN), OPTIONAL :: opt_number                    !< numberOfVGridUsed
     LOGICAL,      INTENT(IN), OPTIONAL :: opt_set_vct_as_levels         !< set VCT to level values
     INTEGER,      INTENT(IN), OPTIONAL :: opt_nlevref                   !< no. of half levels
@@ -573,6 +608,7 @@ CONTAINS
     CALL axis%set(zaxisLevels=axis_levels) !necessary for GRIB2
 
     IF (PRESENT(opt_name)) CALL axis%set(zaxisName=TRIM(opt_name))
+    IF (PRESENT(opt_unit)) CALL axis%set(zaxisUnits=TRIM(opt_unit))
 
     set_bounds = .FALSE.
     IF (PRESENT(opt_set_bounds)) set_bounds = opt_set_bounds

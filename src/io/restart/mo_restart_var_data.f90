@@ -1,16 +1,16 @@
-! The glue layer between the restart writing code and the variables:
-! The restart writing code only ever sees 3D pointers returned by get_var_3d_ptr.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! The glue layer between the restart writing code and the variables:
+! The restart writing code only ever sees 3D pointers returned by get_var_3d_ptr.
 
 MODULE mo_restart_var_data
 
@@ -27,7 +27,6 @@ MODULE mo_restart_var_data
   USE mo_var_metadata_types, ONLY: t_var_metadata
   USE mo_var_metadata,       ONLY: get_var_timelevel
 #ifdef _OPENACC
-  USE mo_mpi,                       ONLY: i_am_accel_node
   USE openacc, ONLY: acc_is_present
 #endif
 
@@ -46,9 +45,10 @@ MODULE mo_restart_var_data
 
 CONTAINS
 
-  SUBROUTINE get_var_3d_ptr_dp(vd, r_ptr_3d)
+  SUBROUTINE get_var_3d_ptr_dp(vd, r_ptr_3d, lacc)
     TYPE(t_var), POINTER, INTENT(IN) :: vd
     REAL(dp), POINTER, INTENT(OUT) :: r_ptr_3d(:,:,:)
+    LOGICAL, INTENT(IN) :: lacc
     REAL(dp), POINTER :: r_ptr_2d(:,:)
     INTEGER :: nindex, nlevs, var_ref_pos
     CHARACTER(*), PARAMETER :: routine = modname//":get_var_3d_ptr_dp"
@@ -88,18 +88,19 @@ CONTAINS
            & TRIM(int2string(vd%info%ndims))//"d arrays not handled yet")
     END SELECT
 #ifdef _OPENACC
-    if(i_am_accel_node .AND. ( vd%info%lopenacc .NEQV. acc_is_present(r_ptr_3d) )) then
+    if(lacc .AND. ( vd%info%lopenacc .NEQV. acc_is_present(r_ptr_3d) )) then
       print *, "in restart: ", TRIM(vd%info%NAME), vd%info%lopenacc, acc_is_present(r_ptr_3d)
       CALL finish(routine, "lopenacc and acc_is_present are inconsistent for '"//TRIM(vd%info%NAME)//"'")
     endif
 #endif
-    !$ACC UPDATE HOST(r_ptr_3d) ASYNC(1) IF(i_am_accel_node .AND. vd%info%lopenacc)
-    !$ACC WAIT(1) IF(i_am_accel_node)
+    !$ACC UPDATE HOST(r_ptr_3d) ASYNC(1) IF(lacc .AND. vd%info%lopenacc)
+    !$ACC WAIT(1) IF(lacc)
   END SUBROUTINE get_var_3d_ptr_dp
 
-  SUBROUTINE get_var_3d_ptr_sp(vd, s_ptr_3d)
+  SUBROUTINE get_var_3d_ptr_sp(vd, s_ptr_3d, lacc)
     TYPE(t_var), POINTER, INTENT(IN) :: vd
     REAL(sp), POINTER, INTENT(OUT) :: s_ptr_3d(:,:,:)
+    LOGICAL, INTENT(IN) :: lacc
     REAL(sp), POINTER :: s_ptr_2d(:,:)
     INTEGER :: nindex, nlevs, var_ref_pos
     CHARACTER(*), PARAMETER :: routine = modname//":get_var_3d_ptr_sp"
@@ -139,18 +140,19 @@ CONTAINS
            & TRIM(int2string(vd%info%ndims))//"d arrays not handled yet")
     END SELECT
 #ifdef _OPENACC
-    if(i_am_accel_node .AND. ( vd%info%lopenacc .NEQV. acc_is_present(s_ptr_3d) )) then
+    if(lacc .AND. ( vd%info%lopenacc .NEQV. acc_is_present(s_ptr_3d) )) then
       print *, "in restart: ", TRIM(vd%info%NAME), vd%info%lopenacc, acc_is_present(s_ptr_3d)
       CALL finish(routine, "lopenacc and acc_is_present are inconsistent for '"//TRIM(vd%info%NAME)//"'")
     endif
 #endif
-    !$ACC UPDATE HOST(s_ptr_3d) ASYNC(1) IF(i_am_accel_node .AND. vd%info%lopenacc)
-    !$ACC WAIT(1) IF(i_am_accel_node)
+    !$ACC UPDATE HOST(s_ptr_3d) ASYNC(1) IF(lacc .AND. vd%info%lopenacc)
+    !$ACC WAIT(1) IF(lacc)
   END SUBROUTINE get_var_3d_ptr_sp
 
-  SUBROUTINE get_var_3d_ptr_int(vd, i_ptr_3d)
+  SUBROUTINE get_var_3d_ptr_int(vd, i_ptr_3d, lacc)
     TYPE(t_var), POINTER, INTENT(IN) :: vd
     INTEGER, POINTER, INTENT(OUT) :: i_ptr_3d(:,:,:)
+    LOGICAL, INTENT(IN) :: lacc
     INTEGER, POINTER :: i_ptr_2d(:,:)
     INTEGER :: nindex, nlevs, var_ref_pos
     CHARACTER(*), PARAMETER :: routine = modname//":get_var_3d_ptr_i"
@@ -190,13 +192,13 @@ CONTAINS
            & TRIM(int2string(vd%info%ndims))//"d arrays not handled yet")
     END SELECT
 #ifdef _OPENACC
-    if(i_am_accel_node .AND. ( vd%info%lopenacc .NEQV. acc_is_present(i_ptr_3d) )) then
+    if(lacc .AND. ( vd%info%lopenacc .NEQV. acc_is_present(i_ptr_3d) )) then
       print *, "in restart: ", TRIM(vd%info%NAME), vd%info%lopenacc, acc_is_present(i_ptr_3d)
       CALL finish(routine, "lopenacc and acc_is_present are inconsistent for '"//TRIM(vd%info%NAME)//"'")
     endif
 #endif
-    !$ACC UPDATE HOST(i_ptr_3d) ASYNC(1) IF(i_am_accel_node .AND. vd%info%lopenacc)
-    !$ACC WAIT(1) IF(i_am_accel_node)
+    !$ACC UPDATE HOST(i_ptr_3d) ASYNC(1) IF(lacc .AND. vd%info%lopenacc)
+    !$ACC WAIT(1) IF(lacc)
   END SUBROUTINE get_var_3d_ptr_int
 
   ! Returns true, if the time level of the given field is valid, else false.

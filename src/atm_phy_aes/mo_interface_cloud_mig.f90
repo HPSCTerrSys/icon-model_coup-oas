@@ -1,16 +1,15 @@
-!
-! Subroutine interface_cloud_mig calls NWP graupel scheme
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutine interface_cloud_mig calls NWP graupel scheme
 
 MODULE mo_interface_cloud_mig
 
@@ -27,6 +26,7 @@ MODULE mo_interface_cloud_mig
   USE mo_cloud_mig_types     ,ONLY: t_cloud_mig_input, t_cloud_mig_output
   USE mo_cloud_mig_memory    ,ONLY:   cloud_mig_input,   cloud_mig_output
   USE mo_cloud_mig           ,ONLY:   cloud_mig
+  USE mo_cloud_mig_config    ,ONLY:   cloud_mig_config
 
   USE mo_timer               ,ONLY: ltimer, timer_start, timer_stop, &
        &                            timer_mig, timer_cld_mig
@@ -58,6 +58,7 @@ CONTAINS
     INTEGER  :: nlev
     !
     REAL(wp) :: pdtime
+    REAL(wp) :: cia
     LOGICAL  :: is_in_sd_ed_interval
     LOGICAL  :: is_active
     !
@@ -87,6 +88,7 @@ CONTAINS
     pdtime               = aes_phy_tc(jg)%dt_phy_sec
     is_in_sd_ed_interval = aes_phy_tc(jg)%is_in_sd_ed_interval_mig
     is_active            = aes_phy_tc(jg)%is_active_mig
+    cia                  = cloud_mig_config(jg)% cia
 
     ! associate pointers
     !
@@ -139,6 +141,7 @@ CONTAINS
           !
           CALL cloud_mig( jcs, jce                            ,& !< in : column index range
                &          pdtime                              ,& !< in : timestep
+               &          cia                                 ,& !< in : control ice amount
                &          field% dz        (:,jks:jke,jb)     ,& !< in : vertical layer thickness
                &          field% rho       (:,jks:jke,jb)     ,& !< in : density
                &          field% pfull     (:,jks:jke,jb)     ,& !< in : pressure
@@ -155,7 +158,7 @@ CONTAINS
                &          tend_qi_mig      (:,jks:jke)        ,& !< out: tendency of cloud ice
                &          tend_qr_mig      (:,jks:jke)        ,& !< out: tendency of rain
                &          tend_qs_mig      (:,jks:jke)        ,& !< out: tendency of snow
-               &          tend_qg_mig      (:,jks:jke)        ,& !< out: tendency of graupel 
+               &          tend_qg_mig      (:,jks:jke)        ,& !< out: tendency of graupel
                &          pr_rain          (:)                ,& !& out: precip rate rain
                &          pr_ice           (:)                ,& !& out: precip rate rain
                &          pr_snow          (:)                ,& !& out: precip rate snow

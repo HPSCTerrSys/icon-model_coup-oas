@@ -1,18 +1,16 @@
-! Routines for defining, initializing and executing action events
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
-!
+
+! Routines for defining, initializing and executing action events
+
 ! *****************************************************************
 !            RECIPE FOR CREATING A NEW ACTION EVENT
 ! *****************************************************************
@@ -433,6 +431,11 @@ CONTAINS
       CALL init(act_obj%var_element_ptr(ivar)%p%r_ptr, &
            act_obj%var_element_ptr(ivar)%p%info%resetval%rval, lacc=.TRUE.)
 !$OMP END PARALLEL
+    ELSE IF (ASSOCIATED(act_obj%var_element_ptr(ivar)%p%s_ptr)) THEN
+!$OMP PARALLEL
+      CALL init(act_obj%var_element_ptr(ivar)%p%s_ptr, &
+           act_obj%var_element_ptr(ivar)%p%info%resetval%sval, lacc=.TRUE.)
+!$OMP END PARALLEL
     ELSE IF (ASSOCIATED(act_obj%var_element_ptr(ivar)%p%i_ptr)) THEN
 !$OMP PARALLEL
       CALL init(act_obj%var_element_ptr(ivar)%p%i_ptr, &
@@ -475,6 +478,9 @@ CONTAINS
       dom_loop: DO jg = 1, n_dom
         var => find_list_element (var_list(jg), TRIM(var_name))
 
+        res_time(jg) = -999._wp
+        IF (.NOT. ASSOCIATED(var)) CYCLE
+
         ASSOCIATE(action_list => var%info%action_list)
           ! get number of available actions of requested type
           nact_typ = action_list%getNumActions(act_typ)
@@ -514,4 +520,3 @@ CONTAINS
 
 
 END MODULE mo_action
-

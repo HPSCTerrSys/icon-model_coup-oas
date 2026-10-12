@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -14,13 +14,13 @@
 begin
 
   Model    = getenv("Model")
-  SpecData = getenv("SpecData") 
+  SpecData = getenv("SpecData")
   DataPath = getenv("DataPath")
   ExpName  = getenv("ExpName")
   OutFrq   = stringtoint(getenv("output_frequency"))
 
-  vorName  = getenv("vor_coeff_name") 
-  divName  = getenv("div_coeff_name") 
+  vorName  = getenv("vor_coeff_name")
+  divName  = getenv("div_coeff_name")
 
   day = (/10,30/)
   ndays = dimsizes(day)
@@ -41,7 +41,7 @@ begin
 
  ; shape of the arrays in the input file: (ntime,nlev,nspec,2)
 
-  nlev = dimsizes(File->$vorName$(0,:,0,0)) 
+  nlev = dimsizes(File->$vorName$(0,:,0,0))
   nspc = dimsizes(File->$vorName$(0,0,:,0))
 
   trunctmp = sqrt(8*nspc+1) -3
@@ -72,14 +72,14 @@ begin
 ;------------------------------------------
 ; calculate spectrum
 ;------------------------------------------
- ; tmp arrays 
+ ; tmp arrays
  ;------------------------------------------
 
   svo2d = new( (/nlev,trunc+1,trunc+1,2/), double )
   sd2d  = svo2d
 
  ;------------------------------------------
- ; time step by time step 
+ ; time step by time step
  ;------------------------------------------
   do jday=0,ndays-1
 
@@ -163,7 +163,7 @@ begin
        system("rm "+ out_file_name)
    end if
 
-   out_file = addfile(out_file_name,"c") 
+   out_file = addfile(out_file_name,"c")
    out_file->ke  = spec_ke
    out_file->div = spec_div
    out_file->rot = spec_vor

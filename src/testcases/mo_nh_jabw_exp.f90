@@ -1,16 +1,15 @@
-! Subroutine to initialized the Jablonowski Williansom test case for the NH-Core
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutine to initialized the Jablonowski Williansom test case for the NH-Core
 
 MODULE mo_nh_jabw_exp
 !-------------------------------------------------------------------------
@@ -31,7 +30,7 @@ MODULE mo_nh_jabw_exp
    USE mo_run_config,           ONLY: iqv, ntracer
    USE mo_impl_constants,       ONLY: MAX_CHAR_LENGTH
    USE mo_parallel_config,      ONLY: nproma, p_test_run
-   USE mo_satad,                ONLY: sat_pres_water, &  !! saturation vapor pressure w.r.t. water
+   USE mo_thdyn_functions,      ONLY: sat_pres_water, &  !! saturation vapor pressure w.r.t. water
      &                                sat_pres_ice       !! saturation vapor pressure w.r.t. ice
    USE mo_exception,            ONLY: finish, message_text
    USE mo_ncar_testcases,       ONLY: tracer_q1_q2, tracer_q3, &
@@ -51,23 +50,23 @@ MODULE mo_nh_jabw_exp
 
 
 
-   PUBLIC :: init_nh_topo_jabw,init_nh_state_prog_jabw, & 
+   PUBLIC :: init_nh_topo_jabw,init_nh_state_prog_jabw, &
            & init_passive_tracers_nh_jabw, &
            & init_nh_inwp_tracers
 
-  
+
    PRIVATE
-   REAL(wp), PARAMETER :: cpd_o_rd  = 1._wp / rd_o_cpd 
+   REAL(wp), PARAMETER :: cpd_o_rd  = 1._wp / rd_o_cpd
 
 
 
-! !DEFINED PARAMETERS for jablonowski williamson:  
-  REAL(wp), PARAMETER :: eta0  = 0.252_wp ! 
+! !DEFINED PARAMETERS for jablonowski williamson:
+  REAL(wp), PARAMETER :: eta0  = 0.252_wp !
   REAL(wp), PARAMETER :: etat  = 0.2_wp   ! tropopause
   REAL(wp), PARAMETER :: gamma = 0.005_wp ! temperature elapse rate (K/m)
   REAL(wp), PARAMETER :: dtemp = 4.8e5_wp ! empirical temperature difference (K)
 
-  REAL(wp), PARAMETER :: lonC  = pi/9._wp ! longitude of the perturb. centre 
+  REAL(wp), PARAMETER :: lonC  = pi/9._wp ! longitude of the perturb. centre
   REAL(wp), PARAMETER :: latC  = 2._wp*lonC !latitude of the perturb. centre
 
 !--------------------------------------------------------------------
@@ -76,7 +75,7 @@ MODULE mo_nh_jabw_exp
 !-------------------------------------------------------------------------
 !
   !>
-  !! Initialization of topography for the nh standard jabw test case 
+  !! Initialization of topography for the nh standard jabw test case
   !!
   SUBROUTINE init_nh_topo_jabw( ptr_patch, topo_c, nblks_c, npromz_c, &
                              &  u0, opt_m_height, opt_m_half_width )
@@ -94,9 +93,9 @@ MODULE mo_nh_jabw_exp
   REAL(wp)       :: z_lon, z_lat
 !!$  CHARACTER(len=MAX_CHAR_LENGTH), PARAMETER :: &
 !!$    &  routine = '(mo_nh_jabw_exp) init_nh_topo_jabw:'
- 
+
   REAL(wp)      :: zsiny, zcosy,tmp1,tmp2,tmp3
-  REAL(wp)      :: z_fac1, z_fac2    
+  REAL(wp)      :: z_fac1, z_fac2
   LOGICAL       :: lmount
   REAL(wp)      :: mount_height, mount_half_width
 
@@ -110,7 +109,7 @@ MODULE mo_nh_jabw_exp
        lmount = .FALSE.
      END IF
 
- 
+
       DO jb = 1, nblks_c
         IF (jb /= nblks_c) THEN
           nlen = nproma
@@ -129,11 +128,11 @@ MODULE mo_nh_jabw_exp
           IF ( itopo==0 ) topo_c(jc,jb) = tmp1*(tmp2+tmp3)/grav
           IF (itopo==0 .AND. lmount ) THEN
             z_lon = ptr_patch%cells%center(jc,jb)%lon
-            z_fac1= SIN(latC)*SIN(z_lat)+COS(latC)*COS(z_lat)*COS(z_lon-lonC) 
+            z_fac1= SIN(latC)*SIN(z_lat)+COS(latC)*COS(z_lat)*COS(z_lon-lonC)
             z_fac2= grid_sphere_radius*ACOS(z_fac1)/mount_half_width
             topo_c(jc,jb) = topo_c(jc,jb) &
                           & + mount_height*EXP(-z_fac2**2)
-          ENDIF 
+          ENDIF
         ENDDO
       ENDDO
 
@@ -142,7 +141,7 @@ MODULE mo_nh_jabw_exp
 !-------------------------------------------------------------------------
 !
   !>
-  !! Initialization of prognostic state vector for the nh standard jabw test case 
+  !! Initialization of prognostic state vector for the nh standard jabw test case
   !!  without moisture
   !!
   SUBROUTINE init_nh_state_prog_jabw( ptr_patch, ptr_nh_prog, ptr_nh_diag, &
@@ -161,7 +160,7 @@ MODULE mo_nh_jabw_exp
     TYPE(t_nh_metrics), INTENT(IN)      :: p_metrics !< NH metrics state
     TYPE(t_int_state), INTENT(IN)       :: p_int
 
-    REAL(wp), INTENT(IN)                :: p_sfc   !surface pressure, 1.e5 Pa in the standard jabw 
+    REAL(wp), INTENT(IN)                :: p_sfc   !surface pressure, 1.e5 Pa in the standard jabw
     REAL(wp), INTENT(IN)                :: up
     REAL(wp), INTENT(IN)                :: u0
     REAL(wp), INTENT(IN)                :: temp0
@@ -188,8 +187,8 @@ MODULE mo_nh_jabw_exp
 
     ALLOCATE (zeta_v(nproma,nlev,ptr_patch%nblks_c), &
               zeta_v_e(nproma,nlev,ptr_patch%nblks_e) )
-    
-    
+
+
     zeta_v    = 0._wp
     zeta_v_e  = 0._wp
     nblks_c   = ptr_patch%nblks_c
@@ -239,7 +238,7 @@ MODULE mo_nh_jabw_exp
                         +1.25_wp*etat*(zeta_old(jc)**4)-0.2_wp*(zeta_old(jc)**5))
             ENDIF
             z_geopot(jc) = z_favg(jc)+u0*(zcoszetav(jc)**1.5_wp)*&
-                          (z_fac1(jc)*u0*(zcoszetav(jc)**1.5_wp)+z_fac2(jc)) 
+                          (z_fac1(jc)*u0*(zcoszetav(jc)**1.5_wp)+z_fac2(jc))
             z_temp(jc)   = z_tavg(jc)+0.75_wp*zeta_old(jc)*pi*u0/rd*zsinzetav(jc)*&
                        SQRT(zcoszetav(jc))*(2.0_wp*u0*z_fac1(jc)*(zcoszetav(jc)**1.5_wp) &
                        + z_fac2(jc))
@@ -256,14 +255,14 @@ MODULE mo_nh_jabw_exp
         ! Use analytic expressions at all model level
           DO jc = 1, nlen
             ptr_nh_prog%exner(jc,jk,jb) = (zeta_old(jc)*ps_o_p0ref)**rd_o_cpd
-            ptr_nh_prog%theta_v(jc,jk,jb) = z_temp(jc) & 
+            ptr_nh_prog%theta_v(jc,jk,jb) = z_temp(jc) &
             &        /ptr_nh_prog%exner(jc,jk,jb)
             ptr_nh_prog%rho(jc,jk,jb) = &
             &        ptr_nh_prog%exner(jc,jk,jb)**cvd_o_rd*p0ref/rd &
             &        /ptr_nh_prog%theta_v(jc,jk,jb)
             !initialize diagnose pres and temp variables
-            ptr_nh_diag%pres(jc,jk,jb) = p0ref*ptr_nh_prog%exner(jc,jk,jb)**(cpd_o_rd) 
-            ptr_nh_diag%temp(jc,jk,jb) = z_temp(jc)  
+            ptr_nh_diag%pres(jc,jk,jb) = p0ref*ptr_nh_prog%exner(jc,jk,jb)**(cpd_o_rd)
+            ptr_nh_diag%temp(jc,jk,jb) = z_temp(jc)
 
           ENDDO !jc
       ENDDO !jk
@@ -272,8 +271,8 @@ MODULE mo_nh_jabw_exp
 !$OMP END PARALLEL
 
     IF (p_test_run) zeta_v_e = 0._wp
-    CALL cells2edges_scalar(zeta_v,ptr_patch,p_int%c_lin_e,zeta_v_e)
-    CALL sync_patch_array(SYNC_E,ptr_patch,zeta_v_e)
+    CALL cells2edges_scalar(zeta_v, ptr_patch, p_int%c_lin_e, zeta_v_e, lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_E,ptr_patch,zeta_v_e, lacc=.FALSE.)
 
     i_startblk = ptr_patch%edges%start_blk(2,1)
 !$OMP PARALLEL
@@ -288,7 +287,7 @@ MODULE mo_nh_jabw_exp
             z_lon(je) = ptr_patch%edges%center(je,jb)%lon
             zu(je)    = u0*(COS(zeta_v_e(je,jk,jb))**1.5_wp)*(SIN(2.0_wp*z_lat(je))**2)
             IF ( up .GT. 1.e-20_wp ) THEN
-             z_fac1(je)= SIN(latC)*SIN(z_lat(je))+COS(latC)*COS(z_lat(je))*COS(z_lon(je)-lonC) 
+             z_fac1(je)= SIN(latC)*SIN(z_lat(je))+COS(latC)*COS(z_lat(je))*COS(z_lon(je)-lonC)
              z_fac2(je)  = 10._wp*ACOS(z_fac1(je))
              zu(je) = zu(je) + up* EXP(-z_fac2(je)**2)
             END IF
@@ -300,23 +299,23 @@ MODULE mo_nh_jabw_exp
         ENDDO
     ENDDO
 !$OMP END DO
-!$OMP END PARALLEL 
+!$OMP END PARALLEL
    DEALLOCATE(zeta_v, zeta_v_e)
 
   ! initialize vertical velocity
    CALL init_w(ptr_patch, p_int, ptr_nh_prog%vn, p_metrics%z_ifc, ptr_nh_prog%w)
-   CALL sync_patch_array(SYNC_C, ptr_patch, ptr_nh_prog%w)
+   CALL sync_patch_array(SYNC_C, ptr_patch, ptr_nh_prog%w, lacc=.FALSE.)
 
    CALL hydro_adjust ( ptr_patch, p_metrics, ptr_nh_prog%rho,  &
                      & ptr_nh_prog%exner, ptr_nh_prog%theta_v  )
 
   END SUBROUTINE init_nh_state_prog_jabw
 !-------------------------------------------------------------------------
-! 
+!
 !>
   !! Defines passive traces for the nh jabw test case
   SUBROUTINE init_passive_tracers_nh_jabw( ptr_patch, ptr_nh_prog,           &
-                                     &     rotate_axis_deg, tracer_inidist_list, p_sfc)  
+                                     &     rotate_axis_deg, tracer_inidist_list, p_sfc)
 
     CHARACTER(len=MAX_CHAR_LENGTH), PARAMETER ::  &
       &  routine = 'init_passive_tracers_nh_jabw'
@@ -332,7 +331,7 @@ MODULE mo_nh_jabw_exp
     REAL(wp), ALLOCATABLE               :: zeta_v(:,:,:)
 
     REAL(wp)                            :: rotate_axis_deg
-    REAL(wp), INTENT(IN)                :: p_sfc   !surface pressure, 1e5 Pa in the standard jabw 
+    REAL(wp), INTENT(IN)                :: p_sfc   !surface pressure, 1e5 Pa in the standard jabw
 
 
    ! local variables
@@ -341,7 +340,7 @@ MODULE mo_nh_jabw_exp
    INTEGER                              :: jc, jb, jk, jjt
    INTEGER                              :: nblks_c, npromz_c,&
                                          &  nlen
-   REAL(wp)                             :: zlat, zlon 
+   REAL(wp)                             :: zlat, zlon
    REAL(wp)                             :: ps_o_p0ref
 
 !--------------------------------------------------------------------
@@ -357,7 +356,7 @@ MODULE mo_nh_jabw_exp
    ALLOCATE (zeta_v(nproma,nlev,ptr_patch%nblks_c))
    !calculate zeta_v from exner function
    DO jb = 1, nblks_c
-     IF (jb /= nblks_c) THEN 
+     IF (jb /= nblks_c) THEN
       nlen = nproma
       ELSE
       nlen = npromz_c
@@ -372,7 +371,7 @@ MODULE mo_nh_jabw_exp
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jb,jk,jjt,jc,nlen,zlat,zlon)
    DO jb = 1, nblks_c
-     IF (jb /= nblks_c) THEN 
+     IF (jb /= nblks_c) THEN
       nlen = nproma
       ELSE
       nlen = npromz_c
@@ -380,34 +379,34 @@ MODULE mo_nh_jabw_exp
      DO jk = 1, nlev
       DO jjt = 1, ntracer
         SELECT CASE(tracer_inidist_list(jjt))
-  
+
         CASE(1)
-  
+
                     DO jc = 1, nlen
                       zlat = ptr_patch%cells%center(jc,jb)%lat
                       zlon = ptr_patch%cells%center(jc,jb)%lon
                       ptr_nh_prog%tracer(jc,jk,jb,jjt) =  &
                       tracer_q1_q2(zlon, zlat, zeta_v(jc,jk,jb), rotate_axis_deg, 0.6_wp)
                     ENDDO ! cell loop
-  
+
         CASE(2)
-  
+
                     DO jc =1, nlen
                       zlat = ptr_patch%cells%center(jc,jb)%lat
                       zlon = ptr_patch%cells%center(jc,jb)%lon
                       ptr_nh_prog%tracer(jc,jk,jb,jjt) =  &
                         tracer_q1_q2(zlon, zlat, zeta_v(jc,jk,jb), rotate_axis_deg, 1.0_wp)
                     ENDDO ! cell loop
-  
+
         CASE(3)
-  
+
                     DO jc =1, nlen
                       zlat = ptr_patch%cells%center(jc,jb)%lat
                       zlon = ptr_patch%cells%center(jc,jb)%lon
                       ptr_nh_prog%tracer(jc,jk,jb,jjt) =  &
                         tracer_q3(zlon, zlat, rotate_axis_deg)
                     ENDDO ! cell loop
-  
+
         CASE(4)
                     ptr_nh_prog%tracer(:,jk,jb,jjt) = 1._wp
 
@@ -418,17 +417,17 @@ MODULE mo_nh_jabw_exp
         END SELECT
        END DO
       END DO
-     END DO  
- 
+     END DO
+
 !$OMP END DO
-!$OMP END PARALLEL  
+!$OMP END PARALLEL
    DEALLOCATE(zeta_v)
 
   END SUBROUTINE init_passive_tracers_nh_jabw
 !-------------------------------------------------------------------------
 !
   !>
-  !! Initialization of tracers for the jabw test in case of inwp  
+  !! Initialization of tracers for the jabw test in case of inwp
   !!
   SUBROUTINE init_nh_inwp_tracers( ptr_patch, ptr_nh_prog, ptr_nh_diag, &
     &                              p_metrics, rh_at_1000hpa, qv_max,    &
@@ -446,17 +445,17 @@ MODULE mo_nh_jabw_exp
 
     REAL(wp), INTENT (IN)               :: rh_at_1000hpa, qv_max
     REAL(wp), INTENT (IN), OPTIONAL     :: opt_global_moist     !global moisture content in kg/m**2
-    LOGICAL,  INTENT (IN)               :: l_rediag    
+    LOGICAL,  INTENT (IN)               :: l_rediag
 
    ! local variables
 
     INTEGER                             :: nblks_c,  npromz_c, nlen,  &
-                                           nlev 
+                                           nlev
     INTEGER                             :: jb,jc, jk, jjt, ji
     REAL(wp)                            :: zsqv, z_help, z_1_o_rh, zrhf, z_moist,          &
                                            z_aux(nproma,ptr_patch%nlev,ptr_patch%nblks_c), &
                                            z_area(nproma,ptr_patch%nblks_c)
-    INTEGER                             :: niter 
+    INTEGER                             :: niter
     LOGICAL                             :: l_global_moist
 !--------------------------------------------------------------------
 
@@ -475,12 +474,12 @@ MODULE mo_nh_jabw_exp
    niter = 1
  END IF
 
-    ! Do some iterations to come closer to the moisture and temperature/pressure 
+    ! Do some iterations to come closer to the moisture and temperature/pressure
     DO ji = 1, niter
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jb,jk,jjt,jc,nlen,zrhf,z_1_o_rh,z_help,zsqv)
         DO jb = 1, nblks_c
-          IF (jb /= nblks_c) THEN 
+          IF (jb /= nblks_c) THEN
             nlen = nproma
           ELSE
             nlen = npromz_c
@@ -511,16 +510,16 @@ MODULE mo_nh_jabw_exp
                       IF (  ptr_nh_diag%pres(jc,jk,jb) <= 10000._wp) &
                          &  ptr_nh_prog%tracer(jc,jk,jb,jjt)      &
                          &  = MIN ( 5.e-6_wp, ptr_nh_prog%tracer(jc,jk,jb,jjt) )
-                    
-                      ! Limit QV in the tropics                       
+
+                      ! Limit QV in the tropics
                       ptr_nh_prog%tracer(jc,jk,jb,jjt) = &
                       &   MIN(qv_max,ptr_nh_prog%tracer(jc,jk,jb,jjt))
-  
+
                     END DO
-  
+
                   ELSE !other tracers than water vapor zero at start
                     ptr_nh_prog%tracer(:,jk,jb,jjt) = 0._wp
-                  ENDIF ! tracer              
+                  ENDIF ! tracer
              ENDDO ! tracer loop
             ENDDO ! vertical level loop
         ENDDO ! block loop
@@ -532,6 +531,7 @@ MODULE mo_nh_jabw_exp
         CALL diagnose_pres_temp ( p_metrics, ptr_nh_prog,     &
           &                       ptr_nh_prog, ptr_nh_diag,   &
           &                       ptr_patch,                  &
+          &                       lacc=.FALSE.,               &
           &                       opt_calc_temp=.TRUE.,       &
           &                       opt_calc_pres=.TRUE.        )
       ENDIF
@@ -551,13 +551,13 @@ MODULE mo_nh_jabw_exp
         ENDIF
 
         DO jc = 1, nlen
-          IF (ptr_patch%cells%decomp_info%owner_mask(jc,jb)) & 
+          IF (ptr_patch%cells%decomp_info%owner_mask(jc,jb)) &
             z_area(jc,jb) = ptr_patch%cells%area(jc,jb)
         ENDDO !jc
 
         DO jk = 1, nlev
           DO jc = 1, nlen
-            IF (ptr_patch%cells%decomp_info%owner_mask(jc,jb)) & 
+            IF (ptr_patch%cells%decomp_info%owner_mask(jc,jb)) &
               z_aux(jc,jk,jb) = p_metrics%ddqz_z_full(jc,jk,jb) * ptr_nh_prog%rho(jc,jk,jb) &
                               * ptr_nh_prog%tracer(jc,jk,jb,iqv) *ptr_patch%cells%area(jc,jb)
           ENDDO !jc
@@ -576,10 +576,11 @@ MODULE mo_nh_jabw_exp
         CALL diagnose_pres_temp ( p_metrics, ptr_nh_prog,     &
             &                     ptr_nh_prog, ptr_nh_diag,   &
             &                     ptr_patch,                  &
+            &                     lacc=.FALSE.,               &
             &                     opt_calc_temp=.TRUE.,       &
             &                     opt_calc_pres=.TRUE.        )
       ENDIF
-    END IF 
+    END IF
 
 
    END SUBROUTINE init_nh_inwp_tracers

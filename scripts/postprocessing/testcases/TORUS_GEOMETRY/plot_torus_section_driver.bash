@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -72,7 +72,7 @@ while getopts "C:FL:D:S:T:ho:t:vz:" Option
        echo "  -F  force overwriting of existing files"
        echo "  -L  contour levels in the form start:end:ncontours"
        echo "  -S  specify the name of the scalar variable [MANDATORY!]"
-       echo "  -T  terminal; possible values \"x11\" \"ncgm\" \"ps\" \"eps\"" 
+       echo "  -T  terminal; possible values \"x11\" \"ncgm\" \"ps\" \"eps\""
        echo "      \"epsi\" \"pdf\""
        echo "      default: \"${default_output_terminal}\""
        echo "  -o  output_file; default constructed from the input file"
@@ -151,7 +151,7 @@ function get_numeric_range()
      n=$((n+1))
      range[${n}]=${sed_extracted}
    fi
- done   
+ done
  range_n=${n}
 }
 # ------------------------------------------------------------------
@@ -274,4 +274,3 @@ if [ ${verbose} ]
   echo "${ncl_output}"
 fi
 # ------------------------------------------------------------------
-

@@ -1,0 +1,282 @@
+#!/bin/ksh
+
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+
+%manual
+  -------------------------------------------------
+  EOM_PREPARE
+  -------------------------------------------------
+
+  This script is part of the ICON SMS suite
+  Initial implementation: F. Prill,   DWD (2012-05-07)
+  Conversion to ecFlow:   M. Koehler, DWD (2022-11)
+
+  Corresponding author:
+    Martin Koehler, DWD, mailto:martin.koehler@dwd.de
+
+  Task objectives:
+  - extract output
+  - generate plots
+
+%end
+
+# include the header file for remote jobs
+%include <head_hpc.h>
+
+# -------------------------------------------------
+
+echo "EOM_PREPARE"
+
+module load ecmwf-toolbox/new
+module load cdo
+module load python3
+
+export ECCODES_DEFINITION_PATH="/usr/local/apps/ecmwf-toolbox/2021.08.3.0/GNU/8.4/share/eccodes/definitions:/home/dwd/eccodes/definitions.edzw-2.27.0"
+
+#dwd_grib_api=/home/ms/de/dwd/grib_api
+#export GRIB_DEFINITION_PATH="/usr/local/apps/grib_api/1.15.0/CRAY/82/share/grib_api/definitions:${dwd_grib_api}/definitions.edzw-1.14.5"
+
+lcatdata=1
+lcpdata=0
+lget_grb_data=0
+ldeldata=1
+
+lreprocess=0           # after new model results reprocess - either in eom_prepare.sms or post_prepare.sms (normally)
+
+case %SIMMODE% in
+  1) lgetdata=1        # 0: get no data, 1: get from ecfs
+     lsplitdata=1  ;;  # pre-operations
+  2) lgetdata=0        # monthly mean 10day forecasts
+     lsplitdata=0  ;;
+esac
+
+lgetdata=0
+lrmse=0
+lrms_diff=1
+
+# delete data only on the very last day of the month
+EOFM=`python3 %SCBASEDIR%/gen/date_calc.py -a endofmonth -d %YMD%%INIHOUR%`
+if [[ "${EOFM}" -eq "1" ]] ; then
+  ldeldata=1
+else
+  ldeldata=0
+fi
+
+####
+#lget_grb_data=1    # alternatives: get_grb_data=0 or get_grb_data=1
+#lcpdata=0          # alternatives: cpdata=1       or cpdata=0
+#lgetdata=1
+#lsplitdata=1
+ldeldata=0
+####
+
+
+
+#----------------------------------------------------------------------------#
+# 1. Setup                                                                   #
+#----------------------------------------------------------------------------#
+
+YYYYMM=`echo %YMD% | cut -c 1-6`
+date01=${YYYYMM}'01'%INIHOUR%
+date31=%YMD%%INIHOUR%              # e.g. 2012063000
+
+# base name for output and namelist files
+#basename31=%USER%_%EXPNUM%_${date31}
+basenameMM=%USER%_%EXPNUM%_${YYYYMM}
+base=%USER%_%EXPNUM%
+
+outdir=%SCTEMP%/%SUITE%/%EXPNUM%/output/${date31}
+
+mondir=%SCTEMP%/%SUITE%/%EXPNUM%/post/${YYYYMM}
+mondir2=%SCTEMP%/%SUITE%/%EXPNUM2%/post/${YYYYMM}
+
+# clean tmp_stat:
+#\rm -rf ${mondir}/tmp_stat/${basenameMM}_DOM01_0001_*.grb
+\rm -rf ${mondir}/tmp_stat
+
+
+#----------------------------------------------------------------------------#
+# 4. Move files to ecgate and clean-up                                       #
+#----------------------------------------------------------------------------#
+
+
+#-----------------------------------------------------------------------------
+# move monthly mean data files for each variable and forecast range to ecgate and ECFS
+
+if [[ $lcpdata = 1 ]] ; then
+  cd $mondir/grb_data
+  emkdir -p   ec:icon/experiments/%SUITE%/%EXPNUM%/${YYYYMM}/grb_data
+  ecp "*.grb" ec:icon/experiments/%SUITE%/%EXPNUM%/${YYYYMM}/grb_data
+  ecflow_client --event=cpdata
+fi
+
+if [[ $lget_grb_data = 1 ]] ; then
+  cd $mondir/grb_data
+  ecp ec:icon/experiments/%SUITE%/%EXPNUM%/${YYYYMM}/grb_data/*.grb .
+fi
+
+
+#-----------------------------------------------------------------------------
+# delete monthly mean processed data files
+
+if [[ $ldeldata = 1 ]] ; then
+  cd $mondir/grb_data
+  ##\rm -rf dangerous
+fi
+
+
+#----------------------------------------------------------------------------#
+# 5. Time mean scores                                                        #
+#----------------------------------------------------------------------------#
+
+DD=`echo %YMD% | cut -c 7-8`   #e.g. 30 (last day)
+
+set -A varlist   u  v  t  z  q   u  v  t  pres  q  0.1.212 0.1.213 ccl
+set -A varlist2  U  V  T  FI QV	 U  V  T  P     QV QC      QI      CC
+set -A levtype   pl pl pl pl pl	 ml ml ml ml    ml ml      ml      ml
+set -A nlevels   25 25 25 25 25  90 90 90 90    90 90      90      90
+
+datadir=$SCRATCH/temp
+
+
+#-----------------------------------------------------------------------------
+# Read data from ECFS
+
+if [[ $lgetdata = 1 ]] ; then
+
+  levtype1=PL
+  for EXP in %EXPNUM% %EXPNUM2% ; do
+
+    mkdir -p ${datadir}/%USER%_${EXP}
+
+    ymdh=${date01}
+    while (( ${ymdh} <= ${date31} )) ; do
+
+      ecp ec:/deia/icon/experiments/%SUITE%/${EXP}/${ymdh}/%USER%_${EXP}_${ymdh}_DOM01_${levtype1}_0001.grb \
+         ${datadir}/dei2_${EXP}
+
+      ymdh=`expr ${ymdh} + 100`  # 100=+1day+00hours
+    done                         # end days
+
+  done
+
+fi
+
+
+#-----------------------------------------------------------------------------
+# split full model data files in one file per variable and per time step
+
+if [[ $lsplitdata = 1 ]] ; then
+
+    basenameMM=%USER%_%EXPNUM%_${YYYYMM}
+    cd ${datadir}/%USER%_%EXPNUM%
+    mkdir -p grb_data
+
+    for var in ${varlist[*]} ; do
+
+      rm -f ${mondir}/tmp_dir/${basenameMM}_DOM01_0001_${var}_*.grb
+
+      ymdh=${date01}
+      while (( ${ymdh} <= ${date31} )) ; do
+        echo "processing variable: "$var
+        outdir="%SCTEMP%/%SUITE%/%EXPNUM%/output/${ymdh}/"
+        cd $outdir
+
+        basename=%USER%_%EXPNUM%_${ymdh}
+
+       #cdo selname,${var}  ${basename}_DOM01_${levtype1}_0001.grb  \
+       #           grb_data/${basename}_DOM01_0001_${var}.grb
+
+        grib_copy  grb_data/${basename}_DOM01_0001_${var}.grb       \
+                   grb_data/${basename}_DOM01_0001_${var}_[endStep].grb
+
+        time=0
+        while (( ${time} <= 240 )) ; do
+          cat   grb_data/${basename}_DOM01_0001_${var}_${time}.grb >> grb_data/${basenameMM}_DOM01_0001_${var}_${time}.grb
+          rm -f grb_data/${basename}_DOM01_0001_${var}_${time}.grb
+          time=`expr ${time} + 12`  # 100=+1day+00hours
+        done                         # end days
+
+        ymdh=`expr ${ymdh} + 100`  # 100=+1day+00hours
+      done                         # end days
+
+    done
+
+fi
+
+
+#-----------------------------------------------------------------------------
+# calculate RMSE
+
+if [[ $lrmse = 1 ]] ; then
+
+  cd ${mondir}
+
+  for DT in 1 2 3 4 5 6 7 8 9 10 ; do
+    if [[ $DT -ge $DD ]] ; then ;  break ; fi
+
+    for var in ${varlist[*]} ; do
+      DH=$((24*DT))  # forecast time [h]
+
+      cdo -P 2 seltimestep,`seq -s ',' $((DT+1)) ${DD}` tmp_steps/${basenameMM}_DOM01_0001_${var}_0.grb              \
+                                                                  ${basenameMM}_DOM01_0001_${var}_0_sel-${DD}.grb
+      cdo -P 2 seltimestep,`seq -s ',' 1 $((DD-DT))`    tmp_steps/${basenameMM}_DOM01_0001_${var}_${DH}.grb          \
+                                                                  ${basenameMM}_DOM01_0001_${var}_${DH}_sel-${DD}.grb
+      cdo -P 2 sub ${basenameMM}_DOM01_0001_${var}_${DH}_sel-${DD}.grb   \
+                   ${basenameMM}_DOM01_0001_${var}_0_sel-${DD}.grb       \
+                   ${basenameMM}_DOM01_0001_${var}_0_${DH}_dif-${DD}.grb
+
+      cdo timstd   ${basenameMM}_DOM01_0001_${var}_0_${DH}_dif-${DD}.grb \
+                   ${basenameMM}_DOM01_0001_${var}_0_${DH}_rms-${DD}.grb
+
+      grib_set -s stepRange=${DH}   ${basenameMM}_DOM01_0001_${var}_0_${DH}_rms-${DD}.grb out.grb
+      mv out.grb ${mondir}/grb_data/${basenameMM}_DOM01_0001_${var}_0_${DH}_rms-${DD}.grb
+    done
+  done
+
+fi
+
+
+#-----------------------------------------------------------------------------
+# calculate model difference in RMSE
+
+if [[ $lrms_diff = 1 ]] ; then
+
+  scorefile=${mondir}/scores_%USER%_%EXPNUM%_rms_all.txt
+# rm -rf $scorefile
+  cd ${mondir}
+
+  for nvar in 1 2 3 4 5 6 7 8 9 10 11 12 ; do
+    var=${varlist[nvar-1]}
+    var2=${varlist2[nvar-1]}
+    ltyp=${levtype[nvar-1]}
+    nlev=${nlevels[nvar-1]}
+
+    for DT in 1 2 3 4 5 6 7 8 9 10 ; do
+      if [[ $DT -ge $DD ]] ; then ;  break ; fi
+
+      DH=$((24*DT))  # forecast time [h]
+      set -A rmse1 `cdo output -fldmean -sqrt ${mondir}/grb_data/%USER%_%EXPNUM%_${YYYYMM}_DOM01_0001_${var}_${ltyp}_0_${DH}_var-${DD}.grb`
+
+      integer np=0
+      while (( $np <= $nlev-1 )) ; do
+        echo ${var2}  ${ltyp} level: $((np+1))   inidatetime: ${date01}   step: $DH   nfc: ${DD}    Min:  0.0   Max:  0.0   Mean:  ${rmse1[$np]}   RMS: 0.0   rms >> ${scorefile}
+        np=np+1
+      done
+    done
+  done
+
+  mkdir -p      ${mondir}/metplots
+  cp $scorefile ${mondir}/metplots
+
+fi
+
+
+# -------------------------------------------------
+# include the "tail" file for remote jobs
+%include <tail.h>

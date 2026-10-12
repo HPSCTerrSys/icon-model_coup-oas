@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -11,7 +11,7 @@
 # ------------------------------------------
 
 # ===========================================================================
-# 
+#
 # Name: exp.dwd_run_ICON_09_R2B4N5_EPS_prog_rbf.run
 #
 # Purpose: Run script for ICON at 160 km grid spacing on a global domain.
@@ -20,7 +20,7 @@
 #
 # Author: Annika Lauber (C2SM)
 #
-# =========================================================================== 
+# ===========================================================================
 
 #--------------------------------------------------------------------------------------------------
 # The suffix _prog_rbf indicates that only a very limited set of prognostic output variables  is checked.
@@ -35,7 +35,7 @@
 # A spread of 5.0 is required to make the variables above validate.
 # This experiment was tested on Piz Daint (nvhpc 21.3 and gcc 9.3.0).
 #
-# The variables 'pres_sfc' is failing probtest for spreads up to 16. 
+# The variables 'pres_sfc' is failing probtest for spreads up to 16.
 # Therefore this field has been excluded.
 #
 # Note:
@@ -69,10 +69,10 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/buildbot_data/nwp
 
 # ===========================================================================
 # This experiment describes a ICON global experiment using the physics packages that are
-# used at DWD for global ensembles in production. This simulation computes a few time steps on 
+# used at DWD for global ensembles in production. This simulation computes a few time steps on
 # a low-resolution grid. The setup is for development purposes.
 #
-# Options that are not working on GPU at the moment are replaced or disabled. 
+# Options that are not working on GPU at the moment are replaced or disabled.
 # The original settings are marked by "TODO". These should be reactivated as soon
 # as the corresponding option is ported.
 
@@ -117,7 +117,7 @@ ndays_restart=60
 dt_restart=`expr ${ndays_restart} \* 86400`
 
 # possible dtime values (large values might be unstable)
-# 1 | 2 | 3 | 4 | 5 | 6 | 8 | 9 | 10 | 12 | 15 | 18 | 20 | 24 | 25 | 27 | 30 | 36 | 40 | 45 | 50 | 54 | 60 | 72 | 75 
+# 1 | 2 | 3 | 4 | 5 | 6 | 8 | 9 | 10 | 12 | 15 | 18 | 20 | 24 | 25 | 27 | 30 | 36 | 40 | 45 | 50 | 54 | 60 | 72 | 75
 # 90 | 100 | 108 | 120 | 135 | 150 | 180 | 200 | 216 | 225 | 270 | 300 | 360 | 450 | 540 | 600 | 675 | 900
 # 1080 | 1350 | 1800 | 2700 | 5400
 dtime=540
@@ -231,7 +231,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  lp2cintp_incr                = .TRUE.
  lp2cintp_sfcana              = .TRUE.
  pinit_seed                   = 0          ! seed for perturbation of initial model state. no perturbation by default
- pinit_amplitude              = 1e-14      ! amplitude of perturbation 
+ pinit_amplitude              = 1e-14      ! amplitude of perturbation
 /
 &io_nml
  itype_pres_msl               = 5         ! (1) 3: IFS-type extrapolation
@@ -250,7 +250,7 @@ inwp_satad      = 1
 inwp_sso        = 1
 inwp_gwd        = 1
 inwp_surface    = 1
-latm_above_top  = .false.,.true. 
+latm_above_top  = .false.,.true.
 ldetrain_conv_prec = .false.,.false.
 efdt_min_raylfric = 7200.
 itype_z0         = 2

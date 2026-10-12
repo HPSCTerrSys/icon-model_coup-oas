@@ -1,10 +1,7 @@
-! @brief Initialisation of atmosphere coupling
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,18 +9,21 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! @brief Initialisation of atmosphere coupling
+
 !----------------------------
 #include "omp_definitions.inc"
 !----------------------------
 
 MODULE mo_atmo_coupling_frame
 
-  USE mo_kind                ,ONLY: wp
   USE mo_model_domain        ,ONLY: t_patch
-  USE mo_atm_phy_nwp_config,  ONLY: atm_phy_nwp_config
-  USE mo_run_config          ,ONLY: iforcing, ltimer
-  USE mo_timer,               ONLY: timer_start, timer_stop, timer_coupling_init
-  USE mo_impl_constants      ,ONLY: MAX_CHAR_LENGTH, inwp, LSS_JSBACH
+  USE mo_master_control,      ONLY: get_my_process_name
+  USE mo_grid_config         ,ONLY: n_dom
+  USE mo_atm_phy_nwp_config  ,ONLY: atm_phy_nwp_config
+  USE mo_run_config          ,ONLY: iforcing, ltimer, msg_level
+  USE mo_timer               ,ONLY: timer_start, timer_stop, timer_coupling_init
+  USE mo_impl_constants      ,ONLY: iaes, inwp, ivdiff, LSS_JSBACH
   USE mo_ext_data_types      ,ONLY: t_external_data
 
 #if !defined(__NO_JSBACH__) && !defined(__NO_JSBACH_HD__) && defined(YAC_coupling)
@@ -35,12 +35,18 @@ MODULE mo_atmo_coupling_frame
     &                               is_coupled_to_waves,     &
     &                               is_coupled_to_output,    &
     &                               is_coupled_to_aero,      &
-    &                               is_coupled_to_o3
+    &                               is_coupled_to_o3,        &
+    &                               is_coupled_to_cleo
   USE mo_aes_phy_config      ,ONLY: aes_phy_config
   USE mo_time_config         ,ONLY: time_config
 
-  USE mo_atmo_wave_coupling  ,ONLY: construct_atmo_wave_coupling
-  USE mo_atmo_ocean_coupling ,ONLY: construct_atmo_ocean_coupling
+  USE mo_atmo_wave_coupling  ,ONLY: construct_atmo_wave_coupling, &
+                                    construct_atmo_wave_coupling_finalize
+  USE mo_atmo_ocean_coupling ,ONLY: construct_atmo_ocean_coupling, &
+                                    destruct_atmo_ocean_coupling
+  USE mo_atmo_ocean_coupling_common ,ONLY: &
+    construct_atmo_ocean_coupling_common_finalize
+  USE mo_atmo_cleo_coupling  ,ONLY: construct_atmo_cleo_coupling_post_sync
   USE mo_atmo_o3_provider_coupling,ONLY: &
     construct_atmo_o3_provider_coupling_post_sync
   USE mo_atmo_aero_provider_coupling,ONLY: &
@@ -49,8 +55,8 @@ MODULE mo_atmo_coupling_frame
 
   USE mo_exception           ,ONLY: finish, message
 
-  USE mo_coupling_utils      ,ONLY: cpl_def_main, cpl_sync_def, cpl_enddef
-
+  USE mo_coupling_utils      ,ONLY: cpl_def_main, cpl_sync_def, cpl_enddef, &
+       &                            cpl_write_config_info, cpl_config_file_exists
   USE mtime                  ,ONLY: timedeltaToString, MAX_TIMEDELTA_STR_LEN
 
 #ifndef __NO_ICON_COMIN__
@@ -74,9 +80,6 @@ MODULE mo_atmo_coupling_frame
   CHARACTER(len=*), PARAMETER :: str_module = 'mo_atmo_coupling_frame' ! Output of module for debug
 
   PUBLIC :: construct_atmo_coupling, destruct_atmo_coupling
-  PUBLIC :: nbr_inner_cells
-
-  INTEGER, SAVE :: nbr_inner_cells
 
 CONTAINS
 
@@ -99,11 +102,19 @@ CONTAINS
     !---------------------------------------------------------------------
 
     INTEGER :: comp_id, output_comp_id
-    INTEGER :: grid_id
-    INTEGER :: cell_point_id, vertex_point_id
+
+    ! un-nested case:
+    ! *_id(0) == -1
+    ! *_id(1) == id for main patch
+    ! nested case:
+    ! *_id(0) == id for combination of all patches
+    ! *_id(1:n_dom) == id for each patch
+    INTEGER :: grid_id(0:n_dom)
+    INTEGER :: cell_point_id(0:n_dom), vertex_point_id(0:n_dom)
 
     INTEGER :: jg
 
+    CHARACTER(len=:), ALLOCATABLE :: grid_name
     CHARACTER(LEN=MAX_TIMEDELTA_STR_LEN) :: timestepstring
 
     CHARACTER(LEN=*), PARAMETER   :: routine = str_module // ':construct_atmo_coupling'
@@ -118,32 +129,32 @@ CONTAINS
     patch_horz => p_patch(jg)
 
 #ifndef __NO_ICON_COMIN__
-    CALL icon_call_callback(EP_ATM_YAC_DEFCOMP_BEFORE, COMIN_DOMAIN_OUTSIDE_LOOP)
+    CALL icon_call_callback(EP_ATM_YAC_DEFCOMP_BEFORE, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE.)
 #endif
+
+    grid_name = "icon_atmos_grid"
 
     ! Do basic initialisation of the component
     IF( is_coupled_to_output() ) THEN
-      CALL cpl_def_main(routine,           & !in
-                        patch_horz,        & !in
-                        "icon_atmos_grid", & !in
-                        comp_id,           & !out
-                        output_comp_id,    & !out
-                        grid_id,           & !out
-                        cell_point_id,     & !out
-                        vertex_point_id,   & !out
-                        nbr_inner_cells)     !out
+      CALL cpl_def_main(routine,         & !in
+                        p_patch,         & !in
+                        grid_name,       & !in
+                        comp_id,         & !out
+                        output_comp_id,  & !out
+                        grid_id,         & !out
+                        cell_point_id,   & !out
+                        vertex_point_id)   !out
     ELSE
-      CALL cpl_def_main(routine,           & !in
-                        patch_horz,        & !in
-                        "icon_atmos_grid", & !in
-                        comp_id,           & !out
-                        grid_id,           & !out
-                        cell_point_id,     & !out
-                        nbr_inner_cells)     !out
+      CALL cpl_def_main(routine,         & !in
+                        p_patch,         & !in
+                        grid_name,       & !in
+                        comp_id,         & !out
+                        grid_id,         & !out
+                        cell_point_id)     !out
     ENDIF
 
 #ifndef __NO_ICON_COMIN__
-    CALL icon_call_callback(EP_ATM_YAC_DEFCOMP_AFTER, COMIN_DOMAIN_OUTSIDE_LOOP)
+    CALL icon_call_callback(EP_ATM_YAC_DEFCOMP_AFTER, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE.)
 #endif
 
     ! get model timestep
@@ -154,7 +165,8 @@ CONTAINS
       CALL message(str_module, 'Constructing the coupling frame atmosphere-output.')
 
       CALL construct_output_coupling ( &
-        p_patch, output_comp_id, cell_point_id, vertex_point_id, timestepstring)
+        p_patch, output_comp_id, cell_point_id(1), vertex_point_id(1), &
+        timestepstring, .FALSE.)
 
     END IF
 
@@ -163,19 +175,22 @@ CONTAINS
       CALL message(str_module, 'Constructing the coupling frame atmosphere-ocean.')
 
       CALL construct_atmo_ocean_coupling( &
-        p_patch, ext_data, comp_id, grid_id, cell_point_id, timestepstring)
+        p_patch, ext_data, comp_id, grid_id, cell_point_id, timestepstring, &
+        use_ocean_velocity= &
+          iforcing == iaes .OR. &
+          (iforcing == inwp .AND. atm_phy_nwp_config(jg)%inwp_turb == ivdiff))
 
 #if !defined(__NO_JSBACH__) && !defined(__NO_JSBACH_HD__) && defined(YAC_coupling)
 
       ! Define coupling of runoff if HD model is present and interface is coded
       !  - discrimination between Proto2 (no HD) and Proto3 (with HD) is needed
       ! preliminary: coupling to jsbach/hd is active
-      IF ( iforcing /= INWP .OR. ( atm_phy_nwp_config(jg)%inwp_surface == LSS_JSBACH .AND. .NOT. is_coupled_to_hydrodisc() ) ) THEN
+      IF ( (iforcing /= INWP .AND. aes_phy_config(jg)%ljsb) .OR. ( atm_phy_nwp_config(jg)%inwp_surface == LSS_JSBACH .AND. .NOT. is_coupled_to_hydrodisc() ) ) THEN
 
         ! Construct coupling frame for atmosphere/JSBACH-hydrological discharge
         CALL message(str_module, 'Constructing the coupling frame atmosphere/JSBACH-hydrological discharge.')
 
-        CALL jsb_fdef_hd_fields(comp_id, (/cell_point_id/), grid_id, patch_horz%n_patch_cells)
+        CALL jsb_fdef_hd_fields(comp_id, cell_point_id(1), grid_id(1))
 
       ENDIF
 
@@ -189,7 +204,7 @@ CONTAINS
 
 
       CALL construct_nwp_hydrodisc_coupling( &
-        p_patch, ext_data, comp_id, grid_id, cell_point_id, timestepstring)
+        p_patch, ext_data, comp_id, grid_id(1), cell_point_id(1), timestepstring)
 
     ENDIF ! Construct coupling frame for atmosphere-hydrological discharge
 
@@ -198,19 +213,19 @@ CONTAINS
       CALL message(str_module, 'Constructing the coupling frame atmosphere-wave.')
 
       CALL construct_atmo_wave_coupling( &
-        comp_id, cell_point_id, timestepstring)
+        comp_id, cell_point_id(1), timestepstring)
 
     END IF
 
 #ifndef __NO_ICON_COMIN__
-    CALL icon_call_callback(EP_ATM_YAC_SYNCDEF_BEFORE, COMIN_DOMAIN_OUTSIDE_LOOP)
+    CALL icon_call_callback(EP_ATM_YAC_SYNCDEF_BEFORE, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE.)
 #endif
 
     ! Synchronize all definitions until this point with other components
     CALL cpl_sync_def(str_module)
 
 #ifndef __NO_ICON_COMIN__
-    CALL icon_call_callback(EP_ATM_YAC_SYNCDEF_AFTER, COMIN_DOMAIN_OUTSIDE_LOOP)
+    CALL icon_call_callback(EP_ATM_YAC_SYNCDEF_AFTER, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE.)
 #endif
 
     ! add Ozone data field if needed
@@ -219,8 +234,14 @@ CONTAINS
       ! Construct coupling frame for atmosphere-o3 provider
       CALL message(str_module, 'Constructing the coupling frame atmosphere-o3 provider.')
 
-      CALL construct_atmo_o3_provider_coupling_post_sync( &
-        comp_id, cell_point_id, TRIM(aes_phy_config(jg)%dt_rad))
+      IF ( iforcing == iaes ) THEN
+        CALL construct_atmo_o3_provider_coupling_post_sync( &
+          comp_id, cell_point_id(1), TRIM(aes_phy_config(jg)%dt_rad))
+      ELSE IF ( iforcing == inwp ) THEN
+        ! Only daily updates for ozon in nwp o3_interface
+        CALL construct_atmo_o3_provider_coupling_post_sync( &
+          comp_id, cell_point_id(1), "P1D")
+      END IF
 
     END IF
 
@@ -229,25 +250,56 @@ CONTAINS
       ! Construct coupling frame for atmosphere-aero provider
       CALL message(str_module, 'Constructing the coupling frame atmosphere-aero provider.')
 
-      CALL construct_atmo_aero_provider_coupling_post_sync( &
-        comp_id, cell_point_id, TRIM(aes_phy_config(jg)%dt_rad))
+      IF ( iforcing == iaes ) THEN
+        CALL construct_atmo_aero_provider_coupling_post_sync( &
+          comp_id, cell_point_id(1), TRIM(aes_phy_config(jg)%dt_rad))
+      ELSE IF ( iforcing == inwp ) THEN
+        ! Only daily updates for aerosol in nwp_aerosol_daily_update
+        CALL construct_atmo_aero_provider_coupling_post_sync( &
+          comp_id, cell_point_id(1), "P1D")
+      END IF
 
+    END IF
+
+    IF ( is_coupled_to_cleo() ) THEN
+      CALL message(str_module, 'Constructing the coupling frame atmosphere-CLEO.')
+      CALL construct_atmo_cleo_coupling_post_sync(comp_id, cell_point_id(1), &
+                                                  patch_horz%n_patch_cells, timestepstring)
     END IF
 
     ! End definition of coupling fields and search
 
 #ifndef __NO_ICON_COMIN__
-    CALL icon_call_callback(EP_ATM_YAC_ENDDEF_BEFORE, COMIN_DOMAIN_OUTSIDE_LOOP)
+    CALL icon_call_callback(EP_ATM_YAC_ENDDEF_BEFORE, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE.)
 #endif
 
     CALL cpl_enddef(str_module)
 
 #ifndef __NO_ICON_COMIN__
-    CALL icon_call_callback(EP_ATM_YAC_ENDDEF_AFTER, COMIN_DOMAIN_OUTSIDE_LOOP)
+    CALL icon_call_callback(EP_ATM_YAC_ENDDEF_AFTER, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE.)
 #endif
 
-    ! finalizes the output coupling
+    ! finalizes construction of output coupling
     IF( is_coupled_to_output() ) CALL construct_output_coupling_finalize()
+
+    ! finalizes construction of atmo-ocean coupling
+    IF ( is_coupled_to_ocean() ) THEN
+      !Prevent that ICON couples without file and the error appears somewhere else
+      IF (.NOT. cpl_config_file_exists()) &
+      &  CALL finish(str_module, "coupling.yaml file could not be found!")
+      !Make sure that the fields live on the same time frame
+      IF(time_config%timeshift%dt_shift .ne. 0) CALL construct_atmo_ocean_coupling_common_finalize()
+    ENDIF
+
+    ! finalizes construction of atmo-wave coupling
+    IF ( is_coupled_to_waves() ) THEN
+      CALL construct_atmo_wave_coupling_finalize()
+
+      ! write YAC setup information to stdout
+      IF (msg_level >= 8) THEN
+        CALL cpl_write_config_info(TRIM(routine), TRIM(get_my_process_name()), grid_name)
+      ENDIF
+    ENDIF
 
     IF (ltimer) CALL timer_stop(timer_coupling_init)
 
@@ -259,6 +311,12 @@ CONTAINS
   SUBROUTINE destruct_atmo_coupling()
 
     CHARACTER(LEN=*), PARAMETER   :: routine = str_module // ':destruct_atmo_coupling'
+
+    IF ( is_coupled_to_ocean() ) THEN
+
+      CALL destruct_atmo_ocean_coupling ()
+
+    END IF
 
     IF ( is_coupled_run() ) THEN
 

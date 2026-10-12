@@ -1,18 +1,15 @@
-!
-! This module prepares aerosol climatologies in a format that can be used by ecRad
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module prepares aerosol climatologies in a format that can be used by ecRad
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -25,8 +22,9 @@ MODULE mo_nwp_ecrad_prep_aerosol
 
   USE mo_kind,                   ONLY: wp
   USE mo_exception,              ONLY: finish
-  USE mo_fortran_tools,          ONLY: assert_acc_host_only, assert_acc_device_only,t_ptr_2d
+  USE fortran_support,           ONLY: assert_acc_host_only, assert_acc_device_only, t_ptr_2d_wp
   USE mo_impl_constants,         ONLY: n_camsaermr
+  USE mo_radiation_config,       ONLY: ecrad_check_input
 #ifdef __ECRAD
   USE mo_ecrad,                  ONLY: t_ecrad_aerosol_type, t_ecrad_conf, t_opt_ptrs
   USE mo_aerosol_util,           ONLY: get_nbands_lw_aerosol, get_nbands_sw_aerosol,   &
@@ -49,8 +47,8 @@ INTERFACE nwp_ecrad_prep_aerosol
   MODULE PROCEDURE nwp_ecrad_prep_aerosol_td
   MODULE PROCEDURE nwp_ecrad_prep_aerosol_CAMS
 END INTERFACE nwp_ecrad_prep_aerosol
-  
-  
+
+
 CONTAINS
 
   !---------------------------------------------------------------------------------------
@@ -83,13 +81,14 @@ CONTAINS
 
     CALL assert_acc_device_only("nwp_ecrad_prep_aerosol_constant", lacc)
 
-    !$ACC DATA PRESENT(ecrad_conf, ecrad_aerosol, ssa_lw, od_lw, g_lw, ssa_sw, od_sw, g_sw)
+    n_bands_lw = get_nbands_lw_aerosol(ecrad_conf)
+    n_bands_sw = get_nbands_sw_aerosol(ecrad_conf)
 
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     IF (ecrad_conf%do_lw) THEN
-      n_bands_lw = get_nbands_lw_aerosol(ecrad_conf)
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR COLLAPSE(3)
+      !$ACC LOOP SEQ
       DO jband = 1, n_bands_lw
+        !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
         DO jk = slev, nlev
           DO jc = i_startidx, i_endidx
             ecrad_aerosol%od_lw(jband,jk,jc)  = 0._wp
@@ -107,14 +106,12 @@ CONTAINS
           ENDDO ! jc
         ENDDO ! jk
       ENDDO ! jband
-      !$ACC END PARALLEL
     ENDIF
 
     IF (ecrad_conf%do_sw) THEN
-      n_bands_sw = get_nbands_sw_aerosol(ecrad_conf)
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR COLLAPSE(3)
+      !$ACC LOOP SEQ
       DO jband = 1, n_bands_sw
+        !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
         DO jk = slev, nlev
           DO jc = i_startidx, i_endidx
             ecrad_aerosol%od_sw(jband,jk,jc)  = 0._wp
@@ -132,10 +129,8 @@ CONTAINS
           ENDDO ! jc
         ENDDO ! jk
       ENDDO ! jband
-      !$ACC END PARALLEL
     ENDIF
-
-    !$ACC END DATA
+    !$ACC END PARALLEL
 
   END SUBROUTINE nwp_ecrad_prep_aerosol_constant
   !---------------------------------------------------------------------------------------
@@ -175,7 +170,7 @@ CONTAINS
       &  scal_sct(:,:),         & !< Scaling factor scattering
       &  scal_asy(:,:)            !< Scaling factor asymmetry
     CHARACTER(len=*), PARAMETER :: &
-      &  routine = modname//'::nwp_ecrad_prep_aerosol_tegen' 
+      &  routine = modname//'::nwp_ecrad_prep_aerosol_tegen'
     INTEGER                  :: &
       &  jc, jk, jband,         & !< Loop indices
       &  n_bands_sw,            & !< Number of ecrad shortwave bands
@@ -191,15 +186,14 @@ CONTAINS
 
     CALL assert_acc_device_only("nwp_ecrad_prep_aerosol_tegen", lacc)
 
-    !$ACC DATA PRESENT(ecrad_conf, ecrad_aerosol, zaeq1, zaeq2, zaeq3, zaeq4, zaeq5, scal_abs, scal_sct, scal_asy)
-
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
 ! LONGWAVE
     IF (ecrad_conf%do_lw) THEN
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR COLLAPSE(3)
+      !$ACC LOOP SEQ
       DO jk = slev, nlev
 !NEC$ nointerchange
 !NEC$ nounroll
+        !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
         DO jband = 1, n_bands_lw
           DO jc = i_startidx, i_endidx
             ! LW optical thickness
@@ -214,15 +208,14 @@ CONTAINS
           ENDDO ! jc
         ENDDO ! jband
       ENDDO ! jk
-      !$ACC END PARALLEL
     ENDIF
 
 ! SHORTWAVE
     IF (ecrad_conf%do_sw) THEN
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR COLLAPSE(3) PRIVATE(jband_shift, tau_abs, tau_sca)
+      !$ACC LOOP SEQ
       DO jk = slev, nlev
 !NEC$ nointerchange
+        !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2) PRIVATE(jband_shift, tau_abs, tau_sca)
         DO jband = 1, n_bands_sw
           DO jc = i_startidx, i_endidx
 
@@ -240,13 +233,13 @@ CONTAINS
               &      + zaeq3(jc,jk) * scal_sct(jband_shift,3) &
               &      + zaeq4(jc,jk) * scal_sct(jband_shift,4) &
               &      + zaeq5(jc,jk) * scal_sct(jband_shift,5)
-    
+
             ! Total optical depth for band jband
             ecrad_aerosol%od_sw (jband,jk,jc) = tau_abs + tau_sca
-            
+
             ! Bulk SW single scattering albedo for band jband
             ecrad_aerosol%ssa_sw(jband,jk,jc) = tau_sca / ( tau_abs + tau_sca )
-    
+
             ! Bulk SW asymmetry factor
             ecrad_aerosol%g_sw  (jband,jk,jc) =                                        &
               & (   zaeq1(jc,jk) * scal_sct(jband_shift,1) * scal_asy(jband_shift,1)   &
@@ -257,10 +250,8 @@ CONTAINS
           ENDDO ! jc
         ENDDO ! jband
       ENDDO ! jk
-      !$ACC END PARALLEL
     ENDIF
-
-    !$ACC END DATA
+    !$ACC END PARALLEL
 
   END SUBROUTINE nwp_ecrad_prep_aerosol_tegen
 
@@ -293,11 +284,14 @@ CONTAINS
     TYPE(t_opt_ptrs), DIMENSION(ecrad_conf%n_bands_lw), INTENT(in):: opt_ptrs_lw
     TYPE(t_opt_ptrs), DIMENSION(ecrad_conf%n_bands_sw), INTENT(in):: opt_ptrs_sw
 
-    CALL assert_acc_host_only("nwp_ecrad_prep_aerosol_td", lacc)
+    CALL assert_acc_device_only("nwp_ecrad_prep_aerosol_td", lacc)
 
-   ! LONGWAVE
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    ! LONGWAVE
     IF (ecrad_conf%do_lw) THEN
+      !$ACC LOOP SEQ
       DO jband = 1, ecrad_conf%n_bands_lw
+        !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
         DO jk = slev, nlev
           DO jc = i_startidx, i_endidx
             ! LW optical thickness
@@ -310,9 +304,11 @@ CONTAINS
       ENDDO     ! jband
     ENDIF
 
-   !SHORTWAVE
+    !SHORTWAVE
     IF (ecrad_conf%do_sw) THEN
+      !$ACC LOOP SEQ
       DO jband = 1, ecrad_conf%n_bands_sw
+        !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
         DO jk = slev, nlev
           DO jc = i_startidx, i_endidx
             ecrad_aerosol%od_sw  (jband,jk,jc) = opt_ptrs_sw(jband)%ptr_od  (jc,jk)
@@ -322,6 +318,19 @@ CONTAINS
         ENDDO   ! jk
       ENDDO     ! jband
     ENDIF
+    !$ACC END PARALLEL
+
+    IF (ecrad_check_input) THEN
+      DO jband = 1, ecrad_conf%n_bands_sw
+        DO jk = slev, nlev
+          DO jc = i_startidx, i_endidx
+            ! Upscaling leads to truncation errors which can violate ecRad's physical consistency check
+            ecrad_aerosol%ssa_sw(jband,jk,jc) = MIN(ecrad_aerosol%ssa_sw(jband,jk,jc),1._wp)
+          ENDDO
+        ENDDO
+      ENDDO
+    ENDIF
+
   END SUBROUTINE nwp_ecrad_prep_aerosol_td
   !---------------------------------------------------------------------------------------
 
@@ -331,13 +340,13 @@ CONTAINS
     INTEGER, INTENT(in)                      :: &
       &  slev, nlev,            & !< Start and end index of vertical loop
       &  i_startidx, i_endidx     !< Start and end index of horizontal loop
-    TYPE(t_ptr_2d), INTENT(in)               :: &
+    TYPE(t_ptr_2d_wp), INTENT(in)            :: &
       &  ptr_camsaermr(11)
     TYPE(t_ecrad_aerosol_type),INTENT(inout) :: &
       &  ecrad_aerosol            !< ecRad aerosol information (input)
     ! Local variables
     CHARACTER(len=*), PARAMETER :: &
-      &  routine = modname//'::nwp_ecrad_prep_aerosol_CAMS' 
+      &  routine = modname//'::nwp_ecrad_prep_aerosol_CAMS'
     INTEGER                  :: &
       &  jc, jk, js              !< Loop indices
 
@@ -347,7 +356,7 @@ CONTAINS
           ecrad_aerosol%mixing_ratio(jc,jk,js)= ptr_camsaermr(js)%p(jc,jk)
         ENDDO
       ENDDO
-    ENDDO    
+    ENDDO
 
   END SUBROUTINE nwp_ecrad_prep_aerosol_CAMS
 #endif

@@ -43,8 +43,8 @@ MODULE mo_cufunctions
     &                  jpim=>i4
 
 !  USE yomhook   ,ONLY : lhook,   dr_hook
-  
-  
+
+
   USE mo_cuparameters, ONLY: r2es, r3les, r3ies, r4les, r4ies,   &
     & r5alvcp, r5alscp, &!r5les, r5ies,          &
     & ralvdcp, ralsdcp, rtice, rtwat,          &
@@ -55,8 +55,8 @@ MODULE mo_cufunctions
     & retv     ,rlvtt    ,rlstt    ,rtt,&
     & rd       ,rkappa   ,ratm ,               &
     & lhook,   dr_hook
-  
-  
+
+
   IMPLICIT NONE
 
   PRIVATE
@@ -147,7 +147,7 @@ CONTAINS
     !$ACC ROUTINE SEQ
     REAL(KIND=jprb)             :: foeewl
     REAL(KIND=jprb), INTENT(in) :: ptare
-    foeewl=r2es*EXP(r3les*(ptare-rtt)/(ptare-r4les)) 
+    foeewl=r2es*EXP(r3les*(ptare-rtt)/(ptare-r4les))
    END FUNCTION foeewl
 
   ELEMENTAL FUNCTION foeewi (ptare)
@@ -623,4 +623,3 @@ CONTAINS
 
 
 END MODULE mo_cufunctions
-

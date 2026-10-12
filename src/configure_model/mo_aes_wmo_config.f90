@@ -1,11 +1,7 @@
-! Configuration of the upper and lower levels for WMO_tropopause calculation
-! that is used in the AES physics package.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,11 +9,15 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Configuration of the upper and lower levels for WMO_tropopause calculation
+! that is used in the AES physics package.
+
 MODULE mo_aes_wmo_config
 
   USE mo_exception            ,ONLY: message, print_value
   USE mo_kind                 ,ONLY: wp
   USE mo_impl_constants       ,ONLY: max_dom
+  USE mo_run_config           ,ONLY: num_lev, lvert_nest
 
   USE mo_vertical_coord_table ,ONLY: vct_a
 
@@ -35,7 +35,7 @@ MODULE mo_aes_wmo_config
   !! Name of this unit
   !!
   CHARACTER(LEN=*), PARAMETER :: name = 'aes_wmo'
-  
+
   !>
   !! Configuration type containing parameters and switches for the configuration of the AES microphysics
   !!
@@ -56,7 +56,7 @@ MODULE mo_aes_wmo_config
   !! Configuration state vectors, for multiple domains/grids.
   !!
   TYPE(t_aes_wmo_config), TARGET :: aes_wmo_config(max_dom)
-  
+
 CONTAINS
 
   !----
@@ -111,6 +111,12 @@ CONTAINS
           END IF
        END DO
        !
+       ! account for potential vertical nesting
+       !
+       IF (lvert_nest) THEN
+          aes_wmo_config(jg)% jkswmo = MAX(1,aes_wmo_config(jg)% jkswmo - (num_lev(1)-num_lev(jg)))
+          aes_wmo_config(jg)% jkewmo = MAX(1,aes_wmo_config(jg)% jkewmo - (num_lev(1)-num_lev(jg)))
+       END IF
     END DO
     !
   END SUBROUTINE eval_aes_wmo_config

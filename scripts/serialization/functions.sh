@@ -2,19 +2,20 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 ser_update_file_hash() {
   local hash_file="../${my_iconppdir}/$1.sha1"
   local modif_file="../${my_iconppdir}/$1.modified"
   if [ -e "${hash_file}" ] && ( sha1sum --status -c "${hash_file}" );then
-    rm -f "${modif_file}" 
+    rm -f "${modif_file}"
   else
     rm -f "${hash_file}";
     sha1sum "$1" > "${modif_file}"

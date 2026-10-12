@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -44,7 +44,7 @@ PROGRAM ww_icon
                            rain_l_m,  rain_m_s,  snow_l_m, snow_m_s,                &
                            rash_lm_s, rash_s_vs, snsh_l_ms,                         &
                            driz_l_m, driz_m_s, drif_l_ms, raif_l_ms,                &
-                           rgdiff_th1, rgdiff_th2                            
+                           rgdiff_th1, rgdiff_th2
 
 #else
   USE mo_kind,   ONLY: wp
@@ -105,7 +105,7 @@ PROGRAM ww_icon
   INTEGER           :: hstart, hstop, hinc ! forecast range in hours for which
                                            ! WW is calculated
 
-  REAL(wp)          :: dhour 
+  REAL(wp)          :: dhour
   CHARACTER(LEN=256):: ww_output
   INTEGER           :: iunit
   CHARACTER(LEN=11) :: y_namelist = 'NAMELIST_WW'
@@ -118,7 +118,7 @@ PROGRAM ww_icon
                            rain_l_m,  rain_m_s,  snow_l_m, snow_m_s,                &
                            rash_lm_s, rash_s_vs, snsh_l_ms,                         &
                            driz_l_m, driz_m_s, drif_l_ms, raif_l_ms,                &
-                           rgdiff_th1, rgdiff_th2                            
+                           rgdiff_th1, rgdiff_th2
 
 
   ymodel = 'ICON'
@@ -295,7 +295,7 @@ PROGRAM ww_icon
     rain_con0(:) = rain_con(:)
     snow_gsp0(:) = snow_gsp(:)
     snow_con0(:) = snow_con(:)
-    
+
   END DO
 
   IF ( verbosity > 9) PRINT *, 'Close output GRIB file'
@@ -364,9 +364,9 @@ CONTAINS
 
     INTEGER :: i, k
     REAL(wp):: hh
-    REAL(wp), PARAMETER :: delta_h = 0.5_wp 
+    REAL(wp), PARAMETER :: delta_h = 0.5_wp
 
-  
+
     IF ( verbosity > 2) PRINT *, 'Calculate ibas_con, itop_con'
     bas_con(:) = 0
     top_con(:) = 0
@@ -454,7 +454,7 @@ CONTAINS
                            snow_gsp_idx = 11, &
                            snow_con_idx = 12, &
                            hbas_con_idx = 13, &
-                           htop_con_idx = 14   
+                           htop_con_idx = 14
 
    CHARACTER(LEN=8), PARAMETER :: varname2d(p_idx) = (/   &
   &                  'T       ', 'QV      ', 'QC      ', 'U       ', 'V       ', \
@@ -770,7 +770,7 @@ CONTAINS
 
   SUBROUTINE print_stat( iun, ivv, ivar, ldim, yname)
 !
-! doing some statistics of calculated ww 
+! doing some statistics of calculated ww
 !
 ! Current Code Owner: DWD, Ulrich Pflueger
 ! phone: 069 8062 2753
@@ -832,7 +832,7 @@ CONTAINS
       IF (count( ivar(:)==i) > 0) THEN
         WRITE(iun,'(3a,i2,a,i9,F8.2,a2)') 'number of all ',yname,'(:) = ',i,      &
    &      '  :', count( ivar(:)==i), count( ivar(:)==i)*rldim,' %'
-      ENDIF  
+      ENDIF
     END DO
   ENDIF
 

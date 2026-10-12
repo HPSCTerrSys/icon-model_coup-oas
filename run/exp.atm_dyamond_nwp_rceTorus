@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -56,7 +56,7 @@ radiationTimeStep="PT5M"
 # start and end date+time
 start_date=${start_date:="2008-08-01T00:00:00Z"}
     end_date=${end_date:="2009-06-01T00:00:00Z"}
-    
+
 calendar="360 day year"
 
 # restart intervals
@@ -70,7 +70,7 @@ file_interval_2d="P1M"
 file_interval_3d="P1M"
 
 output_atm_cgrid="no" # 1 file
-output_atm_2d="yes"   # 1 file 
+output_atm_2d="yes"   # 1 file
 output_atm_3d="yes"   # 1 file
 output_phy_3d="yes"   # 1 file
 
@@ -84,10 +84,10 @@ fi
 if [[ "$output_atm_2d" == "yes" ]]; then
   num_io_procs=`expr ${num_io_procs} + 1`
 fi
-if [[ "$output_atm_3d" == "yes" ]]; then 
+if [[ "$output_atm_3d" == "yes" ]]; then
   num_io_procs=`expr ${num_io_procs} + 1`
 fi
-if [[ "$output_phy_3d" == "yes" ]]; then 
+if [[ "$output_phy_3d" == "yes" ]]; then
   num_io_procs=`expr ${num_io_procs} + 1`
 fi
 
@@ -119,7 +119,7 @@ cat > ${atmo_namelist} << EOF
  ltransport       = .TRUE.      ! transport
  iforcing         = 3           ! 0: none, 1: HS, 2: ECHAM, 3: NWP
  output           = 'nml'
- msg_level        = 12          ! level of details report during integration 
+ msg_level        = 12          ! level of details report during integration
  restart_filename = "${EXPNAME}_restart_atm_<rsttime>.nc"
  activate_sync_timers = .TRUE.
  profiling_output = 1           ! aggregated: 1; detailed: 2; in files: 3
@@ -165,7 +165,7 @@ cat > ${atmo_namelist} << EOF
 &nwp_phy_nml
  inwp_gscp       = 2 ! 2:one-moment graupel scheme
  inwp_convection = 0 ! 1:Tiedtke/Bechtold
- inwp_radiation  = 1 ! 1:RRTM radiation, 3:PSRAD
+ inwp_radiation  = 4 ! 4:ecRad
  inwp_cldcover   = 5 ! 1: Martin Koehler cloud cover scheme ! 5: all or nothing
  inwp_turb       = 1 ! 1: Raschendorfer turbulence          ! 5: Smagorinsky diffusion (Dipankar et al.)
  inwp_gwd        = 0 ! gravity wave drag
@@ -185,7 +185,7 @@ cat > ${atmo_namelist} << EOF
  irad_o3         = 4 ! read in external ozone file
  izenith         = 5 ! 5: prescribed zenith angle; 6: equinox diurnal cycle
  irad_aero       = 0 ! switch off aerosols
- irad_cfc11      = 0 
+ irad_cfc11      = 0
  irad_cfc12      = 0
  irad_co2        = 2
  irad_ch4        = 2
@@ -193,6 +193,7 @@ cat > ${atmo_namelist} << EOF
  vmr_co2         =  348.e-06 ! RCEMIP values; modern-day values
  vmr_ch4         = 1650.e-09
  vmr_n2o         =  306.e-09
+ ecrad_data_path = '${basedir}/externals/ecrad/data'
 /
 &dynamics_nml
  lcoriolis       = .FALSE.

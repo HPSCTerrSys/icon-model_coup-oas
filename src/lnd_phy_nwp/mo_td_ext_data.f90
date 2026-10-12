@@ -1,19 +1,18 @@
-! Subroutines needed for updating the climatological boundary conditions
-! in NWP physics.
-!
-! includes, e.g. updating time dependent SST and Sea Ice fraction
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutines needed for updating the climatological boundary conditions
+! in NWP physics.
+!
+! includes, e.g. updating time dependent SST and Sea Ice fraction
 
 MODULE mo_td_ext_data
 
@@ -50,7 +49,7 @@ MODULE mo_td_ext_data
   USE mo_bcs_time_interpolation, ONLY: t_time_interpolation_weights,         &
     &                                  calculate_time_interpolation_weights
   USE mo_dynamics_config,     ONLY: nnow_rcf
-  USE mo_nwp_phy_init,        ONLY: clim_cdnc
+  USE mo_nwp_tuning_config,   ONLY: tune_cdnc
 
   IMPLICIT NONE
 
@@ -59,6 +58,7 @@ MODULE mo_td_ext_data
   PUBLIC  :: update_nwp_phy_bcs
   PUBLIC  :: set_sst_and_seaice
   PUBLIC  :: read_td_ext_data_file
+  PUBLIC  :: set_cdnc_from_extdata
 
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_td_extdata'
 
@@ -75,7 +75,7 @@ CONTAINS
   !! modis albedo           : alb_dif, albuv_dif, albni_dif
   !! climatological cloud droplet number         : cdnc
   !!
-  !! Update of aerosol fields, which is based on a monthly climatology 
+  !! Update of aerosol fields, which is based on a monthly climatology
   !! happens in mo_nwp_rrtm_interface:nwp_aerosol.
   !!
   !! In addition, some fields which directly depend on the above ones
@@ -89,8 +89,8 @@ CONTAINS
     TYPE(t_external_data) , INTENT(INOUT) :: ext_data
     TYPE(t_lnd_state)     , INTENT(INOUT) :: p_lnd_state
     TYPE(t_nh_state)      , INTENT(IN)    :: p_nh_state
-    TYPE(t_nwp_phy_diag)  , INTENT(INOUT) :: prm_diag        
-    TYPE(datetime)        , INTENT(IN)    :: ref_datetime     !< reference date for computation 
+    TYPE(t_nwp_phy_diag)  , INTENT(INOUT) :: prm_diag
+    TYPE(datetime)        , INTENT(IN)    :: ref_datetime     !< reference date for computation
                                                               ! of climatological SST increments
     TYPE(datetime)        , INTENT(IN)    :: target_datetime  !< target date for temporal interpolation
     TYPE(datetime)        , INTENT(IN)    :: mtime_old
@@ -133,6 +133,7 @@ CONTAINS
 
     SELECT CASE(sstice_mode)
     CASE (SSTICE_ANA_CLINC)
+
       !
       ! add climatological SST increment (updates t_g_t, t_s_t, t_sk_t, qv_s_t)
       !
@@ -182,7 +183,7 @@ CONTAINS
 
     CASE DEFAULT
       !
-      ! do nothing (sstice_mode = SSTICE_ana, SSTICE_INST) 
+      ! do nothing (sstice_mode = SSTICE_ana, SSTICE_INST)
     END SELECT
 
 
@@ -217,12 +218,61 @@ CONTAINS
         &                        ext_data%atm%emis_rad      )! out
 
     ENDIF
+
     ! Interpolate monthly cdnc climatology
     IF (atm_phy_nwp_config(jg)%icpl_aero_gscp == 3) THEN
-      CALL clim_cdnc(target_datetime, p_patch, ext_data, prm_diag)
+      CALL interpol_monthly_mean(p_patch,                          &! in
+           &                     target_datetime,                  &! in
+           &                     ext_data%atm_td%cdnc,             &! in
+           &                     ext_data%atm%cdnc                 )! out
+      IF (atm_phy_nwp_config(jg)%scale_cdnc_mode == 0) THEN
+        CALL set_cdnc_from_extdata(p_patch, ext_data, prm_diag)
+      ENDIF
     ENDIF
 
   END SUBROUTINE update_nwp_phy_bcs
+
+  !------------------------------------------------
+  ! Use climatological data of cloud droplet number
+  ! Satellite based data are provided in EXTPAR
+  !------------------------------------------------
+
+  SUBROUTINE set_cdnc_from_extdata(p_patch, ext_data, prm_diag)
+
+    TYPE(t_patch)        , INTENT(in)    :: p_patch
+    TYPE(t_external_data), INTENT(in)    :: ext_data
+    TYPE(t_nwp_phy_diag) , INTENT(inout) :: prm_diag
+
+    INTEGER  :: rl_start, rl_end, i_startblk, i_endblk, i_startidx, i_endidx
+    INTEGER  :: jb, jc
+    REAL(wp) :: tune_cdnc_min, tune_cdnc_max, tune_cdnc_fac
+
+    rl_start   = 1
+    rl_end     = min_rlcell_int
+    i_startblk = p_patch%cells%start_block(rl_start)
+    i_endblk   = p_patch%cells%end_block(rl_end)
+
+    tune_cdnc_min = tune_cdnc(1)    ! lower bound
+    tune_cdnc_max = tune_cdnc(2)    ! upper bound
+    tune_cdnc_fac = tune_cdnc(3)    ! scaling factor
+
+!$OMP PARALLEL
+!$OMP DO PRIVATE(jb,jc,i_startidx,i_endidx)
+    DO jb = i_startblk, i_endblk
+
+        CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
+        DO jc = i_startidx, i_endidx
+
+          ! allow some tuning/calibration of CDNC with upper and lower bound and a scaling factor
+          prm_diag%cloud_num(jc,jb) = MIN(MAX(tune_cdnc_fac*ext_data%atm%cdnc(jc,jb),tune_cdnc_min),tune_cdnc_max)
+
+        ENDDO
+
+    ENDDO
+!$OMP END DO
+!$OMP END PARALLEL
+
+  END SUBROUTINE set_cdnc_from_extdata
 
 
   !>
@@ -258,24 +308,24 @@ CONTAINS
     TYPE(datetime), POINTER            :: mtime_date
     TYPE(datetime), POINTER            :: mtime_date_old
     TYPE(datetime), POINTER            :: mtime_hour
-    
+
     TYPE(t_time_interpolation_weights) :: current_time_interpolation_weights
-    TYPE(t_time_interpolation_weights) :: old_time_interpolation_weights    
+    TYPE(t_time_interpolation_weights) :: old_time_interpolation_weights
 
     ! this is because newDatetime requires a pointer as input argument
-    mtime_date => target_datetime   
+    mtime_date => target_datetime
     mtime_date_old => datetime_old
 
     SELECT CASE (ext_data_mode)
-      
-    CASE (SSTICE_CLIM) 
+
+    CASE (SSTICE_CLIM)
       ! SST and sea ice fraction updated based on the climatological
       ! monthly values
-      
+
       mtime_hour => newDatetime(mtime_date)
       mtime_hour%time%minute = 0
       mtime_hour%time%second = 0
-      mtime_hour%time%ms     = 0                  
+      mtime_hour%time%ms     = 0
       current_time_interpolation_weights = calculate_time_interpolation_weights(mtime_hour)
       CALL deallocateDatetime(mtime_hour)
 
@@ -321,14 +371,14 @@ CONTAINS
 
 
 
-    CASE (SSTICE_AVG_MONTHLY) 
+    CASE (SSTICE_AVG_MONTHLY)
       ! SST and sea ice fraction updated based on the actual monthly
       ! values
 
       mtime_hour => newDatetime(mtime_date_old)
       mtime_hour%time%minute = 0
       mtime_hour%time%second = 0
-      mtime_hour%time%ms     = 0                  
+      mtime_hour%time%ms     = 0
       old_time_interpolation_weights = calculate_time_interpolation_weights(mtime_hour)
       call deallocateDatetime(mtime_hour)
       m1 = old_time_interpolation_weights%month1
@@ -339,7 +389,7 @@ CONTAINS
       mtime_hour => newDatetime(mtime_date)
       mtime_hour%time%minute = 0
       mtime_hour%time%second = 0
-      mtime_hour%time%ms     = 0                  
+      mtime_hour%time%ms     = 0
       current_time_interpolation_weights = calculate_time_interpolation_weights(mtime_hour)
       call deallocateDatetime(mtime_hour)
       month1 = current_time_interpolation_weights%month1
@@ -487,4 +537,3 @@ CONTAINS
 !-----------------------------------------------------------------------
 
 END MODULE mo_td_ext_data
-

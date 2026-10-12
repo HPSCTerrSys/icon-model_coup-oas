@@ -1,17 +1,17 @@
-! @brief Setup for synthetic satellite images
-!
-! configuration setup for synthetic satellite images
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief Setup for synthetic satellite images
+!
+! configuration setup for synthetic satellite images
 
 MODULE mo_synsat_config
 
@@ -75,7 +75,7 @@ MODULE mo_synsat_config
     INTEGER            :: nsat_id_max        ! for range of satellite ids
     INTEGER            :: nrttov_id          ! sensor identification within rttov
     INTEGER            :: nchan_min          ! for range of channels
-    INTEGER            :: nchan_max          ! for range of channels  
+    INTEGER            :: nchan_max          ! for range of channels
     INTEGER            :: num_chan_max       ! Max. Number of channels for that sensor
   END TYPE sat_check_type
 
@@ -93,8 +93,8 @@ MODULE mo_synsat_config
     INTEGER            :: ngrib_aees(4*jpch) ! list of additional element numbers for grib output
     REAL(wp)           :: longitude          ! position of geost. satellite
     REAL(wp)           :: emissivity(jpch)   ! emissivities for all channels
-    LOGICAL            :: lclear_rad         ! for clear sky radiance 
-    LOGICAL            :: lcloud_rad         ! for cloudy sky radiance 
+    LOGICAL            :: lclear_rad         ! for clear sky radiance
+    LOGICAL            :: lcloud_rad         ! for cloudy sky radiance
     LOGICAL            :: lclear_tem         ! for clear sky temperature
     LOGICAL            :: lcloud_tem         ! for cloudy sky temperature
   END TYPE sat_org_type
@@ -109,8 +109,8 @@ MODULE mo_synsat_config
     INTEGER            :: nsat_id            ! Satellite identification
     CHARACTER(LEN=12)  :: sensor            ! Name of sensor used
     INTEGER            :: num_chan           ! Number of channels used
-    LOGICAL            :: lclear_rad         ! for clear sky radiance 
-    LOGICAL            :: lcloud_rad         ! for cloudy sky radiance 
+    LOGICAL            :: lclear_rad         ! for clear sky radiance
+    LOGICAL            :: lcloud_rad         ! for cloudy sky radiance
     LOGICAL            :: lclear_tem         ! for clear sky temperature
     LOGICAL            :: lcloud_tem         ! for cloudy sky temperature
   END TYPE sat_input_type
@@ -131,7 +131,7 @@ MODULE mo_synsat_config
          ! list of time steps for which satellite computations must be done
 
 
-  ! the following are the RTTOV satellite and sensor tables 
+  ! the following are the RTTOV satellite and sensor tables
   ! (Table 3 from the RTTOV documentation)
 
   CHARACTER(LEN= 8) :: rttov_satell_table(  13)
@@ -293,7 +293,7 @@ MODULE mo_synsat_config
     addclouds(:) = .TRUE.
 
     ! --- consistency check
-    
+
     ! Since "n_chans", "numchans" are used interchangeably (more or
     ! less) under the implicit assumption that we have only one
     ! satellite, we make place an assertion here:
@@ -391,7 +391,7 @@ MODULE mo_synsat_config
         CASE (CHAN_IR8_7)
           scaledValueOfCentralWaveNumber = 114942
           scaleFactorOfCentralWaveNumber = 0
-        CASE (CHAN_IR9_7) 
+        CASE (CHAN_IR9_7)
           scaledValueOfCentralWaveNumber = 103092
           scaleFactorOfCentralWaveNumber = 0
         CASE (CHAN_IR10_8)
@@ -420,7 +420,7 @@ MODULE mo_synsat_config
         CASE (CHAN_IR8_7)
           scaledValueOfCentralWaveNumber = 114942
           scaleFactorOfCentralWaveNumber = 0
-        CASE (CHAN_IR9_7) 
+        CASE (CHAN_IR9_7)
           scaledValueOfCentralWaveNumber = 103092
           scaleFactorOfCentralWaveNumber = 0
         CASE (CHAN_IR10_8)
@@ -452,7 +452,7 @@ MODULE mo_synsat_config
         CASE (CHAN_IR8_7)
           scaledValueOfCentralWaveNumber = 114942
           scaleFactorOfCentralWaveNumber = 0
-        CASE (CHAN_IR9_7) 
+        CASE (CHAN_IR9_7)
           scaledValueOfCentralWaveNumber = 103092
           scaleFactorOfCentralWaveNumber = 0
         CASE (CHAN_IR10_8)
@@ -481,7 +481,7 @@ MODULE mo_synsat_config
         CASE (CHAN_IR8_7)
           scaledValueOfCentralWaveNumber = 114942
           scaleFactorOfCentralWaveNumber = 0
-        CASE (CHAN_IR9_7) 
+        CASE (CHAN_IR9_7)
           scaledValueOfCentralWaveNumber = 103092
           scaleFactorOfCentralWaveNumber = 0
         CASE (CHAN_IR10_8)

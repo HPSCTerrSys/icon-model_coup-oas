@@ -1,18 +1,15 @@
-!
-! Subroutine interface_aes_rad calls the radiative transfer scheme.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutine interface_aes_rad calls the radiative transfer scheme.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -25,10 +22,11 @@ MODULE mo_interface_aes_rad
 
   USE mo_aes_phy_dims,         ONLY: aes_phy_dims
   USE mo_aes_phy_config,       ONLY: aes_phy_tc
+  USE mo_aes_rad_config,       ONLY: aes_rad_config
   USE mo_aes_phy_memory,       ONLY: t_aes_phy_field, prm_field
-  USE mo_snow_ice_reff,        ONLY: ice_reff_moss, snow_reff_funeedles, ice_reff_funeedles, snow_x, ice_x
-  USE mo_run_config,           ONLY: iqs, iqi
-  USE mo_aes_graupel,          ONLY: snow_number, snow_lambda, ice_number
+  USE mo_snow_ice_reff,        ONLY: ice_reff_moss, ice_x
+  USE mo_run_config,           ONLY: iqi
+  USE mo_aes_graupel,          ONLY: ice_number
 
 #ifndef __NO_RTE_RRTMGP__
   USE mo_rte_rrtmgp_radiation, ONLY: rte_rrtmgp_radiation
@@ -66,6 +64,8 @@ CONTAINS
     !
     ! temp variable since non-contiguous slicing is not supported in OpenACC
     REAL(wp):: qtrc_phy(aes_phy_dims(jg)%nproma,aes_phy_dims(jg)%nlev,aes_phy_dims(jg)%ntracer)
+    !
+    LOGICAL :: lclrsky_lw, lclrsky_sw
 
     IF (ltimer) CALL timer_start(timer_rad)
 
@@ -76,6 +76,9 @@ CONTAINS
     datetime             => aes_phy_tc(jg)%datetime
     is_in_sd_ed_interval =  aes_phy_tc(jg)%is_in_sd_ed_interval_rad
     is_active            =  aes_phy_tc(jg)%is_active_rad
+
+    lclrsky_lw = aes_rad_config(jg)%lclrsky_lw
+    lclrsky_sw = aes_rad_config(jg)%lclrsky_sw
 
     ! associate pointers
     field => prm_field(jg)
@@ -122,12 +125,6 @@ CONTAINS
           !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1)
           DO i2=1,nlev
             DO i1=jcs,jce
-               !calculate reff of snow here (further down, the variables are per m^2 instead of m^3)
-               field%acsnc(i1,i2,jb) = snow_number(field%ta(i1,i2,jb), field%rho(i1,i2,jb), field%qtrc_phy(i1,i2,jb,iqs))
-               field%acsnc(i1,i2,jb) = field%acsnc(i1,i2,jb) / snow_lambda(field%rho(i1,i2,jb), field%qtrc_phy(i1,i2,jb,iqs), field%acsnc(i1,i2,jb))
-               field%x_snow(i1,i2,jb) = snow_x(field%ta(i1,i2,jb), field%rho(i1,i2,jb),field%qtrc_phy(i1,i2,jb,iqs))
-               field%reff_snow(i1,i2,jb) = snow_reff_funeedles(field%ta(i1,i2,jb), field%rho(i1,i2,jb), field%qtrc_phy(i1,i2,jb,iqs))
-
                !calculate reff of ice here (further down, the variables are per m^2 instead of m^3)
                !diagnose cloud ice number concentration first
                field%acinc(i1,i2,jb) = ice_number(field%ta(i1,i2,jb), field%rho(i1,i2,jb)) * field%rho(i1,i2,jb)
@@ -143,7 +140,6 @@ CONTAINS
               & loglac         = loglac                    ,&!< in  glacier mask (logical)
               & this_datetime  = datetime                  ,&!< in  actual time step
               & pcos_mu0       = field%cosmu0_rt(:,jb)     ,&!< in  solar zenith angle
-              & daylght_frc    = field%daylght_frc_rt(:,jb),&!in daylight fraction
               & alb_vis_dir    = field%albvisdir(:,jb)     ,&!< in  surface albedo for visible range, direct
               & alb_nir_dir    = field%albnirdir(:,jb)     ,&!< in  surface albedo for near IR range, direct
               & alb_vis_dif    = field%albvisdif(:,jb)     ,&!< in  surface albedo for visible range, diffuse
@@ -155,16 +151,14 @@ CONTAINS
               & dz             = field%dz(:,:,jb)          ,&!< in  geometric height thickness of layer [m]
               & pp_hl          = field%phalf(:,:,jb)       ,&!< in  pressure at half levels at t-dt [Pa]
               & pp_fl          = field%pfull(:,:,jb)       ,&!< in  pressure at full levels at t-dt [Pa]
-              & rad_2d         = field%rad_2d(:,jb)        ,&!< in  arbitrary 2d field in radiation for output
+              & lts            = field%lts(:,jb)           ,&!< out lower troposheric stability  [K]
+              & cinhoml        = field%cinhoml(:,jb)       ,&!< out cloud liquid water inhomogeneity
               & tk_fl          = field%ta(:,:,jb)          ,&!< in  tk_fl  = temperature at full level at t-dt
               & xm_air         = field%mair(:,:,jb)        ,&!< in  air mass in layer [kg/m2]
               & xq_trc         = qtrc_phy                  ,&!< in  tracer  mass fraction [kg/kg]
               & xv_ozn         = field%o3(:,:,jb)          ,&!< out ozone volume mixing ratio [mol/mol]
               !
               & reff_ice       = field%reff_ice(:,:,jb)    ,&!< in   effective radius of cloud ice [m]
-              & tau_ice        = field% tau_ice(:,:,jb)    ,&!< inout cloud ice optical depth integrated over all bands
-              & reff_snow      = field%reff_snow(:,:,jb)   ,&!< in   effective radius of snow [m]
-              & tau_snow       = field% tau_snow(:,:,jb)   ,&!< inout snow optical depth integrated over all bands
               & cdnc           = field% acdnc(:,:,jb)      ,&!< in   cloud droplet number conc
               !
               & lw_dnw_clr     = field%rldcs_rt(:,:,jb)    ,&!< out  Clear-sky net longwave  at all levels
@@ -204,14 +198,10 @@ CONTAINS
           !
           ! LW
           !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1)
-          field%rldcs_rt(:,:,:)  = 0.0_wp !< out  Clear-sky net longwave  at all levels
-          field%rlucs_rt(:,:,:)  = 0.0_wp !< out  Clear-sky net longwave  at all levels
           field%rld_rt  (:,:,:)  = 0.0_wp !< out  All-sky net longwave  at all levels
           field%rlu_rt  (:,:,:)  = 0.0_wp !< out  All-sky net longwave  at all levels
           !
           ! SW all
-          field%rsdcs_rt(:,:,:)  = 0.0_wp !< out  Clear-sky net shortwave at all levels
-          field%rsucs_rt(:,:,:)  = 0.0_wp !< out  Clear-sky net shortwave at all levels
           field%rsd_rt  (:,:,:)  = 0.0_wp !< out  All-sky net longwave  at all levels
           field%rsu_rt  (:,:,:)  = 0.0_wp !< out  All-sky net longwave  at all levels
           !
@@ -228,12 +218,24 @@ CONTAINS
           !
           ! total cloud cover diagnostics
           field%aclcov(:,:)      = 0.0_wp !< out  total cloud cover
-          ! cloud ice and snow optical depth integrated over all bands
-          field%tau_ice(:,:,:) = 0.0_wp
-          field%tau_snow(:,:,:) = 0.0_wp
           !$ACC END KERNELS
           !
-       !
+          ! LW clear sky
+          IF (lclrsky_lw) THEN
+             !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1)
+             field%rldcs_rt(:,:,:)  = 0.0_wp !< out  Clear-sky net longwave  at all levels
+             field%rlucs_rt(:,:,:)  = 0.0_wp !< out  Clear-sky net longwave  at all levels
+             !$ACC END KERNELS
+          END IF
+          !
+          ! SW clear sky
+          IF (lclrsky_sw) THEN
+             !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1)
+             field%rsdcs_rt(:,:,:)  = 0.0_wp !< out  Clear-sky net shortwave at all levels
+             field%rsucs_rt(:,:,:)  = 0.0_wp !< out  Clear-sky net shortwave at all levels
+             !$ACC END KERNELS
+          END IF
+          !
        END IF
 
      IF (ltimer) CALL timer_stop(timer_rad)

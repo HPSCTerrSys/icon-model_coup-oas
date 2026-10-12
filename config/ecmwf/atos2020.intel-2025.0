@@ -1,0 +1,95 @@
+#!/usr/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+#####################################################################################
+###   Configure wrapper for ATOS System at ECMWF/Bologna (From 2020 procurement)  ###
+###       Atos Sequana XH2000                                                     ###
+###       Red Hat Enterprise Linux                                                ###
+###       Compiler: intel 2025.0                                                  ###
+#####################################################################################
+
+set -eu
+
+SCRIPT_DIR=$(cd "$(dirname "$0")">/dev/null; pwd)
+ICON_DIR=$(cd "${SCRIPT_DIR}/../..">/dev/null; pwd)
+
+MODULES='prgenv/intel-llvm intel/2025.0 hpcx-openmpi hdf5 netcdf4 intel-mkl/19.0.5 ecmwf-toolbox aec libfyaml'
+#MODULES+=' python3/3.12.9-01'
+
+################################################################################
+
+BUILD_ENV=". $MODULESHOME/init/sh ; module purge ;  module load $MODULES; FC=mpif90 ; CC=mpicc;"
+eval "$BUILD_ENV"
+
+# XML2 library
+XML_INCLUDE='-I/usr/include/libxml2/'
+XML_LIB='-L/usr/lib64 -lxml2 -lz'
+
+# RTTOV Version 13 (built with intel/2021.4.0)
+RTTOV_INCLUDE="-I/perm/dwg/rttov13_icon/build_atos_intel/include"
+RTTOV_LIBDIR="-L/perm/dwg/rttov13_icon/build_atos_intel"
+RTTOV_LIB="-lrttov13"
+
+# Compilers and flags
+CC='mpicc'
+CFLAGS='-gdwarf-4 -O3 -qno-opt-dynamic-align -ftz -march=native -fp-model=precise'
+CPPFLAGS="$ECCODES_INCLUDE $HDF5_INCLUDE $NETCDF4_INCLUDE $LIBFYAML_INCLUDE $RTTOV_INCLUDE $XML_INCLUDE"
+
+FC='mpif90'
+FCFLAGS="$ECCODES_INCLUDE $HDF5_INCLUDE $NETCDF4_INCLUDE $RTTOV_INCLUDE $XML_INCLUDE"
+LDFLAGS="$ECCODES_LIB $HDF5_LIB $NETCDF4_LIB  ${LIBFYAML_LIB} ${RTTOV_LIBDIR} ${XML_LIB} -L$MKLROOT/lib/intel64"
+
+LIBS="${RTTOV_LIB} -lmkl_gf_lp64 -lmkl_sequential -lmkl_core -lstdc++"
+
+# Avoid Error: Rank mismatch between actual argument at (1) and actual argument at (2) (scalar and rank-1)
+#ICON_FCFLAGS='-O2 -assume realloc_lhs -ftz -DDO_NOT_COMBINE_PUT_AND_NOCHECK'
+ICON_FCFLAGS='-O2 -assume realloc_lhs -ftz -fp-model=precise'
+ICON_ECRAD_FCFLAGS="-D__ECRAD_LITTLE_ENDIAN"
+
+EXTRA_CONFIG='--disable-ocean --enable-grib2 --enable-ecrad --disable-openmp --disable-jsbach --disable-aes --enable-mixed-precision --disable-rte-rrtmgp --disable-mpi-checks'
+#EXTRA_CONFIG+=' --enable-rttov'
+#EXTRA_CONFIG+=' --enable-art --enable-coupling --enable-comin'
+#EXTRA_CONFIG+=' --enable-bundled-python'
+
+################################################################################
+
+${ICON_DIR}/configure \
+BUILD_ENV="$BUILD_ENV" \
+CC="$CC" \
+CFLAGS="$CFLAGS" \
+CPPFLAGS="$CPPFLAGS" \
+FC="$FC" \
+FCFLAGS="$FCFLAGS" \
+ICON_FCFLAGS="$ICON_FCFLAGS" \
+ICON_ECRAD_FCFLAGS="$ICON_ECRAD_FCFLAGS" \
+LDFLAGS="$LDFLAGS" \
+LIBS="$LIBS" \
+${EXTRA_CONFIG} \
+"$@"
+
+# Copy runscript-related files when building out-of-source:
+if test $(pwd) != $(cd "${ICON_DIR}"; pwd); then
+  echo "Copying runscript input files from the source directory..."
+  rsync -uavz ${ICON_DIR}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${ICON_DIR}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${ICON_DIR}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
+  rsync -uavz ${ICON_DIR}/make_runscripts .
+  ln -sf ${ICON_DIR}/data
+  ln -sf ${ICON_DIR}/vertical_coord_tables
+fi

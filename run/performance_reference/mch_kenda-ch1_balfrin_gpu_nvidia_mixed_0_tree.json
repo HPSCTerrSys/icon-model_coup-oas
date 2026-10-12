@@ -34,6 +34,15 @@
           ],
           "children": [
             {
+              "name": "gpu_mem_use",
+              "ancestry": [
+                "root",
+                "total",
+                "integrate_nh"
+              ],
+              "children": []
+            },
+            {
               "name": "nh_solve",
               "ancestry": [
                 "root",
@@ -178,31 +187,27 @@
                   ]
                 }
               ]
-            },
-            {
-              "name": "nesting",
-              "ancestry": [
-                "root",
-                "total",
-                "integrate_nh"
-              ],
-              "children": [
-                {
-                  "name": "nesting.bdy_interp",
-                  "ancestry": [
-                    "root",
-                    "total",
-                    "integrate_nh",
-                    "nesting"
-                  ],
-                  "children": []
-                }
-              ]
             }
           ]
         },
         {
+          "name": "action",
+          "ancestry": [
+            "root",
+            "total"
+          ],
+          "children": []
+        },
+        {
           "name": "dace_coupling",
+          "ancestry": [
+            "root",
+            "total"
+          ],
+          "children": []
+        },
+        {
+          "name": "dace_acc_data_copies",
           "ancestry": [
             "root",
             "total"
@@ -234,6 +239,13 @@
           "children": []
         }
       ]
+    },
+    {
+      "name": "acc_data_copies",
+      "ancestry": [
+        "root"
+      ],
+      "children": []
     },
     {
       "name": "global_sum",
@@ -507,6 +519,14 @@
       "children": [
         {
           "name": "write_restart_io",
+          "ancestry": [
+            "root",
+            "write_restart"
+          ],
+          "children": []
+        },
+        {
+          "name": "write_restart_communication",
           "ancestry": [
             "root",
             "write_restart"

@@ -1,14 +1,14 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
 #include "omp_definitions.inc"
 
    MODULE mo_bgc_icon_comm
@@ -17,7 +17,7 @@
 
       USE mo_ocean_diagnostics_types,   ONLY:  t_ocean_regions
 
-      USE mo_control_bgc,          ONLY: dtb,bgc_gin, bgc_arctic, bgc_lab, & 
+      USE mo_control_bgc,          ONLY: dtb,bgc_gin, bgc_arctic, bgc_lab, &
        &                                 bgc_natl, bgc_atl, bgc_tatl, &
        &                                 bgc_tropac, &
        &                                 bgc_land, bgc_ind, &
@@ -44,7 +44,7 @@
 
       USE mo_bgc_constants,      ONLY: molw_co2
 
-       
+
       USE mo_parallel_config,     ONLY: nproma
 
       USE mo_hamocc_nml,         ONLY: io_stdo_bgc, l_cpl_co2, ks, l_N_cycle,i_settling
@@ -54,7 +54,7 @@
       USE mo_var_list_gpu,        ONLY: gpu_update_var_list
 
       USE mo_fortran_tools,      ONLY: set_acc_host_or_device
- 
+
       IMPLICIT NONE
 
       PUBLIC
@@ -72,7 +72,7 @@
 
       CONTAINS
 
-!================================================================================== 
+!==================================================================================
        SUBROUTINE ini_bgc_regions
 
         IMPLICIT NONE
@@ -84,29 +84,29 @@
          bgc_arctic=ocean_regions%arctic_ocean                      !2
          bgc_lab= ocean_regions%labrador_sea                        !3
          bgc_natl= ocean_regions%north_atlantic                     !4
-         bgc_tatl= ocean_regions%tropical_atlantic                  !5 
+         bgc_tatl= ocean_regions%tropical_atlantic                  !5
          bgc_soce=ocean_regions%southern_ocean                      !6
          bgc_ind=ocean_regions%indian_ocean                         !7
          bgc_tropac= ocean_regions%tropical_pacific                 !8
          bgc_npac=ocean_regions%north_pacific                       !9
          bgc_carb=ocean_regions%caribbean                           !-33
- 
+
        END SUBROUTINE
-!================================================================================== 
-    
+!==================================================================================
+
       SUBROUTINE update_icon(local_bgc_mem, start_idx, end_idx, &
 &             klevs, pddpo, jb, ptracer, pco2flx, lacc)
 
       USE mo_param1_bgc, ONLY: n_bgctra,kcflux_cpl
 
       TYPE(t_bgc_memory), POINTER :: local_bgc_mem
-      REAL(wp)     :: ptracer(:,:,:,:)    
+      REAL(wp)     :: ptracer(:,:,:,:)
       INTEGER, INTENT(in)::klevs(nproma), jb
       REAL(wp),INTENT(in) :: pddpo(nproma,n_zlev) !< size of scalar grid cell (3rd REAL) [m]
       REAL(wp),INTENT(inout) :: pco2flx(nproma)
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
 
-      INTEGER :: jc, jk, kpke
+      INTEGER :: jc, jk, kpke, max_klevs
       INTEGER :: start_idx, end_idx
       INTEGER :: itrac
       LOGICAL :: lzacc
@@ -116,10 +116,12 @@
      ! CALL message(TRIM(routine), 'start' )
 
      CALL set_acc_host_or_device(lzacc, lacc)
- 
+
+#ifndef __LVECTOR__
+
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP GANG VECTOR
-      DO jc=start_idx,end_idx 
+      DO jc=start_idx,end_idx
         kpke=klevs(jc)
         IF (pddpo(jc, 1) .GT. EPSILON(0.5_wp)) THEN
           pco2flx(jc)=local_bgc_mem%bgcflux(jc,kcflux_cpl) * molw_co2
@@ -128,15 +130,37 @@
           !$ACC LOOP SEQ
           DO itrac=1,n_bgctra
              ptracer(jc,jk,jb,itrac) = local_bgc_mem%bgctra(jc,jk,itrac)
-          ENDDO 
+          ENDDO
         ENDDO
         ENDIF
       ENDDO
       !$ACC END PARALLEL
- 
+
+#else
+
+    max_klevs = MAXVAL(klevs(start_idx:end_idx))
+
+    DO jc = start_idx , end_idx
+        IF (pddpo(jc, 1) .GT. EPSILON(0.5_wp)) THEN
+            pco2flx(jc) = local_bgc_mem%bgcflux(jc,kcflux_cpl) * molw_co2
+        END IF
+    END DO
+
+    DO itrac = 1, n_bgctra
+        DO jk = 1, max_klevs
+            DO jc = start_idx , end_idx
+                IF ( (jk <= klevs(jc)) .AND. (pddpo(jc, 1) .GT. EPSILON(0.5_wp)) ) THEN
+                    ptracer(jc,jk,jb,itrac) = local_bgc_mem%bgctra(jc,jk,itrac)
+                END IF
+            END DO
+        END DO
+    END DO ! itrac
+
+#endif
+
       END SUBROUTINE
 
-!================================================================================== 
+!==================================================================================
       SUBROUTINE update_bgc(local_bgc_mem, local_sediment_mem, start_index, end_index, &
                           & klevs, pddpo, jb, ptracer, pco2mr, p_diag, p_sed, p_tend,  &
                           & max_klevs, lacc)
@@ -156,9 +180,9 @@
 
       TYPE(t_bgc_memory), POINTER :: local_bgc_mem
       TYPE(t_sediment_memory), POINTER :: local_sediment_mem
-      
-      
-      REAL(wp)     :: ptracer(:,:,:,:)    
+
+
+      REAL(wp)     :: ptracer(:,:,:,:)
       REAL(wp)     :: pco2mr(nproma)
       INTEGER, INTENT(in)::klevs(nproma), jb
       TYPE(t_hamocc_diag) :: p_diag
@@ -245,17 +269,31 @@
         END DO
       END DO
 
+#ifndef __LVECTOR__
       !$ACC LOOP GANG VECTOR COLLAPSE(2)
       DO jk =1,max_klevs
         DO jc=start_index,end_index
           IF (pddpo(jc, 1) .GT. EPSILON(0.5_wp) .and. jk <= klevs(jc)) THEN
             !$ACC LOOP SEQ
             DO itrac = 1,n_bgctra
+#else
+    DO itrac = 1, n_bgctra
+        DO jk = 1, max_klevs
+            DO jc = start_index, end_index
+                IF (pddpo(jc, 1) .GT. EPSILON(0.5_wp) .and. jk <= klevs(jc)) THEN
+#endif
               local_bgc_mem%bgctra(jc,jk,itrac)=ptracer(jc,jk,jb,itrac)
+#ifndef __LVECTOR__
             END DO
           END IF
         END DO
       END DO
+#else
+                END IF
+            END DO
+        END DO
+    END DO
+#endif
 
       IF (lsediment_only) THEN
         !$ACC LOOP GANG VECTOR
@@ -285,10 +323,10 @@
 
       END SUBROUTINE
 
-!================================================================================== 
+!==================================================================================
   SUBROUTINE set_bgc_tendencies_output(local_bgc_mem, local_sediment_mem, local_aggregate_memory, start_idx, end_idx, &
 &             klevs,pddpo,jb,p_tend, p_diag, p_sed, p_agg, max_klevs, lacc)
-      
+
       USE mo_param1_bgc, ONLY: kphosy, ksred, kremin, kdenit, &
  &                             kcflux, koflux, knflux, knfixd, &
  &                             knfix, kgraz, ksilpro, kprorca, &
@@ -307,7 +345,7 @@
 &                              kzdy, kpdy,kcoex1000,kcoex2000, &
 &                              kopex1000,kopex2000,kcalex1000,&
 &                              kcalex2000, kaou, kcTlim, kcLlim, &
-&                              kcPlim, kcFlim, ipowh2s,kh2sprod, &   
+&                              kcPlim, kcFlim, ipowh2s,kh2sprod, &
 &                              kh2sloss,iatmco2,kpco2,klysocl,knitinp, &
 &                              kwdust, kwpoc, kwopal, kwcal, &
 &                              isremino, isreminn, isremins, &
@@ -315,8 +353,8 @@
 &                              kdnrn, kdnra, kanam, ksammox, ksnitox, &
 &                              ksdnrn, ksdnra, ksanam, ksnrn2
 
-      USE mo_memory_agg, ONLY : kavdp, kavrhop, ksticka, klmaxagg, kdfagg, kavrhof
-  
+      USE mo_memory_agg, ONLY : kavdp, kavrhop, ksticka, klmaxagg, kdfagg
+
       TYPE(t_bgc_memory), POINTER :: local_bgc_mem
       TYPE(t_sediment_memory), POINTER :: local_sediment_mem
       TYPE(t_aggregates_memory), POINTER :: local_aggregate_memory
@@ -338,10 +376,10 @@
       LOGICAL :: lzacc
 
       CALL set_acc_host_or_device(lzacc, lacc)
- 
+
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP GANG VECTOR
-      DO jc=start_idx,end_idx 
+      DO jc=start_idx,end_idx
         IF (pddpo(jc, 1) .GT. EPSILON(0.5_wp)) THEN
           p_tend%co2mr(jc,jb) = local_bgc_mem%atm(jc,iatmco2)
           p_tend%cflux(jc,jb) = local_bgc_mem%bgcflux(jc,kcflux)
@@ -401,18 +439,18 @@
              p_tend%dmsuv(jc,jk,jb) = local_bgc_mem%bgctend(jc,jk,kdmsuv)
              p_tend%euexp(jc,jk,jb) = local_bgc_mem%bgctend(jc,jk,keuexp)
              p_diag%hi(jc,jk,jb)     = local_bgc_mem%hi(jc, jk)
-             p_diag%co3(jc,jk,jb)    = local_bgc_mem%co3(jc,jk) 
-             p_tend%akb(jc,jk,jb)    = local_bgc_mem%akb3(jc,jk) 
-             p_tend%akw(jc,jk,jb)    = local_bgc_mem%akw3(jc,jk) 
-             p_tend%ak1(jc,jk,jb)    = local_bgc_mem%ak13(jc,jk) 
-             p_tend%ak2(jc,jk,jb)    = local_bgc_mem%ak23(jc,jk) 
-             p_tend%aks(jc,jk,jb)    = local_bgc_mem%aks3(jc,jk) 
-             p_tend%akf(jc,jk,jb)    = local_bgc_mem%akf3(jc,jk) 
-             p_tend%ak1p(jc,jk,jb)   = local_bgc_mem%ak1p3(jc,jk) 
+             p_diag%co3(jc,jk,jb)    = local_bgc_mem%co3(jc,jk)
+             p_tend%akb(jc,jk,jb)    = local_bgc_mem%akb3(jc,jk)
+             p_tend%akw(jc,jk,jb)    = local_bgc_mem%akw3(jc,jk)
+             p_tend%ak1(jc,jk,jb)    = local_bgc_mem%ak13(jc,jk)
+             p_tend%ak2(jc,jk,jb)    = local_bgc_mem%ak23(jc,jk)
+             p_tend%aks(jc,jk,jb)    = local_bgc_mem%aks3(jc,jk)
+             p_tend%akf(jc,jk,jb)    = local_bgc_mem%akf3(jc,jk)
+             p_tend%ak1p(jc,jk,jb)   = local_bgc_mem%ak1p3(jc,jk)
              p_tend%ak2p(jc,jk,jb)   = local_bgc_mem%ak2p3(jc,jk)
              p_tend%ak3p(jc,jk,jb)   = local_bgc_mem%ak3p3(jc,jk)
              p_tend%aksi(jc,jk,jb)   = local_bgc_mem%aksi3(jc,jk)
-             p_tend%aksp(jc,jk,jb)   = local_bgc_mem%aksp(jc,jk) 
+             p_tend%aksp(jc,jk,jb)   = local_bgc_mem%aksp(jc,jk)
              p_tend%flim(jc,jk,jb)   = local_bgc_mem%bgctend(jc,jk,kflim)
              p_tend%nlim(jc,jk,jb)   = local_bgc_mem%bgctend(jc,jk,knlim)
              p_tend%plim(jc,jk,jb)   = local_bgc_mem%bgctend(jc,jk,kplim)
@@ -420,7 +458,7 @@
              p_tend%cLlim(jc,jk,jb)  = local_bgc_mem%bgctend(jc,jk,kcLlim)
              p_tend%cPlim(jc,jk,jb)  = local_bgc_mem%bgctend(jc,jk,kcPlim)
              p_tend%cFlim(jc,jk,jb)  = local_bgc_mem%bgctend(jc,jk,kcFlim)
-             p_tend%satoxy(jc,jk,jb)    = local_bgc_mem%satoxy(jc,jk) 
+             p_tend%satoxy(jc,jk,jb)    = local_bgc_mem%satoxy(jc,jk)
              p_tend%aou(jc,jk,jb) = local_bgc_mem%bgctend(jc,jk,kaou)
            END IF
         END DO
@@ -444,7 +482,7 @@
           END DO
         END DO
       END IF
-                 
+
 
       IF (l_N_cycle) THEN
         !$ACC LOOP GANG VECTOR
@@ -475,7 +513,7 @@
         DO jk = 1,ks
           DO jc = start_idx, end_idx
             IF( pddpo(jc,1) .GT. EPSILON(0.5_wp)) THEN
-              p_sed%pwnh4(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipownh4) 
+              p_sed%pwnh4(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipownh4)
               p_sed%pwno2(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipowno2)
               p_tend%sedammox(jc,jk,jb) = local_sediment_mem%sedtend(jc,jk,ksammox)
               p_tend%sednitox(jc,jk,jb) = local_sediment_mem%sedtend(jc,jk,ksnitox)
@@ -491,24 +529,24 @@
       !$ACC LOOP GANG VECTOR
       DO jc=start_idx,end_idx
         IF (pddpo(jc, 1) .GT. EPSILON(0.5_wp)) THEN
-          p_tend%satn2(jc,jb)    = local_bgc_mem%satn2(jc) 
-          p_tend%satn2o(jc,jb)   = local_bgc_mem%satn2o(jc) 
-          p_tend%solco2(jc,jb)   = local_bgc_mem%solco2(jc) 
+          p_tend%satn2(jc,jb)    = local_bgc_mem%satn2(jc)
+          p_tend%satn2o(jc,jb)   = local_bgc_mem%satn2o(jc)
+          p_tend%solco2(jc,jb)   = local_bgc_mem%solco2(jc)
           ! Sediment
           ! local_sediment_mem%burial layers
           p_sed%bo12(jc,jb) = local_sediment_mem%burial(jc,issso12)
           p_sed%bc12(jc,jb) = local_sediment_mem%burial(jc,isssc12)
           p_sed%bsil(jc,jb) = local_sediment_mem%burial(jc,issssil)
-          p_sed%bter(jc,jb) = local_sediment_mem%burial(jc,issster) 
+          p_sed%bter(jc,jb) = local_sediment_mem%burial(jc,issster)
           ! Sediment-ocean fluxes
-          p_tend%sedflic(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaic) 
-          p_tend%sedflal(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaal) 
-          p_tend%sedflph(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaph) 
-          p_tend%sedflox(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaox) 
-          p_tend%sedflsi(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowasi) 
-          p_tend%sedflfe(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowafe) 
-          p_tend%sedfln2(jc,jb) = local_bgc_mem%sedfluxo(jc,ipown2) 
-          p_tend%sedflno3(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowno3) 
+          p_tend%sedflic(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaic)
+          p_tend%sedflal(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaal)
+          p_tend%sedflph(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaph)
+          p_tend%sedflox(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaox)
+          p_tend%sedflsi(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowasi)
+          p_tend%sedflfe(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowafe)
+          p_tend%sedfln2(jc,jb) = local_bgc_mem%sedfluxo(jc,ipown2)
+          p_tend%sedflno3(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowno3)
           p_tend%sedflh2s(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowh2s)
         END IF
       END DO
@@ -536,17 +574,17 @@
             p_sed%pwh2ob(jc,jk,jb) = local_sediment_mem%powh2obud(jc,jk)
             p_sed%pwn2b(jc,jk,jb) = local_sediment_mem%pown2bud(jc,jk)
             ! tendencies
-            p_tend%sedro2(jc,jk,jb) = local_sediment_mem%sedtend(jc,jk,isremino) 
-            p_tend%sedrn(jc,jk,jb)  = local_sediment_mem%sedtend(jc,jk,isreminn) 
-            p_tend%sedrs(jc,jk,jb)  = local_sediment_mem%sedtend(jc,jk,isremins) 
+            p_tend%sedro2(jc,jk,jb) = local_sediment_mem%sedtend(jc,jk,isremino)
+            p_tend%sedrn(jc,jk,jb)  = local_sediment_mem%sedtend(jc,jk,isreminn)
+            p_tend%sedrs(jc,jk,jb)  = local_sediment_mem%sedtend(jc,jk,isremins)
           END IF
         END DO
       END DO
       !$ACC END PARALLEL
 
-  END SUBROUTINE 
+  END SUBROUTINE
 
-!================================================================================== 
+!==================================================================================
   SUBROUTINE set_bgc_tendencies_output_sedon(local_bgc_mem, local_sediment_mem, start_idx,end_idx,pddpo,jb, &
  &                                           p_tend, p_sed)
 
@@ -563,7 +601,7 @@
       USE mo_bgc_bcond, ONLY: ext_data_bgc
       TYPE(t_bgc_memory), POINTER :: local_bgc_mem
       TYPE(t_sediment_memory), POINTER :: local_sediment_mem
-  
+
       TYPE(t_hamocc_sed) :: p_sed
       TYPE(t_hamocc_tend):: p_tend
 
@@ -573,7 +611,7 @@
 
       INTEGER :: jc, jk
 
-      DO jc=start_idx,end_idx 
+      DO jc=start_idx,end_idx
         IF (pddpo(jc, 1) .GT. EPSILON(0.5_wp)) THEN
         p_tend%prcaca(jc,jb) = ext_data_bgc%prcaca(jc,jb)
         p_tend%prorca(jc,jb) = ext_data_bgc%prorca(jc,jb)
@@ -584,22 +622,22 @@
         p_sed%bo12(jc,jb) = local_sediment_mem%burial(jc,issso12)
         p_sed%bc12(jc,jb) = local_sediment_mem%burial(jc,isssc12)
         p_sed%bsil(jc,jb) = local_sediment_mem%burial(jc,issssil)
-        p_sed%bter(jc,jb) = local_sediment_mem%burial(jc,issster) 
+        p_sed%bter(jc,jb) = local_sediment_mem%burial(jc,issster)
         ! Sediment-ocean fluxes
-        p_tend%sedflic(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaic) 
-        p_tend%sedflal(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaal) 
-        p_tend%sedflph(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaph) 
-        p_tend%sedflox(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaox) 
-        p_tend%sedflsi(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowasi) 
-        p_tend%sedflfe(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowafe) 
-        p_tend%sedfln2(jc,jb) = local_bgc_mem%sedfluxo(jc,ipown2) 
-        p_tend%sedflno3(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowno3) 
-        p_tend%sedflh2s(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowh2s) 
+        p_tend%sedflic(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaic)
+        p_tend%sedflal(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaal)
+        p_tend%sedflph(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaph)
+        p_tend%sedflox(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowaox)
+        p_tend%sedflsi(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowasi)
+        p_tend%sedflfe(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowafe)
+        p_tend%sedfln2(jc,jb) = local_bgc_mem%sedfluxo(jc,ipown2)
+        p_tend%sedflno3(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowno3)
+        p_tend%sedflh2s(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowh2s)
         if (l_N_cycle) THEN
-           p_tend%sedflnh4(jc,jb) = local_bgc_mem%sedfluxo(jc,ipownh4) 
+           p_tend%sedflnh4(jc,jb) = local_bgc_mem%sedfluxo(jc,ipownh4)
            p_tend%sedflno2(jc,jb) = local_bgc_mem%sedfluxo(jc,ipowno2)
            DO jk = 1,ks
-                p_sed%pwnh4(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipownh4) 
+                p_sed%pwnh4(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipownh4)
                 p_sed%pwno2(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipowno2)
                 p_tend%sedammox(jc,jk,jb) = local_sediment_mem%sedtend(jc,jk,ksammox)
                 p_tend%sednitox(jc,jk,jb) = local_sediment_mem%sedtend(jc,jk,ksnitox)
@@ -630,20 +668,20 @@
              p_sed%pwn2b(jc,jk,jb) = local_sediment_mem%pown2bud(jc,jk)
 
              ! tendencies
-             p_tend%sedro2(jc,jk,jb) = local_sediment_mem%sedtend(jc,jk,isremino) 
-             p_tend%sedrn(jc,jk,jb)  = local_sediment_mem%sedtend(jc,jk,isreminn) 
-             p_tend%sedrs(jc,jk,jb)  = local_sediment_mem%sedtend(jc,jk,isremins) 
-             
+             p_tend%sedro2(jc,jk,jb) = local_sediment_mem%sedtend(jc,jk,isremino)
+             p_tend%sedrn(jc,jk,jb)  = local_sediment_mem%sedtend(jc,jk,isreminn)
+             p_tend%sedrs(jc,jk,jb)  = local_sediment_mem%sedtend(jc,jk,isremins)
+
         ENDDO
       ENDIF
       ENDDO
 
- 
 
-  END SUBROUTINE 
 
-!================================================================================== 
-    
+  END SUBROUTINE
+
+!==================================================================================
+
       SUBROUTINE initial_update_icon(local_bgc_mem, local_sediment_mem, start_index, end_index, &
 &             klevs,pddpo,jb,ptracer, p_sed,p_diag,pco2flux)
 
@@ -654,10 +692,10 @@
  &                             ipownh4, ipowno2, &
  &                             ipowasi, ipowafe, ipowh2s, &
  &                             kcflux_cpl
-  
+
       TYPE(t_bgc_memory), POINTER :: local_bgc_mem
       TYPE(t_sediment_memory), POINTER :: local_sediment_mem
-      REAL(wp)     :: ptracer(nproma,n_zlev,n_bgctra)    
+      REAL(wp)     :: ptracer(nproma,n_zlev,n_bgctra)
 
       INTEGER, INTENT(in)::klevs(nproma)
       TYPE(t_hamocc_sed) :: p_sed
@@ -672,8 +710,8 @@
                 routine = 'update_icon'
 
      ! CALL message(TRIM(routine), 'start' )
- 
-      DO jc=start_index,end_index 
+
+      DO jc=start_index,end_index
         kpke=klevs(jc)
         IF (pddpo(jc, 1) .GT. EPSILON(0.5_wp)) THEN
          if(l_cpl_co2)pco2flux(jc)=local_bgc_mem%bgcflux(jc,kcflux_cpl) * molw_co2
@@ -683,14 +721,14 @@
           ENDDO
 
              p_diag%hi(jc,jk,jb)  = local_bgc_mem%hi(jc, jk)
-             p_diag%co3(jc,jk,jb) = local_bgc_mem%co3(jc,jk) 
+             p_diag%co3(jc,jk,jb) = local_bgc_mem%co3(jc,jk)
         ENDDO
         ! Sediment
         ! local_sediment_mem%burial layers
         p_sed%bo12(jc,jb) = local_sediment_mem%burial(jc,issso12)
         p_sed%bc12(jc,jb) = local_sediment_mem%burial(jc,isssc12)
         p_sed%bsil(jc,jb) = local_sediment_mem%burial(jc,issssil)
-        p_sed%bter(jc,jb) = local_sediment_mem%burial(jc,issster) 
+        p_sed%bter(jc,jb) = local_sediment_mem%burial(jc,issster)
         p_sed%bolay(jc,jb) = local_bgc_mem%bolay(jc)
         p_sed%kbo(jc,jb) = local_bgc_mem%kbo(jc)
         DO jk =1,ks
@@ -710,47 +748,50 @@
              p_sed%pwno3(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipowno3)
              p_sed%pwh2s(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipowh2s)
              if (l_N_cycle) THEN
-                p_sed%pwnh4(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipownh4) 
-                p_sed%pwno2(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipowno2) 
+                p_sed%pwnh4(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipownh4)
+                p_sed%pwno2(jc,jk,jb) = local_sediment_mem%powtra(jc,jk,ipowno2)
              ENDIF
              p_sed%sedhi(jc,jk,jb) = local_sediment_mem%sedhpl(jc,jk)
         ENDDO
       ENDIF
- 
+
       ENDDO
- 
- 
+
+
       END SUBROUTINE
 
-!================================================================================== 
+!==================================================================================
 
 
   SUBROUTINE print_bgc_parameters
-  USE mo_memory_bgc, ONLY      : phytomi, grami, remido, dyphy, zinges,        &
-       &                      bkphy, bkzoo, bkopal,                      &
-       &                     sulfate_reduction,                &
+  USE mo_memory_bgc, ONLY    : phytomi, grami, remido, dyphy, zinges,        &
+       &                     bkphy, bkzoo, bkopal,                      &
        &                     n2_fixation,                             &
-       &                     ropal, perc_diron, riron, fesoly, relaxfe,         &
+       &                     ropal, fesoly, relaxfe,         &
        &                     pi_alpha_cya,                     &
        &                     Topt_cya,T1_cya,T2_cya,bkcya_N, &
        &                     buoyancyspeed_cya,                                 &
        &                     doccya_fac, thresh_aerob, thresh_sred, &
-       &                     bkno3, bkfe, bkpo4, bkno3_cya, bknh4, bknh4_cya, &
-       &                     ro2ammo, rmm, kg_denom, no2denit, anamoxra, &
-       &                     nitriox, nitrira, bkno2, rno3nh4, rno3no2
+       &                     ro2ammo, rmm, kg_denom, rno3nh4, rno3no2,  &
+       &                     bkno3_cya, bknh4_cya, bkfe
 
    USE mo_hamocc_nml, ONLY: l_cyadyn, denit_sed, disso_po, &
       &                 sinkspeed_opal, sinkspeed_calc,grazra,cycdec,l_dynamic_pi, &
       &                 drempoc,dremopal,dremcalc,denitrification, bkcya_P,bkcya_fe, &
       &                 no3nh4red, no3no2red, calmax, &
-      &                    l_opal_q10, opal_remin_q10, opal_remin_tref,&
-      &                    l_doc_q10, doc_remin_q10, doc_remin_tref,&
-      &                    l_poc_q10, poc_remin_q10, poc_remin_tref
+      &                 l_opal_q10, opal_remin_q10, opal_remin_tref,&
+      &                 l_doc_q10, doc_remin_q10, doc_remin_tref,&
+      &                 l_poc_q10, poc_remin_q10, poc_remin_tref, &
+      &                 bkno3, bknh4, bkno2, bkpo4, &
+      &                 perc_diron, riron, &
+      &                 no2denit,anamoxra,nitriox, nitrira, &
+      &                 sulfate_reduction,prodn2o,dremn2o
+
 
 
    USE mo_sedmnt, ONLY: disso_op, disso_cal,sred_sed
 
-  
+
   CHARACTER(LEN=max_char_length) :: &
                 cpara_name,cpara_val
 
@@ -793,7 +834,7 @@
    CALL to_bgcout("bkcya_n",bkcya_n)
    CALL to_bgcout("bkcya_fe",bkcya_fe)
    CALL to_bgcout("doccya_fac",doccya_fac)
-  
+
    ! Detritus
    cpara_name='DETRITUS'
    cpara_val="========"
@@ -804,9 +845,9 @@
    CALL to_bgcout("sulfate_reduction 1/d",sulfate_reduction)
    CALL to_bgcout("thresh_aerob",thresh_aerob)
    CALL to_bgcout("thresh_sred",thresh_sred)
-   
+
    IF (i_settling==2) THEN
-       CALL to_bgcout("l_poc_q10",l_poc_q10)     
+       CALL to_bgcout("l_poc_q10",l_poc_q10)
        CALL to_bgcout("poc_remin_tref",poc_remin_tref)
        CALL to_bgcout("poc_remin_q10",poc_remin_q10)
    END IF
@@ -835,6 +876,9 @@
    CALL to_bgcout("bkno2",bkno2)
    CALL to_bgcout("rno3nh4",rno3nh4)
    CALL to_bgcout("rno3no2",rno3no2)
+   CALL to_bgcout("sulfate_reduction 1/d",sulfate_reduction*inv_dtb)
+   CALL to_bgcout("prodn2o", prodn2o)
+   CALL to_bgcout("dremn2o 1/d",dremn2o*inv_dtb)
 
    endif
 
@@ -845,11 +889,11 @@
    CALL message_to_own_unit(TRIM(cpara_name), TRIM(cpara_val), io_stdo_bgc )
    CALL to_bgcout("remido",remido*inv_dtb)
    IF (i_settling==2) THEN
-       CALL to_bgcout("l_doc_q10",l_doc_q10)     
+       CALL to_bgcout("l_doc_q10",l_doc_q10)
        CALL to_bgcout("doc_remin_tref",doc_remin_tref)
        CALL to_bgcout("doc_remin_q10",doc_remin_q10)
    END IF
-  
+
 
    ! Opal
    cpara_name='Si/Opal'
@@ -860,7 +904,7 @@
    CALL to_bgcout("ropal",ropal)
    CALL to_bgcout("sinkspeed_opal",sinkspeed_opal*inv_dtb)
    IF (i_settling==2) THEN
-       CALL to_bgcout("l_opal_q10",l_opal_q10)     
+       CALL to_bgcout("l_opal_q10",l_opal_q10)
        CALL to_bgcout("opal_remin_tref",opal_remin_tref)
        CALL to_bgcout("opal_remin_q10",opal_remin_q10)
    END IF
@@ -881,7 +925,7 @@
    CALL to_bgcout("disso_op",disso_op)
    CALL to_bgcout("disso_cal",disso_cal)
    CALL to_bgcout("sred_sed",sred_sed)
-   
+
 
    ! Calc
    cpara_name='Calc'
@@ -894,11 +938,11 @@
    cpara_val="==========="
    CALL message_to_own_unit(TRIM(cpara_name), TRIM(cpara_val), io_stdo_bgc )
   END SUBROUTINE print_bgc_parameters
-!================================================================================== 
+!==================================================================================
 
   SUBROUTINE print_wpoc(wpoc)
     REAL(wp), INTENT(in) :: wpoc(:,:)
-     
+
     CHARACTER(LEN=max_char_length) :: &
                 cpara_name,cpara_val
 
@@ -908,7 +952,7 @@
    cpara_name='========WPOC [m/d]'
    cpara_val="============="
    CALL message_to_own_unit(TRIM(cpara_name), TRIM(cpara_val), io_stdo_bgc )
-   
+
    DO k=1,n_zlev
     write(cpara_name,'(i2)')k
     write(cpara_val,'(f6.2)')wpoc(1,k)/dtb
@@ -918,10 +962,10 @@
    cpara_name='======================='
    cpara_val="==========="
    CALL message_to_own_unit(TRIM(cpara_name), TRIM(cpara_val), io_stdo_bgc )
-  
+
   END SUBROUTINE print_wpoc
 
-!================================================================================== 
+!==================================================================================
 
 SUBROUTINE to_bgcout_real(cname,val)
   REAL(wp),INTENT(in) ::val

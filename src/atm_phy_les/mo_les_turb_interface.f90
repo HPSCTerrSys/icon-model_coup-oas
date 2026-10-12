@@ -1,21 +1,19 @@
-!OPTION! -cont -msg o
-! this command should fix the problem of copying arrays in a subroutine call
-!
-!AD: Interface between the les_phy_interface and various turbulence schems suitable
-!    for LES. At present it only has classical Smagorinsky scheme.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+!AD: Interface between the les_phy_interface and various turbulence schems suitable
+!    for LES. At present it only has classical Smagorinsky scheme.
+
+!OPTION! -cont -msg o
+! this command should fix the problem of copying arrays in a subroutine call
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -57,11 +55,11 @@ SUBROUTINE les_turbulence  ( tcall_turb_jg,                   & !>in
                           & p_metrics,                        & !>in
                           & p_int,                            & !>in
                           & p_prog,                           & !>in
-                          & p_prog_now_rcf,                   & !>inout                          
+                          & p_prog_now_rcf,                   & !>inout
                           & p_prog_rcf,                       & !>inout
                           & p_diag ,                          & !>inout
                           & prm_diag, prm_nwp_tend,           & !>inout
-                          & lnd_prog_now,                     & !>in 
+                          & lnd_prog_now,                     & !>in
                           & lnd_prog_new,                     & !>inout only for idealized LES
                           & lnd_diag,                         & !>in
                           & lacc                              ) !>in
@@ -71,7 +69,7 @@ SUBROUTINE les_turbulence  ( tcall_turb_jg,                   & !>in
   TYPE(t_int_state),    INTENT(in),TARGET   :: p_int          !< single interpolation state
   TYPE(t_nh_metrics)          ,INTENT(in)   :: p_metrics
   TYPE(t_nh_prog),      TARGET,INTENT(inout):: p_prog          !<the prog vars
-  TYPE(t_nh_prog),      TARGET,INTENT(inout):: p_prog_now_rcf  !<old state for tke  
+  TYPE(t_nh_prog),      TARGET,INTENT(inout):: p_prog_now_rcf  !<old state for tke
   TYPE(t_nh_prog),      TARGET,INTENT(inout):: p_prog_rcf      !<call freq
   TYPE(t_nh_diag),      TARGET,INTENT(inout):: p_diag          !<the diag vars
   TYPE(t_nwp_phy_diag),        INTENT(inout):: prm_diag        !< atm phys vars
@@ -106,7 +104,7 @@ SUBROUTINE les_turbulence  ( tcall_turb_jg,                   & !>in
   jg        = p_patch%id
 
   IF (msg_level >= 15) CALL message('mo_les_turb_interface:', 'turbulence')
-  
+
   !For 3D turbulence the whole patch needs to be passed. Therefore, this call
   !is made outside the block loop next. However, the tendencies it calculates
   !is then used inside the block loop (see at the end) to update u,v,t,qv,qc
@@ -115,8 +113,8 @@ SUBROUTINE les_turbulence  ( tcall_turb_jg,                   & !>in
   IF (les_config(jg)%les_metric) THEN
       CALL drive_subgrid_diffusion_m(p_sim_time,      & !in (Christopher Moseley)
                                      p_prog,          & !inout for w (it is updated inside)
-                                     p_prog_now_rcf,  & !inout 
-                                     p_prog_rcf,      & !inout                                         
+                                     p_prog_now_rcf,  & !inout
+                                     p_prog_rcf,      & !inout
                                      p_diag,          & !inout
                                      p_metrics,       & !in
                                      p_patch,         & !in
@@ -134,8 +132,8 @@ SUBROUTINE les_turbulence  ( tcall_turb_jg,                   & !>in
 #endif
       CALL drive_subgrid_diffusion(p_sim_time,        & !in (Christopher Moseley)
                                    p_prog,            & !inout for w (it is updated inside)
-                                   p_prog_now_rcf,    & !inout   
-                                   p_prog_rcf,        & !in                                 
+                                   p_prog_now_rcf,    & !inout
+                                   p_prog_rcf,        & !in
                                    p_diag,            & !inout
                                    p_metrics,         & !in
                                    p_patch,           & !in
@@ -149,7 +147,7 @@ SUBROUTINE les_turbulence  ( tcall_turb_jg,                   & !>in
                                    )
   END IF
 
-  
+
   ! exclude boundary interpolation zone of nested domains
   rl_start = grf_bdywidth_c+1
   rl_end   = min_rlcell_int
@@ -167,7 +165,7 @@ SUBROUTINE les_turbulence  ( tcall_turb_jg,                   & !>in
     ! Update wind speed, QV and temperature with turbulence tendencies
     ! Note: the update of wind speed is done here in order to pass u and v at the correct time level
     ! to turbtran and the convection scheme. However, the update of the prognostic variable vn
-    ! is done at the end of the NWP interface by first interpolating the u/v tendencies to the 
+    ! is done at the end of the NWP interface by first interpolating the u/v tendencies to the
     ! velocity points (in order to minimize interpolation errors) and then adding the tendencies
     ! to vn
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)

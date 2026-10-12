@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -9,11 +9,11 @@
 # ------------------------------------------
 
 # Description of test case
-# Test if "climate-forcings" as in CMIP experiments (aerosols, ozone, 
+# Test if "climate-forcings" as in CMIP experiments (aerosols, ozone,
 # radiation, GHGs) work. These correspond to the namelist settings:
-# irad_aero=18, irad_o3=5, isolrad=2, irad_co2=4, irad_n2o=4, 
+# irad_aero=18, irad_o3=5, isolrad=2, irad_co2=4, irad_n2o=4,
 # irad_cfc11=4, irad_cfc12=4
-# Additionally, the SST & sea-ice forcing sstice_mode=4 is tested, 
+# Additionally, the SST & sea-ice forcing sstice_mode=4 is tested,
 # which is important for AMIP type of experiments.
 
 # ----------------------------------------------------------------------
@@ -23,7 +23,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -97,8 +97,8 @@ ln -sf ${INDATADIR}/R2B4_aeropt_kinne_lw_b16_coa.nc bc_aeropt_kinne_lw_b16_coa.n
 # The data from 1850 should be linked here, not 1979. But 1979 is used just for test:
 ln -sf ${INDATADIR}/R2B4_aeropt_kinne_sw_b14_fin_1979.nc bc_aeropt_kinne_sw_b14_fin.nc
 
-ln -sf ${INDATADIR}/bc_aeropt_cmip6_volc_lw_b16_sw_b14_${YYYY}.nc bc_aeropt_cmip6_volc_lw_b16_sw_b14_${YYYY}.nc
-ln -sf ${INDATADIR}/bc_aeropt_cmip6_volc_lw_b16_sw_b14_${NEXT_YYYY}.nc bc_aeropt_cmip6_volc_lw_b16_sw_b14_${NEXT_YYYY}.nc
+ln -sf ${INDATADIR}/bc_aeropt_cmip6_volc_lw_b16_sw_b14_${YYYY}.nc bc_aeropt_volc_lw_b16_sw_b14_${YYYY}.nc
+ln -sf ${INDATADIR}/bc_aeropt_cmip6_volc_lw_b16_sw_b14_${NEXT_YYYY}.nc bc_aeropt_volc_lw_b16_sw_b14_${NEXT_YYYY}.nc
 ln -sf ${ICONDIR}/data/MACv2.0-SP_v1.nc .
 
 # link ozone
@@ -133,6 +133,13 @@ done
 
 # green house gases filename
 ghg_filename=greenhouse_historical.nc
+
+# ASL for stochastic pattern generator
+if [[ "$builder" = "rcl_nec" ]]; then
+  spg_use_asl=".true."
+else
+  spg_use_asl=".false."
+fi
 
 # ----------------------------------------------------------------------
 # create ICON master namelist
@@ -269,6 +276,14 @@ cat > NAMELIST_${EXPID} << EOF
           efdt_min_raylfric = 7200.
           icapdcycl         = 3
           icpl_o3_tp        = 1
+          lstoch_pattern_generator = .true.
+          itype_stoch_phys  = 4
+          spg_use_asl       = ${spg_use_asl}
+          spg_length_scale  = 1000e3, 2000e3
+          spg_time_scale    = 14400., 28800.
+          spg_spec_modes    = 5, 5
+          spg_variance      = 0.3, 0.1
+          spg_num           = 2
         /
         &nwp_tuning_nml
           tune_gust_factor =7 ! iref: 8
@@ -346,7 +361,7 @@ cat > NAMELIST_${EXPID} << EOF
           ecrad_isolver = ${radiation_ecrad_isolver}
  ! Solver version. 2: McICA with OpenACC, 0: McICA
         /
-        &nonhydrostatic_nml	
+        &nonhydrostatic_nml
           iadv_rhotheta       = 2
           ivctype             = 2
           itime_scheme        = 4
@@ -367,7 +382,7 @@ cat > NAMELIST_${EXPID} << EOF
           htop_moist_proc     = 22500.
           hbot_qvsubstep      = 16000.
         /
-        &sleve_nml	
+        &sleve_nml
           min_lay_thckn       = 20.         ! lowest level thickness (between half-levels)
           max_lay_thckn       = 400.        ! maximum layer thickness below htop_thcknlimit
           htop_thcknlimit     = 14000.
@@ -378,16 +393,16 @@ cat > NAMELIST_${EXPID} << EOF
           decay_exp           = 1.2
           flat_height         = 16000.
         /
-        &dynamics_nml	
+        &dynamics_nml
           divavg_cntrwgt = 0.50
           lcoriolis      = .TRUE.
         /
-        &transport_nml	
+        &transport_nml
           ivadv_tracer   = 3,3,3,3,3
           itype_hlimit   = 3,4,4,4,4,0
           ihadv_tracer   = 52,2,2,2,2,0
         /
-        &diffusion_nml	
+        &diffusion_nml
           hdiff_order         = 5
           itype_vn_diffu      = 1
           itype_t_diffu       = 2
@@ -396,13 +411,13 @@ cat > NAMELIST_${EXPID} << EOF
           lhdiff_vn           = .TRUE.
           lhdiff_temp         = .TRUE.
         /
-        &interpol_nml	
+        &interpol_nml
           nudge_zone_width       = 8
           lsq_high_ord           = 3
           l_intp_c2l             = .TRUE.
           l_mono_c2l             = .TRUE.
         /
-        &extpar_nml	
+        &extpar_nml
           itopo                   = 1
           n_iter_smooth_topo      = 1
           heightdiff_threshold    = 3000.

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -53,4 +53,3 @@ ncrename -d height_3,levh temp6.nc           icon-scm.nc
 # clean
 
 rm -rf temp0.nc temp1.nc temp2.nc temp3.nc temp4.nc temp5.nc
-

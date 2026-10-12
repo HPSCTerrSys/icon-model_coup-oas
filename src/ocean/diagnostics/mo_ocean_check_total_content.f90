@@ -1,16 +1,15 @@
-! Contains basic diagnostics for ICON ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains basic diagnostics for ICON ocean model.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -107,26 +106,26 @@ CONTAINS
     REAL(wp), DIMENSION(nproma,patch_2d%alloc_cell_blocks) :: h_diff
     TYPE(t_subset_range), POINTER :: owned_cells
     INTEGER :: blockNo
- 
+
     owned_cells => patch_2D%cells%owned
 
 !ICON_OMP_PARALLEL_DO ICON_OMP_DEFAULT_SCHEDULE
     DO blockNo = owned_cells%start_block, owned_cells%end_block
       h_diff(:,blockNo) = h_new(:,blockNo) - h_old(:,blockNo)
     ENDDO
-    
+
     volume_diff = subset_sum(h_diff, patch_2d%cells%area, owned_cells, h_mean_diff)
-    
+
     accumulated_volume_difference(id) = accumulated_volume_difference(id) + volume_diff
     accumulated_h_difference(id)      = accumulated_h_difference(id)      + h_mean_diff
-    
+
     IF (my_process_is_stdio()) THEN
       WRITE(0,*) '(',id,')', ' -- mean h error, accumulated:', h_mean_diff, accumulated_h_difference(id)
       WRITE(0,*) '(',id,')', ' -- volume error, accumulated:', volume_diff, accumulated_volume_difference(id)
     ENDIF
   END SUBROUTINE check_accumulated_volume_difference
   !-------------------------------------------------------------------------
-   
+
   !-------------------------------------------------------------------------
   SUBROUTINE check_total_salt_content(id, so, patch_2d, h, thickness, ice, im)
 
@@ -154,7 +153,7 @@ CONTAINS
     total_salt = global_sum_array(salt)
     total_saltinseaice = global_sum_array(saltinseaice)
     total_saltinliquidwater = global_sum_array(saltinliquidwater)
-    IF (initial_total_salt == 0.0_wp) THEN 
+    IF (initial_total_salt == 0.0_wp) THEN
       initial_total_salt = total_salt
       total_salt_old = total_salt
       accumulated_run_error(:) = 0.0_wp
@@ -172,12 +171,12 @@ CONTAINS
 !       WRITE(0,*) '(',id,')', ' saltice:' , total_saltinseaice, total_saltinseaice - total_saltinseaice_old
 !       WRITE(0,*) '(',id,')', ' saltwat:' , total_saltinliquidwater, total_saltinliquidwater - total_saltinliquidwater_old
      ENDIF
-   
+
 !    IF (my_process_is_stdio()) THEN
-!       WRITE(0,*) '(',id,')', ' -- total init error:', (total_salt - initial_total_salt) / initial_total_salt 
+!       WRITE(0,*) '(',id,')', ' -- total init error:', (total_salt - initial_total_salt) / initial_total_salt
 !       WRITE(0,*) '(',id,')', ' -- accumulated run error:', accumulated_run_error(id) /  total_salt
 !    ENDIF
-   
+
     total_salt_old = total_salt
     total_saltinseaice_old = total_saltinseaice
     total_saltinliquidwater_old = total_saltinliquidwater
@@ -204,25 +203,24 @@ CONTAINS
     REAL(wp), DIMENSION(nproma,patch_2d%alloc_cell_blocks) :: saltinseaice
     REAL(wp), DIMENSION(nproma,patch_2d%alloc_cell_blocks) :: saltinliquidwater
 
-    INTEGER :: im 
+    INTEGER :: im
     LOGICAL :: lzacc
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
-    !$ACC DATA COPY(salt, saltinseaice, saltinliquidwater) IF(lzacc)
+    !$ACC DATA CREATE(salt, saltinseaice, saltinliquidwater) IF(lzacc)
 
     CALL calc_salt_content(so, patch_2d, h, thickness, ice, im , &
-                           salt, saltinseaice, saltinliquidwater, lacc=lzacc )
+                           salt, saltinseaice, saltinliquidwater, lacc=lzacc)
+
+    total_salt = global_sum_array(salt, lacc=lzacc)
+    total_saltinseaice = global_sum_array(saltinseaice, lacc=lzacc)
+    total_saltinliquidwater = global_sum_array(saltinliquidwater, lacc=lzacc)
 
     !$ACC END DATA
-
-    total_salt = global_sum_array(salt)
-    total_saltinseaice = global_sum_array(saltinseaice)
-    total_saltinliquidwater = global_sum_array(saltinliquidwater)
-
   END SUBROUTINE calc_total_salt_content
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   SUBROUTINE calc_salt_content(so, patch_2d, h, thickness, ice, im, &
             salt, saltinseaice, saltinliquidwater, lacc)
@@ -241,7 +239,7 @@ CONTAINS
     REAL(wp) :: rhoicwa,rhosnwa,draftave
     LOGICAL :: lzacc
 
- 
+
     TYPE(t_subset_range), POINTER                         :: subset
     INTEGER                                               :: block, cell, cellStart,cellEnd, level
     INTEGER                                               :: im
@@ -273,7 +271,7 @@ CONTAINS
              &                         * SUM(ice%hi(cell,:,BLOCK)*ice%conc(cell,:,BLOCK)) &
              &                         * patch_2d%cells%area(cell,BLOCK)
 
-        IF (im .eq. 0) then 
+        IF (im .eq. 0) then
 
           draftave=sum((rhoicwa*ice%hi(cell,:,BLOCK)+rhosnwa*ice%hs(cell,:,BLOCK))&
                     *ice%conc(cell,:,BLOCK))
@@ -321,7 +319,7 @@ CONTAINS
     REAL(wp), DIMENSION(nproma,patch_2d%alloc_cell_blocks) :: snowvolume
     REAL(wp), DIMENSION(nproma,patch_2d%alloc_cell_blocks) :: icearea
 
- 
+
     TYPE(t_subset_range), POINTER                          :: subset
     INTEGER                                                :: block, cell, cellStart,cellEnd, level
 
@@ -397,7 +395,7 @@ CONTAINS
   END SUBROUTINE check_total_si_volume
   !-------------------------------------------------------------------------
 
-   
+
    SUBROUTINE check_total_salt_content_zstar(id, so, patch_2d, stretch, thickness, ice, p_oce_sfc)
 
     TYPE(t_patch), TARGET, INTENT(IN)                                 :: patch_2d
@@ -421,7 +419,7 @@ CONTAINS
     TYPE(t_ocean_surface)                       :: p_oce_sfc
     TYPE(t_subset_range), POINTER                :: subset
     INTEGER                                      :: block, cell, cellStart,cellEnd, level
-    REAL(wp)  :: flux, flux_tot 
+    REAL(wp)  :: flux, flux_tot
 
     flux     = 0.0_wp
     flux_tot = 0.0_wp
@@ -433,12 +431,12 @@ CONTAINS
         flux = flux + patch_2d%cells%area(cell,BLOCK) *p_oce_sfc%FrshFlux_IceSalt(cell, block) * dtime
       END DO ! cell
     END DO !block
-    
+
     flux_tot = global_sum_array(flux)
 !    IF (my_process_is_stdio()) THEN
-!       WRITE(0,*) '(',id,')', ' flux   :', flux_tot 
+!       WRITE(0,*) '(',id,')', ' flux   :', flux_tot
 !     ENDIF
- 
+
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     CALL calc_salt_content_zstar(so, patch_2d, stretch, thickness, ice, &
@@ -447,7 +445,7 @@ CONTAINS
     total_salt = global_sum_array(salt)
     total_saltinseaice = global_sum_array(saltinseaice)
     total_saltinliquidwater = global_sum_array(saltinliquidwater)
-    IF (initial_total_salt == 0.0_wp) THEN 
+    IF (initial_total_salt == 0.0_wp) THEN
       initial_total_salt = total_salt
       total_salt_old = total_salt
       accumulated_run_error(:) = 0.0_wp
@@ -461,12 +459,12 @@ CONTAINS
 !       WRITE(0,*) '(',id,')', ' saltwat:' , total_saltinliquidwater, total_saltinliquidwater - total_saltinliquidwater_old
 !       WRITE(0,*) '(',id,')', ' saltwat:' , total_saltinliquidwater, total_saltinseaice
      ENDIF
-   
+
 !    IF (my_process_is_stdio()) THEN
-!       WRITE(0,*) '(',id,')', ' -- total init error:', (total_salt - initial_total_salt) / initial_total_salt 
+!       WRITE(0,*) '(',id,')', ' -- total init error:', (total_salt - initial_total_salt) / initial_total_salt
 !       WRITE(0,*) '(',id,')', ' -- accumulated run error:', accumulated_run_error(id) /  total_salt
 !    ENDIF
-   
+
     total_salt_old = total_salt
     total_saltinseaice_old = total_saltinseaice
     total_saltinliquidwater_old = total_saltinliquidwater
@@ -475,7 +473,7 @@ CONTAINS
 
   END SUBROUTINE check_total_salt_content_zstar
 
-  
+
   SUBROUTINE calc_total_salt_content_zstar(so, patch_2d, stretch, thickness, ice, &
       & total_salt, total_saltinseaice, total_saltinliquidwater, lacc)
 
@@ -497,20 +495,19 @@ CONTAINS
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
-    !$ACC DATA COPY(salt, saltinseaice, saltinliquidwater) IF(lzacc)
+    !$ACC DATA CREATE(salt, saltinseaice, saltinliquidwater) IF(lzacc)
 
     CALL calc_salt_content_zstar(so, patch_2d, stretch, thickness, ice, &
                            salt, saltinseaice, saltinliquidwater, lacc=lzacc )
 
+    total_salt = global_sum_array(salt, lacc=lzacc)
+    total_saltinseaice = global_sum_array(saltinseaice, lacc=lzacc)
+    total_saltinliquidwater = global_sum_array(saltinliquidwater, lacc=lzacc)
+
     !$ACC END DATA
-
-    total_salt = global_sum_array(salt)
-    total_saltinseaice = global_sum_array(saltinseaice)
-    total_saltinliquidwater = global_sum_array(saltinliquidwater)
-
   END SUBROUTINE calc_total_salt_content_zstar
- 
-  
+
+
   SUBROUTINE calc_salt_content_zstar(so, patch_2d, stretch, thickness, ice, &
             salt, saltinseaice, saltinliquidwater, lacc)
     TYPE(t_patch), TARGET, INTENT(IN)                                 :: patch_2d
@@ -528,7 +525,7 @@ CONTAINS
     REAL(wp) :: rhoicwa,rhosnwa,draftave
     LOGICAL :: lzacc
 
- 
+
     TYPE(t_subset_range), POINTER                         :: subset
     INTEGER                                               :: block, cell, cellStart,cellEnd, level
 
@@ -536,9 +533,12 @@ CONTAINS
 
     IF(no_tracer<=1)RETURN
 
-    salt         = 0.0_wp
-    saltinseaice = 0.0_wp
-    saltinliquidwater = 0.0_wp
+    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    salt(:,:)              = 0.0_wp
+    saltinseaice(:,:)      = 0.0_wp
+    saltinliquidwater(:,:) = 0.0_wp
+    !$ACC END KERNELS
+    !$ACC WAIT(1)
 
     rhoicwa = rhoi / rho_ref
     rhosnwa = rhos / rho_ref

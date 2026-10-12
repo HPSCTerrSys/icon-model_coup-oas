@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,9 +14,9 @@ set -e
 #--------------------------------------------------------------
 # job for teleconnections (ENSO, NAO, NAM, SAM)
 #   - data preparation
-#   - plot (ncl) 
+#   - plot (ncl)
 #  T. Crueger and R. Brokopf    (March 2017)
-# 
+#
 #  see documentation at the bottom of this file
 #--------------------------------------------------------------
 #
@@ -28,7 +28,7 @@ NAM=1
 SAM=1
 exp="mbe0780"
 
-name="monmean_atm_2d_ml_${exp}_1979-2008"    # monthly data 
+name="monmean_atm_2d_ml_${exp}_1979-2008"    # monthly data
 datdir="/pool/data/MOP/AMIP/ICON-AES-1.1.00/r2b4_47lev/DATA/" # path of input data
 
 yStrt="1979"       # start yyyy
@@ -49,7 +49,7 @@ workdir="/work/mh0081/m214091/GitTest"
   fi
 
 cd ${PLTDIR}
-    
+
 date
 
 #######################################################
@@ -74,7 +74,7 @@ echo $MODULES
     module unload cdo
     module load $MODULES
 
-which cdo 
+which cdo
 which ncl
 #
 
@@ -87,7 +87,7 @@ echo Qpath path $Qpath
 
 if [ "$ENSO" = "1" ]
 then
-  ${Qpath}/ENSO/prepareENSO_ICON  $name $exp $yStrt $yLast $atm_RES $datdir $PLTDIR 
+  ${Qpath}/ENSO/prepareENSO_ICON  $name $exp $yStrt $yLast $atm_RES $datdir $PLTDIR
   ncl ${Qpath}/ENSO/ENSO_panel_ICON.ncl
   ncl ${Qpath}/ENSO/ENSO_ICON.ncl
   rm -f *${exp}*.nc var*.txt
@@ -100,7 +100,7 @@ fi
 
 if [ "$NAO" = "1" ]
 then
-  ${Qpath}/NAO/prepareNAO_ICON  $name $exp $yStrt $yLast $atm_RES $datdir $PLTDIR 
+  ${Qpath}/NAO/prepareNAO_ICON  $name $exp $yStrt $yLast $atm_RES $datdir $PLTDIR
   ncl ${Qpath}/NAO/NAO_panel_ICON.ncl
   ncl ${Qpath}/NAO/NAO_ICON.ncl
   rm -f *${exp}*.nc var*.txt
@@ -113,7 +113,7 @@ fi
 
 if [ "$NAM" = "1" ]
 then
-  ${Qpath}/NAM/prepareNAM_ICON  $name $exp $yStrt $yLast $atm_RES  $datdir $PLTDIR 
+  ${Qpath}/NAM/prepareNAM_ICON  $name $exp $yStrt $yLast $atm_RES  $datdir $PLTDIR
   ncl ${Qpath}/NAM/NAM_panel_ICON.ncl
   ncl ${Qpath}/NAM/NAM_ICON.ncl
   rm -f *${exp}*.nc var*.txt
@@ -126,7 +126,7 @@ fi
 
 if [ "$SAM" = "1" ]
 then
-  ${Qpath}/SAM/prepareSAM_ICON  $name $exp $yStrt $yLast $atm_RES  $datdir $PLTDIR 
+  ${Qpath}/SAM/prepareSAM_ICON  $name $exp $yStrt $yLast $atm_RES  $datdir $PLTDIR
   ncl ${Qpath}/SAM/SAM_panel_ICON.ncl
   ncl ${Qpath}/SAM/SAM_ICON.ncl
   rm -f *${exp}*.nc var*.txt
@@ -145,14 +145,14 @@ exit
 # Documentation:
 #----------------------------
 #   - Teleconnections -
-# 
+#
 # This script performs time series and teleconnection figures for
 #  -  ENSO, NAO, NAM/SAM  (4 seasons) -
 #
 #   1.) ENSO
 #   - Calculates normalized nino3.4 seasonal timeseries of sst (ts)
 #     (5S-5N; 189E-240E)
-#   - Plot: regression pattern of psl/tas onto nino3.4 timeseries  
+#   - Plot: regression pattern of psl/tas onto nino3.4 timeseries
 #
 #   2.) NAO:
 #     - Prepare data: seasonal psl means
@@ -173,7 +173,7 @@ exit
 #  1.) Thompson, D. W. J. and J.M. Wallace, 2000:
 #  Annular modes in the extratropical circulation. Part I: Month-to-month
 #  variability. J. Climate, 13, 1000-1016.
-#  
+#
 #  2.)Hurrell, J. W. and C. Deser, 2009:
 #  North Atlantic climate variability: The role of the North Atlantic Oscillation.
 #  J. Mar. Syst., 78, 28-41.
@@ -185,22 +185,22 @@ exit
 # NAO=1      North Atlantic Oscillation
 # NAM=1      Northern Annular Mode
 # SAM=1      Southern Annular Mode
-# 
+#
 # set to "0", if not
 #
 # exp= experiment number, appears in the caption of the plots
 #
 # yStrt= YYYY  start year, appears in the caption of the plots
 # ylast= YYYY  end year, appears in the caption of the plots
-#                                 
+#
 # name=  name of input data files with monthly surface  data, at least:
-#           - psl   sea level pressure    
-#           - tas   2 m temperature       
+#           - psl   sea level pressure
+#           - tas   2 m temperature
 #           - ts    surface temperature (only for ENSO)
-# 
+#
 # atm_RES=r2b4   atmospheric grid resolution r2b4 of the input data
 #
-# workdir= working directory 
-# datdir= directory of input data 
+# workdir= working directory
+# datdir= directory of input data
 #
-#########################################################################       
+#########################################################################

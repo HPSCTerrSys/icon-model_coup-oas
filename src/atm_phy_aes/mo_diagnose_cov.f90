@@ -1,16 +1,15 @@
-!
-! Module containing subroutine computing the 0/1 cloud cover.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module containing subroutine computing the 0/1 cloud cover.
 
 MODULE mo_diagnose_cov
 
@@ -31,7 +30,7 @@ MODULE mo_diagnose_cov
 
 CONTAINS
 
-  SUBROUTINE diagnose_cov(jg, jb, jcs, jce) 
+  SUBROUTINE diagnose_cov(jg, jb, jcs, jce)
 
     ! Arguments
     !

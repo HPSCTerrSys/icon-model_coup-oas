@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,7 +14,7 @@
 #
 # _bb_table_Description_  AMIP experiment, no forcing, no transport
 # _bb_table_Model_        non-hydrostatic atmosphere
- 
+
 #--------------------------------------------------------------------------------
 #
 # 1. Define the experiment and the files to be checked
@@ -23,7 +23,7 @@
 # file run/exp.<EXPNAME>. EXPNAME is used also for:
 # - the output directory name: experiments/<EXPNAME>
 # - the output  file names: <EXPNAME>_<TYPE>_<DATE>.nc
-# - the restart file names: 
+# - the restart file names:
 #
 export EXPERIMENT='atm_amip_noforcing_notransport_test'
 
@@ -38,11 +38,11 @@ export TYPES='atm_3d_ml'
 export DATES='19790101T000000Z 19790101T000400Z 19790101T000800Z 19790101T001200Z 19790101T001600Z'
 
 # RESTART_DATE defines the date and time from which restarts should be performed.
-# 
+#
 export RESTART_DATE='19790101T000800Z'
 
 #--------------------------------------------------------------------------------
-# 
+#
 # 2. Define the checksuite mode
 #
 # u = update test
@@ -56,7 +56,7 @@ export RESTART_DATE='19790101T000800Z'
 export MD='rnmo'
 
 #--------------------------------------------------------------------------------
-# 
+#
 # 3. Launch the checksuite from run/
 
 rundir=`pwd`

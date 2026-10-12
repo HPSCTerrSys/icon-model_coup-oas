@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,7 +24,7 @@
 #   - convert to SERVICE format, calculate meridional integral using fortran program psiread
 #   - convert back to NETCDF format using grid description file
 #   - simple plot using NCL with shell-script nclsh
-#          
+#
 
 set -e
 
@@ -94,7 +94,7 @@ cdo -f srv copy $inpfile.nc $inpfile.srv
 #rm $inpfile.nc
 
 cat > scr-psiread.f90 <<EOF
-!-------------------------------------------------------------------------  
+!-------------------------------------------------------------------------
 !
 !
 !!  Calculation of horizontal stream function
@@ -108,7 +108,7 @@ cat > scr-psiread.f90 <<EOF
 !
 ! TODO: diffuse from ocean to land, cut land points
 ! TODO: implement variable output dimension (1 deg resolution) and smoothing extent
-!! 
+!!
 PROGRAM psiread
 
 IMPLICIT NONE
@@ -119,7 +119,7 @@ INTEGER, PARAMETER ::  nlat = $nlat                  ! meridional dimension of r
 INTEGER, PARAMETER ::  nlon = $nlon                  ! zonal dimension of regular grid
 
 ! smoothing area is 2*jsmth-1 lat/lon areas of 1 deg
-INTEGER, PARAMETER ::  jsmth = 3                  
+INTEGER, PARAMETER ::  jsmth = 3
 INTEGER            :: jb, jc, i_startidx, i_endidx
 INTEGER            :: jlat, jlon, jx, jy
 INTEGER            :: isrv(8), isrvu(8)
@@ -211,7 +211,7 @@ jx = 1 + 320*nlat/360
 
 
 END PROGRAM psiread
-!-------------------------------------------------------------------------  
+!-------------------------------------------------------------------------
 EOF
 
 echo "PSI -> compile and run program scr-psiread.x"
@@ -254,4 +254,3 @@ nclsh /pool/data/ICON/tools/icon_plot.ncl -altLibDir=/pool/data/ICON/tools \
 # -maskName=wet_c -selMode=manual -minVar=-100 -maxVar=100 -numLevs=20 \
 
 exit
-

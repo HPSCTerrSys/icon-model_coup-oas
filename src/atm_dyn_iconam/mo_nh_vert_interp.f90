@@ -1,19 +1,16 @@
-!
-! This module contains routines for the vertical interpolation of
-! atmospheric data provided by external analyses to the ICON grid
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains routines for the vertical interpolation of
+! atmospheric data provided by external analyses to the ICON grid
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -49,7 +46,7 @@ MODULE mo_nh_vert_interp
   USE mo_grf_intp_data_strc,  ONLY: t_gridref_state
   USE mo_grf_bdyintp,         ONLY: interpol_scal_grf, interpol2_vec_grf
   USE mo_sync,                ONLY: sync_patch_array, SYNC_C, SYNC_E
-  USE mo_satad,               ONLY: sat_pres_water
+  USE mo_thdyn_functions,     ONLY: sat_pres_water
   USE mo_nwp_sfc_interp,      ONLY: process_sfcfields
   USE mo_upatmo_config,       ONLY: upatmo_config
   USE mo_nh_vert_extrap_utils,ONLY: t_expol_state
@@ -118,7 +115,7 @@ CONTAINS
       ENDIF
     ENDDO
 #else
-    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) ASYNC(1) DEFAULT(PRESENT) REDUCTION(MIN: start_idx_diff_threshold) IF(lacc)
+    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) ASYNC(1) DEFAULT(PRESENT) REDUCTION(MIN: start_idx_diff_threshold) COPY(start_idx_diff_threshold) IF(lacc)
     DO jk = 1, nlevs
       DO jc = 1, nlen
         IF ( z2d_in(jc,jk)-z_reference(jc) <= threshold ) THEN
@@ -165,7 +162,7 @@ CONTAINS
       ENDIF
     ENDDO
 #else
-    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) REDUCTION(MIN: start_idx_threshold) ASYNC(1) IF(lacc)
+    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) REDUCTION(MIN: start_idx_threshold) ASYNC(1) COPY(start_idx_threshold) IF(lacc)
     DO jk = 1, nlevs
       DO jc = 1, nlen
         IF ( zalml(jc,jk) < threshold ) THEN
@@ -219,8 +216,8 @@ CONTAINS
 
         jgc = p_patch(jg)%child_id(jn)
 
-        CALL interpol_scal_grf (p_pp=p_patch(jg), p_pc=p_patch(jgc), p_grf=p_grf(jg)%p_dom(jn), &
-                                nfields=1, lacc=.FALSE., f3din1=initicon(jg)%atm%w, f3dout1=initicon(jgc)%atm%w )
+        CALL interpol_scal_grf (p_pp=p_patch(jg), p_pc=p_patch(jgc), p_grf=p_grf(jg)%p_dom(jn), nfields=1,      &
+                                nlev_ex=1, lacc=.FALSE., f3din1=initicon(jg)%atm%w, f3dout1=initicon(jgc)%atm%w )
 
         CALL interpol2_vec_grf (p_pp=p_patch(jg), p_pc=p_patch(jgc), p_grf=p_grf(jg)%p_dom(jn), &
                                 nfields=1, lacc=.FALSE., f3din1=initicon(jg)%atm%vn, f3dout1=initicon(jgc)%atm%vn )
@@ -271,7 +268,7 @@ CONTAINS
   !! data (atmosphere only) interpolated horizontally by ICONREMAP to
   !! the ICON grid
   !!
-  !! SOURCE data taken from initicon%atm_in: 
+  !! SOURCE data taken from initicon%atm_in:
   !! z3d (psfc or log(psfc), phi_sfc), temp, vn (u,v), qv, qc, qi, qr, qs, pres, w (omega), tke
   !! Alternatives are given in brackets.
   !! - if z3d is not available, it is derived from (psfc or log(psfc), phi_sfc)
@@ -287,8 +284,8 @@ CONTAINS
   !!       allows skipping all computations requiring MPI synchronization
   !!
   !!
-  !! Fields are vertically interpolated onto the ICON vertical grid 
-  !! and stored in the initicon%atm state. They are finally converted into the following 
+  !! Fields are vertically interpolated onto the ICON vertical grid
+  !! and stored in the initicon%atm state. They are finally converted into the following
   !! set of prognostic variables:
   !! vn, w, qv, qc, qi, qr, qs, rho, exner, theta_v
   !!
@@ -312,7 +309,7 @@ CONTAINS
 
     INTEGER :: jg
     INTEGER :: nlev, nlevp1, idx
-    INTEGER :: nlev_in         ! number of vertical levels in source vgrid 
+    INTEGER :: nlev_in         ! number of vertical levels in source vgrid
     LOGICAL :: lc2f, l_use_vn, latbcmode, linputonzgpot
 
     ! Auxiliary fields for input data
@@ -411,9 +408,9 @@ CONTAINS
       linputonzgpot = .FALSE.
     ENDIF
 
-    ! (Deep atmosphere: 
-    ! The 'z_mc_in'-field is the geopotential height in case of IFS-date. For the shallow atmosphere geopotential 
-    ! and geometric height coincide. Unfortunately this does no longer hold for the deep atmosphere. 
+    ! (Deep atmosphere:
+    ! The 'z_mc_in'-field is the geopotential height in case of IFS-date. For the shallow atmosphere geopotential
+    ! and geometric height coincide. Unfortunately this does no longer hold for the deep atmosphere.
     ! So a further step is required in which geopotential height is transformed into geometric height.)
     IF (ldeepatmo .AND. linputonzgpot) THEN
       CALL deepatmo_htrafo(z_inout=initicon%const%z_mc_in,                                             &
@@ -448,10 +445,10 @@ CONTAINS
     IF (.NOT. ASSOCIATED(initicon%const%z_mc_in)) THEN
        CALL finish(routine, "Internal error: z_mc_in not associated!")
     END IF
-    ! (Deep atmosphere: it is assumed here and in the following 
-    ! that the weighting factors computed in 'prepare_...(_intp)' result from 
-    ! a pure distance weighting (along coordinate lines etc.), 
-    ! so no deep-atmosphere modification is applied, this would have to be reconsidered, 
+    ! (Deep atmosphere: it is assumed here and in the following
+    ! that the weighting factors computed in 'prepare_...(_intp)' result from
+    ! a pure distance weighting (along coordinate lines etc.),
+    ! so no deep-atmosphere modification is applied, this would have to be reconsidered,
     ! if the weighting would be regarded as a volume weighting)
     CALL prepare_lin_intp(z_mc_in, initicon%const%z_mc,                     &
                           p_patch%nblks_c, p_patch%npromz_c, nlev_in, nlev, &
@@ -488,9 +485,9 @@ CONTAINS
                           opt_lmask=opt_lmask_c, lacc=.FALSE. )
 
     ! (Extrapolate temperature to upper atmosphere
-    ! Note: the following subroutine is a post-processing routine, 
+    ! Note: the following subroutine is a post-processing routine,
     ! it has to be positioned after 'temperature_intp'!
-    ! This applies to the remaining extrapolations as well.)                     
+    ! This applies to the remaining extrapolations as well.)
     IF (lexpol) CALL expol%temp(p_patch, initicon%atm%temp)
 
 
@@ -502,11 +499,11 @@ CONTAINS
       !
 
       ! full level heights at edges for initicon input
-      CALL cells2edges_scalar(z_mc_in, p_patch, p_int%c_lin_e, atm_in_z_me, opt_fill_latbc=.TRUE., lacc=.FALSE.)
+      CALL cells2edges_scalar(z_mc_in, p_patch, p_int%c_lin_e, atm_in_z_me, lacc=.FALSE., opt_fill_latbc=.TRUE.)
 
 
       ! full level heights at edges for ICON vertical grid
-      CALL cells2edges_scalar(p_metrics%z_mc, p_patch, p_int%c_lin_e, z_me, opt_fill_latbc=.TRUE., lacc=.FALSE.)
+      CALL cells2edges_scalar(p_metrics%z_mc, p_patch, p_int%c_lin_e, z_me, lacc=.FALSE., opt_fill_latbc=.TRUE.)
 
 
       ! compute extrapolation coefficients for edges
@@ -554,9 +551,9 @@ CONTAINS
     ENDIF
 
     ! This synchronization is executed in the calling routine in latbc mode
-    ! (Postpone 'sync' to after extrapolation below in case 
+    ! (Postpone 'sync' to after extrapolation below in case
     ! upper-atmosphere extrapolation has been switched on)
-    IF (.NOT. latbcmode .AND. (.NOT. lexpol)) CALL sync_patch_array(SYNC_E,p_patch,initicon%atm%vn)
+    IF (.NOT. latbcmode .AND. (.NOT. lexpol)) CALL sync_patch_array(SYNC_E,p_patch,initicon%atm%vn,lacc=.FALSE.)
 
 
     ! Preliminary interpolation of QV: this is needed to compute virtual temperature
@@ -617,7 +614,7 @@ CONTAINS
     ENDDO
 
     ! (Extrapolate water phases, except for water vapour 'qv', to upper atmosphere.
-    ! Note: this is only done for subroutine-internal use, 
+    ! Note: this is only done for subroutine-internal use,
     ! see the final treatment of the 'qx' in 'mo_initicon_utils: copy_initicon2prog_atm')
     IF (lexpol) CALL expol%qx(p_patch, initicon%atm%qc, initicon%atm%qi, initicon%atm%qr, initicon%atm%qs)
 
@@ -631,7 +628,7 @@ CONTAINS
       &                        p_patch%nblks_c, p_patch%npromz_c, nlev, nlev_in,       &
       &                        wfac_lin, idx0_lin, bot_idx_lin, opt_lmask=opt_lmask_c)
 
-    ! (Extrapolate pressure to upper atmosphere) 
+    ! (Extrapolate pressure to upper atmosphere)
     IF (lexpol) CALL expol%pres(p_patch, initicon%atm%pres, z_tempv, p_metrics)
 
 
@@ -654,16 +651,16 @@ CONTAINS
     CALL pressure_intp_initmode(initicon%atm_in%pres, temp_v_in, z_mc_in,              &
       &                        initicon%atm%pres, z_tempv, initicon%const%z_mc,        &
       &                        p_patch%nblks_c, p_patch%npromz_c, nlev, nlev_in,       &
-      &                        wfac_lin, idx0_lin, bot_idx_lin, opt_lmask=opt_lmask_c) 
+      &                        wfac_lin, idx0_lin, bot_idx_lin, opt_lmask=opt_lmask_c)
 
-    ! (In case of an upper-atmosphere extrapolation, 'hydro_adjust' should not be called 
-    ! in 'src/atm_dyn_iconam/mo_initicon_utils: copy_initicon2prog_atm', so it has to be done here. 
-    ! In its current form, this can be covered by 'expol%pres', 
-    ! but be careful, if you change something here or there.) 
+    ! (In case of an upper-atmosphere extrapolation, 'hydro_adjust' should not be called
+    ! in 'src/atm_dyn_iconam/mo_initicon_utils: copy_initicon2prog_atm', so it has to be done here.
+    ! In its current form, this can be covered by 'expol%pres',
+    ! but be careful, if you change something here or there.)
     IF (lexpol) THEN
       CALL expol%pres(p_patch, initicon%atm%pres, z_tempv, p_metrics, opt_slev=1, opt_elev=nlev)
-      ! (Below, the extrapolation of vn requires the horizontal pressure gradient, 
-      ! but 'initicon%atm%pres' should have been processed on the entire grid, so no sync should be necessary) 
+      ! (Below, the extrapolation of vn requires the horizontal pressure gradient,
+      ! but 'initicon%atm%pres' should have been processed on the entire grid, so no sync should be necessary)
     ENDIF
 
 
@@ -672,12 +669,12 @@ CONTAINS
                          initicon%atm%rho, initicon%atm%exner,   &
                          initicon%atm%theta_v)
 
-    ! (The extrapolation of 'vn' makes use of the geostrophic balance, 
+    ! (The extrapolation of 'vn' makes use of the geostrophic balance,
     ! so it should be computed after the thermodynamic state has been settled.)
     IF (lexpol) THEN
       CALL expol%vn(p_patch, initicon%atm%vn, initicon%atm%theta_v, initicon%atm%exner, p_metrics, p_int)
-      IF (.NOT. latbcmode) CALL sync_patch_array(SYNC_E,p_patch,initicon%atm%vn)
-    ENDIF    
+      IF (.NOT. latbcmode) CALL sync_patch_array(SYNC_E,p_patch,initicon%atm%vn,lacc=.FALSE.)
+    ENDIF
 
 
     ! Compute coefficients for w interpolation
@@ -703,7 +700,7 @@ CONTAINS
       ! Impose appropriate lower boundary condition on vertical wind field
       CALL adjust_w(p_patch, p_int, initicon%atm%vn, initicon%const%z_ifc, initicon%atm%w)
 
-      CALL sync_patch_array(SYNC_C,p_patch,initicon%atm%w)
+      CALL sync_patch_array(SYNC_C,p_patch,initicon%atm%w,lacc=.FALSE.)
     ENDIF
 
     IF ((init_mode == MODE_ICONVREMAP .OR. lvert_remap_fg) .AND. ASSOCIATED(initicon%atm_in%tke)) THEN
@@ -916,7 +913,7 @@ CONTAINS
 #ifdef _OPENACC
         lfound_all = .TRUE.
         ! The following reduction must appear in its own small kernel as it did not work otherwise with Nvidia 21.2
-        !$ACC PARALLEL LOOP VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc) REDUCTION(.AND.: lfound_all)
+        !$ACC PARALLEL LOOP VECTOR DEFAULT(PRESENT) ASYNC(1) REDUCTION(.AND.: lfound_all) COPY(lfound_all) IF(lzacc)
         DO jc = 1, nlen
           lfound_all = lfound_all .AND. l_found(jc)
         ENDDO
@@ -1121,7 +1118,7 @@ CONTAINS
 
     CALL assert_acc_device_only("prepare_extrap_ifspp", lacc)
 
-    ! Use extrapolation from 150 m AGL if one of the IFS methods is selected, and 
+    ! Use extrapolation from 150 m AGL if one of the IFS methods is selected, and
     ! orography-height dependent blending between 10 m and 150 m AGL if the new DWD
     ! method is selected (which constitutes a mixture between the IFS method and the old GME method)
     SELECT CASE (itype_pres_msl)
@@ -1179,7 +1176,7 @@ CONTAINS
 
           IF (z3d_in(jc,jk,jb)  >= z3d_h_in(jc,nlevs_in+1,jb)+zextrap(jc,jb) .AND. &
               z3d_in(jc,jk+1,jb) < z3d_h_in(jc,nlevs_in+1,jb)+zextrap(jc,jb) .OR.  &
-              kextrap(jc,jb) == -1 .AND. jk == nlevs_in-1) THEN 
+              kextrap(jc,jb) == -1 .AND. jk == nlevs_in-1) THEN
             kextrap(jc,jb) = jk
             wfac_extrap(jc,jb) = (z3d_h_in(jc,nlevs_in+1,jb)+zextrap(jc,jb) - z3d_in(jc,jk+1,jb)) / &
                                  (z3d_in(jc,jk,jb)                          - z3d_in(jc,jk+1,jb))
@@ -1324,7 +1321,7 @@ CONTAINS
 #ifdef _OPENACC
         lfound_all = .TRUE.
         ! The following reduction must appear in its own small kernel as it did not work otherwise with Nvidia 21.2
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc) REDUCTION(.AND.: lfound_all)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) REDUCTION(.AND.: lfound_all) COPY(lfound_all) IF(lzacc)
         DO jc = 1, nlen
           lfound_all = lfound_all .AND. l_found(jc)
         ENDDO
@@ -1619,8 +1616,8 @@ CONTAINS
       IF (istat /= SUCCESS) CALL finish(routine, 'deepatmo_htrafo failed')
       z_in  => zgpot_in
       z_out => zgpot_out
-      ! Note: the heights above ground level, 'zpbl1', 'zpbl2', 'zextrap' and heights derived from them 
-      ! have relatively low values (~ 1 km), so no deep-atmosphere modification is applied to them. 
+      ! Note: the heights above ground level, 'zpbl1', 'zpbl2', 'zextrap' and heights derived from them
+      ! have relatively low values (~ 1 km), so no deep-atmosphere modification is applied to them.
       ! (Put another way: we regard 'zpbl1', 'zpbl2', and 'zextrap' to represent geopotential heights.)
     ENDIF
 
@@ -1895,7 +1892,7 @@ CONTAINS
       z_out => z3d_out
     ELSE
       ALLOCATE(zgpot_in(nproma, nlevs_in,  nblks), zgpot_out(nproma, nlevs_out, nblks), STAT=istat)
-      IF (istat /= SUCCESS) CALL finish('mo_nh_vert_interp: pressure_intp_initmode', 'Allocation of zgpot failed') 
+      IF (istat /= SUCCESS) CALL finish('mo_nh_vert_interp: pressure_intp_initmode', 'Allocation of zgpot failed')
       ! Compute geopotential heights in case of the deep atmosphere
       CALL deepatmo_htrafo(z_in=z3d_out, z_out=zgpot_out, nblks_nproma_npromz=[nblks,nproma,npromz], &
         & start_end_levels=[1,nlevs_out], radius=grid_sphere_radius, trafo_type='z2zgpot', ierror=istat, lacc=.FALSE.)
@@ -2029,7 +2026,7 @@ CONTAINS
     NULLIFY(z_in, z_out)
     IF (ldeepatmo) THEN
       DEALLOCATE(zgpot_in, zgpot_out, STAT=istat)
-      IF (istat /= SUCCESS) CALL finish('mo_nh_vert_interp: pressure_intp_initmode', 'Deallocation of zgpot failed') 
+      IF (istat /= SUCCESS) CALL finish('mo_nh_vert_interp: pressure_intp_initmode', 'Deallocation of zgpot failed')
     ENDIF
 
   END SUBROUTINE pressure_intp_initmode
@@ -2079,11 +2076,12 @@ CONTAINS
     z_topo_c(:,1,:) = topo_c(:,:)
 
     ! Compute auxiliary topography at verices
-    CALL cells2verts_scalar(z_topo_c, p_patch, p_int%cells_aw_verts, z_topo_v, 1, 1)
+    CALL cells2verts_scalar(z_topo_c, p_patch, p_int%cells_aw_verts, z_topo_v, &
+                            lacc=.FALSE., opt_slev=1, opt_elev=1               )
 
     ! Compute slopes
-    CALL grad_fd_norm ( z_topo_c, p_patch, slope_norm, 1, 1)
-    CALL grad_fd_tang ( z_topo_v, p_patch, slope_tang, 1, 1)
+    CALL grad_fd_norm ( z_topo_c, p_patch, slope_norm, lacc=.FALSE., opt_slev=1, opt_elev=1)
+    CALL grad_fd_tang ( z_topo_v, p_patch, slope_tang, lacc=.FALSE., opt_slev=1, opt_elev=1)
 
     i_startblk = p_patch%edges%start_blk(2,1)
 
@@ -2097,7 +2095,8 @@ CONTAINS
     ENDDO
 
     ! Interpolate absolute slope to mass points
-    CALL edges2cells_scalar(slope_abs_e, p_patch, p_int%e_bln_c_s, slope_abs_c, 1, 1)
+    CALL edges2cells_scalar(slope_abs_e, p_patch, p_int%e_bln_c_s, slope_abs_c, &
+                            lacc=.FALSE., opt_slev=1, opt_elev=1                )
 
     i_startblk = p_patch%cells%start_blk(2,1)
 
@@ -2110,7 +2109,7 @@ CONTAINS
       ENDDO
     ENDDO
 
-    CALL sync_patch_array(SYNC_C,p_patch,slope_c)
+    CALL sync_patch_array(SYNC_C,p_patch,slope_c,lacc=.FALSE.)
 
   END SUBROUTINE compute_slope
 
@@ -2970,7 +2969,7 @@ CONTAINS
                 ENDIF
               ENDIF
             ENDDO
-#ifdef _OPENACC
+#ifndef _OPENACC
             ! ACC: the following EXIT would be illegal within an OpenACC Kernel, thus we skip this CPU optimization
             IF (ALL(l_found(1:nlen))) EXIT
 #endif
@@ -3355,7 +3354,7 @@ CONTAINS
                 ENDIF
               ENDIF
             ENDDO
-#ifdef _OPENACC
+#ifndef _OPENACC
             ! ACC: the following EXIT would be illegal within an OpenACC Kernel, thus we skip this CPU optimization
             IF (ALL(l_found(1:nlen))) EXIT
 #endif

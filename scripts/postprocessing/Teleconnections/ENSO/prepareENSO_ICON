@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -13,7 +13,7 @@ set -ex
 name=$1
 echo $name
 exp=$2
-yStrt=$3 
+yStrt=$3
 yLast=$4
 atm_RES=$5
 datdir=$6
@@ -37,8 +37,8 @@ $lonR
 eof00
 
 
-YY1=`expr $yStrt + 1` 
-YY2=`expr $yLast - 1` 
+YY1=`expr $yStrt + 1`
+YY2=`expr $yLast - 1`
 cdo -r mergetime -selmon,3/12 -selyear,${yStrt} ${datdir}/${name}  -selyear,${YY1}/${YY2} ${datdir}/${name}  -selmon,1/11 -selyear,${yLast} ${datdir}/${name} monmean.nc
 
 
@@ -60,10 +60,10 @@ for seas in $seaslist; do
 
 
       case $var in
-       ts) 
+       ts)
        cdo -f nc -fldmean -sellonlatbox,${lonL},${lonR},${latS},${latN} -selmon,${mon} -seasmean -selvar,${var}  monmean.nc ${var}_${exp}_${seas}_${atm_RES}_nino34.nc
        cdo -r -detrend ${var}_${exp}_${seas}_${atm_RES}_nino34.nc ${var}_${exp}_${seas}_${atm_RES}_nino34_detrend.nc;;
-       *) 
+       *)
        cdo -f nc -selmon,${mon} -seasmean -selvar,${var} monmean.nc ${var}_${exp}_${seas}_${atm_RES}.nc
        cdo -r -detrend ${var}_${exp}_${seas}_${atm_RES}.nc ${var}_${exp}_${seas}_${atm_RES}_detrend.nc
       esac
@@ -74,6 +74,4 @@ rm monmean.nc
 # ohne Grid-Info: cdo -infon -sellonlatbox,189,240,-5,5 -setgrid,/pool/data/ICON/post/r2b4_amip/r2b4_amip.nc -selmon,1 -seasmean -selvar,ts monmean_atm_2d_ml_mbe0780_1979-2008
 
 # export REMAP_AREA_MIN=.5
-# cdo -r remapycon,${ECHAM_RES}grid ${inDir}/${name} BOT_${exp}_${ECHAM_RES} 
-
-
+# cdo -r remapycon,${ECHAM_RES}grid ${inDir}/${name} BOT_${exp}_${ECHAM_RES}

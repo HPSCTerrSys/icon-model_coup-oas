@@ -1,9 +1,7 @@
-! Configuration of the Carbon cycle settings
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -11,12 +9,15 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Configuration of the Carbon cycle settings
+
 MODULE mo_ccycle_config
 
   USE mo_exception     ,ONLY: message, print_value, finish
   USE mo_kind          ,ONLY: wp
   USE mo_impl_constants,ONLY: max_dom
   USE mo_grid_config   ,ONLY: n_dom
+  USE mo_io_units      ,ONLY: filename_max
 
   IMPLICIT NONE
   PRIVATE
@@ -27,6 +28,8 @@ MODULE mo_ccycle_config
   PUBLIC ::         ccycle_config
   PUBLIC ::    init_ccycle_config       !< initialize ccycle_config
   PUBLIC ::   print_ccycle_config       !< print out
+  PUBLIC ::   update_ccycle_config
+
 
   ! Named constants
   PUBLIC :: CCYCLE_MODE_NONE
@@ -67,6 +70,12 @@ MODULE mo_ccycle_config
      !
      REAL(wp) :: vmr_co2   !< co2 volume mixing ratio for c-cycle
      !
+     LOGICAL  :: lanthro   !< .true. for reading in anthropogenic emissions
+     !
+     CHARACTER(LEN=filename_max)  :: C4MIP_FLAG !< one of three flags of C4MIP experiments
+                                                !< COU - interactive CO2 in radiation scheme and between land/ocean-atmosphere
+                                                !< RAD - interactive CO2 in radiation scheme and fixed between land/ocean-atmosphere
+                                                !< BGC - fixed CO2 in radiation scheme and interactive  between land/ocean-atmosphere
   END TYPE t_ccycle_config
 
   !>
@@ -96,9 +105,54 @@ CONTAINS
     !                                           4: transient co2 concentration scenario from file
     !
     ! For ico2conc = 2:
-    ccycle_config(:)% vmr_co2  = 284.3e-06_wp ! co2 volume mixing ratio of 1850 (CMIP6)
+    ccycle_config(:)% vmr_co2  = 284.3e-06_wp ! co2 volume mixing ratio of 1850 (CMIP7)
+    !
+    ccycle_config(:)% lanthro = .FALSE.
+    !
+    ! CMIP experiments configuration
+    ! --------------------------
+    !
+    ccycle_config(:)% C4MIP_FLAG  = 'none'
     !
   END SUBROUTINE init_ccycle_config
+
+  SUBROUTINE update_ccycle_config
+    INTEGER           :: jg
+    !
+    ! Six C4MI experiments:
+    ! COU  - emission driven CO2 is used in land/sea-atmosphere and radiation scheme
+    ! BGC  - emission driven CO2 is used in land/sea-atmosphere, but constant CO2 VMR is used in radiation scheme
+    ! RAD  - emission driven CO2 is used in radiation scheme, but constant CO2 VMR is used in land/sea-atmosphere
+    ! cCOU - concentration driven CO2 (read from a file) is used in land/sea-atmosphere and radiation scheme
+    ! cBGC - concentration driven CO2 (read from a file) is used in land/sea-atmosphere, but constant CO2 VMR is used in radiation scheme
+    ! cRAD - concentration driven CO2 (read from a file) is used in radiation scheme, but constant CO2 VMR is used in land/sea-atmosphere
+    !
+    ! For 'BGC' and 'RAD' experiments ico2conc variable is not used to set constant CO2
+    ! For 'BGC' constant CO2 in radiation scheme is set in mo_radiation_nml (if C4MIP_FLAG = 'BGC' THEN irad_co2 = 2)
+    ! For 'RAD' constant CO2 in land-atm is set in mo_nwp_vdiff_interface   (if C4MIP_FLAG = 'RAD' THEN co2_concentration_srf = vmr_co2)
+    !
+    DO jg = 1,n_dom
+
+      SELECT CASE(ccycle_config(jg)% C4MIP_FLAG)
+      CASE ('COU','BGC')
+        ccycle_config(jg)% iccycle   = CCYCLE_MODE_INTERACTIVE
+        ccycle_config(jg)% ico2conc  = CCYCLE_CO2CONC_FROMFILE
+      CASE ('RAD')
+        ccycle_config(jg)% iccycle   = CCYCLE_MODE_INTERACTIVE
+        ccycle_config(jg)% ico2conc  = CCYCLE_CO2CONC_CONST
+      CASE ('cCOU','cBGC')
+        ccycle_config(jg)% iccycle   = CCYCLE_MODE_PRESCRIBED
+        ccycle_config(jg)% ico2conc  = CCYCLE_CO2CONC_FROMFILE
+      CASE ('cRAD')
+        ccycle_config(jg)% iccycle   = CCYCLE_MODE_PRESCRIBED
+        ccycle_config(jg)% ico2conc  = CCYCLE_CO2CONC_CONST
+      CASE default
+        ccycle_config(jg)% iccycle   = CCYCLE_MODE_PRESCRIBED
+        ccycle_config(jg)% ico2conc  = CCYCLE_CO2CONC_CONST
+      END SELECT
+
+   END DO
+  END SUBROUTINE update_ccycle_config
 
   !----
 
@@ -127,6 +181,7 @@ CONTAINS
        CALL print_value('    ccycle_config('//TRIM(cg)//')% iccycle  ',ccycle_config(jg)% iccycle )
        CALL print_value('    ccycle_config('//TRIM(cg)//')% ico2conc ',ccycle_config(jg)% ico2conc)
        CALL print_value('    ccycle_config('//TRIM(cg)//')% vmr_co2  ',ccycle_config(jg)% vmr_co2 )
+       CALL print_value('    ccycle_config('//TRIM(cg)//')% lanthro  ',ccycle_config(jg)% lanthro )
        CALL message    ('','')
        !
        SELECT CASE(ccycle_config(jg)% iccycle)

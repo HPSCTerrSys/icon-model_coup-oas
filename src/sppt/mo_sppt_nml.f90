@@ -1,19 +1,18 @@
-!
-!  Namelist for SPPT (Stochastic Pertubation of Physics Tendencies)
-!
-!  these Subroutines are called by control model and construct the
-!  SPPT scheme
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Namelist for SPPT (Stochastic Pertubation of Physics Tendencies)
+!
+! these Subroutines are called by control model and construct the
+! SPPT scheme
 
 MODULE mo_sppt_nml
 
@@ -80,7 +79,7 @@ MODULE mo_sppt_nml
 
     lsppt = .FALSE.     ! if TRUE SPPT is switched on
 
-    hinc_rn = 21600_wp    ! time increment for drawing a new field of random numbers        (seconds)
+    hinc_rn = 21600._wp    ! time increment for drawing a new field of random numbers        (seconds)
 
     ! converted from deg to rad when copied to the config state (see below)
     dlat_rn = 1e-1_wp    ! random number coarse grid point distance in meridional direction (deg)
@@ -160,11 +159,3 @@ MODULE mo_sppt_nml
 
 
 END MODULE mo_sppt_nml
-
-
-
-
-
-
-
-

@@ -1,18 +1,15 @@
-!
-! This module contains the interface between ICONAM dynamics and Held-Suarez forcing
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains the interface between ICONAM dynamics and Held-Suarez forcing
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -99,17 +96,19 @@ CONTAINS
 
     !$ACC DATA CREATE(zsigma_mc, zsigma_me, ddt_temp, z_ekin, zddt_vn, zlat) &
     !$ACC   PRESENT(p_nh_diag, p_int_state, p_metrics, p_nh_prog, p_patch%cells%center)
-    
+
     !-------------------------------------------------------------------------
     ! First the surface pressure, pressure and temperature must be diagnosed
 
     CALL diagnose_pres_temp ( p_metrics, p_nh_prog,               &
       &                       p_nh_prog, p_nh_diag,               &
       &                       p_patch,                            &
+      &                       lacc=.TRUE.,                        &
       &                       opt_calc_temp=.TRUE.,               &
       &                       opt_calc_pres=.TRUE. )
 
-    IF (lhs_fric_heat) CALL rbf_vec_interpol_cell(p_nh_prog%vn,p_patch,p_int_state,p_nh_diag%u,p_nh_diag%v)
+    IF (lhs_fric_heat) CALL rbf_vec_interpol_cell(p_nh_prog%vn,p_patch,p_int_state, &
+                                                  p_nh_diag%u,p_nh_diag%v, lacc=.TRUE.)
 
     !-------------------------------------------------------------------------
 
@@ -166,7 +165,7 @@ CONTAINS
 
        ! the tendency in temp must be transfromed to a tendency in the exner function
        ! For this it is assumed that the density is constant
-       
+
        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
        !$ACC LOOP GANG VECTOR COLLAPSE(2)
        DO jk=1,nlev
@@ -175,7 +174,7 @@ CONTAINS
           ENDDO
        ENDDO
        !$ACC END PARALLEL
-       
+
     ENDDO
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
@@ -221,4 +220,3 @@ CONTAINS
   END SUBROUTINE held_suarez_nh_interface
 
 END MODULE mo_nh_held_suarez_interface
-

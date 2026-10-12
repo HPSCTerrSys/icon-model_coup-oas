@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! The radiation scheme ecRad expects information from the host model (i.e., ICON) to be
 !   copied to different ecRad data structures: t_ecrad_single_level_type, t_ecrad_gas_type,
 !   t_ecrad_thermodynamics_type and t_ecrad_cloud_type. Similarly, the output of ecRad, i.e.
@@ -7,21 +17,10 @@
 !   correct ecRad data structure. The subroutines are written in a way that they can be used
 !   on the reduced radiation grid as well as on the full radiation grid. This ensures
 !   consistency between the two modes.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_nwp_ecrad_utilities
 
-  USE mo_kind,                   ONLY: wp
+  USE mo_kind,                   ONLY: wp, rp
   USE mo_math_constants,         ONLY: rad2deg, pi
   USE mo_exception,              ONLY: finish
   USE mo_fortran_tools,          ONLY: set_acc_host_or_device, assert_acc_device_only
@@ -33,7 +32,8 @@ MODULE mo_nwp_ecrad_utilities
                                    &   irad_h2o, irad_o3, irad_co2,              &
                                    &   irad_n2o, irad_ch4,                       &
                                    &   irad_o2, irad_cfc11, irad_cfc12,          &
-                                   &   vpp_ch4, vpp_n2o, decorr_pole, decorr_equator
+                                   &   vpp_ch4, vpp_n2o, decorr_pole, decorr_equator, &
+                                   &   ecrad_check_input, lcalculate_fsd
   USE mo_nwp_tuning_config,      ONLY: tune_difrad_3dcont
   USE mtime,                     ONLY: datetime
   USE mo_bc_greenhouse_gases,    ONLY: ghg_co2mmr, ghg_ch4mmr, ghg_n2ommr, ghg_cfcmmr
@@ -55,14 +55,14 @@ MODULE mo_nwp_ecrad_utilities
                                    &   iband_vis_ecrad, weight_vis_ecrad,        &
                                    &   nweight_par_ecrad, iband_par_ecrad,       &
                                    &   weight_par_ecrad,                         &
-                                   &   ecrad_hyd_list,                           &   
+                                   &   ecrad_hyd_list,                           &
                                    &   ecrad_iqc, ecrad_iqi, ecrad_iqr,          &
                                    &   ecrad_iqs, ecrad_iqg
 #endif
 
   USE mo_exception,              ONLY: message
   USE mo_grid_config,            ONLY: l_scm_mode
-  USE mo_scm_nml,                ONLY: lon_scm, lat_scm 
+  USE mo_scm_nml,                ONLY: lon_scm, lat_scm
 
   IMPLICIT NONE
 
@@ -71,7 +71,7 @@ MODULE mo_nwp_ecrad_utilities
   !> module name string
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_nwp_ecrad_utilities'
 
-
+  PUBLIC :: ecrad_check_input_fields
   PUBLIC :: ecrad_set_single_level
   PUBLIC :: ecrad_set_thermodynamics
   PUBLIC :: ecrad_set_clouds
@@ -79,11 +79,56 @@ MODULE mo_nwp_ecrad_utilities
   PUBLIC :: ecrad_store_fluxes
   PUBLIC :: add_3D_diffuse_rad
   PUBLIC :: get_indices_rad_subblock
-
-  ! helper functions to be removed once acc is merged into libecrad
+  PUBLIC :: lcalculate_fsd
 
 CONTAINS
 
+
+  !---------------------------------------------------------------------------------------
+  !>
+  !! SUBROUTINE ecrad_check_input_fields:
+  !! Check input fields of ecRad for physical consistency
+  !!
+  SUBROUTINE ecrad_check_input_fields(check_entry_point, jcs, jce, nlev, &
+    &                                 pres, pres_ifc)
+    CHARACTER(LEN=*), INTENT(in) :: &
+      &  check_entry_point            !< Poor-man's traceback in case not provided by the compiler settings
+    INTEGER, INTENT(in)  :: &
+      &  jcs, jce, nlev               !< Loop bounds
+    REAL(wp), INTENT(in) :: &
+      &  pres(:,:),         &         !< Full level pressure
+      &  pres_ifc(:,:)                !< Half level pressure
+    ! Local variables
+    INTEGER              :: &
+      &  jc, jk                       !< Loop indices
+
+    DO jk = 1, nlev-1
+      DO jc = jcs, jce
+        IF ( pres(jc,jk) >= pres(jc,jk+1) ) THEN
+          CALL finish(check_entry_point,'Check failed: pres not decreasing with height')
+        ENDIF
+      ENDDO !jc
+    ENDDO !jk
+
+    DO jk = 1, nlev
+      DO jc = jcs, jce
+        IF ( pres_ifc(jc,jk) >= pres_ifc(jc,jk+1) ) THEN
+          CALL finish(check_entry_point,'Check failed: pres_ifc not decreasing with height')
+        ENDIF
+      ENDDO !jc
+    ENDDO !jk
+
+    DO jc = jcs, jce
+      IF ( pres_ifc(jc,1)  > 1.e4_wp ) THEN
+        CALL finish(check_entry_point,'Check failed: Model top should not be below 100 hPa')
+      ENDIF
+    ENDDO !jc
+
+#if ( defined (__INTEL_COMPILER) || defined (__INTEL_LLVM_COMPILER) ) && defined (_OPENMP)
+    CALL finish(check_entry_point,'Using Intel compiler with OpenMP for ecRad in ICON has known issues')
+#endif
+
+  END SUBROUTINE ecrad_check_input_fields
 
   !---------------------------------------------------------------------------------------
   !>
@@ -171,6 +216,8 @@ CONTAINS
   SUBROUTINE ecrad_set_thermodynamics(ecrad_thermodynamics, temp, pres, pres_ifc, &
     &                                 nlev, nlevp1, i_startidx, i_endidx, lacc)
 
+    CHARACTER(len=*), PARAMETER:: routine = modname//'::ecrad_set_thermodynamics'
+
     TYPE(t_ecrad_thermodynamics_type), INTENT(inout) :: &
       &  ecrad_thermodynamics     !< ecRad thermodynamics information
     REAL(wp), INTENT(in)     :: &
@@ -185,60 +232,67 @@ CONTAINS
 ! Local variables
     INTEGER                  :: &
       &  jc, jk                   !< loop indices
+    LOGICAL                  :: &
+      & is_bad = .FALSE.          !< Return value of ecRad-internal physical consistency checks
 
-      CALL assert_acc_device_only('ecrad_set_thermodynamics', lacc)
+    CALL assert_acc_device_only('ecrad_set_thermodynamics', lacc)
 
-      !$ACC DATA PRESENT(ecrad_thermodynamics, temp, pres, pres_ifc)
+    !$ACC DATA PRESENT(ecrad_thermodynamics, temp, pres, pres_ifc)
 
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR COLLAPSE(2)
-      DO jk=1,nlevp1
-        DO jc = i_startidx, i_endidx
-          ecrad_thermodynamics%pressure_hl(jc,jk)    = pres_ifc(jc,jk)
-        ENDDO !jc
-      ENDDO !jk
-      !$ACC END PARALLEL
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC LOOP GANG VECTOR COLLAPSE(2)
+    DO jk=1,nlevp1
+      DO jc = i_startidx, i_endidx
+        ecrad_thermodynamics%pressure_hl(jc,jk)    = pres_ifc(jc,jk)
+      ENDDO !jc
+    ENDDO !jk
+    !$ACC END PARALLEL
 
-      ! Temperature at half levels is interpolated in the same way as in rrtm so far.
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP SEQ
-      DO jk=2,nlev
-        !$ACC LOOP GANG VECTOR
-        DO jc = i_startidx, i_endidx
-          ecrad_thermodynamics%temperature_hl(jc,jk) =                                             &
-            &                  (temp(jc,jk-1) * pres(jc,jk-1)  * ( pres(jc,jk) - pres_ifc(jc,jk) ) &
-            &                + temp(jc,jk) * pres(jc,jk) * ( pres_ifc(jc,jk) - pres(jc,jk-1)))     &
-            &                / ( pres_ifc(jc,jk) * (pres(jc,jk) - pres(jc,jk-1) ) )
-        ENDDO !jc
-      ENDDO !jk
-      !$ACC END PARALLEL
-
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    ! Temperature at half levels is interpolated in the same way as in rrtm so far.
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC LOOP SEQ
+    DO jk=2,nlev
       !$ACC LOOP GANG VECTOR
       DO jc = i_startidx, i_endidx
-        ecrad_thermodynamics%temperature_hl(jc,nlevp1) = temp(jc,nlev) + (pres_ifc(jc,nlevp1) - pres(jc,nlev)) * &
-                               (temp(jc,nlev-1) - temp(jc,nlev))/(pres(jc,nlev-1) - pres(jc,nlev))
-        ecrad_thermodynamics%temperature_hl(jc,1)         = temp(jc,1)                        &
-          &                   + ( pres_ifc(jc,1) - pres(jc,1) )                               &
-          &                   * (temp(jc,1)      - ecrad_thermodynamics%temperature_hl(jc,2)) &
-          &                   / (pres(jc,1)      - pres_ifc(jc,2) )
+        ecrad_thermodynamics%temperature_hl(jc,jk) =                                             &
+          &                  (temp(jc,jk-1) * pres(jc,jk-1)  * ( pres(jc,jk) - pres_ifc(jc,jk) ) &
+          &                + temp(jc,jk) * pres(jc,jk) * ( pres_ifc(jc,jk) - pres(jc,jk-1)))     &
+          &                / ( pres_ifc(jc,jk) * (pres(jc,jk) - pres(jc,jk-1) ) )
       ENDDO !jc
-      !$ACC END PARALLEL
+    ENDDO !jk
+    !$ACC END PARALLEL
 
-      ! Directly provide full level temperature and pressure to rrtm gas_optics in ecrad (see rrtm_pass_temppres_fl).
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR COLLAPSE(2)
-      DO jk = 1, nlev
-        DO jc = i_startidx, i_endidx
-          ecrad_thermodynamics%pressure_fl(jc,jk)    = pres(jc,jk)
-          ecrad_thermodynamics%temperature_fl(jc,jk) = temp(jc,jk)
-        ENDDO !jc
-      ENDDO !jk
-      !$ACC END PARALLEL
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC LOOP GANG VECTOR
+    DO jc = i_startidx, i_endidx
+      ecrad_thermodynamics%temperature_hl(jc,nlevp1) = temp(jc,nlev) + (pres_ifc(jc,nlevp1) - pres(jc,nlev)) * &
+                             (temp(jc,nlev-1) - temp(jc,nlev))/(pres(jc,nlev-1) - pres(jc,nlev))
+      ecrad_thermodynamics%temperature_hl(jc,1)         = temp(jc,1)                        &
+        &                   + ( pres_ifc(jc,1) - pres(jc,1) )                               &
+        &                   * (temp(jc,1)      - ecrad_thermodynamics%temperature_hl(jc,2)) &
+        &                   / (pres(jc,1)      - pres_ifc(jc,2) )
+    ENDDO !jc
+    !$ACC END PARALLEL
 
-      CALL ecrad_thermodynamics%calc_saturation_wrt_liquid(istartcol=i_startidx, iendcol=i_endidx)
+    ! Directly provide full level temperature and pressure to rrtm gas_optics in ecrad (see rrtm_pass_temppres_fl).
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC LOOP GANG VECTOR COLLAPSE(2)
+    DO jk = 1, nlev
+      DO jc = i_startidx, i_endidx
+        ecrad_thermodynamics%pressure_fl(jc,jk)    = pres(jc,jk)
+        ecrad_thermodynamics%temperature_fl(jc,jk) = temp(jc,jk)
+      ENDDO !jc
+    ENDDO !jk
+    !$ACC END PARALLEL
 
-      !$ACC END DATA
+    CALL ecrad_thermodynamics%calc_saturation_wrt_liquid(istartcol=i_startidx, iendcol=i_endidx)
+
+    !$ACC END DATA
+
+    IF  (ecrad_check_input) THEN
+      is_bad = ecrad_thermodynamics%out_of_physical_bounds(istartcol=i_startidx, iendcol=i_endidx, do_fix=.FALSE.)
+      IF (is_bad) CALL finish(routine,'ecrad_thermodynamics out_of_physical_bounds check triggered')
+    ENDIF
 
   END SUBROUTINE ecrad_set_thermodynamics
   !---------------------------------------------------------------------------------------
@@ -251,15 +305,17 @@ CONTAINS
   !!
   SUBROUTINE ecrad_set_clouds(ecrad_cloud, ecrad_thermodynamics, qc, qi, clc, temp, pres, acdnc,                  &
     &                         fr_glac, fr_land, qr,qs,qg,reff_liq, reff_frz, reff_rain, reff_snow, reff_graupel,  &
-    &                         icpl_reff, fact_reffc, clc_min, use_general_cloud_optics, cell_center,              &
+    &                         fsd, icpl_reff, fact_reffc, clc_min, use_general_cloud_optics, cell_center,         &
     &                         nlev, i_startidx, i_endidx, lacc)
+
+    CHARACTER(len=*), PARAMETER:: routine = modname//'::ecrad_set_clouds'
 
     TYPE(t_ecrad_cloud_type), INTENT(inout) :: &
       &  ecrad_cloud              !< ecRad cloud information
     TYPE(t_ecrad_thermodynamics_type), INTENT(inout) :: &
       &  ecrad_thermodynamics     !< ecRad thermodynamics information
     TYPE(t_geographical_coordinates), INTENT(in), TARGET :: &
-      &  cell_center(:)           !< lon/lat information of cell centers 
+      &  cell_center(:)           !< lon/lat information of cell centers
     REAL(wp), TARGET, INTENT(in) :: &
       &  qc(:,:),               & !< Total cloud water (gridscale + subgridscale)
       &  qi(:,:)                  !< Total cloud ice   (gridscale + subgridscale)
@@ -267,7 +323,8 @@ CONTAINS
       &  clc(:,:),              & !< Cloud cover
       &  temp(:,:),             & !< Full level temperature field
       &  pres(:,:),             & !< Full level pressure field
-      &  fact_reffc,            & !< Factor in the calculation of cloud droplet effective radius
+      &  fact_reffc               !< Factor in the calculation of cloud droplet effective radius
+    REAL(rp), INTENT(in)     :: &
       &  clc_min                  !< Minimum cloud cover value to be considered as partly cloudy
     REAL(wp), POINTER, INTENT(in)     :: &
       &  acdnc(:,:),            & !< Cloud droplet numb. conc. (m-3)
@@ -280,7 +337,8 @@ CONTAINS
       &  reff_frz(:,:),         & !< effective radius of the frozen phase (external)
       &  reff_rain(:,:),        & !< effective radius of the rain phase (external)
       &  reff_snow(:,:),        & !< effective radius of the snow phase (external)
-      &  reff_graupel(:,:)        !< effective radius of the graupel phase (external)
+      &  reff_graupel(:,:),     & !< effective radius of the graupel phase (external)
+      &  fsd(:,:)                 !< fractional standard deviation
     INTEGER, INTENT(in)      :: &
       &  icpl_reff,             & !< Option for effective radius
       &  nlev,                  & !< Number of vertical full levels
@@ -296,8 +354,9 @@ CONTAINS
       &  lwc, iwc,              & !< Cloud liquid and ice water content
       &  liwcfac,               & !< Factor to calculate cloud liquid and ice water content
       &  zcos_lat,              & !< latitude factor cos(lat)
-      &  zdecorr(i_startidx:i_endidx), &!< decorrelation length scale
       &  reff_min, reff_max       !< Limits for reff needed by ecrad (hardcoded)
+    REAL(rp)                 :: &
+      &  zdecorr(i_startidx:i_endidx) !< decorrelation length scale
     REAL (wp), PARAMETER     :: &
       &  qcrit_rad = 5E-5_wp      !< Limit for when to consider large hydrometeors for radiation
     INTEGER                  :: &
@@ -306,7 +365,9 @@ CONTAINS
     INTEGER                  :: &
       &  iqc_loc, iqi_loc         !< indices for water and ice in ecrad_hyd_list
     LOGICAL                  :: &
-      &  l_large_hyd              !< large hydrometeors change cloud fraction / small have max/min limits 
+      &  l_large_hyd              !< large hydrometeors change cloud fraction / small have max/min limits
+    LOGICAL                  :: &
+      &  is_bad = .FALSE.         !< Return value of ecRad-internal physical consistency checks
 
     TYPE(t_geographical_coordinates), TARGET, ALLOCATABLE :: scm_center(:)
     TYPE(t_geographical_coordinates), POINTER             :: ptr_center(:)
@@ -335,7 +396,7 @@ CONTAINS
       ! Shonk et al. (2010) but smoothed over the equator
       zcos_lat     = COS(ptr_center(jc)%lat)
       zdecorr(jc)  = decorr_pole + (decorr_equator-decorr_pole) * zcos_lat*zcos_lat
-    ENDDO 
+    ENDDO
     !$ACC END PARALLEL
 
     CALL assert_acc_device_only("ecrad_set_clouds", lacc)
@@ -395,19 +456,19 @@ CONTAINS
             CASE( ecrad_iqg )
               ptr_qx => qg
               ptr_reff_x => reff_graupel
-              l_large_hyd = .true.           
+              l_large_hyd = .true.
           END SELECT
-          
+
           IF ( l_large_hyd) THEN ! Large hydrometeors update
             DO jk = 1, nlev
               DO jc = i_startidx, i_endidx
                 IF ( ptr_qx(jc,jk) > qcrit_rad ) THEN
                   ecrad_cloud%mixing_ratio(jc,jk,iqx) = ptr_qx(jc,jk)
-                  ecrad_cloud%fraction(jc,jk) = 1.0    ! Set cloud cover to one if large hydrometors are present
+                  ecrad_cloud%fraction(jc,jk) = 1._wp    ! Set cloud cover to one if large hydrometors are present
                 ELSE
                   ecrad_cloud%mixing_ratio(jc,jk,iqx) = 0.0_wp
                 ENDIF
-                ecrad_cloud%effective_radius(jc,jk,iqx) = ptr_reff_x(jc,jk) 
+                ecrad_cloud%effective_radius(jc,jk,iqx) = ptr_reff_x(jc,jk)
               END DO
             END DO
           ELSE ! Small hydrometeors update
@@ -434,7 +495,7 @@ CONTAINS
           END SELECT
         END DO
 
- 
+
         DO jk = 1, nlev
           DO jc = i_startidx, i_endidx
             IF (clc(jc,jk) > clc_min ) THEN
@@ -492,17 +553,41 @@ CONTAINS
         !$ACC LOOP GANG VECTOR COLLAPSE(2)
         DO jk = 1, nlev
           DO jc = i_startidx, i_endidx
-            ecrad_cloud%re_liq(jc,jk) = MAX(MIN(reff_liq(jc,jk),32.0e-6_wp),2.0e-6_wp)  
-            ecrad_cloud%re_ice(jc,jk) = MAX(MIN(reff_frz(jc,jk),99.0e-6_wp),5.0e-6_wp) 
+            ecrad_cloud%re_liq(jc,jk) = MAX(MIN(reff_liq(jc,jk),32.0e-6_wp),2.0e-6_wp)
+            ecrad_cloud%re_ice(jc,jk) = MAX(MIN(reff_frz(jc,jk),99.0e-6_wp),5.0e-6_wp)
           ENDDO
         ENDDO
         !$ACC END PARALLEL
       ENDIF
-    END IF
+    ENDIF
+
+    IF (lcalculate_fsd) THEN
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+      !$ACC LOOP GANG VECTOR COLLAPSE(2)
+      DO jk = 1, nlev
+        DO jc = i_startidx, i_endidx
+          ecrad_cloud%fractional_std(jc,jk)=fsd(jc,jk)
+        ENDDO
+      ENDDO
+      !$ACC END PARALLEL
+    ENDIF
+
     !$ACC WAIT
     !$ACC END DATA
     !$ACC END DATA
     !$ACC END DATA
+
+    IF  (ecrad_check_input) THEN
+      DO jk = 1, nlev
+        DO jc = i_startidx, i_endidx
+          ! Upscaling leads to truncation errors which can violate ecRad's physical consistency check
+          ecrad_cloud%fraction(jc,jk) = MIN(ecrad_cloud%fraction(jc,jk),1._wp)
+        ENDDO
+      ENDDO
+      is_bad = ecrad_cloud%out_of_physical_bounds(istartcol=i_startidx, iendcol=i_endidx, do_fix=.FALSE.)
+      IF (is_bad) CALL finish(routine,'ecrad_cloud out_of_physical_bounds check triggered')
+    ENDIF
+
   END SUBROUTINE ecrad_set_clouds
   !---------------------------------------------------------------------------------------
 
@@ -521,13 +606,16 @@ CONTAINS
   !!   11        : Read ozone from SCM input instead of here.
   !! The finish calls in case default should never trigger as the values for irad_xyz
   !! were already checked in mo_nml_crosscheck.
-  !! 
+  !!
   !! Care has to be taken for the indices that are passed to ecRad:
   !! - Values outside i_startidx:i_endidx are not initialized and must not be accessed
   !! - This interval might be smaller than jcs:jce
   !! - There is a documentation of the indices in the header of get_indices_rad_subblock
   !!
-  SUBROUTINE ecrad_set_gas(ecrad_gas, ecrad_conf, o3, qv, pres, i_startidx, i_endidx, nlev, lacc)
+  SUBROUTINE ecrad_set_gas(ecrad_gas, ecrad_conf, o3, qv, pres, &
+    &                      qvrad_ext, o3rad_ext, co2rad_ext, o2rad_ext, &
+    &                      cfc11rad_ext, cfc12rad_ext, n2orad_ext, ch4rad_ext, &
+    &                      i_startidx, i_endidx, nlev, lacc)
 
     TYPE(t_ecrad_gas_type), INTENT(inout) :: &
       &  ecrad_gas                !< ecRad cloud information
@@ -537,6 +625,15 @@ CONTAINS
       &  o3(:,:),               & !< Ozone concentration
       &  qv(:,:),               & !< Water vapor
       &  pres(:,:)                !< Full level pressure
+    REAL(wp), POINTER, INTENT(in) :: &
+      &  qvrad_ext(:,:),        & !< Externally specified water vapor (kg kg-1)
+      &  o3rad_ext(:,:),        & !< Externally specified ozone (kg kg-1)
+      &  co2rad_ext(:,:),       & !< Externally specified carbon dioxide (kg kg-1)
+      &  o2rad_ext(:,:),        & !< Externally specified oxygen (kg kg-1)
+      &  cfc11rad_ext(:,:),     & !< Externally specified CFC11 (kg kg-1)
+      &  cfc12rad_ext(:,:),     & !< Externally specified CFC12 (kg kg-1)
+      &  n2orad_ext(:,:),       & !< Externally specified N2O (kg kg-1)
+      &  ch4rad_ext(:,:)          !< Externally specified CH4 (kg kg-1)
     INTEGER, INTENT(in)      :: &
       &  i_startidx, i_endidx,  & !< Start and end index of nproma loop in current block
       &  nlev                     !< Number of vertical full levels
@@ -556,18 +653,22 @@ CONTAINS
 
     ! Water Vapor
     SELECT CASE(irad_h2o)
+      CASE(-1) ! External specification
+        CALL ecrad_gas%put(ecRad_IH2O, IMassMixingRatio, qvrad_ext(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(0) ! No water vapor
-        CALL ecrad_gas%put_well_mixed(ecRad_IH2O, IVolumeMixingRatio, 0._wp,  istartcol=i_startidx, iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_IH2O, IVolumeMixingRatio, 0._rp,  istartcol=i_startidx, iendcol=i_endidx)
       CASE(1) ! Use values from diagnosed water vapor content
         CALL ecrad_gas%put(ecRad_IH2O, IMassMixingRatio, qv(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE DEFAULT
-        CALL finish(routine, 'Current implementation only supports irad_h2o = 0, 1')
+        CALL finish(routine, 'Current implementation only supports irad_h2o = -1, 0, 1')
     END SELECT
 
     ! Ozone
     SELECT CASE(irad_o3)
+      CASE(-1) ! External specification
+        CALL ecrad_gas%put(ecRad_IO3, IMassMixingRatio, o3rad_ext(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(0) ! No Ozone
-        CALL ecrad_gas%put_well_mixed(ecRad_IO3,IVolumeMixingRatio, 0._wp,  istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_IO3,IVolumeMixingRatio, 0._rp,  istartcol=i_startidx,iendcol=i_endidx)
       CASE(10) ! Use values from interactive ozone
         CALL ecrad_gas%put(ecRad_IO3, IMassMixingRatio, o3(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(5,7,9,79,97) ! Use values from GEMS/MACC (different profiles)
@@ -577,65 +678,75 @@ CONTAINS
         CALL message('mo_nwp_ecrad_utilities: irad_o3=11', &
           &          'Ozone used for radiation is read from SCM input file')
       CASE DEFAULT
-        CALL finish(routine, 'Current implementation only supports irad_o3 = 0, 5, 7, 9, 10, 79, 97, 11')
+        CALL finish(routine, 'Current implementation only supports irad_o3 = -1, 0, 5, 7, 9, 10, 79, 97, 11')
     END SELECT
 
     !CO2
     SELECT CASE(irad_co2)
+      CASE(-1) ! External specification
+        CALL ecrad_gas%put(ecRad_ICO2, IMassMixingRatio, co2rad_ext(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(0) ! No CO2
-        CALL ecrad_gas%put_well_mixed(ecRad_ICO2,IVolumeMixingRatio, 0._wp,    istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICO2,IVolumeMixingRatio, 0._rp,    istartcol=i_startidx,iendcol=i_endidx)
       CASE(2) ! Constant value derived from namelist parameter vmr_co2
-        CALL ecrad_gas%put_well_mixed(ecRad_ICO2,IVolumeMixingRatio, vmr_co2,  istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICO2,IVolumeMixingRatio, REAL(vmr_co2, rp),  istartcol=i_startidx,iendcol=i_endidx)
       CASE(4) ! time dependent concentration from external file
-        CALL ecrad_gas%put_well_mixed(ecRad_ICO2,IMassMixingRatio, ghg_co2mmr,  istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICO2,IMassMixingRatio, REAL(ghg_co2mmr, rp),  istartcol=i_startidx,iendcol=i_endidx)
       CASE DEFAULT
-        CALL finish(routine, 'Current implementation only supports irad_co2 = 0, 2, 4')
+        CALL finish(routine, 'Current implementation only supports irad_co2 = -1, 0, 2, 4')
     END SELECT
 
     !O2
     SELECT CASE(irad_o2)
+      CASE(-1) ! External specification
+        CALL ecrad_gas%put(ecRad_IO2, IMassMixingRatio, o2rad_ext(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(0) ! No O2
-        CALL ecrad_gas%put_well_mixed(ecRad_IO2,IVolumeMixingRatio, 0._wp,   istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_IO2,IVolumeMixingRatio, 0._rp,   istartcol=i_startidx,iendcol=i_endidx)
       CASE(2) ! Constant value derived from namelist parameter vmr_o2
         ! O2 is hardcoded within rrtm gas solver of ecRad, option for ecRad_IO2 only in case of psrad gas solver
         ! We still put it in ecRad, because this bug should be fixed with the next ecRad release
-        CALL ecrad_gas%put_well_mixed(ecRad_IO2,IVolumeMixingRatio, vmr_o2,  istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_IO2,IVolumeMixingRatio, REAL(vmr_o2, rp),  istartcol=i_startidx,iendcol=i_endidx)
       CASE DEFAULT
-        CALL finish(routine, 'Current implementation only supports irad_o2 = 0, 2')
+        CALL finish(routine, 'Current implementation only supports irad_o2 = -1, 0, 2')
     END SELECT
 
     !CFC11
     SELECT CASE(irad_cfc11)
+      CASE(-1) ! External specification
+        CALL ecrad_gas%put(ecRad_ICFC11, IMassMixingRatio, cfc11rad_ext(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(0) ! No CFC11
-        CALL ecrad_gas%put_well_mixed(ecRad_ICFC11,IVolumeMixingRatio, 0._wp,    istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICFC11,IVolumeMixingRatio, 0._rp,    istartcol=i_startidx,iendcol=i_endidx)
       CASE(2) ! Constant value derived from namelist parameter vmr_cfc11
-        CALL ecrad_gas%put_well_mixed(ecRad_ICFC11,IVolumeMixingRatio, vmr_cfc11,istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICFC11,IVolumeMixingRatio, REAL(vmr_cfc11, rp),istartcol=i_startidx,iendcol=i_endidx)
       CASE(4) ! time dependent concentration from external file
-        CALL ecrad_gas%put_well_mixed(ecRad_ICFC11,IMassMixingRatio, ghg_cfcmmr(1),istartcol=i_startidx, &
+        CALL ecrad_gas%put_well_mixed(ecRad_ICFC11,IMassMixingRatio, REAL(ghg_cfcmmr(1), rp),istartcol=i_startidx, &
           &                           iendcol=i_endidx)
       CASE DEFAULT
-        CALL finish(routine, 'Current implementation only supports irad_cfc11 = 0, 2, 4')
+        CALL finish(routine, 'Current implementation only supports irad_cfc11 = -1, 0, 2, 4')
     END SELECT
 
     !CFC12
     SELECT CASE(irad_cfc12)
+      CASE(-1) ! External specification
+        CALL ecrad_gas%put(ecRad_ICFC12, IMassMixingRatio, cfc12rad_ext(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(0) ! No CFC12
-        CALL ecrad_gas%put_well_mixed(ecRad_ICFC12,IVolumeMixingRatio, 0._wp,    istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICFC12,IVolumeMixingRatio, 0._rp,    istartcol=i_startidx,iendcol=i_endidx)
       CASE(2) ! Constant value derived from namelist parameter vmr_cfc12
-        CALL ecrad_gas%put_well_mixed(ecRad_ICFC12,IVolumeMixingRatio, vmr_cfc12,istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICFC12,IVolumeMixingRatio, REAL(vmr_cfc12, rp),istartcol=i_startidx,iendcol=i_endidx)
       CASE(4) ! time dependent concentration from external file
-        CALL ecrad_gas%put_well_mixed(ecRad_ICFC12,IMassMixingRatio, ghg_cfcmmr(2),istartcol=i_startidx, &
+        CALL ecrad_gas%put_well_mixed(ecRad_ICFC12,IMassMixingRatio, REAL(ghg_cfcmmr(2), rp),istartcol=i_startidx, &
           &                           iendcol=i_endidx)
       CASE DEFAULT
-        CALL finish(routine, 'Current implementation only supports irad_cfc12 = 0, 2, 4')
+        CALL finish(routine, 'Current implementation only supports irad_cfc12 = -1, 0, 2, 4')
     END SELECT
 
     !N2O
     SELECT CASE(irad_n2o)
+      CASE(-1) ! External specification
+        CALL ecrad_gas%put(ecRad_IN2O, IMassMixingRatio, n2orad_ext(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(0) ! No N2O
-        CALL ecrad_gas%put_well_mixed(ecRad_IN2O,IVolumeMixingRatio, 0._wp,  istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_IN2O,IVolumeMixingRatio, 0._rp,  istartcol=i_startidx,iendcol=i_endidx)
       CASE(2) ! Constant value derived fromecrad_set_gas namelist parameter vmr_n2o
-        CALL ecrad_gas%put_well_mixed(ecRad_IN2O,IVolumeMixingRatio, vmr_n2o,istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_IN2O,IVolumeMixingRatio, REAL(vmr_n2o, rp),istartcol=i_startidx,iendcol=i_endidx)
       CASE(3) ! Tanh profile
         ALLOCATE(n2o(ncol,nlev))
         !$ACC ENTER DATA CREATE(n2o) ASYNC(1)
@@ -645,17 +756,19 @@ CONTAINS
         !$ACC EXIT DATA DELETE(n2o)
         DEALLOCATE(n2o)
       CASE(4) ! time dependent concentration from external file
-        CALL ecrad_gas%put_well_mixed(ecRad_IN2O,IMassMixingRatio, ghg_n2ommr,istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_IN2O,IMassMixingRatio, REAL(ghg_n2ommr, rp),istartcol=i_startidx,iendcol=i_endidx)
       CASE DEFAULT
-        CALL finish(routine, 'Current implementation only supports irad_n2o = 0, 2, 3, 4')
+        CALL finish(routine, 'Current implementation only supports irad_n2o = -1, 0, 2, 3, 4')
     END SELECT
 
     !CH4
     SELECT CASE(irad_ch4)
+      CASE(-1) ! External specification
+        CALL ecrad_gas%put(ecRad_ICH4, IMassMixingRatio, ch4rad_ext(i_startidx:i_endidx,:), istartcol=i_startidx)
       CASE(0) ! No CH4
-        CALL ecrad_gas%put_well_mixed(ecRad_ICH4,IVolumeMixingRatio, 0._wp,  istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICH4,IVolumeMixingRatio, 0._rp,  istartcol=i_startidx,iendcol=i_endidx)
       CASE(2) ! Constant value derived from namelist parameter vmr_ch4
-        CALL ecrad_gas%put_well_mixed(ecRad_ICH4,IVolumeMixingRatio, vmr_ch4,istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICH4,IVolumeMixingRatio, REAL(vmr_ch4, rp),istartcol=i_startidx,iendcol=i_endidx)
       CASE(3) ! Tanh profile
         ALLOCATE(ch4(ncol,nlev))
         !$ACC ENTER DATA CREATE(ch4) ASYNC(1)
@@ -665,15 +778,15 @@ CONTAINS
         !$ACC EXIT DATA DELETE(ch4)
         DEALLOCATE(ch4)
       CASE(4) ! time dependent concentration from external file
-        CALL ecrad_gas%put_well_mixed(ecRad_ICH4,IMassMixingRatio, ghg_ch4mmr,istartcol=i_startidx,iendcol=i_endidx)
+        CALL ecrad_gas%put_well_mixed(ecRad_ICH4,IMassMixingRatio, REAL(ghg_ch4mmr, rp),istartcol=i_startidx,iendcol=i_endidx)
       CASE DEFAULT
-        CALL finish(routine, 'Current implementation only supports irad_ch4 = 0, 2, 3, 4')
+        CALL finish(routine, 'Current implementation only supports irad_ch4 = -1, 0, 2, 3, 4')
     END SELECT
 
-    ! The following gases are currently not filled from the ICON side. Although they are set to 0 inside ecrad, 
-    ! they are set to 0 here for completeness. 
-    CALL ecrad_gas%put_well_mixed(ecRad_IHCFC22,IVolumeMixingRatio, 0._wp, istartcol=i_startidx, iendcol=i_endidx)
-    CALL ecrad_gas%put_well_mixed(ecRad_ICCl4,  IVolumeMixingRatio, 0._wp, istartcol=i_startidx, iendcol=i_endidx)
+    ! The following gases are currently not filled from the ICON side. Although they are set to 0 inside ecrad,
+    ! they are set to 0 here for completeness.
+    CALL ecrad_gas%put_well_mixed(ecRad_IHCFC22,IVolumeMixingRatio, 0._rp, istartcol=i_startidx, iendcol=i_endidx)
+    CALL ecrad_gas%put_well_mixed(ecRad_ICCl4,  IVolumeMixingRatio, 0._rp, istartcol=i_startidx, iendcol=i_endidx)
 
     CALL ecrad_set_gas_units(ecrad_conf, ecrad_gas)
 
@@ -692,6 +805,8 @@ CONTAINS
     &                           lwflxclr_sfc, lwflx_up    , lwflx_dn    , swflx_up    , swflx_dn,              &
     &                           lwflx_up_clr, lwflx_dn_clr, swflx_up_clr, swflx_dn_clr,                        &
     &                           cosmu0mask, zsct, i_startidx, i_endidx, nlevp1, lacc)
+
+    CHARACTER(len=*), PARAMETER:: routine = modname//'::ecrad_store_fluxes'
 
     INTEGER, INTENT(in)   :: &
       &  jg                       !< domain index
@@ -736,8 +851,15 @@ CONTAINS
     ! Local Variables
     INTEGER                  :: &
       &  jband, jc, jk            !< Loop indices
+    LOGICAL                  :: &
+      &  is_bad = .FALSE.         !< Return value of ecRad-internal physical consistency checks
 
       CALL assert_acc_device_only("ecrad_store_fluxes", lacc)
+
+      IF (ecrad_check_input) THEN ! this is ecrad output being checked...
+        is_bad = ecrad_flux%out_of_physical_bounds(istartcol=i_startidx,iendcol=i_endidx)
+        IF (is_bad) CALL finish(routine,'ecrad_flux out_of_physical_bounds check triggered')
+      ENDIF
 
       !$ACC DATA PRESENT(ecrad_flux, cosmu0, trsolall, trsol_up_toa, trsol_up_sfc, trsol_nir_sfc) &
       !$ACC   PRESENT(trsol_vis_sfc, trsol_par_sfc, fr_nir_sfc_diff, fr_vis_sfc_diff) &
@@ -774,7 +896,7 @@ CONTAINS
       !$ACC LOOP GANG VECTOR COLLAPSE(2)
       DO jk = 1, nlevp1
         DO jc = i_startidx, i_endidx
-          IF ( cosmu0mask(jc) ) THEN 
+          IF ( cosmu0mask(jc) ) THEN
             ! solar transmissivity, all sky, net down
             trsolall(jc,jk)     = (ecrad_flux%sw_dn(jc,jk)-ecrad_flux%sw_up(jc,jk))/cosmu0(jc)
           ENDIF
@@ -784,7 +906,7 @@ CONTAINS
       ENDDO
       !$ACC END PARALLEL
 
-      IF (atm_phy_nwp_config(jg)%l_3d_rad_fluxes) THEN    
+      IF (atm_phy_nwp_config(jg)%l_3d_rad_fluxes) THEN
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR COLLAPSE(2)
         DO jk = 1, nlevp1
@@ -792,7 +914,7 @@ CONTAINS
             ! LW/SW, up/down, all/clear 3D fluxes
             lwflx_up    (jc,jk)   = ecrad_flux%lw_up(jc,jk)
             lwflx_dn    (jc,jk)   = ecrad_flux%lw_dn(jc,jk)
-  
+
             swflx_up    (jc,jk)   = ecrad_flux%sw_up(jc,jk)       *zsct
             swflx_dn    (jc,jk)   = ecrad_flux%sw_dn(jc,jk)       *zsct
             lwflx_up_clr(jc,jk)   = ecrad_flux%lw_up_clear(jc,jk)
@@ -868,9 +990,9 @@ CONTAINS
   !!
   SUBROUTINE transmissivity_in_band (weights, bands, tr_band, cosmu0, mask, tr_wgt, nbands)
 
-    REAL(wp), INTENT(IN) :: weights(:) !< Weight for each band index present in `band`.
+    REAL(rp), INTENT(IN) :: weights(:) !< Weight for each band index present in `band`.
     INTEGER, INTENT(IN) :: bands(:) !< List of band indices.
-    REAL(wp), INTENT(IN) :: tr_band(:,:) !< Transmissivities for each band (nbands,ncells).
+    REAL(rp), INTENT(IN) :: tr_band(:,:) !< Transmissivities for each band (nbands,ncells).
     REAL(wp), INTENT(IN) :: cosmu0(:) !< Cosine of the solar zenith angle.
     LOGICAL, INTENT(IN) :: mask(:) !< Set to .TRUE. for elements that should be processed.
     REAL(wp), INTENT(INOUT) :: tr_wgt(:) !< Total (band-weighted) transmissivity (ncells).
@@ -989,7 +1111,7 @@ CONTAINS
 
         fr_nir_sfc_diff(jc) = MIN(1._wp, fr_nir_sfc_diff(jc) + diff_frac_corr)
         fr_vis_sfc_diff(jc) = MIN(1._wp, fr_vis_sfc_diff(jc) + diff_frac_corr)
-        fr_vis_sfc_diff(jc) = MIN(1._wp, fr_par_sfc_diff(jc) + diff_frac_corr)
+        fr_par_sfc_diff(jc) = MIN(1._wp, fr_par_sfc_diff(jc) + diff_frac_corr)
 
         trsol_dn_sfc_diff(jc) = MIN(ecrad_flux%sw_dn(jc,nlev+1)/cosmu0(jc), trsol_dn_sfc_diff(jc) + &
             & diff_frac_corr * ecrad_flux%sw_dn(jc,nlev+1)/cosmu0(jc))
@@ -1030,7 +1152,7 @@ CONTAINS
   !>
   !! Function create_rdm_seed:
   !! Create a unique but reproducable random seed for the McICA solver
-  !! 
+  !!
   !! -------Algorithm taken from IFS, courtesy of R.J. Hogan-------
   !! This method gives a unique value for roughly every 1-km square
   !! on the globe and every minute.  (lat * rad2deg) gives rough
@@ -1041,7 +1163,7 @@ CONTAINS
   !! values.  The result can be contained in a 32-byte integer (but
   !! since random numbers are generated with the help of integer
   !! overflow, it should not matter if the number did overflow).
-  !! 
+  !!
   !! A more simple algorithm using the sum of int(lat), int(lon) and
   !! int(simtime) creates stripe patterns in the instantaneous fluxes.
   !! --------------------------------------------------------------
@@ -1076,7 +1198,7 @@ CONTAINS
     REAL(wp)                :: &
       &  reff_crystal_min,     & !< Minimum value ice crystal effective radius
       &  reff_crystal_max        !< Maximum value ice crystal effective radius
-    
+
     ! Minimum and maximum value (derived from file ECHAM6_CldOptProps.nc)
     reff_crystal_min = 4._wp
     reff_crystal_max = 99._wp ! 124._wp < modified as values > 100 mu m lead to crashes in ecRad
@@ -1222,7 +1344,7 @@ CONTAINS
 
     INTEGER, INTENT(IN)  :: i_startidx, i_endidx
     INTEGER, INTENT(IN)  :: jb_rad
-    
+
     INTEGER, INTENT(OUT) :: jcs, jce
     INTEGER, INTENT(OUT) :: i_startidx_rad, i_endidx_rad
 
@@ -1231,7 +1353,7 @@ CONTAINS
     INTEGER, INTENT(OUT), OPTIONAL :: jnps, jnpe
     INTEGER, INTENT(OUT), OPTIONAL :: i_startidx_sub, i_endidx_sub
 
-    jcs = nproma_sub*(jb_rad-1) + 1 
+    jcs = nproma_sub*(jb_rad-1) + 1
     jce = MIN(nproma_sub*jb_rad, nproma)
 
     i_startidx_rad = MAX(i_startidx-jcs+1, 1)

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,15 +13,15 @@
 ; --------------------------
 ; Skripts are based on NCL MJO Climate Variability Tools
 ; https://www.ncl.ucar.edu/Applications/mjoclivar.shtml
-; 
-; These were developed following the recommendations 
+;
+; These were developed following the recommendations
 ; of US-CLIVAR MJO Working Group
-; 
+;
 ; Adapted for use at DWD by Julia Keller, FE 13, August 2015
 ; Works with NCL 6.3.0
-; 
+;
 ; Program:
-;   mjo_analysis_clivar_wk_spacetime.ncl  
+;   mjo_analysis_clivar_wk_spacetime.ncl
 ; Purpose:
 ;   Create Wheeler-Kiladis Wavenumber-Frequency Spectra plot
 ; Origin:
@@ -29,15 +29,15 @@
 ;   available at www.ncl.ucar.edu/Applications/space_time.shtml
 ;-----------------------------------------------------------
 ; Required Input:
-;   Time series of daily or 6/12hourly means, e.g. constructed from 
+;   Time series of daily or 6/12hourly means, e.g. constructed from
 ;   6 hourly output via cdo daymean (not the processed anomalies!)
 ; Program Flow:
 ;   Read data and plot Space-Time Spectra using the NCL Function
 ;   wkSpaceTime
 ;
 ;   Note:
-;   NCL-Function "wkSpaceTime" assigns colortables 
-;   in dependence on variable names -> commit required names 
+;   NCL-Function "wkSpaceTime" assigns colortables
+;   in dependence on variable names -> commit required names
 ;   to get same color scheme for different experiments!
 ;   Variable Names are "FLUT", "OLR", "olr", "U200", "U850",
 ;   "OMEGA500" and "PRECT"
@@ -48,12 +48,12 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "diagnostics_cam.ncl"
-;    
+;
 ;***********************************************************
 
 ;###########################################################
 ;
-; Preparation  
+; Preparation
 ;
 ;###########################################################
 
@@ -75,16 +75,16 @@ load "diagnostics_cam.ncl"
 ;      yperhov  - no of years plotted in hov
 ;------ Area to be considered ----
 ;      latmin
-;      latmax     
-;      lonmin    
-;      lonmax  
+;      latmax
+;      lonmin
+;      lonmax
 ;------ Switches for various plots (on/off)------
 ;      vari     - create variance plot
 ;      bptime   - create bp-filtered time series
 ;      bphov    - create bp-filtered hovmoeller diagram
 ;      bparea   - create bp-filtered map
-;      spectra  - create spectres 
-;--------------------------------------------------    
+;      spectra  - create spectres
+;--------------------------------------------------
 
 ; Set plotting options
   opt = True
@@ -94,45 +94,45 @@ load "diagnostics_cam.ncl"
 
 print("-------Get data and prepare-------")
 ;***********************************************************
-; Load file and process information on variables etc   
+; Load file and process information on variables etc
 ;   - Get info on variables
 ;   - Identify which variable contains coordinates or data,
 ;     based on dimensions and sizes
-;   - Bring dimension and coordinate names to standard                
+;   - Bring dimension and coordinate names to standard
 ;***********************************************************
 
 ; Read data and assign variables accordingly
-   fin   = addfile (infile, "r") 
+   fin   = addfile (infile, "r")
 
    vars  = getfilevarnames(fin)                  ; write all variable names in array
-   
+
    nvars = dimsizes(vars)
    timecount=0
    do i = 0,nvars-1
      print(vars)
      print(nvars)
-     dummy      = fin->$vars(i)$                 ; read variable 
+     dummy      = fin->$vars(i)$                 ; read variable
      dummydims  = getvardims(dummy)           ; get dimensions of variable
      ndims   	= dimsizes(dummydims)              ; get number of dimensions
      delete(dummy)
                                                    ; separate data and coordinates
-     if ( ndims .eq. 1) then                     ; data = several dimensions        
+     if ( ndims .eq. 1) then                     ; data = several dimensions
        print("--------Get info on dimensions--------")
-                                                 ; coordinates =  one dimension 
+                                                 ; coordinates =  one dimension
        if (ndims .eq. lats) then   ; identify lat, lon and time coords
          print("---get lats---")
-         lat     = fin->$vars(i)$                ; set dimension names to standard 
+         lat     = fin->$vars(i)$                ; set dimension names to standard
          lat!0   = "lat"
          lat@lat = "latitude"
        end if
-        
+
        if (ndims .eq. lons) then
          print("---get lons---")
          lon     = fin->$vars(i)$
          lon!0   = "lon"
          lon@lon = "longitude"
        end if
-    
+
        if ((ndims .eq. times) .and. (timecount .eq. 0)) then
           timecount=1
           print("---get time---")
@@ -141,20 +141,20 @@ print("-------Get data and prepare-------")
           time@time = "time"
           time@units="hours since 2001-01-01 00:00:0.0"
        end if
-       
+
      end if                                ; end of process for coordinates
-     
+
      if (ndims .ge. 3) then                        ; identify data characteristics
       print("---get data---")
        if (getfilevartypes(fin,vars(i)) .eq. "short") then
           datain = short2flt(fin->$vars(i)$ )
        else if (getfilevartypes(fin,vars(i)) .eq. "integer") then
           datain = int2flt(fin->$vars(i)$ )
-       else 
+       else
           datain = fin->$vars(i)$
        end if
        end if
-; determine size of dimensions and 
+; determine size of dimensions and
        subdims = dimsizes(datain)                 ; rename dimensions accordingly
        do j = 0, ndims-1
          if (subdims(j) .eq. times) then
@@ -170,7 +170,7 @@ print("-------Get data and prepare-------")
             datain@lon  = "longitude"
          end if
        end do
-     end if 
+     end if
      delete(dummydims)
      delete(ndims)
    end do
@@ -178,14 +178,14 @@ print("-------Get data and prepare-------")
    print("--------Extract subregion--------")
 
    if (lons .gt. 720) then
-      xin = datain(:,{latmin:latmax:2},:)                       ; read data to x 
+      xin = datain(:,{latmin:latmax:2},:)                       ; read data to x
    else
-      xin = datain(:,{latmin:latmax},:)                       ; read data to x 
+      xin = datain(:,{latmin:latmax},:)                       ; read data to x
    end if
- 
+
    delete(datain)
    datatype=typeof(xin)
-  
+
    if (datatype .eq. "short") then
      x=short2flt(xin)
    else
@@ -193,8 +193,6 @@ print("-------Get data and prepare-------")
    end if
 
 
-  
+
 
    wkSpaceTime(x,plotfile,datainfo,varname,latmax,floattoint(nSpD),nDayWin,nDaySkip,opt)
-
-

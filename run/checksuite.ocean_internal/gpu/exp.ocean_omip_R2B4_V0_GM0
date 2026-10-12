@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -103,6 +103,8 @@ elif [ ${GRID} == R2B8 ] ; then
 
 fi
 
+    SUBDIR=""
+
 if [ ${LEV} == L40 ] ; then
 
     n_zlev=40
@@ -130,6 +132,22 @@ elif [ ${LEV} == L64 ] ; then
 
     minVerticalLevels=2
 
+elif [ ${LEV} == L72 ] ; then
+
+    SUBDIR="ZSTAR/"
+    n_zlev=72
+    dzlev_m="2.0,2.2,2.5,2.8,3.1,3.5,3.9,4.4,4.9,5.4,5.9,6.4,7.1,7.7,8.4,9.2,10.1,11.0,
+           12.0,13.2,14.4,15.7,17.1,18.7,20.4,22.3,24.3,26.5,28.9,31.5,34.3,37.3,40.6,
+           43.1,45.3,46.8,48.4,50.0,51.7,53.4,55.2,57.0,58.9,60.8,62.9,66.6,72.6,80.6,
+           90.6,100.2,110.0,120.3,128.7,137.4,146.4,155.7,165.2,174.8,184.4,194.1,203.6,
+           212.9,221.9,230.5,238.5,245.9,252.4,258.1,262.8,266.4,268.9,270.1"
+
+    levidx_100m=15
+    levidx_200m=25
+    levidx_2000m=55
+
+    minVerticalLevels=10
+
 elif [ ${LEV} == L128 ] ; then
 
     n_zlev=128
@@ -155,6 +173,7 @@ elif [ ${LEV} == L128 ] ; then
 
 elif [ ${LEV} == L128SMT ] ; then
 
+    SUBDIR="ZSTAR/"
     n_zlev=128
     dzlev_m="2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 3.0, 3.1, 3.2,\
                  3.4, 3.5, 3.7, 3.9, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.3, 5.5,\
@@ -217,7 +236,7 @@ autoPostProcessing="false"                         # submit postprocessing job
 iforc=12
 forcing_timescale=365  # length of OMIP/NCEP dataset: 1 = annual; 12 = monthly data; 365/else = daily data
 init_relax=1
-ocean_data_InputFolder="/pool/data/ICON/oes/input/r0004/${grid_name}"
+ocean_data_InputFolder="/pool/data/ICON/oes/input/r0005/${grid_name}"
 grids_folder=${ocean_data_InputFolder}
 #-----------------------------------------------------------------------------
 #icon_data_rootFolder=/pool/data/ICON
@@ -371,7 +390,7 @@ cat >> ${ocean_namelist} << EOF
                                     'HeatFlux_LongWave','HeatFlux_Sensible','HeatFlux_Latent',
                                     'FrshFlux_Runoff','FrshFlux_Precipitation','FrshFlux_Evaporation',
                                     'FrshFlux_TotalOcean','FrshFlux_VolumeIce','totalsnowfall',
-                                    'FrshFlux_VolumeTotal','swsum','heatabs'${STRETCH_C}
+                                    'FrshFlux_VolumeTotal','swsum','heatabs','group:ice_diag'${STRETCH_C}
 /
 
 &output_nml
@@ -550,7 +569,7 @@ cat >> ${ocean_namelist} << EOF
 &parallel_nml
   nproma                          = ${nproma}
   p_test_run                      = .FALSE.
-  l_fast_sum                      = .TRUE.
+  l_fast_sum                      = .FALSE.
   num_prefetch_proc               = 0
   pio_type                        = 0
   num_io_procs                    = 0
@@ -621,6 +640,7 @@ cat >> ${ocean_namelist} << EOF
 /
 
 &ocean_tracer_transport_nml
+  no_tracer                       = 2         ! 2 normal setup; 3 with age tracer; 4 with age tracer squared
   FLUX_CALCULATION_HORZ           = 5         ! 1=upwind, 2=central, 3=Lax-Friedrichs, 4=Miura, 5=FCT with Zalesak limiter (default)
   FLUX_CALCULATION_VERT           = 7         ! 6=adpo; 7=upwind biased ppm (default); 8=FCT with zalesak limiter
   ! define low and high order methods to be used in horizontal flux corrected transport methods (flux_calculation_horz=4,5)
@@ -654,7 +674,7 @@ if  [ x${vert_mix} = xPP ] ; then
 
 cat >> ${ocean_namelist} << EOF
 &ocean_vertical_diffusion_nml
-  vert_mix_type                               = 1       ! 1: PP; 2: TKE; ; 4 TKE+IDEMIX
+  vert_mix_type                               = 1       ! 1: PP; 2: TKE;  4 TKE+IDEMIX
   PPscheme_type                               = 0
   velocity_VerticalDiffusion_background       = 5.0E-5  ! [m2/s]  vertical background viscosity coefficient for velocity
   Temperature_VerticalDiffusion_background    = 1.0E-5  ! [m2/s]  vertical background diffusion coefficient for temperature
@@ -676,7 +696,7 @@ elif  [ x${vert_mix} = xTKE ] ; then
 
 cat >> ${ocean_namelist} << EOF
 &ocean_vertical_diffusion_nml
-  vert_mix_type                   = 2  ! 1: PP; 2: TKE; ; 4 TKE+IDEMIX
+  vert_mix_type                   = 2  ! 1: PP; 2: TKE; 4 TKE+IDEMIX
   only_tke                        = .TRUE. ! .TRUE. for TKE; .FALSE. for TKE+IDEMIX
   ! vmix/tke parameters
   c_k                             = 0.3
@@ -736,6 +756,7 @@ cat >> ${ocean_namelist} << EOF
   albim                           = 0.65      ! Albedo of ice (melting)
 
 ! Pstar                           = 40000
+  seaice_stress_diag              = .TRUE.
 /
 
 &ocean_forcing_nml
@@ -775,11 +796,16 @@ cat >> ${ocean_namelist} << EOF
 /
 
 &ocean_diagnostics_nml
+  diagnose_age                    = .FALSE.
+  diagnose_green                  = .FALSE.
   diagnostics_level               = 1
   diagnose_for_horizontalvelocity = .FALSE.
   diagnose_for_heat_content       = .TRUE.
   eddydiag                        = .FALSE.
   diagnose_for_tendencies         = .TRUE.
+  use_layers                      = .FALSE.
+  n_dlev                          = 84
+  mode_layers                     = 1
 /
 
 &io_nml
@@ -798,7 +824,7 @@ EOF
 #. ${thisdir}/add_required_ocean_files
 
 
-add_link_file ${ocean_data_InputFolder}/${GRID}${LEV}_initial_state.nc initial_state.nc
+add_link_file ${ocean_data_InputFolder}/${SUBDIR}${GRID}${LEV}_initial_state.nc initial_state.nc
 add_link_file ${ocean_data_InputFolder}/${GRID}_ocean-flux.nc ocean-flux.nc
 add_link_file ${ocean_data_InputFolder}/${GRID}_ocean-relax.nc ocean-relax.nc
 # IDEMIX forcing fields

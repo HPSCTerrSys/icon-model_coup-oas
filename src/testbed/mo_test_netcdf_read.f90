@@ -1,16 +1,15 @@
-!
-! Tests the mo_read_interface methods
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Tests the mo_read_interface methods
 
 MODULE mo_test_netcdf_read
 
@@ -29,7 +28,11 @@ MODULE mo_test_netcdf_read
     &                               t_stream_id, read_1D, read_2D_time, &
     &                               read_3D_time, read_netcdf_broadcast_method
   USE mo_netcdf_errhandler,   ONLY: nf
-  USE mo_netcdf
+  USE mo_netcdf,              ONLY: nf90_create, nf90_close, nf90_def_dim, &
+    &                               nf90_def_var, nf90_float, nf90_double, &
+    &                               nf90_enddef, nf90_put_var, nf90_clobber, &
+    &                               nf90_64bit_offset, nf90_set_fill, nf90_nofill
+
 !-------------------------------------------------------------------------
 IMPLICIT NONE
 PRIVATE
@@ -49,7 +52,7 @@ PRIVATE
 
 
 CONTAINS
-  
+
   !-------------------------------------------------------------------------
   !>
   !! Test reading amip aerosol
@@ -60,9 +63,9 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(in) :: shr_namelist_filename
 
     TYPE(t_patch), POINTER   :: patch
-    REAL(wp), POINTER :: lnwl_array(:), levels_array(:), times_array(:)
-    REAL(wp), POINTER :: aod(:,:,:,:), asy(:,:,:,:)   ! is (nproma, lnwl, blocks, time (months) )
-    REAL(wp), POINTER :: z_aer_fine_mo(:,:,:,:)
+    REAL(wp), ALLOCATABLE :: lnwl_array(:), levels_array(:), times_array(:)
+    REAL(wp), ALLOCATABLE :: aod(:,:,:,:), asy(:,:,:,:)   ! is (nproma, lnwl, blocks, time (months) )
+    REAL(wp), ALLOCATABLE :: z_aer_fine_mo(:,:,:,:)
     INTEGER :: levels, lnwl_size, file_id
     TYPE(t_stream_id) :: stream_id
 
@@ -84,11 +87,11 @@ CONTAINS
 
     !---------------------------------------------------------------------
     CALL read_1D(file_id=file_id, variable_name = "lnwl", &
-      &          return_pointer=lnwl_array)
+      &          alloc_array=lnwl_array)
     CALL read_1D(file_id=file_id, variable_name = "lev", &
-      &          return_pointer=levels_array)
+      &          alloc_array=levels_array)
     CALL read_1D(file_id=file_id, variable_name="time", &
-      &          return_pointer=times_array)
+      &          alloc_array=times_array)
 
     CALL closeFile(file_id)
 
@@ -99,7 +102,7 @@ CONTAINS
     ! example with non-allocated arrays
     ! mote that allocation time dim will be 1:12, as in the file
     CALL read_3D_time(stream_id=stream_id, location=on_cells, &
-      &               variable_name="aod", return_pointer=aod)
+      &               variable_name="aod", alloc_array=aod)
 
     !-----------------------------------------------------
     ! example with allocated arrays, time dim is 0:13
@@ -154,8 +157,8 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(in) :: shr_namelist_filename
 
     TYPE(t_patch), POINTER   :: patch
-    REAL(wp), POINTER :: fill_3D_time_array(:,:,:,:)   ! is (nproma, vertical_levels, blocks, time (months))
-    REAL(wp), POINTER :: fill_2D_time_array(:,:,:)  ! is (nproma, blocks, time )
+    REAL(wp), ALLOCATABLE :: fill_3D_time_array(:,:,:,:)   ! is (nproma, vertical_levels, blocks, time (months))
+    REAL(wp), ALLOCATABLE :: fill_2D_time_array(:,:,:)  ! is (nproma, blocks, time )
     INTEGER :: return_status
     TYPE(t_stream_id) :: stream_id
 
@@ -180,7 +183,7 @@ CONTAINS
     ! will read all timesteps in the file
     CALL read_2D_time(stream_id=stream_id, location=on_cells, &
       &               variable_name=TRIM(testfile_2D_time(2)), &
-      &               return_pointer=fill_2D_time_array)
+      &               alloc_array=fill_2D_time_array)
 
     ! here the fill_2D_time_array is allocated and filled
     ! write the sst array to output ONLY for comparing
@@ -220,7 +223,7 @@ CONTAINS
       &                read_netcdf_broadcast_method)
     CALL read_3D_time(stream_id=stream_id, location=on_cells, &
       &               variable_name=TRIM(testfile_3D_time(2)), &
-      &               return_pointer=fill_3D_time_array)
+      &               alloc_array=fill_3D_time_array)
     !---------------------------------------------------------------------
     ! write the o3 array to output for comparing
     CALL message(method_name,   "write testfile_3D_time(1)")
@@ -239,7 +242,7 @@ CONTAINS
     !---------------------------------------------------------------------
     ! Carry out the shared clean-up processes
     CALL destruct_atmo_model()
-     
+
 
   END SUBROUTINE test_netcdf_read_demo_1
 
@@ -283,7 +286,7 @@ CONTAINS
   INTEGER FUNCTION netcdf_write_REAL_ONCELLS_2D_time_filename(filename, variable_name, write_array, patch)
     CHARACTER(LEN=*), INTENT(IN) :: filename
     CHARACTER(LEN=*), INTENT(IN) :: variable_name
-    REAL(wp), POINTER            :: write_array(:,:,:)
+    REAL(wp), ALLOCATABLE        :: write_array(:,:,:)
     TYPE(t_patch), TARGET        :: patch
 
     INTEGER :: file_id
@@ -307,7 +310,7 @@ CONTAINS
   INTEGER FUNCTION netcdf_write_REAL_ONCELLS_3D_time_filename(filename, variable_name, write_array, patch)
     CHARACTER(LEN=*), INTENT(IN) :: filename
     CHARACTER(LEN=*), INTENT(IN) :: variable_name
-    REAL(wp), POINTER            :: write_array(:,:,:,:)
+    REAL(wp), ALLOCATABLE        :: write_array(:,:,:,:)
     TYPE(t_patch), TARGET        :: patch
 
     INTEGER :: file_id
@@ -332,7 +335,7 @@ CONTAINS
   INTEGER FUNCTION netcdf_write_REAL_ONCELLS_2D_time_fileid(file_id, variable_name, write_array, patch)
     INTEGER, INTENT(IN)  :: file_id
     CHARACTER(LEN=*), INTENT(IN) :: variable_name
-    REAL(wp),      POINTER       :: write_array(:,:,:)
+    REAL(wp),      ALLOCATABLE   :: write_array(:,:,:)
     TYPE(t_patch), TARGET        :: patch
 
     REAL(wp), ALLOCATABLE        :: output_array(:,:)
@@ -405,7 +408,7 @@ CONTAINS
   INTEGER FUNCTION netcdf_write_REAL_ONCELLS_3D_time_fileid(file_id, variable_name, write_array, patch)
     INTEGER, INTENT(IN)  :: file_id
     CHARACTER(LEN=*), INTENT(IN) :: variable_name
-    REAL(wp),      POINTER       :: write_array(:,:,:,:)
+    REAL(wp),      ALLOCATABLE   :: write_array(:,:,:,:)
     TYPE(t_patch), TARGET        :: patch
 
     REAL(wp), ALLOCATABLE        :: output_array(:,:,:)
@@ -485,4 +488,3 @@ CONTAINS
 
 
 END MODULE mo_test_netcdf_read
-

@@ -1,9 +1,7 @@
-! Contains the variables to set up the grid configuration
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -11,12 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the variables to set up the grid configuration
+
 MODULE mo_grid_config
 !-------------------------------------------------------------------------
   USE mo_kind,               ONLY: wp
   USE mo_exception,          ONLY: message_text, finish, message
   USE mo_impl_constants,     ONLY: max_dom
-  USE mo_io_units,           ONLY: filename_max 
+  USE mo_io_units,           ONLY: filename_max
   USE mo_physical_constants, ONLY: earth_radius, earth_angular_velocity
   USE mo_parallel_config,    ONLY: division_method, division_file_name
   USE mo_master_config,      ONLY: getModelBaseDir
@@ -54,8 +54,8 @@ USE mo_netcdf_parallel, ONLY:     &
   PUBLIC :: set_patches_grid_filename
 
 ! !   PUBLIC :: radiation_grid_distribution
-  
-  PUBLIC :: n_dom_start, max_childdom     
+
+  PUBLIC :: n_dom_start, max_childdom
   PUBLIC :: n_phys_dom
   PUBLIC :: no_of_dynamics_grids
   PUBLIC :: use_duplicated_connectivity, use_dummy_cell_closure
@@ -72,8 +72,8 @@ USE mo_netcdf_parallel, ONLY:     &
   ! ------------------------------------------------------------------------
   INTEGER  :: nroot                    ! root division of initial edges
   INTEGER  :: start_lev                ! coarsest bisection level
-  INTEGER  :: n_dom                    ! number of model domains, 1=global domain only 
-  INTEGER  :: n_dom_start=1 
+  INTEGER  :: n_dom                    ! number of model domains, 1=global domain only
+  INTEGER  :: n_dom_start=1
   INTEGER  :: max_childdom             ! type of feedback (incremental or relaxation)
   INTEGER  :: ifeedback_type
   REAL(wp) :: start_time(max_dom)      ! Time at which execution of a (nested) model domain starts
@@ -82,19 +82,19 @@ USE mo_netcdf_parallel, ONLY:     &
 
   LOGICAL  :: lfeedback(max_dom)       ! specifies if feedback to parent grid is performed
   LOGICAL  :: lredgrid_phys(max_dom)   ! If set to .true. radiation is calculated on a reduced grid
-  INTEGER  :: nexlevs_rrg_vnest        ! Maximum number of extra model layers used for calculating radiation if 
+  INTEGER  :: nexlevs_rrg_vnest        ! Maximum number of extra model layers used for calculating radiation if
                                        ! a reduced radiation grid is combined with vertical nesting
-  LOGICAL  :: l_limited_area           ! limited area setup where forcing comes in from sides 
+  LOGICAL  :: l_limited_area           ! limited area setup where forcing comes in from sides
   LOGICAL  :: l_scm_mode               ! SCM mode is designed for tests where all columns are identical
   LOGICAL  :: use_duplicated_connectivity  = .true.  ! if true, the zero connectivity is replaced by the last non-zero value
   LOGICAL  :: use_dummy_cell_closure = .false.  ! if true then create a dummy cell and connect it to cells and edges with no neigbor
-   
+
 !   INTEGER  :: radiation_grid_distribution   ! 0=do nothing
                                        ! 1=redistribute for radiaiton reading from file
 
   LOGICAL  :: lplane                   ! f-plane option
   LOGICAL  :: is_plane_torus           ! f-plane with doubly periodic boundary==> like a plane torus
-  REAL(wp) :: corio_lat                ! Latitude, where the f-plane is located if 
+  REAL(wp) :: corio_lat                ! Latitude, where the f-plane is located if
                                        ! lplane or is_plane_torus=.true.
 
   REAL(wp) :: patch_weight(max_dom)    ! If patch_weight is set to a value > 0
@@ -129,7 +129,7 @@ CONTAINS
 
   !!  Initialization of variables that contain grid configuration
   SUBROUTINE init_grid_configuration
-                                               
+
     !local variables
     INTEGER  :: jg, ncid
     LOGICAL  :: file_exists, lradiation_grid
@@ -137,14 +137,14 @@ CONTAINS
 
     IF (no_of_dynamics_grids /= 0) &
       CALL finish( routine, 'should not be called twice')
-    
+
     !-----------------------------------------------------------------------
     ! find out how many grids we have
     ! and check if they exist
     no_of_dynamics_grids  = 0
 
 !     write(0,*) routine, TRIM(dynamics_grid_filename(1))
-    
+
     jg=1
     DO WHILE (dynamics_grid_filename(jg) /= "")
       IF (my_process_is_stdio()) THEN
@@ -160,7 +160,7 @@ CONTAINS
     END DO
     no_of_dynamics_grids  = jg-1
 
-    lradiation_grid = (LEN_TRIM(radiation_grid_filename) > 0)    
+    lradiation_grid = (LEN_TRIM(radiation_grid_filename) > 0)
     IF (lradiation_grid .AND. (my_process_is_stdio())) THEN
       INQUIRE (FILE=radiation_grid_filename, EXIST=file_exists)
       IF (.NOT. file_exists)   THEN
@@ -178,7 +178,7 @@ CONTAINS
 
     IF (no_of_dynamics_grids < 1) &
       CALL finish( routine, 'no dynamics grid is defined')
-    
+
     IF (no_of_dynamics_grids > 1) CALL message(routine,'Warning: You are using one nproma for multiple grids!')
 
     ! get here the nroot, eventually it should be moved into the patch info
@@ -203,7 +203,7 @@ CONTAINS
     ELSE
       n_dom_start = 1
       lredgrid_phys(1) = .FALSE.    ! lredgrid_phys requires presence of patch0 => reset to false
-    
+
       ! the division method starts from 0, shift if there's no 0 grid (ie no reduced radiation)
       DO jg = no_of_dynamics_grids-1, 0, -1
         division_method(jg+1)              = division_method(jg)
@@ -211,11 +211,11 @@ CONTAINS
       ENDDO
 
     ENDIF
-    
+
     !------------------------------------------------------------
     ! Reset lfeedback to false for all model domains if lfeedback(1) = false
     IF (.NOT. lfeedback(1)) lfeedback(2:max_dom) = .FALSE.
-    
+
   END SUBROUTINE init_grid_configuration
   !-------------------------------------------------------------------------
 
@@ -230,7 +230,7 @@ CONTAINS
 
   END SUBROUTINE get_gridfile_root_level
   !-------------------------------------------------------------------------
-    
+
   !-------------------------------------------------------------------------
   SUBROUTINE get_gridfile_sphere_radius( ncid, sphere_radius )
     INTEGER,    INTENT(in)     :: ncid
@@ -244,7 +244,7 @@ CONTAINS
 
   END SUBROUTINE get_gridfile_sphere_radius
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   FUNCTION get_grid_rescale_factor( ) result(rescale_factor)
     REAL(wp) ::  rescale_factor

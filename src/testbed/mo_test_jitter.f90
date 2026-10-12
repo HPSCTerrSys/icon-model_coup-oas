@@ -1,16 +1,15 @@
-!
-! Main program for the ICON atmospheric model
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Main program for the ICON atmospheric model
 
 !-----------------------------
 #include "omp_definitions.inc"
@@ -40,7 +39,7 @@ PRIVATE
 PUBLIC :: test_jitter
 
 CONTAINS
-  
+
   !-------------------------------------------------------------------------
   !>
   !!
@@ -48,15 +47,15 @@ CONTAINS
 
     CHARACTER(LEN=*), INTENT(in) :: namelist_filename
     CHARACTER(LEN=*), INTENT(in) :: shr_namelist_filename
-        
+
     INTEGER ::  timer_barrier_init, iter
-        
+
     CHARACTER(*), PARAMETER :: method_name = "mo_test_jitter:test_jitter"
 
 
     !---------------------------------------------------------------------
     CALL read_parallel_namelist(namelist_filename)
-    
+
     CALL message(" ---------------- ", method_name)
     WRITE(message_text,*) "testbed_iterations=", testbed_iterations
     CALL message(" -- ", message_text)
@@ -67,21 +66,21 @@ CONTAINS
    !-------------------------------------------------------------------------
     timer_barrier_init  = new_timer("mpi_barrier_init")
     CALL work_mpi_barrier()
-    
+
     !---------------------------------------------------------------------
     ! call some barriers to see how much time it takes
     DO iter=1, testbed_iterations
       CALL timer_start(timer_barrier_init)
-      CALL work_mpi_barrier()    
+      CALL work_mpi_barrier()
       CALL timer_stop(timer_barrier_init)
     ENDDO
     !---------------------------------------------------------------------
     CALL test_jitter_iter()
     !---------------------------------------------------------------------
-  
+
   END SUBROUTINE test_jitter
   !---------------------------------------------------------------------
-    
+
   !---------------------------------------------------------------------
   !>
   SUBROUTINE test_jitter_iter()
@@ -89,13 +88,13 @@ CONTAINS
     ! 3D variables
     REAL(wp), DIMENSION(nproma,no_of_layers,no_of_blocks) :: a, b, c
     REAL(wp) :: suma, sumb, sumc
-    
+
     INTEGER :: timer_calculate, timer_barrier
-    
+
     INTEGER :: i, j, k, iter, calculate
-    
+
     CHARACTER(*), PARAMETER :: method_name = "mo_test_jitter:test_jitter_iter"
-    
+
     timer_barrier  = new_timer("mpi_barrier")
     timer_calculate  = new_timer("calculate")
 !$OMP PARALLEL
@@ -112,7 +111,7 @@ CONTAINS
 !$OMP END DO
 !$OMP END PARALLEL
     !---------------------------------------------------------------------
-    CALL work_mpi_barrier()    
+    CALL work_mpi_barrier()
     !---------------------------------------------------------------------
 
     DO iter=1, testbed_iterations
@@ -141,7 +140,7 @@ CONTAINS
           ENDDO
         ENDDO
 !$OMP END DO
-                
+
 !$OMP DO PRIVATE(i,k,j) ICON_OMP_DEFAULT_SCHEDULE
         DO i = 1, no_of_blocks
           DO k = 1, no_of_layers
@@ -155,18 +154,18 @@ CONTAINS
 
       ENDDO !calculate=1,calculate_iterations
 !$OMP END PARALLEL
-            
+
       CALL timer_stop(timer_calculate)
 !       write(0,*) c(nproma,no_of_layers,no_of_blocks)
       !---------------------------------------------------------------------
       CALL timer_start(timer_barrier)
-      CALL work_mpi_barrier()    
+      CALL work_mpi_barrier()
       CALL timer_stop(timer_barrier)
-      CALL work_mpi_barrier()    
+      CALL work_mpi_barrier()
       !---------------------------------------------------------------------
-          
+
     ENDDO !iter=1, testbed_iterations
-             
+
     !---------------------------------------------------------------------
     ! print something to avoid optimization misfortunes
     suma = SUM(a(:,:,:))
@@ -174,7 +173,7 @@ CONTAINS
     sumc = SUM(c(:,:,:))
     write(0,*) "sums=", suma, sumb, sumc
     !---------------------------------------------------------------------
-    
+
     !---------------------------------------------------------------------
     ! print the timers
     CALL print_timer()
@@ -187,4 +186,3 @@ CONTAINS
 
 
 END MODULE mo_test_jitter
-

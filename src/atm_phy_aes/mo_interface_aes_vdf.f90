@@ -1,10 +1,7 @@
-!
-! Subroutine interface_aes_vdf calls the vertical diffusion and the surface schemes.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,12 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Subroutine interface_aes_vdf calls the vertical diffusion and the surface schemes.
+
 MODULE mo_interface_aes_vdf
 
   USE mo_kind                ,ONLY: wp
   USE mtime                  ,ONLY: t_datetime => datetime, OPERATOR(>)
 
-  USE mo_exception           ,ONLY: finish
+  USE mo_exception           ,ONLY: finish, message, message_text
 
   USE mo_parallel_config     ,ONLY: nproma
   USE mo_run_config          ,ONLY: ntracer
@@ -44,13 +43,29 @@ MODULE mo_interface_aes_vdf
   USE mo_aes_vdf_config      ,ONLY: aes_vdf_config
   USE mo_model_domain        ,ONLY: t_patch
   USE mo_impl_constants_grf  ,ONLY: grf_bdywidth_c
-  USE mo_impl_constants      ,ONLY: min_rlcell_int
+  USE mo_impl_constants      ,ONLY: min_rlcell_int, max_dom
   USE mo_loopindices         ,ONLY: get_indices_c
   USE mo_nh_testcases_nml    ,ONLY: is_dry_cbl, isrfc_type
+  USE mo_fortran_tools       ,ONLY: init
+
+
+#ifndef __NO_JSBACH__
+  USE mo_jsb_time            ,ONLY: is_time_ltrig_rad_m1
+  USE mo_cuda_graphs         ,ONLY: t_cuda_graphs, id_captured, create_graphs, &
+                                    begin_capture, end_capture, replay, reset
+  USE mo_jsb_interface       ,ONLY: invalidate_cuda_graphs
+#endif
+
+  USE, INTRINSIC :: iso_c_binding, ONLY: c_loc
 
 
   IMPLICIT NONE
   PRIVATE
+
+#ifndef __NO_JSBACH__
+  TYPE(t_cuda_graphs) :: graphs
+#endif
+
   PUBLIC  :: interface_aes_vdf
 
 CONTAINS
@@ -80,6 +95,7 @@ CONTAINS
     INTEGER  :: nlev, nlevm1, nlevp1
     INTEGER  :: ntrac
     INTEGER  :: nice        ! for simplicity (ice classes)
+    INTEGER  :: graph_id    ! for CUDA graphs
     !
     REAL(wp) :: zxt_emis(nproma,ntracer-iqt+1,patch%nblks_c)   !< tracer tendency due to surface emission
 
@@ -215,8 +231,36 @@ CONTAINS
     nice   = prm_field(jg)%kice
     turb => aes_vdf_config(jg)%turb
 
-    !$ACC DATA CREATE(zxt_emis) IF(ntrac > 0)
-    !$ACC DATA CREATE(ta_hori_tend, qv_hori_tend, ql_hori_tend, qi_hori_tend) IF(turb == 2)
+#ifndef __NO_JSBACH__
+    graph_id = -1
+    IF (aes_vdf_config(jg)%lcuda_graph_vdf) THEN
+      IF (.NOT. graphs%initialized) THEN
+        CALL create_graphs(graphs, 3, "interface_aes_vdf")
+      END IF
+      IF (invalidate_cuda_graphs) THEN
+        CALL reset(graphs)
+      ELSE
+        graph_id = id_captured( graphs, &
+          ptr_keys=(/ C_LOC(prm_field(patch%id)%qtrc_phy), C_LOC(prm_field(patch%id)%rho) /), &
+          int_keys=(/ merge(1, 0, is_time_ltrig_rad_m1(datetime, pdtime, jg, .FALSE.)) /) )
+        IF (graph_id > 0) THEN
+          CALL replay(graphs, graph_id, 1)
+          !$ACC WAIT(1)
+          NULLIFY(field)
+          NULLIFY(tend)
+          IF (ltimer) CALL timer_stop(timer_vdf)
+          RETURN
+        ELSE
+          CALL begin_capture( graphs, 1, &
+            ptr_keys=(/ C_LOC(prm_field(patch%id)%qtrc_phy), C_LOC(prm_field(patch%id)%rho) /), &
+            int_keys=(/ merge(1, 0, is_time_ltrig_rad_m1(datetime, pdtime, jg, .FALSE.)) /) )
+        END IF
+      END IF
+    END IF
+#endif
+
+    !$ACC DATA CREATE(zxt_emis) ASYNC(1) IF(ntrac > 0)
+    !$ACC DATA CREATE(ta_hori_tend, qv_hori_tend, ql_hori_tend, qi_hori_tend) ASYNC(1) IF(turb == 2)
     !$ACC DATA PRESENT(field, tend, ccycle_config) &
     !$ACC   PRESENT(field%qtrc_phy) & ! ACCWA (nvhpc on levante): to prevent illegal address during kernel execution
     !$ACC   CREATE(zcpt_sfc_tile, ri_tile, zqx, zbn_tile) &
@@ -226,8 +270,8 @@ CONTAINS
     !$ACC   CREATE(zaa_btm, zbb, zbb_btm, zfactor_sfc, ddt_u, ddt_v) &
     !$ACC   CREATE(zthvvar, ztottevn, zch_tile, kedisp, tend_ua_vdf) &
     !$ACC   CREATE(tend_va_vdf, tend_wa_vdf, q_vdf, tend_qtrc_vdf, q_snocpymlt, zco2) &
-#if !(defined(_CRAYFTN) && _RELEASE_MAJOR <= 16)
-    !ACCWA zero sized arrays are not properly supported (CAST-33010) and cause here 
+#if !(defined(_CRAYFTN) && _RELEASE_MAJOR <= 20)
+    !ACCWA zero sized arrays are not properly supported (CAST-33010) and cause here
     ! weird "present" error
     !$ACC   CREATE(tend_qtrc_vdf_dummy) &
 #endif
@@ -238,14 +282,12 @@ CONTAINS
     !$ACC   CREATE(albvisdir, albnirdir, albvisdif, albnirdif) &
     !$ACC   CREATE(albvisdir_tile, albnirdir_tile, albvisdif_tile) &
     !$ACC   CREATE(albnirdif_tile, albedo, albedo_tile) &
-    !$ACC   CREATE(qnc_hori_tend, qni_hori_tend)
+    !$ACC   CREATE(qnc_hori_tend, qni_hori_tend) ASYNC(1)
 
     IF ( is_dry_cbl ) THEN
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1)
-      field% qtrc_phy(:,:,:,iqv) = 0._wp
-      field% qtrc_phy(:,:,:,iqi) = 0._wp
-      field% qtrc_phy(:,:,:,iqc) = 0._wp
-      !$ACC END KERNELS
+      CALL init(field% qtrc_phy(:,:,:,iqv), lacc=.TRUE.)
+      CALL init(field% qtrc_phy(:,:,:,iqi), lacc=.TRUE.)
+      CALL init(field% qtrc_phy(:,:,:,iqc), lacc=.TRUE.)
     END IF
 
     !$NOser verbatim zaa = 0._wp
@@ -292,7 +334,7 @@ CONTAINS
           !
           ! - default is no emission
           IF (ntrac > 0) THEN
-            !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR COLLAPSE(2) ASYNC(1) IF(ntrac > 0)
+            !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR COLLAPSE(2) ASYNC(1)
             DO jt = 1,ntrac
               DO jl = jcs,jce
                 zxt_emis(jl,jt,jb) = 0._wp
@@ -312,7 +354,6 @@ CONTAINS
              CALL finish('interface_aes_vdf','The C-cycle cannot be used without CO2 tracer (ico2<iqt or ntracer<ico2)')
           END IF
           !
-          ! DA: fuse all the 1D copies in a single ACC kernel
           !$ACC PARALLEL NO_CREATE(zxt_emis) DEFAULT(PRESENT) ASYNC(1)
           SELECT CASE (ccycle_config(jg)%iccycle)
              !
@@ -332,7 +373,7 @@ CONTAINS
              ! co2 flux at the surface
              !$ACC LOOP GANG VECTOR
              DO jl = jcs,jce
-               zxt_emis(jl,ico2-(iqt-1),jb) = field%fco2nat(jl,jb)
+               zxt_emis(jl,ico2-(iqt-1),jb) = field%fco2nat(jl,jb) + field%fco2ant(jl,jb)
              END DO
              !
              ! co2 concentration in the lowermost layer
@@ -409,7 +450,6 @@ CONTAINS
           !$ACC END PARALLEL LOOP
           !
         END DO !## jb loop 1
-        !$ACC WAIT
 !$OMP END PARALLEL DO
 
         IF (ltimer) CALL timer_start(timer_vdf_dn)
@@ -434,10 +474,13 @@ CONTAINS
               !
               &          field%   zf(:,:,:),                &! in, geopot. height above sea level, full level
               &          field%   zh(:,:,:),                &! in, geopot. height above sea level, half level
+              &          field% geom(:,:,:),                &! in, geopotential above ground, full level
               &          field%frac_tile(:,:,:),            &! in, area fraction of each sfc type
               &                 ts_tile(:,:,:),             &! in, surface temperature
-              &          field% ocu (:,:),                  &! in, ocean sfc velocity, u-component
-              &          field% ocv (:,:),                  &! in, ocean sfc velocity, v-component
+              &          field% ocean_u (:,:),              &! in, ocean sfc velocity, u-component
+              &          field% ocean_v (:,:),              &! in, ocean sfc velocity, v-component
+              &          field% ice_u (:,:),                &! in, sea ice velocity, u-component
+              &          field% ice_v (:,:),                &! in, sea ice velocity, v-component
               &          field% phalf(:,nlevp1,:),          &! in, sfc pressure
               &          field%   ua(:,:,:),                &! in, um1
               &          field%   va(:,:,:),                &! in, vm1
@@ -503,10 +546,10 @@ CONTAINS
               &          zbh_tile(:,:,:),                   &! out, for "nsurf_diag"
               &          pcsat = csat(:,:),                 &! in, optional, area fraction with wet land surface
               &          pcair = cair(:,:),                 &! in, optional, area fraction with wet land surface (air)
-              &          paz0lh = z0h_lnd(:,:)          )    ! in, optional, roughness length for heat over land
+              &          paz0lh = z0h_lnd(:,:),             &! in, optional, roughness length for heat over land
+              &          lacc=.TRUE.                        )! in
         !
         !
-        ! DA: vdiff_down has its own ACC WAIT due to automatic arrays in ACC data sections
         !----------------------------------------------------------------------------------------
 
         rls = grf_bdywidth_c+1
@@ -640,7 +683,6 @@ CONTAINS
           END IF
           !
         END DO !## jb loop 2
-        !$ACC WAIT
 !$OMP END PARALLEL DO
         !
         !
@@ -662,8 +704,6 @@ CONTAINS
           ! Surface processes that provide time-dependent lower boundary
           ! condition for wind, temperature, tracer concentration, etc.
           !
-          !$ACC WAIT
-          !
           IF (ltimer) CALL timer_start(timer_vdf_sf)
 
           CALL update_surface(jg, jcs, jce, nproma, field%kice,               &! in
@@ -675,8 +715,10 @@ CONTAINS
                &                     cfh_tile(:,jb,:),                        &! in, from "vdiff_down"
                &                     cfm_tile(:,jb,:),                        &! in, from "vdiff_down"
                &              zfactor_sfc(:,jb),                              &! in, from "vdiff_down"
-               &              field% ocu (:,jb),                              &! in, ocean sfc velocity, u-component
-               &              field% ocv (:,jb),                              &! in, ocean sfc velocity, v-component
+               &              field% ocean_u (:,jb),                          &! in, ocean sfc velocity, u-component
+               &              field% ocean_v (:,jb),                          &! in, ocean sfc velocity, v-component
+               &              field% ice_u (:,jb),                            &! in, sea ice velocity, u-component
+               &              field% ice_v (:,jb),                            &! in, sea ice velocity, v-component
                &              zaa(:,:,:,:,jb), zaa_btm(:,:,:,:,jb),           &! inout
                &              zbb(:,:,:,jb),   zbb_btm(:,:,:,jb),             &! inout
                &               zcpt_sfc_tile(:,jb,:),                         &! inout, from "vdiff_down", for "vdiff_up"
@@ -755,7 +797,6 @@ CONTAINS
                &              albnirdif_ice = albnirdif_ice(:,:,jb))           ! inout
           !
           !
-          ! DA: update_surface has its own ACC WAIT due to automatic arrays in ACC data sections
           !----------------------------------------------------------------------------------------
           IF (ltimer) CALL timer_stop(timer_vdf_sf)
           !
@@ -784,11 +825,10 @@ CONTAINS
           ELSE
             tend_qtrc_vdf_iqt => tend_qtrc_vdf_dummy
           ENDIF
-          !$ACC WAIT
           !
           CALL vdiff_up(jcs, jce, nproma, nlev, nlevm1,  &! in
                &        ntrac, nsfc_type,                &! in
-               &        iwtr,                            &! in, indices of different sfc types
+               &        iwtr, iice,                      &! in, indices of different sfc types
                &        pdtime,                          &! in, time steps
                &        field%frac_tile(:,jb,:),         &! in, area fraction of each sfc type
                &               cfm_tile(:,jb,:),         &! in
@@ -806,6 +846,11 @@ CONTAINS
                &             ztottevn(:,:,jb),           &! in, TTE at intermediate time step
                &        aes_vdf_config(jg),              &! in
                &        zbb(:,:,:,jb),                   &! inout
+               &        field% ocean_u (:,jb),           &! in, ocean sfc velocity, u-component
+               &        field% ocean_v (:,jb),           &! in, ocean sfc velocity, v-component
+               &        field% ice_u (:,jb),             &! in, sea ice velocity, u-component
+               &        field% ice_v (:,jb),             &! in, sea ice velocity, v-component
+               &        wstar_tile(:,jb,:),              &! in, wstar
                &        zthvvar(:,:,jb),                 &! in
                &        dummyx(:,:,jb),                  &! inout
                &        z0m_tile(:,jb,:),                &! inout
@@ -820,13 +865,13 @@ CONTAINS
                &        tend_qtrc_vdf_iqt(:,:,jb,:),     & ! out
                &        field%   z0m   (:,  jb),         &! out, for the next step
                &        dummy(:,:,jb),                   &!
-               &        field%      totte(:,:,jb)        )! out
+               &        field%      totte(:,:,jb),       &! out
+               &        lacc=.TRUE.                      )! in
 !!$               &        field%      totte(:,:,jb),       &! out
 !!$               &        field%   sh_vdiff(:,  jb),       &! out, for energy diagnostic
 !!$               &        field%   qv_vdiff(:,  jb)        )! out, for energy diagnostic
           !
           !
-          ! DA: vdiff_up has its own ACC WAIT due to automatic arrays in ACC data sections in vdiff_tendencies
           !----------------------------------------------------------------------------------------
 
           IF ( turb == VDIFF_TURB_3DSMAGORINSKY ) THEN ! Smagorinksy
@@ -934,7 +979,6 @@ CONTAINS
           END IF
         !
         ENDDO !## jb loop2-1 END
-        !$ACC WAIT
 !$OMP END PARALLEL DO
 
       ELSE  ! if ( is_active )
@@ -1024,7 +1068,6 @@ CONTAINS
           END IF
         !
         ENDDO !## jb loop3 END
-        !$ACC WAIT
 !$OMP END PARALLEL DO
 
       END IF ! if ( is_active )
@@ -1051,7 +1094,6 @@ CONTAINS
           ! q_snocpymlt = heating for melting of snow on canopy
           !             = cooling of atmosphere --> negative sign
           !
-          ! DA: fuse all the 1D copies in a single ACC kernel
           !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
           !$ACC LOOP GANG VECTOR
           DO jl = jcs,jce
@@ -1267,7 +1309,7 @@ CONTAINS
                 tend% qtrc_phy(jl,jk,jb,iqi)  = 0._wp
               END DO
             END DO
-          END IF 
+          END IF
           !
           ! diagnostic
           ! 2-tl-scheme
@@ -1291,7 +1333,7 @@ CONTAINS
             !
             field% albvisdir (jl,jb)   = albvisdir (jl,jb)
             field% albnirdir (jl,jb)   = albnirdir (jl,jb)
-            field% albvisdif (jl,jb)   = albvisdif (jl,jb) 
+            field% albvisdif (jl,jb)   = albvisdif (jl,jb)
             field% albnirdif (jl,jb)   = albnirdif (jl,jb)
             field% albedo    (jl,jb)   = albedo    (jl,jb)
           END DO
@@ -1404,14 +1446,13 @@ CONTAINS
           END SELECT
         END IF
         !$ACC END PARALLEL
-        !$ACC WAIT
 
         ! Turbulent mixing, part III:
         ! - Further diagnostics.
         !----------------------------------------------------------------------------------------
         ! TODO: async
         CALL nsurf_diag(jcs, jce, nproma, nsfc_type,     &! in
-            &          ilnd,                            &! in
+            &          ilnd, iwtr, iice,                &! in
             &          field%frac_tile(:,jb,:),         &! in
             &          field% qtrc_phy(:,nlev,jb,iqv),  &! in humidity qm1
             &          field%    ta(:,nlev,jb),         &! in tm1
@@ -1420,8 +1461,10 @@ CONTAINS
             &                  zqx(:,nlev,jb),          &! in, xlm1 + xim1
             &          field%   ua(:,nlev,jb),          &! in, um1
             &          field%   va(:,nlev,jb),          &! in, vm1
-            &          field% ocu (:,jb),               &! in, ocean sfc velocity, u-component
-            &          field% ocv (:,jb),               &! in, ocean sfc velocity, v-component
+            &          field% ocean_u (:,jb),           &! in, ocean sfc velocity, u-component
+            &          field% ocean_v (:,jb),           &! in, ocean sfc velocity, v-component
+            &          field% ice_u (:,jb),             &! in, sea ice velocity, u-component
+            &          field% ice_v (:,jb),             &! in, sea ice velocity, v-component
             &          field% zf  (:,nlev  ,jb),        &! in, height of lowermost full level (m)
             &          field% zh  (:,nlev+1,jb),        &! in, surface height    (m)
             &          field%cptgz(:,nlev,jb),          &! in dry static energy
@@ -1434,6 +1477,7 @@ CONTAINS
             &          field%sfcWind(:,  jb),           &! out 10m windspeed
             &          field%    tas(:,  jb),           &! out temperature in 2m
             &          field%   dew2(:,  jb),           &! out dew point temperature in 2m
+            &          field%   qv2m(:,  jb),           &! out specific humidity in 2m
             &          field%    uas(:,  jb),           &! out zonal wind in 10m
             &          field%    vas(:,  jb),           &! out meridional wind in 10m
             &          field%tasmax (:,  jb),           &! out max 2m temperature
@@ -1441,6 +1485,7 @@ CONTAINS
             &          field%sfcWind_tile(:,jb,:),      &! out 10m windspeed on tiles
             &          field%    tas_tile(:,jb,:),      &! out temperature in 2m on tiles
             &          field%   dew2_tile(:,jb,:),      &! out dew point temperature in 2m on tiles
+            &          field%   qv2m_tile(:,jb,:),      &! out specific humidity in 2m on tiles
             &          field%    uas_tile(:,jb,:),      &! out zonal wind in 10m on tiles
             &          field%    vas_tile(:,jb,:)       )! out meridional wind in 10m on tiles
 
@@ -1746,17 +1791,24 @@ CONTAINS
             END DO
           END DO
         END IF
-        !$ACC WAIT
       !
       ENDDO !## jb loop5 END
 !$OMP END PARALLEL DO
     !
     END IF ! if ( is_in_sd_ed_interval )
 
-    !$ACC WAIT
     !$ACC END DATA
     !$ACC END DATA
     !$ACC END DATA
+
+#ifndef __NO_JSBACH__
+    IF (graph_id == 0) THEN
+      graph_id = end_capture(graphs)
+      CALL replay(graphs, graph_id, 1)
+    END IF
+#endif
+
+    !$ACC WAIT(1)
 
     ! disassociate pointers
     NULLIFY(field)

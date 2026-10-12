@@ -1,15 +1,15 @@
-! Module containing utility routines for setting GRIB2 keys.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module containing utility routines for setting GRIB2 keys.
 
 MODULE mo_grib2_util
 
@@ -20,8 +20,10 @@ MODULE mo_grib2_util
     &                              TSTEP_CONSTANT, TSTEP_AVG, TSTEP_ACCUM, TSTEP_MAX,   &
     &                              TSTEP_MIN, TUNIT_SECOND, TUNIT_MINUTE, TUNIT_HOUR,   &
     &                              vlistDefVarIntKey, CDI_KEY_TYPEOFGENERATINGPROCESS,  &
-    &                              CDI_KEY_PRODUCTDEFINITIONTEMPLATE, CDI_NOERR
-  USE mo_gribout_config,     ONLY: t_gribout_config
+    &                              CDI_KEY_PRODUCTDEFINITIONTEMPLATE, CDI_NOERR,        &
+    &                              zaxisInqLbounds, zaxisInqUbounds
+  USE mo_gribout_config,     ONLY: t_gribout_config, GRIB_UNDEFVAL, GRIB_NOTINUSEVAL, &
+    &                              GRIB_LIB_COMPAT_ECC_2_31_0, GRIB_MAX_NUM_MOD_COMP
   USE mo_var_metadata_types, ONLY: t_var_metadata, CLASS_TILE, CLASS_SYNSAT, &
     &                              CLASS_CHEM, CLASS_TILE_LAND,              &
     &                              CLASS_CHEM_STAT, CLASS_CHEM_OPTP,         &
@@ -34,7 +36,8 @@ MODULE mo_grib2_util
   USE mo_grib2_tile,         ONLY: t_grib2_template_tile
   ! calendar operations
   USE mtime,                 ONLY: timedelta, datetime,                &
-    &                              OPERATOR(-), getTotalSecondsTimeDelta 
+    &                              OPERATOR(-), getTotalSecondsTimeDelta
+  USE mo_grib2,              ONLY: t_grib2_key_list
 
   IMPLICIT NONE
 
@@ -49,6 +52,7 @@ MODULE mo_grib2_util
   PUBLIC :: set_GRIB2_chem_keys
   PUBLIC :: set_GRIB2_timedep_keys
   PUBLIC :: set_GRIB2_timedep_local_keys
+  PUBLIC :: grib_lib_compatibility
 
 CONTAINS
 
@@ -77,7 +81,7 @@ CONTAINS
     ! Load correct tables
     !
     CALL vlistDefVarIntKey(vlistID, varID, "tablesVersion", grib_conf%tablesVersion)
-    CALL vlistDefVarIntKey(vlistID, varID, "localTablesVersion", grib_conf%localTablesVersion)    
+    CALL vlistDefVarIntKey(vlistID, varID, "localTablesVersion", grib_conf%localTablesVersion)
     !
     CALL vlistDefVarIntKey(vlistID, varID, "significanceOfReferenceTime",     &
       &                    grib_conf%significanceOfReferenceTime)
@@ -102,8 +106,8 @@ CONTAINS
 
     IF (ANY((/TSTEP_AVG,TSTEP_ACCUM,TSTEP_MAX,TSTEP_MIN/) == steptype)) THEN
       ! Always set
-      !   typeOfTimeIncrement = 2 
-      !   "Successive times processed have same start time of forecast, 
+      !   typeOfTimeIncrement = 2
+      !   "Successive times processed have same start time of forecast,
       !    forecast time is incremented"
       ! since this is the only type of time processing available in ICON
       CALL vlistDefVarIntKey(vlistID, varID, "typeOfTimeIncrement", 2)
@@ -159,7 +163,7 @@ CONTAINS
     !   Italy:     80   Rome (RSMC)
     !   Athens:    96
     !   MCH:      215   Zuerich
-    !   Poland:   220   Poland  
+    !   Poland:   220   Poland
     !   Romania:  242   Romania
     !             250   cosmo COnsortium for Small scale MOdelling (COSMO)
 
@@ -191,9 +195,17 @@ CONTAINS
         ! Local definition for ensemble products
         ! --------------------------------------
 
-        IF (grib_conf%localTypeOfEnsembleForecast /= -1)                                  &
+        IF (grib_conf%localTypeOfEnsembleForecast /= GRIB_UNDEFVAL)                       &
           &   CALL vlistDefVarIntKey(vlistID, varID, "localTypeOfEnsembleForecast" ,      &
           &                          grib_conf%localTypeOfEnsembleForecast)
+
+      ELSE IF (grib_conf%localDefinitionNumber == 230) THEN
+        !
+        ! --------------------------------------
+        ! Local definition for model composition
+        ! --------------------------------------
+
+        CALL set_GRIB2_local_model_composition_keys(vlistID, varID, grib_conf)
 
       END IF ! localDefinitionNumber
     END SELECT
@@ -206,7 +218,7 @@ CONTAINS
   !! Set GRIB2 ensemble keys (SECTION 4)
   !!
   !! ATTENTION: To be called AFTER set_GRIB2_additional_keys
-  !!            due to its dependency on typeOfGeneratingProcess that may 
+  !!            due to its dependency on typeOfGeneratingProcess that may
   !!            be changed for invariant fields in set_GRIB2_additional_keys
   !!
   SUBROUTINE set_GRIB2_ensemble_keys(vlistID, varID, grib_conf)
@@ -220,7 +232,7 @@ CONTAINS
   !----------------------------------------------------------------
 
     ! get typeOfGeneratingProcess
-    ! We do not make use of grib_conf%typeOfGeneratingProcess, since 
+    ! We do not make use of grib_conf%typeOfGeneratingProcess, since
     ! typeOfGeneratingProcess is modified for invariant fields.
     res = cdiInqKeyInt(vlistID, varID, CDI_KEY_TYPEOFGENERATINGPROCESS, typeOfGeneratingProcess)
     IF (res/=CDI_NOERR) THEN
@@ -231,13 +243,13 @@ CONTAINS
 
       ! SECTION 4: Product definition Section
 
-      IF (grib_conf%typeOfEnsembleForecast /= -1)                                       &
+      IF (grib_conf%typeOfEnsembleForecast /= GRIB_UNDEFVAL)                            &
         &   CALL vlistDefVarIntKey(vlistID, varID, "typeOfEnsembleForecast" ,           &
         &                          grib_conf%typeOfEnsembleForecast)
-      IF (grib_conf%numberOfForecastsInEnsemble /= -1)                                  &
+      IF (grib_conf%numberOfForecastsInEnsemble /= GRIB_UNDEFVAL)                       &
         &   CALL vlistDefVarIntKey(vlistID, varID, "numberOfForecastsInEnsemble" ,      &
         &                          grib_conf%numberOfForecastsInEnsemble)
-      IF (grib_conf%perturbationNumber /= -1)                                           &
+      IF (grib_conf%perturbationNumber /= GRIB_UNDEFVAL)                                &
         &   CALL vlistDefVarIntKey(vlistID, varID, "perturbationNumber" ,               &
         &                          grib_conf%perturbationNumber)
     END IF ! typeOfGeneratingProcess
@@ -248,7 +260,7 @@ CONTAINS
   !! Set GRIB2 keys which are specific to synthetic satellite products.
   !!
   SUBROUTINE set_GRIB2_synsat_keys (vlistID, varID, info)
-    
+
     INTEGER,                INTENT(IN) :: vlistID, varID
     TYPE (t_var_metadata),  INTENT(IN) :: info
 
@@ -286,12 +298,12 @@ CONTAINS
   !! Set keys specific to atmospheric chemical species
   !!
   !! Set GRIB2 keys which are specific to atmospheric chemical species.
-  !! Here, only the PDT will be changed. Additional Template-specific 
-  !! keys will be set at the end of 
+  !! Here, only the PDT will be changed. Additional Template-specific
+  !! keys will be set at the end of
   !! mo_name_list_output_init:add_variables_to_vlist
   !!
   SUBROUTINE set_GRIB2_chem_keys (vlistID, varID, info)
-    
+
     INTEGER,                INTENT(IN) :: vlistID, varID
     TYPE (t_var_metadata),  INTENT(IN) :: info
 
@@ -301,7 +313,7 @@ CONTAINS
     INTEGER :: res
     CHARACTER(len=*), PARAMETER :: routine = 'set_GRIB2_chem_keys'
     ! ----------------------------------------------------------------
-    
+
     SELECT CASE (info%var_class)
     CASE (CLASS_CHEM)
       productDefinitionTemplate = 40
@@ -350,7 +362,7 @@ CONTAINS
     ! local
     INTEGER                   :: res
     INTEGER                   :: typeOfGeneratingProcess
-    INTEGER                   :: productDefinitionTemplate        ! Tile template number 
+    INTEGER                   :: productDefinitionTemplate        ! Tile template number
     INTEGER                   :: natt
     TYPE(t_tileinfo_grb2)     :: tileinfo_grb2
     CHARACTER(len=*), PARAMETER :: routine = 'set_GRIB2_tile_keys'
@@ -374,7 +386,7 @@ CONTAINS
       productDefinitionTemplate = grib2_template_tile%tpl_inst
     ENDIF
 
-! use the following IF condition, once the WMO tile templates for statistical processing 
+! use the following IF condition, once the WMO tile templates for statistical processing
 ! become available (validation by WMO pending).
 !
 !!$    IF (typeOfGeneratingProcess == 4) THEN
@@ -437,9 +449,9 @@ CONTAINS
 
   !------------------------------------------------------------------------------------------------
   !> Set additional, time-dependent GRIB2 keys
-  !!  
+  !!
   !!  This subroutine sets GRIB2 keys that may change during the
-  !!  simulation. Currently this is the case for the start and end time 
+  !!  simulation. Currently this is the case for the start and end time
   !!  of the statistical process interval.
   !!
   !!  Description of how the GRIB2 keys 'forecastTime' and 'lengthOfTimeRange' are computed.
@@ -492,7 +504,7 @@ CONTAINS
     !---------------------------------------------------------
     !
     ! Skip inapplicable fields
-    ! Currently all TSTEP_AVG and TSTEP_ACC fields are skipped, except for special ones 
+    ! Currently all TSTEP_AVG and TSTEP_ACC fields are skipped, except for special ones
     ! listed in ana_avg_vars
 
     ! UB: this method does not work for the internally interpolated vars of name ana_avg_vars, because
@@ -502,20 +514,20 @@ CONTAINS
 !      & (one_of(TRIM(info%name),ana_avg_vars) == -1) ) RETURN
 
     ! DR
-    ! less cumbersome solution, which does no longer skip variables of type 
+    ! less cumbersome solution, which does no longer skip variables of type
     ! TSTEP_AVG, TSTEP_ACCUM. By this, the manual list ana_avg_vars becomes superfluous.
     !
-    ! This version differs from the current version (see above) by the fact that 
-    ! forecastTime and lengthOfTimeRange are set for ALL statistically processed variables 
+    ! This version differs from the current version (see above) by the fact that
+    ! forecastTime and lengthOfTimeRange are set for ALL statistically processed variables
     ! and not only for those of type TSTEP_MAX, TSTEP_MIN and members of the list ana_avg_vars.
     !
-    ! First tests showed that metadata for variables of type TSTEP_AVG, TSTEP_ACCUM are 
-    ! still correct. Putting it the other way around: It is not clear 
-    ! to me why with the currently active version the keys forecastTime and lengthOfTimeRange are 
+    ! First tests showed that metadata for variables of type TSTEP_AVG, TSTEP_ACCUM are
+    ! still correct. Putting it the other way around: It is not clear
+    ! to me why with the currently active version the keys forecastTime and lengthOfTimeRange are
     ! set correctly for variables of type TSTEP_AVG, TSTEP_ACCUM.
     IF ((ALL((/TSTEP_MAX, TSTEP_MIN, TSTEP_AVG, TSTEP_ACCUM/) /= info%isteptype))) RETURN
 
-    ! get vlistID. Note that the stream-internal vlistID must be used. 
+    ! get vlistID. Note that the stream-internal vlistID must be used.
     ! It is obtained via streamInqVlist(streamID)
     vlistID     = streamInqVlist(streamID)
     taxisID     = vlistInqTaxis(vlistID)
@@ -533,31 +545,31 @@ CONTAINS
         CALL finish (routine, 'Illegal actionId')
       ENDIF
 
-      ! get latest (intended) triggering time, which is equivalent to 
+      ! get latest (intended) triggering time, which is equivalent to
       ! the statistical process starting time
       statProc_startDateTime = info%action_list%action(var_actionId)%EventPrevTriggerDate
 
     ELSE
-      ! If there is no RESET action available, it is assumed that the 
+      ! If there is no RESET action available, it is assumed that the
       ! statistical process start time is equal to the model start time
       statProc_startDateTime = start_date
     ENDIF
 
 
     ! get time interval, over which statistical process has been performed
-    ! It is the time difference between the current time (rounded) cur_date and 
+    ! It is the time difference between the current time (rounded) cur_date and
     ! the last time the nullify-action took place (rounded) statProc_startDateTime.
     ! mtime_lengthOfTimeRange = current time - statistical process start time
     mtime_lengthOfTimeRange = cur_date - statProc_startDateTime
 
-    ! time interval over which statistical process has been performed (in secs)    
+    ! time interval over which statistical process has been performed (in secs)
     ilengthOfTimeRange_secs = INT(getTotalSecondsTimeDelta(mtime_lengthOfTimeRange, &
       &                                                statProc_startDateTime)      &
       &                           )
 
 
     ! get forecast_time: forecast_time = statProc_startDateTime - model_startDateTime
-    ! Note that for statistical quantities, the forecast time is the time elapsed between the 
+    ! Note that for statistical quantities, the forecast time is the time elapsed between the
     ! model start time and the start time of the statistical process
     forecast_delta = statProc_startDateTime - start_date
 
@@ -579,12 +591,12 @@ CONTAINS
     END SELECT
 
     ! set forecast time: statProc_startDateTime - model_startDateTime
-    CALL vlistDefVarIntKey(vlistID, varID, "forecastTime", forecast_time) 
+    CALL vlistDefVarIntKey(vlistID, varID, "forecastTime", forecast_time)
 
     !
     ! set length of time range: current time - statProc_startDateTime
     CALL vlistDefVarIntKey(vlistID, varID, "lengthOfTimeRange", ilengthOfTimeRange)
-    ! Note that if one of the statistics templates 4.8 or 4.11 is selected, the time unit 
+    ! Note that if one of the statistics templates 4.8 or 4.11 is selected, the time unit
     ! (GRIB2 key "indicatorOfUnitForTimeRange") is set automatically by CDI.
     ! It is always set identical to "indicatorOfUnitOFTimeRange"
 
@@ -610,18 +622,18 @@ CONTAINS
   !----------------------------------------------------------------
 
 
-    ! get vlistID. Note that the stream-internal vlistID must be used. 
+    ! get vlistID. Note that the stream-internal vlistID must be used.
     ! It is obtained via streamInqVlist(streamID)
     vlistID = streamInqVlist(streamID)
 
     ! SECTION 2: specific settings (local use) for DWD and COSMO Partners
     !  for list of centers see subroutine set_GRIB2_local_keys above
 
-    ! Only set local time information for localDefinitionNumber 253, 254
+    ! Only set local time information for localDefinitionNumber 253, 254, 230
     ! COSMO local section 250 does not include time information
 
     SELECT CASE (grib_conf%localDefinitionNumber)
-    CASE (253, 254)
+    CASE (253, 254, 230)
       SELECT CASE (grib_conf%generatingCenter)
       CASE (78, 80, 215)
 
@@ -654,5 +666,201 @@ CONTAINS
 
   END SUBROUTINE set_GRIB2_timedep_local_keys
 
+  !------------------------------------------------------------------------------------------------
+  !! Set local GRIB2 keys for Local-Use-Section (Section 2) template 230 "Model composition":
+  !! This template was implemented in the local DWD definitions for ecCodes in the first half-year of 2024.
+  !! In production at DWD, ICON-NWP may be coupled together with other model components,
+  !! such as the ART model for aerosol and tracer transport and physics, and the ocean model.
+  !! Template 230 provides keys to specify such model components in a modular way.
+  !! (As the model composition is a highly centre-specific piece of information,
+  !! it is incorporated into Section 2 rather than a new official WMO template for Section 4, e.g.)
+  !!
+  SUBROUTINE set_GRIB2_local_model_composition_keys(vlistID, varID, grib_conf)
+
+    ! Arguments
+    INTEGER,                INTENT(IN) :: vlistID, varID
+    TYPE(t_gribout_config), INTENT(IN) :: grib_conf
+
+    ! Local variables
+    INTEGER :: localOriginOfProduct,              &
+      &        localNumberOfModelComponentsInUse, &
+      &        localModelComponent(8)
+
+    CHARACTER(LEN=*), PARAMETER :: routine = 'set_GRIB2_local_model_composition_keys'
+
+    !----------------------------------------------------------------
+
+    ! The following settings are only available for:
+    ! * Local-Use-Section (Section 2) template 230
+    ! * generatingCenter = 78 / 80 / 215
+    IF (grib_conf%localDefinitionNumber /= 230) THEN
+      RETURN
+    ELSEIF (.NOT. ANY([78, 80, 215] == grib_conf%generatingCenter)) THEN
+      RETURN
+    ENDIF
+
+    ! The following keys of the model composition template
+    ! will be set here (further keys are set in set_GRIB2_timedep_local_keys):
+    !
+    ! * localProductionSystem......................(eccodes local definition table: 2.230)
+    ! * localOriginOfProduct.......................(eccodes local definition table: 2.231)
+    ! * localNumberOfModelComponentsInUse
+    ! * localDrivingModelComponent.................(eccodes local definition table: 2.231.<localOriginOfProduct> = 2.231.1)
+    ! * local2nd/3rd/.../8thModelComponent.........(eccodes local definition table: 2.231.<localOriginOfProduct> = 2.231.1)
+    ! * localProductionContext.....................(eccodes local definition table: 2.233)
+
+    ! Model composition:
+    ! localNumberOfModelComponentsInUse:
+    localNumberOfModelComponentsInUse = COUNT(grib_conf%model_components(:) > GRIB_NOTINUSEVAL)
+    ! It is permitted to specify not model composition at all
+    ! as template 230 may be used for other purposes
+    IF (localNumberOfModelComponentsInUse > 0) THEN
+      ! localOriginOfProduct:
+      ! 1 -> "Product is generated by a process that is based on a model or model composition described by the following 17 octets"
+      localOriginOfProduct = 1
+      ! local(Driving/2nd/3rd/.../8th)ModelComponent:
+      ! The template allows to specify 8 model components at most.
+      ! Default-value initialization:
+      ! 0 -> "Unused = Not in use/Does not apply"
+      localModelComponent(:) = GRIB_NOTINUSEVAL
+      ! Currently GRIB_MAX_NUM_MOD_COMP < 8
+      localModelComponent(1:GRIB_MAX_NUM_MOD_COMP) = grib_conf%model_components(1:GRIB_MAX_NUM_MOD_COMP)
+    ENDIF ! IF (localNumberOfModelComponentsInUse > 0)
+
+    ! Hand over metadata to CDI
+    CALL vlistDefVarIntKey(vlistID, varID, "localProductionSystem", grib_conf%localProductionSystem)
+
+    IF (localNumberOfModelComponentsInUse > 0) THEN
+      CALL vlistDefVarIntKey(vlistID, varID, "localOriginOfProduct", localOriginOfProduct)
+      CALL vlistDefVarIntKey(vlistID, varID, "localNumberOfModelComponentsInUse", localNumberOfModelComponentsInUse)
+      CALL vlistDefVarIntKey(vlistID, varID, "localDrivingModelComponent", localModelComponent(1))
+      CALL vlistDefVarIntKey(vlistID, varID, "local2ndModelComponent", localModelComponent(2))
+      CALL vlistDefVarIntKey(vlistID, varID, "local3rdModelComponent", localModelComponent(3))
+      CALL vlistDefVarIntKey(vlistID, varID, "local4thModelComponent", localModelComponent(4))
+      CALL vlistDefVarIntKey(vlistID, varID, "local5thModelComponent", localModelComponent(5))
+      CALL vlistDefVarIntKey(vlistID, varID, "local6thModelComponent", localModelComponent(6))
+      CALL vlistDefVarIntKey(vlistID, varID, "local7thModelComponent", localModelComponent(7))
+      CALL vlistDefVarIntKey(vlistID, varID, "local8thModelComponent", localModelComponent(8))
+    ENDIF ! IF (localNumberOfModelComponentsInUse > 0)
+
+    IF (grib_conf%localTypeOfEnsembleForecast /= GRIB_UNDEFVAL) &
+      & CALL vlistDefVarIntKey(vlistID, varID, "localTypeOfEnsembleForecast", grib_conf%localTypeOfEnsembleForecast)
+
+    IF (grib_conf%localProductionContext /= GRIB_UNDEFVAL) &
+      & CALL vlistDefVarIntKey(vlistID, varID, "localProductionContext", grib_conf%localProductionContext)
+
+  END SUBROUTINE set_GRIB2_local_model_composition_keys
+
+  !-------------------------------------------------------------------------
+  !> Adjustments for compensating non-backward-compatible
+  !! metadata changes after version updates of the GRIB library
+  !!
+  SUBROUTINE grib_lib_compatibility(grib_lib_compat, vlistID, varID, zaxisID, additional_grib_keys)
+
+    ! Arguments
+    INTEGER,                INTENT(IN) :: grib_lib_compat
+    INTEGER,                INTENT(IN) :: vlistID
+    INTEGER,                INTENT(IN) :: varID
+    INTEGER,                INTENT(IN) :: zaxisID
+    TYPE(t_grib2_key_list), INTENT(IN) :: additional_grib_keys
+
+    ! Local variables
+    INTEGER :: typeOfSecondFixedSurface
+    INTEGER :: scaleFactorOfSecondFixedSurface
+    INTEGER :: scaledValueOfSecondFixedSurface
+    INTEGER :: jkey
+    INTEGER :: key_len
+    INTEGER :: zaxisLboundsSize, zaxisUboundsSize
+    INTEGER :: counter
+    LOGICAL :: is_layer
+
+    !---------------------------------
+
+    ! Initialization of local auxiliary variables
+    ! (we use GRIB_UNDEFVAL = -1 for initialization with negative integer)
+    zaxisLboundsSize                = GRIB_UNDEFVAL
+    zaxisUboundsSize                = GRIB_UNDEFVAL
+    is_layer                        = .FALSE.
+    typeOfSecondFixedSurface        = GRIB_UNDEFVAL
+    scaleFactorOfSecondFixedSurface = GRIB_UNDEFVAL
+    scaledValueOfSecondFixedSurface = GRIB_UNDEFVAL
+
+    IF (grib_lib_compat == GRIB_LIB_COMPAT_ECC_2_31_0) THEN
+
+      ! CDI uses the ecCodes sample file "GRIB2.tmpl" as a starting file for ecCodes.
+      ! The SecondFixedSurface keys are assigned the following values in GRIB2.tmpl:
+      !
+      ! - typeOfSecondFixedSurface        = 255 (Missing)
+      ! - scaleFactorOfSecondFixedSurface = MISSING (= 255)
+      ! - scaledValueOfSecondFixedSurface = MISSING (= 2,147,483,647)
+      !
+      ! Now, if typeOfSecondFixedSurface is set to a value >= 10, 102 say,
+      ! but scaleFactorOfSecondFixedSurface and scaledValueOfSecondFixedSurface
+      ! are not explicitly set, the result is as follows:
+      !
+      ! For ecCodes version < 2.32.0:
+      ! -----------------------------
+      ! - typeOfSecondFixedSurface        = 102 (Specific altitude above mean sea level)
+      ! - scaleFactorOfSecondFixedSurface = 0
+      ! - scaledValueOfSecondFixedSurface = 0
+      !
+      ! For ecCodes version >= 2.32.0:
+      ! ------------------------------
+      ! - typeOfSecondFixedSurface        = 102 (Specific altitude above mean sea level)
+      ! - scaleFactorOfSecondFixedSurface = MISSING
+      ! - scaledValueOfSecondFixedSurface = MISSING
+      !
+      ! With grib_lib_compat = 1, we try to overwrite the behavior of
+      ! ecCodes versions >= 2.32.0 with the behavior of versions < 2.32.0, in this respect.
+
+      ! Check if the SecondFixedSurface keys are among the additional integer GRIB keys
+      counter = 0
+      KEY_LOOP: DO jkey = 1, additional_grib_keys%nint_keys
+        key_len = LEN_TRIM(additional_grib_keys%int_key(jkey)%key)
+        ! Avoid unnecessary string comparisons:
+        ! - LEN(typeOfSecondFixedSurface) = 24
+        ! - LEN(scaleFactorOfSecondFixedSurface) = LEN(scaledValueOfSecondFixedSurface) = 31
+        IF (key_len == 24) THEN
+          IF (additional_grib_keys%int_key(jkey)%key(1:key_len) == "typeOfSecondFixedSurface") THEN
+            typeOfSecondFixedSurface = additional_grib_keys%int_key(jkey)%val
+            counter = counter + 1
+          END IF
+        ELSEIF (key_len == 31) THEN
+          IF (additional_grib_keys%int_key(jkey)%key(1:key_len) == "scaleFactorOfSecondFixedSurface") THEN
+            scaleFactorOfSecondFixedSurface = additional_grib_keys%int_key(jkey)%val
+            counter = counter + 1
+          ELSEIF (additional_grib_keys%int_key(jkey)%key(1:key_len) == "scaledValueOfSecondFixedSurface") THEN
+            scaledValueOfSecondFixedSurface = additional_grib_keys%int_key(jkey)%val
+            counter = counter + 1
+          ENDIF
+        ENDIF
+        ! If there are 3 hits, we can already leave the search loop
+        IF (counter == 3) EXIT KEY_LOOP
+      END DO KEY_LOOP
+
+      IF (typeOfSecondFixedSurface > 9) THEN
+        ! Figure out if zaxis is level- or layer-based:
+        ! In case a zaxis is layer-based, the lower and upper bounds of a layer -
+        ! zaxisLbounds and zaxisUbounds - should have been specified during the creation of the zaxis.
+        ! In this case, the CDI functions zaxisInqLbounds and zaxisInqUbounds should return a size > 0.
+        zaxisLboundsSize = zaxisInqLbounds(zaxisID)
+        zaxisUboundsSize = zaxisInqUbounds(zaxisID)
+        is_layer         = ((zaxisLboundsSize > 0) .AND. (zaxisUboundsSize > 0))
+        ! If a zaxis is layer-based, CDI should set the values of
+        ! the GRIB keys 'scaleFactorOfSecondFixedSurface' and 'scaledValueOfSecondFixedSurface'.
+        ! Therefore, we should not overwrite these values here,
+        ! even though the key 'typeOfSecondFixedSurface' was explicitly set in the 'add_var'
+        ! of the respective variable (for whatever reason).
+        IF (.NOT. is_layer) THEN
+          ! We will set the value of the following two GRIB keys to zero,
+          ! only if they are not explicitly specified in 'add_var'
+          IF (scaleFactorOfSecondFixedSurface < 0) CALL vlistDefVarIntKey(vlistID, varID, "scaleFactorOfSecondFixedSurface", 0)
+          IF (scaledValueOfSecondFixedSurface < 0) CALL vlistDefVarIntKey(vlistID, varID, "scaledValueOfSecondFixedSurface", 0)
+        ENDIF
+      ENDIF ! IF (typeOfSecondFixedSurface > 9)
+
+    ENDIF ! IF (grib_lib_compat == GRIB_LIB_COMPAT_ECC_2_31_0)
+
+  END SUBROUTINE grib_lib_compatibility
 
 END MODULE mo_grib2_util

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -25,7 +25,7 @@
   VarName    = getenv("VarName")
 
   title    = "Held-Suarez Test"
-  DataFile = DataPath+DataID+".nc" 
+  DataFile = DataPath+DataID+".nc"
   PlotFile = PlotPath+DataID
 
 ;----------------------------------------------
@@ -33,7 +33,7 @@
 
   File = addfile( DataFile,"r" )
 
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 ; plot settings
 
      ResXY = True
@@ -57,12 +57,12 @@
      var = var/100.
 
      ntime = dimsizes(var&time)
-     
+
      time = fspan(0,ntime-1,ntime)
 
      ;ResXY@gsnLeftString   = ConfigStr
      ;ResXY@gsnCenterString = ""
-     ;ResXY@gsnRightString  = "Surface Pressure global mean" 
+     ;ResXY@gsnRightString  = "Surface Pressure global mean"
      ResXY@tiMainString = ConfigStr
      ResXY@tiMainFontHeightF  = 0.016
 

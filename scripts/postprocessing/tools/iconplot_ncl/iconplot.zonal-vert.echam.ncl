@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -27,7 +27,7 @@ begin
 ; input, variable setup
 ;---------------------------------------------------------
 
- PlotFormat = getenv("plot_file_format") 
+ PlotFormat = getenv("plot_file_format")
  Model      = getenv("Model")
  DataPath   = getenv("DataPath")
  DataPath2  = getenv("DataPath2")
@@ -51,7 +51,7 @@ begin
  varNameF   = (/"ACLC.zmta","T.zmta"   ,"Qv.zmta"  ,"Qw.zmta"     ,    \
                 "Qi.zmta"  ,"Q4.zmta"  ,"Q5.zmta"     ,                \
                 "U.zmta"   ,"V.zmta"   ,"OMEGA.zmta"  ,                \
-                "UpVp.zmta","TpVp.zmta","eddy-KE.zmta","TpTp.zmta"    /) 
+                "UpVp.zmta","TpVp.zmta","eddy-KE.zmta","TpTp.zmta"    /)
  varName    = (/"ACLC"     ,"T"        ,"Qv"       ,"Qw"          ,    \
                 "Qi"       ,"Q4"       ,"Q5"          ,                \
                 "U"        ,"V"        ,"OMEGA"       ,                \
@@ -83,7 +83,7 @@ begin
  Int =        (/ 10,    5,   2,  20,    5,   5,  10,  10, 0.5,  0.03,  20,  10, 100, 20/)
  Max2=        (/ 30,   20, 0.5,  50,   20,  20,  40,  40, 1.5,  0.05,  60,  20, 500,100/)
  Int2=        (/  3,    2, 0.1,  10,    2,   2,   4,   4, 0.3,  0.01,   6,   4,  50, 10/)
-		    		       		 		                
+
  colorStart = (/  0,    0,   0,   0,    0,   0,   0,   0,   0,     0,   0,   0,   0,  0/)
  colorEnd   = (/101,  101, 101, 101,  101, 101, 101, 101, 101,   101, 101, 101, 101,101/)
 
@@ -108,11 +108,11 @@ begin
  ResC@gsnFrame = False
 
  if (Model .eq."ICOHDC") then
-   ResC@tiYAxisString          = "Hybrid coordinate ~F8~h~F~" 
+   ResC@tiYAxisString          = "Hybrid coordinate ~F8~h~F~"
  end if
  if (Model .eq."ICONAM") then
-   ResC@tiYAxisString          = "Height Km" 
- end if     
+   ResC@tiYAxisString          = "Height Km"
+ end if
 
  FontHeight = 0.02
 
@@ -129,25 +129,25 @@ begin
  ResC@pmLabelBarWidthF         = 0.58
  ResC@lbLabelAutoStride        = True
  ResC@pmLabelBarOrthogonalPosF = 0.01
- ResC@lbLabelFontHeightF       = FontHeight 
+ ResC@lbLabelFontHeightF       = FontHeight
 
 ;ResC@trYLog          = False
  ResC@tmYRMode        = "Automatic"
- if (Model .eq."ICOHDC") then     
+ if (Model .eq."ICOHDC") then
    ResC@trYReverse    = True
    ResC@trYMaxF       = 1.
    ResC@trYMinF       = 0.
  end if
- if (Model .eq."ICONAM") then 
+ if (Model .eq."ICONAM") then
   ;ResC@trGridType    = "LogLin"
   ;ResC@trYAxisType   = "LogAxis"
-  ;ResC@trYLog        = True    
+  ;ResC@trYLog        = True
    ResC@trYReverse    = False
    ResC@trYMaxF       = topheight
    ResC@trYMinF       = 0.
   ;ResC@trYLog        = True
   ;ResC@tmYLMinorPerMajor=8
- end if 
+ end if
 
  ResC@cnInfoLabelOn                = False
 ;ResC@cnLineThicknessF             = 1.2
@@ -188,19 +188,19 @@ begin
  do ivar=0,nvar-1
    File = addfile( DataPath  + DataID +"." + varNameF(ivar) +suffix, "r" )
    File2= addfile( DataPath2 + DataID +"." + varNameF(ivar) +suffix, "r" )
- 
+
    var  = (/File->$varName(ivar)$(0,:,:,0)/)          ; (time,lev,cell,lon)
    var2 = (/File2->$varName(ivar)$(0,:,:,0)/)         ; (time,lev,cell,lon)
    var  = var * Scale(ivar)
    var2 = var2* Scale(ivar)
-  
+
    do istat=0,1                                       ; 0: single experiment, 1:diff exp-control
      if (istat .eq. 1) then
        var = var - var2
      end if
 
      print( varName(ivar) + " min=" + min(var) + " max=" + max(var) )
- 
+
      if (Model .eq. "ICOHDC") then
         vertc     = (File->hyam)/apzero + File->hybm  ; eta as vertical coordinate
         vertc_t   = 0.
@@ -217,18 +217,18 @@ begin
         vertc_t   = topheight
         vertc_sfc = 0.
      end if
- 
+
      var!0     = "vertc"
      var&vertc = vertc
      var!1     = "lat"
      var&lat   = File->lat
- 
+
      vertc4plot       = fspan(vertc_t,vertc_sfc,nlev4plot)
      vertc4plot!0     = "vertc"
      vertc4plot&vertc = vertc4plot
      tmp              = linint1_Wrap( vertc, var(lat|:,vertc|:), False, vertc4plot, 0 )
      var4plot         = tmp(vertc|:,lat|:)
- 
+
      ResC@cnLevelSelectionMode  = "ManualLevels"
      if (istat .eq. 0) then
        ResC@cnMinLevelValF        =  Min(ivar)
@@ -251,7 +251,7 @@ begin
        ResC@gsnSpreadColorEnd     = 250
        ResC@gsnCenterString       = "vs. "+expnum2
      end if
-     gsn_define_colormap(wks,colormap) 
+     gsn_define_colormap(wks,colormap)
 
      ResC@gsnLeftString         = time_stat_text
      ResC@gsnRightString        = Resolution
@@ -261,7 +261,7 @@ begin
      delete(height)
      delete(vertc)
 
-     contour(iplot) = gsn_csm_contour( wks,var4plot,ResC ) 
+     contour(iplot) = gsn_csm_contour( wks,var4plot,ResC )
      if (istat .eq. 0) then
        gsn_panel (wks, contour(iplot), (/1,1/), res_L)
      else

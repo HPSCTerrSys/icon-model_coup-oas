@@ -405,7 +405,7 @@ There are two modes, depending on user-defined <code>%SVN_UPDATE%</code> flag:
 </p>
 
 <p>
-Requires an existing source directory on compute cluster <code>c1a</code>. 
+Requires an existing source directory on compute cluster <code>c1a</code>.
 Apply only <code>svn update</code> and <code>gmake distclean</code> to retrieve the source code from the repository.
 </p>
 
@@ -442,7 +442,7 @@ The build process always starts from a clean directory, i.e. the <em class="u">c
 </p>
 
 <p>
-<strong>Note:</strong> The binary is configured with <code>-O3</code> optimization enabled, which requires a considerable amount of time on the PWR6. 
+<strong>Note:</strong> The binary is configured with <code>-O3</code> optimization enabled, which requires a considerable amount of time on the PWR6.
 </p>
 
 </div>
@@ -537,12 +537,12 @@ On abort or completion: Terminates the SMS task <code>“check_progress”</code
 <!-- EDIT25 TABLE [11946-12108] -->
 <p>
 
-When using the <span class="curid"><a href="/~fprill/wiki/doku.php?id=ecmwf_runs_documentation#setting_up_your_xcdp_client" class="wikilink1" title="ecmwf_runs_documentation">XCDP graphical user interface</a></span> the current number of output files is displayed as a graphical progress bar. Please note that the timing might be inaccurate because the output directory is polled infrequently. 
+When using the <span class="curid"><a href="/~fprill/wiki/doku.php?id=ecmwf_runs_documentation#setting_up_your_xcdp_client" class="wikilink1" title="ecmwf_runs_documentation">XCDP graphical user interface</a></span> the current number of output files is displayed as a graphical progress bar. Please note that the timing might be inaccurate because the output directory is polled infrequently.
 The value of the progress meter is used to trigger the post-processing tasks of the suite.
 </p>
 
 <p>
-Terminates, if all NetCDF output files are available in <code>c1a:$TEMP/sms/output/%SUITE_NAME%/</code><span style='color:red; '><code>$REQUEST_DATE</code></span>/ or if on <code>ecgate</code> a file <code>$HOME/sms/model_complete.flag</code> has been created. 
+Terminates, if all NetCDF output files are available in <code>c1a:$TEMP/sms/output/%SUITE_NAME%/</code><span style='color:red; '><code>$REQUEST_DATE</code></span>/ or if on <code>ecgate</code> a file <code>$HOME/sms/model_complete.flag</code> has been created.
 
 </p>
 
@@ -576,7 +576,7 @@ This task is called for each output step separately.
 
 The calling frequency of this post-processing task is probably too high: It is invoked each time after new output file has been written to disk.
 That is, 80 post-processing tasks are launched on <code>hpc_serial</code> (<code>c1a</code>).
-One could also design a post-processing mechanism which is invoked only <em class="u">once</em>, after the final output file has been created. 
+One could also design a post-processing mechanism which is invoked only <em class="u">once</em>, after the final output file has been created.
 For this, adjust the <code>repeat</code> and <code>trigger</code> keywords in the SMS suite definition file
 </p>
 <pre class="code"> $HOME/ICON_R2B06_10d/def/smsfiles/icon.def</pre>
@@ -716,7 +716,7 @@ Initially create a directory structure for the SMS log files:
  mkdir sms/icon
  mkdir sms/icon/init
  mkdir sms/icon/forecast
- mkdir sms/icon/post    
+ mkdir sms/icon/post
  mkdir sms/icon/init/build
  mkdir sms/icon/forecast/prepare</pre>
 
@@ -730,18 +730,18 @@ Similarly, on the compute cluster <code>c1a</code>:
  mkdir sms/icon
  mkdir sms/icon/init
  mkdir sms/icon/forecast
- mkdir sms/icon/post    
+ mkdir sms/icon/post
  mkdir sms/icon/init/build
  mkdir sms/icon/forecast/prepare</pre>
 
 <p>
 
 In the <code>$HOME/.cdprc</code> file, several utility routines have been defined:
-Start the suite with   
+Start the suite with
 </p>
 <pre class="code"> cdp
- 
- CDP&gt; myalias    
+
+ CDP&gt; myalias
  CDP&gt; play icon.def
  CDP&gt; begin icon   </pre>
 
@@ -749,15 +749,15 @@ Start the suite with
 If there exists already a running SMS suite, you can relaunch the whole setup with
 </p>
 <pre class="code"> cdp
- 
+
  CDP&gt; total_restart</pre>
 
 <p>
 Check the status of the suite with
 </p>
 <pre class="code"> cdp
- 
- CDP&gt; myalias 
+
+ CDP&gt; myalias
  CDP&gt; status -f
       /{sub}   icon{sub}   t1[sub]   </pre>
 
@@ -895,7 +895,7 @@ The configure script must be provided with the correct system paths for NetCDF, 
 gunzip cdo-1.5.4.tar.gz
 tar xvf cdo-1.5.4.tar
 cd cdo-1.5.4
-CC=xlc_r CFLAGS=&quot;-g -O3 -q64 -qhot -qarch=auto -qtune=auto -qsmp=omp -DHAVE_MMAP&quot; 
+CC=xlc_r CFLAGS=&quot;-g -O3 -q64 -qhot -qarch=auto -qtune=auto -qsmp=omp -DHAVE_MMAP&quot;
 ./configure -with-netcdf=/usr/local/apps/netcdf/3.6.3/LP64 \
  --prefix=$PERM/software/cdo-1.5.4_build \
  --with-grib_api=/usr/local/lib/metaps/lib/grib_api/1.9.9 \
@@ -997,9 +997,9 @@ MARS4ICON requires DWD&#039;s date conversion script <code>datconv</code>, which
 
 </div>
 <!-- EDIT43 SECTION "Still TODO" [21481-] --><div class="footnotes">
-<div class="fn"><sup><a href="#fnt__1" id="fn__1" name="fn__1" class="fn_bot">1)</a></sup> 
+<div class="fn"><sup><a href="#fnt__1" id="fn__1" name="fn__1" class="fn_bot">1)</a></sup>
 Important note: The SMS suite is targeted at the compute cluster c1a which will go out of service in 2012.</div>
-<div class="fn"><sup><a href="#fnt__2" id="fn__2" name="fn__2" class="fn_bot">2)</a></sup> 
+<div class="fn"><sup><a href="#fnt__2" id="fn__2" name="fn__2" class="fn_bot">2)</a></sup>
 Keep in mind that there exist two sets of variables: System environment variables are denoted by the dollar (”<code>$</code>”) sign, while SMS variables are denoted by the percent (”<code>%</code>”) sign.</div>
 </div>
 </div>

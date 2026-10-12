@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -178,7 +178,7 @@ cat > icon_master.namelist << EOF
 /
 &time_nml
  ini_datetime_string = "$start_date"
- dt_restart          = $dt_restart ! dummy value to avoid crashes 
+ dt_restart          = $dt_restart ! dummy value to avoid crashes
 /
 &master_time_control_nml
  calendar             = "$calendar"
@@ -238,17 +238,17 @@ radiation_grid_filename = ${radiation_grid_filename}
 /
 &synsat_nml
  lsynsat = .false.
-/ 
+/
 &initicon_nml
-!!! urstart: init_mode=7 -> read ana as dwdfg_filename 
+!!! urstart: init_mode=7 -> read ana as dwdfg_filename
  init_mode             = 7
  lread_ana             = .false.
  dt_iau                = 600
  dt_shift              = -0
  dt_ana                = 3600
  iterate_iau           = .false.
- zpbl1                 = 500. 
- zpbl2                 = 1000. 
+ zpbl1                 = 500.
+ zpbl2                 = 1000.
  dwdfg_filename        = './R<nroot0>B<jlev>_DOM<idom>_ilaf20210322000000.grb'
  ana_varnames_map_file = 'map_file.ana'
 !lconsistency_checks   = .false.
@@ -256,7 +256,7 @@ radiation_grid_filename = ${radiation_grid_filename}
  lp2cintp_incr         = .true.
  lp2cintp_sfcana       = .true.
  use_lakeiceana        = .true.
- icpl_da_sfcevap       = 2 
+ icpl_da_sfcevap       = 2
 /
 &limarea_nml
  dtime_latbc             = 10800          ! 3600.
@@ -266,13 +266,13 @@ radiation_grid_filename = ${radiation_grid_filename}
  latbc_varnames_map_file = 'map_file.lbc'
  latbc_filename          = 'lbcdir/ilbff<ddhhmmss>'
  nretries                = 300             ! I If LatBC data is unavailable: number of retries
- retry_wait_sec          = 2       ! I If LatBC data is unavailable: idle wait seconds between retries 
+ retry_wait_sec          = 2       ! I If LatBC data is unavailable: idle wait seconds between retries
 /
 &io_nml
  itype_pres_msl  = 5              ! new DWD method: Mixture between IFS and old GME method
  itype_rh        = 1              ! RH w.r.t. water
  output_nml_dict = 'map_file.fc'
- gust_interval   = 3600. 
+ gust_interval   = 3600.
  dt_checkpoint   = 2592000
  lmask_boundary  = .true.
 /
@@ -310,8 +310,6 @@ radiation_grid_filename = ${radiation_grid_filename}
  itype_z0          = 2
  icpl_aero_conv    = 1
  icpl_aero_gscp    = 1
- lrtm_filename     = 'rrtmg_lw.nc'
- cldopt_filename   = 'rrtm_cldopt.nc'
  dt_rad  = 720
  dt_conv = 180
  dt_sso  = 360

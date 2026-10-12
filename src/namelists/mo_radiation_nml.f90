@@ -1,16 +1,15 @@
-! This module provides parameters controlling the radiation interface.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides parameters controlling the radiation interface.
 
 MODULE mo_radiation_nml
 
@@ -52,6 +51,7 @@ MODULE mo_radiation_nml
                                  & config_mmr_cfc11  => mmr_cfc11,                      &
                                  & config_mmr_cfc12  => mmr_cfc12,                      &
                                  & config_ecrad_llw_cloud_scat => ecrad_llw_cloud_scat, &
+                                 & config_ecrad_check_input => ecrad_check_input,       &
                                  & config_ecrad_iliquid_scat => ecrad_iliquid_scat,     &
                                  & config_ecrad_iice_scat => ecrad_iice_scat,           &
                                  & config_ecrad_isnow_scat => ecrad_isnow_scat,         &
@@ -59,7 +59,12 @@ MODULE mo_radiation_nml
                                  & config_ecrad_igraupel_scat => ecrad_igraupel_scat,   &
                                  & config_ecrad_isolver => ecrad_isolver,               &
                                  & config_ecrad_igas_model => ecrad_igas_model,         &
+                                 & config_ecrad_nbands_sw => ecrad_nbands_sw,           &
+                                 & config_ecrad_nbands_lw => ecrad_nbands_lw,           &
                                  & config_ecrad_data_path => ecrad_data_path,           &
+                                 & config_lcalculate_fsd => lcalculate_fsd,             &
+                                 & config_fsd_background => fsd_background,             &
+                                 & config_fsd_gridlen => fsd_gridlen,                   &
                                  & iRadAeroConst
 
   USE mo_kind,               ONLY: wp
@@ -76,7 +81,7 @@ MODULE mo_radiation_nml
   USE mo_io_units,           ONLY: filename_max
 #ifdef _OPENACC
   USE openacc
-#define __acc_attach(ptr) CALL acc_attach(ptr)  
+#define __acc_attach(ptr) CALL acc_attach(ptr)
 #else
 #define __acc_attach(ptr)
 #endif
@@ -100,9 +105,9 @@ MODULE mo_radiation_nml
   REAL(wp) :: albedo_fixed   ! value of fixed albedo for albedo_type=3
 
   INTEGER :: direct_albedo   ! 1: SZA dependence according to Ritter and Geleyn (1992)
-                             ! 2: limitation to diffuse albedo according to Zaengl 
+                             ! 2: limitation to diffuse albedo according to Zaengl
                              !    applied to all land points
-                             !    Ritter-Geleyn for ice 
+                             !    Ritter-Geleyn for ice
                              ! 3: Parameterization after Yang et al (2008) for snow-free land points
                              !    limitation after Zaengl for snow-coverer points
                              !    Ritter-Geleyn implementation for ice
@@ -126,8 +131,8 @@ MODULE mo_radiation_nml
   INTEGER :: islope_rad(max_dom)  ! slope correction for surface radiation
                                   ! 0: none
                                   ! 1: slope correction for solar radiation without shading effects
-                                  ! 2: is for slope-dependent radiation with shading and skyview
-                                  ! 3: slope-dependent radiation with shading without skyview
+                                  ! 2: option was removed
+                                  ! 3: slope-dependent radiation with shading
 
   ! --- Switches for radiative agents
   !     irad_x=0 : radiation uses tracer x = 0
@@ -178,6 +183,7 @@ MODULE mo_radiation_nml
   !
   ! ecRad specific configuration
   LOGICAL  :: ecrad_llw_cloud_scat
+  LOGICAL  :: ecrad_check_input
   INTEGER  :: ecrad_iliquid_scat
   INTEGER  :: ecrad_iice_scat
   INTEGER  :: ecrad_isnow_scat
@@ -188,6 +194,11 @@ MODULE mo_radiation_nml
   LOGICAL  :: ecrad_use_general_cloud_optics
 
   CHARACTER(len=MAX_CHAR_LENGTH) :: ecrad_data_path
+
+  ! background value FSD parameter, horizontal mesh size
+  LOGICAL  :: lcalculate_fsd
+  REAL(wp) :: fsd_background
+  REAL(wp) :: fsd_gridlen(max_dom)
 
   !
   NAMELIST /radiation_nml/ isolrad,               &
@@ -214,6 +225,7 @@ MODULE mo_radiation_nml
     &                      decorr_equator,        &
     &                      islope_rad,            &
     &                      ecrad_llw_cloud_scat,  &
+    &                      ecrad_check_input,     &
     &                      ecrad_iliquid_scat,    &
     &                      ecrad_iice_scat,       &
     &                      ecrad_isnow_scat,      &
@@ -222,20 +234,23 @@ MODULE mo_radiation_nml
     &                      ecrad_isolver,         &
     &                      ecrad_igas_model,      &
     &                      ecrad_data_path,       &
+    &                      lcalculate_fsd,        &
+    &                      fsd_background,        &
+    &                      fsd_gridlen,           &
     &                      ecrad_use_general_cloud_optics
 
 CONTAINS
 
-  !! Read Namelist for radiation. 
+  !! Read Namelist for radiation.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for radiation
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)    
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_radiation_namelist( filename )
 
@@ -247,7 +262,7 @@ CONTAINS
     !0!  &  routine = 'mo_radiation_nml:read_radiation_namelist'
 
     !-----------------------
-    ! 1. default settings   
+    ! 1. default settings
     !-----------------------
 
     isolrad        = 1
@@ -285,9 +300,10 @@ CONTAINS
     cos_zenith_fixed = 0.5_wp  ! fixed cosine of zenith angle for izenith=6
 
     decorr_pole    = 2000._wp  ! Default: globally uniform decorrelation length scale
-    decorr_equator = 2000._wp  ! of 2km. 
+    decorr_equator = 2000._wp  ! of 2km.
 
     ecrad_llw_cloud_scat = .FALSE.
+    ecrad_check_input    = .FALSE.
     ecrad_iliquid_scat   = 0
     ecrad_iice_scat      = 0
     ecrad_isnow_scat     = -1        ! No snow in radiation calculation
@@ -296,10 +312,13 @@ CONTAINS
     ecrad_isolver        = 0
     ecrad_igas_model     = 0
     ecrad_data_path      = '.'
+    lcalculate_fsd       = .false.   ! use regime-dependent parameterization for FSD if .true.
+    fsd_background       = 1._wp     ! background fractional standard deviation
+    fsd_gridlen(:)       = 80._wp    ! horizontal mesh size for FSD calculation 80km
     ecrad_use_general_cloud_optics        = .FALSE.   ! No generalized Hydrometeors
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
 
@@ -373,6 +392,7 @@ CONTAINS
     config_decorr_equator = decorr_equator
 
     config_ecrad_llw_cloud_scat = ecrad_llw_cloud_scat
+    config_ecrad_check_input    = ecrad_check_input
     config_ecrad_iliquid_scat   = ecrad_iliquid_scat
     config_ecrad_iice_scat      = ecrad_iice_scat
     config_ecrad_isnow_scat     = ecrad_isnow_scat
@@ -382,6 +402,19 @@ CONTAINS
     config_ecrad_igas_model     = ecrad_igas_model
     config_ecrad_use_general_cloud_optics    = ecrad_use_general_cloud_optics
     config_ecrad_data_path      = TRIM(ecrad_data_path)
+
+    config_lcalculate_fsd       = lcalculate_fsd
+    config_fsd_background       = fsd_background
+    config_fsd_gridlen          = fsd_gridlen
+
+    SELECT CASE(ecrad_igas_model)
+      CASE(0) ! RRTMG
+        config_ecrad_nbands_sw = 14
+        config_ecrad_nbands_lw = 16
+      CASE(1) ! ecckd
+        config_ecrad_nbands_sw = 32
+        config_ecrad_nbands_lw = 32
+    END SELECT
 
     IF ( direct_albedo_water == 3 ) THEN
       csalb => csalb2
@@ -398,7 +431,7 @@ CONTAINS
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
       WRITE(funit,NML=radiation_nml)
-      CALL store_and_close_namelist(funit, 'radiation_nml') 
+      CALL store_and_close_namelist(funit, 'radiation_nml')
     ENDIF
     ! 6. write the contents of the namelist to an ASCII file
     !

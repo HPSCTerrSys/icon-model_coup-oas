@@ -9,7 +9,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, AWI
+! Copyright (C) 2004-2026, AWI
 !
 ! Authors: Sergey Danilov, Qiang Wang
 ! See LICENSES/ for license information
@@ -25,7 +25,7 @@ module mo_ice_fem_init
 
   USE mo_kind,          ONLY: wp
   USE mo_run_config,    ONLY: dtime
-  USE mo_sea_ice_nml,   ONLY: Tevp_inv, i_ice_advec
+  USE mo_sea_ice_nml,   ONLY: Tevp_inv, i_ice_advec, seaice_stress_diag
 !  USE mo_ice_fem_evp_old,   ONLY: init_evp_solver_coeffs_old
   USE mo_ice_fem_evp,       ONLY: init_evp_solver_coeffs
   USE mo_ice_fem_advection, ONLY: fem_fct_ice_init
@@ -106,21 +106,42 @@ integer   :: k
 ! Allocate memory for variables of ice model
  allocate(m_ice(nod2D), a_ice(nod2D), m_snow(nod2D))
  allocate(u_ice(nod2D), v_ice(nod2D))
- allocate(sigma11(elem2D), sigma12(elem2D), sigma22(elem2D))
+ ALLOCATE(sigma11(elem2D), sigma12(elem2D), sigma22(elem2D), delta(elem2d))
+ ALLOCATE(eps11(elem2D), eps12(elem2D), eps22(elem2D))
+ ALLOCATE(si1(elem2D), si2(elem2D))
+ IF (seaice_stress_diag) THEN
+   ALLOCATE(sigma_1(elem2D), sigma_2(elem2D))
+   ALLOCATE(sigma_i(elem2D), sigma_ii(elem2D))
+   ALLOCATE(p0_diag(elem2D), p_diag(elem2D))
+ END IF
  allocate(rhs_m(nod2D), rhs_a(nod2D), rhs_u(nod2D), rhs_v(nod2D))
  allocate(rhs_mis(nod2D))
 
 ! initialize
- u_ice  = 0._wp
- v_ice  = 0._wp
- rhs_m  = 0._wp
- rhs_mis= 0._wp
- rhs_a  = 0._wp
- rhs_u  = 0._wp
- rhs_v  = 0._wp
- sigma11= 0._wp
- sigma22= 0._wp
- sigma12= 0._wp
+ u_ice  = 0.0_wp
+ v_ice  = 0.0_wp
+ rhs_m  = 0.0_wp
+ rhs_mis= 0.0_wp
+ rhs_a  = 0.0_wp
+ rhs_u  = 0.0_wp
+ rhs_v  = 0.0_wp
+ sigma11 = 0.0_wp
+ sigma22 = 0.0_wp
+ sigma12 = 0.0_wp
+ delta = 0.0_wp
+ eps11 = 0.0_wp
+ eps22 = 0.0_wp
+ eps12 = 0.0_wp
+ si1 = 0.0_wp
+ si2 = 0.0_wp
+ IF (seaice_stress_diag) THEN
+   sigma_1 = 0.0_wp
+   sigma_2 = 0.0_wp
+   sigma_i = 0.0_wp
+   sigma_ii = 0.0_wp
+   p0_diag = 0.0_wp
+   p_diag = 0.0_wp
+ END IF
 
 ! Allocate memory used for coupling (Partly used for input, and partly
 ! for output of information)
@@ -138,6 +159,11 @@ DO k=1,nod2D
  lmass_matrix(k)=sum(mass_matrix(icestiff%rowptr(k):icestiff%rowptr(k+1)-1))
 END DO
 
+!$ACC ENTER DATA COPYIN(u_ice, v_ice, m_ice, m_snow, a_ice, elevation, u_w, v_w) &
+!$ACC   COPYIN(stress_atmice_x, stress_atmice_y, sigma11, sigma22, sigma12) &
+!$ACC   COPYIN(si1, si2, sigma_1, sigma_2, sigma_i, sigma_ii, eps11, eps22, eps12, delta) &
+!$ACC   COPYIN(p0_diag, p_diag) &
+!$ACC   COPYIN(rhs_m, rhs_mis, rhs_a, rhs_u, rhs_v, lmass_matrix)
 end subroutine array_setup_ice
 !==========================================================================
 

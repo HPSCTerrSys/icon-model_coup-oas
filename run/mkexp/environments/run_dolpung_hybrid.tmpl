@@ -1,0 +1,311 @@
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#%#
+#%# Collection of all things related to hybrid runs
+#%# on Levante dolpung partition
+#%#
+#
+# $Id: run/mkexp/environments/run_dolpung_hybrid.tmpl 0 2026-01-14 13:35:33Z k202123 $
+
+#%#------------------------
+#% macro set_mpi_variables(JOB, namelists):
+nr_of_hiopy_workers=%{hiopy.nr_of_workers if hiopy is defined else 0}
+#% set nodes = JOB.nodes|d(1)|int
+no_of_nodes=${SLURM_JOB_NUM_NODES:=%{nodes}}
+export atm_procs_per_node=%{JOB.hybrid.atm.gpus_per_node|d(JOB.default_gpus_per_node)}
+export oce_procs_per_node=%{JOB.hybrid.oce.cpus_per_node|d(JOB.default_cpus_per_node)}
+
+# Calculate the total number of MPI procs
+atm_procs=$(( atm_procs_per_node * no_of_nodes ))
+#% if nodes > 2:
+oce_procs=$(( oce_procs_per_node * (no_of_nodes-2) ))    # The CPUs of two nodes are not used for the ocean, but for IO and atm starting
+#% elif nodes > 1:
+oce_procs=$(( oce_procs_per_node * (no_of_nodes-1) ))    # The CPUs of the last node is not used for the ocean but for all IO processes
+#% else
+oce_procs=$(( oce_procs_per_node * no_of_nodes ))
+#% endif
+oce_procs=$((oce_procs - nr_of_hiopy_workers))
+echo "atm_procs: ${atm_procs}"
+echo "oce_procs: ${oce_procs}"
+#%# Define *_io_procs varaible and replace namelist parameter by it
+export atm_io_procs=%{namelists.NAMELIST_atm.parallel_nml.num_io_procs}
+#% set _ = namelists.NAMELIST_atm.parallel_nml.update({"num_io_procs": "raw(${atm_io_procs})"})
+export oce_io_procs=%{namelists.NAMELIST_oce.parallel_nml.num_io_procs}
+#% set _ = namelists.NAMELIST_oce.parallel_nml.update({"num_io_procs": "raw(${oce_io_procs})"})
+#%  if hiopy is defined:
+atm_io_procs=0
+oce_io_procs=0
+#%  endif
+echo "atm_io_procs: ${atm_io_procs}"
+echo "oce_io_procs: ${oce_io_procs}"
+
+mpi_total_procs=$(( atm_procs + oce_procs + atm_io_procs + oce_io_procs + nr_of_hiopy_workers))
+echo "mpi_total_procs: ${mpi_total_procs}"
+
+# Calculate the number of CPU procs per node
+#% if nodes == 1:
+cpu_total_procs=$(( oce_procs + atm_io_procs + oce_io_procs ))
+export cpu_procs_per_node=$(( cpu_total_procs / no_of_nodes ))
+if [ %{JOB.default_cpus_per_node} -lt $cpu_total_procs ] ; then
+   echo "Total CPU task count ($cpu_total_procs) does not fit maximum CPU procs per node (%{JOB.default_cpus_per_node})"
+   check_error 1
+   exit 1
+fi
+#% else
+export cpu_procs_per_node=$oce_procs_per_node     # Most nodes are filled with ocean. For the IO we assume the same number of procs per node.
+#% endif
+echo "cpu_procs_per_node: ${cpu_procs_per_node}"
+#%- endmacro
+
+
+#%#------------------------
+#% macro set_mpi_variables_2():
+mpi_oce_procs=$oce_procs
+mpi_atm_procs=$atm_procs
+#%- endmacro
+
+
+#%#------------------------
+#% macro split_tasks():
+atm_min_rank=0
+atm_max_rank=$((atm_procs - 1 + atm_io_procs))
+atm_group_size=1
+atm_inc_rank=1
+
+oce_min_rank=$((atm_max_rank + 1 ))
+oce_max_rank=$((atm_max_rank + oce_procs + oce_io_procs))
+oce_group_size=1
+oce_inc_rank=1
+
+echo "atm_min_rank: $atm_min_rank"
+echo "atm_max_rank: $atm_max_rank"
+echo "oce_min_rank: $oce_min_rank"
+echo "oce_max_rank: $oce_max_rank"
+#%- endmacro
+
+
+#%#------------------------
+#% macro write_host_file(use_hostfile=None):
+#% if use_hostfile is set:
+#-----------------------------------------------------------------------------
+# Hostfile generation to distributed processes on Levante dolpung partition
+# when running a coupled job as hybrid job
+#
+# $Id: run/mkexp/environments/run_dolpung_hybrid.tmpl:write_host_file 2 2025-09-30 k202123 $
+#
+#% set nodes = JOB.nodes|d(1)|int
+export SLURM_HOSTFILE=$EXPDIR/hst_file
+
+/usr/bin/python3 -c "
+from ClusterShell.NodeSet import NodeSet
+import os
+
+SLURM_NODELIST      = os.environ['SLURM_NODELIST']
+atm_procs_per_node  = int(os.environ['atm_procs_per_node'])
+oce_procs_per_node  = int(os.environ['oce_procs_per_node'])
+atm_io_procs        = int(os.environ['atm_io_procs'])
+oce_io_procs        = int(os.environ['oce_io_procs'])
+
+node_list = NodeSet(SLURM_NODELIST)
+
+# Distribute ATM compute procs on GPUs: 4 GPUs per node, all nodes filled
+for host in node_list:
+    for i in range(atm_procs_per_node):
+        print(host)
+
+#% if nodes > 1:
+# Distribute ATM IO procs on CPUs: all out-ranks on the last node
+host = node_list[-1]
+for i in range(atm_io_procs):
+    print(host)
+
+#%  if nodes > 2:
+# Distribute OCE compute procs on CPUs: oce_procs_per_node, but
+#  skip the first node (reserved for atmosphere compute)
+#  and skip the last node (reserved for I/O)
+for host in node_list[1:-1]:
+    for i in range(oce_procs_per_node):
+        print(host)
+
+#%  else
+# Distribute OCE compute procs on CPUs: oce_procs_per_node, but skip the last node (reserved for I/O)
+for host in node_list[0:-1]:
+    for i in range(oce_procs_per_node):
+        print(host)
+
+#%  endif
+# Distribute OCE IO procs on CPUs: all out-ranks on the last node
+host = node_list[-1]
+for i in range(oce_io_procs):
+    print(host)
+#% else
+# Distribute ATM IO, OCE and OCE IO procs on CPU:
+for host in node_list:
+    for i in range(atm_io_procs + oce_procs_per_node + oce_io_procs):
+        print(host)
+#% endif
+
+#%  if hiopy is defined:
+# Hiopy procs on the last node
+for host in node_list[-1]:
+    for i in range(%{hiopy.nr_of_workers}):
+        print(host)
+#%  endif
+" > $SLURM_HOSTFILE
+#-----------------------------------------------------------------------------
+#% else
+echo "No JOB.use_hostfile is set."
+#% endif
+#%- endmacro
+
+
+#%#------------------------
+#% macro write_run_wrapper_gpu():
+#-----------------------------------------------------------------------------
+# Replace run_wrapper_dolpung.sh for running on Levante dolpung partition
+#  with IO on the CPUs of the nodes
+#
+# $Id: run/mkexp/environments/run_dolpung_hybrid.tmpl:write_run_wrapper_gpu 1 2025-07-14 k202123 $
+#
+rm -f run_model_gpu.sh
+
+cat > run_model_gpu.sh << EOF
+#! /usr/bin/bash
+
+lrank=\$SLURM_LOCALID%4
+
+numanode=(0 1 2 3)
+gpus=(0 1 2 3)
+nics=(mlx5_0:1 mlx5_1:1 mlx5_2:1 mlx5_3:1)
+reorder=(0 1 2 3)
+
+nic_reorder=(\${nics[\${reorder[0]}]}
+             \${nics[\${reorder[1]}]}
+             \${nics[\${reorder[2]}]}
+             \${nics[\${reorder[3]}]})
+numanode_reorder=(\${numanode[\${reorder[0]}]}
+                  \${numanode[\${reorder[1]}]}
+                  \${numanode[\${reorder[2]}]}
+                  \${numanode[\${reorder[3]}]})
+
+export UCX_NET_DEVICES=\${nic_reorder[lrank]}
+
+#echo Atmo compute process \$SLURM_LOCALID on \$(hostname),  numanode=\${numanode_reorder[\$lrank]}
+export CUDA_VISIBLE_DEVICES=\${gpus[\${reorder[lrank]}]}
+export NVCOMPILER_ACC_USE_GRAPH=1    # Nvidia: Currently necessary to properly set the OpenACC runtime for graph capture
+
+numactl --cpunodebind=\${numanode_reorder[\$lrank]} --membind=\${numanode_reorder[\$lrank]} ${MODEL_atm}
+
+EOF
+
+chmod 755 ./run_model_gpu.sh
+#%- endmacro
+
+
+#%#------------------------
+#% macro write_run_wrapper_cpu():
+#-----------------------------------------------------------------------------
+# Replace run_wrapper_dolpung.sh for running on Levante dolpung partition
+#  with IO on the CPUs of the nodes
+#
+# $Id: run/mkexp/environments/un_dolpung_hybrid.tmpl:write_run_wrapper_cpu 1 2025-07-14 k202123 $
+#
+rm -f run_model_cpu.sh
+
+cat > run_model_cpu.sh << EOF
+#! /usr/bin/bash
+#echo CPU process \$SLURM_LOCALID on \$(hostname)
+
+#%  for var in JOB.hybrid.oce.env:
+export %{var}=%{JOB.hybrid.oce.env[var]}
+#%  endfor
+#%#
+sockets=%{JOB.default_gpus_per_node}
+cores_per_socket=\$(( %{JOB.default_cpus_per_node} / sockets))
+icon_procs_per_socket=\$(( (cpu_procs_per_node + sockets -1) / sockets ))
+non_icon_procs_per_socket=\$(( cores_per_socket - icon_procs_per_socket*OMP_NUM_THREADS ))
+icon_ranks_per_socket=\$(( cores_per_socket - non_icon_procs_per_socket ))
+
+# the first 4 ranks are GPUs so they do not count here
+lrank=\$((SLURM_LOCALID - SLURM_GPUS_ON_NODE))
+
+if [[ \$lrank -lt \$icon_procs_per_socket ]]; then
+  core=\$(( non_icon_procs_per_socket + lrank*OMP_NUM_THREADS ))
+  nic=('mlx5_0:1')
+elif [[ \$lrank -lt \$(( icon_procs_per_socket * 2 )) ]]; then
+  core=\$(( cores_per_socket + non_icon_procs_per_socket + lrank*OMP_NUM_THREADS - icon_ranks_per_socket ))
+  nic=('mlx5_1:1')
+elif [[ \$lrank -lt \$(( icon_procs_per_socket * 3 )) ]]; then
+  core=\$(( cores_per_socket*2 + non_icon_procs_per_socket + lrank*OMP_NUM_THREADS - 2*icon_ranks_per_socket ))
+  nic=('mlx5_2:1')
+else
+  core=\$(( cores_per_socket*3 + non_icon_procs_per_socket + lrank*OMP_NUM_THREADS - 3*icon_ranks_per_socket ))
+  nic=('mlx5_3:1')
+fi
+
+export UCX_NET_DEVICES=\${nic}
+numanode=(\$(( core / cores_per_socket )))  # Each socket has 1 NUMA domain for the CPU memory
+export CUDA_VISIBLE_DEVICES=\$numanode
+
+numactl --cpunodebind=\${numanode} --membind=\${numanode} ${MODEL_oce}
+
+EOF
+
+chmod 755 ./run_model_cpu.sh
+#-----------------------------------------------------------------------------
+#%- endmacro
+
+
+#%#------------------------
+#% macro write_run_wrapper_hiopy():
+cat > run_hiopy.sh << 'EOF'
+#! /usr/bin/bash
+#%  for var in JOB.hybrid.hiopy.env:
+export %{var}=%{JOB.hybrid.hiopy.env[var]}
+#%  endfor
+#%#
+source %{hiopy.venv}/bin/activate
+
+#%  set base = DATA_DIR
+#%  set args = ''
+#%#
+#%  if hiopy.storage_backend == 's3':
+#%    set s3_dict = {}
+#%    do s3_dict.update(key = '${S3_KEY}')
+#%    do s3_dict.update(secret = '${S3_SECRET}')
+#%    do s3_dict.update(endpoint_url = hiopy.storage.s3.endpoint_url)
+#%#
+#%    set base = 's3://'+hiopy.storage.s3.bucket
+#%    set args = '--s3-storage-options "'+s3_dict|replace("'", '\\"')+'"'
+#% endif
+
+hiopy-worker --zarr-store-protocol "%{hiopy.storage_backend}" \
+             --zarr-store-path "%{base}/%{hiopy.relative_path_to_dataset}" \
+             --nthreads %{JOB.hybrid.hiopy.env["OMP_NUM_THREADS"]} %{args}
+EOF
+
+chmod 755  ./run_hiopy.sh
+#-----------------------------------------------------------------------------
+#%- endmacro
+
+
+#%#------------------------
+#% macro write_mpmd_file(use_mpmd=None):
+#% if use_mpmd is set:
+cat > icon_mpmd.conf << EOF
+0-$(( atm_procs -1 )) ./run_model_gpu.sh
+#%  if hiopy is defined:
+$(( oce_max_rank + 1 ))-$(( oce_max_rank + %{hiopy.nr_of_workers})) ./run_hiopy.sh
+#%  endif
+* ./run_model_cpu.sh
+EOF
+#% endif
+#%- endmacro

@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,7 +14,7 @@
 #
 # Global R2B6 main run with R2B7 EU nest.
 # Starting from DWD analysis (IAU)
-# For the nest, surface analysis is read from file, while atmospheric analysis 
+# For the nest, surface analysis is read from file, while atmospheric analysis
 # is interpolated from parent grid.
 #
 # Checks:
@@ -40,7 +40,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -126,6 +126,7 @@ nproma_default=$nproma
 # ============================================================================
 
 echo "Running on BB_NAME: " ${BB_NAME}
+echo "Running with_openmp: " ${with_openmp}
 
 # EXP names
 EXP1="reference"
@@ -133,7 +134,7 @@ EXP2="iterative_IAU"
 EXP3="restart"
 EXP4="nproma"
 # Perform additional iteration with different number of threads
-if [[ ${BB_NAME} == 'DWD_nec_hybrid' ]]; then
+if [[ "$with_openmp" = "yes" ]] ; then
   tot_iter=5
   EXP5="omp"
 else
@@ -200,6 +201,10 @@ elif [ $iter -eq 3 ] ; then
   restart_write_mode="dedicated procs multifile"
   start_date="2018-10-01T00:00:00Z"
   stop_date="2018-10-01T13:30:00Z"
+
+  # remove output files written after restart because existing output files are opened
+  # in append mode in case of a restart (only relevant for manually executed tests)
+  rm -f NWP3_winds*.nc
 
 elif [ $iter -eq 4 ] ; then
 
@@ -349,12 +354,15 @@ cat > ${atmo_namelist} << EOF
  lp2cintp_incr			= .true.
  lp2cintp_sfcana		= .true.
  use_lakeiceana                 = .true.
- icpl_da_sfcevap                = 4
+ icpl_da_sfcevap                = 6
  icpl_da_skinc                  = 2
  adjust_tso_tsnow               = .TRUE.
- icpl_da_snowalb                = 2
+ icpl_da_snowalb                = 3
+ icpl_da_landalb                = 1
  icpl_da_sfcfric                = 1
  icpl_da_tkhmin                 = 1
+ parallel_grib_decoding         = .TRUE.  ! .FALSE.: Workroot PE reads and decodes GRIB file records
+                                          ! .TRUE.:  Workroot PE reads GRIB file records, Work PEs decode them
 /
 &io_nml
  itype_pres_msl                 = 5              ! New extrapolation method to circumvent Ninjo problem with surface inversions
@@ -440,6 +448,8 @@ cat > ${atmo_namelist} << EOF
  c_soil_urb                     = 0.5
  sstice_mode                    = 2  ! 1: constant SST; 2: with climatological SST increments
  itype_snowevap                 = 3
+ itype_oskin_warm               = 1  ! 1: ocean warm-layer
+ itype_oskin_cold               = 1  ! 1: ocean cold skin
 /
 &radiation_nml
  irad_o3			= 79
@@ -465,7 +475,7 @@ cat > ${atmo_namelist} << EOF
  damp_height			= 44000.
  rayleigh_coeff			= 0.5
  divdamp_order			= 24
- divdamp_type			= 32 
+ divdamp_type			= 32
  divdamp_fac			= 0.004
  divdamp_trans_start            = 12500
  divdamp_trans_end              = 17500
@@ -606,7 +616,7 @@ cat > ${atmo_namelist} << EOF
  n0_mtgrm          = 0              ! meteogram initial time step (0 is first step!)
  ninc_mtgrm        = ${ninc_mtgrm},${ninc_mtgrm}  ! meteogram output interval
  ldistributed      = .false.,.false.
- stationlist_tot   =  52.17,  14.12, 'Lindenberg',                        
+ stationlist_tot   =  52.17,  14.12, 'Lindenberg',
                       51.97,   4.93, 'Cabauw',
                      -10.08, -61.93, 'LBA_Rondonia',
                       13.50,   2.5 , 'Niamey',
@@ -624,8 +634,27 @@ EOF
 #
 ICON_COMPONENT1_VH_procs=$((num_restart_procs + num_io_procs + num_prefetch_proc + num_io_procs_radar))
 
-$START_MODEL
-EXIT_STATUS=$?
+if [[ "$builder" = "rcl_nec" ]] && [[ "$with_openmp" = "no" ]] && [[ "$iter" = "1" ]]; then
+  LOWER_MEM_LIMIT=39000
+  UPPER_MEM_LIMIT=39400
+  set -o pipefail
+  # Check the memory consumption on NEC
+  $START_MODEL 3>&1 1>&2 2>&3 | $ICONDIR/run/checksuite.nwp/NEC.mem_check.py --lower_mem_limit "$LOWER_MEM_LIMIT" --upper_mem_limit "$UPPER_MEM_LIMIT" 3>&1 1>&2 2>&3
+  # `3>&1 1>&2 2>&3` swaps stderr and stdin so that python processes the original stderr.
+  EXIT_STATUS=$?
+
+  if [[ "$EXIT_STATUS" = "21" ]]; then
+    # Return code 21 is returned by mem_check.py if a threshold is exceeded
+    echo "---------------------------------------------------"
+    echo "                   try again                       "
+    echo "---------------------------------------------------"
+    $START_MODEL 3>&1 1>&2 2>&3 | $ICONDIR/run/checksuite.nwp/NEC.mem_check.py --lower_mem_limit "$LOWER_MEM_LIMIT" --upper_mem_limit "$UPPER_MEM_LIMIT" 3>&1 1>&2 2>&3
+    EXIT_STATUS=$?
+  fi
+else
+  $START_MODEL
+  EXIT_STATUS=$?
+fi
 
 if [ "$EXIT_STATUS" -ne "0" ]; then
   echo "ICON EXIT_STATUS: $EXIT_STATUS"
@@ -713,7 +742,7 @@ else
   echo "DOM01 or DOM02: EXP1 $EXP1 and EXP4 $EXP4 differ"
 fi
 
-if [[ ${BB_NAME} == 'DWD_nec_hybrid' ]]; then
+if [[ "$with_openmp" = "yes" ]] ; then
   echo "=================================================================="
   echo "Check OMP"
   echo "=> Compare experiments:" $EXP1 $EXP5
@@ -761,7 +790,7 @@ else
   echo "nproma test FAILED"
   echo " "
 fi
-if [[ ${BB_NAME} == 'DWD_nec_hybrid' ]]; then
+if [[ "$with_openmp" = "yes" ]] ; then
   if [ $DIFF_STATUS_OMP == 0 ]; then
     echo " "
     echo "OMP test SUCESSFUL"

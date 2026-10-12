@@ -1,17 +1,16 @@
-! Implementation of tides by computation of the Sun's and Moon's full tidal potential
-! This will be used in the pressure gradient calculation
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Implementation of tides by computation of the Sun's and Moon's full tidal potential
+! This will be used in the pressure gradient calculation
 
 !----------------------------
 #include "icon_definitions.inc"
@@ -46,13 +45,13 @@ MODULE mo_ocean_tides
   PRIVATE
 
   PUBLIC  :: calculate_tides_potential
-  
+
   CHARACTER(LEN=12)  :: str_module = 'tides'  ! Output of module for 1 line debug
   INTEGER            :: idt_src    = 1               ! Level of detail for 1 line debug
   INTEGER            :: load_iteration = 0
   INTEGER            :: tide_iteration = 0
   !-------------------------------------------------------------------------
-  
+
 CONTAINS
 
   !-------------------------------------------------------------------------
@@ -66,24 +65,24 @@ CONTAINS
 
     IF (use_tides) THEN
       SELECT CASE(tides_mod)
-      CASE(1) 
+      CASE(1)
         CALL tide(patch_3d,current_time,tides_potential)
-    !  CASE(2) 
+    !  CASE(2)
     !    CALL tide_mpi(patch_3d,current_time,tides_potential)
       CASE default
         CALL finish(str_module, "Unknown tides_mod")
       END SELECT
-   
+
     ENDIF
 
     IF (use_tides_SAL) THEN
       CALL calculate_tides_SAL_simple(patch_3d,rho,h,SelfAtrractionLoad)
     ENDIF
-  
-    
+
+
 !     CALL dbg_print('tides_potential', tides_potential, str_module, 1, in_subset=patch_3d%p_patch_2d(1)%cells%owned)
 !     CALL dbg_print('SelfAtrractionLoad',      SelfAtrractionLoad,      str_module, 1, in_subset=patch_3d%p_patch_2d(1)%cells%owned)
-        
+
   END SUBROUTINE calculate_tides_potential
   !-------------------------------------------------------------------------
 
@@ -93,25 +92,25 @@ CONTAINS
     onCells                              :: rho
     onCells_2D                           :: h
     onCells_2D, INTENT(inout)            :: SelfAtrractionLoad
-    
+
     TYPE(t_patch), POINTER :: patch_2D
     TYPE(t_subset_range), POINTER :: all_cells
     INTEGER :: jb,jc,jk,start_index,end_index, levels
     REAL(wp) :: grav_eps_explicit, smooth, barotropic_part, z_grav_rho_inv_eps
     onCells :: cell_thickness
-   
+
     patch_2D        => patch_3d%p_patch_2d(1)
     all_cells       => patch_2D%cells%ALL
    cell_thickness  => patch_3D%p_patch_1d(1)%prism_thick_c
 !     cell_thickness  => patch_3D%p_patch_1d(1)%prism_thick_flat_sfc_c
-  
-    IF (load_iteration >= tides_smooth_iterations) THEN 
+
+    IF (load_iteration >= tides_smooth_iterations) THEN
       smooth = 1.0_wp
     ELSE
       smooth = REAL(load_iteration,wp) / REAL(tides_smooth_iterations,wp)
       load_iteration = load_iteration + 1
     ENDIF
- 
+
     z_grav_rho_inv_eps  = grav * tides_SAL_coeff * smooth
 !     grav_eps_explicit = grav * tides_SAL_coeff * (1.0_wp-ab_beta) * smooth
 
@@ -122,36 +121,36 @@ CONTAINS
          SelfAtrractionLoad(jc,jb) = h(jc,jb) * z_grav_rho_inv_eps
       ENDDO
     ENDDO
-!ICON_OMP_END_PARALLEL_DO     
- 
+!ICON_OMP_END_PARALLEL_DO
+
   END SUBROUTINE calculate_tides_SAL_simple
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   SUBROUTINE calculate_tides_SAL_Thomas(patch_3d,rho,h,SelfAtrractionLoad)
     TYPE(t_patch_3d ),TARGET, INTENT(in) :: patch_3d
     onCells                              :: rho
     onCells_2D                           :: h
     onCells_2D, INTENT(inout)            :: SelfAtrractionLoad
-    
+
     TYPE(t_patch), POINTER :: patch_2D
     TYPE(t_subset_range), POINTER :: all_cells
     INTEGER :: jb,jc,jk,start_index,end_index, levels
     REAL(wp) :: grav_eps_explicit, smooth, barotropic_part, z_grav_rho_inv_eps
     onCells :: cell_thickness
-   
+
     patch_2D        => patch_3d%p_patch_2d(1)
     all_cells       => patch_2D%cells%ALL
    cell_thickness  => patch_3D%p_patch_1d(1)%prism_thick_c
 !     cell_thickness  => patch_3D%p_patch_1d(1)%prism_thick_flat_sfc_c
-  
-    IF (load_iteration >= tides_smooth_iterations) THEN 
+
+    IF (load_iteration >= tides_smooth_iterations) THEN
       smooth = 1.0_wp
     ELSE
       smooth = REAL(load_iteration,wp) / REAL(tides_smooth_iterations,wp)
       load_iteration = load_iteration + 1
     ENDIF
- 
+
     z_grav_rho_inv_eps  = OceanReferenceDensity_inv * grav * tides_SAL_coeff * smooth
 !     grav_eps_explicit = grav * tides_SAL_coeff * (1.0_wp-ab_beta) * smooth
 
@@ -163,24 +162,24 @@ CONTAINS
          SelfAtrractionLoad(jc,jb) = 0.0_wp
          DO jk = 1, patch_3d%p_patch_1d(1)%dolic_c(jc,jb)
            SelfAtrractionLoad(jc,jb) = SelfAtrractionLoad(jc,jb) + cell_thickness(jc,jk,jb) * rho(jc,jk,jb)
-        ENDDO   
+        ENDDO
         SelfAtrractionLoad(jc,jb) = SelfAtrractionLoad(jc,jb) * z_grav_rho_inv_eps
       ENDDO
     ENDDO
-!ICON_OMP_END_PARALLEL_DO     
- 
+!ICON_OMP_END_PARALLEL_DO
+
   END SUBROUTINE calculate_tides_SAL_Thomas
   !-------------------------------------------------------------------------
- 
+
   !-------------------------------------------------------------------------
   SUBROUTINE tide(patch_3d,mtime_current,tides_potential)
-  
+
   IMPLICIT NONE
-  
+
   TYPE(t_patch_3d ),TARGET, INTENT(in) :: patch_3d
   TYPE(datetime), POINTER              :: mtime_current
   REAL(wp), INTENT(inout)              :: tides_potential(:,:)
-  
+
   TYPE(t_patch), POINTER :: patch_2D
   TYPE(t_subset_range), POINTER :: all_cells
   INTEGER :: jb,jc,jk,start_index,end_index
@@ -189,42 +188,42 @@ CONTAINS
   REAL(dp) :: sekunde,gezhochfahr,rs,rm
   REAL(dp) :: dtim,gst,dcl_m,alp_m,h_m,dcl_s,alp_s,h_s,mpot,spot,longitude,latitude
   REAL(wp) :: smooth
-  
-  
-  
+
+
+
   patch_2D        => patch_3d%p_patch_2d(1)
   all_cells       => patch_2D%cells%ALL
-  
-  
+
+
   CALL datetimeToString(mtime_current, datestri)
-  
+
   READ(datestri(1:4),'(i4)') jahr
   READ(datestri(6:7),'(i2.2)') monat
   READ(datestri(9:10),'(i2.2)') tag
   READ(datestri(12:13),'(i2.2)') stunde
   READ(datestri(15:16),'(i2.2)') minute
   READ(datestri(18:23),'(f6.3)') sekunde
-  
-  IF (tide_iteration >= tides_smooth_iterations) THEN 
+
+  IF (tide_iteration >= tides_smooth_iterations) THEN
     smooth = 1.0_wp
   ELSE
     smooth = REAL(tide_iteration,wp) / REAL(tides_smooth_iterations,wp)
     tide_iteration = tide_iteration + 1
   ENDIF
-   
+
   call timing(jahr,monat,tag,stunde,minute,sekunde,dtim)  ! compute the number of days since 2010 January 0.0
   call get_gst(jahr,monat,tag,stunde,minute,sekunde,gst) ! compute the Greenwich siderial time gst
   call moon_declination(dtim,gst,dcl_m,alp_m,h_m) ! declination (deg) and right ascension (hours) and Greenwich hour angle h (hours) of the Moon after Duffet and Zwart (1979)
   call sun_declination(dtim,gst,dcl_s,alp_s,h_s) ! declination (deg) dcl_s, right ascension (hours) alp_s and Greenwich hour angle h (hours) of the Sun after Duffet and Zwart (1979)
-  
+
   call dist_earth_sun_moon(jahr,monat,tag,stunde+minute*1.0_dp/60.0_dp,rs,rm)  ! distance between rs = Earth - Sun and rm = Earth - Moon  (m)
-  
-  
-   gezhochfahr = 1.0_dp  ! no spin-up 
+
+
+   gezhochfahr = 1.0_dp  ! no spin-up
 !  gezhochfahr = min(1.0_dp,(dtim-tide_start)/30.0_dp)  ! spin-up over the first 30 days, when starting at "tide_start"
 !  gezhochfahr = min(1.0_dp,(dtim+3286.0_dp)/30.0_dp)  ! spin-up over the first 30 days, when starting at 2001-01-01 00:00
 !  gezhochfahr = min(1.0_dp,(dtim+2160.0_dp)/30.0_dp)  ! spin-up over the first 30 days, when starting at 2004-02-01 00:00
-  
+
 ! Compute tidal potential ==================================================
 !ICON_OMP_PARALLEL_DO PRIVATE(jb, jc, start_index,end_index,longitude,latitude,mpot,spot) ICON_OMP_DEFAULT_SCHEDULE
   DO jb = all_cells%start_block, all_cells%end_block
@@ -233,20 +232,20 @@ CONTAINS
     DO jc = start_index, end_index
 
       longitude = patch_2d%cells%center(jc,jb)%lon
-      latitude = patch_2d%cells%center(jc,jb)%lat           
+      latitude = patch_2d%cells%center(jc,jb)%lat
       call Moon_pot(dcl_m,h_m,latitude,longitude,rm,mpot) ! computation of the Moon's tidal potential
       call Sun_pot(dcl_s,h_s,latitude,longitude,rs,spot)  ! computation of the Sun's tidal potential
 
-      tides_potential(jc,jb) = tides_esl_damping_coeff * gezhochfahr * (mpot + spot) * smooth ! combined tidal potential 
-  
+      tides_potential(jc,jb) = tides_esl_damping_coeff * gezhochfahr * (mpot + spot) * smooth ! combined tidal potential
+
     END DO
   END DO
 !ICON_OMP_END_PARALLEL_DO
-  
-  
+
+
   RETURN
 END SUBROUTINE tide
-  
+
 !-------------------------------------------------------------------------
 ! find the number of days since 2010 January 0.0
 subroutine timing(year,mon,day,hour,minute,sekunde,d)
@@ -324,7 +323,7 @@ ma = mod(ma,360.0_dp)
 if(ma.lt.0.0_dp) ma = ma + 360.0_dp   ! Sun's mean anomaly
 
 
-lama = 360.0_dp/365.242191_dp*d + 360.0_dp/pi*e*dsin((360.0_dp/365.242191_dp*d + epsg - omg)*rad) + epsg
+lama = 360.0_dp/365.242191_dp*d + 360.0_dp/pi*e*SIN((360.0_dp/365.242191_dp*d + epsg - omg)*rad) + epsg
 
 lama = mod(lama,360.0_dp)
 if(lama.lt.0.0_dp) lama = lama + 360.0_dp   ! Sun's ecliptic longitude
@@ -353,38 +352,38 @@ if(n.lt.0.0_dp) n = n + 360.0_dp
 
 C = l-lama
 
-Ev = 1.2739_dp*dsin(rad*(2*C-Mm))  ! corrections for evection
+Ev = 1.2739_dp*SIN(rad*(2*C-Mm))  ! corrections for evection
 
-Ae = 0.1858_dp*dsin(rad*Ma) ! annual equation
+Ae = 0.1858_dp*SIN(rad*Ma) ! annual equation
 
-A3 = 0.37_dp*dsin(rad*Ma)  ! third correction
+A3 = 0.37_dp*SIN(rad*Ma)  ! third correction
 
 
 ! -----------------------------------------------------------
 
 Mms = Mm + Ev - Ae -A3   ! Moon's corrected anomaly
 
-Ec = 6.2886_dp*dsin(rad*Mms)  ! equation of the centre
+Ec = 6.2886_dp*SIN(rad*Mms)  ! equation of the centre
 
-A4 = 0.214_dp*dsin(rad*2*Mms) ! another correction term
+A4 = 0.214_dp*SIN(rad*2*Mms) ! another correction term
 
 ls = l + Ev + Ec - Ae + A4 ! Moon's corrected longitude
 
-V = 0.6583_dp*dsin(rad*2*(ls-lama)) ! variation
+V = 0.6583_dp*SIN(rad*2*(ls-lama)) ! variation
 
 lss = ls + v  ! Moon's true orbital longitude
 
 
 ! ---------------------------------------------------------
 
-Ns = N - 0.16_dp*dsin(rad*Ma) ! corrected longitude of the node
+Ns = N - 0.16_dp*SIN(rad*Ma) ! corrected longitude of the node
 i = 5.145396_dp    ! inclination of Moon's orbit
 
-y = dsin(rad*(lss-Ns))*dcos(rad*i)
-x = dcos(rad*(lss-Ns)) + 1.e-8_dp
+y = SIN(rad*(lss-Ns))*COS(rad*i)
+x = COS(rad*(lss-Ns)) + 1.e-8_dp
 
 
-at = datan(y/x)*1.0_dp/rad
+at = ATAN(y/x)*1.0_dp/rad
 
 call conv(at,x,y)
 
@@ -394,7 +393,7 @@ lamm = at + Ns  ! ecliptic longitude
 if(lamm.gt.360.0_dp) lamm = lamm-360.0_dp
 
 
-betm = dasin( dsin(rad*(lss-Ns))*dsin(rad*i))*1.0_dp/rad  ! ecliptic latitude
+betm = ASIN( SIN(rad*(lss-Ns))*SIN(rad*i))*1.0_dp/rad  ! ecliptic latitude
 
 
 ! -------------------------------------------------------------
@@ -403,11 +402,11 @@ T = (d + 3651.5_dp)/36525.0_dp ! number of Julian centuries since epoch 2000 Jan
 
 eps = 23.43929166663333336_dp - 0.013004166666666666_dp*T - 1.6666666666666665e-7_dp*T**2 + 5.027777777777778e-7_dp*T**3 ! mean obliquity of the ecliptic
 
-y = dsin(rad*lamm)*dcos(rad*eps) - dtan(rad*betm)*dsin(rad*eps)
-x = dcos(rad*lamm) + 1.e-8_dp
+y = SIN(rad*lamm)*COS(rad*eps) - TAN(rad*betm)*SIN(rad*eps)
+x = COS(rad*lamm) + 1.e-8_dp
 
 
-alp = datan(y/x)*1.0_dp/rad
+alp = ATAN(y/x)*1.0_dp/rad
 
 call conv(alp,x,y)
 
@@ -415,7 +414,7 @@ alp = alp*0.06666666666666667_dp ! right ascension (hours)
 
 call adj2(alp)
 
-dcl = dasin(dsin(rad*betm)*dcos(rad*eps) + dcos(rad*betm)*dsin(rad*eps)*dsin(rad*lamm))*1.0_dp/rad ! declination
+dcl = ASIN(SIN(rad*betm)*COS(rad*eps) + COS(rad*betm)*SIN(rad*eps)*SIN(rad*lamm))*1.0_dp/rad ! declination
 
 h = gst - alp  ! hour angle (hours)
 
@@ -465,7 +464,7 @@ pi = 3.141592653589793_dp
 rad = pi/180.0_dp
 
 
-n = 360.0_dp/365.242191_dp*d  
+n = 360.0_dp/365.242191_dp*d
 
 call adj(n)
 
@@ -473,7 +472,7 @@ Ma = n + 279.557208_dp-283.112438_dp  !mean anomaly
 
 call adj(ma)
 
-ec = 360.0_dp/pi*0.016705_dp*dsin(rad*Ma)
+ec = 360.0_dp/pi*0.016705_dp*SIN(rad*Ma)
 
 lam = n + ec + 279.557208_dp  ! longitude of the Sun
 call adj(lam)
@@ -487,17 +486,17 @@ T = (d + 3651.5_dp)/36525.0_dp ! number of Julian centuries since epoch 2000 Jan
 
 eps = 23.43929166663333336_dp - 0.013004166666666666_dp*T - 1.6666666666666665e-7_dp*T**2 +5.027777777777778e-7_dp*T**3 ! mean obliquity of the ecliptic
 
-y = dsin(rad*lam)*dcos(rad*eps) - dtan(rad*bet)*dsin(rad*eps)
-x = dcos(rad*lam) + 1.e-8_dp
+y = SIN(rad*lam)*COS(rad*eps) - TAN(rad*bet)*SIN(rad*eps)
+x = COS(rad*lam) + 1.e-8_dp
 
 
-alp = datan(y/x)*1.0_dp/rad
+alp = ATAN(y/x)*1.0_dp/rad
 
 call conv(alp,x,y)
 
 alp = alp*0.06666666666666667_dp ! right ascension (hours)
 
-dcl = dasin(dsin(rad*bet)*dcos(rad*eps) + dcos(rad*bet)*dsin(rad*eps)*dsin(rad*lam))*1.0_dp/rad ! declination
+dcl = ASIN(SIN(rad*bet)*COS(rad*eps) + COS(rad*bet)*SIN(rad*eps)*SIN(rad*lam))*1.0_dp/rad ! declination
 
 h = gst - alp
 
@@ -563,13 +562,13 @@ REAL(dp) :: sekunde,gst,d,s,t0,t,ut
 
 call timing(year,mon,day,0,0,0.0_dp,d)
 
-s = d + 3651.5_dp 
+s = d + 3651.5_dp
 t = s/36525.0_dp
 t0 = 6.697374558_dp + 2400.051336_dp*t + 0.000025862_dp*t**2
 
 call adj2(t0)
 
-ut = hour*1.0_dp + minute*1.0_dp/60.0_dp + sekunde*1.0_dp/3600.0_dp 
+ut = hour*1.0_dp + minute*1.0_dp/60.0_dp + sekunde*1.0_dp/3600.0_dp
 
 ut = ut*1.002737909_dp
 
@@ -584,7 +583,7 @@ end subroutine get_gst
 
 subroutine Moon_pot(dcl,h,lat,lon,r,pot) ! computation of the Moon's tidal potential
 implicit none
-     
+
 REAL(dp) :: pot
 REAL(dp) :: dcl,h
 
@@ -604,17 +603,17 @@ pot0 = gam*m/r
 
 latd = lat/rad
 lond = lon/rad
-  
+
 tet = (90.0_dp - latd)*rad
 codec = (90.0_dp - dcl)*rad
 phi = (h*360.0_dp/24.0_dp + lond)*rad
 
-  
-cosg = dcos(tet)*dcos(codec) + dsin(tet)*dsin(codec)*dcos(phi)  
-wrz = dsqrt(1.0_dp - 2.0_dp*er/r*cosg + (er/r)**2)
-  
+
+cosg = COS(tet)*COS(codec) + SIN(tet)*SIN(codec)*COS(phi)
+wrz = SQRT(1.0_dp - 2.0_dp*er/r*cosg + (er/r)**2)
+
 pot = pot0*(1.0_dp + er/r*cosg - 1.0_dp/wrz)
-  
+
 
 return
 end subroutine Moon_pot
@@ -624,7 +623,7 @@ end subroutine Moon_pot
 
 subroutine Sun_pot(dcl,h,lat,lon,r,pot) ! computation of the Sun's tidal potential
 implicit none
-     
+
 REAL(dp) :: pot
 REAL(dp) :: dcl,h
 
@@ -644,17 +643,17 @@ pot0 = gam*m/r
 
 latd = lat/rad
 lond = lon/rad
-  
+
 tet = (90.0_dp - latd)*rad
 codec = (90.0_dp - dcl)*rad
 phi = (h*360.0_dp/24.0_dp + lond)*rad
 
-  
-cosg = dcos(tet)*dcos(codec) + dsin(tet)*dsin(codec)*dcos(phi)  
-wrz = dsqrt(1.0_dp - 2.0_dp*er/r*cosg + (er/r)**2)
-  
+
+cosg = COS(tet)*COS(codec) + SIN(tet)*SIN(codec)*COS(phi)
+wrz = SQRT(1.0_dp - 2.0_dp*er/r*cosg + (er/r)**2)
+
 pot = pot0*(1.0_dp + er/r*cosg - 1.0_dp/wrz)
-  
+
 
 return
 end subroutine Sun_pot
@@ -670,7 +669,7 @@ REAL(dp) :: lams,p0,l0,l,dd,cc,A3,Ae,Ev,Mm,Mms,ec,rm,n
 INTEGER  :: ih,im
 
 
-pi = 4.e0_dp*datan(1.0_dp)
+pi = 4.e0_dp*ATAN(1.0_dp)
 rad = pi/180.0_dp
 
 r0 = 1.495985e11_dp   ! semi-major axis (m)
@@ -683,10 +682,10 @@ else
   mons = mon
 endif
 
-a = dint(0.01_dp*ys)
-b = 2 - a + dint(0.25_dp*a)
-c = dint(365.25_dp*ys)
-d = dint(30.6001_dp*(mons +1))
+a = AINT(0.01_dp*ys)
+b = 2 - a + AINT(0.25_dp*a)
+c = AINT(365.25_dp*ys)
+d = AINT(30.6001_dp*(mons +1))
 
 jd = b + c + d + day + h/24.0_dp + 1720994.5_dp
 t = (jd - 2415020.0_dp)/36525.0_dp
@@ -706,17 +705,17 @@ ms = pi/180.0_dp*ms
 
 call findEE(e,ms,ee)
 
-ny = 2.0_dp*datan( dsqrt((1.0_dp+e)/(1.0_dp-e))*dtan(0.5_dp*ee))
+ny = 2.0_dp*ATAN( SQRT((1.0_dp+e)/(1.0_dp-e))*TAN(0.5_dp*ee))
 ny = 180.0_dp/pi*ny
 call adj(ny)
 
-rs = r0 *(1.0_dp - e**2)/(1.0_dp+e*dcos(ny*rad))
+rs = r0 *(1.0_dp - e**2)/(1.0_dp+e*COS(ny*rad))
 
 ! =========================================================================
 ! distance Earth - Moon (m)
 
-ih = dint(h)
-im = dint((h-ih)*1./60 + 0.5)
+ih = AINT(h)
+im = AINT((h-ih)*1./60 + 0.5)
 
 call timing(y,mon,day,ih,im,0.0_dp,DD)  ! DD = number of days since 2010 January 0.0
 
@@ -741,18 +740,18 @@ call adj(l)
 cc = l - lams
 call adj(cc)
 
-A3 = 0.37_dp*dsin(ms*rad)
-Ae = 0.1858_dp*dsin(ms*rad)
+A3 = 0.37_dp*SIN(ms*rad)
+Ae = 0.1858_dp*SIN(ms*rad)
 Mm = l - 0.111404_dp*DD-p0  ! Moon's mean anomaly (deg)
 call adj(Mm)
 
-Ev = 1.2739_dp*dsin((2.0_dp*cc - mm)*rad) ! evection
+Ev = 1.2739_dp*SIN((2.0_dp*cc - mm)*rad) ! evection
 
 Mms = Mm + Ev - Ae - A3  ! Moon's corrected anomaly (deg)
 
-Ec = 6.2886_dp*dsin(Mms*rad) 
+Ec = 6.2886_dp*SIN(Mms*rad)
 
-rm = a*(1.0_dp - e**2)/(1.0_dp + e*dcos((Mms + Ec)*rad))
+rm = a*(1.0_dp - e**2)/(1.0_dp + e*COS((Mms + Ec)*rad))
 
 
 return
@@ -768,7 +767,7 @@ REAL(dp) :: e,ms,ee,ee1,ee2,incr,pi,v1,v2,fkt
 
 INTEGER :: ie, ie1,ie2,iincr
 
-pi = 4.0_dp*datan(1.0_dp)
+pi = 4.0_dp*ATAN(1.0_dp)
 it = 0
 
 
@@ -787,7 +786,7 @@ ee=ee1
 ! do ee = ee1,ee2,incr
 do ie = ie1,ie2,iincr
   ee = ee + incr
-  fkt = ee - e*dsin(ee)
+  fkt = ee - e*SIN(ee)
   if(fkt.gt.ms) then
     v1 = ee-incr
     v2 = ee
@@ -805,18 +804,18 @@ if(it.lt.8) goto 2
 ee = 0.5_dp*(v1+v2)
 
 return
-end subroutine findee  
+end subroutine findee
 ! =============================================================================================
 ! =============================================================================================
 
   SUBROUTINE tide_mpi(patch_3d,mtime_current,tides_potential)
-  
+
   IMPLICIT NONE
-  
+
   TYPE(t_patch_3d ),TARGET, INTENT(in) :: patch_3d
   TYPE(datetime), POINTER              :: mtime_current
   REAL(wp), INTENT(inout)              :: tides_potential(:,:)
-  
+
   TYPE(t_patch), POINTER :: patch_2D
   TYPE(t_subset_range), POINTER :: all_cells
   INTEGER :: jb,jc,jk,start_index,end_index
@@ -824,62 +823,62 @@ end subroutine findee
   INTEGER  :: jahr,monat,tag,stunde,minute
   REAL(dp) :: sekunde,gezhochfahr,rs,rm
   REAL(dp) :: dtim,gst,dcl_m,alp_m,h_m,dcl_s,alp_s,h_s,mpot,spot,longitude,latitude
-  
+
   REAL(dp) :: pic,pi2,dt,T,sidt,ecl,nutob,nutl,res(3,2),res2(3,2)
   REAL(dp) :: rkomp,rkosp,erdrad,rekts,dekls,cris3,rektm,deklm,crim3,deklm2,dekls2,sidm,sidmq
   REAL(dp) :: codm,codmq,sids,sidsq,cods,codsq,sidm2,sids2,lon,lat,argp,alatr,hamp,hasp,tipoto
   REAL(dp) :: silato,colato
   INTEGER  :: mmccdt,fnut
   REAL(wp) :: smooth
-  
-  
-  
+
+
+
   patch_2D        => patch_3d%p_patch_2d(1)
   all_cells       => patch_2D%cells%ALL
 
-  IF (tide_iteration >= tides_smooth_iterations) THEN 
+  IF (tide_iteration >= tides_smooth_iterations) THEN
     smooth = 1.0_wp
   ELSE
     smooth = REAL(tide_iteration,wp) / REAL(tides_smooth_iterations,wp)
     tide_iteration = tide_iteration + 1
   ENDIF
- 
-  
+
+
   CALL datetimeToString(mtime_current, datestri)
-  
+
   READ(datestri(1:4),'(i4)') jahr
   READ(datestri(6:7),'(i2.2)') monat
   READ(datestri(9:10),'(i2.2)') tag
   READ(datestri(12:13),'(i2.2)') stunde
   READ(datestri(15:16),'(i2.2)') minute
   READ(datestri(18:23),'(f6.3)') sekunde
-  
+
   call timing(jahr,monat,tag,stunde,minute,sekunde,dtim)  ! compute the number of days since 2010 January 0.0
-  
-  gezhochfahr = 1.0_dp  ! no spin-up 
+
+  gezhochfahr = 1.0_dp  ! no spin-up
 ! gezhochfahr = min(1.0_dp,(dtim-tide_start)/30.0_dp)  ! spin-up over the first 30 days, when starting at "tide_start"
 !  gezhochfahr = min(1.0_dp,(dtim+3286.0_dp)/30.0_dp)  ! spin-up over the first 30 days, when starting at 2001-01-01 00:00
 !  gezhochfahr = min(1.0_dp,(dtim+2160.0_dp)/30.0_dp)  ! spin-up over the first 30 days, when starting at 2004-02-01 00:00
 
   t = dtim+3651.5_dp ! Julian days since 2000-01-01 12:00
   t = t/36525.0_dp  !fractional julian centuries t since 2000-01-01 12:00
-   
-   
-  pi2 = dacos(-1.0_dp) * 2.0_dp
-  pic = dacos(-1.0_dp)/DBLE(180.0_dp)
-   
+
+
+  pi2 = ACOS(-1.0_dp) * 2.0_dp
+  pic = ACOS(-1.0_dp)/180.0_dp
+
   call sidt2(pic,pi2,t,sidt) ! corresponding sidereal time Greenwich sidt
-  
-  
+
+
   fnut=0  ! set fnut (perform nutation -> 1; don't -> 0)
 
   CALL obliq(fnut,pic,T,ecl,nutob,nutl)  ! obliquity of the ecliptic
-  
-  CALL sun_n(fnut,pic,pi2,T,ecl,nutl,res)!  calculation of position of the Sun according to Duffett, 1990 
-  CALL moon(fnut,pic,pi2,T,ecl,nutl,res) !  calculation of position of the Moon according to Duffett, 1990 
-  
+
+  CALL sun_n(fnut,pic,pi2,T,ecl,nutl,res)!  calculation of position of the Sun according to Duffett, 1990
+  CALL moon(fnut,pic,pi2,T,ecl,nutl,res) !  calculation of position of the Moon according to Duffett, 1990
+
   CALL aufb2(sidt,res,res2) ! modifications in preparaion of calculation of potentials
-  
+
   rkomp = -4.113e-07_dp ! factor of the tidal potential due to the moon
                      ! attention the factor is defined negative (contrary to the standard).
   rkosp = 0.46051_dp * rkomp ! FIXME: replace with radius from mo_planetary constants
@@ -896,18 +895,18 @@ end subroutine findee
 
   deklm2 = deklm * 2.0_dp
   dekls2 = dekls * 2.0_dp
-  sidm   = dsin(deklm)
+  sidm   = SIN(deklm)
   sidmq  = sidm*sidm
-  codm   = dcos(deklm)
+  codm   = COS(deklm)
   codmq  = codm*codm
-  sids   = dsin(dekls)
+  sids   = SIN(dekls)
   sidsq  = sids*sids
-  cods   = dcos(dekls)
+  cods   = COS(dekls)
   codsq  = cods*cods
-  sidm2 = dsin(deklm2)
-  sids2 = dsin(dekls2)
-   
-  
+  sidm2 = SIN(deklm2)
+  sids2 = SIN(dekls2)
+
+
 ! Compute tidal potential ==================================================
 !ICON_OMP_PARALLEL_DO PRIVATE(jb, jc, start_index,end_index,longitude,latitude,argp,alatr, silato,colato, &
 !ICON_OMP hamp, hasp) ICON_OMP_DEFAULT_SCHEDULE
@@ -917,7 +916,7 @@ end subroutine findee
     DO jc = start_index, end_index
 
       longitude = patch_2d%cells%center(jc,jb)%lon
-      latitude = patch_2d%cells%center(jc,jb)%lat 
+      latitude = patch_2d%cells%center(jc,jb)%lat
 
       argp = longitude
       alatr = latitude
@@ -932,19 +931,19 @@ end subroutine findee
       ! FIXME: move 1./3. to parameter
       tides_potential(jc,jb) = smooth * tides_esl_damping_coeff * gezhochfahr*(erdrad * rkomp * crim3 &
          * (3.0_dp * (silato**2 - 1.0_dp/3.0_dp) * (sidmq - 1.0_dp/3.0_dp)&
-      &  + DSIN(2.0_dp * alatr) * sidm2 * DCOS(hamp) &
-      &  + colato**2 * codmq * DCOS(2.0_dp * hamp))        &
+      &  + SIN(2.0_dp * alatr) * sidm2 * COS(hamp) &
+      &  + colato**2 * codmq * COS(2.0_dp * hamp))        &
       &  + erdrad * rkosp * cris3 &
       &  * (3.0_dp * (silato**2 - 1.0_dp/3.0_dp) &
       &  * (sidsq - 1.0_dp/3.0_dp) &
-      &  + DSIN(2.0_dp * alatr) * sids2 * DCOS(hasp) &
-      &  + colato**2 * codsq * DCOS(2.0_dp * hasp)))      
+      &  + SIN(2.0_dp * alatr) * sids2 * COS(hasp) &
+      &  + colato**2 * codsq * COS(2.0_dp * hasp)))
 
     END DO
   END DO
 !ICON_OMP_END_PARALLEL_DO
-  
-  
+
+
   RETURN
 END SUBROUTINE tide_mpi
 
@@ -976,9 +975,9 @@ END SUBROUTINE tide_mpi
   ENDIF
 !
   END SUBROUTINE sidt2
-  
+
 ! =============================================================
-  
+
   SUBROUTINE negangle2(pi2,x)
 ! transformation of negative angles
 ! to angles in interval [0 degree; 360 degree)
@@ -995,8 +994,8 @@ END SUBROUTINE tide_mpi
 !
   Return
   END  SUBROUTINE  negangle2
-      
-      
+
+
 ! ===========================================================
 
   SUBROUTINE langle2(pi2,x)
@@ -1015,7 +1014,7 @@ END SUBROUTINE tide_mpi
 !
   Return
   END SUBROUTINE    langle2
-  
+
 ! ===============================================================
 
   Subroutine obliq(fnut,pic,T,ecl,nutob,nutl)
@@ -1033,41 +1032,43 @@ END SUBROUTINE tide_mpi
     T2=T1*T1
 !
     a = 100.0021358_dp * t1
-    ! FIXME: consider using intrinsic AINT here
-    b = 360.0_dp * (a - DBLE(DINT(a)))
+    b = 360.0_dp * (a - AINT(a))
     l1 = 279.6967_dp + 0.000303_dp * t2 + b
     l2 = 2.0_dp * l1 * pic
+
     a = 1336.855231_dp * t1
-    ! FIXME: consider using intrinsic AINT here
-    b = 360.0_dp * (a - DBLE(DINT(a)))
+    b = 360.0_dp * (a - AINT(a))
     d1 = 270.4342_dp - 0.001133_dp * t2 + b
     d2 = 2.0_dp * d1 * pic
+
     a = 99.99736056_dp * t1
-    ! FIXME: consider using intrinsic AINT here
-    b = 360.0_dp * (a - DBLE(DINT(a)))
+    b = 360.0_dp * (a - AINT(a))
     m1 = (358.4758_dp - 0.00015_dp * t2 + b) * pic
+
     a = 1325.552359_dp * t1
-    b = 360.0_dp * (a - DBLE(DINT(a)))
+    b = 360.0_dp * (a - AINT(a))
     m2 = (296.1046_dp + 0.009192_dp * t2 + b) * pic
+
     a = 5.372616667_dp * t1
-    b = 360.0_dp * (a - DBLE(DINT(a)))
+    b = 360.0_dp * (a - AINT(a))
     n1 = (259.1833_dp + 0.002078_dp * t2 - b) * pic
     n2 = 2.0_dp * n1
+
 !   correction term for nutation in longitude
-    nutl = ((-17.2327_dp - 0.01737_dp * t1) * DSIN(n1)               &
-         + (-1.2729_dp - 0.00013_dp * t1) * DSIN(l2) + 0.2088_dp * DSIN(n2) &
-         - 0.2037_dp * DSIN(d2) + (0.1261_dp - 0.00031_dp * t1) * DSIN(m1)  &
-         + 0.0675_dp * DSIN(m2) - (0.0497_dp - 0.00012_dp * t1) * DSIN(l2 + m1) &
-         - 0.0342_dp * DSIN(d2 - n1) - 0.0261_dp * DSIN(d2 + m2)      &
-         + 0.0214_dp * DSIN(l2 - m1) - 0.0149_dp * DSIN(l2 - d2 + m2) &
-         + 0.0124_dp * DSIN(l2 - n1) + 0.0114_dp * DSIN(d2 - m2)) &
+    nutl = ((-17.2327_dp - 0.01737_dp * t1) * SIN(n1)               &
+         + (-1.2729_dp - 0.00013_dp * t1) * SIN(l2) + 0.2088_dp * SIN(n2) &
+         - 0.2037_dp * SIN(d2) + (0.1261_dp - 0.00031_dp * t1) * SIN(m1)  &
+         + 0.0675_dp * SIN(m2) - (0.0497_dp - 0.00012_dp * t1) * SIN(l2 + m1) &
+         - 0.0342_dp * SIN(d2 - n1) - 0.0261_dp * SIN(d2 + m2)      &
+         + 0.0214_dp * SIN(l2 - m1) - 0.0149_dp * SIN(l2 - d2 + m2) &
+         + 0.0124_dp * SIN(l2 - n1) + 0.0114_dp * SIN(d2 - m2)) &
          / 3600.0_dp * pic
 ! correction term for nutation in obliquity of the ecliptic
-    nutob = ((9.21_dp + 0.00091_dp * t1) * DCOS(n1)                  &
-             + (0.5522_dp - 0.00029_dp * t1) * DCOS(l2) - 0.0904_dp * COS(n2) &
-             + 0.0884_dp * DCOS(d2) + 0.0216_dp * DCOS(l2 + m1)           &
-             + 0.0183_dp * DCOS(d2 - n1) + 0.0113_dp * DCOS(d2 + m2)      &
-             - 0.0093_dp * DCOS(l2 - m1) - 0.0066_dp * DCOS(l2 - n1)) &
+    nutob = ((9.21_dp + 0.00091_dp * t1) * COS(n1)                  &
+             + (0.5522_dp - 0.00029_dp * t1) * COS(l2) - 0.0904_dp * COS(n2) &
+             + 0.0884_dp * COS(d2) + 0.0216_dp * COS(l2 + m1)           &
+             + 0.0183_dp * COS(d2 - n1) + 0.0113_dp * COS(d2 + m2)      &
+             - 0.0093_dp * COS(l2 - m1) - 0.0066_dp * COS(l2 - n1)) &
              / 3600.0_dp * pic
 !
   Else
@@ -1088,7 +1089,7 @@ END SUBROUTINE tide_mpi
     ecl = (23.43929167_dp - c/3600.0_dp) * pic + nutob
 !
   END SUBROUTINE obliq
-  
+
 ! ==================================================================
 
       SUBROUTINE Sun_n(fnut,pic,pi2,T,ecl,nutl,res)
@@ -1106,12 +1107,11 @@ END SUBROUTINE tide_mpi
       T3=T2*T1
 !
       a = 100.0021359_dp * t1
-      ! FIXME: consider using intrinsic AINT here
-      b = 360.0_dp * (a - DBLE(DINT(a)))
+      b = 360.0_dp * (a - AINT(a))
       l = (279.69668_dp + 0.0003025_dp * t2 + b) * pic
+
       a = 99.99736042_dp * t1
-      ! FIXME: consider using intrinsic AINT here
-      b = 360.0_dp * (a - DBLE(DINT(a)))
+      b = 360.0_dp * (a - AINT(a))
       m1 = (358.47583_dp - 0.00015_dp * t2 + 0.0000033_dp * t3 + b) * pic
       ec = 0.01675104_dp - 0.0000418_dp * t1 - 0.000000126_dp * t2
 !
@@ -1120,32 +1120,31 @@ END SUBROUTINE tide_mpi
 !
 !  various arguments in rad
       a = 62.55209472_dp * t1
-      !FIXME: consider using intrinsic AINT here
-      b = 360.0_dp * (a - DBLE(DINT(a)))
+      b = 360.0_dp * (a - AINT(a))
       a1 = (153.23_dp + b) * pic
+
       a = 125.1041894_dp * t1
-      !FIXME: consider using intrinsic AINT here
-      b = 360.0_dp * (a - DBLE(DINT(a)))
+      b = 360.0_dp * (a - AINT(a))
       b1 = (216.57_dp + b) * pic
+
       a = 91.56766028_dp * t1
-      !FIXME: consider using intrinsic AINT here
-      b = 360.0_dp * (a - DBLE(DINT(a)))
+      b = 360.0_dp * (a - AINT(a))
       c1 = (312.69_dp + b) * pic
+
       a = 1236.853095_dp * t1
-      !FIXME: consider using intrinsic AINT here
-      b = 360.0_dp * (a - DBLE(DINT(a)))
+      b = 360.0_dp * (a - AINT(a))
       d1 = (350.74_dp - 0.00144_dp * t2 + b) * pic
       e1 = (231.19_dp + 20.2_dp * t1) * pic
+
       a = 183.1353208_dp * t1
-      !FIXME: consider using intrinsic AINT here
-      b = 360.0_dp * (a - DBLE(DINT(a)))
+      b = 360.0_dp * (a - AINT(a))
       h1 = (353.4_dp + b) * pic
 !
-      d2 = (0.00134_dp * DCOS(a1) + 0.00154_dp * DCOS(b1) + 0.002_dp * DCOS(c1) &
-           + 0.00179_dp * DSIN(d1) + 0.00178_dp * DSIN(e1)) * pic
-      d3 = 0.00000543_dp * DSIN(a1) + 0.00001575_dp * DSIN(b1) &
-           + 0.00001627_dp * DSIN(c1) + 0.00003076_dp * DCOS(d1) &
-           + 0.00000927_dp * DSIN(h1)
+      d2 = (0.00134_dp * COS(a1) + 0.00154_dp * COS(b1) + 0.002_dp * COS(c1) &
+           + 0.00179_dp * SIN(d1) + 0.00178_dp * SIN(e1)) * pic
+      d3 = 0.00000543_dp * SIN(a1) + 0.00001575_dp * SIN(b1) &
+           + 0.00001627_dp * SIN(c1) + 0.00003076_dp * COS(d1) &
+           + 0.00000927_dp * SIN(h1)
 !
 !  geocentric ecliptic coordinates of the Sun
       S1=AT+L-M1+D2
@@ -1165,7 +1164,7 @@ END SUBROUTINE tide_mpi
       res(3,1)=S3
 !
       End Subroutine sun_n
-      
+
 ! ===============================================================
 
   SUBROUTINE anomaly(pi2,AM,EC,AT,AE)
@@ -1176,21 +1175,20 @@ END SUBROUTINE tide_mpi
    REAL(dp) :: pi2,AM,EC,AT,AE,M,D,A
 !
 !  see page 113
-      ! FIXME: consider using intrinsic AINT here
-      m = am - pi2 * DBLE(DINT(am / pi2))
+      m = am - pi2 * AINT(am / pi2)
       AE=M
-  1   D=AE-(EC*DSin(AE))-M
+  1   D=AE-(EC*SIN(AE))-M
       IF (ABS(d) .GE. 0.000006_dp) THEN
-        d = d/(1.0_dp - ec * DCOS(ae))
+        d = d/(1.0_dp - ec * COS(ae))
         AE=AE-D
         Goto 1
       Else
-        a = DSQRT((1.0_dp + ec)/(1.0_dp - ec))*DTAN(ae/2.0_dp)
-        at = 2.0_dp * DATAN(a)
+        a = SQRT((1.0_dp + ec)/(1.0_dp - ec))*TAN(ae/2.0_dp)
+        at = 2.0_dp * ATAN(a)
       Endif
 !
       END SUBROUTINE anomaly
-      
+
 !  =============================================================
 
   SUBROUTINE eqecl(pi2,X,Y,P,Q,ecl,SW)
@@ -1203,17 +1201,17 @@ END SUBROUTINE tide_mpi
       REAL(dp) :: pi2,ecl,P,Q,X,Y,SW
 !
 !  see page 62
-      p = DATAN2((DSIN(x) * DCOS(ecl) + DTAN(y) * DSIN(ecl) * sw), DCOS(X))
+      p = ATAN2((SIN(x) * COS(ecl) + TAN(y) * SIN(ecl) * sw), COS(X))
       IF (p .LT. 0.) CALL negangle2(pi2,p)
       IF (P .GE. pi2) CALL langle2(pi2,P)
-      Q=DAsin(DSin(Y)*DCos(ecl)-DCos(Y)*DSin(ecl)*DSin(X)*SW)
+      Q=ASIN(SIN(Y)*COS(ecl)-COS(Y)*SIN(ecl)*SIN(X)*SW)
 !
       END SUBROUTINE eqecl
-      
+
 ! ================================================================
   Subroutine moon(fnut,pic,pi2,T,ecl,nutl,res)
   !  calculation of position of the Moon
-  !  according to Duffett, 1990 
+  !  according to Duffett, 1990
   !
   Integer fnut
   REAL(dp) :: pic,pi2,T,T1,T2,T3,ecl,nutl,A,B,C,SW
@@ -1227,36 +1225,36 @@ END SUBROUTINE tide_mpi
 !
   q = t1 * 36525.0_dp
   m1 = q/27.32158213_dp
-  !FIXME: consider using intrinsic AINT here
-  m1 = 360.0_dp * (m1 - DBLE(DINT(m1)))
+
+  m1 = 360.0_dp * (m1 - AINT(m1))
   m2 = q / 365.2596407_dp
-  !FIXME: consider using intrinsic AINT here
-  m2 = 360.0_dp * (m2 - DBLE(DINT(m2)))
+
+  m2 = 360.0_dp * (m2 - AINT(m2))
   m3 = q / 27.55455094_dp
-  !FIXME: consider using intrinsic AINT here
-  m3 = 360.0_dp * (m3 - DBLE(DINT(m3)))
+
+  m3 = 360.0_dp * (m3 - AINT(m3))
   m4 = q / 29.53058868_dp
-  !FIXME: consider using intrinsic AINT here
-  m4 = 360.0_dp * (m4 - DBLE(DINT(m4)))
+
+  m4 = 360.0_dp * (m4 - AINT(m4))
   m5 = q / 27.21222039_dp
-  !FIXME: consider using intrinsic AINT here
-  m5 = 360.0_dp * (m5 - DBLE(DINT(m5)))
+
+  m5 = 360.0_dp * (m5 - AINT(m5))
   m6 = q / 6798.363307_dp
-  !FIXME: consider using intrinsic AINT here
-  m6 = 360.0_dp * (m6 - DBLE(DINT(m6)))
+
+  m6 = 360.0_dp * (m6 - AINT(m6))
   ml = 270.434164_dp + m1 - 0.001133_dp * t2 + 0.0000019_dp * t3
   ms = 358.475833_dp + m2 - 0.00015_dp * t2 + 0.0000033_dp * t3
   md = 296.104608_dp + m3 + 0.009192_dp * t2 + 0.0000144_dp * t3
   me = 350.737486_dp + m4 - 0.001436_dp * t2 + 0.0000019_dp * t3
   mf = 11.250889_dp + m5 - 0.003211_dp * t2 - 0.0000003_dp * t3
   na = (259.183275_dp - m6 + 0.002078_dp * t2 + 0.0000022_dp * t3) * pic
-  s2 = DSIN(na)
+  s2 = SIN(na)
   a = (51.2_dp + 20.2_dp * t1) * pic
-  s1 = DSIN(a)
+  s1 = SIN(a)
   b = (346.56_dp + 132.87_dp * t1 - 0.0091731_dp * t2) * pic
-  s3 = 0.003964_dp * DSIN(b)
+  s3 = 0.003964_dp * SIN(b)
   c = na + (275.05_dp - 2.3_dp * t1) * pic
-  s4 = DSIN(c)
+  s4 = SIN(c)
   ml = (ml + 0.000233_dp * s1 + s3 + 0.001964_dp * s2) * pic
   ms = (ms - 0.001778_dp * s1) * pic
   md = (md + 0.000817_dp * s1 + s3 + 0.002541_dp * s2) * pic
@@ -1266,51 +1264,51 @@ END SUBROUTINE tide_mpi
   e2 = e * e
 
 !  ecliptic longitude MO1
-  l = 6.28875_dp * DSIN(md) + 1.274018_dp * DSIN(2.0_dp * me - md)        &
-           + 0.658309_dp * DSIN(2.0_dp * me) + 0.213616_dp * DSIN(2.0_dp * md) &
-           - e * 0.185596_dp * DSIN(ms) - 0.114336_dp * DSIN(2.0_dp * mf)     &
-           + 0.058793_dp * DSIN(2.0_dp * (me - md))                          &
-           + 0.057212_dp * e * DSIN(2.0_dp * me - ms - md) + 0.05332_dp      &
-           & * DSIN(2.0_dp * me + md)                                        &
-           + 0.045874_dp * e * DSIN(2.0_dp * me - ms)                        &
-           + 0.041024_dp * e * DSIN(md - ms)                                &
-           - 0.034718_dp * DSIN(me) - e * 0.030465_dp * DSIN(md + ms)        &
-           + 0.015326_dp * DSIN(2.0_dp * (me - mf))                          &
-           - 0.012528_dp * DSIN(2.0_dp * mf + md)                            &
-           - 0.01098_dp * DSIN(2.0_dp * mf - md)                             &
-           + 0.010674_dp * DSIN(4.0_dp * me - md)                            &
-           + 0.010034_dp * DSIN(3.0_dp * md)                                 &
-           + 0.008548_dp * DSIN(4.0_dp * me - 2.0_dp * md)                    &
-           - e * 0.00791_dp * DSIN(ms - md + 2.0_dp * me)                    &
-           - e * 0.006783_dp * DSIN(2.0_dp * me + ms)                        &
-           + 0.005162_dp * DSIN(md - me) + e * 0.005_dp * DSIN(me + ms)      &
-           + 0.003862_dp * DSIN(4.0_dp * me)                                 &
-           + e * 0.004049_dp * DSIN(md - ms + 2.0_dp * me)                   &
-           + 0.003996_dp * DSIN(2.0_dp * (md + me))                          &
-           + 0.003665_dp * DSIN(2.0_dp * me - 3.0_dp * md)                    &
-           + e * 0.002695_dp * DSIN(2.0_dp * md - ms)                        &
-           + 0.002602_dp * DSIN(md - 2.0_dp * (mf + me))                     &
-           + e * 0.002396_dp * DSIN(2.0_dp * (me - md) - ms)                 &
-           - 0.002349_dp * DSIN(me + md)                                    &
-           + e2 * 0.002249_dp * DSIN(2.0_dp * (me - ms))                     &
-           - e * 0.002125_dp * DSIN(ms + 2.0_dp * md)                        &
-           - e2 * 0.002079_dp * DSIN(2.0_dp * ms)                            &
-           + e2 * 0.002059_dp * DSIN(2.0_dp * (me - ms) - md)                &
-           - 0.001773_dp * DSIN(2.0_dp * (me - mf) + md)                     &
-           - 0.001595_dp * DSIN(2.0_dp * (me + mf))                          &
-           + e * 0.00122_dp * DSIN(4.0_dp * me - ms - md)                    &
-           - 0.00111_dp * DSIN(2.0_dp * (md + mf))                           &
-           + 0.000892_dp * DSIN(md - 3.0_dp * me)                            &
-           - e * 0.000811_dp * DSIN(ms + md + 2.0_dp * me)                   &
-           + e * 0.000761_dp * DSIN(4.0_dp * me - ms - 2.0_dp * md)           &
-           + e2 * 0.000704_dp * DSIN(md - 2.0_dp * (ms + me))                &
-           + e * 0.000693_dp * DSIN(ms - 2.0_dp * (md - me))                 &
-           + e * 0.000598_dp * DSIN(2.0_dp * (me - mf) - ms)                 &
-           + 0.00055_dp * DSIN(md + 4.0_dp * me)                             &
-           + 0.000538_dp * DSIN(4.0_dp * md)                                 &
-           + e * 0.000521_dp * DSIN(4.0_dp * me - ms)                        &
-           + 0.000486_dp * DSIN(2.0_dp * md - me)                            &
-           + e2 * 0.000717_dp * DSIN(md - 2.0_dp * ms)
+  l = 6.28875_dp * SIN(md) + 1.274018_dp * SIN(2.0_dp * me - md)        &
+           + 0.658309_dp * SIN(2.0_dp * me) + 0.213616_dp * SIN(2.0_dp * md) &
+           - e * 0.185596_dp * SIN(ms) - 0.114336_dp * SIN(2.0_dp * mf)     &
+           + 0.058793_dp * SIN(2.0_dp * (me - md))                          &
+           + 0.057212_dp * e * SIN(2.0_dp * me - ms - md) + 0.05332_dp      &
+           & * SIN(2.0_dp * me + md)                                        &
+           + 0.045874_dp * e * SIN(2.0_dp * me - ms)                        &
+           + 0.041024_dp * e * SIN(md - ms)                                &
+           - 0.034718_dp * SIN(me) - e * 0.030465_dp * SIN(md + ms)        &
+           + 0.015326_dp * SIN(2.0_dp * (me - mf))                          &
+           - 0.012528_dp * SIN(2.0_dp * mf + md)                            &
+           - 0.01098_dp * SIN(2.0_dp * mf - md)                             &
+           + 0.010674_dp * SIN(4.0_dp * me - md)                            &
+           + 0.010034_dp * SIN(3.0_dp * md)                                 &
+           + 0.008548_dp * SIN(4.0_dp * me - 2.0_dp * md)                    &
+           - e * 0.00791_dp * SIN(ms - md + 2.0_dp * me)                    &
+           - e * 0.006783_dp * SIN(2.0_dp * me + ms)                        &
+           + 0.005162_dp * SIN(md - me) + e * 0.005_dp * SIN(me + ms)      &
+           + 0.003862_dp * SIN(4.0_dp * me)                                 &
+           + e * 0.004049_dp * SIN(md - ms + 2.0_dp * me)                   &
+           + 0.003996_dp * SIN(2.0_dp * (md + me))                          &
+           + 0.003665_dp * SIN(2.0_dp * me - 3.0_dp * md)                    &
+           + e * 0.002695_dp * SIN(2.0_dp * md - ms)                        &
+           + 0.002602_dp * SIN(md - 2.0_dp * (mf + me))                     &
+           + e * 0.002396_dp * SIN(2.0_dp * (me - md) - ms)                 &
+           - 0.002349_dp * SIN(me + md)                                    &
+           + e2 * 0.002249_dp * SIN(2.0_dp * (me - ms))                     &
+           - e * 0.002125_dp * SIN(ms + 2.0_dp * md)                        &
+           - e2 * 0.002079_dp * SIN(2.0_dp * ms)                            &
+           + e2 * 0.002059_dp * SIN(2.0_dp * (me - ms) - md)                &
+           - 0.001773_dp * SIN(2.0_dp * (me - mf) + md)                     &
+           - 0.001595_dp * SIN(2.0_dp * (me + mf))                          &
+           + e * 0.00122_dp * SIN(4.0_dp * me - ms - md)                    &
+           - 0.00111_dp * SIN(2.0_dp * (md + mf))                           &
+           + 0.000892_dp * SIN(md - 3.0_dp * me)                            &
+           - e * 0.000811_dp * SIN(ms + md + 2.0_dp * me)                   &
+           + e * 0.000761_dp * SIN(4.0_dp * me - ms - 2.0_dp * md)           &
+           + e2 * 0.000704_dp * SIN(md - 2.0_dp * (ms + me))                &
+           + e * 0.000693_dp * SIN(ms - 2.0_dp * (md - me))                 &
+           + e * 0.000598_dp * SIN(2.0_dp * (me - mf) - ms)                 &
+           + 0.00055_dp * SIN(md + 4.0_dp * me)                             &
+           + 0.000538_dp * SIN(4.0_dp * md)                                 &
+           + e * 0.000521_dp * SIN(4.0_dp * me - ms)                        &
+           + 0.000486_dp * SIN(2.0_dp * md - me)                            &
+           + e2 * 0.000717_dp * SIN(md - 2.0_dp * ms)
       MO1=ML+L*pic
       If(fnut.Eq.1) Then
         MO1=MO1+nutl
@@ -1319,83 +1317,83 @@ END SUBROUTINE tide_mpi
       IF(MO1 .GE. pi2) CALL langle2(pi2,MO1)
 
 !  ecliptic latitude MO2
-      g = 5.128189_dp * DSIN(mf) + 0.280606_dp * DSIN(md + mf)                 &
-           + 0.277693_dp * DSIN(md - mf) + 0.173238_dp * DSIN(2.0_dp * me - mf) &
-           + 0.055413_dp * DSIN(2.0_dp * me + mf - md)                         &
-           + 0.046272_dp * DSIN(2.0_dp * me - mf - md)                         &
-           + 0.032573_dp * DSIN(2.0_dp * me + mf)                              &
-           + 0.017198_dp * DSIN(2.0_dp * md + mf)                              &
-           + 0.009267_dp * DSIN(2.0_dp * me - mf + md)                         &
-           + 0.008823_dp * DSIN(2.0_dp * md - mf)                              &
-           + e * 0.008247_dp * DSIN(2.0_dp * me - ms - mf)                     &
-           + 0.004323_dp * DSIN(2.0_dp * (me + md) - mf)                       &
-           + 0.0042_dp * DSIN(2.0_dp * me + md + mf)                           &
-           + e * 0.003372_dp * DSIN(mf - ms - 2.0_dp * me)                     &
-           + e * 0.002472_dp * DSIN(2.0_dp * me - md + mf - ms)                &
-           + e * 0.002222_dp * DSIN(2.0_dp * me + mf - ms)                     &
-           + e * 0.002072_dp * DSIN(2.0_dp * me - md - mf - ms)                &
-           + e * 0.001877_dp * DSIN(mf - ms + md)                             &
-           + 0.001828_dp * DSIN(4.0_dp * me - md - mf)                         &
-           - e * 0.001803_dp * DSIN(ms + mf) - 0.00175_dp * DSIN(3.0_dp * mf)   &
-           + e * 0.00157_dp * DSIN(md - mf - ms) - 0.001487_dp * DSIN(me + mf) &
-           - e * 0.001481_dp * DSIN(mf + ms + md)                             &
-           + e * 0.001417_dp * DSIN(mf - ms - md)                             &
-           + e * 0.00135_dp * DSIN(mf - ms) + 0.00133_dp * DSIN(mf - me)       &
-           + 0.001106_dp * DSIN(mf + 3.0_dp * md)                              &
-           + 0.00102_dp * DSIN(4.0_dp * me - mf)                               &
-           + 0.000833_dp * DSIN(mf + 4.0_dp * me - md)                         &
-           + 0.000781_dp * DSIN(md - 3.0_dp * mf)                              &
-           + 0.00067_dp * DSIN(mf + 3.0_dp * me - 2.0_dp * md)                  &
-           + 0.000606_dp * DSIN(2.0_dp * me - 3.0_dp * mf)                      &
-           + 0.000597_dp * DSIN(2.0_dp * (me + md) - mf)                       &
-           + e * 0.000492_dp * DSIN(2.0_dp * me + md - ms - mf)                &
-           + 0.00045_dp * DSIN(2.0_dp * (md - me) - mf)                        &
-           + 0.000439_dp * DSIN(3.0_dp * me - mf)                              &
-           + 0.000423_dp * DSIN(mf + 2.0_dp * (me + md))                       &
-           + 0.000422_dp * DSIN(2.0_dp * me - 3.0_dp * md - mf)                 &
-           - e * 0.000367_dp * DSIN(mf + ms + 2.0_dp * me - md)                &
-           - e * 0.000353_dp * DSIN(mf + ms + 2.0_dp * me)                     &
-           + 0.000331_dp * DSIN(mf + 4.0_dp * me)                              &
-           + e * 0.000317_dp * DSIN(2.0_dp * me + md - ms + mf)                &
-           + e2 * 0.000306_dp * DSIN(2.0_dp * (me - ms) - mf)                  &
-           - 0.000283_dp *DSIN(md + 3.0_dp * mf)
-      w1 = 0.0004664_dp * DCOS(na)
-      w2 = 0.0000754_dp * DCOS(c)
+      g = 5.128189_dp * SIN(mf) + 0.280606_dp * SIN(md + mf)                 &
+           + 0.277693_dp * SIN(md - mf) + 0.173238_dp * SIN(2.0_dp * me - mf) &
+           + 0.055413_dp * SIN(2.0_dp * me + mf - md)                         &
+           + 0.046272_dp * SIN(2.0_dp * me - mf - md)                         &
+           + 0.032573_dp * SIN(2.0_dp * me + mf)                              &
+           + 0.017198_dp * SIN(2.0_dp * md + mf)                              &
+           + 0.009267_dp * SIN(2.0_dp * me - mf + md)                         &
+           + 0.008823_dp * SIN(2.0_dp * md - mf)                              &
+           + e * 0.008247_dp * SIN(2.0_dp * me - ms - mf)                     &
+           + 0.004323_dp * SIN(2.0_dp * (me + md) - mf)                       &
+           + 0.0042_dp * SIN(2.0_dp * me + md + mf)                           &
+           + e * 0.003372_dp * SIN(mf - ms - 2.0_dp * me)                     &
+           + e * 0.002472_dp * SIN(2.0_dp * me - md + mf - ms)                &
+           + e * 0.002222_dp * SIN(2.0_dp * me + mf - ms)                     &
+           + e * 0.002072_dp * SIN(2.0_dp * me - md - mf - ms)                &
+           + e * 0.001877_dp * SIN(mf - ms + md)                             &
+           + 0.001828_dp * SIN(4.0_dp * me - md - mf)                         &
+           - e * 0.001803_dp * SIN(ms + mf) - 0.00175_dp * SIN(3.0_dp * mf)   &
+           + e * 0.00157_dp * SIN(md - mf - ms) - 0.001487_dp * SIN(me + mf) &
+           - e * 0.001481_dp * SIN(mf + ms + md)                             &
+           + e * 0.001417_dp * SIN(mf - ms - md)                             &
+           + e * 0.00135_dp * SIN(mf - ms) + 0.00133_dp * SIN(mf - me)       &
+           + 0.001106_dp * SIN(mf + 3.0_dp * md)                              &
+           + 0.00102_dp * SIN(4.0_dp * me - mf)                               &
+           + 0.000833_dp * SIN(mf + 4.0_dp * me - md)                         &
+           + 0.000781_dp * SIN(md - 3.0_dp * mf)                              &
+           + 0.00067_dp * SIN(mf + 3.0_dp * me - 2.0_dp * md)                  &
+           + 0.000606_dp * SIN(2.0_dp * me - 3.0_dp * mf)                      &
+           + 0.000597_dp * SIN(2.0_dp * (me + md) - mf)                       &
+           + e * 0.000492_dp * SIN(2.0_dp * me + md - ms - mf)                &
+           + 0.00045_dp * SIN(2.0_dp * (md - me) - mf)                        &
+           + 0.000439_dp * SIN(3.0_dp * me - mf)                              &
+           + 0.000423_dp * SIN(mf + 2.0_dp * (me + md))                       &
+           + 0.000422_dp * SIN(2.0_dp * me - 3.0_dp * md - mf)                 &
+           - e * 0.000367_dp * SIN(mf + ms + 2.0_dp * me - md)                &
+           - e * 0.000353_dp * SIN(mf + ms + 2.0_dp * me)                     &
+           + 0.000331_dp * SIN(mf + 4.0_dp * me)                              &
+           + e * 0.000317_dp * SIN(2.0_dp * me + md - ms + mf)                &
+           + e2 * 0.000306_dp * SIN(2.0_dp * (me - ms) - mf)                  &
+           - 0.000283_dp *SIN(md + 3.0_dp * mf)
+      w1 = 0.0004664_dp * COS(na)
+      w2 = 0.0000754_dp * COS(c)
       mo2 = g * pic * (1.0_dp - w1 - w2)
 
 !  horizontal parallax PM
-      pm = 0.950724_dp + 0.051818_dp * DCOS(md)                             &
-           + 0.009531_dp * DCOS(2.0_dp * me - md)                            &
-           + 0.007843_dp * DCOS(2.0_dp * me) + 0.002824_dp * DCOS(2.0_dp * md) &
-           + 0.000857_dp * DCOS(2.0_dp * me + md)                            &
-           + e * 0.000533_dp * DCOS(2.0_dp * me - ms)                        &
-           + e * 0.000401_dp * DCOS(2.0_dp * me - md - ms)                   &
-           + e * 0.00032_dp * DCOS(md - ms) - 0.000271_dp * DCOS(me)         &
-           - e * 0.000264_dp * DCOS(md + ms)                                &
-           - 0.000198_dp * DCOS(2.0_dp * mf - md)                            &
-           + 0.000173_dp * DCOS(3.0_dp * md)                                 &
-           + 0.000167_dp * DCOS(4.0_dp * me - md)- e * 0.000111_dp * DCOS(ms) &
-           + 0.000103_dp * DCOS(4.0_dp * me - 2.0_dp * md)                    &
-           - 0.000084_dp * DCOS(2.0_dp * md - 2.0_dp * me)                    &
-           - e * 0.000083_dp * DCOS(2.0_dp * me + ms)                        &
-           + 0.000079_dp * DCOS(2.0_dp * me + 2.0_dp * md)                    &
-           + 0.000072_dp * DCOS(4.0_dp * me)                                 &
-           + e * 0.000064_dp * DCOS(2.0_dp * me - ms + md)                   &
-           - e * 0.000063_dp * DCOS(2.0_dp * me + ms - md)                   &
-           + e * 0.000041_dp * DCOS(ms + me)                                &
-           + e * 0.000035_dp * DCOS(2.0_dp * md - ms)                        &
-           - 0.000033_dp * DCOS(3.0_dp * md - 2.0_dp * me)                    &
-           - 0.00003_dp * DCOS(md + me)                                     &
-           - 0.000029_dp * DCOS(2.0_dp * (mf - me))                          &
-           - e * 0.000029_dp * DCOS(2.0_dp * md + ms)                        &
-           + e2 * 0.000026_dp * DCOS(2.0_dp * (me - ms))                     &
-           - 0.000023_dp * DCOS(2.0_dp * (mf - me) + md)                     &
-           + e * 0.000019_dp * DCOS(4.0_dp * me - md - ms)
+      pm = 0.950724_dp + 0.051818_dp * COS(md)                             &
+           + 0.009531_dp * COS(2.0_dp * me - md)                            &
+           + 0.007843_dp * COS(2.0_dp * me) + 0.002824_dp * COS(2.0_dp * md) &
+           + 0.000857_dp * COS(2.0_dp * me + md)                            &
+           + e * 0.000533_dp * COS(2.0_dp * me - ms)                        &
+           + e * 0.000401_dp * COS(2.0_dp * me - md - ms)                   &
+           + e * 0.00032_dp * COS(md - ms) - 0.000271_dp * COS(me)         &
+           - e * 0.000264_dp * COS(md + ms)                                &
+           - 0.000198_dp * COS(2.0_dp * mf - md)                            &
+           + 0.000173_dp * COS(3.0_dp * md)                                 &
+           + 0.000167_dp * COS(4.0_dp * me - md)- e * 0.000111_dp * COS(ms) &
+           + 0.000103_dp * COS(4.0_dp * me - 2.0_dp * md)                    &
+           - 0.000084_dp * COS(2.0_dp * md - 2.0_dp * me)                    &
+           - e * 0.000083_dp * COS(2.0_dp * me + ms)                        &
+           + 0.000079_dp * COS(2.0_dp * me + 2.0_dp * md)                    &
+           + 0.000072_dp * COS(4.0_dp * me)                                 &
+           + e * 0.000064_dp * COS(2.0_dp * me - ms + md)                   &
+           - e * 0.000063_dp * COS(2.0_dp * me + ms - md)                   &
+           + e * 0.000041_dp * COS(ms + me)                                &
+           + e * 0.000035_dp * COS(2.0_dp * md - ms)                        &
+           - 0.000033_dp * COS(3.0_dp * md - 2.0_dp * me)                    &
+           - 0.00003_dp * COS(md + me)                                     &
+           - 0.000029_dp * COS(2.0_dp * (mf - me))                          &
+           - e * 0.000029_dp * COS(2.0_dp * md + ms)                        &
+           + e2 * 0.000026_dp * COS(2.0_dp * (me - ms))                     &
+           - 0.000023_dp * COS(2.0_dp * (mf - me) + md)                     &
+           + e * 0.000019_dp * COS(4.0_dp * me - md - ms)
       PM=PM*pic
 
 !  geocentric distance MO3 in km
       ! FIXME: how is this related to radius in mo_planetary_constants?
-      mo3 = 6378.14_dp/DSIN(pm)
+      mo3 = 6378.14_dp/SIN(pm)
 
 !  geocentric equatorial coordinates of the Moon
       sw = -1.0_dp
@@ -1405,14 +1403,14 @@ END SUBROUTINE tide_mpi
       res(3,2)=MO3
 !
       END SUBROUTINE moon
-      
+
 ! ================================================================
 
   SUBROUTINE aufb2(sidt,res,res2)
 
   !  modifications according to "ephaufb.f" by Maik Thomas
   ! (rekt(rad)->sid.time.green.-r.asc.; dekl(rad); cri3->(a/r)^3
-  ! for Sun and Moon) 
+  ! for Sun and Moon)
   !
   REAL(dp) :: sidt,h(3)
   REAL(dp) :: res(3,2),res2(3,2)
@@ -1428,7 +1426,7 @@ END SUBROUTINE tide_mpi
 !
   Return
   END SUBROUTINE aufb2
-  
+
 
 END MODULE mo_ocean_tides
 !=============================================================================

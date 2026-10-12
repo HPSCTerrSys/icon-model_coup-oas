@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -21,7 +21,7 @@ MODULE mo_ser_debug
   IMPLICIT NONE
 
   PUBLIC :: serialize_debug_output, ser_debug_on
-  
+
   LOGICAL :: ser_debug_on = .FALSE.
 
   CONTAINS

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -62,14 +62,14 @@ LEVELS="100000,92500,85000,77500,70000,60000,50000,40000,30000,25000,20000,15000
 CDO=/home/zmaw/m214003/local/thunder/bin/cdo
 #
 ###########################################################################
-# 
+#
 set -ex
 #
 #
 #---interpolate r2b4 to t63 and modellevel to presure level
 #
 cdo -setpartabn,partab -ap2pl,${LEVELS}   $inDat Uatm_dyn_pl
-REMAP_AREA_MIN=0.5 
+REMAP_AREA_MIN=0.5
 cdo -r remapycon,t63grid   Uatm_dyn_pl Uatm_dyn_t63
 
 rm -f  busy*
@@ -79,18 +79,18 @@ rm -f  busy*
 #
 Cvar=va
 newCvar=mastrfu
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
 cdo -r mastrfu  -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63 busy1.nc
 cdo -divc,1000000000  busy1.nc  Ubusy_${newCvar}.nc
 fi
 #
-rm -f  busy* 
+rm -f  busy*
 #
 #-----code223---Cloud cover-----CMOR: cl --
 #
 Cvar=cl
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
 cdo  -mulc,100 -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63 Ubusy_${Cvar}.nc
 fi
@@ -99,7 +99,7 @@ fi
 #----code130---Temperature--850 hPa---CMOR: ta ----
 #
 Cvar=ta
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
 cdo subc,273.15 -sellevel,85000 -selvar,${Cvar}  Uatm_dyn_pl Ubusy_${Cvar}_lola.nc
 fi
@@ -109,12 +109,12 @@ rm -f  busy*
 #----code130--Temperature-850 hPa- (Model-ERAin)---
 #
 Cvar=ta
-if cdo -s showvar -selvar,${Cvar} $ATMeralola > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $ATMeralola > /dev/null
 then
 cdo  -sellevel,85000 -selvar,${Cvar} $ATMeralola busy2.nc
-  if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
   then
-   cdo selvar,${Cvar} -sellevel,85000 Uatm_dyn_pl busy1.nc 
+   cdo selvar,${Cvar} -sellevel,85000 Uatm_dyn_pl busy1.nc
   fi
 cdo sub  busy1.nc busy2.nc  Ubusy_d${Cvar}_lola.nc
 fi
@@ -126,7 +126,7 @@ rm -f  busy*
 #
 
 Cvar=zg
-if cdo -s showvar -selvar,${Cvar}  Uatm_dyn_pl > /dev/null 
+if cdo -s showvar -selvar,${Cvar}  Uatm_dyn_pl > /dev/null
 then
  cdo  -mulc,0.1  -selvar,${Cvar} -sellevel,50000 Uatm_dyn_pl Ubusy_${Cvar}_lola.nc
 fi
@@ -139,10 +139,10 @@ rm -f  busy*
 #
 #
 Cvar=zg
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_pl > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_pl > /dev/null
 then
   cdo  -mulc,0.1  -selvar,${Cvar} -sellevel,50000 Uatm_dyn_pl busy1.nc
-  if cdo -s showvar -selvar,${Cvar} $ATMeralola > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ATMeralola > /dev/null
   then
      cdo -selvar,${Cvar}  $ATMeralola  busy2.nc
      cdo -sub  busy1.nc busy2.nc  Ubusy_d${Cvar}_lola.nc
@@ -155,7 +155,7 @@ rm -f  busy*
 #---ERAin-------Geopotential-----500 hPa- ERAin: code129 CMOR: zg-----
 #
 Cvar=zg
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
 cdo -selvar,${Cvar}  $ATMeralola Ubusy_${Cvar}_erain_lola.nc
 fi
@@ -165,7 +165,7 @@ fi
 #----code130--TA- Temperature---ZONAL--CMOR: ta ---
 #
 Cvar=ta
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
 cdo -zonmean -subc,273.15 -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63 Ubusy_${Cvar}.nc
 #
@@ -176,48 +176,48 @@ fi
 #----code130-- Temperature- (Model-ERAin)-zonal--CMOR: ta ---
 #
 Cvar=ta
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -zonmean -sellevel,${LEVELS} -selvar,${Cvar}  Uatm_dyn_t63 busy1
-  if cdo -s showvar -selvar,${Cvar} $ATMera > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ATMera > /dev/null
   then
      cdo -sellevel,${LEVELS} -selvar,${Cvar} $ATMera busy2
      cdo sub busy1 busy2 Ubusy_d${Cvar}.nc
   fi
 fi
 #
-rm -f  busy* 
+rm -f  busy*
 #
 #
 #-----code131--------zonal----CMOR: ua ----
 #
 Cvar=ua
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63 Ubusy_${Cvar}.nc
-fi 
+fi
 #
 #
 #-----code131-----(Model-ERAin)--zonal----CMOR: ua -
 #
 #
 Cvar=ua
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -zonmean -sellevel,${LEVELS} -selvar,${Cvar}  Uatm_dyn_t63 busy1
-  if cdo -s showvar -selvar,${Cvar} $ATMera > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ATMera > /dev/null
   then
      cdo  -sellevel,${LEVELS} -selvar,${Cvar} $ATMera busy2
      cdo sub busy1 busy2 Ubusy_d${Cvar}.nc
   fi
 fi
 #
-rm -f  busy* 
+rm -f  busy*
 #
 #-----code132---VA-----zonal----CMOR: va ----
 #
 Cvar=va
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63 Ubusy_${Cvar}.nc
 fi
@@ -227,22 +227,22 @@ fi
 #
 #
 Cvar=va
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -zonmean -sellevel,${LEVELS} -selvar,${Cvar}  Uatm_dyn_t63 busy1
-  if cdo -s showvar -selvar,${Cvar} $ATMera > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ATMera > /dev/null
   then
      cdo  -sellevel,${LEVELS} -selvar,${Cvar} $ATMera busy2
      cdo sub busy1 busy2 Ubusy_d${Cvar}.nc
   fi
 fi
 #
-rm -f  busy* 
+rm -f  busy*
 #
 #----code133-- -Specific humidity---CMOR: hus ---
 #
 Cvar=hus
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -mulc,1000 -zonmean -sellevel,${LEVELS} -selvar,${Cvar}  Uatm_dyn_t63 Ubusy_${Cvar}.nc
 fi
@@ -252,7 +252,7 @@ fi
 #
 Cvar=clw
 cdo -selvar,clw   Uatm_dyn_t63 busy99
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63 Ubusy_${Cvar}.nc
 fi
@@ -260,7 +260,7 @@ fi
 #-----code154---Cloud ice---ZONAL-CMOR: cli ---
 #
 Cvar=cli
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63 Ubusy_${Cvar}.nc
 fi
@@ -268,24 +268,24 @@ fi
 #-----code153 + code154---Cloud ice + Cloud water --ZONAL--CMOR:clw+cli --
 #
 Cvar=clw_cli
-if cdo -s showvar -selvar,clw Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,clw Uatm_dyn_t63 > /dev/null
 then
   cdo -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,clw  Uatm_dyn_t63 busy1.nc
-  if cdo -s showvar -selvar,cli Uatm_dyn_t63 > /dev/null 
+  if cdo -s showvar -selvar,cli Uatm_dyn_t63 > /dev/null
   then
     cdo -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,cli  Uatm_dyn_t63 busy2.nc
     cdo add busy1.nc busy2.nc Ubusy_${Cvar}.nc
   fi
 fi
-rm -f  busy* 
+rm -f  busy*
 #
 #-----code157--Relative humidity-------zonal----CMOR: hur ----
 #
 Cvar=hur
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -mulc,100 -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63 Ubusy_${Cvar}.nc
-fi 
+fi
 #
 #
 #-----code157--Relative humidity---(Model-ERAin)--zonal----CMOR: hur -
@@ -293,17 +293,17 @@ fi
 #
 Cvar=hur
 
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63 > /dev/null
 then
   cdo -mulc,100 -zonmean -sellevel,${LEVELS} -selvar,${Cvar}  Uatm_dyn_t63 busy1
-  if cdo -s showvar -selvar,${Cvar} $ATMera > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ATMera > /dev/null
   then
      cdo -sellevel,${LEVELS} -selvar,${Cvar} $ATMera busy2
      cdo sub busy1 busy2 Ubusy_d${Cvar}.nc
   fi
 fi
 #
-rm -f  busy* 
+rm -f  busy*
 #
-rm Uatm_dyn_t63 
+rm Uatm_dyn_t63
 exit

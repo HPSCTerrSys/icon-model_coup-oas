@@ -1,12 +1,7 @@
-!
-! This module has useful routines for LES runs
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,13 +9,15 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! This module has useful routines for LES runs
+
 !----------------------------
 #include "omp_definitions.inc"
 !----------------------------
 
 MODULE mo_nh_vert_interp_les
 
-  USE mo_kind,                ONLY: wp
+  USE mo_kind,                ONLY: wp, vp
   USE mo_nonhydro_types,      ONLY: t_nh_metrics
   USE mo_intp_data_strc,      ONLY: t_int_state
   USE mo_intp,                ONLY: cells2verts_scalar, edges2cells_scalar
@@ -29,7 +26,7 @@ MODULE mo_nh_vert_interp_les
   USE mo_sync,                ONLY: global_sum_array, SYNC_C, SYNC_V, &
                                     sync_patch_array_mult
 #ifdef __MIXED_PRECISION
-  USE mo_sync,                ONLY: sync_patch_array_mult_mp
+  USE mo_sync,                ONLY: sync_patch_array_mult_mixprec
 #endif
   USE mo_impl_constants_grf,  ONLY: grf_bdywidth_c
   USE mo_impl_constants,      ONLY: SUCCESS, min_rlcell_int
@@ -37,7 +34,7 @@ MODULE mo_nh_vert_interp_les
   USE mo_physical_constants,  ONLY: grav
   USE mo_les_config,          ONLY: les_config
   USE mo_exception,           ONLY: finish
-  USE mo_fortran_tools,       ONLY: init, set_acc_host_or_device
+  USE mo_fortran_tools,       ONLY: init, set_acc_host_or_device, copy
 
   IMPLICIT NONE
 
@@ -58,12 +55,25 @@ MODULE mo_nh_vert_interp_les
     TYPE(t_int_state),         INTENT(in)     :: p_int
     TYPE(t_nh_metrics),        INTENT(inout)  :: p_metrics
 
+    REAL(vp), POINTER :: e_bln_c_s_vp(:,:,:) ! REAL(p_int%e_bln_c_s, KIND=vp)
+    REAL(vp), POINTER :: cells_aw_verts_vp(:,:,:) ! REAL(p_int%cells_aw_verts, KIND=vp)
+
     ! local variables
     CHARACTER(*), PARAMETER :: routine = &
         "mo_les_utilities:init_vertical_grid_for_les"
 
     IF(.NOT.les_config(jg)%les_metric) &
       RETURN
+
+    ! Unnecessary copy if not mixed precision, only during initialization
+    ALLOCATE(e_bln_c_s_vp(SIZE(p_int%e_bln_c_s,1), &
+      &                   SIZE(p_int%e_bln_c_s,2), &
+      &                   SIZE(p_int%e_bln_c_s,3)))
+    CALL copy(src=p_int%e_bln_c_s, dest=e_bln_c_s_vp, lacc=.FALSE.)
+    ALLOCATE(cells_aw_verts_vp(SIZE(p_int%cells_aw_verts,1), &
+      &                        SIZE(p_int%cells_aw_verts,2), &
+      &                        SIZE(p_int%cells_aw_verts,3)))
+    CALL copy(src=p_int%cells_aw_verts, dest=cells_aw_verts_vp, lacc=.FALSE.)
 
     IF (p_test_run) THEN
 !$OMP PARALLEL
@@ -79,47 +89,49 @@ MODULE mo_nh_vert_interp_les
     END IF
 
     ! half_c sync
-    CALL edges2cells_scalar(p_metrics%ddxn_z_half_e, p_patch, p_int%e_bln_c_s, &
-      &                     p_metrics%ddxn_z_half_c)
+    CALL edges2cells_scalar(p_metrics%ddxn_z_half_e, p_patch, e_bln_c_s_vp, &
+      &                     p_metrics%ddxn_z_half_c, lacc=.FALSE.)
 
-    CALL edges2cells_scalar(p_metrics%ddxt_z_half_e, p_patch, p_int%e_bln_c_s, &
-      &                     p_metrics%ddxt_z_half_c)
+    CALL edges2cells_scalar(p_metrics%ddxt_z_half_e, p_patch, e_bln_c_s_vp, &
+      &                     p_metrics%ddxt_z_half_c, lacc=.FALSE.)
 
     ! full_c sync
-    CALL edges2cells_scalar(p_metrics%ddxn_z_full, p_patch, p_int%e_bln_c_s, &
-      &                     p_metrics%ddxn_z_full_c)
+    CALL edges2cells_scalar(p_metrics%ddxn_z_full, p_patch, e_bln_c_s_vp, &
+      &                     p_metrics%ddxn_z_full_c, lacc=.FALSE.)
 
-    CALL edges2cells_scalar(p_metrics%ddxt_z_full, p_patch, p_int%e_bln_c_s, &
-      &                     p_metrics%ddxt_z_full_c)
-    CALL sync_patch_array_mult(SYNC_C, p_patch, 4, p_metrics%ddxn_z_half_c, &
-      &                        p_metrics%ddxt_z_half_c, &
-      &                        p_metrics%ddxn_z_full_c, &
-      &                        p_metrics%ddxt_z_full_c)
+    CALL edges2cells_scalar(p_metrics%ddxt_z_full, p_patch, e_bln_c_s_vp, &
+      &                     p_metrics%ddxt_z_full_c, lacc=.FALSE.)
+    CALL sync_patch_array_mult(SYNC_C, p_patch, 4, lacc=.FALSE., &
+      &                        f3din1=p_metrics%ddxn_z_half_c, &
+      &                        f3din2=p_metrics%ddxt_z_half_c, &
+      &                        f3din3=p_metrics%ddxn_z_full_c, &
+      &                        f3din4=p_metrics%ddxt_z_full_c)
 
     ! full_v sync
     CALL cells2verts_scalar(p_metrics%ddxn_z_full_c, p_patch, &
-      &                     p_int%cells_aw_verts, p_metrics%ddxn_z_full_v)
+      &                     cells_aw_verts_vp, p_metrics%ddxn_z_full_v, lacc=.FALSE.)
 
     CALL cells2verts_scalar(p_metrics%ddxt_z_full_c, p_patch, &
-      &                     p_int%cells_aw_verts, p_metrics%ddxt_z_full_v)
+      &                     cells_aw_verts_vp, p_metrics%ddxt_z_full_v, lacc=.FALSE.)
 
     CALL cells2verts_scalar(p_metrics%inv_ddqz_z_full, p_patch, &
-      &                     p_int%cells_aw_verts, p_metrics%inv_ddqz_z_full_v)
+      &                     p_int%cells_aw_verts, p_metrics%inv_ddqz_z_full_v, lacc=.FALSE.)
 
     ! half_v sync
     CALL cells2verts_scalar(p_metrics%ddxt_z_half_c, p_patch, &
-         p_int%cells_aw_verts, p_metrics%ddxt_z_half_v)
+      &                     cells_aw_verts_vp, p_metrics%ddxt_z_half_v, lacc=.FALSE.)
 #ifdef __MIXED_PRECISION
-    CALL sync_patch_array_mult_mp(SYNC_V, p_patch, 1, 3, &
+    CALL sync_patch_array_mult_mixprec(SYNC_V, p_patch, 1, 3, lacc=.FALSE., &
       &                 f3din1_sp=p_metrics%ddxn_z_full_v, &
       &                 f3din2_sp=p_metrics%ddxt_z_full_v, &
-      &                    f3din1=p_metrics%inv_ddqz_z_full_v, &
+      &                    f3din1_dp=p_metrics%inv_ddqz_z_full_v, &
       &                 f3din3_sp=p_metrics%ddxt_z_half_v)
 #else
-    CALL sync_patch_array_mult(SYNC_V, p_patch, 4, p_metrics%ddxn_z_full_v, &
-      &                        p_metrics%ddxt_z_full_v, &
-      &                        p_metrics%inv_ddqz_z_full_v, &
-      &                        p_metrics%ddxt_z_half_v)
+    CALL sync_patch_array_mult(SYNC_V, p_patch, 4, lacc=.FALSE., &
+      &                        f3din1=p_metrics%ddxn_z_full_v, &
+      &                        f3din2=p_metrics%ddxt_z_full_v, &
+      &                        f3din3=p_metrics%inv_ddqz_z_full_v, &
+      &                        f3din4=p_metrics%ddxt_z_half_v)
 #endif
 
   END SUBROUTINE init_vertical_grid_for_les
@@ -133,8 +145,8 @@ MODULE mo_nh_vert_interp_les
     TYPE(t_nh_metrics),INTENT(in) :: p_metrics
     TYPE(t_patch),     INTENT(in) :: p_patch
     REAL(wp), INTENT(in)                  :: varin(:,:,:)
-    INTEGER,  INTENT(in)                  :: rl_start, rl_end 
-    REAL(wp), INTENT(out)                 :: varout(:,:,:)                     
+    INTEGER,  INTENT(in)                  :: rl_start, rl_end
+    REAL(wp), INTENT(out)                 :: varout(:,:,:)
 
     INTEGER :: i_startblk, i_endblk
     INTEGER :: i_endidx, i_startidx, nlevp1, nlev
@@ -164,9 +176,9 @@ MODULE mo_nh_vert_interp_les
         !$ACC LOOP GANG VECTOR COLLAPSE(2)
 #ifdef __LOOP_EXCHANGE
         DO jc = i_startidx , i_endidx
-         DO jk = 2 , nlev  
+         DO jk = 2 , nlev
 #else
-        DO jk = 2 , nlev  
+        DO jk = 2 , nlev
          DO jc = i_startidx , i_endidx
 #endif
           varout(jc,jk,jb) = p_metrics%wgtfac_c(jc,jk,jb)*varin(jc,jk,jb) + &
@@ -187,11 +199,11 @@ MODULE mo_nh_vert_interp_les
              p_metrics%wgtfacq_c(jc,1,jb)*varin(jc,nlev,jb)   + &
              p_metrics%wgtfacq_c(jc,2,jb)*varin(jc,nlev-1,jb) + &
              p_metrics%wgtfacq_c(jc,3,jb)*varin(jc,nlev-2,jb)
-        END DO     
+        END DO
         !$ACC END PARALLEL
-    END DO 
+    END DO
 !$OMP END DO NOWAIT
-!$OMP END PARALLEL 
+!$OMP END PARALLEL
 
   !$ACC WAIT
   !$ACC END DATA
@@ -204,10 +216,10 @@ MODULE mo_nh_vert_interp_les
   !! - It extrapolates if no data given for zb > za
   !! Taken from UCLA-LES
 
-  SUBROUTINE vert_intp_linear_1d(za, xa, zb, xb) 
+  SUBROUTINE vert_intp_linear_1d(za, xa, zb, xb)
      REAL(wp), INTENT(IN)  :: za(:), zb(:), xa(:)
      REAL(wp), INTENT(OUT) :: xb(:)
-  
+
      REAL(wp) :: wt
      INTEGER  :: l, k, na, nb
 
@@ -221,7 +233,7 @@ MODULE mo_nh_vert_interp_les
              l = l-1
           END DO
           wt=(zb(k)-za(l))/(za(l-1)-za(l))
-          xb(k)=xa(l)+(xa(l-1)-xa(l))*wt    
+          xb(k)=xa(l)+(xa(l-1)-xa(l))*wt
        ELSE
           wt=(zb(k)-za(1))/(za(2)-za(1))
           xb(k)=xa(1)+(xa(2)-xa(1))*wt
@@ -232,13 +244,13 @@ MODULE mo_nh_vert_interp_les
 
   !!------------------------------------------------------------------------
   !! global_hor_mean: only called for interior points
-  !! Calculates horizontally averaged vertically varying quantaties 
+  !! Calculates horizontally averaged vertically varying quantaties
 
   SUBROUTINE global_hor_mean(p_patch, var, varout, inv_no_cells)
 
     TYPE(t_patch),     INTENT(in) :: p_patch
     REAL(wp), INTENT(in)                  :: var(:,:,:), inv_no_cells
-    REAL(wp), INTENT(out)                 :: varout(:)                     
+    REAL(wp), INTENT(out)                 :: varout(:)
 
     REAL(wp) :: var_aux(SIZE(var,1),SIZE(var,2),SIZE(var,3))
     INTEGER  :: i_startblk, i_endblk, rl_start
@@ -284,8 +296,8 @@ MODULE mo_nh_vert_interp_les
   FUNCTION vertical_derivative (var, inv_dz) RESULT(dvardz)
 
     REAL(wp), INTENT(in) :: var(:), inv_dz(:)
-                     
-    REAL(wp) :: dvardz(SIZE(inv_dz))                     
+
+    REAL(wp) :: dvardz(SIZE(inv_dz))
     INTEGER  :: jk
 
 !$OMP PARALLEL
@@ -299,7 +311,7 @@ MODULE mo_nh_vert_interp_les
   END FUNCTION vertical_derivative
 
   !!------------------------------------------------------------------------
-  !! Brunt Vaisala Frequency: 
+  !! Brunt Vaisala Frequency:
   !! Calculates BVF for unsaturated and saturated case based on Durran & Klemp 1982
   !! Eq. 4. and using moist lapse rate expression from Marshall and Plumb
   SUBROUTINE brunt_vaisala_freq(p_patch, p_metrics, kbdim, thetav, bru_vais, opt_rlstart, lacc)
@@ -326,11 +338,11 @@ MODULE mo_nh_vert_interp_les
     !$ACC   PRESENT(thetav, bru_vais, p_metrics, p_metrics%inv_ddqz_z_half) &
     !$ACC   CREATE(thetav_ic) IF(lzacc)
 
-    ! To be calculated at all cells at interface levels, except top/bottom 
+    ! To be calculated at all cells at interface levels, except top/bottom
     ! boundaries
     nlev      = p_patch%nlev
 
-    ! Note that the range of bruvais is essentially bound to where theta_v 
+    ! Note that the range of bruvais is essentially bound to where theta_v
     ! was calculated right before the call to brunt_vaisala_freq.
     ! Check for optional arguments
     IF ( PRESENT(opt_rlstart) ) THEN
@@ -362,20 +374,17 @@ MODULE mo_nh_vert_interp_les
           bru_vais(jc,jk,jb) = grav * ( thetav(jc,jk-1,jb) - thetav(jc,jk,jb) ) * &
                                p_metrics%inv_ddqz_z_half(jc,jk,jb)/thetav_ic(jc,jk,jb)
         END DO
-      END DO     
+      END DO
       !$ACC END PARALLEL
-    END DO 
+    END DO
 !$OMP END DO NOWAIT
-!$OMP END PARALLEL     
+!$OMP END PARALLEL
 
   !$ACC WAIT
   !$ACC END DATA
-   
+
   END SUBROUTINE brunt_vaisala_freq
 
 !-------------------------------------------------------------------------------
 
 END MODULE mo_nh_vert_interp_les
-
-
-

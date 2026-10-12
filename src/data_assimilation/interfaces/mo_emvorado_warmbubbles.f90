@@ -1,15 +1,15 @@
-!NEC$ options "-finline-max-depth=3 -finline-max-function-size=1000"
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+!NEC$ options "-finline-max-depth=3 -finline-max-function-size=1000"
 
 MODULE mo_emvorado_warmbubbles
 
@@ -25,16 +25,16 @@ MODULE mo_emvorado_warmbubbles
   USE mo_math_types,                ONLY: t_geographical_coordinates
   USE mo_math_constants,            ONLY: pi, deg2rad
   USE mo_math_utilities,            ONLY: plane_torus_distance
-  USE mo_grid_geometry_info,        ONLY: planar_torus_geometry, sphere_geometry
-  USE mo_satad,                     ONLY: sat_pres_water
+  USE mo_lib_grid_geometry_info,    ONLY: planar_torus_geometry, sphere_geometry
+  USE mo_thdyn_functions,           ONLY: sat_pres_water
   USE mo_exception,                 ONLY: message, finish
 
   IMPLICIT NONE
 
   PRIVATE
-  
+
   PUBLIC :: set_artif_heatrate_dist
-  
+
 CONTAINS
 
   !=======================================================================================
@@ -48,7 +48,7 @@ CONTAINS
   !         - The shape of the disturbances is 3D elliptic in terrain-following coordinates
   !
   !=======================================================================================
- 
+
   SUBROUTINE set_artif_heatrate_dist(jg, sim_time, bublist, dt, p_patch, p_metrics, p_prog_rcf, p_diag)
 
     INTEGER                , intent(in)    :: jg         ! Domain index to decorate debug output
@@ -81,7 +81,7 @@ CONTAINS
       ! 3 Prototypes, which are cloned to 30 bubbles below:
       bublist%bubs(1:3)%ctype_tempdist     = (/'cos-instant ','cos-instant ','cos-hrd     '/) ! Type of perturbation 'cos-hrd', 'cos-instant'
       bublist%bubs(1:3)%ladd_bubblenoise_t = (/.FALSE.,.FALSE.,.FALSE./)   ! Switch to overlay random noise on the disturbance (not yet implemented)
-      bublist%bubs(1:3)%lbub_rhconst       = (/.TRUE.,.TRUE.,.TRUE./)      ! Switch to activate a moisture increment such that rel. hum. stays constant during heating 
+      bublist%bubs(1:3)%lbub_rhconst       = (/.TRUE.,.TRUE.,.TRUE./)      ! Switch to activate a moisture increment such that rel. hum. stays constant during heating
       bublist%bubs(1:3)%htempdist          = (/120.,280.,420./)            ! Time for beginning of temperature disturbance since model start time [s]
       bublist%bubs(1:3)%centlon            = (/9.55,9.8,10.35/)            ! Center (lon) of temperature disturbance [deg]
       bublist%bubs(1:3)%centlat            = (/49.57,50.34,50.58/)         ! Center (lat) of temperature disturbance [deg]
@@ -110,7 +110,7 @@ CONTAINS
     ! update p_prog_rcf%tracer(iqv) and p_diag%temp:
     !
     !======================================================
-    
+
     IF (bublist%num_bubs > 0) THEN
 
       DO i=1, bublist%num_bubs
@@ -124,13 +124,13 @@ CONTAINS
                         .OR. &
                         ( TRIM(p_bub%ctype_tempdist) == 'cos-instant' .AND. &
                             sim_time >= p_bub%htempdist-0.5_wp*dt .AND. sim_time < p_bub%htempdist+0.5_wp*dt )
-        
+
         IF (p_bub%ltempdist .AND. bub_is_active) THEN
 
           SELECT CASE (TRIM(p_bub%ctype_tempdist))
 
           CASE ('cos-instant','cos-hrd')
-          
+
             ! Compute spatial pattern of the bubble in the range [0,1]:
             CALL calc_f_xyz_cos(p_bub, p_patch, p_metrics, f_xyz_3D)
 
@@ -154,17 +154,17 @@ CONTAINS
               WRITE (message_text, '(a,i3,2(a,f0.5),a,f0.1,a,f0.2,a,f0.1,a,f0.1)') &
                    'automatic warm bubble on domain=', jg, ' type='//TRIM(p_bub%ctype_tempdist)//' lon=', p_bub%centlon, &
                    ' lat=', p_bub%centlat, ' height[mAGL]=', p_bub%centz, ' heatingrate[K/s]=', p_bub%heatingrate, &
-                   ' time[s]=', sim_time,' heattime[s]=', p_bub%timecounter 
+                   ' time[s]=', sim_time,' heattime[s]=', p_bub%timecounter
             END IF
             CALL message(TRIM(routine), TRIM(message_text))
-      
+
             ! without halo or boundary  points:
             i_rlstart = grf_bdywidth_c + 1
             i_rlend   = min_rlcell_int
 
             i_startblk = p_patch%cells%start_block( i_rlstart )
             i_endblk   = p_patch%cells%end_block  ( i_rlend   )
-            
+
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jb,i_startidx,i_endidx,jc,jk,told,tnew)
             DO jb = i_startblk, i_endblk
@@ -186,10 +186,10 @@ CONTAINS
                            told * sat_pres_water(tnew) / ( tnew * sat_pres_water(told) )
                     END IF
                   END IF
-                  
+
                 END DO
               END DO
-              
+
             END DO
 !$OMP END DO
 !$OMP END PARALLEL
@@ -203,9 +203,9 @@ CONTAINS
         END IF
 
       END DO
-      
+
     END IF
-    
+
   END SUBROUTINE set_artif_heatrate_dist
 
 
@@ -227,7 +227,7 @@ CONTAINS
 
 
     f_xyz_3D(:,:,:) = 0.0_wp
-    
+
     ! without halo or boundary  points:
     i_rlstart = grf_bdywidth_c + 1
     i_rlend   = min_rlcell_int
@@ -235,7 +235,7 @@ CONTAINS
     i_startblk = p_patch%cells%start_block( i_rlstart )
     i_endblk   = p_patch%cells%end_block  ( i_rlend   )
 
-    
+
     SELECT CASE(p_patch%geometry_info%geometry_type)
 
     CASE (planar_torus_geometry)
@@ -246,7 +246,7 @@ CONTAINS
 
       ! Bubble center : valid on the torus domain
       x_bubble = (/ bub%centlon*deg2rad*earth_radius, bub%centlat*deg2rad*earth_radius, bub%centz /)
-      
+
       ! Non-dimensionalize the bubble center
       bub_hor_width = SQRT(bub%radx*bub%rady)  ! no ellipse, just an equal-area circle
       x_c(1) = x_bubble(1) / bub_hor_width
@@ -259,7 +259,7 @@ CONTAINS
 
         CALL get_indices_c( p_patch, jb, i_startblk, i_endblk,     &
              i_startidx, i_endidx, i_rlstart, i_rlend)
-        
+
         DO jc = i_startidx, i_endidx
           hsurf(jc) = p_metrics%z_ifc(jc,p_patch%nlev+1,jb)
         END DO
@@ -274,15 +274,15 @@ CONTAINS
             IF(dist < 1.0_wp)THEN
               f_xyz_3D(jc,jk,jb) = COS(0.5_wp*pi*dist)**2
             END IF
-          
+
           END DO
       END DO
-      
+
     END DO
 !$OMP END DO
 !$OMP END PARALLEL
 
-      
+
     CASE (sphere_geometry)
 
       geo_bub%lon = bub%centlon * deg2rad
@@ -301,7 +301,7 @@ CONTAINS
         CALL hill_rot_coords( p_patch%cells%center(jc,jb), geo_bub, &
                               bub%rotangle*deg2rad, 0.0_wp, zdx_rot(jc), zdy_rot(jc))
       END DO
-      
+
       DO jk = 1, p_patch%nlev
         DO jc = i_startidx, i_endidx
 
@@ -311,15 +311,15 @@ CONTAINS
           IF (dist < 1.0_wp) THEN
             f_xyz_3d(jc,jk,jb) = COS(0.5_wp*pi*dist)**2
           END IF
-          
+
         END DO
       END DO
-        
+
     END DO
 !$OMP END DO
 !$OMP END PARALLEL
 
-      
+
     CASE DEFAULT
       CALL finish(TRIM(routine), "Undefined grid geometry type for automatic warm bubbles! "// &
                                  "Possible are ''planar_torus_geometry'' or ''sphere_geometry''")
@@ -333,13 +333,13 @@ CONTAINS
 !
 !=================================================================================
 
-  ! Distances relative to hill/bubble elliptic main axes (these can be rotated by <rotangle> 
+  ! Distances relative to hill/bubble elliptic main axes (these can be rotated by <rotangle>
   ! relative to the rotated North direction) for coordinates
   ! given at the mass points. The coordinates must be geographic coordinates in radians.
-  ! 
-  ! The main axes are along great circles and the distances are 
+  !
+  ! The main axes are along great circles and the distances are
   ! also measured along great circles.
-  ! 
+  !
   SUBROUTINE hill_rot_coords(geo_coord, bub_coord, rotangle, height, rx, ry)
 
     IMPLICIT NONE
@@ -354,7 +354,7 @@ CONTAINS
     REAL(KIND=wp),     INTENT(in)       :: rotangle
     !   height level where the arc lengths are referenced to in m:
     REAL(KIND=wp),     INTENT(in)       :: height
-    !   arc lengths along great circles perpendicular to the 
+    !   arc lengths along great circles perpendicular to the
     !   hill/bubble main axes (also great circles):
     REAL(KIND=wp),     INTENT(out)      :: rx, ry
 
@@ -368,7 +368,7 @@ CONTAINS
     zlon_c = bub_coord%lon
     zlat_c = bub_coord%lat
     zlon   = geo_coord%lon
-    zlat   = geo_coord%lat    
+    zlat   = geo_coord%lat
 
     d     =  geo_distance ( bub_coord, geo_coord, 0.0_wp ) / earth_radius
     delta =  geo_course   ( bub_coord, geo_coord )
@@ -416,14 +416,14 @@ CONTAINS
 
     TYPE(t_geographical_coordinates), INTENT(in) :: gc1  ! in radians
     TYPE(t_geographical_coordinates), INTENT(in) :: gc2  ! in radians
-    
+
     !   geogr. direction ("course") from the start point gc1 to the target point gc2
     !   at the start point in rad:
     REAL(KIND=wp)     :: truecourse
 
     REAL(KIND=wp)     :: cangle, cos_cangle, cos_arg
 
-    cos_cangle =  SIN(gc2%lat)*SIN(gc1%lat)+COS(gc2%lat)*COS(gc1%lat)*COS(gc2%lon-gc1%lon) 
+    cos_cangle =  SIN(gc2%lat)*SIN(gc1%lat)+COS(gc2%lat)*COS(gc1%lat)*COS(gc2%lon-gc1%lon)
     cangle = ACOS(cos_cangle)
     IF (ABS(cangle) < 1.0E-20_wp) cangle = 1.0E-20_wp
 

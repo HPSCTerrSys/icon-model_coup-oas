@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,7 +14,7 @@
 # The specifications are passed by namelist to the program.
 # For a complete list see Namelist_overview.pdf
 #
-# EXPNAME and NPROMA must be defined in as environment variables or must 
+# EXPNAME and NPROMA must be defined in as environment variables or must
 # they must be substituted with appropriate values.
 #
 # Marco Giorgetta, MPI-M, 2010-04-21
@@ -123,7 +123,7 @@ cat > ${atmo_namelist} << EOF
 &transport_nml
   tracer_names = 'q4'           ! list of tracer names
  ihadv_tracer         = 2            ! default: miura
- ivadv_tracer         = 0          
+ ivadv_tracer         = 0
  lvadv_tracer         = .FALSE.      ! default: .FALSE.
  itype_vlimit         = 0
  itype_hlimit         = 0

@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -71,7 +71,7 @@ MODULE mo_ser_nml
   SUBROUTINE read_ser_namelist( filename )
 
    CHARACTER(LEN=*), INTENT(IN) :: filename
-   INTEGER :: istat, funit 
+   INTEGER :: istat, funit
    INTEGER :: iunit
    INTEGER :: param_def(3)
 
@@ -132,8 +132,8 @@ MODULE mo_ser_nml
 
    IF(my_process_is_stdio())  THEN
      funit = open_tmpfile()
-     WRITE(funit,NML=ser_nml)                    
-     CALL store_and_close_namelist(funit, 'ser_nml') 
+     WRITE(funit,NML=ser_nml)
+     CALL store_and_close_namelist(funit, 'ser_nml')
    ENDIF
 
    IF(my_process_is_stdio()) WRITE(nnml_output,nml=ser_nml)

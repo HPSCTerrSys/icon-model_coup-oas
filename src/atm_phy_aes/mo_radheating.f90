@@ -1,20 +1,19 @@
-!
-! Module to provide updated radiative fluxes and heating rates
-!
-!   This module contains the "radheating" routine that diagnoses
-!   SW and LW fluxes at TOA and at the surface and the heating
-!   in the atmosphere for the current time.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module to provide updated radiative fluxes and heating rates
+!
+!   This module contains the "radheating" routine that diagnoses
+!   SW and LW fluxes at TOA and at the surface and the heating
+!   in the atmosphere for the current time.
 
 MODULE mo_radheating
 
@@ -68,6 +67,9 @@ CONTAINS
        & klev       ,&
        & klevp1     ,&
        !
+       & lclrsky_lw ,&
+       & lclrsky_sw ,&
+       !
        & rsdt0      ,&
        & cosmu0     ,&
        & daylght_frc,&
@@ -105,8 +107,10 @@ CONTAINS
        & rsus       ,&
        !
        & rsutcs     ,&
+       & rsntcs     ,&
        & rsdscs     ,&
        & rsuscs     ,&
+       & rsnscs     ,&
        !
        & rvds_dir   ,&
        & rpds_dir   ,&
@@ -123,7 +127,9 @@ CONTAINS
        & rlus       ,&
        !
        & rlutcs     ,&
+       & rlntcs     ,&
        & rldscs     ,&
+       & rlnscs     ,&
        !
        & q_rsw      ,&
        & q_rlw      )
@@ -133,65 +139,73 @@ CONTAINS
          &  jcs, jce, kbdim, &
          &  klev, klevp1
 
+    LOGICAL,  INTENT(in)  ::        &
+         &  lclrsky_lw             ,&! switch for longwave  clearsky computation
+         &  lclrsky_sw               ! switch for shortwave clearsky computation
+
     REAL(wp), INTENT(in)  ::        &
          &  rsdt0                  ,&! indicent SW flux for sun in zenith
-         &  cosmu0(kbdim)          ,&! cosine of solar zenith angle at current time
-         &  daylght_frc(kbdim)     ,&! daylight fraction; with diurnal cycle 0 or 1, with zonal mean [0,1]
-         &  emiss (kbdim)          ,&! lw sfc emissivity
-         &  tsr   (kbdim)          ,&! radiative surface temperature at current   time [K]
-         &  tsr_rt(kbdim)          ,&! radiative surface temperature at radiation time [K]
+         &  cosmu0(:)              ,&! cosine of solar zenith angle at current time
+         &  daylght_frc(:)         ,&! daylight fraction; with diurnal cycle 0 or 1, with zonal mean [0,1]
+         &  emiss (:)              ,&! lw sfc emissivity
+         &  tsr   (:)              ,&! radiative surface temperature at current   time [K]
+         &  tsr_rt(:)              ,&! radiative surface temperature at radiation time [K]
          !
-         &  rsd_rt(kbdim,klevp1)   ,&! all-sky   shortwave downward flux at radiation time [W/m2]
-         &  rsu_rt(kbdim,klevp1)   ,&! all-sky   shortwave upward   flux at radiation time [W/m2]
+         &  rsd_rt(:,:)            ,&! all-sky   shortwave downward flux at radiation time [W/m2]
+         &  rsu_rt(:,:)            ,&! all-sky   shortwave upward   flux at radiation time [W/m2]
          !
-         &  rsdcs_rt(kbdim,klevp1) ,&! clear-sky shortwave downward flux at radiation time [W/m2]
-         &  rsucs_rt(kbdim,klevp1) ,&! clear-sky shortwave upward   flux at radiation time [W/m2]
+         &  rsdcs_rt(:,:)          ,&! clear-sky shortwave downward flux at radiation time [W/m2]
+         &  rsucs_rt(:,:)          ,&! clear-sky shortwave upward   flux at radiation time [W/m2]
          !
-         &  rld_rt(kbdim,klevp1)   ,&! all-sky   longwave  downward flux at radiation time [W/m2]
-         &  rlu_rt(kbdim,klevp1)   ,&! all-sky   longwave  upward   flux at radiation time [W/m2]
+         &  rld_rt(:,:)            ,&! all-sky   longwave  downward flux at radiation time [W/m2]
+         &  rlu_rt(:,:)            ,&! all-sky   longwave  upward   flux at radiation time [W/m2]
          !
-         &  rldcs_rt(kbdim,klevp1) ,&! clear-sky longwave  downward flux at radiation time [W/m2]
-         &  rlucs_rt(kbdim,klevp1) ,&! clear-sky longwave  upward   flux at radiation time [W/m2]
+         &  rldcs_rt(:,:)          ,&! clear-sky longwave  downward flux at radiation time [W/m2]
+         &  rlucs_rt(:,:)          ,&! clear-sky longwave  upward   flux at radiation time [W/m2]
          !
-         &  rvds_dir_rt(kbdim)     ,&! all-sky   vis. dir. downward flux at radiation time [W/m2]
-         &  rpds_dir_rt(kbdim)     ,&! all-sky   par  dir. downward flux at radiation time [W/m2]
-         &  rnds_dir_rt(kbdim)     ,&! all-sky   nir  dir. downward flux at radiation time [W/m2]
-         &  rvds_dif_rt(kbdim)     ,&! all-sky   vis. dif. downward flux at radiation time [W/m2]
-         &  rpds_dif_rt(kbdim)     ,&! all-sky   par  dif. downward flux at radiation time [W/m2]
-         &  rnds_dif_rt(kbdim)     ,&! all-sky   nir  dif. downward flux at radiation time [W/m2]
-         &  rvus_rt    (kbdim)     ,&! all-sky   visible   upward   flux at radiation time [W/m2]
-         &  rpus_rt    (kbdim)     ,&! all-sky   par       upward   flux at radiation time [W/m2]
-         &  rnus_rt    (kbdim)       ! all-sky   near-ir   upward   flux at radiation time [W/m2]
+         &  rvds_dir_rt(:)         ,&! all-sky   vis. dir. downward flux at radiation time [W/m2]
+         &  rpds_dir_rt(:)         ,&! all-sky   par  dir. downward flux at radiation time [W/m2]
+         &  rnds_dir_rt(:)         ,&! all-sky   nir  dir. downward flux at radiation time [W/m2]
+         &  rvds_dif_rt(:)         ,&! all-sky   vis. dif. downward flux at radiation time [W/m2]
+         &  rpds_dif_rt(:)         ,&! all-sky   par  dif. downward flux at radiation time [W/m2]
+         &  rnds_dif_rt(:)         ,&! all-sky   nir  dif. downward flux at radiation time [W/m2]
+         &  rvus_rt    (:)         ,&! all-sky   visible   upward   flux at radiation time [W/m2]
+         &  rpus_rt    (:)         ,&! all-sky   par       upward   flux at radiation time [W/m2]
+         &  rnus_rt    (:)           ! all-sky   near-ir   upward   flux at radiation time [W/m2]
 
     REAL(wp), INTENT(out) ::        &
-         &  rsdt  (kbdim)          ,&! all-sky   shortwave downward flux at current   time [W/m2]
-         &  rsut  (kbdim)          ,&! all-sky   shortwave upward   flux at current   time [W/m2]
-         &  rsds  (kbdim)          ,&! all-sky   shortwave downward flux at current   time [W/m2]
-         &  rsus  (kbdim)          ,&! all-sky   shortwave upward   flux at current   time [W/m2]
+         &  rsdt  (:)              ,&! all-sky   shortwave downward flux at current   time [W/m2]
+         &  rsut  (:)              ,&! all-sky   shortwave upward   flux at current   time [W/m2]
+         &  rsds  (:)              ,&! all-sky   shortwave downward flux at current   time [W/m2]
+         &  rsus  (:)              ,&! all-sky   shortwave upward   flux at current   time [W/m2]
          !
-         &  rsutcs(kbdim)          ,&! clear-sky shortwave upward   flux at current   time [W/m2]
-         &  rsdscs(kbdim)          ,&! clear-sky shortwave downward flux at current   time [W/m2]
-         &  rsuscs(kbdim)          ,&! clear-sky shortwave upward   flux at current   time [W/m2]
+         &  rsutcs(:)              ,&! clear-sky shortwave upward   flux at current   time [W/m2]
+         &  rsdscs(:)              ,&! clear-sky shortwave downward flux at current   time [W/m2]
+         &  rsuscs(:)              ,&! clear-sky shortwave upward   flux at current   time [W/m2]
+         &  rsntcs(:)              ,&! clear-sky shortwave net      [W/m2]
+         &  rsnscs(:)              ,&! clear-sky shortwave net      [W/m2]
          !
-         &  rvds_dir(kbdim)        ,&! all-sky   vis. dir. downward flux at current   time [W/m2]
-         &  rpds_dir(kbdim)        ,&! all-sky   par  dir. downward flux at current   time [W/m2]
-         &  rnds_dir(kbdim)        ,&! all-sky   nir  dir. downward flux at current   time [W/m2]
-         &  rvds_dif(kbdim)        ,&! all-sky   vis. dif. downward flux at current   time [W/m2]
-         &  rpds_dif(kbdim)        ,&! all-sky   par  dif. downward flux at current   time [W/m2]
-         &  rnds_dif(kbdim)        ,&! all-sky   nir  dif. downward flux at current   time [W/m2]
-         &  rvus    (kbdim)        ,&! all-sky   visible   upward   flux at current   time [W/m2]
-         &  rpus    (kbdim)        ,&! all-sky   par       upward   flux at current   time [W/m2]
-         &  rnus    (kbdim)        ,&! all-sky   near-ir   upward   flux at current   time [W/m2]
+         &  rvds_dir(:)            ,&! all-sky   vis. dir. downward flux at current   time [W/m2]
+         &  rpds_dir(:)            ,&! all-sky   par  dir. downward flux at current   time [W/m2]
+         &  rnds_dir(:)            ,&! all-sky   nir  dir. downward flux at current   time [W/m2]
+         &  rvds_dif(:)            ,&! all-sky   vis. dif. downward flux at current   time [W/m2]
+         &  rpds_dif(:)            ,&! all-sky   par  dif. downward flux at current   time [W/m2]
+         &  rnds_dif(:)            ,&! all-sky   nir  dif. downward flux at current   time [W/m2]
+         &  rvus    (:)            ,&! all-sky   visible   upward   flux at current   time [W/m2]
+         &  rpus    (:)            ,&! all-sky   par       upward   flux at current   time [W/m2]
+         &  rnus    (:)            ,&! all-sky   near-ir   upward   flux at current   time [W/m2]
          !
-         &  rlut  (kbdim)          ,&! all-sky   longwave  upward   flux at current   time [W/m2]
-         &  rlds  (kbdim)          ,&! all-sky   longwave  downward flux at current   time [W/m2]
-         &  rlus  (kbdim)          ,&! all-sky   longwave  upward   flux at current   time [W/m2]
+         &  rlut  (:)              ,&! all-sky   longwave  upward   flux at current   time [W/m2]
+         &  rlds  (:)              ,&! all-sky   longwave  downward flux at current   time [W/m2]
+         &  rlus  (:)              ,&! all-sky   longwave  upward   flux at current   time [W/m2]
          !
-         &  rlutcs(kbdim)          ,&! clear-sky longwave  upward   flux at current   time [W/m2]
-         &  rldscs(kbdim)          ,&! clear-sky longwave  downward flux at current   time [W/m2]
+         &  rlutcs(:)              ,&! clear-sky longwave  upward   flux at current   time [W/m2]
+         &  rldscs(:)              ,&! clear-sky longwave  downward flux at current   time [W/m2]
+         &  rlntcs(:)              ,&! clear-sky longwave  net      [W/m2]
+         &  rlnscs(:)              ,&! clear-sky longwave  net      [W/m2]
          !
-         &  q_rsw (kbdim,klev)     ,&! radiative shortwave heating  [W/m2]
-         &  q_rlw (kbdim,klev)       ! radiative longwave  heating  [W/m2]
+         &  q_rsw (:,:)            ,&! radiative shortwave heating  [W/m2]
+         &  q_rlw (:,:)              ! radiative longwave  heating  [W/m2]
 
     ! Local arrays
     REAL(wp) ::                     &
@@ -206,6 +220,7 @@ CONTAINS
     !$ACC   PRESENT(rld_rt, rlu_rt, rldcs_rt, rlucs_rt, rvds_dir_rt, rpds_dir_rt, rnds_dir_rt) &
     !$ACC   PRESENT(rvds_dif_rt, rpds_dif_rt, rnds_dif_rt, rvus_rt, rpus_rt, rnus_rt, rsdt, rsut) &
     !$ACC   PRESENT(rsds, rsus, rsutcs, rsdscs, rsuscs, rvds_dir, rpds_dir, rnds_dir, rvds_dif) &
+    !$ACC   PRESENT(rsntcs, rsnscs, rlntcs, rlnscs) &
     !$ACC   PRESENT(rpds_dif, rnds_dif, rvus, rpus, rnus, rlut, rlds, rlus, rlutcs, rldscs) &
     !$ACC   PRESENT(q_rsw, q_rlw) &
     !$ACC   CREATE(xsdt, rsn, rln)
@@ -222,7 +237,7 @@ CONTAINS
     ! - scaling ratio for fluxes at current time: xsdt    = rsdt / rsdt_rt
     !
     ! top of atmophere
-    !$ACC PARALLEL DEFAULT(NONE) FIRSTPRIVATE(jcs, jce, rsdt0) ASYNC(1)
+    !$ACC PARALLEL DEFAULT(NONE) FIRSTPRIVATE(jcs, jce, rsdt0, lclrsky_sw) ASYNC(1)
     !$ACC LOOP GANG VECTOR
     DO jc = jcs, jce
       rsdt  (jc)   = rsdt0*cosmu0(jc)*daylght_frc(jc)
@@ -232,8 +247,14 @@ CONTAINS
          xsdt  (jc)   = 0.0_wp
       END IF
       !
+      ! all sky
       rsut  (jc)   = rsu_rt  (jc,1) * xsdt(jc)
-      rsutcs(jc)   = rsucs_rt(jc,1) * xsdt(jc)
+      ! clear sky
+      IF (lclrsky_sw) THEN
+         rsutcs(jc)   = rsucs_rt(jc,1) * xsdt(jc)
+         rsntcs(jc)   = rsdt(jc) - rsutcs(jc)
+      END IF
+      !
     END DO
     !$ACC END PARALLEL
     !
@@ -247,15 +268,19 @@ CONTAINS
     END DO
     !$ACC END PARALLEL
     !
-    !$ACC PARALLEL DEFAULT(NONE) FIRSTPRIVATE(jcs, jce, klevp1) ASYNC(1)
+    ! surface
+    !$ACC PARALLEL DEFAULT(NONE) FIRSTPRIVATE(jcs, jce, klevp1, lclrsky_sw, lclrsky_lw) ASYNC(1)
     !$ACC LOOP GANG VECTOR
     DO jc = jcs, jce
-      ! surface
+      ! all sky
       rsds  (jc)   = rsd_rt  (jc,klevp1) * xsdt(jc)
-      rsdscs(jc)   = rsdcs_rt(jc,klevp1) * xsdt(jc)
-      !
       rsus  (jc)   = rsu_rt  (jc,klevp1) * xsdt(jc)
-      rsuscs(jc)   = rsucs_rt(jc,klevp1) * xsdt(jc)
+      ! clear sky
+      IF (lclrsky_sw) THEN
+         rsdscs(jc)   = rsdcs_rt(jc,klevp1) * xsdt(jc)
+         rsuscs(jc)   = rsucs_rt(jc,klevp1) * xsdt(jc)
+         rsnscs(jc)   = rsdscs(jc) - rsuscs(jc)
+      END IF
       !
       ! components
       rvds_dir(jc) = rvds_dir_rt(jc) * xsdt(jc)
@@ -281,8 +306,13 @@ CONTAINS
       ! - rad. surface temp.  at current time : tsr
       !
       ! top of atmophere
+      ! all sky
       rlut  (jc)   = rlu_rt  (jc,1)
-      rlutcs(jc)   = rlucs_rt(jc,1)
+      ! clear sky
+      IF (lclrsky_lw) THEN
+         rlutcs(jc)   = rlucs_rt(jc,1)
+         rlntcs(jc)   = -rlucs_rt(jc,1)
+      END IF
       !
     END DO
     !$ACC END PARALLEL
@@ -296,12 +326,16 @@ CONTAINS
     END DO
     !$ACC END PARALLEL
     !
-    !$ACC PARALLEL DEFAULT(NONE) FIRSTPRIVATE(klevp1, jcs, jce) ASYNC(1)
+    !$ACC PARALLEL DEFAULT(NONE) FIRSTPRIVATE(klevp1, jcs, jce, lclrsky_lw) ASYNC(1)
     !$ACC LOOP GANG VECTOR PRIVATE(drlus_dtsr, dtsr)
     DO jc = jcs, jce
       ! surface
+      ! all sky
       rlds  (jc)  = rld_rt  (jc,klevp1)
-      rldscs(jc)  = rldcs_rt(jc,klevp1)
+      ! clear sky
+      IF (lclrsky_lw) THEN
+         rldscs(jc)  = rldcs_rt(jc,klevp1)
+      END IF
       !
       ! - correct upward flux for changed radiative surface temperature
       drlus_dtsr = emiss(jc)*4._wp*stbo*tsr(jc)**3 ! derivative
@@ -310,6 +344,10 @@ CONTAINS
            &          +drlus_dtsr * dtsr           !       + correction
       !
       rln(jc,klevp1) = rlds(jc) - rlus(jc)
+      ! clear sky
+      IF (lclrsky_lw) THEN
+         rlnscs(jc)  = rldscs(jc) - rlus(jc)
+      END IF
     END DO
     !$ACC END PARALLEL
 

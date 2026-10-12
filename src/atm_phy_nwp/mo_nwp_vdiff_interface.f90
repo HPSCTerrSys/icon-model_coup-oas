@@ -1,10 +1,7 @@
-!
-! Interface to the VDIFF turbulence scheme and JSBACH land-surface scheme.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,9 +9,11 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Interface to the VDIFF turbulence scheme and JSBACH land-surface scheme.
+
 MODULE mo_nwp_vdiff_interface
 
-  USE mo_bc_greenhouse_gases, ONLY: ghg_co2mmr
+  USE mo_bc_greenhouse_gases, ONLY: ghg_co2mmr, bc_greenhouse_gases_time_interpolation
   USE mo_ccycle_config, ONLY: &
       & CCYCLE_MODE_NONE, CCYCLE_MODE_INTERACTIVE, CCYCLE_MODE_PRESCRIBED, CCYCLE_CO2CONC_CONST, &
       & CCYCLE_CO2CONC_FROMFILE, t_ccycle_config
@@ -23,9 +22,7 @@ MODULE mo_nwp_vdiff_interface
   USE mo_aes_convect_tables, ONLY: init_aes_convect_tables => init_convect_tables
   USE mo_exception, ONLY: finish, message
   USE mo_ext_data_types, ONLY: t_external_data
-  USE mo_fortran_tools, ONLY: assert_lacc_equals_i_am_accel_node, &
-      & assert_acc_device_only, copy, init, if_associated
-  USE mo_mpi, ONLY: i_am_accel_node
+  USE mo_fortran_tools, ONLY: assert_acc_device_only, copy, init, if_associated
   USE mo_impl_constants, ONLY: end_prog_cells, start_prog_cells
   USE mo_kind, ONLY: wp
   USE mo_lnd_nwp_config, ONLY: frsea_thrhld
@@ -48,16 +45,20 @@ MODULE mo_nwp_vdiff_interface
   USE mo_physical_constants, ONLY: cpd, cvd, cvv, grav, rd, rdv, tf_fresh => tmelt, vtmpc1, &
       & zemiss_def, vmr_to_mmr_co2
   USE mo_run_config, ONLY: ico2, iqc, iqi, nqtendphy, iqt, iqv, ntracer
-  USE mo_satad, ONLY: latent_heat_vaporization, sat_pres_water, spec_humi
+  USE mo_thdyn_functions, ONLY: latent_heat_vaporization, sat_pres_water, spec_humi
   USE mo_turb_vdiff, ONLY: &
       & imh_vdiff => imh, imqv_vdiff => imqv, ih_vdiff => ih, iqc_vdiff => ixl, &
       & iqv_vdiff => iqv, nvar_vdiff, matrix_to_richtmyer_coeff, &
       & nmatrix_vdiff => nmatrix, vdiff_down, vdiff_init, &
-      & vdiff_new_time_value, vdiff_get_richtmyer_coeff_momentum, vdiff_surface_flux, vdiff_up, &
-      & vdiff_update_boundary, vdiff_get_tke
+      & vdiff_get_richtmyer_coeff_momentum, vdiff_surface_flux, vdiff_up, vdiff_update_boundary, &
+      & vdiff_get_tke
   USE mo_turb_vdiff_config, ONLY: t_vdiff_config
   USE mo_turb_vdiff_params, ONLY: vdiff_implfact => cvdifts, VDIFF_TURB_3DSMAGORINSKY
   USE mtime, ONLY: datetime, julianday, getJulianDayFromDatetime
+  USE mo_bc_anthro_emission, ONLY: get_current_bc_anthro_emission_year, &
+      & read_bc_anthro_emission, bc_anthro_emission_time_interpolation
+  USE mo_bcs_time_interpolation, ONLY: t_time_interpolation_weights, &
+      & calculate_time_interpolation_weights
 
 #ifndef __NO_JSBACH__
   USE mo_jsb_interface, ONLY: &
@@ -109,18 +110,20 @@ CONTAINS
   !! provides surface temperatures and albedos, as well as latent and sensible heat fluxes.
   !!
   SUBROUTINE nwp_vdiff ( &
-        & datetime_now, delta_time, patch, ccycle_config, vdiff_config, nh_prog, nh_prog_rcf, &
+        & datetime_now, delta_time, patch, ccycle_config, vdiff_config, nh_prog, tracer, tke, &
         & nh_diag, nh_metrics, phy_diag, ext_data, diag_lnd, prog_lnd_new, prog_wtr_now, &
         & prog_wtr_new, mem, phy_tend, initialize, lacc &
       )
-
     TYPE(datetime), POINTER, INTENT(IN) :: datetime_now !< Current time.
     REAL(wp), INTENT(IN) :: delta_time !< Time interval.
     TYPE(t_patch), TARGET, INTENT(IN) :: patch !< Current patch.
     TYPE(t_ccycle_config), INTENT(IN) :: ccycle_config !< Carbon-cycle configuration.
     TYPE(t_vdiff_config), INTENT(IN) :: vdiff_config !< vdiff configuration.
     TYPE(t_nh_prog), INTENT(INOUT) :: nh_prog !< Prognostic variables on current patch.
-    TYPE(t_nh_prog), INTENT(INOUT) :: nh_prog_rcf !< Prognostic variables (reduced calling freq).
+    REAL(wp), CONTIGUOUS, INTENT(INOUT) :: tracer(:,:,:,:)
+    !< Tracer field array (nproma,nlev,nblks_c,ntracer) [X/kg].
+    REAL(wp), CONTIGUOUS, INTENT(INOUT) :: tke(:,:,:)
+    !< Turbulence kinetic energy on layer interfaces (nproma,nlev+1,nblks_c) [J/kg].
     TYPE(t_nh_diag), INTENT(INOUT) :: nh_diag !< Diagnostic variables on current patch.
     TYPE(t_nh_metrics), INTENT(IN) :: nh_metrics !< Geometry of the patch.
     TYPE(t_nwp_phy_diag), INTENT(INOUT) :: phy_diag !< Diagnostic physics variables on current patch.
@@ -129,8 +132,10 @@ CONTAINS
     !< NWP LSS diagnostic land variables.
     TYPE(t_lnd_prog), INTENT(INOUT) :: prog_lnd_new
     !< NWP LSS prognostic land variables (time `t+1`).
-    TYPE(t_wtr_prog), INTENT(IN) :: prog_wtr_now
+    TYPE(t_wtr_prog), VALUE, INTENT(IN) :: prog_wtr_now
     !< NWP LSS prognostic water variables (time `t`).
+    !! VALUE, because it may alias `prog_wtr_new` during initialization, causing a false positive
+    !! in NAG checks.
     TYPE(t_wtr_prog), INTENT(INOUT) :: prog_wtr_new
     !< NWP LSS prognostic water variables (time `t+1`).
     TYPE(t_nwp_vdiff_state), INTENT(INOUT) :: mem !< vdiff and jsbach state.
@@ -139,7 +144,8 @@ CONTAINS
     LOGICAL, OPTIONAL, INTENT(IN) :: initialize
     !< Propagate land for 1s to get initial fluxes and temperatures. No update of atmospheric
     !! prognostic variables.
-    LOGICAL, OPTIONAL, INTENT(IN) :: lacc
+
+    LOGICAL, INTENT(IN) :: lacc
 
     !
     ! Local constants
@@ -162,8 +168,13 @@ CONTAINS
     !> Temperature of each surface class [K].
     REAL(wp) :: temp_sfc(nproma, patch%nblks_c, SFC_NUM)
 
+    !> Ocean velocities [m/s]
     REAL(wp), CONTIGUOUS, POINTER :: ocean_u(:,:) !< Ocean surface velocity (zonal).
     REAL(wp), CONTIGUOUS, POINTER :: ocean_v(:,:) !< Ocean surface velocity (meridional).
+
+    !> Sea ice velocities [m/s]
+    REAL(wp), CONTIGUOUS, POINTER :: ice_u(:,:) !< Sea ice velocity (zonal).
+    REAL(wp), CONTIGUOUS, POINTER :: ice_v(:,:) !< Sea ice velocity (meridional).
 
     !> Wind speed at lowest model level [m/s].
     REAL(wp) :: wind_lowest(nproma, patch%nblks_c)
@@ -367,112 +378,107 @@ CONTAINS
 
     LOGICAL :: linit
     LOGICAL :: lis_coupled_to_ocean
+    LOGICAL :: lhave_flx_co2_natural_sea
+
+    TYPE(t_time_interpolation_weights) :: current_time_interpolation_weights
 
     !
     ! Subroutine start
     !
 
     CALL assert_acc_device_only ('nwp_vdiff', lacc)
-    CALL assert_lacc_equals_i_am_accel_node ('nwp_vdiff', lacc, i_am_accel_node)
 
-    ! Asynchronous data regions are a too recent feature. We have to resort to unstructured ones.
-    ! This crutch ensures that we don't forget to delete any variable. The compiler complains when
-    ! the line gets too long, so we have to split it into chunks, too. Yay...
-#   define LIST_CREATE1 \
-        zero2d, \
-        fr_sfc, \
-        fr_sft, \
-        temp_sfc, \
-        ocean_u, \
-        ocean_v, \
-        wind_lowest, \
-        tracer_srf_emission, \
-        cloud_water_total, \
-        rain_srf, \
-        snow_srf, \
-        wstar, \
-        qsat_sfc, \
-        height_top_dry_cbl, \
-        ri_number, \
-        ri_number_sfc
-#   define LIST_CREATE2 \
-        mixing_length, \
-        prefactor_exchange, \
-        exchange_coeff_water_var, \
-        exchange_coeff_tte, \
-        exchange_coeff_temp_var, \
-        a_matrices, \
-        a_matrices_btm, \
-        b_rhs, \
-        b_rhs_btm, \
-        ddt_u_smag, \
-        ddt_v_smag, \
-        ddt_w_smag, \
-        ddt_horiz_temp, \
-        ddt_horiz_qv, \
-        ddt_horiz_qc, \
-        ddt_horiz_qi, \
-        s_sfc, \
-        s_atm, \
-        theta_v_var_intermediate, \
-        total_turbulence_energy_intermediate
-#   define LIST_CREATE3 \
-        ch_sfc, \
-        bn_sfc, \
-        bhn_sfc, \
-        bm_sfc, \
-        bh_sfc, \
-        co2_concentration_srf, \
-        rho_ratio_delta_z, \
-        t_acoef, \
-        t_bcoef, \
-        q_acoef, \
-        q_bcoef, \
-        uv_acoef, \
-        u_bcoef, \
-        v_bcoef, \
-        flx_rad, \
-        drag_coef, \
-        t_eff_sft, \
-        qsat_sft, \
-        s_sft, \
-        t2m_sft
-#   define LIST_CREATE4 \
-        td2m_sft, \
-        rh2m_sft, \
-        qv2m_sft, \
-        u10m_sft, \
-        v10m_sft, \
-        wind_10m_sft, \
-        qv_sft, \
-        evapo_sft, \
-        evapo_potential, \
-        flx_heat_ground, \
-        cap_heat_ground, \
-        flx_heat_latent_sft, \
-        flx_heat_sensible_sft, \
-        flx_mom_u_sft, \
-        flx_mom_v_sft, \
-        Q_snowcanopymelt, \
-        alb, \
-        ekin_dissipation, \
-        ddt_u, \
-        ddt_v, \
-        ddt_Q
-#   define LIST_CREATE5 \
-        ddt_tracer, \
-        z0m_gbm, \
-        flx_humidity, \
-        flx_sensible, \
-        flx_mom_u, \
-        flx_mom_v, \
-        temp_srf_old
-    !$ACC ENTER DATA ASYNC(1) &
-    !$ACC   CREATE(LIST_CREATE1) &
-    !$ACC   CREATE(LIST_CREATE2) &
-    !$ACC   CREATE(LIST_CREATE3) &
-    !$ACC   CREATE(LIST_CREATE4) &
-    !$ACC   CREATE(LIST_CREATE5)
+    !$ACC DATA ASYNC(1) &
+    !$ACC   CREATE(a_matrices) &
+    !$ACC   CREATE(a_matrices_btm) &
+    !$ACC   CREATE(alb) &
+    !$ACC   CREATE(b_rhs) &
+    !$ACC   CREATE(b_rhs_btm) &
+    !$ACC   CREATE(bh_sfc) &
+    !$ACC   CREATE(bhn_sfc) &
+    !$ACC   CREATE(bn_sfc) &
+    !$ACC   CREATE(bm_sfc) &
+    !$ACC   CREATE(cap_heat_ground) &
+    !$ACC   CREATE(ch_sfc) &
+    !$ACC   CREATE(cloud_water_total) &
+    !$ACC   CREATE(co2_concentration_srf) &
+    !$ACC   CREATE(ddt_u_smag) &
+    !$ACC   CREATE(ddt_v_smag) &
+    !$ACC   CREATE(ddt_w_smag) &
+    !$ACC   CREATE(ddt_horiz_temp) &
+    !$ACC   CREATE(ddt_horiz_qv) &
+    !$ACC   CREATE(ddt_horiz_qc) &
+    !$ACC   CREATE(ddt_horiz_qi) &
+    !$ACC   CREATE(ddt_Q) &
+    !$ACC   CREATE(ddt_tracer) &
+    !$ACC   CREATE(ddt_u) &
+    !$ACC   CREATE(ddt_v) &
+    !$ACC   CREATE(drag_coef) &
+    !$ACC   CREATE(ekin_dissipation) &
+    !$ACC   CREATE(evapo_potential) &
+    !$ACC   CREATE(evapo_sft) &
+    !$ACC   CREATE(exchange_coeff_temp_var) &
+    !$ACC   CREATE(exchange_coeff_tte) &
+    !$ACC   CREATE(exchange_coeff_water_var) &
+    !$ACC   CREATE(flx_heat_ground) &
+    !$ACC   CREATE(flx_heat_latent_sft) &
+    !$ACC   CREATE(flx_heat_sensible_sft) &
+    !$ACC   CREATE(flx_humidity) &
+    !$ACC   CREATE(flx_mom_u) &
+    !$ACC   CREATE(flx_mom_u_sft) &
+    !$ACC   CREATE(flx_mom_v) &
+    !$ACC   CREATE(flx_mom_v_sft) &
+    !$ACC   CREATE(flx_sensible) &
+    !$ACC   CREATE(flx_rad) &
+    !$ACC   CREATE(fr_sfc) &
+    !$ACC   CREATE(fr_sft) &
+    !$ACC   CREATE(height_top_dry_cbl) &
+    !$ACC   CREATE(mixing_length) &
+    !$ACC   CREATE(prefactor_exchange) &
+    !$ACC   CREATE(q_acoef) &
+    !$ACC   CREATE(q_bcoef) &
+    !$ACC   CREATE(Q_snowcanopymelt) &
+    !$ACC   CREATE(qsat_sfc) &
+    !$ACC   CREATE(qsat_sft) &
+    !$ACC   CREATE(qv_sft) &
+    !$ACC   CREATE(qv2m_sft) &
+    !$ACC   CREATE(rain_srf) &
+    !$ACC   CREATE(rh2m_sft) &
+    !$ACC   CREATE(rho_ratio_delta_z) &
+    !$ACC   CREATE(ri_number) &
+    !$ACC   CREATE(ri_number_sfc) &
+    !$ACC   CREATE(s_sfc) &
+    !$ACC   CREATE(s_sft) &
+    !$ACC   CREATE(s_atm) &
+    !$ACC   CREATE(snow_srf) &
+    !$ACC   CREATE(t_acoef) &
+    !$ACC   CREATE(t_bcoef) &
+    !$ACC   CREATE(t_eff_sft) &
+    !$ACC   CREATE(t2m_sft) &
+    !$ACC   CREATE(td2m_sft) &
+    !$ACC   CREATE(temp_sfc) &
+    !$ACC   CREATE(temp_srf_old) &
+    !$ACC   CREATE(theta_v_var_intermediate) &
+    !$ACC   CREATE(total_turbulence_energy_intermediate) &
+    !$ACC   CREATE(tracer_srf_emission) &
+    !$ACC   CREATE(u_bcoef) &
+    !$ACC   CREATE(u10m_sft) &
+    !$ACC   CREATE(uv_acoef) &
+    !$ACC   CREATE(v_bcoef) &
+    !$ACC   CREATE(v10m_sft) &
+    !$ACC   CREATE(wind_10m_sft) &
+    !$ACC   CREATE(wind_lowest) &
+    !$ACC   CREATE(wstar) &
+    !$ACC   CREATE(z0m_gbm) &
+    !$ACC   CREATE(zero2d)
+
+    ! Since prog_wtr_now is a VALUE, we have to copy and attach all member pointers.
+    ! The VALUE and this can go away once NAG Fortran is updated to build 7150.
+
+    !$ACC DATA ASYNC(1) &
+    !$ACC   COPYIN(prog_wtr_now) &
+    !$ACC   ATTACH(prog_wtr_now%t_ice, prog_wtr_now%h_ice, prog_wtr_now%t_snow_si) &
+    !$ACC   ATTACH(prog_wtr_now%h_snow_si, prog_wtr_now%alb_si)
 
     IF (PRESENT(initialize)) THEN
       linit = initialize
@@ -480,6 +486,7 @@ CONTAINS
       linit = .FALSE.
     END IF
 
+    lhave_flx_co2_natural_sea = ASSOCIATED(mem%sea_state%flx_co2_natural_sea)
     lis_coupled_to_ocean = is_coupled_to_ocean()
 
     i_startblk = patch%cells%start_block(start_prog_cells)
@@ -491,54 +498,77 @@ CONTAINS
     ktrac = MAX(0, ntracer + 1 - iqt)
 
     !$OMP PARALLEL
-      CALL init(zero2d(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(tracer_srf_emission(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init(zero2d(:,:), lacc=.TRUE.)
+      CALL init(tracer_srf_emission(:,:,:), lacc=.TRUE.)
+      CALL init(ddt_tracer(:,:,:,:), lacc=.TRUE.)
+      CALL init(flx_heat_latent_sft(:,:,:), lacc=.TRUE.)
+      CALL init(flx_heat_sensible_sft(:,:,:), lacc=.TRUE.)
+      CALL init(t2m_sft(:,:,:), lacc=.TRUE.)
+      CALL init(td2m_sft(:,:,:), lacc=.TRUE.)
     !$OMP END PARALLEL
 
-    CALL get_surface_type_fractions(patch, ext_data, mem, diag_lnd, fr_sfc, fr_sft)
-    CALL get_surface_class_temperature(patch, fr_sft, mem%temp_sft, fr_sfc, temp_sfc)
+    CALL get_surface_type_fractions(patch, ext_data, mem, diag_lnd, fr_sfc, fr_sft, lacc=.TRUE.)
+    CALL get_surface_class_temperature(patch, fr_sft, mem%temp_sft, fr_sfc, temp_sfc, lacc=.TRUE.)
+
+    IF (ASSOCIATED(mem%fco2ant)) THEN
+      IF (ccycle_config%lanthro) THEN
+        IF (datetime_now%date%year /= get_current_bc_anthro_emission_year()) THEN
+          CALL read_bc_anthro_emission(datetime_now%date%year, patch)
+        END IF
+        current_time_interpolation_weights = calculate_time_interpolation_weights(datetime_now)
+        CALL bc_anthro_emission_time_interpolation(current_time_interpolation_weights, &
+          & mem%fco2ant(:,:), &
+          & patch)
+      END IF
+    END IF
 
     !$OMP PARALLEL
-      CALL weighted_average(patch, fr_sfc(:,:,:), temp_sfc(:,:,:), temp_srf_old(:,:))
+      CALL weighted_average(patch, fr_sfc(:,:,:), temp_sfc(:,:,:), temp_srf_old(:,:), lacc=.TRUE.)
 
       !$OMP DO PRIVATE(i_blk, ics, ice, ic, kl)
       DO i_blk = i_startblk, i_endblk
         CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
             & end_prog_cells)
 
-        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
           ! Total cloud water: ice and liquid water.
           !$ACC LOOP GANG VECTOR COLLAPSE(2)
           DO kl = 1, patch%nlev
             DO ic = ics, ice
               cloud_water_total(ic,kl,i_blk) = &
-                  & nh_prog_rcf%tracer(ic,kl,i_blk,iqc) + nh_prog_rcf%tracer(ic,kl,i_blk,iqi)
+                  & tracer(ic,kl,i_blk,iqc) + tracer(ic,kl,i_blk,iqi)
             END DO
           END DO
 
-          ! Consider natural CO2 emissions to close the carbon cycle (if enabled).
+          ! Consider natural and anthropogenic CO2 emissions to close the carbon cycle (if enabled).
+          ! Anthropogenic emissions are on a grid-level and occur in land and ocean.
           IF (ico2 > 0) THEN
             !$ACC LOOP GANG VECTOR
             DO ic = ics, ice
               tracer_srf_emission(ic,ico2 - iqt + 1,i_blk) = &
-                  & mem%flx_co2_natural_land(ic,i_blk) * fr_sft(ic,i_blk,SFT_LAND) &
-                  & + mem%sea_state%flx_co2_natural_sea(ic,i_blk) &
-                  &   * (fr_sft(ic,i_blk,SFT_SWTR) + fr_sft(ic,i_blk,SFT_SICE))
+                & mem%flx_co2_natural_land(ic,i_blk) * fr_sft(ic,i_blk,SFT_LAND) + mem%fco2ant(ic,i_blk)
+              IF (lhave_flx_co2_natural_sea) THEN
+                tracer_srf_emission(ic,ico2 - iqt + 1,i_blk) = &
+                  & tracer_srf_emission(ic,ico2 - iqt + 1,i_blk)  &
+                  & + mem%sea_state%flx_co2_natural_sea(ic,i_blk) * fr_sft(ic,i_blk,SFT_SWTR)
+              END IF
             END DO
           END IF
-        !$ACC END PARALLEL
+          !$ACC END PARALLEL
       END DO
     !$OMP END PARALLEL
 
+    ! Ocean velocities
     ocean_u => if_associated(mem%sea_state%ocean_u, zero2d)
     ocean_v => if_associated(mem%sea_state%ocean_v, zero2d)
+
+    ! Sea ice velocities
+    ice_u => if_associated(mem%sea_state%ice_u, zero2d)
+    ice_v => if_associated(mem%sea_state%ice_v, zero2d)
 
     p_graupel_gsp_rate => if_associated(phy_diag%graupel_gsp_rate, zero2d)
     p_ice_gsp_rate => if_associated(phy_diag%ice_gsp_rate, zero2d)
     p_hail_gsp_rate => if_associated(phy_diag%hail_gsp_rate, zero2d)
-
-    !$ACC ENTER DATA ASYNC(1) &
-    !$ACC   ATTACH(ocean_u, ocean_v, p_graupel_gsp_rate, p_ice_gsp_rate, p_hail_gsp_rate)
 
     !$OMP PARALLEL
       !$OMP DO PRIVATE(i_blk, ics, ice, ic)
@@ -546,7 +576,7 @@ CONTAINS
         CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
             & end_prog_cells)
 
-        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
           !$ACC LOOP GANG VECTOR
           DO ic = ics, ice
             rho_ratio_delta_z(ic,i_blk) = &
@@ -568,15 +598,15 @@ CONTAINS
                 & + phy_diag%snow_con_rate(ic,i_blk) + p_hail_gsp_rate(ic,i_blk) &
                 & + p_ice_gsp_rate(ic,i_blk) + p_graupel_gsp_rate(ic,i_blk)
           END DO
-        !$ACC END PARALLEL
+          !$ACC END PARALLEL
       END DO
 
-      CALL flx_rad%init(patch, phy_diag)
-      CALL alb%init(nproma, patch%nblks_c)
+      CALL flx_rad%init(patch, phy_diag, lacc=.TRUE.)
+      CALL alb%init(nproma, patch%nblks_c, lacc=.TRUE.)
     !$OMP END PARALLEL
 
-    CALL get_surface_co2_concentration(patch, ccycle_config, nh_prog_rcf%tracer(:,:,:,:), &
-        & co2_concentration_srf)
+    CALL get_surface_co2_concentration(patch, ccycle_config, datetime_now, tracer(:,:,:,:), &
+        & co2_concentration_srf, lacc=.TRUE.)
 
     ! Routine queues on async queue 1. No need to wait.
     CALL vdiff_down( &
@@ -597,20 +627,23 @@ CONTAINS
         & patch=patch, &
         & pzf=nh_metrics%z_mc(:,:,:), &
         & pzh=nh_metrics%z_ifc(:,:,:), &
+        & pgeom1=nh_metrics%geopot_agl(:,:,:), &
         & pfrc=fr_sfc(:,:,:), &
         & ptsfc_tile=temp_sfc(:,:,:), &
         & pocu=ocean_u(:,:), &
         & pocv=ocean_v(:,:), &
+        & piceu=ice_u(:,:), &
+        & picev=ice_v(:,:), &
         & ppsfc=nh_diag%pres_sfc(:,:), &
         & pum1=nh_diag%u(:,:,:), &
         & pvm1=nh_diag%v(:,:,:), &
         & pwm1=nh_prog%w(:,:,:), &
         & ptm1=nh_diag%temp(:,:,:), &
-        & pqm1=nh_prog_rcf%tracer(:,:,:,iqv), &
-        & pxlm1=nh_prog_rcf%tracer(:,:,:,iqc), &
-        & pxim1=nh_prog_rcf%tracer(:,:,:,iqi), &
+        & pqm1=tracer(:,:,:,iqv), &
+        & pxlm1=tracer(:,:,:,iqc), &
+        & pxim1=tracer(:,:,:,iqi), &
         & pxm1=cloud_water_total(:,:,:), &
-        & pxtm1=nh_prog_rcf%tracer(:,:,:,iqt:), &
+        & pxtm1=tracer(:,:,:,iqt:), &
         & pmair=nh_diag%airmass_new(:,:,:), &
         & rho=nh_prog%rho(:,:,:), &
         & paphm1=nh_diag%pres_ifc(:,:,:), &
@@ -665,19 +698,20 @@ CONTAINS
         & pbn_tile=bn_sfc(:,:,:), &
         & pbhn_tile=bhn_sfc(:,:,:), &
         & pbm_tile=bm_sfc(:,:,:), &
-        & pbh_tile=bh_sfc(:,:,:) &
+        & pbh_tile=bh_sfc(:,:,:), &
+        & lacc=.TRUE. &
       )
 
     ! vdiff_down does not initialize the INTENT(OUT) tendencies from the Smagorinsky if TTE is chosen :(
     IF (vdiff_config%turb /= VDIFF_TURB_3DSMAGORINSKY) THEN
       !$OMP PARALLEL
-        CALL init(ddt_u_smag(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-        CALL init(ddt_v_smag(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-        CALL init(ddt_w_smag(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-        CALL init(ddt_horiz_temp(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-        CALL init(ddt_horiz_qv(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-        CALL init(ddt_horiz_qc(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-        CALL init(ddt_horiz_qi(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
+        CALL init(ddt_u_smag(:,:,:), lacc=.TRUE.)
+        CALL init(ddt_v_smag(:,:,:), lacc=.TRUE.)
+        CALL init(ddt_w_smag(:,:,:), lacc=.TRUE.)
+        CALL init(ddt_horiz_temp(:,:,:), lacc=.TRUE.)
+        CALL init(ddt_horiz_qv(:,:,:), lacc=.TRUE.)
+        CALL init(ddt_horiz_qc(:,:,:), lacc=.TRUE.)
+        CALL init(ddt_horiz_qi(:,:,:), lacc=.TRUE.)
       !$OMP END PARALLEL
     END IF
 
@@ -685,8 +719,8 @@ CONTAINS
     CALL update_earth_declination(datetime_now)
 
     CALL sea_model_update_sst( &
-        & patch, mem%sea_state, datetime_now, ext_data%atm_td%sst_m(:,:,:), &
-        & diag_lnd%t_seasfc(:,:) &
+        & patch, mem%sea_state, datetime_now, ext_data%atm_td%sst_m, &
+        & diag_lnd%t_seasfc(:,:), lacc=.TRUE. &
       )
 
 #ifndef __NO_JSBACH__
@@ -702,19 +736,19 @@ CONTAINS
         CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
             & end_prog_cells)
 
-        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
           !$ACC LOOP GANG VECTOR
           DO ic = ics, ice
             drag_coef(ic,SFC_LAND) = grav * prefactor_exchange(ic,i_blk) &
-                & * mem%exchange_coeff_h_sfc(ic,i_blk,SFC_LAND)
+                & * mem%exchange_coeff_h_sfc(ic,i_blk,SFC_LAND) / MERGE(delta_time, 1._wp, linit)
             drag_coef(ic,SFC_WATER) = grav * prefactor_exchange(ic,i_blk) &
-                & * mem%exchange_coeff_h_sfc(ic,i_blk,SFC_WATER)
+                & * mem%exchange_coeff_h_sfc(ic,i_blk,SFC_WATER) / MERGE(delta_time, 1._wp, linit)
             drag_coef(ic,SFC_ICE) = grav * prefactor_exchange(ic,i_blk) &
-                & * mem%exchange_coeff_h_sfc(ic,i_blk,SFC_ICE)
+                & * mem%exchange_coeff_h_sfc(ic,i_blk,SFC_ICE) / MERGE(delta_time, 1._wp, linit)
             ch_sfc(ic,i_blk,SFC_LAND) = &
                 & MERGE(ch_sfc(ic,i_blk,SFC_LAND), 1._wp, ext_data%atm%fr_land(ic,i_blk) > 0._wp)
           END DO
-        !$ACC END PARALLEL
+          !$ACC END PARALLEL
 
         CALL matrix_to_richtmyer_coeff( &
             & jcs=ics, &
@@ -732,6 +766,7 @@ CONTAINS
             & pfn_h=t_bcoef(:,:), &
             & pen_qv=q_acoef(:,:), &
             & pfn_qv=q_bcoef(:,:), &
+            & lacc=.TRUE., &
             & pcair=mem%fact_q_air(:,i_blk), &
             & pcsat=mem%fact_qsat_srf(:,i_blk) &
           )
@@ -748,7 +783,8 @@ CONTAINS
             & pmair=nh_diag%airmass_new(:,:,i_blk), &
             & pen_uv=uv_acoef(:,:), &
             & pfn_u=u_bcoef(:,:), &
-            & pfn_v=v_bcoef(:,:) &
+            & pfn_v=v_bcoef(:,:), &
+            & lacc=.TRUE. &
           )
 
         CALL vdiff_get_tke ( &
@@ -758,7 +794,8 @@ CONTAINS
             & vdiff_config=vdiff_config, &
             & ptotte=mem%total_turbulence_energy(:,:,i_blk), &
             & pri=ri_number(:,:,i_blk), &
-            & tke=nh_prog_rcf%tke(:,:,i_blk) &
+            & tke=tke(:,:,i_blk), &
+            & lacc=.TRUE. &
           )
 
         ! Replace the vapor in the lowest atmospheric layer by total water (qv+qc) so the surface
@@ -783,8 +820,6 @@ CONTAINS
         !$ACC END PARALLEL
 
 #ifndef __NO_JSBACH__
-        !$ACC WAIT
-
         CALL jsbach_interface( &
             & model_id=patch%id, &
             & iblk=i_blk, &
@@ -792,9 +827,8 @@ CONTAINS
             & ice=ice, &
             & current_datetime=datetime_now,&
             & dtime=MERGE(1._wp, delta_time, linit), &
-            & steplen=delta_time, &
             & t_air=nh_diag%temp(ics:ice, patch%nlev, i_blk), &
-            & q_air=nh_prog_rcf%tracer(ics:ice, patch%nlev, i_blk, iqv), &
+            & q_air=tracer(ics:ice, patch%nlev, i_blk, iqv), &
             & rain=rain_srf(ics:ice,i_blk), &
             & snow=snow_srf(ics:ice,i_blk), &
             & wind_air=wind_lowest(ics:ice,i_blk), &
@@ -862,6 +896,25 @@ CONTAINS
           )
 #endif
 
+        ! Diagnose surface stress (in N/m**2). This is a mixed-time flux.
+        CALL get_surface_stress ( &
+            & ics=ics, &
+            & ice=ice, &
+            & delta_time=delta_time, &
+            & prefactor_exchange=prefactor_exchange(:,i_blk), &
+            & exchange_coeff_m_sfc=mem%exchange_coeff_m_sfc(:,i_blk,:), &
+            & uv_acoef=uv_acoef(:,:), &
+            & u_bcoef=u_bcoef(:,:), &
+            & v_bcoef=v_bcoef(:,:), &
+            & ocean_u=ocean_u(:,i_blk), &
+            & ocean_v=ocean_v(:,i_blk), &
+            & ice_u=ice_u(:,i_blk), &
+            & ice_v=ice_v(:,i_blk), &
+            & zero=zero2d(:,1), &
+            & umfl_sft=flx_mom_u_sft(:,i_blk,:), &
+            & vmfl_sft=flx_mom_v_sft(:,i_blk,:) &
+          )
+
         ! condhf_ice and meltpot_ice are unallocated for uncoupled runs.
         IF (lis_coupled_to_ocean) THEN
           p_condhf_ice_blk => diag_lnd%condhf_ice(:,i_blk)
@@ -880,8 +933,10 @@ CONTAINS
             & ext_data=ext_data, &
             & rain=rain_srf(:,i_blk), &
             & snow=snow_srf(:,i_blk), &
-            & latent_hflx_ice_old=mem%flx_heat_latent_sft(:,i_blk,SFT_SICE), &
-            & sensible_hflx_ice_old=mem%flx_heat_sensible_sft(:,i_blk,SFT_SICE), &
+            & latent_hflx_sft_old=mem%flx_heat_latent_sft(:,i_blk,:), &
+            & sensible_hflx_sft_old=mem%flx_heat_sensible_sft(:,i_blk,:), &
+            & flx_mom_u_sft=flx_mom_u_sft(:,i_blk,:), &
+            & flx_mom_v_sft=flx_mom_v_sft(:,i_blk,:), &
             & flx_rad=flx_rad, &
             & sea_state=mem%sea_state, &
             & cos_zenith_angle=phy_diag%cosmu0(:,i_blk), &
@@ -916,24 +971,8 @@ CONTAINS
             & conductive_hflx_ice=p_condhf_ice_blk, &
             & melt_potential_ice=p_meltpot_ice_blk, &
             & alb=alb, &
-            & prog_wtr_new=prog_wtr_new &
-          )
-
-        ! Diagnose surface stress (in N/m**2). This is a mixed-time flux.
-        CALL get_surface_stress ( &
-            & ics=ics, &
-            & ice=ice, &
-            & delta_time=delta_time, &
-            & prefactor_exchange=prefactor_exchange(:,i_blk), &
-            & exchange_coeff_m_sfc=mem%exchange_coeff_m_sfc(:,i_blk,:), &
-            & uv_acoef=uv_acoef(:,:), &
-            & u_bcoef=u_bcoef(:,:), &
-            & v_bcoef=v_bcoef(:,:), &
-            & ocean_u=ocean_u(:,i_blk), &
-            & ocean_v=ocean_v(:,i_blk), &
-            & zero=zero2d(:,1), &
-            & umfl_sft=flx_mom_u_sft(:,i_blk,:), &
-            & vmfl_sft=flx_mom_v_sft(:,i_blk,:) &
+            & prog_wtr_new=prog_wtr_new, &
+            & lacc=.TRUE. &
           )
 
         ! Including Q_snowcanopymelt here gives a slightly different flux from what JSBACH sees,
@@ -947,10 +986,10 @@ CONTAINS
           END DO
         !$ACC END PARALLEL
 
-        CALL weighted_average(fr_sft(:,i_blk,:), evapo_sft(:,i_blk,:), flx_humidity(:))
-        CALL weighted_average(fr_sft(:,i_blk,:), flx_heat_sensible_sft(:,i_blk,:), flx_sensible(:))
-        CALL weighted_average(fr_sft(:,i_blk,:), flx_mom_u_sft(:,i_blk,:), flx_mom_u(:))
-        CALL weighted_average(fr_sft(:,i_blk,:), flx_mom_v_sft(:,i_blk,:), flx_mom_v(:))
+        CALL weighted_average(fr_sft(ics:ice,i_blk,:), evapo_sft(ics:ice,i_blk,:), flx_humidity(ics:ice), lacc=.TRUE.)
+        CALL weighted_average(fr_sft(ics:ice,i_blk,:), flx_heat_sensible_sft(ics:ice,i_blk,:), flx_sensible(ics:ice), lacc=.TRUE.)
+        CALL weighted_average(fr_sft(ics:ice,i_blk,:), flx_mom_u_sft(ics:ice,i_blk,:), flx_mom_u(ics:ice), lacc=.TRUE.)
+        CALL weighted_average(fr_sft(ics:ice,i_blk,:), flx_mom_v_sft(ics:ice,i_blk,:), flx_mom_v(ics:ice), lacc=.TRUE.)
 
         CALL vdiff_update_boundary( &
             & jcs=ics, &
@@ -965,8 +1004,9 @@ CONTAINS
             & aa=a_matrices(:,:,:,:,i_blk), &
             & aa_btm=a_matrices_btm(:,:,:,:,i_blk), &
             & s_btm=s_atm(:,patch%nlev,i_blk), &
-            & q_btm=nh_prog_rcf%tracer(:,patch%nlev,i_blk,iqv), &
-            & bb=b_rhs(:,:,:,i_blk) &
+            & q_btm=tracer(:,patch%nlev,i_blk,iqv), &
+            & bb=b_rhs(:,:,:,i_blk), &
+            & lacc=.TRUE. &
           )
 
         CALL vdiff_up( &
@@ -978,6 +1018,7 @@ CONTAINS
             & ktrac=ktrac, &
             & ksfc_type=SFC_NUM, &
             & idx_wtr=SFC_WATER, &
+            & idx_ice=SFC_ICE, &
             & pdtime=delta_time, &
             & pfrc=fr_sfc(:,i_blk,:), &
             & pcfm_tile=mem%exchange_coeff_m_sfc(:,i_blk,:), &
@@ -987,14 +1028,20 @@ CONTAINS
             & pvm1=nh_diag%v(:,:,i_blk), &
             & ptm1=nh_diag%temp(:,:,i_blk), &
             & pmair=nh_diag%airmass_new(:,:,i_blk), &
-            & pqm1=nh_prog_rcf%tracer(:,:,i_blk,iqv), &
-            & pxlm1=nh_prog_rcf%tracer(:,:,i_blk,iqc), &
-            & pxim1=nh_prog_rcf%tracer(:,:,i_blk,iqi), &
-            & pxtm1=nh_prog_rcf%tracer(:,:,i_blk,iqt:), &
+            & pqm1=tracer(:,:,i_blk,iqv), &
+            & pxlm1=tracer(:,:,i_blk,iqc), &
+            & pxim1=tracer(:,:,i_blk,iqi), &
+            & pxtm1=tracer(:,:,i_blk,iqt:), &
             & pgeom1=nh_metrics%geopot_agl(:,:,i_blk), &
             & pztottevn=total_turbulence_energy_intermediate(:,:,i_blk), &
             & vdiff_config=vdiff_config, &
             & bb=b_rhs(:,:,:,i_blk), &
+            & ocean_u=ocean_u(:,i_blk), &
+            & ocean_v=ocean_v(:,i_blk), &
+            & ice_u=ice_u(:,i_blk), &
+            & ice_v=ice_v(:,i_blk), &
+            !& pwstar=wstar(:,:), &
+            & pwstar_tile=mem%wstar_sfc(:,i_blk,:), &
             & pzthvvar=theta_v_var_intermediate(:,:,i_blk), &
             & & ! In/outputs
             & pxvar=mem%total_water_var(:,:,i_blk), &
@@ -1009,7 +1056,8 @@ CONTAINS
             & pxtte_vdf=ddt_tracer(:,:,i_blk,iqt:), &
             & pz0m=z0m_gbm(:,i_blk), &
             & pthvvar=mem%theta_v_var(:,:,i_blk), &
-            & ptotte=mem%total_turbulence_energy(:,:,i_blk) &
+            & ptotte=mem%total_turbulence_energy(:,:,i_blk), &
+            & lacc=.TRUE. &
           )
 
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -1017,7 +1065,7 @@ CONTAINS
           DO ic = ics, ice
             qv_sft(ic,i_blk,SFT_LAND) = &
                 & (1._wp - mem%fact_q_air(ic,i_blk)) * ( &
-                &   nh_prog_rcf%tracer(ic,patch%nlev,i_blk,iqv) &
+                &   tracer(ic,patch%nlev,i_blk,iqv) &
                 &   + delta_time * ddt_tracer(ic,patch%nlev,i_blk,iqv)) &
                 & + mem%fact_qsat_srf(ic,i_blk) * qsat_sft(ic,i_blk,SFT_LAND)
           END DO
@@ -1050,6 +1098,9 @@ CONTAINS
           END SELECT
 
           !$ACC DATA ATTACH(b_neutral)
+#           ifdef NFORT_BROKEN_INLINES
+            !NEC$ noinline
+#           endif
             CALL get_near_surface_temperature ( &
                 & ics=ics, &
                 & ice=ice, &
@@ -1064,6 +1115,9 @@ CONTAINS
                 & temp_ref=t2m_sft(:,i_blk,isft) &
               )
 
+#           ifdef NFORT_BROKEN_INLINES
+            !NEC$ noinline
+#           endif
             CALL get_near_surface_dew_point ( &
                 & ics=ics, &
                 & ice=ice, &
@@ -1072,13 +1126,16 @@ CONTAINS
                 & temp_lowest=nh_diag%temp(:,patch%nlev,i_blk), &
                 & pres_lowest=nh_diag%pres(:,patch%nlev,i_blk), &
                 & pres_srf=nh_diag%pres_sfc(:,i_blk), &
-                & q_lowest=nh_prog_rcf%tracer(:,patch%nlev,i_blk,iqv), &
+                & q_lowest=tracer(:,patch%nlev,i_blk,iqv), &
                 & x_lowest=cloud_water_total(:,patch%nlev,i_blk), &
                 & tdew_ref=td2m_sft(:,i_blk,isft), &
                 & rh_ref=rh2m_sft(:,i_blk,isft), &
                 & q_ref=qv2m_sft(:,i_blk,isft) &
               )
 
+#           ifdef NFORT_BROKEN_INLINES
+            !NEC$ noinline
+#           endif
             CALL get_near_surface_wind ( &
                 & ics=ics, &
                 & ice=ice, &
@@ -1103,7 +1160,7 @@ CONTAINS
     !$OMP END PARALLEL
 
 #ifndef __NO_JSBACH__
-    CALL jsbach_finish_timestep (patch%id, datetime_now, delta_time)
+    CALL jsbach_finish_timestep (patch%id, datetime_now, delta_time, linit)
 #endif
 
     !$OMP PARALLEL
@@ -1112,37 +1169,37 @@ CONTAINS
       CALL copy ( &
           & mem%temp_sft(:,:,SFT_LWTR:SFT_NUM), &
           & t_eff_sft(:,:,SFT_LWTR:SFT_NUM), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
 
       ! JSBACH only provides a single albedo for lakes. Copy them to all flavors.
-      CALL copy(alb%alb_vis_dif(:,:,SFT_LWTR), alb%alb_nir_dif(:,:,SFT_LWTR), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(alb%alb_vis_dif(:,:,SFT_LWTR), alb%alb_nir_dir(:,:,SFT_LWTR), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(alb%alb_vis_dif(:,:,SFT_LWTR), alb%alb_vis_dir(:,:,SFT_LWTR), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(alb%alb_vis_dif(:,:,SFT_LWTR), alb%alb_nir_dif(:,:,SFT_LWTR), lacc=.TRUE.)
+      CALL copy(alb%alb_vis_dif(:,:,SFT_LWTR), alb%alb_nir_dir(:,:,SFT_LWTR), lacc=.TRUE.)
+      CALL copy(alb%alb_vis_dif(:,:,SFT_LWTR), alb%alb_vis_dir(:,:,SFT_LWTR), lacc=.TRUE.)
 
-      CALL copy(alb%alb_vis_dif(:,:,SFT_LICE), alb%alb_nir_dif(:,:,SFT_LICE), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(alb%alb_vis_dif(:,:,SFT_LICE), alb%alb_nir_dir(:,:,SFT_LICE), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(alb%alb_vis_dif(:,:,SFT_LICE), alb%alb_vis_dir(:,:,SFT_LICE), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(alb%alb_vis_dif(:,:,SFT_LICE), alb%alb_nir_dif(:,:,SFT_LICE), lacc=.TRUE.)
+      CALL copy(alb%alb_vis_dif(:,:,SFT_LICE), alb%alb_nir_dir(:,:,SFT_LICE), lacc=.TRUE.)
+      CALL copy(alb%alb_vis_dif(:,:,SFT_LICE), alb%alb_vis_dir(:,:,SFT_LICE), lacc=.TRUE.)
 
       ! For consistency, we set the long-wave emissivity of land and lake surfaces to the value
       ! used by JSBACH to deduce net long-wave radiation.
-      CALL init(alb%lw_emissivity(:,:,SFT_LAND:SFT_LICE), zemiss_def, lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init(alb%lw_emissivity(:,:,SFT_LAND:SFT_LICE), zemiss_def, lacc=.TRUE.)
 
       ! Update grid-box temperature.
       CALL weighted_average ( &
-          & patch, fr_sft(:,:,:), t_eff_sft(:,:,:), prog_lnd_new%t_g(:,:), pow=4._wp &
+          & patch, fr_sft(:,:,:), t_eff_sft(:,:,:), prog_lnd_new%t_g(:,:), pow=4._wp, &
+          & lacc=.TRUE. &
         )
-      CALL weighted_average(patch, fr_sft(:,:,:), mem%temp_sft(:,:,:), diag_lnd%t_s(:,:))
+      CALL weighted_average(patch, fr_sft(:,:,:), mem%temp_sft(:,:,:), diag_lnd%t_s(:,:), lacc=.TRUE.)
 
       ! Update surface humidity.
-      CALL weighted_average(patch, fr_sft(:,:,:), qv_sft(:,:,:), diag_lnd%qv_s(:,:))
+      CALL weighted_average(patch, fr_sft(:,:,:), qv_sft(:,:,:), diag_lnd%qv_s(:,:), lacc=.TRUE.)
 
-      CALL weighted_average(patch, fr_sft(:,:,:), alb%alb_nir_dif(:,:,:), phy_diag%albnirdif(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), alb%alb_nir_dir(:,:,:), phy_diag%albnirdir(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), alb%alb_vis_dif(:,:,:), phy_diag%albvisdif(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), alb%alb_vis_dir(:,:,:), phy_diag%albvisdir(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), alb%lw_emissivity(:,:,:), phy_diag%lw_emiss(:,:))
+      CALL weighted_average(patch, fr_sft(:,:,:), alb%alb_nir_dif(:,:,:), phy_diag%albnirdif(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), alb%alb_nir_dir(:,:,:), phy_diag%albnirdir(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), alb%alb_vis_dif(:,:,:), phy_diag%albvisdif(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), alb%alb_vis_dir(:,:,:), phy_diag%albvisdir(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), alb%lw_emissivity(:,:,:), phy_diag%lw_emiss(:,:), lacc=.TRUE.)
 
       CALL flx_rad%get_albdif ( &
           & patch, phy_diag%albnirdif(:,:), phy_diag%albvisdif(:,:), phy_diag%albdif(:,:) &
@@ -1159,7 +1216,7 @@ CONTAINS
           DO kl = 1, patch%nlev
             DO ic = ics, ice
               phy_tend%ddt_temp_turb(ic,kl,i_blk) = ddt_Q(ic,kl,i_blk) &
-                  & / (cvd + (cvv - cvd) * (nh_prog_rcf%tracer(ic,kl,i_blk,iqv) &
+                  & / (cvd + (cvv - cvd) * (tracer(ic,kl,i_blk,iqv) &
                   &    + delta_time * ddt_tracer(ic,kl,i_blk,iqv))) &
                   & / nh_diag%airmass_new(ic,kl,i_blk) &
                   & + ddt_horiz_temp(ic,kl,i_blk)
@@ -1188,46 +1245,43 @@ CONTAINS
       CALL copy ( &
           & ddt_tracer(:,:,:,1:nqtendphy), &
           & phy_tend%ddt_tracer_turb(:,:,:,1:nqtendphy), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
       CALL copy ( &
           & flx_heat_sensible_sft(:,:,:), &
           & mem%flx_heat_sensible_sft(:,:,:), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
       CALL copy ( &
           & flx_heat_latent_sft(:,:,:), &
           & mem%flx_heat_latent_sft(:,:,:), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
       CALL copy ( &
         & evapo_sft(:,:,:), &
         & mem%flx_water_vapor_sft(:,:,:), &
-        & opt_acc_async=.TRUE. &
+        & lacc=.TRUE. &
       )
 
       CALL weighted_average ( &
-          & patch, fr_sft(:,:,:), mem%flx_heat_latent_sft(:,:,:), phy_diag%lhfl_s(:,:) &
+          & patch, fr_sft(:,:,:), mem%flx_heat_latent_sft(:,:,:), phy_diag%lhfl_s(:,:), lacc=.TRUE. &
         )
       CALL weighted_average ( &
-          & patch, fr_sft(:,:,:), mem%flx_heat_sensible_sft(:,:,:), phy_diag%shfl_s(:,:) &
+          & patch, fr_sft(:,:,:), mem%flx_heat_sensible_sft(:,:,:), phy_diag%shfl_s(:,:), lacc=.TRUE. &
         )
       CALL weighted_average ( &
-          & patch, fr_sft(:,:,:), mem%flx_water_vapor_sft(:,:,:), phy_diag%qhfl_s(:,:) &
+          & patch, fr_sft(:,:,:), mem%flx_water_vapor_sft(:,:,:), phy_diag%qhfl_s(:,:), lacc=.TRUE. &
         )
-      CALL weighted_average(patch, fr_sft(:,:,:), flx_mom_u_sft(:,:,:), phy_diag%umfl_s(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), flx_mom_v_sft(:,:,:), phy_diag%vmfl_s(:,:))
+      CALL weighted_average(patch, fr_sft(:,:,:), flx_mom_u_sft(:,:,:), phy_diag%umfl_s(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), flx_mom_v_sft(:,:,:), phy_diag%vmfl_s(:,:), lacc=.TRUE.)
 
-      CALL weighted_average(patch, fr_sft(:,:,:), t2m_sft(:,:,:), phy_diag%t_2m(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), td2m_sft(:,:,:), phy_diag%td_2m(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), rh2m_sft(:,:,:), phy_diag%rh_2m(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), qv2m_sft(:,:,:), phy_diag%qv_2m(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), u10m_sft(:,:,:), phy_diag%u_10m(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), v10m_sft(:,:,:), phy_diag%v_10m(:,:))
-      CALL weighted_average(patch, fr_sft(:,:,:), wind_10m_sft(:,:,:), phy_diag%sp_10m(:,:))
+      CALL weighted_average(patch, fr_sft(:,:,:), t2m_sft(:,:,:), phy_diag%t_2m(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), td2m_sft(:,:,:), phy_diag%td_2m(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), rh2m_sft(:,:,:), phy_diag%rh_2m(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), qv2m_sft(:,:,:), phy_diag%qv_2m(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), u10m_sft(:,:,:), phy_diag%u_10m(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), v10m_sft(:,:,:), phy_diag%v_10m(:,:), lacc=.TRUE.)
+      CALL weighted_average(patch, fr_sft(:,:,:), wind_10m_sft(:,:,:), phy_diag%sp_10m(:,:), lacc=.TRUE.)
 
       CALL get_gust_speed ( &
           & patch, phy_diag, nh_diag, nh_metrics, phy_diag%sp_10m, mem%ustar, phy_diag%dyn_gust &
@@ -1237,27 +1291,25 @@ CONTAINS
       CALL copy ( &
           & mem%flx_heat_latent_sft(:,:,SFT_LAND), &
           & phy_diag%lhfl_pl(:,1,:), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
-      CALL init (phy_diag%lhfl_pl(:,2:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init (phy_diag%lhfl_pl(:,2:,:), lacc=.TRUE.)
 
       CALL copy ( &
           & mem%flx_heat_latent_sft(:,:,SFT_LAND), &
           & phy_diag%lhfl_bs(:,:), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
 
       ! AES switches off theta_v and water variance. theta_v is replicated here for consistency.
       ! Water variance is diagnosed below.
 
-      CALL init (mem%theta_v_var(:,:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init (mem%theta_v_var(:,:,:), lacc=.TRUE.)
 
-      CALL copy (t2m_sft(:,:,SFT_LAND), phy_diag%t_2m_land(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy (td2m_sft(:,:,SFT_LAND), phy_diag%td_2m_land(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy (phy_diag%t_2m(:,:), phy_diag%t_tilemin_inst_2m(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy (phy_diag%t_2m(:,:), phy_diag%t_tilemax_inst_2m(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy (t2m_sft(:,:,SFT_LAND), phy_diag%t_2m_land(:,:), lacc=.TRUE.)
+      CALL copy (td2m_sft(:,:,SFT_LAND), phy_diag%td_2m_land(:,:), lacc=.TRUE.)
+      CALL copy (phy_diag%t_2m(:,:), phy_diag%t_tilemin_inst_2m(:,:), lacc=.TRUE.)
+      CALL copy (phy_diag%t_2m(:,:), phy_diag%t_tilemax_inst_2m(:,:), lacc=.TRUE.)
     !$OMP END PARALLEL
 
     CALL update_nwp_tile_state (patch, delta_time, fr_sft, prog_lnd_new, diag_lnd, phy_diag)
@@ -1265,14 +1317,14 @@ CONTAINS
     ! Update state with tendencies.
     IF (.NOT. linit) THEN
       CALL add_tendencies_to_state ( &
-          & delta_time, patch, phy_tend, nh_prog, nh_prog_rcf, nh_diag, ddt_tracer &
+          & delta_time, patch, phy_tend, nh_prog, tracer, nh_diag, ddt_tracer &
         )
 
       CALL get_stddev_saturation_deficit ( &
           & patch=patch, &
           & z_mc=nh_metrics%z_mc(:,:,:), &
           & z_ifc=nh_metrics%z_ifc(:,:,:), &
-          & tracer=nh_prog_rcf%tracer(:,:,:,:), &
+          & tracer=tracer(:,:,:,:), &
           & mixing_length=mixing_length(:,:,:), &
           & total_turbulence_energy=mem%total_turbulence_energy(:,:,:), &
           & exchange_coeff_h=mem%exchange_coeff_h(:,:,:), &
@@ -1280,10 +1332,6 @@ CONTAINS
           & rcld=phy_diag%rcld(:,:,:) &
         )
     END IF
-
-    !$ACC WAIT(1)
-    !$ACC EXIT DATA &
-    !$ACC   DETACH(ocean_u, ocean_v, p_graupel_gsp_rate, p_ice_gsp_rate, p_hail_gsp_rate)
 
     IF (is_coupled_to_ocean() .AND. .NOT. linit) THEN
       CALL sea_model_couple_ocean (&
@@ -1308,22 +1356,15 @@ CONTAINS
           & t_seasfc=diag_lnd%t_seasfc(:,:), &
           & fr_seaice=diag_lnd%fr_seaice(:,:), &
           & h_ice=prog_wtr_new%h_ice(:,:), &
-          & sea_state=mem%sea_state &
+          & h_snow=prog_wtr_new%h_snow_si(:,:), &
+          & sea_state=mem%sea_state, &
+          & lacc=.TRUE. &
         )
     END IF
 
-    !$ACC WAIT(1)
-    !$ACC EXIT DATA &
-    !$ACC   DELETE(LIST_CREATE1) &
-    !$ACC   DELETE(LIST_CREATE2) &
-    !$ACC   DELETE(LIST_CREATE3) &
-    !$ACC   DELETE(LIST_CREATE4) &
-    !$ACC   DELETE(LIST_CREATE5)
-#   undef LIST_CREATE5
-#   undef LIST_CREATE4
-#   undef LIST_CREATE3
-#   undef LIST_CREATE2
-#   undef LIST_CREATE1
+    ! Data region for prog_wtr_now
+    !$ACC END DATA
+    !$ACC END DATA
 
   END SUBROUTINE nwp_vdiff
 
@@ -1336,7 +1377,12 @@ CONTAINS
 
     INTEGER :: jg
 
-    CALL vdiff_init(2, ntracer)
+    ! VDIFF wants the number of additional diffused tracers beyond the usual water-related ones
+    ! (qv, qc, qi) as its second argument. Here, we assume that the two hydrometeors (qr, qs; first
+    ! argument), as well as all other water-related ones are not diffused. Tracers not related to
+    ! water (those with index >= iqt) are subject to turbulent diffusion, however. The assumptions
+    ! are invalid for two-moment microphysics.
+    CALL vdiff_init(2, ntracer + 1 - iqt)
 
 #ifndef __NO_JSBACH__
     DO jg = 1, SIZE(patch)
@@ -1371,12 +1417,15 @@ CONTAINS
 
     CALL sea_model_init( &
         & patch, ext_data, phy_diag%cosmu0(:,:), lnd_diag%t_seasfc(:,:), &
-        & ext_data%atm_td%sst_m(:,:,:), vdiff_state%sea_state)
+        & ext_data%atm_td%sst_m, vdiff_state%sea_state)
 
     vdiff_state%fact_q_air(:,:) = 0.5_wp
     vdiff_state%fact_qsat_srf(:,:) = 0.5_wp
 
     vdiff_state%flx_co2_natural_land(:,:) = 0._wp
+    IF (ASSOCIATED(vdiff_state%fco2ant)) THEN
+      vdiff_state%fco2ant(:,:) = 0._wp
+    END IF
     vdiff_state%flx_heat_latent_sft(:,:,:) = 0._wp
     vdiff_state%flx_heat_sensible_sft(:,:,:) = 0._wp
     vdiff_state%fr_ice_on_lake(:,:) = MERGE(1._wp, 0._wp, lnd_prog_now%t_g(:,:) < tf_fresh)
@@ -1402,12 +1451,13 @@ CONTAINS
   !! well as the fraction of sea and lake area covered by ice. Land and lake area fractions are
   !! obtained from external data in `ext_data`. The lake ice fraction is computed by JSBACH. Sea
   !! ice has to be provided by a sea ice scheme. Both are stored in `mem`.
-  SUBROUTINE get_surface_type_fractions (patch, ext_data, mem, lnd_diag, fr_sfc, fr_sft)
+  SUBROUTINE get_surface_type_fractions (patch, ext_data, mem, lnd_diag, fr_sfc, fr_sft, lacc)
 
     TYPE(t_patch), INTENT(IN) :: patch !< Current patch.
     TYPE(t_external_data), INTENT(IN) :: ext_data !< External data for the patch.
     TYPE(t_nwp_vdiff_state), INTENT(IN) :: mem !< vdiff and jsbach state.
     TYPE(t_lnd_diag), INTENT(IN) :: lnd_diag
+    LOGICAL, INTENT(IN) :: lacc
     !> Fraction of each surface class (nproma,nblks_c,SFC_NUM).
     REAL(wp), INTENT(OUT) :: fr_sfc(:,:,:)
     !> Fraction of each surface type (nproma,nblks_c,SFT_NUM).
@@ -1419,6 +1469,8 @@ CONTAINS
     INTEGER :: i_startblk, i_endblk
     INTEGER :: ics, ice
     INTEGER :: ic, i_blk
+
+    CALL assert_acc_device_only ('get_surface_type_fractions', lacc)
 
     i_startblk = patch%cells%start_block(start_prog_cells)
     i_endblk = patch%cells%end_block(end_prog_cells)
@@ -1467,7 +1519,7 @@ CONTAINS
   !! \note The function takes water and ice temperatures as area-weighted averages of sea and lake
   !! values. Some kind of flux averaging would probably be more appropriate.
   !!
-  SUBROUTINE get_surface_class_temperature (patch, fr_sft, temp_sft, fr_sfc, temp_sfc)
+  SUBROUTINE get_surface_class_temperature (patch, fr_sft, temp_sft, fr_sfc, temp_sfc, lacc)
 
     TYPE(t_patch), INTENT(IN) :: patch !< Current patch.
     !> Fraction of each surface type [1] (nproma,nblks_c,SFT_NUM).
@@ -1476,12 +1528,15 @@ CONTAINS
     REAL(wp), INTENT(IN) :: temp_sft(:,:,:)
     !> Fraction of each surface class [1] (nproma,nblks_c,SFC_NUM).
     REAL(wp), INTENT(IN) :: fr_sfc(:,:,:)
+    LOGICAL, INTENT(IN) :: lacc
     !> Temperature of each surface class [K] (nproma,nblks_c,SFC_NUM).
     REAL(wp), INTENT(OUT) :: temp_sfc(:,:,:)
 
     INTEGER :: i_startblk, i_endblk
     INTEGER :: ics, ice
     INTEGER :: ic, i_blk
+
+    CALL assert_acc_device_only ('get_surface_class_temperature', lacc)
 
     i_startblk = patch%cells%start_block(start_prog_cells)
     i_endblk = patch%cells%end_block(end_prog_cells)
@@ -1527,13 +1582,15 @@ CONTAINS
   !>
   !! Collect the surface CO2 concentration according to the carbon-cycle configuration.
   !! Time-dependent values are retrieved from `mo_bc_greenhouse_gases::ghg_co2mmr`.
-  SUBROUTINE get_surface_co2_concentration (patch, ccycle_config, tracer, co2_concentration_srf)
-
+  SUBROUTINE get_surface_co2_concentration (patch, ccycle_config, datetime_now, tracer, co2_concentration_srf, lacc)
     TYPE(t_patch), INTENT(IN) :: patch !< Current patch.
     !> Carbon-cycle configuration.
     TYPE(t_ccycle_config), INTENT(IN) :: ccycle_config
+    !> Current time
+    TYPE(datetime), POINTER, INTENT(IN) :: datetime_now
     !> Tracer concentrations at current time step [kg/kg].
     REAL(wp), INTENT(IN) :: tracer(:,:,:,:)
+    LOGICAL, INTENT(IN) :: lacc
     !> CO2 concentration at surface [kg/kg] (nproma, nblks_c).
     REAL(wp), INTENT(OUT) :: co2_concentration_srf(:,:)
 
@@ -1544,12 +1601,25 @@ CONTAINS
     !> CO2 volume mixing ration for 1990 [mol/mol].
     REAL(wp), PARAMETER :: CO2VMR_1990 = 348.0e-06_wp
 
+    !> CO2 volume mixing ratio from ccycle_config
+    REAL(wp) :: vmr_co2
+
+    !> Temporaly CO2 volume mixing ratio used in CCYCLE_MODE_PRESCRIBED
+    REAL(wp) :: co2_concentration_srf_tmp
+
     INTEGER :: i_startblk, i_endblk
     INTEGER :: ics, ice
     INTEGER :: ic, i_blk
+    INTEGER :: nlev
+    INTEGER :: ico2conc
+
+    CALL assert_acc_device_only ('get_surface_co2_concentration', lacc)
 
     i_startblk = patch%cells%start_block(start_prog_cells)
     i_endblk = patch%cells%end_block(end_prog_cells)
+    vmr_co2 = ccycle_config%vmr_co2
+    ico2conc = ccycle_config%ico2conc
+    nlev = patch%nlev
 
     SELECT CASE (ccycle_config%iccycle)
     CASE(CCYCLE_MODE_NONE)
@@ -1561,12 +1631,12 @@ CONTAINS
         CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
             & end_prog_cells)
 
-        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
           !$ACC LOOP GANG VECTOR
           DO ic = ics, ice
             co2_concentration_srf(ic,i_blk) = CO2VMR_1990 * vmr_to_mmr_co2
           END DO
-        !$ACC END PARALLEL
+          !$ACC END PARALLEL
       END DO
       !$OMP END PARALLEL
 
@@ -1581,54 +1651,47 @@ CONTAINS
         CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
             & end_prog_cells)
 
+          IF (ico2conc == CCYCLE_CO2CONC_CONST) THEN
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+            !$ACC LOOP GANG VECTOR
+            DO ic = ics, ice
+              co2_concentration_srf(ic,i_blk) = vmr_co2 * vmr_to_mmr_co2
+            END DO
+          !$ACC END PARALLEL
+          ELSE
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+            !$ACC LOOP GANG VECTOR
+            DO ic = ics, ice
+              co2_concentration_srf(ic,i_blk) = tracer(ic,nlev,i_blk,ico2)
+            END DO
+          !$ACC END PARALLEL
+          END IF
+      END DO
+      !$OMP END PARALLEL
+
+    CASE(CCYCLE_MODE_PRESCRIBED)
+      ! Constant CO2 concentration throughout the simulation.
+      IF (ico2conc == CCYCLE_CO2CONC_CONST) THEN
+        co2_concentration_srf_tmp = vmr_co2 * vmr_to_mmr_co2
+      ! CO2 concentration prescribed from external file.
+      ELSEIF (ico2conc == CCYCLE_CO2CONC_FROMFILE) THEN
+        CALL bc_greenhouse_gases_time_interpolation(datetime_now)
+        co2_concentration_srf_tmp = ghg_co2mmr
+      END IF
+      !$OMP PARALLEL
+      !$OMP DO PRIVATE(i_blk, ics, ice, ic)
+      DO i_blk = i_startblk, i_endblk
+        CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
+            & end_prog_cells)
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
           !$ACC LOOP GANG VECTOR
           DO ic = ics, ice
-            co2_concentration_srf(ic,i_blk) = tracer(ic,patch%nlev,i_blk,ico2)
+            co2_concentration_srf(ic,i_blk) = co2_concentration_srf_tmp
           END DO
         !$ACC END PARALLEL
       END DO
       !$OMP END PARALLEL
 
-    CASE(CCYCLE_MODE_PRESCRIBED)
-      SELECT CASE(ccycle_config%ico2conc)
-      CASE(CCYCLE_CO2CONC_CONST)
-        ! Constant concentration throughout the simulation.
-
-        !$OMP PARALLEL
-        !$OMP DO PRIVATE(i_blk, ics, ice, ic)
-        DO i_blk = i_startblk, i_endblk
-          CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
-              & end_prog_cells)
-
-          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-            !$ACC LOOP GANG VECTOR
-            DO ic = ics, ice
-              co2_concentration_srf(ic,i_blk) = ccycle_config%vmr_co2 * vmr_to_mmr_co2
-            END DO
-          !$ACC END PARALLEL
-        END DO
-        !$OMP END PARALLEL
-
-      CASE(CCYCLE_CO2CONC_FROMFILE)
-        ! Time-dependent concentration (location independent).
-
-        !$OMP PARALLEL
-        !$OMP DO PRIVATE(i_blk, ics, ice, ic)
-        DO i_blk = i_startblk, i_endblk
-          CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
-              & end_prog_cells)
-
-          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-            !$ACC LOOP GANG VECTOR
-            DO ic = ics, ice
-              co2_concentration_srf(ic,i_blk) = ghg_co2mmr
-            END DO
-          !$ACC END PARALLEL
-        END DO
-        !$OMP END PARALLEL
-
-      END SELECT
     END SELECT
 
   END SUBROUTINE get_surface_co2_concentration
@@ -2032,7 +2095,7 @@ CONTAINS
   !! Has to be called once for each block of cells.
   SUBROUTINE get_surface_stress ( &
         & ics, ice, delta_time, prefactor_exchange, exchange_coeff_m_sfc, uv_acoef, u_bcoef, &
-        & v_bcoef, ocean_u, ocean_v, zero, umfl_sft, vmfl_sft &
+        & v_bcoef, ocean_u, ocean_v, ice_u, ice_v, zero, umfl_sft, vmfl_sft &
       )
 
     INTEGER, INTENT(IN) :: ics !< Start cell index.
@@ -2053,6 +2116,10 @@ CONTAINS
     REAL(wp), TARGET, CONTIGUOUS, INTENT(IN) :: ocean_u(:)
     !> Meridional ocean velocity [m/s] (ics:ice).
     REAL(wp), TARGET, CONTIGUOUS, INTENT(IN) :: ocean_v(:)
+   !> Zonal sea ice velocity [m/s] (ics:ice).
+    REAL(wp), TARGET, CONTIGUOUS, INTENT(IN) :: ice_u(:)
+    !> Meridional sea ice velocity [m/s] (ics:ice).
+    REAL(wp), TARGET, CONTIGUOUS, INTENT(IN) :: ice_v(:)
     !> Zero field (for surface u and v over land, etc.) [1] (ics:ice).
     REAL(wp), TARGET, CONTIGUOUS, INTENT(IN) :: zero(:)
 
@@ -2073,6 +2140,9 @@ CONTAINS
       CASE (SFT_SWTR)
         u_sfc => ocean_u
         v_sfc => ocean_v
+      CASE (SFT_SICE)
+        u_sfc => ice_u
+        v_sfc => ice_v
       CASE DEFAULT
         u_sfc => zero
         v_sfc => zero
@@ -2136,34 +2206,34 @@ CONTAINS
 #endif
 
     !$OMP PARALLEL
-      CALL copy(prog_lnd_new%t_g(:,:), prog_lnd_new%t_g_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(diag_lnd%t_s(:,:), prog_lnd_new%t_s_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(diag_lnd%t_s(:,:), prog_lnd_new%t_sk_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(diag_lnd%t_s(:,:), prog_lnd_new%t_so_t(:,1,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(diag_lnd%t_s(:,:), diag_lnd%t_sk(:,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(diag_lnd%t_s(:,:), diag_lnd%t_so(:,1,:), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(diag_lnd%qv_s(:,:), diag_lnd%qv_s_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(prog_lnd_new%t_g(:,:), prog_lnd_new%t_g_t(:,:,1), lacc=.TRUE.)
+      CALL copy(diag_lnd%t_s(:,:), prog_lnd_new%t_s_t(:,:,1), lacc=.TRUE.)
+      CALL copy(diag_lnd%t_s(:,:), prog_lnd_new%t_sk_t(:,:,1), lacc=.TRUE.)
+      CALL copy(diag_lnd%t_s(:,:), prog_lnd_new%t_so_t(:,1,:,1), lacc=.TRUE.)
+      CALL copy(diag_lnd%t_s(:,:), diag_lnd%t_sk(:,:), lacc=.TRUE.)
+      CALL copy(diag_lnd%t_s(:,:), diag_lnd%t_so(:,1,:), lacc=.TRUE.)
+      CALL copy(diag_lnd%qv_s(:,:), diag_lnd%qv_s_t(:,:,1), lacc=.TRUE.)
 
-      CALL copy(phy_diag%albnirdif(:,:), phy_diag%albnirdif_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(phy_diag%albvisdif(:,:), phy_diag%albvisdif_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(phy_diag%albdif(:,:), phy_diag%albdif_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(phy_diag%albnirdif(:,:), phy_diag%albnirdif_t(:,:,1), lacc=.TRUE.)
+      CALL copy(phy_diag%albvisdif(:,:), phy_diag%albvisdif_t(:,:,1), lacc=.TRUE.)
+      CALL copy(phy_diag%albdif(:,:), phy_diag%albdif_t(:,:,1), lacc=.TRUE.)
 
-      CALL copy(phy_diag%shfl_s(:,:), phy_diag%shfl_s_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(phy_diag%lhfl_s(:,:), phy_diag%lhfl_s_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(phy_diag%qhfl_s(:,:), phy_diag%qhfl_s_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(phy_diag%umfl_s(:,:), phy_diag%umfl_s_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy(phy_diag%vmfl_s(:,:), phy_diag%vmfl_s_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(phy_diag%shfl_s(:,:), phy_diag%shfl_s_t(:,:,1), lacc=.TRUE.)
+      CALL copy(phy_diag%lhfl_s(:,:), phy_diag%lhfl_s_t(:,:,1), lacc=.TRUE.)
+      CALL copy(phy_diag%qhfl_s(:,:), phy_diag%qhfl_s_t(:,:,1), lacc=.TRUE.)
+      CALL copy(phy_diag%umfl_s(:,:), phy_diag%umfl_s_t(:,:,1), lacc=.TRUE.)
+      CALL copy(phy_diag%vmfl_s(:,:), phy_diag%vmfl_s_t(:,:,1), lacc=.TRUE.)
 
-      CALL copy (phy_diag%u_10m(:,:), phy_diag%u_10m_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy (phy_diag%v_10m(:,:), phy_diag%v_10m_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy (phy_diag%u_10m(:,:), phy_diag%u_10m_t(:,:,1), lacc=.TRUE.)
+      CALL copy (phy_diag%v_10m(:,:), phy_diag%v_10m_t(:,:,1), lacc=.TRUE.)
 
-      CALL copy (phy_diag%lhfl_pl(:,:,:), phy_diag%lhfl_pl_t(:,:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL copy (phy_diag%lhfl_bs(:,:), phy_diag%lhfl_bs_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy (phy_diag%lhfl_pl(:,:,:), phy_diag%lhfl_pl_t(:,:,:,1), lacc=.TRUE.)
+      CALL copy (phy_diag%lhfl_bs(:,:), phy_diag%lhfl_bs_t(:,:,1), lacc=.TRUE.)
 
 #ifndef __NO_JSBACH__
       !$ACC ENTER DATA ATTACH(p_runoff, p_drainage) ASYNC(1)
-        CALL copy(p_runoff(:,:), diag_lnd%runoff_s_inst_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
-        CALL copy(p_drainage(:,:), diag_lnd%runoff_g_inst_t(:,:,1), lacc=.TRUE., opt_acc_async=.TRUE.)
+        CALL copy(p_runoff(:,:), diag_lnd%runoff_s_inst_t(:,:,1), lacc=.TRUE.)
+        CALL copy(p_drainage(:,:), diag_lnd%runoff_g_inst_t(:,:,1), lacc=.TRUE.)
       !$ACC WAIT(1)
       !$ACC EXIT DATA DETACH(p_runoff, p_drainage)
 
@@ -2203,16 +2273,19 @@ CONTAINS
   END SUBROUTINE update_nwp_tile_state
 
 
-  SUBROUTINE weighted_average_2d (w, x, xavg, pow)
+  SUBROUTINE weighted_average_2d (w, x, xavg, pow, lacc)
 
     REAL(wp), INTENT(IN) :: w(:,:) !< Weights.
     REAL(wp), INTENT(IN) :: x(:,:) !< Values.
+    LOGICAL, INTENT(IN) :: lacc
     REAL(wp), INTENT(OUT) :: xavg(:) !< Averaged value.
     REAL(wp), OPTIONAL, INTENT(IN) :: pow !< Power of the average (default: 1).
 
     INTEGER :: ic
     INTEGER :: k
     REAL(wp) :: ppow
+
+    CALL assert_acc_device_only ('weighted_average_2d', lacc)
 
     IF (PRESENT(pow)) THEN
       ! NVidia compiler doesn't like optionals.
@@ -2257,11 +2330,12 @@ CONTAINS
 
   END SUBROUTINE weighted_average_2d
 
-  SUBROUTINE weighted_average_3d (patch, w, x, xavg, pow)
+  SUBROUTINE weighted_average_3d (patch, w, x, xavg, pow, lacc)
 
     TYPE(t_patch), INTENT(IN) :: patch !< Current patch.
     REAL(wp), INTENT(IN) :: w(:,:,:) !< Weights.
     REAL(wp), INTENT(IN) :: x(:,:,:) !< Values.
+    LOGICAL, INTENT(IN) :: lacc
     REAL(wp), INTENT(OUT) :: xavg(:,:) !< Averaged value.
     REAL(wp), OPTIONAL, INTENT(IN) :: pow !< Power of the average (default: 1).
 
@@ -2269,6 +2343,8 @@ CONTAINS
     INTEGER :: ics, ice, ic
     INTEGER :: k
     REAL(wp) :: ppow
+
+    CALL assert_acc_device_only ('weighted_average_3d', lacc)
 
     i_startblk = patch%cells%start_block(start_prog_cells)
     i_endblk = patch%cells%end_block(end_prog_cells)
@@ -2333,7 +2409,7 @@ CONTAINS
   !>
   !! Update the state of the model with turbulence tendencies.
   SUBROUTINE add_tendencies_to_state ( &
-        & dtime, patch, phy_tend, nh_prog, nh_prog_rcf, nh_diag, ddt_tracer &
+        & dtime, patch, phy_tend, nh_prog, tracer, nh_diag, ddt_tracer &
       )
 
     REAL(wp), INTENT(IN) :: dtime !< Time step length [s].
@@ -2341,8 +2417,8 @@ CONTAINS
     TYPE(t_nwp_phy_tend), INTENT(IN) :: phy_tend !< Physics tendencies.
     TYPE(t_nh_prog), INTENT(INOUT) :: nh_prog
     !< Prognostic variables of the current atmospheric state.
-    TYPE(t_nh_prog), INTENT(INOUT) :: nh_prog_rcf
-    !< Prognostic variables of the current atmospheric state (for tracers).
+    REAL(wp), CONTIGUOUS, INTENT(INOUT) :: tracer(:,:,:,:)
+    !< Tracer concentrations [X/kg].
     TYPE(t_nh_diag), INTENT(INOUT) :: nh_diag
     !< Diagnostic variables of the current atmospheric state.
     REAL(wp), INTENT(IN) :: ddt_tracer(:,:,:,:) !< Extra tracer tendencies.
@@ -2418,8 +2494,7 @@ CONTAINS
           !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
           DO kl = 1, patch%nlev
             DO ic = ics, ice
-              nh_prog_rcf%tracer(ic,kl,i_blk,it) = nh_prog_rcf%tracer(ic,kl,i_blk,it) &
-                  & + dtime * ddt_tracer(ic,kl,i_blk,it)
+              tracer(ic,kl,i_blk,it) = tracer(ic,kl,i_blk,it) + dtime * ddt_tracer(ic,kl,i_blk,it)
             END DO
           END DO
 
@@ -2427,8 +2502,7 @@ CONTAINS
             !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
             DO kl = 1, patch%nlev
               DO ic = ics, ice
-                nh_prog_rcf%tracer(ic,kl,i_blk,it) = &
-                  & MAX(0._wp, nh_prog_rcf%tracer(ic,kl,i_blk,it))
+                tracer(ic,kl,i_blk,it) = MAX(0._wp, tracer(ic,kl,i_blk,it))
               END DO
             END DO
           END IF

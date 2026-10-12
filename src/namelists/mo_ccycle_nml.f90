@@ -1,10 +1,7 @@
-! Read configuration parameters as Fortran namelist from an external file.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,11 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Read configuration parameters as Fortran namelist from an external file.
+
 MODULE mo_ccycle_nml
 
   USE mo_ccycle_config    ,ONLY: ccycle_config, init_ccycle_config
   USE mo_process_nml      ,ONLY: process_nml
-  
+
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: process_ccycle_nml

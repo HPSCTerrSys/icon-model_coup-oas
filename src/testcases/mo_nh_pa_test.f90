@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Pure 3D-Advection test case adapted to the NH-Core
 !
 ! This module contains parameters, initialization subroutines and
@@ -8,18 +19,6 @@
 ! - Jablonowski et al. (2008): Idealized test cases for the dynamical cores
 !   of Atmospheric General Circulation Models: A proposal for the NCAR ASP
 !   2008 summer colloquium
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_nh_pa_test
 
@@ -48,7 +47,7 @@ USE mo_ncar_testcases,      ONLY: init_pure_adv_wind, init_pure_adv_tracers, &
 USE mo_io_units,            ONLY: find_next_free_unit
 USE mo_exception,           ONLY: finish
 USE mo_mpi,                 ONLY: my_process_is_stdio
-USE mo_physical_constants,  ONLY: rdaylen
+USE mo_time_base,           ONLY: rdaylen
 USE mo_grid_config,         ONLY: grid_angular_velocity
 
 IMPLICIT NONE
@@ -111,7 +110,7 @@ CONTAINS
     REAL(wp) :: z_aleph, rovcp
 
 
-    INTEGER :: ilc1, ibc1  !< line and block indices of cell1 adjacent 
+    INTEGER :: ilc1, ibc1  !< line and block indices of cell1 adjacent
                            !< to the current edge
 !--------------------------------------------------------------------
 !
@@ -203,11 +202,11 @@ CONTAINS
           ptr_patch%edges%f_e(je,jb) = 2.0_wp*grid_angular_velocity &
             & *(SIN(zlat)*COS(z_aleph) - COS(zlon)*COS(zlat)*SIN(z_aleph))
 
-          ! get line and block indices of 
+          ! get line and block indices of
           ilc1 = ptr_patch%edges%cell_idx(je,jb,1)
           ibc1 = ptr_patch%edges%cell_blk(je,jb,1)
 
-          ! Since rho is constant in horizontal direction, there is no need 
+          ! Since rho is constant in horizontal direction, there is no need
           ! for interpolation.
           ptr_nh_diag%mass_fl_e(je,jk,jb) = ptr_nh_prog%rho(ilc1,jk,ibc1)  &
             * ptr_nh_prog%vn(je,jk,jb) * p_metrics%ddqz_z_full_e(je,jk,jb)
@@ -521,8 +520,8 @@ CONTAINS
 ! It is suggested by Jablonowski to update the density, which is needed in order
 ! to convert between \rho*q and q. So far this has been neglected.
 
-!!! ATTENTION: To avoid unused dummy arguments, p_rho_prog_new and 
-!!! p_rho_prog_now have been removed from the argument list. These must be 
+!!! ATTENTION: To avoid unused dummy arguments, p_rho_prog_new and
+!!! p_rho_prog_now have been removed from the argument list. These must be
 !!! re-included in case the following code is used.
 !    !
 !    ! compute updated pressure and density at full levels

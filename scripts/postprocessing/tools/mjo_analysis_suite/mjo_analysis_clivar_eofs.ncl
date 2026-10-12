@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,15 +13,15 @@
 ; --------------------------
 ; Skripts are based on NCL MJO Climate Variability Tools
 ; https://www.ncl.ucar.edu/Applications/mjoclivar.shtml
-; 
-; These were developed following the recommendations 
+;
+; These were developed following the recommendations
 ; of US-CLIVAR MJO Working Group
-; 
+;
 ; Adapted for use at DWD by Julia Keller, FE 13, August 2015
 ; Works with NCL 6.3.0
-; 
+;
 ; Program:
-;   mjo_analysis_clivar_eofs.ncl  
+;   mjo_analysis_clivar_eofs.ncl
 ; Purpose:
 ;   Compute and plot EOFs for particular variable
 ; Origin:
@@ -30,9 +30,9 @@
 ; Required Input:
 ;   Daily Anomalies of variable to be processed
 ;   Created by mjo_analysis_clivar_anomalies.ncl
-;   
-;   
-; Program flow: 
+;
+;
+; Program flow:
 ;   - Read daily anomalies
 ;   - Apply bandpass filter
 ;   - Compute EOFs
@@ -50,7 +50,7 @@ begin
 
 ;###########################################################
 ;
-; Preparation  
+; Preparation
 ;
 ;###########################################################
 
@@ -70,19 +70,19 @@ begin
 ;      bpwgt    - bandpass filter weight
 ;      spd      - interval of input data in days
 ;      latmin     - general latitude band to be considered
-;      latmax   
+;      latmax
 ;      neof     - number of EOFs to be considered
 
 
- 
-; Define plot settings  
+
+; Define plot settings
    wksType = "png"
    if (wksType.eq."png") then
      wksTypeLocal = "eps"
    else
      wksTypeLocal = wksType
    end if
-   
+
 
    yrStrt  = ymdStrt/10000
    yrLast  = ymdLast/10000
@@ -100,12 +100,12 @@ begin
    fca      = 1./bpmax
    fcb      = 1./bpmin
    wgt      = filwgts_lanczos (nWgt, ihp, fca, fcb, sigma )
-   bpf      = (/bpmin,bpmax,bpwgt/)  
+   bpf      = (/bpmin,bpmax,bpwgt/)
 
 
 ;###########################################################
 ;
-; Get data  
+; Get data
 ;
 ;###########################################################
 
@@ -114,19 +114,19 @@ begin
 ; Read daily anomalies
 ;------------------------------------------------
    varname     = var+"_anom"                  ; replace if smoothed var is wanted
-   f       = addfile (infile, "r")                         
+   f       = addfile (infile, "r")
    TIME    = f->time                          ; days since ...
    YMD     = cd_calendar(TIME, -2)            ; entire (time,6)
 
    iStrt   = ind(YMD.eq.ymdStrt)              ; index start
-   iLast   = ind(YMD.eq.ymdLast)              ; index last 
+   iLast   = ind(YMD.eq.ymdLast)              ; index last
    delete(TIME)
    delete(YMD )
 
    if (getfilevartypes(f,varname) .eq. "short") then
-      x = short2flt( f->$varname$(iStrt:iLast,{latmin:latmax},:) ) 
+      x = short2flt( f->$varname$(iStrt:iLast,{latmin:latmax},:) )
    else
-      x = f->$varname$(iStrt:iLast,{latmin:latmax},:) 
+      x = f->$varname$(iStrt:iLast,{latmin:latmax},:)
    end if
    dimx    = dimsizes( x )
    ntim    = dimx(0)
@@ -170,12 +170,12 @@ begin
    print("-----plot EOFs-----")
    wksNameBase = plotdir+datainfo+"_"+var+"_EOF"
    wks = gsn_open_wks(wksTypeLocal,wksNameBase)
-   gsn_define_colormap(wks,"BlwhRe") 
+   gsn_define_colormap(wks,"BlwhRe")
    plot = new(neof,graphic)                ; create graphic array
                                            ; only needed if paneling
 ; EOF patterns
 
-   res                      = True         
+   res                      = True
    res@gsnDraw              = False        ; don't draw yet
    res@gsnFrame             = False        ; don't advance frame yet
    res@gsnSpreadColors      = True         ; spread out color table
@@ -223,7 +223,7 @@ begin
   rts           = True
   rts@gsnDraw   = False       ; don't draw yet
   rts@gsnFrame  = False       ; don't advance frame yet
-  rts@gsnScale  = True        ; force text scaling               
+  rts@gsnScale  = True        ; force text scaling
 
 ; these four resources allow the user to stretch the plot size, and
 ; decide exactly where on the page to draw it.
@@ -233,8 +233,8 @@ begin
   rts@vpXF      = 0.10        ; change start locations
   rts@vpYF      = 0.75        ; the plot
 
-  rts@gsnYRefLine           = 0.              ; reference line   
- ;rts@gsnXYBarChart         = True            ; create bar chart 
+  rts@gsnYRefLine           = 0.              ; reference line
+ ;rts@gsnXYBarChart         = True            ; create bar chart
   rts@gsnAboveYRefLineColor = "red"           ; above ref line fill red
   rts@gsnBelowYRefLineColor = "blue"          ; below ref line fill blue
 
@@ -249,9 +249,9 @@ begin
   yrfrac  = yyyymmdd_to_yyyyfrac(yyyymmdd, 0.0)
   delete(yrfrac@long_name)
 
-  nGrd    = nlat*mlon 
+  nGrd    = nlat*mlon
   eof_ts  = eof_ts/nGrd
-  rts@tiYAxisString = x@units  
+  rts@tiYAxisString = x@units
 
   do n=0,neof-1
      rts@gsnLeftString  = "EOF "+(n+1)
@@ -268,6 +268,3 @@ begin
     system("/bin/rm -f "+wksNameBase+".eps")
   end if
 end
-
-
-

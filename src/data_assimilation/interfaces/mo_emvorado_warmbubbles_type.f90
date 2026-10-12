@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -24,7 +24,7 @@ MODULE mo_emvorado_warmbubbles_type
     CHARACTER(len=12) :: ctype_tempdist  ! Type of perturbation 'cos-hrd', 'cos-instant'
     LOGICAL  ::   ltempdist              ! Switch to set temperature disturbance to ACTIVE
     LOGICAL  ::   ladd_bubblenoise_t     ! Switch to overlay random noise on the disturbance (not yet implemented)
-    LOGICAL  ::   lbub_rhconst           ! Switch to activate a moisture increment such that rel. hum. stays constant during heating 
+    LOGICAL  ::   lbub_rhconst           ! Switch to activate a moisture increment such that rel. hum. stays constant during heating
     REAL(wp) ::   htempdist              ! Time for beginning of temperature disturbance since model start time [s]
     REAL(wp) ::   centlon                ! Center (lon) of temperature disturbance [deg]
     REAL(wp) ::   centlat                ! Center (lat) of temperature disturbance [deg]
@@ -46,7 +46,7 @@ MODULE mo_emvorado_warmbubbles_type
     INTEGER :: num_bubs = 0                   ! Number of elements of the list "bubs"
     TYPE(t_warmbubble), POINTER :: bubs(:) => NULL()
   END TYPE t_bubblecontainer
-  
+
   TYPE(t_bubblecontainer) :: autobubs_list(max_dom)
-  
+
 END MODULE mo_emvorado_warmbubbles_type

@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -30,6 +30,9 @@ MODULE mo_nwp_gpu_util
   USE mo_var_list_gpu,            ONLY: gpu_update_var_list
   USE mo_sppt_config,             ONLY: sppt_config
 #endif
+  USE mo_timer,                    ONLY: ltimer, timers_level, timer_start, &
+                                         timer_stop, timer_acc_data_copies, &
+                                         timer_dace_acc_data_copies
 
   IMPLICIT NONE
 
@@ -53,6 +56,8 @@ MODULE mo_nwp_gpu_util
 
     TYPE(t_atm_phy_nwp_config), POINTER :: a
 
+    IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
+
     CALL assert_acc_device_only("gpu_d2h_nh_nwp", lacc)
 
     !$ACC UPDATE HOST(ext_data%atm%list_seaice%ncount) &
@@ -63,7 +68,7 @@ MODULE mo_nwp_gpu_util
     !$ACC   HOST(ext_data%atm%z0_lcc, ext_data%atm%z0_lcc_min, ext_data%atm%plcovmax_lcc) &
     !$ACC   HOST(ext_data%atm%laimax_lcc, ext_data%atm%rootdmax_lcc, ext_data%atm%stomresmin_lcc) &
     !$ACC   HOST(ext_data%atm%snowalb_lcc, ext_data%atm%snowtile_lcc, ext_data%atm%t_cl, ext_data%atm%lc_frac_t) &
-    !$ACC   HOST(ext_data%atm%frac_t, ext_data%atm%sai_t) &
+    !$ACC   HOST(ext_data%atm%frac_t, ext_data%atm%sai_t, ext_data%atm%o3) &
     !$ACC   ASYNC(1) IF(PRESENT(ext_data))
 
     !$ACC UPDATE HOST(p_int%lsq_high, p_int%lsq_lin) &
@@ -134,6 +139,7 @@ MODULE mo_nwp_gpu_util
       !$ACC   HOST(a%ldetrain_conv_prec, a%inwp_radiation, a%inwp_sso, a%inwp_gwd, a%inwp_cldcover, a%inwp_turb) &
       !$ACC   HOST(a%inwp_surface, a%itype_z0, a%dt_conv, a%dt_ccov, a%dt_rad, a%dt_sso, a%dt_gwd, a%dt_fastphy) &
       !$ACC   HOST(a%mu_rain, a%mu_snow, a%rain_n0_factor, a%qi0, a%qc0, a%icpl_aero_gscp, a%ustart_raylfric) &
+      !$ACC   HOST(a%lvariable_rain_n0) &
       !$ACC   HOST(a%efdt_min_raylfric, a%latm_above_top, a%icalc_reff, a%icpl_rad_reff, a%luse_clc_rad, a%ithermo_water) &
       !$ACC   HOST(a%lupatmo_phy, a%lenabled, a%lcall_phy, a%lcalc_acc_avg) &
       !$ACC   HOST(a%lcalc_extra_avg, a%lhave_graupel, a%l2moment, a%lhydrom_read_from_fg, a%lhydrom_read_from_ana) &
@@ -146,6 +152,7 @@ MODULE mo_nwp_gpu_util
     ENDIF
 
     !$ACC WAIT(1)
+    IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
 
   END SUBROUTINE gpu_d2h_nh_nwp
 
@@ -163,6 +170,8 @@ MODULE mo_nwp_gpu_util
 
     TYPE(t_atm_phy_nwp_config), POINTER :: a
 
+    IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
+
     CALL assert_acc_device_only("gpu_d2h_nh_nwp", lacc)
 
     !$ACC UPDATE DEVICE(ext_data%atm%list_seaice%ncount) &
@@ -173,7 +182,7 @@ MODULE mo_nwp_gpu_util
     !$ACC   DEVICE(ext_data%atm%z0_lcc, ext_data%atm%z0_lcc_min, ext_data%atm%plcovmax_lcc) &
     !$ACC   DEVICE(ext_data%atm%laimax_lcc, ext_data%atm%rootdmax_lcc, ext_data%atm%stomresmin_lcc) &
     !$ACC   DEVICE(ext_data%atm%snowalb_lcc, ext_data%atm%snowtile_lcc, ext_data%atm%t_cl, ext_data%atm%lc_frac_t) &
-    !$ACC   DEVICE(ext_data%atm%frac_t, ext_data%atm%sai_t) &
+    !$ACC   DEVICE(ext_data%atm%frac_t, ext_data%atm%sai_t, ext_data%atm%o3) &
     !$ACC   ASYNC(1) IF(PRESENT(ext_data))
 
     !$ACC UPDATE DEVICE(p_int%lsq_high, p_int%lsq_lin) &
@@ -245,9 +254,10 @@ MODULE mo_nwp_gpu_util
       !$ACC   DEVICE(a%ldetrain_conv_prec, a%inwp_radiation, a%inwp_sso, a%inwp_gwd, a%inwp_cldcover, a%inwp_turb) &
       !$ACC   DEVICE(a%inwp_surface, a%itype_z0, a%dt_conv, a%dt_ccov, a%dt_rad, a%dt_sso, a%dt_gwd, a%dt_fastphy) &
       !$ACC   DEVICE(a%mu_rain, a%mu_snow, a%rain_n0_factor, a%qi0, a%qc0, a%icpl_aero_gscp, a%ustart_raylfric) &
+      !$ACC   DEVICE(a%lvariable_rain_n0) &
       !$ACC   DEVICE(a%efdt_min_raylfric, a%latm_above_top, a%icalc_reff, a%icpl_rad_reff, a%luse_clc_rad, a%ithermo_water) &
       !$ACC   DEVICE(a%lupatmo_phy, a%lenabled, a%lcall_phy, a%lcalc_acc_avg) &
-      !$ACC   DEVICE(a%lcalc_extra_avg, a%lhave_graupel, a%l2moment, a%lsbm, a%lhydrom_read_from_fg, a%lhydrom_read_from_ana) &
+      !$ACC   DEVICE(a%lcalc_extra_avg, a%lhave_graupel, a%l2moment, a%lhydrom_read_from_fg, a%lhydrom_read_from_ana) &
 #ifndef __NO_ICON_LES__
       !$ACC   DEVICE(a%is_les_phy) &
 #endif
@@ -255,6 +265,8 @@ MODULE mo_nwp_gpu_util
       !$ACC   DEVICE(a%ozone_maxinc) &
       !$ACC   ASYNC(1)
     ENDIF
+
+    IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
 
   END SUBROUTINE gpu_h2d_nh_nwp
 
@@ -267,6 +279,8 @@ MODULE mo_nwp_gpu_util
 
     ! local scalars
     INTEGER :: ipoll
+
+    IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
 
     CALL assert_acc_device_only("gpu_d2h_art", lacc)
 
@@ -295,6 +309,8 @@ MODULE mo_nwp_gpu_util
       !$ACC WAIT(1)
     END IF
 
+    IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
+
   END SUBROUTINE gpu_d2h_art
 
   SUBROUTINE gpu_h2d_art(jg, p_art_data, lacc)
@@ -308,6 +324,7 @@ MODULE mo_nwp_gpu_util
 
     TYPE(t_atm_phy_nwp_config), POINTER :: a
 
+    IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
 
     CALL assert_acc_device_only("gpu_h2d_art", lacc)
 
@@ -335,25 +352,35 @@ MODULE mo_nwp_gpu_util
       ENDIF
     END IF
 
+    IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
+
   END SUBROUTINE gpu_h2d_art
 #endif
 
   SUBROUTINE devcpy_nwp(lacc)
     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
 
+    IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
+
     CALL assert_acc_device_only("devcpy_nwp", lacc)
 
     !$ACC ENTER DATA COPYIN(kstart_moist, kstart_tracer)
+
+    IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
 
   END SUBROUTINE devcpy_nwp
 
   SUBROUTINE hostcpy_nwp(lacc)
     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
 
+    IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
+
     CALL assert_acc_device_only("hostcpy_nwp", lacc)
 
     !$ACC WAIT(1)
     !$ACC EXIT DATA DELETE(kstart_moist, kstart_tracer)
+
+    IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
 
   END SUBROUTINE hostcpy_nwp
 
@@ -366,6 +393,8 @@ MODULE mo_nwp_gpu_util
 
     LOGICAL :: lqr, lqs, lqg
 
+    IF (timers_level > 9) CALL timer_start(timer_dace_acc_data_copies)
+
     lqr = iqr > 0
     lqs = iqs > 0
     lqg = iqg > 0
@@ -377,7 +406,7 @@ MODULE mo_nwp_gpu_util
     !$ACC   HOST(p_nh_state(jg)%diag%u) &
     !$ACC   HOST(p_nh_state(jg)%diag%v) &
     !$ACC   ASYNC(1)
-    
+
     !$ACC UPDATE &
     !$ACC   HOST(p_nh_state(jg)%prog(nnow_rcf(jg))%tracer(:,:,:,iqv:iqv)) &
     !$ACC   HOST(p_nh_state(jg)%prog(nnow_rcf(jg))%tracer(:,:,:,iqc:iqc)) &
@@ -404,6 +433,14 @@ MODULE mo_nwp_gpu_util
     !$ACC   HOST(prm_diag%clcl) &
     !$ACC   HOST(prm_diag%clcm) &
     !$ACC   HOST(prm_diag%clch) &
+    !$ACC   HOST(prm_diag%tas_gmean) &
+    !$ACC   HOST(prm_diag%rsdt_gmean) &
+    !$ACC   HOST(prm_diag%rsut_gmean) &
+    !$ACC   HOST(prm_diag%rlut_gmean) &
+    !$ACC   HOST(prm_diag%prec_gmean) &
+    !$ACC   HOST(prm_diag%evap_gmean) &
+    !$ACC   HOST(prm_diag%pme_gmean) &
+    !$ACC   HOST(prm_diag%radtop_gmean) &
     !$ACC   ASYNC(1)
 
     !$ACC UPDATE &
@@ -428,6 +465,8 @@ MODULE mo_nwp_gpu_util
 #endif
 
     !$ACC WAIT(1)
+
+    IF (timers_level > 9) CALL timer_stop(timer_dace_acc_data_copies)
 
   END SUBROUTINE gpu_d2h_dace
 

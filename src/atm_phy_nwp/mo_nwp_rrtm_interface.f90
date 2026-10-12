@@ -1,18 +1,15 @@
-!
-! This module is the interface between nwp_nh_interface to the radiation scheme RRTM.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module is the interface between nwp_nh_interface to the radiation scheme RRTM.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -26,7 +23,7 @@ MODULE mo_nwp_rrtm_interface
   USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config
   USE mo_nwp_tuning_config,    ONLY: tune_dust_abs
   USE mo_grid_config,          ONLY: l_limited_area, nexlevs_rrg_vnest
-  USE mo_exception,            ONLY: message, message_text
+  USE mo_exception,            ONLY: finish, message, message_text
   USE mo_ext_data_types,       ONLY: t_external_data
   USE mo_parallel_config,      ONLY: nproma, p_test_run
   USE mo_run_config,           ONLY: msg_level, iqv, iqc, iqi
@@ -40,6 +37,7 @@ MODULE mo_nwp_rrtm_interface
   USE mo_nonhydro_types,       ONLY: t_nh_diag
   USE mo_nwp_phy_types,        ONLY: t_nwp_phy_diag
   USE mo_radiation,            ONLY: radiation_nwp
+  USE mo_radiation_config,     ONLY: irad_aero, iRadAeroTegen, iRadAeroART
   USE mo_aerosol_util,         ONLY: tune_dust
   USE mo_lrtm_par,             ONLY: nbndlw
   USE mo_sync,                 ONLY: global_max, global_min
@@ -68,18 +66,18 @@ CONTAINS
       &  routine = modname//'::nwp_rrtm_radiation'
 
     TYPE(datetime), POINTER, INTENT(in) :: current_date
-    
+
     TYPE(t_patch),        TARGET,INTENT(in) :: pt_patch     !<grid/patch info.
     TYPE(t_external_data),TARGET,INTENT(in) :: ext_data
 
     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
 
-    REAL(wp), INTENT(in) :: &
-      & zaeq1(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq2(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq3(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq4(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq5(nproma,pt_patch%nlev,pt_patch%nblks_c)
+    REAL(wp), ALLOCATABLE, TARGET, INTENT(inout) :: &
+      & zaeq1(:,:,:), &
+      & zaeq2(:,:,:), &
+      & zaeq3(:,:,:), &
+      & zaeq4(:,:,:), &
+      & zaeq5(:,:,:)
 
     TYPE(t_nh_diag), TARGET, INTENT(in)  :: pt_diag     !<the diagnostic variables
     TYPE(t_nwp_phy_diag),       INTENT(inout):: prm_diag
@@ -92,6 +90,9 @@ CONTAINS
             & ptr_reff_qc => NULL(), ptr_reff_qi => NULL()
     REAL(wp), DIMENSION(:),    POINTER :: &
             & ptr_fr_glac => NULL(), ptr_fr_land => NULL()
+    REAL(wp), DIMENSION(:,:), POINTER :: ptr_aeq1 => NULL(), ptr_aeq2 => NULL(), &
+      &                                  ptr_aeq3 => NULL(), ptr_aeq4 => NULL(), &
+      &                                  ptr_aeq5 => NULL()
 
 #ifdef __INTEL_COMPILER
 !DIR$ ATTRIBUTES ALIGN : 64 :: aclcov
@@ -117,7 +118,10 @@ CONTAINS
     nlev   = pt_patch%nlev
     nlevp1 = pt_patch%nlevp1
 
-
+    IF (irad_aero /= iRadAeroTegen .AND. irad_aero /= iRadAeroART) THEN
+      ! Work around the hard wired connection between RRTM and Tegen
+      ALLOCATE(zaeq1(nproma,nlev,1))
+    ENDIF
 
     !-------------------------------------------------------------------------
     !> Radiation
@@ -157,8 +161,9 @@ CONTAINS
       END IF
     END IF
 
-!$OMP PARALLEL PRIVATE(jb,i_startidx,i_endidx,dust_tunefac,                   &
-!$OMP                  ptr_clc,ptr_acdnc,ptr_fr_land,ptr_fr_glac,ptr_reff_qc,ptr_reff_qi) 
+!$OMP PARALLEL PRIVATE(jb,i_startidx,i_endidx,dust_tunefac, &
+!$OMP                  ptr_clc,ptr_acdnc,ptr_fr_land,ptr_fr_glac,ptr_reff_qc,ptr_reff_qi, &
+!$OMP                  ptr_aeq1, ptr_aeq2, ptr_aeq3, ptr_aeq4, ptr_aeq5)
 !$OMP DO ICON_OMP_GUIDED_SCHEDULE
     DO jb = i_startblk, i_endblk
 
@@ -183,7 +188,7 @@ CONTAINS
       ELSE
         ptr_clc => prm_diag%clc(:,:,jb)
       END IF
-      
+
       IF (atm_phy_nwp_config(jg)%icpl_rad_reff == 0) THEN ! Internal parameterization of reff
         ptr_acdnc  =>  prm_diag%acdnc(:,:,jb)
         ptr_fr_land=>  ext_data%atm%fr_land(:,jb)  !< in     land fraction
@@ -191,6 +196,20 @@ CONTAINS
       ELSE
         ptr_reff_qc => prm_diag%reff_qc(:,:,jb)
         ptr_reff_qi => prm_diag%reff_qi(:,:,jb)
+      ENDIF
+
+      IF (irad_aero == iRadAeroTegen .OR. irad_aero == iRadAeroART) THEN
+        ptr_aeq1 => zaeq1(:,:,jb)
+        ptr_aeq2 => zaeq2(:,:,jb)
+        ptr_aeq3 => zaeq3(:,:,jb)
+        ptr_aeq4 => zaeq4(:,:,jb)
+        ptr_aeq5 => zaeq5(:,:,jb)
+      ELSE ! Work around the hard wired connection between RRTM and Tegen
+        ptr_aeq1 => zaeq1(:,:,1)
+        ptr_aeq2 => zaeq1(:,:,1)
+        ptr_aeq3 => zaeq1(:,:,1)
+        ptr_aeq4 => zaeq1(:,:,1)
+        ptr_aeq5 => zaeq1(:,:,1)
       ENDIF
 
       CALL radiation_nwp(               &
@@ -232,14 +251,14 @@ CONTAINS
         & qm_ice     =prm_diag%tot_cld  (:,:,jb,iqi) ,&!< in cloud ice mass mixing ratio at t-dt
         & qm_o3      =ext_data%atm%o3   (:,:,jb)     ,&!< in o3 mass mixing ratio at t-dt
         & cdnc       =ptr_acdnc                      ,&!< in  cloud droplet numb conc. [1/m**3]
-        & reff_liq   =ptr_reff_qc                    ,&!< in effective radius liquid phase 
-        & reff_frz   =ptr_reff_qi                    ,&!< in effective radius frozen phase 
+        & reff_liq   =ptr_reff_qc                    ,&!< in effective radius liquid phase
+        & reff_frz   =ptr_reff_qi                    ,&!< in effective radius frozen phase
         & cld_frc    =ptr_clc                        ,&!< in  cloud fraction [m2/m2]
-        & zaeq1      = zaeq1(:,:,jb)                 ,&!< in aerosol continental
-        & zaeq2      = zaeq2(:,:,jb)                 ,&!< in aerosol maritime
-        & zaeq3      = zaeq3(:,:,jb)                 ,&!< in aerosol urban
-        & zaeq4      = zaeq4(:,:,jb)                 ,&!< in aerosol volcano ashes
-        & zaeq5      = zaeq5(:,:,jb)                 ,&!< in aerosol stratospheric background
+        & zaeq1      =ptr_aeq1                       ,&!< in aerosol continental
+        & zaeq2      =ptr_aeq2                       ,&!< in aerosol maritime
+        & zaeq3      =ptr_aeq3                       ,&!< in aerosol urban
+        & zaeq4      =ptr_aeq4                       ,&!< in aerosol volcano ashes
+        & zaeq5      =ptr_aeq5                       ,&!< in aerosol stratospheric background
         & dust_tunefac = dust_tunefac (:,:)          ,&!< in LW tuning factor for dust aerosol
                               ! output
                               ! ------
@@ -275,6 +294,13 @@ CONTAINS
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
+    NULLIFY(ptr_aeq1, ptr_aeq2, ptr_aeq3, ptr_aeq4, ptr_aeq5)
+
+    IF (irad_aero /= iRadAeroTegen .AND. irad_aero /= iRadAeroART) THEN
+      ! Work around the hard wired connection between RRTM and Tegen
+      IF(ALLOCATED(zaeq1)) DEALLOCATE(zaeq1)
+    ENDIF
+
   END SUBROUTINE nwp_rrtm_radiation
   !---------------------------------------------------------------------------------------
 
@@ -292,12 +318,12 @@ CONTAINS
     TYPE(t_patch),        TARGET,INTENT(in) :: pt_patch     !<grid/patch info.
     TYPE(t_patch),        TARGET,INTENT(in) :: pt_par_patch !<grid/patch info (parent grid)
     TYPE(t_external_data),INTENT(in):: ext_data
-    REAL(wp),             INTENT(in) ::               &
-      & zaeq1(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq2(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq3(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq4(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq5(nproma,pt_patch%nlev,pt_patch%nblks_c)
+    REAL(wp), ALLOCATABLE, TARGET, INTENT(inout) :: &
+      & zaeq1(:,:,:), &
+      & zaeq2(:,:,:), &
+      & zaeq3(:,:,:), &
+      & zaeq4(:,:,:), &
+      & zaeq5(:,:,:)
 
     TYPE(t_nh_diag), TARGET,    INTENT(inout):: pt_diag     !<the diagnostic variables
     TYPE(t_nwp_phy_diag),       INTENT(inout):: prm_diag
@@ -333,11 +359,6 @@ CONTAINS
     REAL(wp), ALLOCATABLE, TARGET:: zrg_tot_cld  (:,:,:,:)
     REAL(wp), ALLOCATABLE, TARGET:: zlp_tot_cld  (:,:,:,:)
     REAL(wp), ALLOCATABLE, TARGET:: zrg_clc      (:,:,:)
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_aeq1(:,:,:)
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_aeq2(:,:,:)
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_aeq3(:,:,:)
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_aeq4(:,:,:)
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_aeq5(:,:,:)
     ! Output fields
     REAL(wp), ALLOCATABLE, TARGET:: zrg_aclcov   (:,:)
     REAL(wp), ALLOCATABLE, TARGET:: zrg_lwflxall (:,:,:)
@@ -355,10 +376,10 @@ CONTAINS
     REAL(wp), ALLOCATABLE, TARGET:: zrg_trsol_clr_sfc   (:,:)
     REAL(wp), ALLOCATABLE, TARGET:: zrg_lwflx_clr_sfc   (:,:)
 
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_lwflx_up    (:,:,:)    !< longwave  3D upward   flux          
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_lwflx_dn    (:,:,:)    !< longwave  3D downward flux           
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_swflx_up    (:,:,:)    !< shortwave 3D upward   flux          
-    REAL(wp), ALLOCATABLE, TARGET:: zrg_swflx_dn    (:,:,:)    !< shortwave 3D downward flux          
+    REAL(wp), ALLOCATABLE, TARGET:: zrg_lwflx_up    (:,:,:)    !< longwave  3D upward   flux
+    REAL(wp), ALLOCATABLE, TARGET:: zrg_lwflx_dn    (:,:,:)    !< longwave  3D downward flux
+    REAL(wp), ALLOCATABLE, TARGET:: zrg_swflx_up    (:,:,:)    !< shortwave 3D upward   flux
+    REAL(wp), ALLOCATABLE, TARGET:: zrg_swflx_dn    (:,:,:)    !< shortwave 3D downward flux
     REAL(wp), ALLOCATABLE, TARGET:: zrg_lwflx_up_clr(:,:,:)    !< longwave  3D upward   flux clear-sky
     REAL(wp), ALLOCATABLE, TARGET:: zrg_lwflx_dn_clr(:,:,:)    !< longwave  3D downward flux clear-sky
     REAL(wp), ALLOCATABLE, TARGET:: zrg_swflx_up_clr(:,:,:)    !< shortwave 3D upward   flux clear-sky
@@ -367,11 +388,14 @@ CONTAINS
     ! Pointer to parent patch or local parent patch for reduced grid
     TYPE(t_patch), POINTER       :: ptr_pp
 
-    REAL(wp), DIMENSION(:,:), POINTER :: ptr_reff_qc => NULL(), ptr_reff_qi => NULL()
+    REAL(wp), DIMENSION(:,:), POINTER :: ptr_reff_qc => NULL(), ptr_reff_qi => NULL(), &
+      &                                  ptr_aeq1 => NULL(), ptr_aeq2 => NULL(), ptr_aeq3 => NULL(), &
+      &                                  ptr_aeq4 => NULL(), ptr_aeq5 => NULL()
 
     TYPE(t_upscale_fields)   :: input_extra_flds, input_extra_2D   !< pointer array for input in upscale routine
 
-    INTEGER   ::   irg_acdnc, irg_fr_land, irg_fr_glac      ! indices of extra fields
+    INTEGER   ::   irg_acdnc, irg_fr_land, irg_fr_glac, &  ! indices of extra fields
+      &            irg_zaeq1, irg_zaeq2, irg_zaeq3, irg_zaeq4, irg_zaeq5
 
     ! Pointer to the acutally used variant of clc:
     REAL(wp), DIMENSION(:,:,:), POINTER ::  ptr_clc => NULL()
@@ -386,7 +410,7 @@ CONTAINS
 
     REAL(wp), DIMENSION(:), ALLOCATABLE :: max_pres_ifc, max_pres, max_temp, max_acdnc, &
         max_qv, max_qc, max_qi, max_cc, min_pres_ifc, min_pres, min_temp, min_acdnc, &
-        min_qv, min_qc, min_qi, min_cc, max_reff_liq, max_reff_frz, min_reff_liq, min_reff_frz 
+        min_qv, min_qc, min_qi, min_cc, max_reff_liq, max_reff_frz, min_reff_liq, min_reff_frz
 
     REAL(wp), DIMENSION(pt_patch%nlevp1) :: max_lwflx, min_lwflx, max_swtrans, min_swtrans
 #ifdef __INTEL_COMPILER
@@ -397,8 +421,8 @@ CONTAINS
 !DIR$ ATTRIBUTES ALIGN : 64 :: zrg_ktype,zrg_pres_ifc,zlp_pres_ifc,zrg_pres
 !DIR$ ATTRIBUTES ALIGN : 64 :: zrg_temp,zrg_o3,zrg_tot_cld
 !DIR$ ATTRIBUTES ALIGN : 64 :: zrg_reff_liq, zrg_reff_frz, zrg_extra_flds, zrg_extra_2D
-!DIR$ ATTRIBUTES ALIGN : 64 :: zlp_tot_cld,zrg_clc,zrg_aeq1,zrg_aeq2,zrg_aeq3
-!DIR$ ATTRIBUTES ALIGN : 64 :: zrg_aeq4,zrg_aeq5,zrg_aclcov,zrg_lwflxall
+!DIR$ ATTRIBUTES ALIGN : 64 :: zlp_tot_cld,zrg_clc
+!DIR$ ATTRIBUTES ALIGN : 64 :: zrg_aclcov,zrg_lwflxall
 !DIR$ ATTRIBUTES ALIGN : 64 :: zrg_trsolall,zrg_lwflx_up_sfc,zrg_trsol_up_toa
 !DIR$ ATTRIBUTES ALIGN : 64 :: zrg_trsol_up_sfc,zrg_trsol_nir_sfc,zrg_trsol_vis_sfc,zrg_trsol_par_sfc
 !DIR$ ATTRIBUTES ALIGN : 64 :: zrg_fr_nir_sfc_diff,zrg_fr_vis_sfc_diff,zrg_fr_par_sfc_diff
@@ -506,11 +530,6 @@ CONTAINS
         zrg_pres     (nproma,nlev_rg  ,nblks_par_c),   &
         zrg_temp     (nproma,nlev_rg  ,nblks_par_c),   &
         zrg_o3       (nproma,nlev_rg  ,nblks_par_c),   &
-        zrg_aeq1     (nproma,nlev_rg  ,nblks_par_c),   &
-        zrg_aeq2     (nproma,nlev_rg  ,nblks_par_c),   &
-        zrg_aeq3     (nproma,nlev_rg  ,nblks_par_c),   &
-        zrg_aeq4     (nproma,nlev_rg  ,nblks_par_c),   &
-        zrg_aeq5     (nproma,nlev_rg  ,nblks_par_c),   &
         zrg_tot_cld  (nproma,nlev_rg  ,nblks_par_c,3), &
         zlp_tot_cld  (nproma,nlev_rg  ,nblks_lp_c,3),  &
         zrg_clc      (nproma,nlev_rg  ,nblks_par_c),   &
@@ -530,7 +549,7 @@ CONTAINS
         zrg_lwflxall    (nproma,nlev_rg+1,nblks_par_c),&
         zrg_trsolall    (nproma,nlev_rg+1,nblks_par_c),&
         zrg_lwflx_up    (np, nl, nblks_par_c),         &
-        zrg_lwflx_dn    (np, nl, nblks_par_c),         &   
+        zrg_lwflx_dn    (np, nl, nblks_par_c),         &
         zrg_swflx_up    (np, nl, nblks_par_c),         &
         zrg_swflx_dn    (np, nl, nblks_par_c),         &
         zrg_lwflx_up_clr(np, nl, nblks_par_c),         &
@@ -538,15 +557,32 @@ CONTAINS
         zrg_swflx_up_clr(np, nl, nblks_par_c),         &
         zrg_swflx_dn_clr(np, nl, nblks_par_c) )
 
+      IF (irad_aero /= iRadAeroTegen .AND. irad_aero /= iRadAeroART) THEN
+        ! Work around the hard wired connection between RRTM and Tegen
+        ALLOCATE(zaeq1(nproma,nlev_rg,1))
+      ENDIF
 
     ! Set indices for extra fields in the upscaling routine
       irg_acdnc   = 0
       irg_fr_land = 0
       irg_fr_glac = 0
-    
+      irg_zaeq1   = 0
+      irg_zaeq2   = 0
+      irg_zaeq3   = 0
+      irg_zaeq4   = 0
+      irg_zaeq5   = 0
+
       CALL input_extra_flds%construct(nlev_rg)  ! Extra fields in upscaling routine. 3D fields with nlev_rg
       CALL input_extra_2D%construct(1)          ! Extra fields in upscaling routine: 2D fields
-    
+
+      IF (irad_aero == iRadAeroTegen .OR. irad_aero == iRadAeroART) THEN
+        CALL input_extra_flds%assign(zaeq1(:,:,:), irg_zaeq1)
+        CALL input_extra_flds%assign(zaeq2(:,:,:), irg_zaeq2)
+        CALL input_extra_flds%assign(zaeq3(:,:,:), irg_zaeq3)
+        CALL input_extra_flds%assign(zaeq4(:,:,:), irg_zaeq4)
+        CALL input_extra_flds%assign(zaeq5(:,:,:), irg_zaeq5)
+      ENDIF
+
       IF (l_coupled_reff) THEN
         ALLOCATE(zrg_reff_liq (nproma,nlev_rg,nblks_par_c),   &
              zrg_reff_frz (nproma,nlev_rg,nblks_par_c))
@@ -617,19 +653,18 @@ CONTAINS
         & prm_diag%ktype, pt_diag%pres_ifc, pt_diag%pres,               &
         & pt_diag%temp,                                                 &
         & prm_diag%tot_cld, ptr_clc,                                    &
-        & ext_data%atm%o3, zaeq1, zaeq2, zaeq3, zaeq4, zaeq5,           &
+        & ext_data%atm%o3,                                              &
         & zrg_emis_rad,                                                 &
         & zrg_cosmu0, zrg_albvisdir, zrg_albnirdir, zrg_albvisdif,      &
         & zrg_albnirdif, zrg_albdif, zrg_tsfc, zrg_rtype, zrg_pres_ifc, &
         & zrg_pres, zrg_temp,                                           &
         & zrg_tot_cld, zrg_clc, zrg_o3,                                 &
-        & zrg_aeq1, zrg_aeq2, zrg_aeq3, zrg_aeq4, zrg_aeq5,             &
         & zlp_pres_ifc, zlp_tot_cld, prm_diag%buffer_rrg,               &
         & atm_phy_nwp_config(jg)%icpl_rad_reff,                         &
         & prm_diag%reff_qc, prm_diag%reff_qi,                           &
         & zrg_reff_liq, zrg_reff_frz,input_extra_flds, zrg_extra_flds,  &
-        & input_extra_2D, zrg_extra_2D)
-    
+        & input_extra_2D, zrg_extra_2D, lacc=.FALSE.)
+
       IF (jg == 1 .AND. l_limited_area) THEN
         rl_start = grf_fbk_start_c
       ELSE
@@ -647,7 +682,7 @@ CONTAINS
                  max_qv(nlev_rg), max_qc(nlev_rg), max_qi(nlev_rg), max_cc(nlev_rg),              &
                  min_pres_ifc(nlev_rg), min_pres(nlev_rg), min_temp(nlev_rg), min_acdnc(nlev_rg), &
                  min_qv(nlev_rg), min_qc(nlev_rg), min_qi(nlev_rg), min_cc(nlev_rg)  )
-                
+
         max_albvisdir = 0._wp
         min_albvisdir = 1.e10_wp
         max_albvisdif = 0._wp
@@ -760,7 +795,7 @@ CONTAINS
         END IF
         IF (l_coupled_reff) THEN
           max_reff_liq = global_max(max_reff_liq)
-          max_reff_frz = global_max(max_reff_frz)        
+          max_reff_frz = global_max(max_reff_frz)
           min_reff_liq = global_min(min_reff_liq)
           min_reff_frz = global_min(min_reff_frz)
         END IF
@@ -791,7 +826,7 @@ CONTAINS
             CALL message(routine, TRIM(message_text))
           ENDDO
         END IF
-      
+
         WRITE(message_text,'(a)') 'max/min QV, QC, QI, CC'
         CALL message(routine, message_text)
 
@@ -840,11 +875,6 @@ CONTAINS
             zrg_pres     (1:i_startidx-1,jk,jb) = zrg_pres     (i_startidx,jk,jb)
             zrg_temp     (1:i_startidx-1,jk,jb) = zrg_temp     (i_startidx,jk,jb)
             zrg_o3       (1:i_startidx-1,jk,jb) = zrg_o3       (i_startidx,jk,jb)
-            zrg_aeq1     (1:i_startidx-1,jk,jb) = zrg_aeq1     (i_startidx,jk,jb)
-            zrg_aeq2     (1:i_startidx-1,jk,jb) = zrg_aeq2     (i_startidx,jk,jb)
-            zrg_aeq3     (1:i_startidx-1,jk,jb) = zrg_aeq3     (i_startidx,jk,jb)
-            zrg_aeq4     (1:i_startidx-1,jk,jb) = zrg_aeq4     (i_startidx,jk,jb)
-            zrg_aeq5     (1:i_startidx-1,jk,jb) = zrg_aeq5     (i_startidx,jk,jb)
             zrg_tot_cld  (1:i_startidx-1,jk,jb,iqv) = zrg_tot_cld(i_startidx,jk,jb,iqv)
             zrg_tot_cld  (1:i_startidx-1,jk,jb,iqc) = zrg_tot_cld(i_startidx,jk,jb,iqc)
             zrg_tot_cld  (1:i_startidx-1,jk,jb,iqi) = zrg_tot_cld(i_startidx,jk,jb,iqi)
@@ -869,8 +899,9 @@ CONTAINS
 
 #if !defined(__PGI)
 !FIXME: PGI + OpenMP produce deadlock in this loop. Compiler bug suspected
-!ICON_OMP PARALLEL DO PRIVATE(jb,jk,i_startidx,i_endidx,dust_tunefac,              &    
-!ICON_OMP              ptr_acdnc, ptr_fr_land,ptr_fr_glac,ptr_reff_qc,ptr_reff_qi) &
+!ICON_OMP PARALLEL DO PRIVATE(jb,jk,i_startidx,i_endidx,dust_tunefac,              &
+!ICON_OMP              ptr_acdnc, ptr_fr_land,ptr_fr_glac,ptr_reff_qc,ptr_reff_qi, &
+!ICON_OMP              ptr_aeq1, ptr_aeq2, ptr_aeq3, ptr_aeq4, ptr_aeq5) &
 !ICON_OMP ICON_OMP_GUIDED_SCHEDULE
 #endif
       DO jb = i_startblk, i_endblk
@@ -889,6 +920,7 @@ CONTAINS
         zrg_ktype(1:i_endidx,jb) = NINT(zrg_rtype(1:i_endidx,jb))
 
       NULLIFY(ptr_acdnc,ptr_fr_land,ptr_fr_glac,ptr_reff_qc,ptr_reff_qi)
+      NULLIFY(ptr_aeq1, ptr_aeq2, ptr_aeq3, ptr_aeq4, ptr_aeq5)
 
       IF (l_coupled_reff) THEN
         ptr_reff_qc => zrg_reff_liq(:,:,jb)
@@ -898,6 +930,24 @@ CONTAINS
       IF ( irg_acdnc   > 0 ) ptr_acdnc   => zrg_extra_flds(:,:,jb,irg_acdnc)
       IF ( irg_fr_land > 0 ) ptr_fr_land => zrg_extra_2D(:,jb,irg_fr_land)
       IF ( irg_fr_glac > 0 ) ptr_fr_glac => zrg_extra_2D(:,jb,irg_fr_glac)
+
+      IF (irad_aero == iRadAeroTegen .OR. irad_aero == iRadAeroART) THEN
+        IF ( ALL((/irg_zaeq1, irg_zaeq2, irg_zaeq3, irg_zaeq4, irg_zaeq5/) > 0) ) THEN
+          ptr_aeq1 => zrg_extra_flds(:,:,jb,irg_zaeq1)
+          ptr_aeq2 => zrg_extra_flds(:,:,jb,irg_zaeq2)
+          ptr_aeq3 => zrg_extra_flds(:,:,jb,irg_zaeq3)
+          ptr_aeq4 => zrg_extra_flds(:,:,jb,irg_zaeq4)
+          ptr_aeq5 => zrg_extra_flds(:,:,jb,irg_zaeq5)
+        ELSE
+          CALL finish(routine, 'Upscaling of Tegen fields not successful')
+        ENDIF
+      ELSE ! Work around the hard wired connection between RRTM and Tegen
+        ptr_aeq1 => zaeq1(:,:,1)
+        ptr_aeq2 => zaeq1(:,:,1)
+        ptr_aeq3 => zaeq1(:,:,1)
+        ptr_aeq4 => zaeq1(:,:,1)
+        ptr_aeq5 => zaeq1(:,:,1)
+      ENDIF
 
         CALL radiation_nwp(               &
                                 !
@@ -940,11 +990,11 @@ CONTAINS
           & reff_liq   =ptr_reff_qc             ,&!< in    effective radius liquid phase. [m]
           & reff_frz   =ptr_reff_qi             ,&!< in    effective radius frozen phase. [m]
           & cld_frc    =zrg_clc    (:,:,jb)     ,&!< in    cld_frac = cloud fraction [m2/m2]
-          & zaeq1      = zrg_aeq1(:,:,jb)       ,&!< in aerosol continental
-          & zaeq2      = zrg_aeq2(:,:,jb)       ,&!< in aerosol maritime
-          & zaeq3      = zrg_aeq3(:,:,jb)       ,&!< in aerosol urban
-          & zaeq4      = zrg_aeq4(:,:,jb)       ,&!< in aerosol volcano ashes
-          & zaeq5      = zrg_aeq5(:,:,jb)       ,&!< in aerosol stratospheric background
+          & zaeq1      = ptr_aeq1               ,&!< in aerosol continental
+          & zaeq2      = ptr_aeq2               ,&!< in aerosol maritime
+          & zaeq3      = ptr_aeq3               ,&!< in aerosol urban
+          & zaeq4      = ptr_aeq4               ,&!< in aerosol volcano ashes
+          & zaeq5      = ptr_aeq5               ,&!< in aerosol stratospheric background
           & dust_tunefac = dust_tunefac (:,:)   ,&!< in LW tuning factor for dust aerosol
                                 !
                                 ! output
@@ -990,7 +1040,8 @@ CONTAINS
         &  zrg_lwflx_up         , zrg_lwflx_dn         , zrg_swflx_up         , zrg_swflx_dn,          &
         &  zrg_lwflx_up_clr     , zrg_lwflx_dn_clr     , zrg_swflx_up_clr     , zrg_swflx_dn_clr,      &
         &  prm_diag%lwflx_up    , prm_diag%lwflx_dn    , prm_diag%swflx_up    , prm_diag%swflx_dn,     &
-        &  prm_diag%lwflx_up_clr, prm_diag%lwflx_dn_clr, prm_diag%swflx_up_clr, prm_diag%swflx_dn_clr  )
+        &  prm_diag%lwflx_up_clr, prm_diag%lwflx_dn_clr, prm_diag%swflx_up_clr, prm_diag%swflx_dn_clr, &
+        &  lacc=.FALSE.                                                                                )
 
       ! Debug output of radiation output fields
       IF (msg_level >= 16) THEN
@@ -1036,7 +1087,7 @@ CONTAINS
 
       DEALLOCATE (zrg_cosmu0, zrg_albvisdir, zrg_albnirdir, zrg_albvisdif, zrg_albnirdif, &
         zrg_albdif, zrg_tsfc, zrg_pres_ifc, zrg_pres, zrg_temp, zrg_o3, zrg_ktype,        &
-        zrg_aeq1,zrg_aeq2,zrg_aeq3,zrg_aeq4,zrg_aeq5, zrg_tot_cld, zrg_clc,               &
+        zrg_tot_cld, zrg_clc,                                                             &
         zrg_aclcov, zrg_lwflxall, zrg_trsolall, zrg_lwflx_up_sfc, zrg_trsol_up_toa,       &
         zrg_trsol_up_sfc, zrg_trsol_nir_sfc, zrg_trsol_vis_sfc, zrg_trsol_par_sfc,        &
         zrg_fr_nir_sfc_diff, zrg_fr_vis_sfc_diff, zrg_fr_par_sfc_diff,                    &
@@ -1044,10 +1095,15 @@ CONTAINS
         zrg_lwflx_clr_sfc, zrg_emis_rad, zlp_pres_ifc, zlp_tot_cld,                       &
         zrg_lwflx_up    , zrg_lwflx_dn    , zrg_swflx_up    , zrg_swflx_dn,               &
         zrg_lwflx_up_clr, zrg_lwflx_dn_clr, zrg_swflx_up_clr, zrg_swflx_dn_clr            )
-      IF (l_coupled_reff) DEALLOCATE(zrg_reff_liq,zrg_reff_frz)     
+      IF (l_coupled_reff) DEALLOCATE(zrg_reff_liq,zrg_reff_frz)
       IF (input_extra_flds%ntot > 0 ) DEALLOCATE(zrg_extra_flds)
       IF (input_extra_2D%ntot > 0   ) DEALLOCATE(zrg_extra_2D  )
-    
+      NULLIFY(ptr_aeq1, ptr_aeq2, ptr_aeq3, ptr_aeq4, ptr_aeq5)
+      IF (irad_aero /= iRadAeroTegen .AND. irad_aero /= iRadAeroART) THEN
+        ! Work around the hard wired connection between RRTM and Tegen
+        IF(ALLOCATED(zaeq1)) DEALLOCATE(zaeq1)
+      ENDIF
+
       CALL input_extra_flds%destruct()
       CALL input_extra_2D%destruct()
 
@@ -1055,5 +1111,3 @@ CONTAINS
   !---------------------------------------------------------------------------------------
 
 END MODULE mo_nwp_rrtm_interface
-
-

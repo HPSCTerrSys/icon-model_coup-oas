@@ -1,0 +1,28 @@
+#! %{JOB.python3} #%# -*- mode: python -*- vi: set ft=python :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# %{EXP_ID}.%{JOB.id}
+#
+# Pre-processing job for ICON experiment
+# Handles data preparation and initial setup before model run
+#
+# %{mkexp_input}
+#
+
+#%include ['mkexp/environments/'+ENVIRONMENT+'.tmpl', 'mkexp/environments/DEFAULT.tmpl'] ignore missing
+
+#%  if JOB.hiopy_configure == 'true':
+# --- start Hiopy configure
+#%    include 'mkexp/defaults/hiopy/pre.tmpl'
+#
+# --- end Hiopy configure
+#%  endif

@@ -1,13 +1,14 @@
 #%# -*- mode: sh -*-
 #%#- ICON
 #%#-
-#%#- ------------------------------------------
-#%#- Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 #%#- Contact information: icon-model.org
+#%#-
 #%#- See AUTHORS.TXT for a list of authors
 #%#- See LICENSES/ for license information
 #%#- SPDX-License-Identifier: BSD-3-Clause
-#%#- ------------------------------------------
+#%#- ---------------------------------------------------------------
 #
 # Setup for mistral (SLURM)
 #
@@ -25,7 +26,7 @@
 #SBATCH --exclusive
 #% endif
 #%#-
-#%-if JOB.nodes is defined and JOB.tasks_per_node|default(1): 
+#%-if JOB.nodes is defined and JOB.tasks_per_node|default(1):
 #SBATCH --nodes=%{JOB.nodes}
 #SBATCH --tasks-per-node=%{JOB.tasks_per_node}
 #%   if JOB.tasks|int != JOB.nodes|int * JOB.tasks_per_node|default(1)|int:

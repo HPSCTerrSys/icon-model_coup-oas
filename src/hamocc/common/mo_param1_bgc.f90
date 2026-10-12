@@ -1,17 +1,17 @@
-! @brief bgc tracer parameters
-!
-! Definition of parameters
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief bgc tracer parameters
+!
+! Definition of parameters
 
 MODULE mo_param1_bgc
   USE mo_kind, ONLY : wp
@@ -35,8 +35,8 @@ MODULE mo_param1_bgc
        &                isilica    = 10,              &
        &                idoc       = 11,              &
        &                ian2o      = 12,              &
-       &                idet       = 13,              &         
-       &                iiron      = 14,              &               
+       &                idet       = 13,              &
+       &                iiron      = 14,              &
        &                idms       = 15,              &
        &                ih2s       = 16,              &
        &                idust      = 17,              &
@@ -51,7 +51,7 @@ MODULE mo_param1_bgc
   ! non-advected (fast sinking) tracers
   INTEGER ::             icalc,         &
        &                 iopal,         &
-       &                 i_base  
+       &                 i_base
 
 
   INTEGER :: n_bgctra
@@ -64,7 +64,7 @@ MODULE mo_param1_bgc
        &                iatmn2     = 3,               &
        &                i_base_atm = 3
 
-  INTEGER, PARAMETER :: natm = i_base_atm 
+  INTEGER, PARAMETER :: natm = i_base_atm
 
   ! sediment
   INTEGER, PARAMETER :: issso12   = 1,                &
@@ -72,7 +72,7 @@ MODULE mo_param1_bgc
        &                issssil   = 3,                &
        &                issster   = 4,                &
        &                nsss_base = 4
-  INTEGER, PARAMETER :: nsedtra = nsss_base 
+  INTEGER, PARAMETER :: nsedtra = nsss_base
 
   ! pore water tracers, index must be the same as for ocetra otherwise problems in dipowa.f90!
   INTEGER, PARAMETER :: ipowaic    = 1,               &
@@ -88,7 +88,7 @@ MODULE mo_param1_bgc
 
   ! Extended N-cycle parameters
   INTEGER :: ipownh4, ipowno2, npowa_ammo
-  
+
   INTEGER :: npowtra
 
  ! Diagnostics
@@ -130,8 +130,8 @@ MODULE mo_param1_bgc
       &                 kwopal    = 35,               &
       &                 kwcal    = 36,               &
       &                 kwdust    = 37,               &
-      &                 nbgctend_base  = 37 
- 
+      &                 nbgctend_base  = 37
+
   INTEGER, PARAMETER :: kcflux     = 1,               &
       &                 koflux     = 2,               &
       &                 knflux     = 3,               &
@@ -158,7 +158,7 @@ MODULE mo_param1_bgc
       &                 klysocl    = 24,               &
       &                 knitinp    = 25,               &
       &                 kcflux_cpl = 26,               &
-      &                 nbgcflux_base   = 26  
+      &                 nbgcflux_base   = 26
 
   INTEGER :: nbgcflux, nbgctend
 
@@ -174,7 +174,7 @@ MODULE mo_param1_bgc
       &                 nsed_diag_base =3,&
       &                 isremino =1,&
       &                 isreminn =2,&
-      &                 isremins =3   
+      &                 isremins =3
 
   INTEGER :: nsed_diag, nsed_diag_ammo
   INTEGER :: ksammox, ksnitox, ksanam, ksdnrn, ksdnra, ksnrn2
@@ -200,7 +200,7 @@ CONTAINS
       IF (i_settling==2) THEN
           ntraad=n_bgctra
       END IF
-      
+
       ! porewater tracers
       ipownh4  = MERGE(npowa_base+1,0,l_N_cycle)
       ipowno2  = MERGE(npowa_base+2,0,l_N_cycle)
@@ -244,5 +244,3 @@ CONTAINS
 
   END SUBROUTINE set_tracer_indices
 END MODULE mo_param1_bgc
-
-

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -29,7 +29,7 @@
 ;get environment variables
   Model      = getenv("MODEL")
   testcase   = getenv("TESTCASE")
-  expdir     = getenv("EXP")	
+  expdir     = getenv("EXP")
   ConfigStr  = getenv("CONFIG_STRING")
   Diri       = getenv("DIRI")
   FileName   = getenv("FNAM")
@@ -39,15 +39,15 @@
 
   level      = stringtointeger(getenv("LEVEL"))
   timestep   = stringtointeger(getenv("TIMESTEP"))
-  
+
 ;open files
   File       = addfile(FileName,"r" )                      ;open data file
   attName    = asciiread(Diro+"list.txt",-1,"string")      ;read in ascii file containing namelist parameters
 
   nattName = dimsizes(attName)
 
-  TitleString = " " 
-  TitleOffset = 0.000                                  
+  TitleString = " "
+  TitleOffset = 0.000
 
   do i = 0,nattName-1
 
@@ -66,9 +66,9 @@
 ;--------------------------------------------------------------
 
   VarNames = getfilevarnames( File )
- 
-  rad2deg = 45./atan(1.)              ; radians to degrees 
-  
+
+  rad2deg = 45./atan(1.)              ; radians to degrees
+
  ; coordinates of global coarse grid
   x = File->clon *rad2deg             ; cell center, lon
   y = File->clat *rad2deg             ; cell center, lat
@@ -91,17 +91,17 @@
   ResC@mpProjection         = "CylindricalEquidistant"
   ResC@mpCenterLonF         =  180.         ; choose center lon
   ResC@mpCenterLatF         =  20.          ; choose center lat
-  ResC@mpLimitMode          = "LatLon"      ; required 
+  ResC@mpLimitMode          = "LatLon"      ; required
   ResC@mpFillOn             = False
   ResC@mpMinLatF            = -20.
   ResC@mpMaxLatF            = 90.
 ;  ResC@mpGreatCircleLinesOn = True
-  
+
   ResC@gsnFrame             = False
   ResC@gsnMaximize          = False
   ResC@gsnSpreadColors      = True
   ResC@gsnStringFontHeightF = FontHeight
-  ResC@gsnRightString       = RightString 
+  ResC@gsnRightString       = RightString
   ResC@cnFillOn             = True
   ResC@cnLinesOn            = False
   ResC@cnInfoLabelOn        = False
@@ -116,15 +116,15 @@
   ResC@tiXAxisFontHeightF       = FontHeight
   ResC@tiXAxisOffsetYF          = FontHeight
   ResC@tiMainFont               = 21
-   
+
   ResC@pmLabelBarHeightF        = 0.07
   ResC@pmLabelBarWidthF         = 0.7
   ResC@pmLabelBarOrthogonalPosF = 0.1
-  ResC@lbLabelBarOn             = True 
+  ResC@lbLabelBarOn             = True
   ResC@lbLabelAutoStride        = True
   ResC@lbTitlePosition          = "Bottom"
-  ResC@lbTitleFontHeightF       = FontHeight	
-  
+  ResC@lbTitleFontHeightF       = FontHeight
+
 
 ;---------------------------------------------------------------
 ; labels and variable dependent settings
@@ -141,7 +141,7 @@ do i = 0,dimsizes(VarNames) -1
      colormap="BlAqGrYeOrRe"
 
      gsn_define_colormap(wks,colormap)
-    
+
      ;ResC@cnMinLevelValF  = (/ 220./)
      ;ResC@cnMaxLevelValF  = (/ 330./)
      ;ResC@cnLevelSpacingF = (/  3./)
@@ -181,7 +181,7 @@ do i = 0,dimsizes(VarNames) -1
 
      plot = gsn_csm_contour_map(wks,var,ResC)
      frame(wks)
-  
+
     end if
 
     if ( VarNames(i) .eq."Q2") then
@@ -190,7 +190,7 @@ do i = 0,dimsizes(VarNames) -1
       var = var*scale
       var@long_name="specific cloud water"
       var@units="g/kg"
-      
+
       colormap = "prcp_2"
       colorStart = 3
       colorEnd   = 15
@@ -205,11 +205,11 @@ do i = 0,dimsizes(VarNames) -1
      ResC@tiMainString   = TitleString
      ResC@tiXAxisString  = "Mean "+avg(var)+"  Maximum "+max(var)
      ResC@lbTitleString  = var@long_name+" in "+var@units
-      
+
      plot = gsn_csm_contour_map(wks,var,ResC)
      frame(wks)
-    
-  
+
+
 
     end if
 
@@ -225,7 +225,7 @@ do i = 0,dimsizes(VarNames) -1
         colorEnd   = 15
 
         gsn_define_colormap(wks,colormap)
-        
+
         ;ResC@cnMinLevelValF  = (/ 0./)
         ;ResC@cnMaxLevelValF  = (/ 0.05/)
         ;ResC@cnLevelSpacingF = (/ 0.0025/)
@@ -241,13 +241,13 @@ do i = 0,dimsizes(VarNames) -1
    end if
 
       if (VarNames(i) .eq."Q7") then ;if (VarNames(i) .eq."Q4") then
-        
+
         var = File->$VarNames(i)$(timestep,level,:)   ; dims: (time,lev,cell)
         scale = 1.e3
         var = var*scale
         var@long_name="specific rain water"
-        var@units="g/kg"      
- 
+        var@units="g/kg"
+
         colormap = "prcp_2"
         colorStart = 2
         colorEnd   = 15
@@ -300,24 +300,24 @@ do i = 0,dimsizes(VarNames) -1
   if (VarNames(i) .eq."PS") then
 
         var = File->$VarNames(i)$(timestep,:)   ; dims: (time,cell)
-        scale = 1.e-2    
+        scale = 1.e-2
         var = var*scale
         var@units="hPa"
 
         colormap = "testcmap"
         colorStart = 2
         colorEnd   = 200
-        
+
         ;varMin     = (/ 940./)
         ;varMax     = (/ 1040./)
         ;varInt     = (/  5./)
-     
+
         gsn_define_colormap(wks,colormap)
 
         ;ResC@cnMinLevelValF  = varMin
-        ;ResC@cnMaxLevelValF  = varMax 
+        ;ResC@cnMaxLevelValF  = varMax
         ;ResC@cnLevelSpacingF = varInt
-        
+
         ResC@gsnLeftString        = var@long_name+" (level "+level+", step "+timestep+")"
         ResC@tiMainString   = TitleString
 
@@ -330,16 +330,16 @@ do i = 0,dimsizes(VarNames) -1
     end if
 
   if (VarNames(i) .eq."DIV") then
-  
+
         var = File->$VarNames(i)$(timestep,level,:)   ; dims: (time,lev,cell)
-        scale = 1.e3    
+        scale = 1.e3
         var = var*scale*3.6
         var@units="1/h"
 
         colormap = "testcmap"
         colorStart = 2
         colorEnd   = 200
-               
+
         gsn_define_colormap(wks,colormap)
 
         ;ResC@cnMinLevelValF  = (/ -0.2/)
@@ -398,7 +398,7 @@ do i = 0,dimsizes(VarNames) -1
         colormap = "testcmap"
         colorStart = 2
         colorEnd   = 200
-     
+
         gsn_define_colormap(wks,colormap)
 
         ;ResC@cnMinLevelValF  = (/ -40/)
@@ -409,7 +409,7 @@ do i = 0,dimsizes(VarNames) -1
         ResC@tiMainString   = TitleString
         ResC@lbTitleString  = var@long_name+" in "+var@units
         ResC@tiXAxisString  = "Minimum "+min(var)+" "+ "Maximum "+max(var)
-        
+
         ResS = ResC
         symMinMaxPlt (var,20,False,ResS)
         plot = gsn_csm_contour_map(wks,var,ResS)
@@ -427,7 +427,7 @@ do i = 0,dimsizes(VarNames) -1
         colormap = "testcmap"
         colorStart = 2
         colorEnd   = 200
-     
+
         gsn_define_colormap(wks,colormap)
 
         ;ResC@cnMinLevelValF  = (/ -40/)
@@ -439,7 +439,7 @@ do i = 0,dimsizes(VarNames) -1
         ResC@tiMainString   = TitleString
         ResC@lbTitleString  = var@long_name+" in "+var@units
         ResC@tiXAxisString  = "Minimum "+min(var)+" "+ "Maximum "+max(var)
-        
+
         ResS = ResC
         symMinMaxPlt (var,20,False,ResS)
         plot = gsn_csm_contour_map(wks,var,ResS)
@@ -457,11 +457,11 @@ do i = 0,dimsizes(VarNames) -1
         colormap = "testcmap"
         colorStart = 2
         colorEnd   = 200
-        
+
         ;varMin     = (/ -40/)
         ;varMax     = (/ 40/)
         ;varInt     = (/ 3/)
-     
+
         gsn_define_colormap(wks,colormap)
         ;ResC@cnMinLevelValF  = (/ -40/)
         ;ResC@cnMaxLevelValF  = (/ 40/)
@@ -471,7 +471,7 @@ do i = 0,dimsizes(VarNames) -1
         ResC@tiMainString   = TitleString
         ResC@lbTitleString  = var@long_name+" in "+var@units
         ResC@tiXAxisString  = "Minimum "+min(var)+" "+ "Maximum "+max(var)
-        
+
         ResS = ResC
         symMinMaxPlt (var,20,False,ResS)
         plot = gsn_csm_contour_map(wks,var,ResS)
@@ -480,9 +480,9 @@ do i = 0,dimsizes(VarNames) -1
       end if
 
   ;if (VarNames(i) .eq."APRL") then
-  
+
   ;      var = File->$VarNames(i)$(timestep,:)   ; dims: (time,cell)
-  ;      scale = 8.64e4    
+  ;      scale = 8.64e4
   ;      var = var*scale
   ;      var@units="mm/d"
 
@@ -490,7 +490,7 @@ do i = 0,dimsizes(VarNames) -1
   ;      colormap   = "WhViBlGrYeOrReWh"
   ;      colorStart = 2
   ;      colorEnd   = 25
-               
+
   ;      gsn_define_colormap(wks,colormap)
 
   ;      ResC@gsnLeftString        = "APRL (level "+level+", step "+timestep+")"
@@ -509,5 +509,3 @@ do i = 0,dimsizes(VarNames) -1
 end do
 
 end
-
-

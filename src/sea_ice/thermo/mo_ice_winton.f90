@@ -1,19 +1,18 @@
-! Provide an implementation of the sea-ice model.
-!
-! Provide an implementation of the parameters of the surface module (sea ice)
-! used between the atmopshere and the hydrostatic ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of the sea-ice model.
+!
+! Provide an implementation of the parameters of the surface module (sea ice)
+! used between the atmopshere and the hydrostatic ocean model.
 
 MODULE mo_ice_winton
 
@@ -22,12 +21,12 @@ MODULE mo_ice_winton
   USE mo_run_config,          ONLY: dtime
   USE mo_model_domain,        ONLY: t_patch
   USE mo_physical_constants,  ONLY: rhoi, rhos, rho_ref,ki,ks,&
-    &                               mu ,ci, alf, I_0!,Tf
+    &                               mu ,ci, alf, I_0
   USE mo_sea_ice_nml,         ONLY: hci_layer, sice
   USE mo_sea_ice_types,       ONLY: t_sea_ice
   USE mo_grid_subset,         ONLY: t_subset_range, get_index_range
   USE mo_util_dbg_prnt,       ONLY: dbg_print
-  USE mo_fortran_tools,       ONLY: set_acc_host_or_device
+  USE mo_fortran_tools,       ONLY: set_acc_host_or_device, set_acc_async_queue
 
   IMPLICIT NONE
 
@@ -72,7 +71,8 @@ CONTAINS
             &   nonsolar,       & ! Latent and sensible heat flux and longwave radiation [W/m^2]
             &   dnonsolardT,    & ! Derivative of non-solar fluxes w.r.t. temperature [W/m^2/K]
             &   Tfw,            & ! Freezing temperature of the ocean
-            &   lacc)
+            &   lacc,           &
+            &   opt_acc_async_queue )
 
     INTEGER, INTENT(IN)    :: i_startidx_c, i_endidx_c, nbdim, kice
     REAL(wp),INTENT(IN)    :: pdtime
@@ -88,6 +88,7 @@ CONTAINS
     REAL(wp),INTENT(IN)    :: dnonsolardT(nbdim,kice)
     REAL(wp),INTENT(IN)    :: Tfw        (nbdim)
     LOGICAL, INTENT(IN), OPTIONAL :: lacc
+    INTEGER, INTENT(IN), OPTIONAL :: opt_acc_async_queue
 
     !!Local variables
     REAL(wp) ::      &
@@ -110,15 +111,17 @@ CONTAINS
 
     INTEGER :: k, jk, jc ! loop indices
     LOGICAL :: lzacc
+    INTEGER :: acc_async_queue
 
     CALL set_acc_host_or_device(lzacc, lacc)
+    CALL set_acc_async_queue(acc_async_queue, opt_acc_async_queue)
 
     muS = mu*Sice
 
    !-------------------------------------------------------------------------------
 
     ! initialization
-    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
     !$ACC LOOP SEQ
     DO k = 1,kice
       !$ACC LOOP GANG VECTOR
@@ -130,7 +133,7 @@ CONTAINS
     !$ACC END PARALLEL
     idt2   =  1.0_wp / (2.0_wp*pdtime)
 
-    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
     !$ACC LOOP SEQ
     DO k=1,kice
       !$ACC LOOP GANG VECTOR PRIVATE(B, A, K1, K2, D, iK1B, Tsurfm, A1a, A1) &
@@ -263,9 +266,16 @@ CONTAINS
     !$ACC DATA CREATE(Q_surplus) IF(lzacc)
 
     ! Necessary initialisation
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
-    Q_surplus(:,:,:) = 0.0_wp
-    !$ACC END KERNELS
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(3) ASYNC(1) IF(lzacc)
+    DO jb = 1, p_patch%nblks_c
+      DO k = 1, ice%kice
+        DO jc = 1, nproma
+          Q_surplus(jc,k,jb) = 0.0_wp
+        END DO
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
     surfmelti1       = 0.0_wp
     surfmelti2       = 0.0_wp
     !
@@ -274,7 +284,7 @@ CONTAINS
     !-------------------------------------------------------------------------------
     DO jb = 1,p_patch%nblks_c
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO k=1,ice%kice
         DO jc = i_startidx_c,i_endidx_c
           ! Do the following wherever there is ice
@@ -478,6 +488,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 
     !$ACC END DATA
 

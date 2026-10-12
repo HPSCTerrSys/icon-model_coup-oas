@@ -1,0 +1,55 @@
+#!/bin/ksh
+
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+
+%manual
+  -------------------------------------------------
+  SETUP
+  -------------------------------------------------
+
+  This script is part of the ICON SMS suite
+  Initial implementation: F. Prill, DWD (2012-05-07)
+  Conversion to ecFlow:   M. Koehler, DWD (2022-11)
+
+  Corresponding author:
+    Martin Koehler, DWD, mailto:martin.koehler@dwd.de
+
+  Task objectives:
+  - set initial variables
+%end
+
+# include the header file for remote jobs
+%include <head_hpc.h>
+
+# -------------------------------------------------
+
+echo "SETUP"
+
+module load python3
+
+
+# Build a new binary every MONDAY:
+WEEKDAY=`python3 %SCBASEDIR%/gen/date_calc.py -a weekday -d %ECF_DATE%00`
+if [[ "${WEEKDAY}" -eq "1" ]]
+then
+   ecflow_client --event=enable_build
+fi
+
+
+# Create data directory
+
+#mkdir -p %SCTEMP%/%SUITE%/%EXPNUM%/post/%YMD%%INIHOUR%
+mkdir -p %SCTEMP%/%SUITE%/%EXPNUM%/post
+mkdir -p %SCTEMP%/%SUITE%/%EXPNUM%/input/%YMD%%INIHOUR%
+mkdir -p %SCTEMP%/%SUITE%/%EXPNUM%/output/%YMD%%INIHOUR%
+
+
+# -------------------------------------------------
+
+# include the "tail" file for remote jobs
+%include <tail.h>

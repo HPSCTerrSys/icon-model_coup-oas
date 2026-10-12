@@ -1,19 +1,19 @@
-! Namelist for turbulent diffusion (turbdiff)
-!
-! These subroutines are called by read_atmo_namelists and do the turbulent
-! diffusion setup (for turbdiff).
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief: Namelist for turbulent processes (turbdiff)
+!
+! Completing the 'turbdiff_config'-setup contained in module 'mo_turbdiff_config' by including
+!  input of "NAMELIST/turbdiff_nml/" and loading the domain-specific configuration state.
+! This is done through subroutine 'read_turbdiff_namelist' (called in 'read_atmo_namelists').
 
 MODULE mo_turbdiff_nml
 
@@ -26,66 +26,74 @@ MODULE mo_turbdiff_nml
   USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_restart_nml_and_att, ONLY: open_tmpfile, store_and_close_namelist,     &
     &                               open_and_restore_namelist, close_tmpfile
-  USE mo_turbdiff_config,     ONLY: turbdiff_config 
+  USE mo_turbdiff_config !global USE: - all individal quantities being associated to components of 'turbdiff_config(jg)'
+                         !            - SUB 'load_turbdiff_config' so as to load these components by updated values
+                         !            - config-state vector 'turbdiff_config' (only for "!$ACC UPDATE DEVICE"-directive)
+                         !Note(MR): This indicates that 'mo_turbdiff_nml' should be a part of 'mo_turbdiff_config'!
+!dom_spec<
+! USE mo_turbdiff_config, pat_len_def => pat_len !only, if 'pat_len'-values shall be domain-specific
+!dom_spec>
 
-  USE turb_data,              ONLY: &
-    & itype_sher, imode_shshear, itype_wcld, &
-    & imode_tran, imode_turb, icldm_tran, icldm_turb, imode_tkesso, &
-    & ltkesso, ltkecon, lexpcor, ltmpcor, lprfcor, lnonloc, lcpfluc, lsflcnd, &
-    & tur_len, pat_len, a_stab, tkhmin, tkmmin, c_diff, ltkeshs, &
-    & rlam_heat, rlam_mom, rat_sea, tkesmot, frcsmot, impl_s, impl_t, q_crit, &
-    & a_hshr, imode_frcsmot, lfreeslip, alpha0, alpha1, alpha0_max, alpha0_pert, &
-    & tkhmin_strat, tkmmin_strat, rat_glac, imode_charpar, &
-    & rat_lam
   USE mo_nml_annotate,        ONLY: temp_defaults, temp_settings
-  
+
   IMPLICIT NONE
   PRIVATE
 
   PUBLIC :: read_turbdiff_namelist
 
-  !----------------------------------!
-  ! additional turbdiff_nml namelist variables  !
-  !----------------------------------!
+  !--------------------------------------------------------------------------------------------------
 
-  LOGICAL :: lconst_z0   ! TRUE: horizontally homogeneous roughness length 
-                         ! (for idealized testcases)
+  ! Private auxilary declarations for namelist variables:
+  !
+  ! - Each of these variables is associated to a component of 'turbdiff_config(jg)'
+  !    and may be a vector in case of domain-specific settings.
 
-  REAL(wp) :: const_z0   ! horizontally homogeneous roughness length 
-                         ! (for idealized testcases)
-
-  LOGICAL :: ldiff_qi    ! turbulent diffusion of cloud ice QI
-                         ! .TRUE.: ON
-
-  LOGICAL :: ldiff_qs    ! turbulent diffusion of snow QS
-                         ! .FALSE.: OFF
+!dom_spec<
+! REAL(wp):: pat_len(0:max_dom) !only, if 'pat_len'-values shall be domain-specific
+!dom_spec>
+  !--------------------------------------------------------------------------------------------------
 
   NAMELIST/turbdiff_nml/ &
-    & itype_sher, imode_shshear, itype_wcld, &
-    & imode_tran, imode_turb, icldm_tran, icldm_turb, imode_tkesso, &
-    & ltkesso, ltkecon, lexpcor, ltmpcor, lprfcor, lnonloc, lcpfluc, lsflcnd, lfreeslip, &
-    & tur_len, pat_len, a_stab, tkhmin, tkmmin, c_diff, ltkeshs, imode_charpar, &
-    & rlam_heat, rlam_mom, rat_sea, rat_glac, tkesmot, frcsmot, impl_s, impl_t, q_crit, &
-    & a_hshr, imode_frcsmot, alpha0, alpha1, alpha0_max, tkhmin_strat, tkmmin_strat, &
-!   additional namelist parameters:
-    & lconst_z0, const_z0, ldiff_qi, ldiff_qs, &
-    & rat_lam
+  ! parameters, switches and selectors from 'mo_turbdiff_config':
+    & impl_s, impl_t, tkhmin, tkmmin, tkhmin_strat, tkmmin_strat, &
+    & imode_frcsmot, &
+     & frcsmot, tkesmot, &
+    & rlam_heat, rlam_mom, rat_lam, rat_sea, rat_glac, &
+    & imode_charpar, &
+     & alpha0, alpha0_max, alpha1, &
+    & lconst_z0, &
+     & const_z0, tur_len, pat_len, &
+    & c_diff, a_stab, a_hshr, &
+    & q_crit, &
+    & ltkesso, ltkecon, ltkeshs, ltmpcor, lcpfluc, lsflcnd, &
+    & ldiff_qi, ldiff_qs, lfreeslip, &
+    & imode_tran, imode_turb, icldm_tran, icldm_turb, itype_wcld, itype_sher, &
+    & imode_shshear, imode_tkesso, imode_snowsmot, imode_tkemini
+
+  ! Note:
+  ! The individual variable names applied in the namelist are taken from 'mo_turbdiff_config'
+  !  and have already been initialized there by default values at declaration.
+  ! Some of them will be overwritten by namelist-settings below.
+  ! If domain-specific values shall be given by the above namelist for any variable, say 'pat_len',
+  ! - add ", pat_len_def => pat_len" to "USE mo_turbdiff_config' above
+  ! - define a local vector 'pat_len(:)' in the module-header just before the namelist declaration
+  ! (see out-commented lines parenthesized by "!dom_spec<" and "!dom-spec>")
 
 CONTAINS
 
   !-------------------------------------------------------------------------
   !
-  !! Read Namelist for turbulent diffusion. 
+  !! Read Namelist for turbulent diffusion.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for turbulent diffusion
-  !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - sets default values (for domain-specific quantities)
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)   
-  !!
+  !! - fills the configuration state (almost fully)
+  !
   SUBROUTINE read_turbdiff_namelist( filename )
 
     CHARACTER(LEN=*), INTENT(IN) :: filename
@@ -96,27 +104,26 @@ CONTAINS
     CHARACTER(len=*), PARAMETER ::  &
       &  routine = 'mo_turbdiff_nml: read_turbdiff_nml'
 
-    ! 0. default settings of internal turbdiff namelist variables
-    !    is done by initialization in MODULE 'turb_data'
-
-    !-----------------------
-    ! 1. default settings of additional namelist variables:
-    !-----------------------
-
-    lconst_z0    =.FALSE. ! horizontally homogeneous roughness length 
-                          ! (for idealized testcases)
-
-    const_z0     = 0.001_wp ! horizontally homogeneous roughness length
-                            ! (for idealized testcases)
-
-    ldiff_qi     = .FALSE.   ! turbulent diffusion of QI  
-
-    ldiff_qs     = .FALSE.  ! no turbulent diffusion of QS  
+    ! Note:
+    ! If domain-specific values shall be given by the above namelist for any variable, say 'pat_len',
+    ! - copy default to vector 'pat_len' via the line "pat_len = pat_len_def" in section 1.
+    ! - include the line "pat_len_def = pat_len(jg)" just before "CALL load_turbdiff_config(jg)"
+    ! (see out-commented lines parenthesized by "!dom_spec<" and "!dom-spec>")
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 1. default settings of namelist variables are taken from initialization
+    !    of 'turbdiff_config' in MODULE 'mo_turbdiff_config'
+    !------------------------------------------------------------------
+
+!dom_spec<
+!   pat_len = pat_len_def !only, if 'pat_len'-values shall be domain-specific
+!dom_spec>
+
+    !------------------------------------------------------------------
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
+
     IF (use_restart_namelists()) THEN
       funit = open_and_restore_namelist('turbdiff_nml')
       READ(funit,NML=turbdiff_nml)
@@ -126,10 +133,11 @@ CONTAINS
     !--------------------------------------------------------------------
     ! 3. Read user's (new) specifications (Done so far by all MPI processes)
     !--------------------------------------------------------------------
+
     CALL open_nml(TRIM(filename))
     CALL position_nml ('turbdiff_nml', STATUS=istat)
     IF (my_process_is_stdio()) THEN
-      iunit = temp_defaults() 
+      iunit = temp_defaults()
       WRITE(iunit, turbdiff_nml)  ! write defaults to temporary text file
     END IF
     SELECT CASE (istat)
@@ -141,7 +149,6 @@ CONTAINS
       END IF
     END SELECT
     CALL close_nml
-
 
 
     !----------------------------------------------------
@@ -162,64 +169,24 @@ CONTAINS
     ! 5. Fill the configuration state
     !----------------------------------------------------
 
-    DO jg= 0,max_dom
-      turbdiff_config(jg)%imode_tran   = imode_tran
-      turbdiff_config(jg)%icldm_tran   = icldm_tran
-      turbdiff_config(jg)%imode_turb   = imode_turb
-      turbdiff_config(jg)%icldm_turb   = icldm_turb
-      turbdiff_config(jg)%itype_sher   = itype_sher
-      turbdiff_config(jg)%imode_shshear= imode_shshear
-      turbdiff_config(jg)%imode_frcsmot= imode_frcsmot
-      turbdiff_config(jg)%imode_tkesso = imode_tkesso
-      turbdiff_config(jg)%ltkesso      = ltkesso
-      turbdiff_config(jg)%ltkeshs      = ltkeshs
-      turbdiff_config(jg)%ltkecon      = ltkecon
-      turbdiff_config(jg)%lexpcor      = lexpcor
-      turbdiff_config(jg)%ltmpcor      = ltmpcor
-      turbdiff_config(jg)%lprfcor      = lprfcor
-      turbdiff_config(jg)%lnonloc      = lnonloc
-      turbdiff_config(jg)%lfreeslip    = lfreeslip
-      turbdiff_config(jg)%lcpfluc      = lcpfluc
-      turbdiff_config(jg)%lsflcnd      = lsflcnd
-      turbdiff_config(jg)%itype_wcld   = itype_wcld
-      turbdiff_config(jg)%tur_len      = tur_len
-      turbdiff_config(jg)%pat_len      = pat_len
-      turbdiff_config(jg)%a_stab       = a_stab
-      turbdiff_config(jg)%imode_charpar= imode_charpar
-      turbdiff_config(jg)%alpha0       = alpha0
-      turbdiff_config(jg)%alpha0_max   = alpha0_max
-      turbdiff_config(jg)%alpha0_pert  = alpha0_pert
-      turbdiff_config(jg)%alpha1       = alpha1
-      turbdiff_config(jg)%tkhmin       = tkhmin
-      turbdiff_config(jg)%tkmmin       = tkmmin
-      turbdiff_config(jg)%tkhmin_strat = tkhmin_strat
-      turbdiff_config(jg)%tkmmin_strat = tkmmin_strat
-      turbdiff_config(jg)%c_diff       = c_diff
-      turbdiff_config(jg)%rlam_heat    = rlam_heat
-      turbdiff_config(jg)%rlam_mom     = rlam_mom
-      turbdiff_config(jg)%rat_sea      = rat_sea
-      turbdiff_config(jg)%rat_lam      = rat_lam
-      turbdiff_config(jg)%rat_glac     = rat_glac
-      turbdiff_config(jg)%tkesmot      = tkesmot
-      turbdiff_config(jg)%frcsmot      = frcsmot
-      turbdiff_config(jg)%impl_s       = impl_s
-      turbdiff_config(jg)%impl_t       = impl_t
-      turbdiff_config(jg)%a_hshr       = a_hshr
-      turbdiff_config(jg)%q_crit       = q_crit
+    DO jg= 1,max_dom
 
-      turbdiff_config(jg)%lconst_z0    = lconst_z0
-      turbdiff_config(jg)%const_z0     = const_z0
-      turbdiff_config(jg)%ldiff_qi     = ldiff_qi
-      turbdiff_config(jg)%ldiff_qs     = ldiff_qs
-    ENDDO
+!dom_spec<
+!     pat_len_def = pat_len(jg) !only, if 'pat_len'-values shall be domain-specific
+!dom_spec>
+
+      CALL load_turbdiff_config(jg) !filling the full configuration-state 'turbdiff_config' (except its part 6.)
+
+    END DO
+    !$ACC UPDATE DEVICE(turbdiff_config) ASYNC(1)
 
     !-----------------------------------------------------
     ! 6. Store the namelist for restart
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=turbdiff_nml)                    
-      CALL store_and_close_namelist(funit, 'turbdiff_nml')             
+      WRITE(funit,NML=turbdiff_nml)
+      CALL store_and_close_namelist(funit, 'turbdiff_nml')
     ENDIF
 
     ! 7. write the contents of the namelist to an ASCII file

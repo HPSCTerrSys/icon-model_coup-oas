@@ -1,17 +1,17 @@
-! Interface between NWP physics and the hydrological discharge model, through a coupler.
-! Based on the ocean coupling interface
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
+
+! Interface between NWP physics and the hydrological discharge model, through a coupler.
+! Based on the ocean coupling interface
+
 !----------------------------
 #include "omp_definitions.inc"
 !----------------------------
@@ -23,7 +23,7 @@ MODULE mo_nwp_hydrodisc_coupling
   USE mo_nwp_lnd_types       ,ONLY: t_lnd_diag
   USE mo_nwp_phy_types       ,ONLY: t_nwp_phy_diag
   USE mo_ext_data_types      ,ONLY: t_external_data
-  USE mo_lnd_nwp_config      ,ONLY: ntiles_total, ntiles_water
+  USE mo_lnd_nwp_config      ,ONLY: ntiles_total, ntiles_water, isub_lake
   USE mo_fortran_tools       ,ONLY: init, assert_acc_host_only
   USE mo_parallel_config     ,ONLY: nproma
   USE mo_atm_phy_nwp_config  ,ONLY: atm_phy_nwp_config
@@ -31,8 +31,12 @@ MODULE mo_nwp_hydrodisc_coupling
   USE mo_physical_constants  ,ONLY: rhoh2o
   USE mo_run_config          ,ONLY: dtime, msg_level
   USE mo_loopindices         ,ONLY: get_indices_c
+  USE mo_dbg_nml             ,ONLY: str_mod_tst
 
   USE mo_coupling_utils      ,ONLY: cpl_def_field, cpl_put_field
+#if !defined NOMPI && defined YAC_coupling
+  USE yac                    ,ONLY: yac_fget_action, YAC_ACTION_NONE
+#endif
 
   USE mo_exception           ,ONLY: finish, message, message_text
   USE mo_sync                ,ONLY: global_sum_array
@@ -106,12 +110,14 @@ CONTAINS
     INTEGER               :: jb                    ! block loop count
     INTEGER               :: jc                    ! nproma loop count
     INTEGER               :: error
+    INTEGER               :: info
     INTEGER               :: i_startblk, i_endblk  ! blocks
     INTEGER               :: i_startidx, i_endidx  ! slices
     INTEGER               :: isubs                 ! tile index
     REAL(wp), TARGET, ALLOCATABLE :: buffer(:,:,:) ! buffer transferred to YAC coupler
+    REAL(wp)              :: diag_runoff
+
     CHARACTER(LEN=*), PARAMETER   :: routine = str_module // ':nwp_couple_hydrodisc'
-    REAL(wp)              :: diag_tmp
 
     ! This routine hasn't been ported yet.
     CALL assert_acc_host_only(routine, lacc)
@@ -137,38 +143,72 @@ CONTAINS
     !-------------------------------------------------------------------------
 
     !$OMP PARALLEL
-    CALL init(buffer(:,:,:))
+    CALL init(buffer(:,:,:), lacc=.FALSE.)
     !$OMP END PARALLEL
 
 !ICON_OMP_PARALLEL_DO PRIVATE(jb, jc, i_startidx, i_endidx, isubs) ICON_OMP_RUNTIME_SCHEDULE
     DO jb = i_startblk, i_endblk
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
-                       & i_startidx, i_endidx, start_prog_cells, end_prog_cells)
+           & i_startidx, i_endidx, start_prog_cells, end_prog_cells)
 
-      ! aggregate over tiles
-      DO isubs = 1, ntiles_total + ntiles_water
+      ! aggregate over land tiles (ocean, sea-ice, lake should not have any runoff)
+      !   TERRA: ntiles_total>=1; JSBACH: ntiles_total=1 and all surfaces are on tile 1
+      DO isubs = 1, ntiles_total
         DO jc = i_startidx, i_endidx
-          buffer(jc,jb,1) = buffer(jc,jb,1) + lnd_diag%runoff_s_inst_t(jc,jb,isubs) / dtime &
-            &           * ext_data%atm%frac_t(jc,jb,isubs)
-          buffer(jc,jb,2) = buffer(jc,jb,2) + lnd_diag%runoff_g_inst_t(jc,jb,isubs) / dtime &
-            &           * ext_data%atm%frac_t(jc,jb,isubs)
+          buffer(jc,jb,1) = buffer(jc,jb,1) + lnd_diag%runoff_s_inst_t(jc,jb,isubs) / dtime  &
+            &                               * ext_data%atm%frac_t(jc,jb,isubs)
+          buffer(jc,jb,2) = buffer(jc,jb,2) + lnd_diag%runoff_g_inst_t(jc,jb,isubs) / dtime  &
+            &                               * ext_data%atm%frac_t(jc,jb,isubs)
+          ! add water residuum from TERRA to ground runoff (only land), resid=0 for JSBACH
+          buffer(jc,jb,2) = buffer(jc,jb,2) + lnd_diag%resid_wso_inst_t(jc,jb,isubs) / dtime &
+            &                               * ext_data%atm%frac_t(jc,jb,isubs)
         ENDDO
-      ENDDO  ! isubs
-    ENDDO ! jb
-
+      ENDDO
+      ! add lake P-E into surface runoff (only for TERRA)
+      IF (atm_phy_nwp_config(jg)%inwp_surface == LSS_TERRA) THEN
+        DO jc = i_startidx, i_endidx
+          buffer(jc,jb,1) = buffer(jc,jb,1) + lnd_diag%runoff_s_inst_t(jc,jb,isub_lake) / dtime &
+            &                               * ext_data%atm%frac_t(jc,jb,isub_lake)
+        ENDDO
+      ENDIF
+    ENDDO
 !ICON_OMP_END_PARALLEL_DO
 
+#if !defined NOMPI && defined YAC_coupling
     ! Online diagnose for global sum of runoff (m3/s) before sending to YAC:
-    IF (msg_level >= 10) THEN
-      diag_tmp = global_sum_array(buffer(:,:,1) * p_patch%cells%area(:,:) / rhoh2o)
-      WRITE(message_text,'(a,f15.3)') ' NWP-HD: global total surface runoff (m3/s) :' , diag_tmp
-      CALL message(routine, message_text)
+    IF (msg_level >= 15) THEN
+      CALL yac_fget_action(field_id_runoffs, info)
+      IF ( info /= YAC_ACTION_NONE ) THEN
+        diag_runoff = global_sum_array(buffer(:,:,1) * p_patch%cells%area(:,:) / rhoh2o)
+        WRITE(message_text,'(a,f15.3)') ' NWP-HD: global total surface runoff (m3/s) :' , diag_runoff
+        CALL message(routine, message_text)
 
-      diag_tmp = global_sum_array(buffer(:,:,2) * p_patch%cells%area(:,:) / rhoh2o)
-      WRITE(message_text,'(a,f15.3)') ' NWP-HD: global total ground runoff (m3/s) :' , diag_tmp
-      CALL message(routine, message_text)
+        diag_runoff = global_sum_array(buffer(:,:,2) * p_patch%cells%area(:,:) / rhoh2o)
+        WRITE(message_text,'(a,f15.3)') ' NWP-HD: global total ground runoff (m3/s) :' , diag_runoff
+        CALL message(routine, message_text)
+
+        ! Optional tile-based global budgets
+        IF (ANY(str_mod_tst(:) == 'hd')) THEN
+          DO isubs = 1, ntiles_total + ntiles_water
+            diag_runoff = global_sum_array(lnd_diag%runoff_s_inst_t(:,:,isubs)  &
+                        & / dtime * p_patch%cells%area(:,:) / rhoh2o)
+            WRITE(message_text,'(a,i5,f15.3)') ' NWP-HD: runoff_s_inst_t (m3/s) :'  , isubs, diag_runoff
+            CALL message(routine, message_text)
+
+            diag_runoff = global_sum_array(lnd_diag%runoff_g_inst_t(:,:,isubs)  &
+                        & / dtime * p_patch%cells%area(:,:) / rhoh2o)
+            WRITE(message_text,'(a,i5,f15.3)') ' NWP-HD: runoff_g_inst_t (m3/s) :'  , isubs, diag_runoff
+            CALL message(routine, message_text)
+
+            diag_runoff = global_sum_array(lnd_diag%resid_wso_inst_t(:,:,isubs) &
+                        & / dtime * p_patch%cells%area(:,:) / rhoh2o)
+            WRITE(message_text,'(a,i5,f15.3)') ' NWP-HD: resid_wso_inst_t (m3/s) :' , isubs, diag_runoff
+            CALL message(routine, message_text)
+          ENDDO
+        ENDIF
+      ENDIF
     ENDIF
-
+#endif
     !------------------------------------------------
     !  Send surface water runoff
     !    "surface water runoff"

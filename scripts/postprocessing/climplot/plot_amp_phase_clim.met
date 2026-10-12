@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -23,13 +23,13 @@
 include "cossinlon1.f90"
 
 #
-#  This job retrieves averaged data and computes amplitude and phase of diurnal cycle. 
+#  This job retrieves averaged data and computes amplitude and phase of diurnal cycle.
 #
 
 args=arguments()
 exp1=args[1]
 start_dates=args[2]
-datelist=(parse(string(start_dates),"/")) 
+datelist=(parse(string(start_dates),"/"))
 datefiln=args[3]
 nmon=args[4]
 freado  = args[5] # read option for observational data, 'disc' or 'ecfs'
@@ -67,10 +67,10 @@ if seasons="YEAR" or seasons="DJF" or seasons="JJA" then
 #seasonst=["200106_nmon3","200012_nmon3","200009_nmon12"]
 #NENS=4
 
-datadir = getenv("PLOTDATA") 
+datadir = getenv("PLOTDATA")
 if (datadir="") then
   datadir="."
-end if 
+end if
 datadir=datadir&"/"
 
 plotdir=datadir
@@ -99,7 +99,7 @@ contour=10
 levlst_a=nil
 levlst_p=nil
 
-#  List of time levels for phase 
+#  List of time levels for phase
 #  (has to be list of 9; below and above is white)
 
 levlst_p=[10.5,11,11.5,12,12.5,13,13.5,14,14.5]
@@ -185,7 +185,7 @@ for ns=1 to count(seasons) do
 #  1.3  Build list of contours if necessary
 #
 
-   if count(levlst_a) < 2 then 
+   if count(levlst_a) < 2 then
      for j=1 to nct do
        levlst_a=levlst_a&list((j-0.5)*contour)
      end for
@@ -213,7 +213,7 @@ for ns=1 to count(seasons) do
         levtype	:	"sfc",
         class	:	"od",
         type		:	"an",
-        repres	:	"gg", 
+        repres	:	"gg",
         levelist	:	"off",
         param	:	"lsm",
         date		:	20020101,
@@ -222,7 +222,7 @@ for ns=1 to count(seasons) do
         grid		:	grid
          )
    end if
- 
+
    lsm=lsm>0.5
 
 #
@@ -258,14 +258,14 @@ for ns=1 to count(seasons) do
    end for
 
 #
-#  3.2 Convert to amplitude and phase 
+#  3.2 Convert to amplitude and phase
 #
 
    EPSI=0.05
    amppha=amp_phase(cosint,sinint,EPSI)
 
 #
-#  3.3 Put phase of small amplitudes to missing value 
+#  3.3 Put phase of small amplitudes to missing value
 #      (threshold is smallest amplitude contour)
 #
 
@@ -281,7 +281,7 @@ for ns=1 to count(seasons) do
      fldo7=read(source:ecfsdir&'dcycle/'&obstyp&'_'&season&'_7.grb')
      fldo=fldo*24       # scaling
      fldo7=fldo7*24     # scaling
-     cosint=fldo[1]*0. 
+     cosint=fldo[1]*0.
      sinint=fldo[1]*0.
      cosint7=cosint
      sinint7=sinint
@@ -380,23 +380,23 @@ for ns=1 to count(seasons) do
 
 #
 #  4.3  Define page and plot
-# 
+#
 
 
    if Grib2='y' then
      geo  = grib_to_geo(data : amppha[1])
      amppha[1] = geo_to_grib(grid      : [1.125,1.125],
-                   geopoints : geo)  
+                   geopoints : geo)
      geo  = grib_to_geo(data : amppha[2])
      amppha[2] = geo_to_grib(grid      : [1.125,1.125],
                    geopoints : geo)
-   end if  
+   end if
 
 #  Page 1
 
    npag=1
    page=setplotfile(plotfile1,area,npag)
-   plot(page,amppha[1],con_a,textpa,legend) 
+   plot(page,amppha[1],con_a,textpa,legend)
 
    if param="tp" and plotobs='y' then
      areao=[-40,-180,40,180]
@@ -405,7 +405,7 @@ for ns=1 to count(seasons) do
      plot(page[2],ampphao[1],con_a,textpao_40,legend_40)
    end if
 
-#  Page 2   
+#  Page 2
 
    page=setplotfile(plotfile2,area,npag)
    plot(page,amppha[2],con_p2,textpp,legend)
@@ -415,7 +415,7 @@ for ns=1 to count(seasons) do
      page=setplotfile(plotfile2o,areao,2)
      plot(page[1],amppha[2]  ,con_p2,textpp_40 ,legend_40)
      plot(page[2],ampphao7[2],con_p2,textppo_40,legend_40)
-   end if 
+   end if
 
 end for # plotting seasons
 end for # plotting all parameters
@@ -576,7 +576,7 @@ function amp_phase(cosint, sinint, eps)
 #----------------------------------------------------------
 # amp_phase computes amplitude and phase of vector (sinint,cosint)
 #
-#     in: 
+#     in:
 #         cosint  : x-component of vector
 #         sinint  : y-component of vector
 #         eps     : small number

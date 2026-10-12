@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -16,7 +16,7 @@
 
 MODULE mo_netcdf_parallel
 
-USE mo_kind, ONLY: dp
+USE mo_kind, ONLY: dp, sp
 USE mo_mpi, ONLY: p_pe_work, p_io, p_bcast, p_comm_work
 
 USE mo_netcdf
@@ -32,10 +32,14 @@ PUBLIC :: p_nf90_inquire_dimension
 PUBLIC :: p_nf90_inquire_attribute
 PUBLIC :: p_nf90_inquire_variable
 
+PUBLIC :: nf90_nowrite, nf90_global, nf90_noerr
+
 PUBLIC :: p_nf90_get_att
 INTERFACE p_nf90_get_att
-  MODULE PROCEDURE p_nf90_get_att_real_dp
-  MODULE PROCEDURE p_nf90_get_att_one_real_dp
+  MODULE PROCEDURE p_nf90_get_att_dp
+  MODULE PROCEDURE p_nf90_get_att_sp
+  MODULE PROCEDURE p_nf90_get_att_one_dp
+  MODULE PROCEDURE p_nf90_get_att_one_sp
   MODULE PROCEDURE p_nf90_get_att_one_int
   MODULE PROCEDURE p_nf90_get_att_text
 END INTERFACE p_nf90_get_att
@@ -44,26 +48,20 @@ PUBLIC :: p_nf90_inq_varid
 
 PUBLIC :: p_nf90_get_var
 INTERFACE p_nf90_get_var
-  MODULE PROCEDURE p_nf90_get_var_1D_real_dp
-  MODULE PROCEDURE p_nf90_get_var_2D_real_dp
-  MODULE PROCEDURE p_nf90_get_var_3D_real_dp
-  MODULE PROCEDURE p_nf90_get_var_4D_real_dp
+  MODULE PROCEDURE p_nf90_get_var_1D_dp
+  MODULE PROCEDURE p_nf90_get_var_2D_dp
+  MODULE PROCEDURE p_nf90_get_var_3D_dp
+  MODULE PROCEDURE p_nf90_get_var_4D_dp
+  MODULE PROCEDURE p_nf90_get_var_1D_sp
+  MODULE PROCEDURE p_nf90_get_var_2D_sp
+  MODULE PROCEDURE p_nf90_get_var_3D_sp
+  MODULE PROCEDURE p_nf90_get_var_4D_sp
   MODULE PROCEDURE p_nf90_get_var_1D_int
   MODULE PROCEDURE p_nf90_get_var_2D_int
   MODULE PROCEDURE p_nf90_get_var_3D_int
   MODULE PROCEDURE p_nf90_get_var_text
   MODULE PROCEDURE p_nf90_get_var_1D_text
 END INTERFACE p_nf90_get_var
-
-PUBLIC :: p_nf90x_get_var_local
-INTERFACE p_nf90x_get_var_local
-  MODULE PROCEDURE p_nf90x_get_var_local_1D_real_dp
-  MODULE PROCEDURE p_nf90x_get_var_local_1D_int
-  MODULE PROCEDURE p_nf90x_get_var_local_2D_int
-END INTERFACE p_nf90x_get_var_local
-
-REAL(dp), ALLOCATABLE :: local_buffer_real_dp(:)
-INTEGER, ALLOCATABLE :: local_buffer_int(:)
 
 CONTAINS
 
@@ -98,9 +96,6 @@ INTEGER FUNCTION p_nf90_close(ncid)
 
   CALL p_bcast(res, p_io, p_comm_work)
   p_nf90_close = res
-
-  IF (ALLOCATED(local_buffer_real_dp)) DEALLOCATE(local_buffer_real_dp)
-  IF (ALLOCATED(local_buffer_int)) DEALLOCATE(local_buffer_int)
 
 END FUNCTION p_nf90_close
 
@@ -151,7 +146,7 @@ INTEGER FUNCTION p_nf90_inquire_dimension(ncid, dimid, name, len)
     CALL p_bcast(local_name, p_io, p_comm_work)
     name = local_name
   ENDIF
-  
+
   IF (PRESENT(len)) THEN
     CALL p_bcast(local_len, p_io, p_comm_work)
     len = local_len
@@ -250,7 +245,7 @@ INTEGER FUNCTION p_nf90_inquire_variable(ncid, varid, name, xtype, ndims, dimids
 
 END FUNCTION p_nf90_inquire_variable
 
-INTEGER FUNCTION p_nf90_get_att_real_dp(ncid, varid, name, values)
+INTEGER FUNCTION p_nf90_get_att_dp(ncid, varid, name, values)
 
   INTEGER, INTENT(in) :: ncid, varid
   CHARACTER(len=*), INTENT(in) :: name
@@ -263,15 +258,36 @@ INTEGER FUNCTION p_nf90_get_att_real_dp(ncid, varid, name, values)
   ENDIF
 
   CALL p_bcast(res, p_io, p_comm_work)
-  p_nf90_get_att_real_dp = res
+  p_nf90_get_att_dp = res
 
   IF (res /= NF90_NOERR) RETURN
 
   CALL p_bcast(values, p_io, p_comm_work)
 
-END FUNCTION p_nf90_get_att_real_dp
+END FUNCTION p_nf90_get_att_dp
 
-INTEGER FUNCTION p_nf90_get_att_one_real_dp(ncid, varid, name, values)
+INTEGER FUNCTION p_nf90_get_att_sp(ncid, varid, name, values)
+
+  INTEGER, INTENT(in) :: ncid, varid
+  CHARACTER(len=*), INTENT(in) :: name
+  REAL(sp), INTENT(out) :: values(:)
+
+  INTEGER :: res
+
+  IF (p_pe_work == p_io) THEN
+    res = nf90_get_att(ncid, varid, name, values)
+  ENDIF
+
+  CALL p_bcast(res, p_io, p_comm_work)
+  p_nf90_get_att_sp = res
+
+  IF (res /= NF90_NOERR) RETURN
+
+  CALL p_bcast(values, p_io, p_comm_work)
+
+END FUNCTION p_nf90_get_att_sp
+
+INTEGER FUNCTION p_nf90_get_att_one_dp(ncid, varid, name, values)
 
   INTEGER, INTENT(in) :: ncid, varid
   CHARACTER(len=*), INTENT(in) :: name
@@ -284,13 +300,34 @@ INTEGER FUNCTION p_nf90_get_att_one_real_dp(ncid, varid, name, values)
   ENDIF
 
   CALL p_bcast(res, p_io, p_comm_work)
-  p_nf90_get_att_one_real_dp = res
+  p_nf90_get_att_one_dp = res
 
   IF (res /= NF90_NOERR) RETURN
 
   CALL p_bcast(values, p_io, p_comm_work)
 
-END FUNCTION p_nf90_get_att_one_real_dp
+END FUNCTION p_nf90_get_att_one_dp
+
+INTEGER FUNCTION p_nf90_get_att_one_sp(ncid, varid, name, values)
+
+  INTEGER, INTENT(in) :: ncid, varid
+  CHARACTER(len=*), INTENT(in) :: name
+  REAL(sp), INTENT(out) :: values
+
+  INTEGER :: res
+
+  IF (p_pe_work == p_io) THEN
+    res = nf90_get_att(ncid, varid, name, values)
+  ENDIF
+
+  CALL p_bcast(res, p_io, p_comm_work)
+  p_nf90_get_att_one_sp = res
+
+  IF (res /= NF90_NOERR) RETURN
+
+  CALL p_bcast(values, p_io, p_comm_work)
+
+END FUNCTION p_nf90_get_att_one_sp
 
 INTEGER FUNCTION p_nf90_get_att_one_int(ncid, varid, name, values)
 
@@ -355,7 +392,7 @@ INTEGER FUNCTION p_nf90_inq_varid(ncid, name, varid)
 
 END FUNCTION p_nf90_inq_varid
 
-INTEGER FUNCTION p_nf90_get_var_1D_real_dp(ncid, varid, values, start, count)
+INTEGER FUNCTION p_nf90_get_var_1D_dp(ncid, varid, values, start, count)
 
   INTEGER, INTENT(in)  :: ncid, varid
   REAL(dp), INTENT(out) :: values(:)
@@ -384,15 +421,52 @@ INTEGER FUNCTION p_nf90_get_var_1D_real_dp(ncid, varid, values, start, count)
   ENDIF
 
   CALL p_bcast(res, p_io, p_comm_work)
-  p_nf90_get_var_1D_real_dp = res
+  p_nf90_get_var_1D_dp = res
 
   IF (res /= NF90_NOERR) RETURN
 
   CALL p_bcast(values, p_io, p_comm_work)
 
-END FUNCTION p_nf90_get_var_1D_real_dp
+END FUNCTION p_nf90_get_var_1D_dp
 
-INTEGER FUNCTION p_nf90_get_var_2D_real_dp(ncid, varid, values, start, count)
+INTEGER FUNCTION p_nf90_get_var_1D_sp(ncid, varid, values, start, count)
+
+  INTEGER, INTENT(in)  :: ncid, varid
+  REAL(sp), INTENT(out) :: values(:)
+  INTEGER, OPTIONAL, INTENT(in) :: start(:), count(:)
+  ! TODO: add the remaining OPTIONAL arguments of the original interface
+
+  INTEGER :: res
+
+  INTEGER, DIMENSION(NF90_MAX_VAR_DIMS) :: local_start, local_count
+  INTEGER :: ndims
+
+  IF (p_pe_work == p_io) THEN
+    ! As in the original implementation, the user is responsible for all size
+    ! mismatches (i.e. we do not query the file for the real number and the
+    ! sizes of the dimenstions:
+    ndims = SIZE(SHAPE(values))
+    local_start(:) = 1
+    local_count(:ndims) = SHAPE(values)
+    local_count(ndims + 1:) = 1
+
+    IF (PRESENT(start)) local_start(:SIZE(start)) = start(:)
+    IF (PRESENT(count)) local_count(:SIZE(count)) = count(:)
+
+    res = nf90_get_var(ncid, varid, values, &
+                     & start = local_start, count = local_count)
+  ENDIF
+
+  CALL p_bcast(res, p_io, p_comm_work)
+  p_nf90_get_var_1D_sp = res
+
+  IF (res /= NF90_NOERR) RETURN
+
+  CALL p_bcast(values, p_io, p_comm_work)
+
+END FUNCTION p_nf90_get_var_1D_sp
+
+INTEGER FUNCTION p_nf90_get_var_2D_dp(ncid, varid, values, start, count)
 
   INTEGER, INTENT(in)  :: ncid, varid
   REAL(dp), INTENT(out) :: values(:,:)
@@ -421,15 +495,52 @@ INTEGER FUNCTION p_nf90_get_var_2D_real_dp(ncid, varid, values, start, count)
   ENDIF
 
   CALL p_bcast(res, p_io, p_comm_work)
-  p_nf90_get_var_2D_real_dp = res
+  p_nf90_get_var_2D_dp = res
 
   IF (res /= NF90_NOERR) RETURN
 
   CALL p_bcast(values, p_io, p_comm_work)
 
-END FUNCTION p_nf90_get_var_2D_real_dp
+END FUNCTION p_nf90_get_var_2D_dp
 
-INTEGER FUNCTION p_nf90_get_var_3D_real_dp(ncid, varid, values, start, count)
+INTEGER FUNCTION p_nf90_get_var_2D_sp(ncid, varid, values, start, count)
+
+  INTEGER, INTENT(in)  :: ncid, varid
+  REAL(sp), INTENT(out) :: values(:,:)
+  INTEGER, OPTIONAL, INTENT(in) :: start(:), count(:)
+  ! TODO: add the remaining OPTIONAL arguments of the original interface
+
+  INTEGER :: res
+
+  INTEGER, DIMENSION(NF90_MAX_VAR_DIMS) :: local_start, local_count
+  INTEGER :: ndims
+
+  IF (p_pe_work == p_io) THEN
+    ! As in the original implementation, the user is responsible for all size
+    ! mismatches (i.e. we do not query the file for the real number and the
+    ! sizes of the dimenstions:
+    ndims = SIZE(SHAPE(values))
+    local_start(:) = 1
+    local_count(:ndims) = SHAPE(values)
+    local_count(ndims + 1:) = 1
+
+    IF (PRESENT(start)) local_start(:SIZE(start)) = start(:)
+    IF (PRESENT(count)) local_count(:SIZE(count)) = count(:)
+
+    res = nf90_get_var(ncid, varid, values, &
+                     & start = local_start, count = local_count)
+  ENDIF
+
+  CALL p_bcast(res, p_io, p_comm_work)
+  p_nf90_get_var_2D_sp = res
+
+  IF (res /= NF90_NOERR) RETURN
+
+  CALL p_bcast(values, p_io, p_comm_work)
+
+END FUNCTION p_nf90_get_var_2D_sp
+
+INTEGER FUNCTION p_nf90_get_var_3D_dp(ncid, varid, values, start, count)
 
   INTEGER, INTENT(in)  :: ncid, varid
   REAL(dp), INTENT(out) :: values(:,:,:)
@@ -458,15 +569,52 @@ INTEGER FUNCTION p_nf90_get_var_3D_real_dp(ncid, varid, values, start, count)
   ENDIF
 
   CALL p_bcast(res, p_io, p_comm_work)
-  p_nf90_get_var_3D_real_dp = res
+  p_nf90_get_var_3D_dp = res
 
   IF (res /= NF90_NOERR) RETURN
 
   CALL p_bcast(values, p_io, p_comm_work)
 
-END FUNCTION p_nf90_get_var_3D_real_dp
+END FUNCTION p_nf90_get_var_3D_dp
 
-INTEGER FUNCTION p_nf90_get_var_4D_real_dp(ncid, varid, values, start, count)
+INTEGER FUNCTION p_nf90_get_var_3D_sp(ncid, varid, values, start, count)
+
+  INTEGER, INTENT(in)  :: ncid, varid
+  REAL(sp), INTENT(out) :: values(:,:,:)
+  INTEGER, OPTIONAL, INTENT(in) :: start(:), count(:)
+  ! TODO: add the remaining OPTIONAL arguments of the original interface
+
+  INTEGER :: res
+
+  INTEGER, DIMENSION(NF90_MAX_VAR_DIMS) :: local_start, local_count
+  INTEGER :: ndims
+
+  IF (p_pe_work == p_io) THEN
+    ! As in the original implementation, the user is responsible for all size
+    ! mismatches (i.e. we do not query the file for the real number and the
+    ! sizes of the dimenstions:
+    ndims = SIZE(SHAPE(values))
+    local_start(:) = 1
+    local_count(:ndims) = SHAPE(values)
+    local_count(ndims + 1:) = 1
+
+    IF (PRESENT(start)) local_start(:SIZE(start)) = start(:)
+    IF (PRESENT(count)) local_count(:SIZE(count)) = count(:)
+
+    res = nf90_get_var(ncid, varid, values, &
+                     & start = local_start, count = local_count)
+  ENDIF
+
+  CALL p_bcast(res, p_io, p_comm_work)
+  p_nf90_get_var_3D_sp = res
+
+  IF (res /= NF90_NOERR) RETURN
+
+  CALL p_bcast(values, p_io, p_comm_work)
+
+END FUNCTION p_nf90_get_var_3D_sp
+
+INTEGER FUNCTION p_nf90_get_var_4D_dp(ncid, varid, values, start, count)
 
   INTEGER, INTENT(in)  :: ncid, varid
   REAL(dp), INTENT(out) :: values(:,:,:,:)
@@ -495,13 +643,50 @@ INTEGER FUNCTION p_nf90_get_var_4D_real_dp(ncid, varid, values, start, count)
   ENDIF
 
   CALL p_bcast(res, p_io, p_comm_work)
-  p_nf90_get_var_4D_real_dp = res
+  p_nf90_get_var_4D_dp = res
 
   IF (res /= NF90_NOERR) RETURN
 
   CALL p_bcast(values, p_io, p_comm_work)
 
-END FUNCTION p_nf90_get_var_4D_real_dp
+END FUNCTION p_nf90_get_var_4D_dp
+
+INTEGER FUNCTION p_nf90_get_var_4D_sp(ncid, varid, values, start, count)
+
+  INTEGER, INTENT(in)  :: ncid, varid
+  REAL(sp), INTENT(out) :: values(:,:,:,:)
+  INTEGER, OPTIONAL, INTENT(in) :: start(:), count(:)
+  ! TODO: add the remaining OPTIONAL arguments of the original interface
+
+  INTEGER :: res
+
+  INTEGER, DIMENSION(NF90_MAX_VAR_DIMS) :: local_start, local_count
+  INTEGER :: ndims
+
+  IF (p_pe_work == p_io) THEN
+    ! As in the original implementation, the user is responsible for all size
+    ! mismatches (i.e. we do not query the file for the real number and the
+    ! sizes of the dimenstions:
+    ndims = SIZE(SHAPE(values))
+    local_start(:) = 1
+    local_count(:ndims) = SHAPE(values)
+    local_count(ndims + 1:) = 1
+
+    IF (PRESENT(start)) local_start(:SIZE(start)) = start(:)
+    IF (PRESENT(count)) local_count(:SIZE(count)) = count(:)
+
+    res = nf90_get_var(ncid, varid, values, &
+                     & start = local_start, count = local_count)
+  ENDIF
+
+  CALL p_bcast(res, p_io, p_comm_work)
+  p_nf90_get_var_4D_sp = res
+
+  IF (res /= NF90_NOERR) RETURN
+
+  CALL p_bcast(values, p_io, p_comm_work)
+
+END FUNCTION p_nf90_get_var_4D_sp
 
 INTEGER FUNCTION p_nf90_get_var_1D_int(ncid, varid, values, start, count)
 
@@ -684,208 +869,5 @@ INTEGER FUNCTION p_nf90_get_var_1D_text(ncid, varid, values, start, count)
   CALL p_bcast(values, p_io, p_comm_work)
 
 END FUNCTION p_nf90_get_var_1D_text
-
-SUBROUTINE ensure_buffer_real_dp(buffer_size)
-
-  INTEGER, INTENT(in) :: buffer_size
-
-  IF (ALLOCATED(local_buffer_real_dp)) THEN
-    IF (SIZE(local_buffer_real_dp) < buffer_size) &
-    & DEALLOCATE(local_buffer_real_dp)
-  ENDIF
-
-  IF (.NOT. ALLOCATED(local_buffer_real_dp)) &
-  & ALLOCATE(local_buffer_real_dp(buffer_size))
-
-END SUBROUTINE ensure_buffer_real_dp
-
-SUBROUTINE ensure_buffer_int(buffer_size)
-
-  INTEGER, INTENT(in) :: buffer_size
-
-  IF (ALLOCATED(local_buffer_int)) THEN
-    IF (SIZE(local_buffer_int) < buffer_size) &
-    & DEALLOCATE(local_buffer_int)
-  ENDIF
-
-  IF (.NOT. ALLOCATED(local_buffer_int)) &
-  & ALLOCATE(local_buffer_int(buffer_size))
-
-END SUBROUTINE ensure_buffer_int
-
-SUBROUTINE get_slices_real_dp(tgt, src, dimlens, start, count)
-
-  REAL(dp), INTENT(out) :: tgt(*)
-  REAL(dp), INTENT(in) :: src(:)
-  INTEGER, DIMENSION(:), INTENT(in) :: dimlens, start, count
-
-  INTEGER, DIMENSION(SIZE(dimlens)) :: offsets, dimsizes
-  INTEGER :: ii, jj
-
-  offsets(:) = start(:SIZE(dimlens))
-  dimsizes(1) = 1
-  dimsizes(2:) = [(PRODUCT(dimlens(:jj)), jj = 1, SIZE(dimlens) - 1)]
-
-  DO ii = 1, PRODUCT(count)
-    DO jj = 1, SIZE(dimlens) - 1
-      IF (offsets(jj) > start(jj) + count(jj) - 1) THEN
-        offsets(jj) = start(jj)
-        offsets(jj + 1) = offsets(jj + 1) + 1
-      ELSE
-        EXIT
-      ENDIF
-    ENDDO
-    tgt(ii) = src(SUM(dimsizes * (offsets - 1)) + 1)
-    offsets(1) = offsets(1) + 1
-  ENDDO
-
-END SUBROUTINE get_slices_real_dp
-
-SUBROUTINE get_slices_int(tgt, src, dimlens, start, count)
-
-  INTEGER, INTENT(out) :: tgt(*)
-  INTEGER, INTENT(in) :: src(:)
-  INTEGER, DIMENSION(:), INTENT(in) :: dimlens, start, count
-
-  INTEGER, DIMENSION(SIZE(dimlens)) :: offsets, dimsizes
-  INTEGER :: ii, jj
-
-  offsets(:) = start(:SIZE(dimlens))
-  dimsizes(1) = 1
-  dimsizes(2:) = [(PRODUCT(dimlens(:jj)), jj = 1, SIZE(dimlens) - 1)]
-
-  DO ii = 1, PRODUCT(count)
-    DO jj = 1, SIZE(dimlens) - 1
-      IF (offsets(jj) > start(jj) + count(jj) - 1) THEN
-        offsets(jj) = start(jj)
-        offsets(jj + 1) = offsets(jj + 1) + 1
-      ELSE
-        EXIT
-      ENDIF
-    ENDDO
-    tgt(ii) = src(SUM(dimsizes * (offsets - 1)) + 1)
-    offsets(1) = offsets(1) + 1
-  ENDDO
-
-END SUBROUTINE get_slices_int
-
-INTEGER FUNCTION p_nf90x_get_var_local_assumed_real_dp(ncid, varid, values, start, count)
-
-  INTEGER, INTENT(in)  :: ncid, varid
-  REAL(dp), INTENT(out) :: values(*)
-  INTEGER, INTENT(in) :: start(:), count(:)
-
-  INTEGER :: res
-
-  INTEGER :: ii, dimdata(NF90_MAX_VAR_DIMS + 1)  ! ndims + dimids/dimlens
-
-  IF (p_pe_work == p_io) THEN
-    res = nf90_inquire_variable(ncid, varid, ndims = dimdata(1), dimids = dimdata(2:))
-    IF (res /= NF90_NOERR) GOTO 999
-
-    DO ii = 1, dimdata(1)
-      res = nf90_inquire_dimension(ncid, dimdata(1 + ii), len = dimdata(1 + ii))
-      IF (res /= NF90_NOERR) GOTO 999
-    ENDDO
-    dimdata(1 + dimdata(1) + 1:) = 1
-
-    CALL ensure_buffer_real_dp(PRODUCT(dimdata(2:)))
-    res = nf90_get_var(ncid, varid, local_buffer_real_dp, count = dimdata(2:))
-  ENDIF
-
-999 CONTINUE
-
-  CALL p_bcast(res, p_io, p_comm_work)
-  p_nf90x_get_var_local_assumed_real_dp = res
-
-  IF (res /= NF90_NOERR) RETURN
-
-  CALL p_bcast(dimdata, p_io, p_comm_work)
-  IF (p_pe_work /= p_io) THEN
-    CALL ensure_buffer_real_dp(PRODUCT(dimdata(2:)))
-  ENDIF
-
-  CALL p_bcast(local_buffer_real_dp, p_io, p_comm_work)
-
-  CALL get_slices_real_dp(values, local_buffer_real_dp, &
-                        & dimdata(2:dimdata(1) + 1), start, count)
-
-END FUNCTION p_nf90x_get_var_local_assumed_real_dp
-
-INTEGER FUNCTION p_nf90x_get_var_local_assumed_int(ncid, varid, values, start, count)
-
-  INTEGER, INTENT(in)  :: ncid, varid
-  INTEGER, INTENT(out) :: values(*)
-  INTEGER, INTENT(in) :: start(:), count(:)
-
-  INTEGER :: res
-
-  INTEGER :: ii, dimdata(NF90_MAX_VAR_DIMS + 1)  ! ndims + dimids/dimlens
-
-  IF (p_pe_work == p_io) THEN
-    res = nf90_inquire_variable(ncid, varid, ndims = dimdata(1), dimids = dimdata(2:))
-    IF (res /= NF90_NOERR) GOTO 999
-
-    DO ii = 1, dimdata(1)
-      res = nf90_inquire_dimension(ncid, dimdata(1 + ii), len = dimdata(1 + ii))
-      IF (res /= NF90_NOERR) GOTO 999
-    ENDDO
-    dimdata(1 + dimdata(1) + 1:) = 1
-
-    CALL ensure_buffer_int(PRODUCT(dimdata(2:)))
-    res = nf90_get_var(ncid, varid, local_buffer_int, count = dimdata(2:))
-  ENDIF
-
-999 CONTINUE
-
-  CALL p_bcast(res, p_io, p_comm_work)
-  p_nf90x_get_var_local_assumed_int = res
-
-  IF (res /= NF90_NOERR) RETURN
-
-  CALL p_bcast(dimdata, p_io, p_comm_work)
-  IF (p_pe_work /= p_io) THEN
-    CALL ensure_buffer_int(PRODUCT(dimdata(2:)))
-  ENDIF
-
-  CALL p_bcast(local_buffer_int, p_io, p_comm_work)
-
-  CALL get_slices_int(values, local_buffer_int, &
-                    & dimdata(2:dimdata(1) + 1), start, count)
-
-END FUNCTION p_nf90x_get_var_local_assumed_int
-
-INTEGER FUNCTION p_nf90x_get_var_local_1D_real_dp(ncid, varid, values, start, count)
-
-  INTEGER, INTENT(in)  :: ncid, varid
-  REAL(dp), INTENT(out) :: values(:)
-  INTEGER, INTENT(in) :: start(:), count(:)
-
-  p_nf90x_get_var_local_1D_real_dp = &
-  & p_nf90x_get_var_local_assumed_real_dp(ncid, varid, values, start, count)
-
-END FUNCTION p_nf90x_get_var_local_1D_real_dp
-
-INTEGER FUNCTION p_nf90x_get_var_local_1D_int(ncid, varid, values, start, count)
-
-  INTEGER, INTENT(in)  :: ncid, varid
-  INTEGER, INTENT(out) :: values(:)
-  INTEGER, INTENT(in) :: start(:), count(:)
-
-  p_nf90x_get_var_local_1D_int = &
-  & p_nf90x_get_var_local_assumed_int(ncid, varid, values, start, count)
-
-END FUNCTION p_nf90x_get_var_local_1D_int
-
-INTEGER FUNCTION p_nf90x_get_var_local_2D_int(ncid, varid, values, start, count)
-
-  INTEGER, INTENT(in)  :: ncid, varid
-  INTEGER, INTENT(out) :: values(:,:)
-  INTEGER, INTENT(in) :: start(:), count(:)
-
-  p_nf90x_get_var_local_2D_int = &
-  & p_nf90x_get_var_local_assumed_int(ncid, varid, values, start, count)
-
-END FUNCTION p_nf90x_get_var_local_2D_int
 
 END MODULE mo_netcdf_parallel

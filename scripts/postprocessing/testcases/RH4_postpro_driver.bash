@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -20,8 +20,8 @@
 # Initial version by Hui Wan (MPI-M, 2009-05)
 #
 # Short description:
-# This script interpolates the orginal ICOHDC output to selected 
-# pressure level, then makes contour plots. 
+# This script interpolates the orginal ICOHDC output to selected
+# pressure level, then makes contour plots.
 #
 # Software needed:
 # - CDO (Climate Data Operators, www.mpimet.mpg.de/cdo)
@@ -35,9 +35,9 @@
 check_error()
 {
 
-# Check if the first parameter (return status) is not OK 
+# Check if the first parameter (return status) is not OK
 
-  if [ $1 -ne 0 ] 
+  if [ $1 -ne 0 ]
   then
 
 # Stop running this script and return the error status
@@ -50,7 +50,7 @@ check_error()
 #                          USER'S SPECIFICATIONS
 if [ "x$1" != "x" ]
 then
-  set_env=$1 
+  set_env=$1
 else
   set_env=/null
 fi
@@ -99,15 +99,15 @@ horizontal_resolution="R2B04"
 vertical_resolution="L31"
 
 # 1.6 Whether the model output is in a single NetCDF file or
-# has been split into separate files. (Here we assume that 
-# in case of a single file, the string "_0001" has been added to 
+# has been split into separate files. (Here we assume that
+# in case of a single file, the string "_0001" has been added to
 # the name of the model output after ${EXP}"_RxBxxLxx".
 # In case of output splitting, the first file is labeled "_0001",
 # the second one "_0002", and so on.)
 
 data_file_split=1     # 0 = single file; 1 = multiple files
 
-# If the output is split, how often is a new file started? 
+# If the output is split, how often is a new file started?
 
 dt_trigger_file_hour=720
 
@@ -124,8 +124,8 @@ export diag_day=15
 # - 850 hPa zonal wind, meridional wind, relative vorticity, divergence,
 #   temperature and vertical velocity (omega).
 #
-# Before plotting, vertical interpolation is needed. Set the following 
-# variables to let the script do interplation and/or visualization. 
+# Before plotting, vertical interpolation is needed. Set the following
+# variables to let the script do interplation and/or visualization.
 
 cn_plot_option=1   # (1=ON,0=OFF)
 interp_option=1    # (1=ON,0=OFF)
@@ -143,8 +143,8 @@ rm_tmp_files=1
 
 # Check if there is a local file 'set_env' whith includes a special setting of the values
 
-if [ -f ${set_env} ] 
-then 
+if [ -f ${set_env} ]
+then
   echo " "
   echo " !!!!! Use setting from ./${set_env}"
   echo " "
@@ -195,7 +195,7 @@ fi
 #---------------------------------------------------------------
 # It is easy if model output is in a single file ...
 #
-if [ ${data_file_split} -eq 0 ]; then 
+if [ ${data_file_split} -eq 0 ]; then
 
    fid=1
    tid=`expr 1 + ${diag_day} \* ${output_frequency}`
@@ -221,8 +221,8 @@ else
       tid=`expr $tid + 1`
    fi
 fi
-  
-   fid_str=$(printf "%04d" $fid) 
+
+   fid_str=$(printf "%04d" $fid)
 
 #==========================================================================
 # Perform vertical interpolation and make contour plots
@@ -276,7 +276,7 @@ fi
 
 #------------------------------------------------------------------------
 # Clean up
-#------------------------------------------------------------------------ 
+#------------------------------------------------------------------------
 echo
 echo "=== Postprocessing finished for the RH wave test."
 
@@ -291,7 +291,7 @@ if [ $rm_tmp_files -eq 1 ]; then
    if [ `ls ${tmp_data_path} |wc -l` -eq 0 ]; then
       rm -rf ${tmp_data_path}
    fi
-   echo "=== The temporary data have been removed." 
+   echo "=== The temporary data have been removed."
 else
    echo "=== The temporary data can be found in "${tmp_data_path}
 fi

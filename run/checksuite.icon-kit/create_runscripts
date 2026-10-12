@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -47,11 +47,11 @@ echo $input_file
 if [ -z "$input_file" ] ;
 
 then
-    echo " --------------------------------" 
-	echo " --------------------------------" 
+    echo " --------------------------------"
+	echo " --------------------------------"
 	echo "           missing input file"
-	echo " --------------------------------" 
-	echo " --------------------------------" 
+	echo " --------------------------------"
+	echo " --------------------------------"
     usage
 	exit
 fi
@@ -69,20 +69,20 @@ fi
 
         create_header ${experiment[$i]}
 		    create_lart_loop_start ${experiment[$i]}
-        create_body ${script[$i]} 
+        create_body ${script[$i]}
         create_footer ${experiment[$i]} ${walltime[$i]} ${nodes[$i]} ${queue[$i]} "${output[@]}"
 		    create_lart_loop_end ${experiment[$i]}
 		    check_action ${action} ${experiment[$i]}
-		 
+
 		    ;;
 		 *none*)
 		   lart=.True.
-			 
+
 	     create_header ${experiment[$i]}
        create_body ${script[$i]}
        create_footer ${experiment[$i]} ${walltime[$i]} ${nodes[$i]} ${queue[$i]} "${output[@]}"
 		   check_action ${action} ${experiment[$i]}
-		   
+
 		   ;;
 		esac
 	i=$(($i+1))
@@ -174,13 +174,13 @@ while [ $i -lt $number_of_experiments ]
    ./run/checksuite.icon-kit/runscripts/${experiment[$i]}.run
    i=$(($i+1))
  done
-           ;; 
+           ;;
          *none*)
            ;;
 
  esac
 
- 
+
  echo "-------------------------------------------------"         >>${info_filename}
  echo "---  All specified runs performed - exiting   ---"         >>${info_filename}
  echo "-------------------------------------------------"         >>${info_filename}

@@ -1,10 +1,7 @@
-! Contains utility routines for reading NetCDF and GRIB2 files (using
-! the CDI library) and communicating fields in parallel.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,9 +9,12 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains utility routines for reading NetCDF and GRIB2 files (using
+! the CDI library) and communicating fields in parallel.
+
 MODULE mo_util_cdi
 
-  USE ISO_C_BINDING,         ONLY: C_INT, C_CHAR
+  USE ISO_C_BINDING,         ONLY: C_INT, C_CHAR, C_DOUBLE, C_NULL_CHAR
   USE mo_kind,               ONLY: wp, sp, dp, i8
   USE mo_exception,          ONLY: finish
   USE mo_communication,      ONLY: t_scatterPattern
@@ -27,28 +27,32 @@ MODULE mo_util_cdi
   USE mo_dictionary,         ONLY: t_dictionary, DICT_MAX_STRLEN
   USE mo_cdi_constants,      ONLY: GRID_UNSTRUCTURED_CELL
   USE mo_var_metadata_types, ONLY: t_var_metadata
-  USE mo_gribout_config,     ONLY: t_gribout_config
+  USE mo_gribout_config,     ONLY: t_gribout_config, GRIB_LIB_COMPAT_ECC_2_31_0
   USE mo_cf_convention,      ONLY: t_cf_var
   USE mo_aes_phy_config,     ONLY: aes_phy_config
   USE mo_grib2_util,         ONLY: set_GRIB2_additional_keys, set_GRIB2_tile_keys, &
     &                              set_GRIB2_ensemble_keys, set_GRIB2_local_keys,  &
-    &                              set_GRIB2_synsat_keys, set_GRIB2_chem_keys
+    &                              set_GRIB2_synsat_keys, set_GRIB2_chem_keys,     &
+    &                              grib_lib_compatibility
   USE mo_nwp_sfc_tiles,      ONLY: t_tileinfo_icon, t_tileinfo_grb2, trivial_tile_att
 
   USE mo_cdi,                ONLY: FILETYPE_NC, FILETYPE_NC2, FILETYPE_NC4, streamInqVlist, vlistNvars, vlistInqVarDatatype, &
                                  & vlistInqVarIntKey, vlistInqVarZaxis, &
                                  & vlistInqVarGrid, gridInqSize, zaxisInqSize, CDI_DATATYPE_FLT64, CDI_DATATYPE_INT32, &
                                  & streamInqTimestep, &
-                                 & vlistDefVarIntKey, &
                                  & streamReadVarSliceF, streamReadVarSlice, vlistInqVarName, &
                                  & vlistInqVarSubtype, subtypeInqSize, &
                                  & cdi_max_name, &
                                  & subtypeDefActiveIndex, CDI_DATATYPE_PACK23, CDI_DATATYPE_PACK32, cdiStringError, &
                                  & FILETYPE_GRB2, vlistDefVar, cdiEncodeParam, &
                                  & vlistDefVarName, vlistDefVarLongname, vlistDefVarTsteptype, &
-    &                              vlistDefVarStdname, vlistDefVarUnits, vlistDefVarParam, vlistDefVarMissval, &
-    &                              vlistDefVarDatatype, vlistDefVarIntKey, vlistDefVarDblKey, &
-                                 & TIME_CONSTANT, TIME_VARYING, TSTEP_CONSTANT
+                                 & vlistDefVarStdname, vlistDefVarUnits, vlistDefVarParam, vlistDefVarMissval, &
+                                 & vlistDefVarDatatype, vlistDefVarIntKey, vlistDefVarDblKey, &
+                                 & TIME_CONSTANT, TIME_VARYING, TSTEP_CONSTANT, &
+                                 & vlistDefVarNSB, cdiDefKeyInt, cdiDefKeyString, CDI_KEY_CHUNKSIZE, CDI_KEY_FILTERSPEC
+#ifndef __NO_ICON_WAVES__
+  USE mo_wave_grib2,         ONLY: set_grib2_pdt_wave_spectra
+#endif
 
   IMPLICIT NONE
   PRIVATE
@@ -65,19 +69,50 @@ MODULE mo_util_cdi
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_util_cdi'
 
   INTERFACE read_cdi_2d
-    MODULE PROCEDURE read_cdi_2d_real
+    MODULE PROCEDURE read_cdi_2d_wp
     MODULE PROCEDURE read_cdi_2d_int
     MODULE PROCEDURE read_cdi_2d_time
-    MODULE PROCEDURE read_cdi_2d_real_tiles
-    MODULE PROCEDURE read_cdi_2d_int_tiles
+    MODULE PROCEDURE read_cdi_2d_tiles_wp
+    MODULE PROCEDURE read_cdi_2d_tiles_int
     MODULE PROCEDURE read_cdi_2d_time_tiles
     MODULE PROCEDURE read_cdi_2d_lbc
   END INTERFACE
 
   INTERFACE read_cdi_3d
-    MODULE PROCEDURE read_cdi_3d_real
-    MODULE PROCEDURE read_cdi_3d_real_tiles
+    MODULE PROCEDURE read_cdi_3d_wp
+    MODULE PROCEDURE read_cdi_3d_tiles_wp
     MODULE PROCEDURE read_cdi_3d_lbc
+  END INTERFACE
+
+
+  ! C bindings, temporarily replacing the broken CDI interfaces from mo_cdi
+  !
+  INTERFACE
+    !==================================================================
+    ! C binding interface for the actual CDI integer array routine
+    !==================================================================
+    SUBROUTINE lib_vlistDefVarIntArrKey(vlistID, varID, name, values, nvalues) &
+        bind(C, name="vlistDefVarIntArrKey")
+      IMPORT :: c_char, c_int
+      INTEGER(c_int), VALUE :: vlistID
+      INTEGER(c_int), VALUE :: varID
+      CHARACTER(KIND=c_char) :: name(*)
+      INTEGER(c_int) :: values(*)
+      INTEGER(c_int), VALUE :: nvalues
+    END SUBROUTINE lib_vlistDefVarIntArrKey
+
+    !========================================================
+    ! C binding interface for the actual CDI double array routine
+    !========================================================
+    SUBROUTINE lib_vlistDefVarDblArrKey(vlistID, varID, name, values, nvalues) &
+        BIND(C, NAME="vlistDefVarDblArrKey")
+      IMPORT :: c_char, c_int, c_double
+      INTEGER(c_int), VALUE :: vlistID
+      INTEGER(c_int), VALUE :: varID
+      CHARACTER(KIND=c_char) :: name(*)
+      REAL(c_double) :: values(*)
+      INTEGER(c_int), VALUE :: nvalues
+    END SUBROUTINE lib_vlistDefVarDblArrKey
   END INTERFACE
 
 
@@ -117,6 +152,80 @@ MODULE mo_util_cdi
   END TYPE
 
 CONTAINS
+
+  ! Fortran wrappers, temporarily replacing the broken CDI wrappers from mo_cdi
+  !
+  !==================================================================
+  ! Fortran wrapper for vlistDefVarIntArrKey with null-terminated string
+  !==================================================================
+  SUBROUTINE vlistDefVarIntArrKey(vlistID, varID, name, values, nvalues)
+    INTEGER(c_int), VALUE :: vlistID
+    INTEGER(c_int), VALUE :: varID
+    CHARACTER(len=*), INTENT(IN) :: name          ! Fortran string
+    INTEGER(c_int), INTENT(IN) :: values(:)       ! Fortran integer array
+    INTEGER(c_int), VALUE :: nvalues
+
+    ! Local variables
+    CHARACTER(kind=c_char), ALLOCATABLE :: name_temp(:)
+    INTEGER(c_int), ALLOCATABLE :: values_contig(:)
+    INTEGER :: keylen, i
+
+    ! --- Prepare null-terminated C string ---
+    keylen = len_trim(name)
+    ALLOCATE(name_temp(0:keylen))        ! +1 for null terminator
+    DO i = 1, keylen
+      name_temp(i-1) = transfer(name(i:i), name_temp(0))
+    END DO
+    name_temp(keylen) = c_null_char
+
+    ! --- Ensure integer array is contiguous ---
+    ALLOCATE(values_contig(nvalues))
+    values_contig = values(1:nvalues)
+
+    ! --- Call the actual C routine ---
+    CALL lib_vlistDefVarIntArrKey(vlistID, varID, name_temp, values_contig, nvalues)
+
+    ! Clean up
+    DEALLOCATE(name_temp)
+    DEALLOCATE(values_contig)
+  END SUBROUTINE vlistDefVarIntArrKey
+
+  !==================================================================
+  ! Fortran wrapper for vlistDefVarDblArrKey with null-terminated string
+  !==================================================================
+  SUBROUTINE vlistDefVarDblArrKey(vlistID, varID, name, values, nvalues)
+    INTEGER(c_int), VALUE :: vlistID
+    INTEGER(c_int), VALUE :: varID
+    CHARACTER(LEN=*), INTENT(IN) :: name
+    REAL(c_double), INTENT(IN) :: values(:)
+    INTEGER(c_int), VALUE :: nvalues
+
+    ! Local variables
+    CHARACTER(KIND=c_char), ALLOCATABLE :: name_temp(:)
+    REAL(c_double), ALLOCATABLE :: values_contig(:)
+    INTEGER :: keylen, i
+
+    ! --- Null-terminated C string ---
+    keylen = LEN_TRIM(name)
+    ALLOCATE(name_temp(0:keylen))          ! +1 for null terminator
+    DO i = 1, keylen
+      name_temp(i-1) = TRANSFER(name(i:i), name_temp(0))
+    END DO
+    name_temp(keylen) = c_null_char
+
+    ! --- Contiguous real array ---
+    ALLOCATE(values_contig(nvalues))
+    values_contig = values(1:nvalues)
+
+    ! --- Call the actual C routine ---
+    CALL lib_vlistDefVarDblArrKey(vlistID, varID, name_temp, values_contig, nvalues)
+
+    ! Clean up
+    DEALLOCATE(name_temp)
+    DEALLOCATE(values_contig)
+  END SUBROUTINE vlistDefVarDblArrKey
+
+
 
   !> Provides a common interface to all NetCDF flavors used within
   !> ICON.
@@ -223,7 +332,7 @@ CONTAINS
             ENDIF
           ENDDO
     ENDIF
-    
+
     CALL p_bcast(subtypeSize, p_io, distribution%communicator)
 
     ! put tile info into local 1D arrays, for broadcasting
@@ -391,7 +500,7 @@ CONTAINS
         WRITE(0,*) routine, ": Total read statistics for stream ID ", me%streamId
         WRITE(0,'(8X,A,I19,A)')   "amount:    ", me%readBytes, " bytes"
         WRITE(0,'(8X,A,F19.3,A)') "duration:  ", me%readDuration, " seconds"
-        IF (me%readDuration > 0._wp) THEN
+        IF (me%readDuration > 0._dp) THEN
           WRITE(0,'(8X,A,F19.3,A)') "bandwidth: ", REAL(me%readBytes, dp)/(1048576.0_dp*me%readDuration), " MiB/s"
         ENDIF
     END IF
@@ -558,7 +667,7 @@ CONTAINS
     CALL streamReadVarSliceF(parameters%streamID, varID, level, buffer, nmiss)
     IF(msg_level >= 5 .and. my_process_is_stdio()) THEN
         duration = p_mpi_wtime() - startTime
-        bytes = INT(SIZE(buffer, 1), i8) * 8_i8
+        bytes = INT(SIZE(buffer, 1), i8) * 4_i8
         parameters%readDuration = parameters%readDuration + duration
         parameters%readBytes = parameters%readBytes + bytes
         CALL writeSpeedMessage(routine, bytes, duration)
@@ -569,16 +678,16 @@ CONTAINS
   !---------------------------------------------------------------------------------------------------------------------------------
   !> read and distribute a 3D variable across the processes
   !---------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE read_cdi_3d_wp(parameters, varID, nlevs, levelDimension, var_out, lvalue_add)
+  SUBROUTINE read_cdi_3d_dp2wp(parameters, varID, nlevs, levelDimension, var_out, lvalue_add)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     INTEGER, INTENT(IN) :: varID, nlevs, levelDimension
     REAL(wp), TARGET, INTENT(INOUT) :: var_out(:,:,:) !< output field
     LOGICAL, INTENT(IN) :: lvalue_add         !< If .TRUE., add values to given field
 
     REAL(wp), POINTER :: var_out_lev(:,:)
-    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_3d_wp'
+    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_3d_dp2wp'
     INTEGER :: jk, ierrstat, nmiss
-    REAL(wp), ALLOCATABLE :: tmp_buf(:) ! temporary local array
+    REAL(dp), ALLOCATABLE :: tmp_buf(:) ! temporary local array
     LOGICAL :: is_workroot
 
     is_workroot = my_process_is_mpi_workroot()
@@ -616,19 +725,19 @@ CONTAINS
     DEALLOCATE(tmp_buf, STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish(routine, "DEALLOCATE failed!")
 
-  END SUBROUTINE read_cdi_3d_wp
+  END SUBROUTINE read_cdi_3d_dp2wp
 
 
   !---------------------------------------------------------------------------------------------------------------------------------
   !> read and distribute a 3D variable across the processes
   !---------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE read_cdi_3d_sp(parameters, varID, nlevs, levelDimension, var_out, lvalue_add)
+  SUBROUTINE read_cdi_3d_sp2wp(parameters, varID, nlevs, levelDimension, var_out, lvalue_add)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     INTEGER, INTENT(IN) :: varID, nlevs, levelDimension
     REAL(wp), TARGET, INTENT(INOUT) :: var_out(:,:,:) !< output field
     LOGICAL, INTENT(IN) :: lvalue_add         !< If .TRUE., add values to given field
 
-    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_3d_sp'
+    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_3d_sp2wp'
     INTEGER :: jk, ierrstat, nmiss
     REAL(wp), POINTER :: var_out_lev(:,:)
     REAL(sp), ALLOCATABLE :: tmp_buf(:) ! temporary local array
@@ -669,14 +778,14 @@ CONTAINS
     DEALLOCATE(tmp_buf, STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish(routine, "DEALLOCATE failed!")
 
-  END SUBROUTINE read_cdi_3d_sp
+  END SUBROUTINE read_cdi_3d_sp2wp
 
   !-------------------------------------------------------------------------
   !> Read 3D dataset from file.
   !
   !  Note: This implementation uses a 2D buffer.
   !
-  SUBROUTINE read_cdi_3d_real_tiles(parameters, varname, nlevs, var_out, tileinfo, opt_lvalue_add, opt_lev_dim)
+  SUBROUTINE read_cdi_3d_tiles_wp(parameters, varname, nlevs, var_out, tileinfo, opt_lvalue_add, opt_lev_dim)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     CHARACTER(len=*),        INTENT(IN)    :: varname        !< Var name of field to be read
     INTEGER,                 INTENT(IN)    :: nlevs          !< vertical levels of netcdf file
@@ -685,7 +794,7 @@ CONTAINS
     LOGICAL,             INTENT(IN), OPTIONAL :: opt_lvalue_add       !< If .TRUE., add values to given field
     INTEGER,             INTENT(IN), OPTIONAL :: opt_lev_dim          !< array dimension (of the levels)
 
-    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_3d_real_tiles'
+    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_3d_tiles_wp'
     INTEGER :: vlistId, varId, zaxisId, gridId, levelDimension, subtypeID, tile_index
     LOGICAL :: lvalue_add
 
@@ -720,19 +829,19 @@ CONTAINS
     SELECT CASE(parameters%variableDatatype(varId+1))
         CASE(CDI_DATATYPE_PACK23:CDI_DATATYPE_PACK32, CDI_DATATYPE_FLT64, CDI_DATATYPE_INT32)
             ! int32 is treated as double precision because single precision floats would cut off up to seven bits from the integer
-            CALL read_cdi_3d_wp(parameters, varId, nlevs, levelDimension, var_out, lvalue_add)
+            CALL read_cdi_3d_dp2wp(parameters, varId, nlevs, levelDimension, var_out, lvalue_add)
         CASE DEFAULT
             ! XXX: Broadcasting CDI_DATATYPE_PACK1..CDI_DATATYPE_PACK22 DATA as single precision may actually change their values, but this
             !      error will always be smaller than the error made by storing the DATA as CDI_DATATYPE_PACK1..CDI_DATATYPE_PACK22 IN the
             !      first place.
-            CALL read_cdi_3d_sp(parameters, varId, nlevs, levelDimension, var_out, lvalue_add)
+            CALL read_cdi_3d_sp2wp(parameters, varId, nlevs, levelDimension, var_out, lvalue_add)
     END SELECT
 
     IF(my_process_is_mpi_workroot()) THEN
       ! reset tile index
       IF (tile_index > 0)  CALL subtypeDefActiveIndex(subtypeID, 0)
     END IF
-  END SUBROUTINE read_cdi_3d_real_tiles
+  END SUBROUTINE read_cdi_3d_tiles_wp
 
 
   !-------------------------------------------------------------------------
@@ -740,7 +849,7 @@ CONTAINS
   !
   !  Note: This implementation uses a 2D buffer.
   !
-  SUBROUTINE read_cdi_3d_real(parameters, varname, nlevs, var_out, opt_lvalue_add, opt_lev_dim)
+  SUBROUTINE read_cdi_3d_wp(parameters, varname, nlevs, var_out, opt_lvalue_add, opt_lev_dim)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     CHARACTER(len=*),        INTENT(IN)    :: varname        !< Var name of field to be read
     INTEGER,                 INTENT(IN)    :: nlevs          !< vertical levels of netcdf file
@@ -748,9 +857,9 @@ CONTAINS
     LOGICAL,             INTENT(IN), OPTIONAL :: opt_lvalue_add       !< If .TRUE., add values to given field
     INTEGER,             INTENT(IN), OPTIONAL :: opt_lev_dim          !< array dimension (of the levels)
 
-    CALL read_cdi_3d_real_tiles(parameters, varname, nlevs, var_out, &
+    CALL read_cdi_3d_tiles_wp(parameters, varname, nlevs, var_out, &
       &                         trivial_tile_att%getTileinfo_grb2(), opt_lvalue_add, opt_lev_dim)
-  END SUBROUTINE read_cdi_3d_real
+  END SUBROUTINE read_cdi_3d_wp
 
 
   !---------------------------------------------------------------------------------------------------------------------------------
@@ -845,7 +954,7 @@ CONTAINS
       END IF
 
       CALL parameters%distribution%distribute(map_buf(:), var_out(:, jk, :), .FALSE.)
- 
+
     END DO ! jk=1,nlevs
 
     ! clean up
@@ -865,8 +974,8 @@ CONTAINS
 
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_2d_lbc'
-    INTEGER :: jk, ierrstat, nmiss, i
-    INTEGER :: vlistId, varId, zaxisId, gridId, tile_index, grid_size
+    INTEGER :: ierrstat, nmiss, i
+    INTEGER :: vlistId, varId, gridId, tile_index, grid_size
     REAL(sp), ALLOCATABLE :: tmp_buf(:), map_buf(:) ! temporary local array
     LOGICAL :: lmap_buf, is_workroot
     CHARACTER(len=DICT_MAX_STRLEN) :: mapped_name
@@ -938,7 +1047,7 @@ CONTAINS
       END IF
 
       CALL parameters%distribution%distribute(map_buf(:), var_out(:, :), .FALSE.)
- 
+
 
     ! clean up
     DEALLOCATE(tmp_buf, map_buf, STAT=ierrstat)
@@ -949,12 +1058,12 @@ CONTAINS
   !---------------------------------------------------------------------------------------------------------------------------------
   !> read and distribute a 2D variable across the processes
   !---------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE read_cdi_2d_sp(parameters, varID, var_out)
+  SUBROUTINE read_cdi_2d_sp2wp(parameters, varID, var_out)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     INTEGER, INTENT(IN) :: varID
     REAL(wp), INTENT(INOUT) :: var_out(:,:)
 
-    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_2d_sp'
+    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_2d_sp2wp'
     INTEGER :: nmiss, ierrstat
     REAL(sp), ALLOCATABLE :: tmp_buf(:)
 
@@ -972,19 +1081,19 @@ CONTAINS
 
     DEALLOCATE(tmp_buf, STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish(routine, "DEALLOCATE failed!")
-  END SUBROUTINE read_cdi_2d_sp
+  END SUBROUTINE read_cdi_2d_sp2wp
 
   !---------------------------------------------------------------------------------------------------------------------------------
   !> read and distribute a 2D variable across the processes
   !---------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE read_cdi_2d_wp(parameters, varID, var_out)
+  SUBROUTINE read_cdi_2d_dp2wp(parameters, varID, var_out)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     INTEGER, INTENT(IN) :: varID
     REAL(wp), INTENT(INOUT) :: var_out(:,:)
 
-    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_2d_wp'
+    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_2d_dp2wp'
     INTEGER :: nmiss, ierrstat
-    REAL(wp), ALLOCATABLE :: tmp_buf(:)
+    REAL(dp), ALLOCATABLE :: tmp_buf(:)
 
     IF (my_process_is_mpi_workroot()) THEN
         ! read record as 1D field
@@ -1000,20 +1109,20 @@ CONTAINS
 
     DEALLOCATE(tmp_buf, STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish(routine, "DEALLOCATE failed!")
-  END SUBROUTINE read_cdi_2d_wp
+  END SUBROUTINE read_cdi_2d_dp2wp
 
 
   !-------------------------------------------------------------------------
   !> Read 2D dataset from file, implementation for REAL fields
   !
-  SUBROUTINE read_cdi_2d_real_tiles (parameters, varname, var_out, tileinfo)
+  SUBROUTINE read_cdi_2d_tiles_wp (parameters, varname, var_out, tileinfo)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     CHARACTER(len=*),        INTENT(IN)    :: varname        !< Var name of field to be read
     REAL(wp),                INTENT(INOUT) :: var_out(:,:)   !< output field
     TYPE(t_tileinfo_grb2),   INTENT(IN)    :: tileinfo
 
     ! local variables:
-    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_2d_real_tiles'
+    CHARACTER(len=*), PARAMETER :: routine = modname//':read_cdi_2d_tiles_wp'
     INTEGER       :: varId, vlistId, gridId, subtypeID, tile_index
 
     CALL parameters%findVarId(varname, tileinfo, varID, tile_index)
@@ -1035,38 +1144,38 @@ CONTAINS
     SELECT CASE(parameters%variableDatatype(varId+1))
         CASE(CDI_DATATYPE_PACK23:CDI_DATATYPE_PACK32, CDI_DATATYPE_FLT64, CDI_DATATYPE_INT32)
             ! int32 is treated as double precision because single precision floats would cut off up to seven bits from the integer
-            CALL read_cdi_2d_wp(parameters, varId, var_out)
+            CALL read_cdi_2d_dp2wp(parameters, varId, var_out)
         CASE DEFAULT
             ! XXX: Broadcasting CDI_DATATYPE_PACK1..CDI_DATATYPE_PACK22 DATA as single precision may actually change their values, but this
             !      error will always be smaller than the error made by storing the DATA as CDI_DATATYPE_PACK1..CDI_DATATYPE_PACK22 IN the
             !      first place.
-            CALL read_cdi_2d_sp(parameters, varId, var_out)
+            CALL read_cdi_2d_sp2wp(parameters, varId, var_out)
     END SELECT
 
     IF(my_process_is_mpi_workroot()) THEN
       ! reset tile index
       IF (tile_index > 0)  CALL subtypeDefActiveIndex(subtypeID, 0)
     END IF
-  END SUBROUTINE read_cdi_2d_real_tiles
+  END SUBROUTINE read_cdi_2d_tiles_wp
 
 
   !-------------------------------------------------------------------------
   !> Read 2D dataset from file, implementation for REAL fields
   !
-  SUBROUTINE read_cdi_2d_real (parameters, varname, var_out)
+  SUBROUTINE read_cdi_2d_wp (parameters, varname, var_out)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     CHARACTER(len=*),        INTENT(IN)    :: varname        !< Var name of field to be read
     REAL(wp),                INTENT(INOUT) :: var_out(:,:)   !< output field
 
-    CALL read_cdi_2d_real_tiles (parameters, varname, var_out, trivial_tile_att%getTileinfo_grb2())
-  END SUBROUTINE read_cdi_2d_real
+    CALL read_cdi_2d_tiles_wp (parameters, varname, var_out, trivial_tile_att%getTileinfo_grb2())
+  END SUBROUTINE read_cdi_2d_wp
 
 
   !-------------------------------------------------------------------------
   !> Read 2D dataset from file, implementation for INTEGER fields
   !
 
-  SUBROUTINE read_cdi_2d_int_tiles(parameters, varname, var_out, tileinfo)
+  SUBROUTINE read_cdi_2d_tiles_int(parameters, varname, var_out, tileinfo)
     TYPE(t_inputParameters), INTENT(INOUT) :: parameters
     CHARACTER(len=*),        INTENT(IN)    :: varname        !< Var name of field to be read
     INTEGER,                 INTENT(INOUT) :: var_out(:,:)   !< output field
@@ -1083,13 +1192,13 @@ CONTAINS
     var_tmp(:,:) = 0._wp
     IF (ierrstat /= SUCCESS) CALL finish (routine, 'ALLOCATE failed.')
     ! read the field as a REAL-valued field:
-    CALL read_cdi_2d_real_tiles (parameters, varname, var_tmp, tileinfo )
+    CALL read_cdi_2d_tiles_wp (parameters, varname, var_tmp, tileinfo )
     ! perform number conversion
     var_out(:,:) = NINT(var_tmp)
     ! clean up
     DEALLOCATE(var_tmp, STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish (routine, 'DEALLOCATE failed.')
-  END SUBROUTINE read_cdi_2d_int_tiles
+  END SUBROUTINE read_cdi_2d_tiles_int
 
 
   !-------------------------------------------------------------------------
@@ -1101,7 +1210,7 @@ CONTAINS
     CHARACTER(len=*),        INTENT(IN)    :: varname        !< Var name of field to be read
     INTEGER,                 INTENT(INOUT) :: var_out(:,:)   !< output field
 
-    CALL read_cdi_2d_int_tiles(parameters, varname, var_out, trivial_tile_att%getTileinfo_grb2())
+    CALL read_cdi_2d_tiles_int(parameters, varname, var_out, trivial_tile_att%getTileinfo_grb2())
   END SUBROUTINE read_cdi_2d_int
 
 
@@ -1140,12 +1249,12 @@ CONTAINS
       SELECT CASE(parameters%variableDatatype(varId+1))
         CASE(CDI_DATATYPE_PACK23:CDI_DATATYPE_PACK32, CDI_DATATYPE_FLT64, CDI_DATATYPE_INT32)
             ! int32 is treated as double precision because single precision floats would cut off up to seven bits from the integer
-            CALL read_cdi_2d_wp(parameters, varId, var_out(:,:,jt))
+            CALL read_cdi_2d_dp2wp(parameters, varId, var_out(:,:,jt))
         CASE DEFAULT
             ! XXX: Broadcasting CDI_DATATYPE_PACK1..CDI_DATATYPE_PACK22 DATA as single precision may actually change their values, but this
             !      error will always be smaller than the error made by storing the DATA as CDI_DATATYPE_PACK1..CDI_DATATYPE_PACK22 IN the
             !      first place.
-            CALL read_cdi_2d_sp(parameters, varId, var_out(:,:,jt))
+            CALL read_cdi_2d_sp2wp(parameters, varId, var_out(:,:,jt))
       END SELECT
     END DO
     IF (is_workroot) THEN
@@ -1190,6 +1299,9 @@ CONTAINS
   FUNCTION create_cdi_variable(vlistID, gridID, zaxisID,    &
     &                          info, missval, output_type,  &
     &                          gribout_config, i_lctype,    &
+    &                          number_of_bits,              &
+    &                          chunk_size,                  &
+    &                          filter_spec,                 &
     &                          out_varnames_dict) RESULT(varID)
     INTEGER :: varID
     INTEGER,                INTENT(IN)         :: vlistID, gridID, zaxisID
@@ -1198,11 +1310,15 @@ CONTAINS
     INTEGER,                INTENT(IN)         :: output_type
     TYPE(t_gribout_config), INTENT(IN)         :: gribout_config
     INTEGER,                INTENT(IN)         :: i_lctype
+    INTEGER,                INTENT(IN)         :: number_of_bits
+    INTEGER,                INTENT(IN)         :: chunk_size
+    CHARACTER(len=MAX_CHAR_LENGTH), INTENT(IN) :: filter_spec
     TYPE(t_dictionary),     INTENT(IN)         :: out_varnames_dict
     ! local variables
     CHARACTER(LEN=DICT_MAX_STRLEN) :: mapped_name
     TYPE(t_cf_var), POINTER        :: this_cf
-    INTEGER                        :: i
+    INTEGER                        :: nval
+    INTEGER                        :: i, iret
 
     ! Search name mapping for name in NetCDF file
     IF (info%cf%short_name /= '') THEN
@@ -1252,7 +1368,7 @@ CONTAINS
     END IF
 
     IF (output_type == FILETYPE_GRB2) THEN
-      
+
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       !!!          ATTENTION                    !!!
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1281,22 +1397,63 @@ CONTAINS
       CALL set_GRIB2_tile_keys(vlistID, varID, info, i_lctype, gribout_config%grib2_template_tile)
 #endif
 
-      ! Set further additional integer keys
+#ifndef __NO_ICON_WAVES__
+      ! Set grib2 PDT for wave 2D spectra
+      CALL set_grib2_pdt_wave_spectra(vlistID, varID, info)
+#endif
+
+      ! Set additional integer keys
       DO i=1,info%grib2%additional_keys%nint_keys
         CALL vlistDefVarIntKey(vlistID, varID, TRIM(info%grib2%additional_keys%int_key(i)%key), &
           &                    info%grib2%additional_keys%int_key(i)%val)
       END DO
 
-      ! Set further additional double keys
+      ! Set additional double keys
       DO i=1,info%grib2%additional_keys%ndbl_keys
         CALL vlistDefVarDblKey(vlistID, varID, TRIM(info%grib2%additional_keys%dbl_key(i)%key), &
           &                    info%grib2%additional_keys%dbl_key(i)%val)
       END DO
 
+      ! Set additional integer array keys
+      DO i=1,info%grib2%additional_keys%nintarr_keys
+        nval = info%grib2%additional_keys%intarr_key(i)%arr_len
+        CALL vlistDefVarIntArrKey(vlistID, varID, TRIM(info%grib2%additional_keys%intarr_key(i)%key), &
+          &                    info%grib2%additional_keys%intarr_key(i)%vals(1:nval),nval)
+      ENDDO
+
+      ! Set additional double array keys
+      DO i=1,info%grib2%additional_keys%ndblarr_keys
+        nval = info%grib2%additional_keys%dblarr_key(i)%arr_len
+        CALL vlistDefVarDblArrKey(vlistID, varID, TRIM(info%grib2%additional_keys%dblarr_key(i)%key), &
+          &                    info%grib2%additional_keys%dblarr_key(i)%vals(1:nval),nval)
+      ENDDO
+
+      ! Adjustments for compensating non-backward-compatible
+      ! metadata changes after version updates of the GRIB library.
+      ! (For now, any adjustment presupposes additional integer GRIB keys being set.)
+      IF ((gribout_config%grib_lib_compat == GRIB_LIB_COMPAT_ECC_2_31_0) &
+        & .AND. (info%grib2%additional_keys%nint_keys > 0)) THEN
+        CALL grib_lib_compatibility(grib_lib_compat      = gribout_config%grib_lib_compat, & ! in
+          &                         vlistID              = vlistID,                        & ! in
+          &                         varID                = varID,                          & ! in
+          &                         zaxisID              = zaxisID,                        & ! in
+          &                         additional_grib_keys = info%grib2%additional_keys      ) ! in
+      ENDIF
+
     ELSE ! NetCDF
       CALL vlistDefVarDatatype(vlistID, varID, this_cf%datatype)
+
+      IF (number_of_bits .GT. 0) THEN
+        CALL vlistDefVarNSB(vlistID, varID, number_of_bits)
+      ENDIF
+      IF (chunk_size >= 0) THEN
+        iret = cdiDefKeyInt(vlistID, varID, CDI_KEY_CHUNKSIZE, chunk_size);
+      ENDIF
+      IF (LEN_TRIM(filter_spec) > 0) THEN
+        iret = cdiDefKeyString(vlistID, varID, CDI_KEY_FILTERSPEC, TRIM(filter_spec))
+      ENDIF
     ENDIF
-   
+
   END FUNCTION create_cdi_variable
 
 

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -174,7 +174,7 @@ begin
   format = "pdf"
 
 ;---Determine paper size as orientation does not work as expected
-  if ( "${PROJ}" .eq. "NPS" .or. "${PROJ}" .eq. "SPS" ) then 
+  if ( "${PROJ}" .eq. "NPS" .or. "${PROJ}" .eq. "SPS" ) then
       format@wkPaperSize = "A4"
   else
       format@wkPaperHeightF = 8.3
@@ -189,7 +189,7 @@ begin
   a   = addfile("${IFILE}","r")
 
   S=$STEP
-  if ( "${LEVEL}" .eq. "-1") then   
+  if ( "${LEVEL}" .eq. "-1") then
    l=${LEVEL}-1
    x   = a->${VAR}(: , :, :)
   else
@@ -224,11 +224,11 @@ begin
   res@gsnFrame= False
 
   res@gsnMaximize       = True     ; maximize plot in frame
-  res@gsnPaperOrientation = "portrait" 
+  res@gsnPaperOrientation = "portrait"
 
 
 ;---These are sample resources you might want to set
-  if ( "${TYPE}" .eq. "0") then   
+  if ( "${TYPE}" .eq. "0") then
   res@cnFillOn          = False     ; turn on contour fill
   res@cnLinesOn         = True    ; turn off contour lines
   res@cnLineLabelsOn    = True    ; turn off line labels
@@ -236,7 +236,7 @@ begin
   res@cnFillOn          = True     ; turn on contour fill
   res@cnLinesOn         = False    ; turn off contour lines
   res@cnLineLabelsOn    = False    ; turn off line labels
-  end if 
+  end if
 ;---Use if you have a high-res grid that could be slow to plot.
  res@cnFillMode        = "RasterFill"
 ; res@cnFillMode        = "CellFill"
@@ -250,7 +250,7 @@ begin
 ;  res@cnMissingValFillColor    = "gray30" ; set color for missing areas
 
 
-  if ( "${TITLE}" .eq. "") then   
+  if ( "${TITLE}" .eq. "") then
     res@tiMainString = "${IFILE}"
   else
     res@tiMainString = "${TITLE}"
@@ -266,17 +266,17 @@ begin
 
 ;---Set to False if plotting regional data or setting sfXArray/sfYArray
 ;  res@gsnAddCyclic      = False
-;  res@sfXArray          = lon   ; Only necessary if x doesn't 
+;  res@sfXArray          = lon   ; Only necessary if x doesn't
 ;  res@sfYArray          = lat   ; contain 1D coordinate arrays
 ;
 
-  if ( "${LSTRING}" .eq. "") then   
+  if ( "${LSTRING}" .eq. "") then
 
     if (isdim(x,"depth")) then
        res@gsnLeftString = x@depth +"m"
       else if (isdim(x,"depth_2")) then
          res@gsnLeftString = x@depth_2 +"m"
-      else 
+      else
         res@gsnLeftString = ""
       end if
     end if
@@ -287,7 +287,7 @@ begin
 
 ;       res@gsnLeftString = x@depth +"m"
 
-  if ( "${CSTRING}" .eq. "") then   
+  if ( "${CSTRING}" .eq. "") then
      res@gsnCenterString = x@long_name+" ["+ x@units+"]"
 ;     res@gsnCenterString = ""
   else
@@ -296,30 +296,30 @@ begin
 
   do timestep = 0, dimsizes(time)-1
 
-    
+
    ; Convert to UTC time.
      utc_date = cd_calendar(time(timestep), 0)
    ; Store return information into more meaningful variables.
- 
-    year   = tointeger(utc_date(0,0))    
+
+    year   = tointeger(utc_date(0,0))
     month  = tointeger(utc_date(0,1))
     day    = tointeger(utc_date(0,2))
 
-    sdate = sprinti("%0.4i", year) +"-"+ sprinti("%0.2i", month) +"-"+ sprinti("%0.2i", day) 
+    sdate = sprinti("%0.4i", year) +"-"+ sprinti("%0.2i", month) +"-"+ sprinti("%0.2i", day)
 
-    if ( "${RSTRING}" .eq. "") then   
+    if ( "${RSTRING}" .eq. "") then
       res@gsnRightString = sdate
-    else 
+    else
       res@gsnRightString = "${RSTRING}"
     end if
 
 
-    if ( "${PROJ}" .eq. "NPS" ) then 
+    if ( "${PROJ}" .eq. "NPS" ) then
       res@gsnPolar   = "NH"                          ; specify the hemisphere
      res@mpMinLatF         = 50
      res@mpMaxLatF         = 90
       plot = gsn_csm_contour_map_polar(wks,x(timestep, :,:),res)    ; create the plot
-    else if ( "${PROJ}" .eq. "SPS" ) then 
+    else if ( "${PROJ}" .eq. "SPS" ) then
       res@mpMinLatF         = -90
       res@mpMaxLatF         = -20
       res@gsnPolar   = "SH"                          ; specify the hemisphere
@@ -331,25 +331,25 @@ begin
 ; map if you have a different projection, like lambert conformal.
 ;
 
-      if ( "${MINLAT}" .eq. "" ) then 
+      if ( "${MINLAT}" .eq. "" ) then
         res@mpMinLatF         = min(x@lat2d)
       else
-        res@mpMinLatF         = $MINLAT 
+        res@mpMinLatF         = $MINLAT
       end if
 
-      if ( "${MAXLAT}" .eq. "" ) then 
+      if ( "${MAXLAT}" .eq. "" ) then
         res@mpMaxLatF         = max(x@lat2d)
       else
         res@mpMaxLatF         = $MAXLAT
       end if
 
-      if ( "${MINLON}" .eq. "" ) then 
+      if ( "${MINLON}" .eq. "" ) then
         res@mpMinLonF         = min(x@lon2d)
       else
         res@mpMinLonF         = $MINLON
       end if
 
-      if ( "${MAXLON}" .eq. "" ) then 
+      if ( "${MAXLON}" .eq. "" ) then
         res@mpMaxLonF         = max(x@lon2d)
       else
         res@mpMaxLonF         = $MAXLON
@@ -358,7 +358,7 @@ begin
       res@mpCenterLonF      = (res@mpMinLonF + res@mpMaxLonF) / 2.
       res@mpCenterLatF      = (res@mpMinLatF + res@mpMaxLatF) / 2.
       plot = gsn_csm_contour_map(wks,x(timestep, :,:),res)
-      if ( "${TYPE}" .eq. "0") then   
+      if ( "${TYPE}" .eq. "0") then
         plot = ColorNegDashZeroPosContour(plot,"red","magenta","blue")
       end if
     end if

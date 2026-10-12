@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -27,7 +27,7 @@
 ;---------------------------------------------------------------
  begin
   wcStrt     = systemfunc("date")
-  Model      = "ICOHAM" 
+  Model      = "ICOHAM"
   Resolution = "R2B04L31"
 
   Diri      =  "~dreinert/NCL_scripts/icon_workshop/ICON_data/"
@@ -35,24 +35,24 @@
 
   File = addfile(Diri+Filename, "r" )
   print("File="+Filename)
-  
-  VarName = "DIV"                                               
+
+  VarName = "DIV"
   scale   = 1.e6
   level   = 20
   time    = 9 ;! attention on time stepping, here 24h
-  
+
   var = File->$VarName$(time,level,:)   ; dims: (time,lev,cell)
   var = var*scale
   printVarSummary(var)
 
-  print("Varscale="+scale)  
+  print("Varscale="+scale)
   print("max="+max(var))
   print("min="+min(var))
   print("mean="+avg(var))
 
 ;+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-; Labeling  
+; Labeling
   LeftString   = var@long_name+"  at Hybrid Level "+level+" at day "+time
   RightString  = Model+" "+Resolution
   CenterString = ""
@@ -67,7 +67,7 @@
 ;  print("varmax="+varMax)
 ;  print("varmin="+varMin)
 ;  print("varint="+varInt)
-  
+
   rad2deg = 45./atan(1.)   ; radians to degrees
 
 ;---------------------------------------------------------------
@@ -77,13 +77,13 @@
   x = File->clon *rad2deg   ; cell center, lon
   y = File->clat *rad2deg   ; cell center, lat
   vlon = File->clon_vertices * rad2deg
-  print("longitude min/max: " + min(vlon) + " " + max(vlon))  
+  print("longitude min/max: " + min(vlon) + " " + max(vlon))
   vlon = where(vlon.lt.0, vlon + 360, vlon)
-  print("longitude min/max: " + min(vlon) + " " + max(vlon))  
+  print("longitude min/max: " + min(vlon) + " " + max(vlon))
   vlat = File->clat_vertices * rad2deg
 
 ; Note: clon and clat are longitude and latitude of triangle centers.
-;       Locations of the cell corners are given by 
+;       Locations of the cell corners are given by
 ;       clon_vertices and clat_vertices in the nc file.
 
 ;---------------------------------------------------------------
@@ -106,7 +106,7 @@
   FontHeight = 0.01
 
   ResC@tiXAxisFontHeightF        = FontHeight
-  ResC@tiYAxisFontHeightF        = FontHeight 
+  ResC@tiYAxisFontHeightF        = FontHeight
   ResC@tmXBLabelFontHeightF      = FontHeight
   ResC@tmYLLabelFontHeightF      = FontHeight
   ResC@tmXBMajorLengthF          = FontHeight*.5
@@ -126,17 +126,17 @@
   ResC@mpMinLatF      =  0.
   ResC@mpMaxLatF      =  60.
 
-  ResC@gsnMajorLonSpacing =  30. 
+  ResC@gsnMajorLonSpacing =  30.
   ResC@gsnMinorLonSpacing =  10.
-  ResC@gsnMajorLatSpacing =  15. 
-  ResC@gsnMinorLatSpacing =   5. 
+  ResC@gsnMajorLatSpacing =  15.
+  ResC@gsnMinorLatSpacing =   5.
 
   ResC@mpFillOn               = False
 
   ResC@sfXArray                 = x  ; These are 1D arrays, so a triangular
   ResC@sfYArray                 = y  ; mesh will be created internally.
 
-  ResC@lbLabelBarOn             = True 
+  ResC@lbLabelBarOn             = True
   ResC@pmLabelBarHeightF        = 0.04
   ResC@pmLabelBarWidthF         = 0.5
   ResC@lbLabelAutoStride        = True
@@ -153,9 +153,9 @@
 
   ResC@gsnSpreadColors      = True
 
-  ResC@gsnLeftString        = LeftString 
+  ResC@gsnLeftString        = LeftString
   ResC@gsnCenterString      = CenterString
-  ResC@gsnRightString       = RightString 
+  ResC@gsnRightString       = RightString
 
   ResC@cnFillMode           = "rasterfill"
   ResC@cnRasterSmoothingOn  = True
@@ -176,7 +176,7 @@
 ; indicates if the vertices are w/in the lat/lon area we're
 ; interested in.
 ;
- 
+
   flags = new(dimsizes(var),logical);,"No_FillValue")
   flags = True
 

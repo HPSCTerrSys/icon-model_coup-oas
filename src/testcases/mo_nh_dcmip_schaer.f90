@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Subroutine to initialize testcases 21 22 (Mountain waves over a Schaer
 ! type mountain on a small planet without and with wind shear) proposed
 ! for the DCMIP summer school
@@ -16,18 +27,6 @@
 ! Literature
 ! - Dynamical Core Model Intercomparison Project (DCMIP)
 !   Test Case Document (P. Ullrich et al, 2012)
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_nh_dcmip_schaer
 
@@ -44,7 +43,7 @@ MODULE mo_nh_dcmip_schaer
    USE mo_intp,                 ONLY: cells2edges_scalar
    USE mo_sync,                 ONLY: sync_patch_array, sync_patch_array_mult, &
      &                                SYNC_C, SYNC_E
-   USE mo_nh_init_utils,        ONLY: convert_thdvars  !, init_w 
+   USE mo_nh_init_utils,        ONLY: convert_thdvars  !, init_w
    USE mo_hydro_adjust,         ONLY: hydro_adjust
 
    IMPLICIT NONE
@@ -63,14 +62,14 @@ MODULE mo_nh_dcmip_schaer
 !-------------------------------------------------------------------------
 !
   !>
-  !! Initialization of topograpphy for the nh schaer-type DCMIP test cases 
+  !! Initialization of topograpphy for the nh schaer-type DCMIP test cases
   !!
   SUBROUTINE init_nh_topo_dcmip_schaer( p_patch, topo_c, fis)
 
     TYPE(t_patch), TARGET,INTENT(INOUT) :: &  !< patch on which computation is performed
       &  p_patch
 
-  
+
    REAL(wp), INTENT(INOUT)  :: topo_c    (:,:)
    REAL(wp), INTENT(INOUT)  :: fis       (:,:)
 
@@ -79,7 +78,7 @@ MODULE mo_nh_dcmip_schaer
    REAL(wp)    :: r, z_lat, z_lon
    REAL(wp)    :: sin_tmp, cos_tmp
    INTEGER     :: i_startidx, i_endidx, i_startblk, i_endblk
-   INTEGER     :: i_rlstart, i_rlend, i_nchdom 
+   INTEGER     :: i_rlstart, i_rlend, i_nchdom
 
 !  !DEFINED PARAMETERS for the Schaer-type testcase (DCMIP):
    REAL(wp), PARAMETER :: h0 = 250._wp  ! maximum schaer-type mountain height(m)
@@ -120,28 +119,28 @@ MODULE mo_nh_dcmip_schaer
 
      ENDDO  !jc
    ENDDO  !jb
-!$OMP END DO 
+!$OMP END DO
 !$OMP END PARALLEL
 
 
    END SUBROUTINE init_nh_topo_dcmip_schaer
- 
+
 !-------------------------------------------------------------------------
 
   !>
-  !! Initialization of prognostic state vector for the DCMIP nh  schaer-type 
+  !! Initialization of prognostic state vector for the DCMIP nh  schaer-type
   !! test case.
   !!
   !!
-  !!  The tests in this section examine the response of atmospheric models to flow over a 
+  !!  The tests in this section examine the response of atmospheric models to flow over a
   !! mountain profile, with and without wind shear. In order to ensure the simulated response
   !! contains both hydrostatic and non-hydrostatic features, the radius of the Earth is scaled so that the
   !! simulation is in the non-hydrostatic domain. We chose a non-rotating Earth with angular velocity
   !! = 0 s^-1 and select a reduced-size Earth with radius as = a/X. The reduction factor is set to
-  !! X = 500. This choice leads to an Earth with a circumference at the equator of about 2pi a/X, which is 
+  !! X = 500. This choice leads to an Earth with a circumference at the equator of about 2pi a/X, which is
   !! approximately 80 km. These underlying ideas behind the tests are based on the work of Schaer et al. (MWR 2002),
   !! Wedi and Smolarkiewicz (QJR 2009), and Wedi et al. (ECMWF Tech Report 2009)
-  !! Note however that in the presence of vertical wind shear we do not recommend the isothermal conditions 
+  !! Note however that in the presence of vertical wind shear we do not recommend the isothermal conditions
   !! suggested in the literature. They lead to imbalances of the initial conditions in spherical geometry
 
   SUBROUTINE init_nh_prog_dcmip_schaer(p_patch, p_nh_prog, p_nh_diag, p_nh_ref, &
@@ -163,13 +162,13 @@ MODULE mo_nh_dcmip_schaer
       &  p_metrics
     TYPE(t_int_state),    INTENT(IN)    :: &  !< interpolation state
       &  p_int
-    LOGICAL,              INTENT(IN)    :: l_hydro_adjust !if .TRUE. hydrostatically balanced 
+    LOGICAL,              INTENT(IN)    :: l_hydro_adjust !if .TRUE. hydrostatically balanced
                                                           ! initial condition
 
     !local variables
     INTEGER  :: jc, je, jk, jb        !< loop indices
     INTEGER  :: i_startidx, i_endidx, i_startblk, i_endblk
-    INTEGER  :: i_rlstart, i_rlend, i_nchdom  
+    INTEGER  :: i_rlstart, i_rlend, i_nchdom
     INTEGER  :: nlev, nlevp1          !< number of full/half levels
     REAL(wp) :: z_lat                 !< geographical coordinates
     REAL(wp) :: temp_e, zu, zv, c
@@ -180,7 +179,7 @@ MODULE mo_nh_dcmip_schaer
     REAL(wp), PARAMETER :: peq = 100000._wp  ! Reference surface pressure at the equator (Pa)
     REAL(wp), PARAMETER :: teq = 300._wp     ! Reference surface temperature at the equator (K)
     REAL(wp), PARAMETER :: ueq = 20._wp      ! Reference zonal wind velocity (m/s)
-    REAL(wp), PARAMETER :: cs  = 2.5e-4_wp   ! equatorial surface wind shear 
+    REAL(wp), PARAMETER :: cs  = 2.5e-4_wp   ! equatorial surface wind shear
                                              ! (lshear_dcmip .TRUE.) (m-1)
 
 !--------------------------------------------------------------------
@@ -196,9 +195,9 @@ MODULE mo_nh_dcmip_schaer
 
     ! Compute geometric height at edge points
     CALL cells2edges_scalar(p_metrics%z_mc, p_patch, &
-             p_int%c_lin_e, z_me)
+             p_int%c_lin_e, z_me, lacc=.FALSE.)
 
-    CALL sync_patch_array(SYNC_E,p_patch,z_me)
+    CALL sync_patch_array(SYNC_E,p_patch,z_me,lacc=.FALSE.)
 
 
     ! Mountain waves with or without vertical shear
@@ -235,7 +234,7 @@ MODULE mo_nh_dcmip_schaer
           ! the temperature at the edge is needed
           temp_e = teq *(1.0_wp - (c*ueq*ueq/(grav))*(SIN(z_lat)**2) )
 
-          zu = ueq * COS(z_lat) * SQRT( (2.0_wp*teq/temp_e)*c*z_me(je,jk,jb) + temp_e/teq) 
+          zu = ueq * COS(z_lat) * SQRT( (2.0_wp*teq/temp_e)*c*z_me(je,jk,jb) + temp_e/teq)
           ! meridional velocity
           zv = 0._wp
 
@@ -258,7 +257,7 @@ MODULE mo_nh_dcmip_schaer
 ! initialized vertical velocity
 
   ! CALL init_w(p_patch, p_int, p_nh_prog%vn, p_metrics%z_ifc, p_nh_prog%w)
-  ! CALL sync_patch_array(SYNC_C, p_patch, p_nh_prog%w)
+  ! CALL sync_patch_array(SYNC_C, p_patch, p_nh_prog%w, lacc=.FALSE.)
 
    i_rlstart = 1
    i_rlend   = min_rlcell
@@ -281,7 +280,7 @@ MODULE mo_nh_dcmip_schaer
          !
          p_nh_diag%temp(jc,jk,jb) = teq*(1.0_wp - (c*ueq*ueq/(grav))*(SIN(z_lat)**2) )
 
-         p_nh_diag%pres(jc,jk,jb) = peq*EXP( -(ueq*ueq/(2.0_wp*rd*teq))*(SIN(z_lat)**2) & 
+         p_nh_diag%pres(jc,jk,jb) = peq*EXP( -(ueq*ueq/(2.0_wp*rd*teq))*(SIN(z_lat)**2) &
                       & - grav*p_metrics%z_mc(jc,jk,jb)/(rd*p_nh_diag%temp(jc,jk,jb))    )
 
          ! initialized vertical velocity
@@ -302,7 +301,7 @@ MODULE mo_nh_dcmip_schaer
 
        z_lat = p_patch%cells%center(jc,jb)%lat
 
-       p_nh_diag%pres_sfc(jc,jb) = peq*EXP( -(ueq*ueq/(2.0_wp*rd*teq))*(SIN(z_lat)**2) & 
+       p_nh_diag%pres_sfc(jc,jb) = peq*EXP( -(ueq*ueq/(2.0_wp*rd*teq))*(SIN(z_lat)**2) &
                 &  - grav* p_metrics%z_ifc(jc,nlevp1,jb)/(rd*p_nh_diag%temp(jc,nlev,jb)) )
      ENDDO !jc
 
@@ -319,9 +318,10 @@ MODULE mo_nh_dcmip_schaer
                       & p_nh_prog%rho, p_nh_prog%exner, p_nh_prog%theta_v  )
 
 
-   CALL sync_patch_array_mult(SYNC_C, p_patch, 2, p_nh_prog%w, p_nh_ref%w_ref)
-   CALL sync_patch_array_mult(SYNC_C, p_patch, 3,                               &
-     &                        p_nh_prog%rho, p_nh_prog%exner, p_nh_prog%theta_v )
+   CALL sync_patch_array_mult(SYNC_C, p_patch, 2, lacc=.FALSE., &
+                            & f3din1=p_nh_prog%w, f3din2=p_nh_ref%w_ref)
+   CALL sync_patch_array_mult(SYNC_C, p_patch, 3, lacc=.FALSE., &
+                            & f3din1=p_nh_prog%rho, f3din2=p_nh_prog%exner, f3din3=p_nh_prog%theta_v )
 
 
    IF (l_hydro_adjust) THEN
@@ -329,7 +329,8 @@ MODULE mo_nh_dcmip_schaer
      CALL hydro_adjust ( p_patch, p_metrics, p_nh_prog%rho, &
                        & p_nh_prog%exner, p_nh_prog%theta_v )
 
-     CALL sync_patch_array_mult(SYNC_C, p_patch, 3, p_nh_prog%rho, p_nh_prog%exner, p_nh_prog%theta_v)
+     CALL sync_patch_array_mult(SYNC_C, p_patch, 3, lacc=.FALSE., &
+                              & f3din1=p_nh_prog%rho, f3din2=p_nh_prog%exner, f3din3=p_nh_prog%theta_v)
    END IF
 
 

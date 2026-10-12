@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -16,7 +16,12 @@ unset CDPATH
 script_dir=$(cd "$(dirname "$0")"; pwd)
 icon_dir=$(cd "${script_dir}/../.."; pwd)
 
-modules='oneapi/2022.1.0'
+# We cannot enforce the system GCC toolchain for the Fortran compiler using a
+# compiler flag. For example, '-gnu-prefix=/usr/bin/' results in
+# ifx: error #10417: Problem setting up the Intel(R) Compiler compilation environment. Requires 'install path' setting gathered from '/usr/bin'.
+# The best we can do is to unload the gcc environment module and hope that the
+# first `gcc` in the PATH is `/usr/bin/gcc`:
+modules='!gcc oneapi/2022.1.0'
 sw_root='/sw/bullseye-x64/views/icon/nompi/oneapi-2022.1.0'
 
 if test -r "${sw_root}/lib/librttov_main.a"; then
@@ -43,12 +48,12 @@ fi
 BUILD_ENV=". \"${ENV}\";. \"${script_dir}/module_switcher\"; switch_for_module ${modules}; export PATH=\"${sw_root}/bin:\${PATH-}\"; export LD_LIBRARY_PATH=\"${sw_root}/lib:\${LD_LIBRARY_PATH-}\"; export PYTHONPATH=\"${sw_root}/python/pp_ser:\${PYTHONPATH-}\";"
 
 CC='icx'
-CFLAGS='-g -march=native -pc64 -ftz -fma -qno-opt-dynamic-align'
+CFLAGS='-g -march=native -pc64 -ftz -fma -qno-opt-dynamic-align --gcc-toolchain=/usr'
 ICON_CFLAGS='-O3'
 ICON_BUNDLED_CFLAGS='-O2'
 
 CXX='icpx'
-CXXFLAGS='-g -march=native -pc64 -ftz -fma -qno-opt-dynamic-align -O2'
+CXXFLAGS='-g -march=native -pc64 -ftz -fma -qno-opt-dynamic-align -O2 --gcc-toolchain=/usr'
 
 CPPFLAGS="-I${sw_root}/include -I${sw_root}/include/libxml2"
 
@@ -65,11 +70,19 @@ ICON_OCEAN_PATH='src/hamocc:src/ocean:src/sea_ice'
 ICON_ECRAD_FCFLAGS='-qno-opt-dynamic-align -no-fma -fpe0'
 
 LDFLAGS="${RTTOV_LDFLAGS-} -L${sw_root}/lib -Wl,--disable-new-dtags"
-LIBS="-Wl,--as-needed -lxml2 -lSerialboxFortran -leccodes ${RTTOV_LIBS-} -llapack -lblas -lnetcdff -lnetcdf -lhdf5_hl_fortran -lhdf5_fortran -lhdf5"
+LIBS="-Wl,--as-needed -lxml2 -lSerialboxFortran -leccodes ${RTTOV_LIBS-} -llapack -lblas -lnetcdff -lnetcdf -lhdf5_hl_fortran -lhdf5_fortran -lhdf5 -lstdc++"
 
 AR='xiar'
 
-EXTRA_CONFIG_ARGS='--enable-loop-exchange --enable-intel-consistency --disable-mpi --disable-coupling --enable-grib2 --enable-fcgroup-OCEAN'
+EXTRA_CONFIG_ARGS="\
+--enable-loop-exchange \
+--enable-intel-consistency \
+--disable-mpi \
+--disable-coupling \
+--enable-grib2 \
+--enable-fcgroup-OCEAN \
+--enable-bundled-python=mtime \
+"
 
 ################################################################################
 
@@ -105,11 +118,17 @@ done
 # Copy runscript-related files when building out-of-source:
 if test $(pwd) != $(cd "${icon_dir}"; pwd); then
   echo "Copying runscript input files from the source directory..."
-  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*'
-  ln -sf -t run/ ${icon_dir}/run/standard_*
-  rsync -uavz ${icon_dir}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${icon_dir}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${icon_dir}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${icon_dir}/make_runscripts .
   ln -sf ${icon_dir}/data
   ln -sf ${icon_dir}/vertical_coord_tables
 fi
-

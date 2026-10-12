@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,13 +15,13 @@
 # Author: Marc Salzmann (MPI, 2011-04)
 #
 # This scripts builds up a registry (table) containing information
-# needed for data processing (include variable name, GRIB code, 
-# unit, etc.) and for plotting (e.g., contour levels, color map). 
+# needed for data processing (include variable name, GRIB code,
+# unit, etc.) and for plotting (e.g., contour levels, color map).
 #
-# When user calls this script for a field by giving its name in 
+# When user calls this script for a field by giving its name in
 # the ICON model output, e.g., like
 #  . ./lookup_variable.ksh PS
-# the script searches through the registry and returns the entry index 
+# the script searches through the registry and returns the entry index
 # of the field as variable "ie" to the calling script. If no matching
 # entry is found, "ie" gets the value -1.
 #=======================================================================
@@ -477,4 +477,3 @@ if [ $ie -eq -1 ]; then
   echo Did not find variable $1 in the table!
   exit
 fi
-

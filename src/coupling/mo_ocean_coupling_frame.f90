@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -17,7 +16,9 @@
 MODULE mo_ocean_coupling_frame
 
   USE mo_exception,           ONLY: message, finish
+  USE mo_grid_config,         ONLY: n_dom
   USE mo_run_config,          ONLY: ltimer
+  USE mo_ocean_era5_provider_coupling, ONLY:  construct_ocean_era5_provider_coupling_post_sync
   USE mo_timer,               ONLY: timer_start, timer_stop, &
        &                            timer_coupling_init
   USE mo_model_domain,        ONLY: t_patch, t_patch_3d
@@ -27,11 +28,12 @@ MODULE mo_ocean_coupling_frame
   ! For the coupling
   !
   USE mo_coupling_utils,      ONLY: cpl_def_main, cpl_enddef
-  USE mo_coupling_config,     ONLY: is_coupled_run, is_coupled_to_atmo, &
-    &                               is_coupled_to_output
+  USE mo_coupling_config,     ONLY: is_coupled_run, is_coupled_to_atmo, is_coupled_to_waves, &
+    &                               is_coupled_to_output, is_coupled_to_era5
   USE mo_output_coupling,     ONLY: construct_output_coupling, &
     &                               construct_output_coupling_finalize
-  USE mo_ocean_atmo_coupling, ONLY: construct_ocean_atmo_coupling
+  USE mo_ocean_atmo_coupling, ONLY: construct_ocean_atmo_coupling, construct_ocean_atmo_coupling_finalize
+  USE mo_ocean_wave_coupling, ONLY: construct_ocean_wave_coupling
   USE mo_time_config,         ONLY: time_config
 
   !-------------------------------------------------------------
@@ -40,12 +42,10 @@ MODULE mo_ocean_coupling_frame
 
   PRIVATE
 
+  CHARACTER(len=*), PARAMETER :: ocean_grid_name = 'icon_ocean_grid'
   CHARACTER(len=*), PARAMETER :: str_module = 'mo_ocean_coupling_frame' ! Output of module for debug
 
   PUBLIC :: construct_ocean_coupling, destruct_ocean_coupling
-  PUBLIC :: nbr_inner_cells
-
-  INTEGER, SAVE :: nbr_inner_cells
 
 CONTAINS
 
@@ -64,8 +64,8 @@ CONTAINS
     TYPE(t_patch), POINTER :: patch_horz
 
     INTEGER :: comp_id, output_comp_id
-    INTEGER :: grid_id
-    INTEGER :: cell_point_id, vertex_point_id
+    INTEGER :: grid_id(0:n_dom)
+    INTEGER :: cell_point_id(0:n_dom), vertex_point_id(0:n_dom)
 
     CHARACTER(LEN=MAX_TIMEDELTA_STR_LEN) :: timestepstring
 
@@ -82,23 +82,21 @@ CONTAINS
 
     ! Do basic initialisation of the component
     IF( is_coupled_to_output() ) THEN
-      CALL cpl_def_main(routine,           & !in
-                        patch_horz,        & !in
-                        "icon_ocean_grid", & !in
-                        comp_id,           & !out
-                        output_comp_id,    & !out
-                        grid_id,           & !out
-                        cell_point_id,     & !out
-                        vertex_point_id,   & !out
-                        nbr_inner_cells)     !out
+      CALL cpl_def_main(routine,                 & !in
+                        patch_3d%p_patch_2d(1:), & !in
+                        ocean_grid_name,         & !in
+                        comp_id,                 & !out
+                        output_comp_id,          & !out
+                        grid_id,                 & !out
+                        cell_point_id,           & !out
+                        vertex_point_id)           !out
     ELSE
-      CALL cpl_def_main(routine,           & !in
-                        patch_horz,        & !in
-                        "icon_ocean_grid", & !in
-                        comp_id,           & !out
-                        grid_id,           & !out
-                        cell_point_id,     & !out
-                        nbr_inner_cells)     !out
+      CALL cpl_def_main(routine,                 & !in
+                        patch_3d%p_patch_2d(1:), & !in
+                        ocean_grid_name,         & !in
+                        comp_id,                 & !out
+                        grid_id,                 & !out
+                        cell_point_id)             !out
     ENDIF
 
     ! get model timestep
@@ -109,8 +107,8 @@ CONTAINS
       CALL message(str_module, 'Constructing the coupling frame ocean-output.')
 
       CALL construct_output_coupling ( &
-        patch_3d%p_patch_2d(1:), output_comp_id, cell_point_id, &
-        vertex_point_id, timestepstring)
+        patch_3d%p_patch_2d(1:), output_comp_id, cell_point_id(1), &
+        vertex_point_id(1), timestepstring, .TRUE.)
 
     END IF
 
@@ -120,8 +118,28 @@ CONTAINS
       CALL message(str_module, 'Constructing the coupling frame ocean-atmosphere.')
 
       CALL construct_ocean_atmo_coupling( &
-        patch_3d, comp_id, grid_id, cell_point_id, timestepstring, &
-        nbr_inner_cells)
+        patch_3d, comp_id, grid_id(1), cell_point_id(1), timestepstring)
+
+    END IF
+
+!provide era5 forcing
+    IF ( is_coupled_to_era5() ) THEN
+
+      ! Construct coupling frame for ocean-era5_provider
+      CALL message(str_module, 'Constructing the coupling frame ocean-era5_provider')
+
+      CALL construct_ocean_era5_provider_coupling_post_sync(patch_3d, comp_id, grid_id(1), cell_point_id(1), timestepstring)
+
+    END IF
+
+    IF ( is_coupled_to_waves() ) THEN
+
+      ! Construct coupling frame for ocean-waves
+      CALL message(str_module, 'Constructing the coupling frame ocean-waves.')
+
+      CALL construct_ocean_wave_coupling( &
+        patch_3d, comp_id, grid_id(1), cell_point_id(1), timestepstring, &
+        ocean_grid_name)
 
     END IF
 
@@ -129,6 +147,8 @@ CONTAINS
 
     ! finalizes the output coupling
     IF( is_coupled_to_output() ) CALL construct_output_coupling_finalize()
+
+    IF ( is_coupled_to_atmo() ) CALL construct_ocean_atmo_coupling_finalize()
 
     IF (ltimer) CALL timer_stop(timer_coupling_init)
 
@@ -143,7 +163,7 @@ CONTAINS
 
     IF (is_coupled_run()) THEN
 
-      CALL message(str_module, 'Destructing the coean coupling frame.')
+      CALL message(str_module, 'Destructing the ocean coupling frame.')
 
     END IF
 
@@ -152,4 +172,3 @@ CONTAINS
   !--------------------------------------------------------------------------
 
 END MODULE mo_ocean_coupling_frame
-

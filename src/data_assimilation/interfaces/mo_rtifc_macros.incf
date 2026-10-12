@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -11,26 +11,9 @@
 !
 !+ Preprocessor macros for mo_rtifc_*.f90
 !
-!
 ! Description:
 !   This file contains the Macro definitions
 !
-! Current Code Owner: DWD, Robin Faulwetter
-!    phone: +49 69 8062 2746
-!    fax:   +49 69 8062 3721
-!    email:  robin.faulwetter@dwd.de
-!
-! History:
-! Version      Date       Name
-! ------------ ---------- ----
-! @VERSION@    @DATE@     Robin Faulwetter
-!  Initial release
-!
-! Code Description:
-! Language: Fortran 2003.
-! Software Standards:
-!
-! Heritage: mo_rtifc_10.f90
 !=======================================================================
 
 

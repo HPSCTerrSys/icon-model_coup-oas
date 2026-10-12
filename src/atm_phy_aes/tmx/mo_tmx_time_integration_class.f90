@@ -1,10 +1,7 @@
-!
-! Classes and functions for the turbulent mixing package (tmx)
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,12 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Classes and functions for the turbulent mixing package (tmx)
+
 MODULE mo_tmx_time_integration_class
 
   USE mo_kind,              ONLY: wp
   USE mo_exception,         ONLY: finish
   USE mo_surrogate_class,   ONLY: t_surrogate
-  ! USE mo_variable_list, ONLY: t_variable_list
 
   IMPLICIT NONE
   PRIVATE
@@ -46,7 +44,7 @@ MODULE mo_tmx_time_integration_class
   END INTERFACE
 
   CHARACTER(len=*), PARAMETER :: modname = 'mo_tmx_time_integration_class'
-  
+
 ! CONTAINS
 
 END MODULE mo_tmx_time_integration_class

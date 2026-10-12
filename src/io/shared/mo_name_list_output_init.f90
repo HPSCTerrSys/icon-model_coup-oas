@@ -1,16 +1,18 @@
-! Module handling the initialization of synchronous and asynchronous output.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module handling the initialization of synchronous and asynchronous output.
+
 !NEC$ options "-fno-loop-unroll"
+
 MODULE mo_name_list_output_init
 
   USE, INTRINSIC :: ISO_C_BINDING, ONLY: c_ptr, c_f_pointer, c_int64_t, c_double
@@ -24,7 +26,8 @@ MODULE mo_name_list_output_init
                                                 & gridDefNvertex, gridDefXvals, cdiDefAttTxt, CDI_GLOBAL, gridDefParamRLL,      &
                                                 & gridDefYvals, gridDefXlongname, gridDefYlongname, gridDefReference,           &
                                                 & taxisDefTunit, taxisDefCalendar, taxisDefRdate, taxisDefRtime, vlistDefTaxis, &
-                                                & gridDefProj, GRID_PROJECTION, GRID_CURVILINEAR, institutDef
+                                                & gridDefProj, GRID_PROJECTION, GRID_CURVILINEAR, institutDef,                  &
+                                                & CDI_COMPRESS_NONE, CDI_COMPRESS_SZIP
   USE mo_cdi_constants,                     ONLY: GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_VERT, GRID_UNSTRUCTURED_EDGE, &
                                                 & GRID_REGULAR_LONLAT, GRID_VERTEX, GRID_EDGE, GRID_CELL, GRID_ZONAL
   USE mo_dynamics_config, ONLY: nnow, nnew, nold
@@ -76,7 +79,7 @@ MODULE mo_name_list_output_init
 
 #ifndef __NO_ICON_ATMO__
   USE mo_nh_pzlev_config,                   ONLY: nh_pzlev_config
-  USE mo_extpar_config,                     ONLY: i_lctype
+  USE mo_extpar_config,                     ONLY: ext_atm_attr
   USE mo_lnd_nwp_config,                    ONLY: ntiles_lnd, ntiles_water, ntiles_total, tile_list, &
     &                                             isub_water, isub_lake, isub_seaice, lsnowtile
   USE mo_nwp_sfc_tiles,                     ONLY: setup_tile_list
@@ -148,7 +151,7 @@ MODULE mo_name_list_output_init
     &                                             GRP_PREFIX, TILE_PREFIX,                        &
     &                                             t_fname_metadata, all_events, t_patch_info_ll,  &
     &                                             is_grid_info_var, GRB2_GRID_INFO_NAME,          &
-    &                                             t_event_data_local, FILETYPE_YAC
+    &                                             t_event_data_local, FILETYPE_NONE
   USE mo_name_list_output_gridinfo,         ONLY: set_grid_info_grb2, set_grid_info_netcdf,       &
     &                                             collect_all_grid_info, copy_grid_info,          &
     &                                             allgather_grid_info, deallocate_all_grid_info,  &
@@ -159,6 +162,7 @@ MODULE mo_name_list_output_init
     &                                             setup_zaxes_oce
 #ifndef __NO_ICON_WAVES__
   USE mo_waves_vertical_axes,               ONLY: setup_zaxes_waves
+  USE mo_wave_name_list_output,             ONLY: replicate_wave_data_on_io_procs
 #endif
   USE mo_level_selection_types,             ONLY: t_level_selection
 #ifndef __NO_JSBACH__
@@ -297,9 +301,9 @@ CONTAINS
     CHARACTER(LEN=vname_len)              :: hl_varlist(max_var_hl)
     CHARACTER(LEN=vname_len)              :: il_varlist(max_var_il)
     CHARACTER(len=MAX_CHAR_LENGTH)        :: m_levels                         !< level selection: model levels
-    REAL(wp)                              :: p_levels(MAX_NPLEVS)             !< pressure levels
-    REAL(wp)                              :: h_levels(MAX_NZLEVS)             !< height levels
-    REAL(wp)                              :: i_levels(MAX_NILEVS)             !< isentropic levels
+    REAL(dp)                              :: p_levels(MAX_NPLEVS)             !< pressure levels
+    REAL(dp)                              :: h_levels(MAX_NZLEVS)             !< height levels
+    REAL(dp)                              :: i_levels(MAX_NILEVS)             !< isentropic levels
     INTEGER                               :: remap
     CHARACTER(LEN=MAX_CHAR_LENGTH)        :: operation
     REAL(wp)                              :: reg_lon_def(3)
@@ -307,7 +311,7 @@ CONTAINS
     INTEGER                               :: reg_def_mode
     REAL(wp)                              :: north_pole(2)
 
-    REAL(wp)                              :: output_bounds(3*MAX_TIME_INTERVALS)
+    REAL(dp)                              :: output_bounds(3*MAX_TIME_INTERVALS)
     INTEGER                               :: output_time_unit
     CHARACTER(LEN=MAX_DATETIME_STR_LEN+1) :: output_start(MAX_TIME_INTERVALS), &
       &                                      output_end(MAX_TIME_INTERVALS)
@@ -333,9 +337,16 @@ CONTAINS
       &                                      pe_placement_hl(MAX_NUM_IO_PROCS), &
       &                                      pe_placement_il(MAX_NUM_IO_PROCS)
 
+    !> switch for optional individual control on GRIB2 compression
+    INTEGER                               :: compression_type
+
     !> RBF shape parameter.
     REAL(wp)                              :: rbf_scale
     LOGICAL :: is_stdio
+
+    INTEGER                               :: number_of_bits
+    INTEGER                               :: chunk_size
+    CHARACTER(len=MAX_CHAR_LENGTH)        :: filter_spec
 
     ! The namelist containing all variables above
     NAMELIST /output_nml/ &
@@ -353,7 +364,8 @@ CONTAINS
       stream_partitions_hl, stream_partitions_il,            &
       pe_placement_ml, pe_placement_pl,                      &
       pe_placement_hl, pe_placement_il,                      &
-      filename_extn, rbf_scale, operation
+      filename_extn, rbf_scale, operation, compression_type, &
+      filter_spec, chunk_size, number_of_bits
 
     ! Before we start: prepare the levels set objects for the vertical
     ! interpolation.
@@ -438,9 +450,9 @@ CONTAINS
       hl_varlist(:)            = ' '
       il_varlist(:)            = ' '
       m_levels                 = " "
-      p_levels(:)              = -1._wp
-      h_levels(:)              = -1._wp
-      i_levels(:)              = -1._wp
+      p_levels(:)              = -1._dp
+      h_levels(:)              = -1._dp
+      i_levels(:)              = -1._dp
       remap                    = REMAP_NONE
       operation                = ''
       reg_lon_def(:)           = 0._wp
@@ -450,7 +462,7 @@ CONTAINS
       output_start(:)          = ' '
       output_end(:)            = ' '
       output_interval(:)       = ' '
-      output_bounds(:)         = -1._wp
+      output_bounds(:)         = -1._dp
       output_time_unit         = 1
       ready_file               = DEFAULT_EVENT_NAME
       lonlat_id                = 0
@@ -463,6 +475,10 @@ CONTAINS
       pe_placement_hl(:)       = -1 !< i.e. MPI rank undefined (round-robin placement)
       pe_placement_il(:)       = -1 !< i.e. MPI rank undefined (round-robin placement)
       rbf_scale                = -1._wp
+      compression_type         = CDI_UNDEFID !<  (-1) take over setting of main switch
+      number_of_bits           = 0
+      chunk_size               = -1
+      filter_spec              = ''
 
       ! -- Read output_nml
 
@@ -500,19 +516,31 @@ CONTAINS
       END IF
       IF(reg_lon_def(3)<reg_lon_def(1)) CALL finish(routine,'end lon < start lon')
 
+      IF (filetype == FILETYPE_GRB2) THEN
+        IF (ALL([CDI_UNDEFID, CDI_COMPRESS_NONE, CDI_COMPRESS_SZIP] /= compression_type)) THEN
+          WRITE(message_text,'(a,i0,a)') 'compression_type = ', compression_type, ' is unsupported (supported values: 0, 1)'
+          CALL finish(routine, message_text)
+        ENDIF
+      ELSE
+        IF (compression_type /= CDI_UNDEFID) THEN
+          WRITE(message_text,'(a,i0,a)') ' Setting a compression_type is supported for GRIB2 output only'
+          CALL finish(routine, message_text)
+        ENDIF
+      END IF
+
       ! -- Scale output bounds
 
-      IF (output_bounds(1) > -1._wp) THEN
+      IF (output_bounds(1) > -1._dp) THEN
         ! output_bounds is always in seconds - the question is what to do with months or years
         ! output_time_unit: 1 = second, 2=minute, 3=hour, 4=day, 5=month, 6=year
         SELECT CASE(output_time_unit)
         CASE(1); output_bounds(:) = output_bounds(:)
         ! Note: output_bounds == -1 is used later on to check for valid entries
-        CASE(2); WHERE(output_bounds(:) >= 0._wp) output_bounds(:) = output_bounds(:)*60._wp
-        CASE(3); WHERE(output_bounds(:) >= 0._wp) output_bounds(:) = output_bounds(:)*3600._wp
-        CASE(4); WHERE(output_bounds(:) >= 0._wp) output_bounds(:) = output_bounds(:)*86400._wp
-        CASE(5); WHERE(output_bounds(:) >= 0._wp) output_bounds(:) = output_bounds(:)*86400._wp*30._wp  ! Not a real calender month
-        CASE(6); WHERE(output_bounds(:) >= 0._wp) output_bounds(:) = output_bounds(:)*86400._wp*365._wp ! Not a real calender year
+        CASE(2); WHERE(output_bounds(:) >= 0._dp) output_bounds(:) = output_bounds(:)*60._dp
+        CASE(3); WHERE(output_bounds(:) >= 0._dp) output_bounds(:) = output_bounds(:)*3600._dp
+        CASE(4); WHERE(output_bounds(:) >= 0._dp) output_bounds(:) = output_bounds(:)*86400._dp
+        CASE(5); WHERE(output_bounds(:) >= 0._dp) output_bounds(:) = output_bounds(:)*86400._dp*30._dp  ! Not a real calender month
+        CASE(6); WHERE(output_bounds(:) >= 0._dp) output_bounds(:) = output_bounds(:)*86400._dp*365._dp ! Not a real calender year
         CASE DEFAULT
           CALL finish(routine,'Illegal output_time_unit')
         END SELECT
@@ -651,6 +679,10 @@ CONTAINS
         p_onl%pe_placement_pl(:)       = pe_placement_pl(:)
         p_onl%pe_placement_hl(:)       = pe_placement_hl(:)
         p_onl%pe_placement_il(:)       = pe_placement_il(:)
+        p_onl%compression_type         = compression_type
+        p_onl%number_of_bits           = number_of_bits
+        p_onl%chunk_size               = chunk_size
+        p_onl%filter_spec              = filter_spec
 
         ! -- translate variables names according to variable name dictionary:
         ! allow case-insensitive variable names:
@@ -688,7 +720,7 @@ CONTAINS
         varlist(k) = varnames_dict%get(varlist(k), default=varlist(k))
         varlist(k) = tolower(varlist(k))
       END DO
-      IF (PRESENT(remap)) THEN 
+      IF (PRESENT(remap)) THEN
         IF (k .GT. 1) THEN
           SELECT CASE(remap)
           CASE (REMAP_NONE)
@@ -740,13 +772,13 @@ CONTAINS
   CONTAINS
 
   SUBROUTINE merge_set(levels, intp_name, vl1, mergeset)
-    REAL(wp), INTENT(IN) :: levels(:)
+    REAL(dp), INTENT(IN) :: levels(:)
     CHARACTER(*), INTENT(IN) :: intp_name, vl1
     TYPE(t_value_set), INTENT(INOUT) :: mergeset
     INTEGER :: nlevs
 
     DO nlevs=1,SIZE(levels)
-      IF (levels(nlevs) < 0._wp) EXIT
+      IF (levels(nlevs) < 0._dp) EXIT
     END DO
     nlevs = nlevs - 1
     IF ((nlevs == 0) .AND. (vl1 /= ' ')) &
@@ -950,7 +982,7 @@ CONTAINS
 
       this_i_lctype = 0
 #ifndef __NO_ICON_ATMO__
-      this_i_lctype = i_lctype(print_patch_id)
+      this_i_lctype = ext_atm_attr(print_patch_id)%i_lctype
 #endif
 
       CALL print_var_list(out_varnames_dict,              &
@@ -1096,7 +1128,7 @@ CONTAINS
       ! there may be multiple "output_bounds" intervals, consider all:
       DO idx=1,MAX_TIME_INTERVALS
         istart = (idx-1)*3
-        IF (p_onl%output_bounds(istart+1) == -1._wp) CYCLE
+        IF (p_onl%output_bounds(istart+1) == -1._dp) CYCLE
 
         CALL mtime_timedelta_from_fseconds(p_onl%output_bounds(istart+1), &
              sim_step_info%sim_start, mtime_td1)
@@ -1363,6 +1395,17 @@ CONTAINS
           ! (optional:) explicitly specified I/O rank
           p_of%io_proc_id      = -1 ! undefined MPI rank
           p_of%pe_placement    = pe_placement(ifile_partition)
+
+          ! individual setting of GRIB2 compression
+          IF (p_onl%compression_type == CDI_UNDEFID) THEN
+            IF (p_of%name_list%filetype == FILETYPE_GRB2) THEN
+              p_of%compression_type = MERGE(CDI_COMPRESS_SZIP, CDI_COMPRESS_NONE, gribout_config(idom)%lgribout_compress_ccsds)
+            ELSE
+              p_of%compression_type = CDI_UNDEFID
+            ENDIF
+          ELSE
+            p_of%compression_type = p_onl%compression_type
+          ENDIF
 
           CALL add_varlist_to_output_file(p_of, varlist_ptr)
         END DO ! ifile_partition
@@ -1686,8 +1729,8 @@ CONTAINS
       fname_metadata%extn = of%name_list%filename_extn(1:tlen)
     END IF
 
-    CALL getAttributesForRestarting(restartAttributes)
-    IF (restartAttributes%is_init) THEN
+    IF (isRestart()) THEN
+      CALL getAttributesForRestarting(restartAttributes)
       ! Restart case: Get starting index of ouput from restart file
       !               (if there is such an attribute available).
       WRITE(attname,'(a,i2.2)') 'output_jfile_',i
@@ -2372,21 +2415,21 @@ CONTAINS
     TYPE(t_output_file), INTENT(INOUT), TARGET :: of
     ! local constants
     CHARACTER(LEN=*), PARAMETER       :: routine = modname//"::setup_output_vlist"
-    REAL(wp),         PARAMETER       :: ZERO_TOL = 1.e-15_wp
+    REAL(dp),         PARAMETER       :: ZERO_TOL = EPSILON(1._dp)
     ! local variables
     INTEGER                           :: k, i_dom, gridtype, idate, &
       &                                  itime, iret, tlen, ll_dim1, ll_dim2
     TYPE(t_lon_lat_data), POINTER     :: lonlat
-    REAL(wp), PARAMETER               :: pi_180 = ATAN(1._wp)/45._wp
+    REAL(dp), PARAMETER               :: pi_180 = ATAN(1._dp)/45._dp
     INTEGER                           :: max_cell_connectivity, max_vertex_connectivity, &
       &                                  cdiInstID
     INTEGER                           :: i, cdi_grid_ids(3), nvert, errstat, &
       &                                  cdiLonLatGridID, curvilinearGridID
-    REAL(wp), ALLOCATABLE             :: p_lonlat(:)
+    REAL(dp), ALLOCATABLE             :: p_lonlat(:)
     TYPE(t_verticalAxisList), POINTER :: it
     CHARACTER(len=128)                :: comment
     LOGICAL                           :: lrotated
-    REAL(wp), ALLOCATABLE             :: rotated_pts(:,:,:)
+    REAL(dp), ALLOCATABLE             :: rotated_pts(:,:,:)
     TYPE (t_lon_lat_grid), POINTER :: grid
     INTEGER                           :: taxisID
 
@@ -2465,8 +2508,8 @@ CONTAINS
       ll_dim1 = lonlat%grid%lon_dim
       ll_dim2 = lonlat%grid%lat_dim
 
-      lrotated = ( ABS(90._wp - lonlat%grid%north_pole(2)) > ZERO_TOL .OR.  &
-      &    ABS( 0._wp - lonlat%grid%north_pole(1)) > ZERO_TOL )
+      lrotated = ( ABS(90._wp - lonlat%grid%north_pole(2)) > EPSILON(1._wp) .OR.  &
+      &    ABS( 0._wp - lonlat%grid%north_pole(1)) > EPSILON(1._wp) )
 
       IF (.NOT. lrotated) THEN
         cdiLonLatGridID = gridCreate(GRID_LONLAT, ll_dim1*ll_dim2)
@@ -2476,8 +2519,8 @@ CONTAINS
         curvilinearGridID = gridCreate(GRID_CURVILINEAR, ll_dim1*ll_dim2)
         of%cdiLonLatGridID = curvilinearGridID
 
-        CALL gridDefParamRLL(cdiLonLatGridID, lonlat%grid%north_pole(1), &
-          &                  lonlat%grid%north_pole(2), 0._c_double)
+        CALL gridDefParamRLL(cdiLonLatGridID, REAL(lonlat%grid%north_pole(1),kind=c_double), &
+          &                  REAL(lonlat%grid%north_pole(2),kind=c_double), 0._c_double)
       END IF
 
       CALL gridDefXsize(cdiLonLatGridID, ll_dim1)
@@ -2491,11 +2534,11 @@ CONTAINS
       ALLOCATE(p_lonlat(ll_dim1))
       IF (lonlat%grid%reg_lon_def(2) <= threshold_delta_or_intvls) THEN
         DO k=1,ll_dim1
-          p_lonlat(k) = lonlat%grid%reg_lon_def(1) + REAL(k-1,wp)*lonlat%grid%reg_lon_def(2)
+          p_lonlat(k) = lonlat%grid%reg_lon_def(1) + REAL(k-1,dp)*lonlat%grid%reg_lon_def(2)
         END DO
       ELSE
         DO k=1,ll_dim1
-          p_lonlat(k) = (lonlat%grid%start_corner(1) + REAL(k-1,wp)*lonlat%grid%delta(1)) / pi_180
+          p_lonlat(k) = (lonlat%grid%start_corner(1) + REAL(k-1,dp)*lonlat%grid%delta(1)) / pi_180
         END DO
       END IF
       CALL gridDefXvals(cdiLonLatGridID, p_lonlat)
@@ -2504,11 +2547,11 @@ CONTAINS
       ALLOCATE(p_lonlat(ll_dim2))
       IF (lonlat%grid%reg_lat_def(2) <= threshold_delta_or_intvls) THEN
         DO k=1,ll_dim2
-          p_lonlat(k) = lonlat%grid%reg_lat_def(1) + REAL(k-1,wp)*lonlat%grid%reg_lat_def(2)
+          p_lonlat(k) = lonlat%grid%reg_lat_def(1) + REAL(k-1,dp)*lonlat%grid%reg_lat_def(2)
         END DO
       ELSE
         DO k=1,ll_dim2
-          p_lonlat(k) = (lonlat%grid%start_corner(2) + REAL(k-1,wp)*lonlat%grid%delta(2)) / pi_180
+          p_lonlat(k) = (lonlat%grid%start_corner(2) + REAL(k-1,dp)*lonlat%grid%delta(2)) / pi_180
         END DO
       END IF
       CALL gridDefYvals(cdiLonLatGridID, p_lonlat)
@@ -2586,18 +2629,18 @@ CONTAINS
       !
       CALL griddefxsize(of%cdiSingleGridID, 1)
       CALL griddefysize(of%cdiSingleGridID, 1)
-      CALL griddefxvals(of%cdiSingleGridID, (/0.0_wp/))
-      CALL griddefyvals(of%cdiSingleGridID, (/0.0_wp/))
+      CALL griddefxvals(of%cdiSingleGridID, (/0.0_dp/))
+      CALL griddefyvals(of%cdiSingleGridID, (/0.0_dp/))
 
       ! Zonal 1 degree grid
       of%cdiZonal1DegID  = gridCreate(GRID_LONLAT,nlat_moc)
       CALL griddefxsize(of%cdiZonal1DegID, 1)
-      CALL griddefxvals(of%cdiZonal1DegID, (/0.0_wp/))
+      CALL griddefxvals(of%cdiZonal1DegID, (/0.0_dp/))
       CALL griddefysize(of%cdiZonal1DegID, nlat_moc)
       ALLOCATE(p_lonlat(nlat_moc))
       DO k=1,nlat_moc
-        p_lonlat(k) = -90.0_wp-90._wp/REAL(nlat_moc,wp) &
-          &           + REAL(k*180,wp)/REAL(nlat_moc, wp)
+        p_lonlat(k) = -90.0_dp-90._dp/REAL(nlat_moc,dp) &
+          &           + REAL(k*180,dp)/REAL(nlat_moc, dp)
       END DO
       CALL griddefyvals(of%cdiZonal1DegID, p_lonlat)
       DEALLOCATE(p_lonlat)
@@ -2706,12 +2749,8 @@ CONTAINS
           END SELECT
         CASE (FILETYPE_GRB2)
           ! handled later...
-        CASE (FILETYPE_YAC)
-#ifdef YAC_coupling
+        CASE (FILETYPE_NONE)
            ! handled later...
-#else
-           CALL finish(routine,'using yac-coupled output but yac coupling is disabled')
-#endif
         CASE DEFAULT
           CALL finish(routine, "Unknown output_type")
         END SELECT
@@ -2802,7 +2841,7 @@ CONTAINS
     TYPE (t_var_metadata), POINTER :: info
     INTEGER                        :: iv, vlistID, gridID, zaxisID, this_i_lctype
     TYPE(t_verticalAxis), POINTER  :: zaxis
-    REAL(wp)                       :: missval
+    REAL(dp)                       :: missval
     LOGICAL                        :: is_mpi_test
 
     is_mpi_test = my_process_is_mpi_test()
@@ -2862,13 +2901,16 @@ CONTAINS
 
       this_i_lctype = 0
 #ifndef __NO_ICON_ATMO__
-      this_i_lctype = i_lctype(of%phys_patch_id)
+      this_i_lctype = ext_atm_attr(of%phys_patch_id)%i_lctype
 #endif
 
       info%cdiVarID = create_cdi_variable(vlistID, gridID, zaxisID,         &
         &                                 info, missval, of%output_type,    &
         &                                 gribout_config(of%phys_patch_id), &
         &                                 this_i_lctype,                    &
+        &                                 of%name_list%number_of_bits,      &
+        &                                 of%name_list%chunk_size,          &
+        &                                 of%name_list%filter_spec,         &
         &                                 out_varnames_dict)
 
     ENDDO
@@ -2980,7 +3022,7 @@ CONTAINS
     CALL p_bcast(gribout_config(1:n_dom_out)%generatingCenter,    bcast_root, p_comm_work_2_io)
     CALL p_bcast(gribout_config(1:n_dom_out)%generatingSubcenter, bcast_root, p_comm_work_2_io)
       ! from extpar config state
-    CALL p_bcast(i_lctype(1:n_dom_out)                          , bcast_root, p_comm_work_2_io)
+    CALL p_bcast(ext_atm_attr(1:n_dom_out)%i_lctype,              bcast_root, p_comm_work_2_io)
 
     IF (iforcing == INWP) THEN
       ! from nwp land config state
@@ -2993,6 +3035,13 @@ CONTAINS
                                                                isub_water, isub_lake, isub_seaice)
     ENDIF
 #endif
+
+#ifndef __NO_ICON_WAVES__
+    IF (my_process_is_waves()) THEN
+      CALL replicate_wave_data_on_io_procs (n_dom_out, bcast_root)
+    ENDIF
+#endif
+
     ! allocate vgrid_buffer on asynchronous output PEs, for storing
     ! the vertical grid UUID
     !
@@ -3104,7 +3153,7 @@ CONTAINS
     INTEGER (KIND=MPI_ADDRESS_KIND) :: mem_size
 
 #ifdef NO_ASYNC_IO_RMA
-    INTEGER :: mpierr 
+    INTEGER :: mpierr
     INTEGER, ALLOCATABLE :: local_recv_buffer_mem_sizes(:)
 
     ! Allocate memory for metainfo requests
@@ -3114,7 +3163,7 @@ CONTAINS
     req_send_metainfo(:) = MPI_REQUEST_NULL
     req_send_data(:) = MPI_REQUEST_NULL
     req_recv_data(:,:) = MPI_REQUEST_NULL
-    
+
     ! Allocate memory for maximum requests sizes
     allocate(recv_buffer_max_sizes(1:SIZE(output_file)))
     allocate(local_recv_buffer_mem_sizes(1:SIZE(output_file)))
@@ -3167,7 +3216,7 @@ CONTAINS
       ! allocate memory window for meta-info communication between
       ! PE#0 and the I/O PEs:
       ! When RMA is not used, this call allocates mem but not window
-      CALL metainfo_allocate_memory_window(output_file(i)%mem_win, output_file(i)%num_vars) 
+      CALL metainfo_allocate_memory_window(output_file(i)%mem_win, output_file(i)%num_vars)
 
 #ifdef NO_ASYNC_IO_RMA
       local_recv_buffer_mem_sizes(i) = mem_size

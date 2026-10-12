@@ -38,4 +38,3 @@ CONTAINS
       template_function.f90 and template_subroutine.f90 >>>
 
 END MODULE mo_<name>
-

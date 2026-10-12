@@ -1,19 +1,19 @@
-! Module handling the meta-data types for vertical axes for the output
-! module.
-!
-! See module mo_name_list_output_zaxes for details of the
-! implementation.
-!!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module handling the meta-data types for vertical axes for the output
+! module.
+!
+! See module mo_name_list_output_zaxes for details of the
+! implementation.
 
 MODULE mo_name_list_output_zaxes_types
 
@@ -24,7 +24,7 @@ MODULE mo_name_list_output_zaxes_types
     &                                             zaxisDefLongname, cdiDefKeyInt, CDI_KEY_TYPEOFFIRSTFIXEDSURFACE, &
     &                                             CDI_GLOBAL
   USE mo_zaxis_type,                        ONLY: t_zaxisType
-  USE mo_kind,                              ONLY: wp, dp
+  USE mo_kind,                              ONLY: dp
   USE mo_exception,                         ONLY: finish
   USE mo_packed_message,                    ONLY: t_PackedMessage
   USE mo_mpi,                               ONLY: p_get_bcast_role
@@ -48,7 +48,7 @@ MODULE mo_name_list_output_zaxes_types
   !
   TYPE t_verticalAxis
 
-    TYPE(t_zaxisType)                    :: zaxisType       !< CDI axis type        
+    TYPE(t_zaxisType)                    :: zaxisType       !< CDI axis type
     INTEGER                              :: zaxisNlev       !< no. of levels
 
     INTEGER                              :: cdi_id = CDI_UNDEFID       !< CDI object ID (or undefined)
@@ -93,7 +93,7 @@ MODULE mo_name_list_output_zaxes_types
   !> Linked list of vertical axis objects
   !
   TYPE t_verticalAxisList
-    
+
     TYPE(t_verticalAxis),     POINTER :: axis => NULL()
     TYPE(t_verticalAxisList), POINTER :: next => NULL()
 
@@ -124,7 +124,7 @@ CONTAINS
     CLASS(t_verticalAxis), INTENT(INOUT) :: axis
 
     axis%zaxisNlev = 0
-    
+
     IF (ALLOCATED(axis%zaxisLevels))    DEALLOCATE(axis%zaxisLevels)
     IF (ALLOCATED(axis%zaxisLbounds))   DEALLOCATE(axis%zaxisLbounds)
     IF (ALLOCATED(axis%zaxisUbounds))   DEALLOCATE(axis%zaxisUbounds)
@@ -147,7 +147,7 @@ CONTAINS
   ! --------------------------------------------------------------------------------------
   !> Based on the object data, create a CDI axis and return the ID.
   !
-  SUBROUTINE t_verticalAxis_cdiZaxisCreate(axis) 
+  SUBROUTINE t_verticalAxis_cdiZaxisCreate(axis)
     CLASS(t_verticalAxis), INTENT(INOUT) :: axis
     INTEGER :: cdiID
     INTEGER :: res
@@ -420,8 +420,8 @@ CONTAINS
   !> Auxiliary function: Check two REAL(dp) arrays for equality.
   !
   LOGICAL FUNCTION array_eqv_dp(array1, array2)
-    REAL(wp), ALLOCATABLE, INTENT(IN) :: array1(:), array2(:)
-    
+    REAL(dp), ALLOCATABLE, INTENT(IN) :: array1(:), array2(:)
+
     array_eqv_dp = .TRUE.
     ! check pointer association status
     IF (.NOT. (ALLOCATED(array1) .EQV. ALLOCATED(array2))) THEN
@@ -444,7 +444,7 @@ CONTAINS
   !
   LOGICAL FUNCTION array_eqv_intc(array1, array2)
     INTEGER(KIND=C_SIGNED_CHAR), ALLOCATABLE, INTENT(IN) :: array1(:), array2(:)
-    
+
     array_eqv_intc = .TRUE.
     ! check pointer association status
     IF (.NOT. (ALLOCATED(array1) .EQV. ALLOCATED(array2))) THEN
@@ -468,12 +468,12 @@ CONTAINS
   LOGICAL FUNCTION t_verticalAxis_eqv(axis1, axis2)
     CLASS(t_verticalAxis), INTENT(IN) :: axis1, axis2
 
-    t_verticalAxis_eqv =  .TRUE. 
+    t_verticalAxis_eqv =  .TRUE.
     IF (.NOT. (axis1%zaxisType == axis2%zaxisType))  t_verticalAxis_eqv=.FALSE.
     IF (.NOT. (axis1%zaxisNlev == axis2%zaxisNlev))  t_verticalAxis_eqv=.FALSE.
     ! (note that we do not check the cdi_id!)
 
-    ! check pointer association status 
+    ! check pointer association status
     IF (.NOT. (ALLOCATED(axis1%zaxisName    ) .EQV. ALLOCATED(axis2%zaxisName    )))  t_verticalAxis_eqv=.FALSE.
     IF (.NOT. (ALLOCATED(axis1%zaxisLongname) .EQV. ALLOCATED(axis2%zaxisLongname)))  t_verticalAxis_eqv=.FALSE.
     IF (.NOT. (ALLOCATED(axis1%zaxisUnits   ) .EQV. ALLOCATED(axis2%zaxisUnits   )))  t_verticalAxis_eqv=.FALSE.
@@ -500,7 +500,7 @@ CONTAINS
       IF (ALLOCATED(axis1%zaxisDefLtype)) THEN
         IF (axis1%zaxisDefLtype /= axis2%zaxisDefLtype)  t_verticalAxis_eqv=.FALSE.
       END IF
-   
+
       ! check array contents (if available):
       IF (.NOT. array_eqv_dp(axis1%zaxisLevels,  axis2%zaxisLevels))   t_verticalAxis_eqv=.FALSE.
       IF (.NOT. array_eqv_dp(axis1%zaxisLbounds, axis2%zaxisLbounds))  t_verticalAxis_eqv=.FALSE.
@@ -671,7 +671,7 @@ CONTAINS
     CLASS(t_verticalAxisList), TARGET, INTENT(IN) :: axisList
     INTEGER,                           INTENT(IN) :: dest  !< destination PE
     INTEGER,                           INTENT(IN) :: comm  !< MPI communicator
-    
+
     TYPE(t_verticalAxisList), POINTER :: it
     TYPE(t_verticalAxis) :: sentinel
 

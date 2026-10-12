@@ -1,15 +1,15 @@
-! The base CLASS for the PUBLIC INTERFACE for restart writing.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! The base CLASS for the PUBLIC INTERFACE for restart writing.
 
 MODULE mo_restart_patch_data
   USE mo_restart_patch_description, ONLY: t_restart_patch_description

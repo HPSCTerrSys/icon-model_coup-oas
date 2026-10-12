@@ -1,15 +1,16 @@
-! This class implements the asynchronous communication of the payload data to the restart processes.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This class implements the asynchronous communication of the payload data to the restart processes.
+
 #include "handle_mpi_error.inc"
 #include "icon_contiguous_defines.inc"
 #include "omp_definitions.inc"
@@ -86,14 +87,14 @@ MODULE mo_async_restart_comm_data
     REAL(dp), CONTIGUOUS_POINTER :: win_buf_d(:)
     REAL(sp), CONTIGUOUS_POINTER :: win_buf_s(:)
     INTEGER, CONTIGUOUS_POINTER :: win_buf_i(:)
-    INTEGER :: in_use = -1, win 
+    INTEGER :: in_use = -1, win
     INTEGER, PUBLIC :: maxLevelSize
 #ifdef NO_MPI_RGET
     INTEGER :: next_activate
 #else
     INTEGER :: req_pool(max_inflight)
 #endif
-    TYPE(inbuffer_t) :: inbuffers(max_inflight) 
+    TYPE(inbuffer_t) :: inbuffers(max_inflight)
     TYPE(t_reorder_info) :: ris(3)
   CONTAINS
     PROCEDURE, PUBLIC :: construct => asyncRestartCommData_construct

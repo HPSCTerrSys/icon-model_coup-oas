@@ -1,15 +1,15 @@
-! Setup of meteogram output.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Setup of meteogram output.
 
 MODULE mo_meteogram_config
 
@@ -19,9 +19,9 @@ MODULE mo_meteogram_config
 
   IMPLICIT NONE
 
-!orig  INTEGER, PARAMETER :: MAX_NAME_LENGTH      =   48  !<  max. name string length   
-!pa  
-  INTEGER, PARAMETER :: MAX_NAME_LENGTH      =   256  !<  max. name string length   
+!orig  INTEGER, PARAMETER :: MAX_NAME_LENGTH      =   48  !<  max. name string length
+!pa
+  INTEGER, PARAMETER :: MAX_NAME_LENGTH      =   256  !<  max. name string length
 !pa
   INTEGER, PARAMETER :: MAX_NUM_STATIONS     =   75  !<  max. number of meteogram locations (global)
                                                      ! NOTE: MAX_NUM_STATIONS=80 did not work with Intel and GCC.
@@ -57,7 +57,7 @@ MODULE mo_meteogram_config
 
     ! activate output of some selected tile specific fields
     LOGICAL                        :: loutput_tiles
-  
+
     !> maximal number of steps retained until flush
     INTEGER                        :: max_time_stamps
     !> warn user about (synchronizing) flush?

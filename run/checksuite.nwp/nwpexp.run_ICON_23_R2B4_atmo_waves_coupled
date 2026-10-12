@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -18,7 +18,9 @@
 # global weather forecast (ICON-NWP) coupled to ICON-wave.
 # The system is set up on the R2B4 atmospheric grid with reduced radiation
 # grid and the R2B4 waves 'water-only' grid.
-
+# The wave energy spectrum is initialized analytically (JONSWAP), while the atmosphere
+# model starts from IFS analysis.
+#
 # The purpose is the technical testing of the coupled setup.
 #
 # Mikhail Dobrynin 23.06.2023
@@ -106,7 +108,7 @@ nproma_wave=$nproma
 
 # Note that "mpi_atm_io_procs" must match the number of output files
 mpi_atm_io_procs=1      # >0 for atmosphere plus land (not working for monitoring)
-mpi_waves_io_procs=0      # ? >0 for waves is not working yet
+mpi_waves_io_procs=1
 ICON_COMPONENT2_proc0_shift=0 # proc0_shift does not work yet with WAVES
 
 #=============================================================================
@@ -161,7 +163,7 @@ rad_refinement="R02B03"
 
 # namelist files
 # --------------
-atm_namelist=NAMELIST_${EXPNAME}_atm
+atmo_namelist=NAMELIST_${EXPNAME}_atm
 wave_namelist=NAMELIST_${EXPNAME}_wave
 
 #--------------------------------------------------------------------------------------------------
@@ -240,7 +242,7 @@ output_atm_dbg=yes
 #--------------------------------------------------------------------------------------------------
 
 if [ $mpi_total_procs -lt 2 ] ; then
-  check_error 0 "This setup requires at least 2 mpi processes. Exit"
+  check_error 1 "This setup requires at least 2 mpi processes. Exit"
 fi
 
 # I.1 Split the number of total procs and assign to each component
@@ -260,7 +262,7 @@ echo "wave_min_rank="$wave_min_rank "wave_max_rank="$wave_max_rank
 # I.2 Fill model list
 # -------------------
 #
-namelist_list[0]="$atm_namelist"
+namelist_list[0]="$atmo_namelist"
 modelname_list[0]="atmo"
 modeltype_list[0]=1
 minrank_list[0]=$atm_min_rank
@@ -283,19 +285,22 @@ wave_lag=1
 
 cat > coupling_${EXPNAME}.yaml << EOF
 definitions:
+  components:
+    atm: &atm
+      component: ${modelname_list[0]}
+      grid: icon_atmos_grid
+    wave: &wave
+      component: ${modelname_list[1]}
+      grid: icon_waves_grid
   atm2wave: &atm2wave
-    src_component: ${modelname_list[0]}
-    src_grid: icon_atmos_grid
-    tgt_component: ${modelname_list[1]}
-    tgt_grid: icon_waves_grid
+    source: *atm
+    target: *wave
     time_reduction: average
     src_lag: ${atm_lag}
     tgt_lag: ${wave_lag}
   wave2atm: &wave2atm
-    src_component: ${modelname_list[1]}
-    src_grid: icon_waves_grid
-    tgt_component: ${modelname_list[0]}
-    tgt_grid: icon_atmos_grid
+    source: *wave
+    target: *atm
     time_reduction: average
     src_lag: ${wave_lag}
     tgt_lag: ${atm_lag}
@@ -384,7 +389,7 @@ add_link_file ${datadir}/R2B4_aeropt_kinne_sw_b14_fin_1850.nc bc_aeropt_kinne_sw
 # If the model runs with mpi_procs=1, then this script exits without error:
 if [[ ${mpi_total_procs} = 1 ]]; then
   echo "This test must not be started if mpi_procs=1 --> exit test without error"
-  check_error 0 "exp.nat_jww_nwp_mpiomp"
+  check_error 1 "exp.nat_jww_nwp_mpiomp"
   exit 0
 fi
 
@@ -413,7 +418,7 @@ dynamics_parent_grid_id="${dynamics_parent_grid_id},"
 # For a complete list see Namelist_overview and Namelist_overview.pdf
 #
 
-cat > ${atm_namelist} << EOF
+cat > ${atmo_namelist} << EOF
 !
 &coupling_mode_nml
  coupled_to_waves        = .TRUE.
@@ -713,7 +718,7 @@ cat > ${wave_namelist} <<EOF
  msg_level            = 15
  ltestcase            = .FALSE.       ! run testcase
  ldynamics            = .TRUE.
- ltransport           = .FALSE.
+ ltransport           = .TRUE.
  ntracer              = $((${nd}*${nf}))
  output               = "nml"
 /
@@ -737,10 +742,17 @@ cat > ${wave_namelist} <<EOF
   itopo = 0
   extpar_filename = '${wave_extpar}'
  /
+&initwave_nml
+ init_mode       = 2       ! coldstart: initialize wave energy spectrum by
+                           ! analytic parameterization (JONSWAP)
+/
  &wave_nml
   ndirs       = ${nd}   ! number of directions
   nfreqs      = ${nf}   ! number of frequencies
   forc_file_prefix = '' ! prefix of forcing file name
+  niter_smooth  = 3
+  depth_min     = 2.
+  depth_max     = 999.
  /
  &output_nml
   filetype                =                          4         ! output format: 2=GRIB2, 4=NETCDFv2
@@ -755,7 +767,7 @@ cat > ${wave_namelist} <<EOF
   output_grid             =                      .TRUE.      ! flag whether grid information is added to output.
   ml_varlist              = 'bathymetry_c','z0',
                             'group:wave_forcing','group:wave_short'
-/
+ /
 EOF
 
 
@@ -786,9 +798,9 @@ if [ x$namelist_list = x ]; then
   minrank_list[0]=0
   maxrank_list[0]=65535
   incrank_list[0]=1
-  if [ x$atm_namelist != x ]; then
+  if [ x$atmo_namelist != x ]; then
     # this is the atmo model
-    namelist_list[0]="$atm_namelist"
+    namelist_list[0]="$atmo_namelist"
     modelname_list[0]="atmo"
     modeltype_list[0]=1
     run_atmo="true"
@@ -858,7 +870,7 @@ fi
 # fill some checks
 
 run_atmo=${run_atmo="false"}
-if [ x$atm_namelist != x ]; then
+if [ x$atmo_namelist != x ]; then
   run_atmo="true"
 fi
 run_ocean=${run_ocean="false"}
@@ -1022,14 +1034,15 @@ done
 #
 ICON_COMPONENT2_VE_procs=$mpi_waves_procs    # START_MODEL_function expects ICON_COMPONENT2_VE_procs
 ICON_COMPONENT1_VH_procs=$mpi_atm_io_procs
-ICON_COMPONENT2_VH_procs=$mpi_waves_io_procs
+ICON_COMPONENT2_VH_procs=0
 echo "mpi procs: total=$mpi_total_procs waves=${ICON_COMPONENT2_VE_procs} atmo=total-waves (will be computed implicitly)"
 
 # ----------------------------------------------------------------------
 # run the model!
 # ----------------------------------------------------------------------
 
-rm -f finish.status
+rm -f finish_atmo.status
+rm -f finish_waves.status
 date
 
 
@@ -1048,7 +1061,7 @@ fi
 
 date
 
-if [ -r finish.status ] ; then
+if [ -r finish_atmo.status -a -r finish_waves.status ] ; then
   check_final_status 0
 else
   check_final_status -1
@@ -1056,10 +1069,17 @@ fi
 #
 #-----------------------------------------------------------------------------
 #
-finish_status=`cat finish.status`
-echo $finish_status
+#Read the finish_status files and cut off whitespaces.
+finish_status_atm=`cat finish_atmo.status`
+finish_status_atm="${finish_status_atm# }"
+finish_status_w=`cat finish_waves.status`
+finish_status_w="${finish_status_w# }"
+
+echo "${finish_status_atm}"
+echo "${finish_status_w}"
 echo "============================"
-echo "Script run successfully: $finish_status"
+echo "Script run (atmo) successfully: $finish_status_atm"
+echo "Script run (waves) successfully: $finish_status_w"
 echo "============================"
 
 #-----------------------------------------------------------------------------
@@ -1080,7 +1100,7 @@ namelist_list=""
 #-----------------------------------------------------------------------------
 # check if we have to restart, ie resubmit
 #   Note: this is a different mechanism from checking the restart
-if [ $finish_status = "RESTART" ] ; then
+if [ "${finish_status_atm}" = "RESTART" -o "${finish_status_w}" = "RESTART" ]; then
   echo "restart next experiment..."
   this_script="${RUNSCRIPTDIR}/${job_name}"
   echo 'this_script: ' "$this_script"
@@ -1107,7 +1127,7 @@ fi
 
 #-----------------------------------------------------------------------------
 
-if [ ${finish_status} == 'OK' ]; then
+if [ "${finish_status_atm}" = 'OK' -a "${finish_status_w}" = 'OK' ] ; then
   EXIT_STATUS=0
 else
   EXIT_STATUS=1

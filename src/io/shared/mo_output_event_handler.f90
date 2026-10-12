@@ -1,18 +1,16 @@
-! Routines for handling of regular output steps and ready file events
-! on multiple I/O PEs.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
+
+! Routines for handling of regular output steps and ready file events
+! on multiple I/O PEs.
 !
 ! Note that this module contains the abstract implementation of the
 ! output event handling, while the actual control of the trigger
@@ -572,14 +570,14 @@ CONTAINS
       &                                     mtime_date_container_b(:)
     TYPE(julianday), ALLOCATABLE :: tmp(:)
     TYPE(julianday), ALLOCATABLE :: mtime_date_uniq(:)
-    
+
     TYPE(julianday), POINTER :: mtime_date_container(:)
-    
+
     INTEGER, ALLOCATABLE :: indices_to_use(:)
     INTEGER :: remaining_intvls, iselected_intvl
-    
+
     INTEGER :: n_event_steps_a, n_event_steps_b, remaining_event_steps
-    
+
     ! allocate event data structure
     ALLOCATE(p_event, STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish (routine, 'ALLOCATE failed.')
@@ -671,19 +669,19 @@ CONTAINS
     END DO
 
     allocate(indices_to_use(nintvls))
-    
+
     CALL remove_duplicate_intervals(begin_str2, end_str2, evd%intvl_str, nintvls, &
          &                          indices_to_use, remaining_intvls)
-    
+
     ! there may be multiple starts/ends/intervals (usually only one):
 
     mtime_date_container => mtime_date_container_a
     n_event_steps = 0
     skipped_dates = 0
 
-    INTERVAL_LOOP: DO iselected_intvl = 1, remaining_intvls    
+    INTERVAL_LOOP: DO iselected_intvl = 1, remaining_intvls
       iintvl = indices_to_use(iselected_intvl)
-      
+
       mtime_begin => newDatetime(TRIM(begin_str2(iintvl)))
       mtime_end   => newDatetime(TRIM(end_str2(iintvl)))
       IF (.NOT. ASSOCIATED(mtime_begin) .OR. .NOT. ASSOCIATED(mtime_end))  THEN
@@ -749,8 +747,8 @@ CONTAINS
         CYCLE interval_loop
       ELSE
         n_event_steps_b = n_event_steps
-        n_event_steps = 0      
-        
+        n_event_steps = 0
+
         IF (n_event_steps_b > 0) THEN
           CALL merge2SortedAndRemoveDuplicates(mtime_date_container_a, n_event_steps_a, &
             &                               mtime_date_container_b, n_event_steps_b, &
@@ -772,13 +770,13 @@ CONTAINS
           ELSE
             mtime_date_container_a(1:remaining_event_steps) = mtime_date_uniq(1:remaining_event_steps)
           ENDIF
-          
+
           n_event_steps_a = remaining_event_steps
-          
+
           DEALLOCATE(mtime_date_uniq)
         END IF
       ENDIF
-      
+
     END DO INTERVAL_LOOP
 
     ! copy back results into original data structures
@@ -786,7 +784,7 @@ CONTAINS
     ! to prevent a potential reallocation in next step add 1 element
     ALLOCATE(mtime_dates(n_event_steps+1), STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish (routine, 'ALLOCATE failed.')
-    ! copy mtime_date_container_a to mtime_date_string 
+    ! copy mtime_date_container_a to mtime_date_string
     DO i = 1, n_event_steps
       CALL getDatetimeFromJulianDay(mtime_date_container_a(i), mtime_dates(i))
     END DO
@@ -816,7 +814,7 @@ CONTAINS
         END IF
       END IF
     END IF
-    
+
     ALLOCATE(mtime_sim_steps(SIZE(mtime_dates)),   &
          &   mtime_exactdate(SIZE(mtime_dates)),   &
          &   filename_metadata(SIZE(mtime_dates)), STAT=ierrstat)
@@ -831,13 +829,13 @@ CONTAINS
       IF (mtime_sim_steps(i) < 0)  EXIT
     END DO
     n_event_steps = (i-1)
-    
+
     IF (n_event_steps > 0) THEN
       CALL fct_generate_filenames(n_event_steps, mtime_dates,       &
         &                   mtime_sim_steps, evd%sim_step_info, evd%fname_metadata, &
         &                   skipped_dates, filename_metadata)
     END IF
-    
+
     ! from this list of time stamp strings: generate the event steps
     ! for this event
     p_event%n_event_steps = n_event_steps
@@ -883,9 +881,9 @@ CONTAINS
       INTEGER, INTENT(in) :: nsize_IA1
       INTEGER, INTENT(in) :: nsize_IA2
       INTEGER, INTENT(out) :: nsize_OA
-      
+
       INTEGER(i8) :: diff
-      
+
       INTEGER :: n, na, nb
       INTEGER :: i, j, k
 
@@ -906,13 +904,13 @@ CONTAINS
         OutputArray(:) = InputArray1(:nsize_IA1)
         RETURN
       ENDIF
-      
+
       na = nsize_IA1
-      nb = nsize_IA2 
+      nb = nsize_IA2
       n = na + nb
-      
+
       ALLOCATE(OutputArray(n))
-      
+
       i = 1
       j = 1
 
@@ -957,7 +955,7 @@ CONTAINS
           j = j+1
         ENDIF
       ENDDO
-      
+
       DO WHILE (i <= na)
         IF ((InputArray1(i)%day /= OutputArray(k-1)%day) .OR. (InputArray1(i)%ms /= OutputArray(k-1)%ms)) THEN
           OutputArray(k) = InputArray1(i)
@@ -967,7 +965,7 @@ CONTAINS
           i = i+1
         ENDIF
       ENDDO
-      
+
       DO WHILE (j <= nb)
         IF ((InputArray2(j)%day /= OutputArray(k-1)%day) .OR. (InputArray2(j)%ms /= OutputArray(k-1)%ms)) THEN
           OutputArray(k) = InputArray2(j)
@@ -977,24 +975,24 @@ CONTAINS
           j = j+1
         ENDIF
       ENDDO
-      
+
       nsize_OA = k-1
-      
+
     END SUBROUTINE merge2SortedAndRemoveDuplicates
 
     SUBROUTINE remove_duplicate_intervals(starts, ends, intvls, n, indices_to_use, remaining)
       CHARACTER(len=*), INTENT(in) :: starts(:)
       CHARACTER(len=*), INTENT(in) :: ends(:)
       CHARACTER(len=*), INTENT(in) :: intvls(:)
-      INTEGER, INTENT(in) :: n         
+      INTEGER, INTENT(in) :: n
       INTEGER, INTENT(out) :: indices_to_use(n)
       INTEGER, INTENT(out) :: remaining
-      
+
       INTEGER :: i, j
-      
+
       remaining = 1
       indices_to_use(1) = 1
-      
+
       OUTER_LOOP: DO i = 2, n
         DO j = 1, remaining
           IF (TRIM(starts(j)) == TRIM(starts(i))) THEN
@@ -1010,9 +1008,9 @@ CONTAINS
         remaining = remaining + 1
         indices_to_use(remaining) = i
       END DO OUTER_LOOP
-      
+
     END SUBROUTINE remove_duplicate_intervals
-    
+
   END SUBROUTINE init_output_event
 
 
@@ -2479,7 +2477,7 @@ CONTAINS
   !> modify all matching filenames.
   !
   SUBROUTINE modify_filename(event, old_name, new_name, start_step)
-    TYPE(t_output_event), INTENT(INOUT), TARGET :: event              !< output event data structure    
+    TYPE(t_output_event), INTENT(INOUT), TARGET :: event              !< output event data structure
     CHARACTER(LEN=*),     INTENT(IN)            :: old_name, new_name !< old file name string and replacement
     INTEGER,              INTENT(IN)            :: start_step         !< event step where to start searching
     ! local variables
@@ -2490,7 +2488,7 @@ CONTAINS
     DO istep=start_step,event%n_event_steps
       n_pes = event%event_step(istep)%n_pes
       DO i_pe=1,n_pes
-        event_step_data => event%event_step(istep)%event_step_data(i_pe)        
+        event_step_data => event%event_step(istep)%event_step_data(i_pe)
         IF (event_step_data%filename_string == old_name) THEN
           event_step_data%filename_string = new_name
           ipart = ipart + 1

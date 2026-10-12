@@ -1,0 +1,60 @@
+#!/bin/ksh
+
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+
+%manual
+  -------------------------------------------------
+  INIT_CP_BINARY
+  -------------------------------------------------
+
+  This script is part of the ICON SMS suite
+  Initial implementation: F. Prill,   DWD (2012-05-07)
+  Conversion to ecFlow:   M. Koehler, DWD (2022-11)
+
+  Corresponding author:
+    Martin Koehler, DWD, mailto:martin.koehler@dwd.de
+
+  Task objectives:
+  - copy ICON binary
+%end
+
+# include the header file for remote jobs
+%include <head_hpc.h>
+
+# -------------------------------------------------
+
+
+echo "INIT_CP_BINARY"
+
+arch=x86_64-unknown-linux-gnu
+
+SETDIRTMP=%SCTEMP%/%SUITE%/%EXPNUM%/output/bin
+mkdir -p ${SETDIRTMP}
+
+
+# Copy executable to experiment temporary directory
+
+#cp %SCPERM%/icon/dwd_icon_tools/icontools/iconremap           ${SETDIRTMP}
+#cp %SCPERM%/icon/dwd_icon_tools/icontools/iconsub             ${SETDIRTMP}
+cp /perm/dei2/icon/dwd_icon_tools/icontools/iconremap           ${SETDIRTMP}
+cp /perm/dei2/icon/dwd_icon_tools/icontools/iconsub             ${SETDIRTMP}
+
+# Use executable from $USER
+
+cp -f %SCCODEDIR%/build/bin/icon                              ${SETDIRTMP}
+#cp -f %SCPERM%/icon/icon-nwp-test4/build.gnu/bin/icon        ${SETDIRTMP}
+
+cd %SCCODEDIR%
+git status | head -1 > ${SETDIRTMP}/icon_rev.txt
+git log | head -3 >>   ${SETDIRTMP}/icon_rev.txt
+
+
+# -------------------------------------------------
+
+# include the "tail" file for remote jobs
+%include <tail.h>

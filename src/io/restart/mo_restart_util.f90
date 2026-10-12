@@ -1,15 +1,15 @@
-! Contains common helper routines for(a)synchronous restart
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains common helper routines for(a)synchronous restart
 
 MODULE mo_restart_util
   USE mo_exception,          ONLY: message, finish, message_text
@@ -87,7 +87,7 @@ CONTAINS
     TYPE(datetime), POINTER :: dt
     INTEGER :: date_int
     REAL(dp) :: date_frac
-    CHARACTER(LEN=MAX_CHAR_LENGTH) :: restart_fname 
+    CHARACTER(LEN=MAX_CHAR_LENGTH) :: restart_fname
 
     dt => restartArgs%restart_datetime
     WRITE (datetimeString,'(i4.4,2(i2.2),a,3(i2.2),a)')    &
@@ -162,7 +162,7 @@ CONTAINS
     INTEGER, INTENT(in) :: operation
     TYPE(t_PackedMessage), INTENT(INOUT) :: packedMessage
     CHARACTER(len=*), PARAMETER ::  routine = modname//':restartArgs_packer'
-    
+
     IF (operation == kPackOp .AND. .NOT. ASSOCIATED(me%restart_datetime)) THEN
       CALL finish(routine, 'Assertion failed: cannot pack unconstructed object.')
     ENDIF

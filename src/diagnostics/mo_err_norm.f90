@@ -1,19 +1,18 @@
-! Calculate error norms as in Williamson et al. (1992)
-!
-! General subroutines to be used for any variable (scalar, or
-! vector with 2 or 3 components) and any test case
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Calculate error norms as in Williamson et al. (1992)
+!
+! General subroutines to be used for any variable (scalar, or
+! vector with 2 or 3 components) and any test case
 
 MODULE mo_err_norm
 !-------------------------------------------------------------------------
@@ -289,4 +288,3 @@ ENDIF
 END SUBROUTINE  compute_err_norm
 
 END MODULE mo_err_norm
-

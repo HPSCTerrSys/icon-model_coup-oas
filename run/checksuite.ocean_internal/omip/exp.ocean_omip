@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,6 +24,7 @@ start_date="2000-01-01T00:00:00Z"
 GRID=RXBY
 LEV=ZZZ
 VERT_COR=NNN
+DYN=DNM
 
 
 if [ ${GRID} = R2B4 ] ; then
@@ -36,15 +37,6 @@ if [ ${GRID} = R2B4 ] ; then
     restart_interval="P50Y"
     checkpoint_interval="P50Y"
 
-# ocean_horizontal_diffusion_nml
-    laplacian_form=1
-    VelocityDiffusion_order=1
-    BiharmonicViscosity_scaling=0
-    BiharmonicViscosity_reference=0.0
-    BiharmonicViscosity_background=0.0
-    HarmonicViscosity_scaling=1
-    HarmonicViscosity_reference=3.0E4
-    HarmonicViscosity_background=0.0
 
 # ocean_GentMcWilliamsRedi_nml
     GMRedi_configuration=1
@@ -61,15 +53,19 @@ elif [ ${GRID} == R2B6 ] ; then
     restart_interval="P10Y"
     checkpoint_interval="P10Y"
 
-#ocean_horizontal_diffusion_nml
-    laplacian_form=1
-    VelocityDiffusion_order=2
-    BiharmonicViscosity_scaling=1
-    BiharmonicViscosity_reference=3.5E12
-    BiharmonicViscosity_background=0.0
-    HarmonicViscosity_scaling=1
-    HarmonicViscosity_reference=0.0
-    HarmonicViscosity_background=0.0
+#ocean_GentMcWilliamsRedi_nml
+    GMRedi_configuration=1
+    k_tracer_GM_kappa_parameter=400.0
+    k_tracer_isoneutral_parameter=400.0
+
+elif [ ${GRID} == R2B7 ] ; then
+    grid_name="OceanOnly_icon_grid_0023_R02B07_G_modified_srtm30_1min"
+    ocean_grids="R2B7_ocean-grid.nc"
+
+    modelTimeStep="PT1200S"
+
+    restart_interval="P5Y"
+    checkpoint_interval="P5Y"
 
 #ocean_GentMcWilliamsRedi_nml
     GMRedi_configuration=1
@@ -81,20 +77,42 @@ elif [ ${GRID} == R2B8 ] ; then
     grid_name="OceanOnly_Global_IcosSymmetric_0010km_rotatedZ37d_modified_srtm30_1min"
     ocean_grids="R2B8_ocean-grid.nc"
 
-    modelTimeStep="PT240S"
+    modelTimeStep="PT600S"
 
     restart_interval="P3M"
     checkpoint_interval="P3M"
 
-#ocean_horizontal_diffusion_nml
-    laplacian_form=1
-    VelocityDiffusion_order=2
-    BiharmonicViscosity_scaling=1
-    BiharmonicViscosity_reference=2.0E10
-    BiharmonicViscosity_background=0.0
-    HarmonicViscosity_scaling=1
-    HarmonicViscosity_reference=0.0
-    HarmonicViscosity_background=0.0
+
+#ocean_GentMcWilliamsRedi_nml
+    GMRedi_configuration=0
+    k_tracer_GM_kappa_parameter=0.0
+    k_tracer_isoneutral_parameter=0.0
+
+elif [ ${GRID} == R2B9 ] ; then
+    grid_name="OceanOnly_IcosSymmetric_4932m_rotatedZ37d_modified_srtm30_1min"
+    ocean_grids="R2B9_ocean-grid.nc"
+
+    modelTimeStep="PT300S"
+
+    restart_interval="P1M"
+    checkpoint_interval="P1M"
+
+
+#ocean_GentMcWilliamsRedi_nml
+    GMRedi_configuration=0
+    k_tracer_GM_kappa_parameter=0.0
+    k_tracer_isoneutral_parameter=0.0
+
+
+elif [ ${GRID} == R2B10 ] ; then
+    grid_name="OceanOnly_Global_IcosSymmetric_2466m_rotatedZ37d_GEBCO_2023"
+    ocean_grids="R2B10_ocean-grid.nc"
+
+    modelTimeStep="PT120S"
+
+    restart_interval="P1M"
+    checkpoint_interval="P1M"
+
 
 #ocean_GentMcWilliamsRedi_nml
     GMRedi_configuration=0
@@ -102,8 +120,6 @@ elif [ ${GRID} == R2B8 ] ; then
     k_tracer_isoneutral_parameter=0.0
 
 fi
-
-    SUBDIR=""
 
 if [ ${LEV} == L40 ] ; then
 
@@ -134,14 +150,13 @@ elif [ ${LEV} == L64 ] ; then
 
 elif [ ${LEV} == L72 ] ; then
 
-    SUBDIR="ZSTAR/"
     n_zlev=72
     dzlev_m="2.0,2.2,2.5,2.8,3.1,3.5,3.9,4.4,4.9,5.4,5.9,6.4,7.1,7.7,8.4,9.2,10.1,11.0,
            12.0,13.2,14.4,15.7,17.1,18.7,20.4,22.3,24.3,26.5,28.9,31.5,34.3,37.3,40.6,
            43.1,45.3,46.8,48.4,50.0,51.7,53.4,55.2,57.0,58.9,60.8,62.9,66.6,72.6,80.6,
            90.6,100.2,110.0,120.3,128.7,137.4,146.4,155.7,165.2,174.8,184.4,194.1,203.6,
            212.9,221.9,230.5,238.5,245.9,252.4,258.1,262.8,266.4,268.9,270.1"
-    
+
     levidx_100m=15
     levidx_200m=25
     levidx_2000m=55
@@ -150,30 +165,6 @@ elif [ ${LEV} == L72 ] ; then
 
 elif [ ${LEV} == L128 ] ; then
 
-    n_zlev=128
-    dzlev_m="11.0,   9.0,     8.0,   8.0,     8.0,    8.0,    8.0,    8.0,    8.0,    8.0,\
-              8.0,    8.0,    8.0,    8.25,   8.5,    8.75,   9.0,   9.25,    9.5,   9.75,\
-             10.0,   10.0,   10.0,   10.0,   10.0,   10.0,   10.0,   10.0,   10.0,   10.0,\
-             10.5,   11.0,   11.5,   12.0,   12.5,   13.0,   13.5,   14.0,   14.5,   15.0,\
-             15.5,   16.0,   16.5,   17.0,   17.5,   18.0,   18.5,   19.0,   19.5,   20.0,\
-             20.5,   21.0,   21.5,   22.0,   22.5,   23.0,   23.5,   24.0,   24.5,   25.0,\
-             25.5,   26.0,   26.5,   27.0,   28.5,   29.0,   29.5,   30.0,   30.5,   31.0,\
-             31.0,   32.0,   33.0,   34.0,   35.0,   36.0,   37.0,   38.0,   39.0,   40.0,\
-             42.0,   44.0,   46.0,   48.0,   50.0,   52.0,   54.0,   56.0,   58.0,   60.0,\
-             62.0,   64.0,   66.0,   68.0,   70.0,   72.0,   74.0,   76.0,   78.0,   80.0,\
-             82.0,   84.0,   86.0,   88.0,   90.0,   92.0,   94.0,   96.0,   98.0,  100.0,\
-            102.0,  104.0,  106.0,  108.0,  110.0,  112.0,  114.0,  116.0,  118.0,  200.0,\
-            200.0,  200.0,  200.0,  200.0,  200.0,  200.0,  200.0,  200.0"
-
-    levidx_100m=14
-    levidx_200m=24
-    levidx_2000m=92
-
-    minVerticalLevels=2
-
-elif [ ${LEV} == L128SMT ] ; then
-
-    SUBDIR="ZSTAR/"
     n_zlev=128
     dzlev_m="2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 3.0, 3.1, 3.2,\
                  3.4, 3.5, 3.7, 3.9, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.3, 5.5,\
@@ -204,9 +195,9 @@ output_interval="P1M"                  # ocean model output interval in days
 daily="P1D"
 monthly="P1M"
 file_interval="${restart_interval}"
-output="cmip6"  #minimum,cmip6,cmip6full
+output="minimum"  #minimum,cmip6,cmip6full,long
 fx_date="${start_date}"
-
+num_io_procs=1
 #
 #-----------------------------------------------------------------------------
 #set the vertical mixing scheme
@@ -222,11 +213,13 @@ vert_cor_type=0
 select_lhs=2
 l_lhs_direct=".TRUE."
 STRETCH_C=''
+LIMIT="0.8"
 else
 vert_cor_type=1
 select_lhs=1
 l_lhs_direct=".FALSE."
 STRETCH_C=",'stretch_c'"
+LIMIT="6.0"
 fi
 
 #-----------------------------------------------------------------------------
@@ -236,7 +229,7 @@ autoPostProcessing="false"                         # submit postprocessing job
 iforc=12
 forcing_timescale=365  # length of OMIP/NCEP dataset: 1 = annual; 12 = monthly data; 365/else = daily data
 init_relax=1
-ocean_data_InputFolder="/pool/data/ICON/oes/input/r0005/${grid_name}"
+ocean_data_InputFolder="/pool/data/ICON/oes/input/r0006/${grid_name}"
 grids_folder=${ocean_data_InputFolder}
 #-----------------------------------------------------------------------------
 #icon_data_rootFolder=/pool/data/ICON
@@ -245,6 +238,7 @@ grids_folder=${ocean_data_InputFolder}
 # -------------------------
 
 if [ x${output} = xcmip6full ] ; then
+num_io_procs=14
 
 cat > ${ocean_namelist} << EOF
 &output_nml
@@ -518,6 +512,7 @@ cat >> ${ocean_namelist} << EOF
 EOF
 
 elif  [ x${output} = xminimum ] ; then
+num_io_procs=1
 
 cat >> ${ocean_namelist} << EOF
 
@@ -536,6 +531,56 @@ cat >> ${ocean_namelist} << EOF
   m_levels                        = "1,${levidx_200m},${levidx_2000m}"
   ml_varlist                      = 'zos','mlotst','hi','hs','conc','ice_u','ice_v','u','v','to','so',
                                     'kin','vort'
+/
+
+&output_nml
+  filetype                        = 5
+  output_filename                 = "${EXPNAME}_P1D_ice"
+  output_start                    = "${start_date}"
+  output_end                      = "${end_date}"
+  output_interval                 = "P1D"
+  filename_format                 = "<output_filename>_<datetime2>"
+!  operation                       = "mean"
+  file_interval                   = "${file_interval}"
+  mode                            = 1
+  include_last                    = .FALSE.
+  output_grid                     = .TRUE.
+  ml_varlist                      = 'hi','hs','conc','ice_u','ice_v','s11','s12','s22','delta','e11','e12','e22','sigma_i','sigma_ii'
+/
+
+&output_nml
+  filetype                        = 5
+  output_filename                 = "${EXPNAME}_P1M_mon"
+  output_start                    = "${start_date}"
+  output_end                      = "${end_date}"
+  output_interval                 = "P1M"
+  filename_format                 = "<output_filename>_<datetime2>"
+  file_interval                   = "${file_interval}"
+  mode                            = 1
+  include_last                    = .FALSE.
+  output_grid                     = .TRUE.
+  operation                       = "mean"
+  ml_varlist                      = 'group:ocean_monitor'
+/
+
+&output_nml
+  filetype                        = 5
+  output_filename                 = "${EXPNAME}_P1M_qps"
+  output_start                    = "${start_date}"
+  output_end                      = "${end_date}"
+  output_interval                 = "P1M"
+  filename_format                 = "<output_filename>_<datetime2>"
+  operation                       = "mean"
+  file_interval                   = "${file_interval}"
+  mode                            = 1
+  include_last                    = .FALSE.
+  output_grid                     = .TRUE.
+  ml_varlist                      = 'to', 'so', 'tke', 'u', 'v', 'zos', 'hi', 'hs',
+                                    'conc', 'mlotst', 'verticallyTotal_mass_flux_e', 'ice_u',
+                                    'ice_v', 'zos_square', 'HeatFlux_Total', 'FrshFlux_Runoff',
+                                    'FrshFlux_Precipitation', 'FrshFlux_Evaporation',
+                                    'FrshFlux_TotalOcean', 'FrshFlux_VolumeIce', 'totalsnowfall',
+                                    'FrshFlux_VolumeTotal', 'group:ocean_moc'
 /
 
 &output_nml
@@ -562,17 +607,114 @@ cat >> ${ocean_namelist} << EOF
                                     'inv_prism_center_dist_e','depth_CellMiddle'
 /
 EOF
+elif  [ x${output} = xlong ] ; then
+num_io_procs=1
+cat >> ${ocean_namelist} << EOF
+
+&output_nml
+      filetype                    = 5
+      output_filename             = "${EXPNAME}_P1Y_3d"
+      output_start                = "${start_date}"
+      output_end                  = "${end_date}"
+      output_interval             = "P1Y"
+      filename_format             = "<output_filename>_<datetime2>"
+      operation                   = "mean"
+      file_interval               = "${file_interval}"
+      mode                        = 1
+      include_last                = .FALSE.
+      output_grid                 = .TRUE.
+      ml_varlist                  = 'to', 'so', 'u', 'v', 'w', 'tke', 'A_veloc_v', 'A_tracer_v_to',
+                                    'A_tracer_v_so', 'normal_velocity', 'rho', 'rhopot',
+                                    'mass_flux', 'heat_content_liquid_water', 'swrab', 'rsdoabsorb'
+/
+
+&output_nml
+      filetype                    = 5
+      output_filename             = "${EXPNAME}_P1M_2d"
+      output_start                = "${start_date}"
+      output_end                  = "${end_date}"
+      output_interval             = "P1M"
+      filename_format             = "<output_filename>_<datetime2>"
+      operation                   = "mean"
+      file_interval               = "${file_interval}"
+      mode                        = 1
+      include_last                = .FALSE.
+      output_grid                 = .TRUE.
+      m_levels                    = 1
+      ml_varlist                  = 'to', 'so', 'zos', 'hi', 'hs', 'conc', 'ice_u', 'ice_v',
+                                    'heat_content_seaice', 'heat_content_snow', 'heat_content_total',
+                                    'atmos_fluxes_stress_xw', 'atmos_fluxes_stress_yw',
+                                    'atmos_fluxes_stress_x', 'atmos_fluxes_stress_y',
+                                    'sea_level_pressure', 'Wind_Speed_10m', 'Qtop', 'Qbot',
+                                    'Qbot_slow', 'ice_vn', 'mld', 'condep', 'draftave', 'mlotst',
+                                    'zHeatOceI', 'heatOceI', 'heatOceW', 'zUnderIce',
+                                    'HeatFlux_Total', 'HeatFlux_ShortWave', 'HeatFlux_LongWave',
+                                    'HeatFlux_Sensible', 'HeatFlux_Latent', 'FrshFlux_Runoff',
+                                    'FrshFlux_Precipitation', 'FrshFlux_Evaporation',
+                                    'FrshFlux_TotalOcean', 'FrshFlux_VolumeIce', 'totalsnowfall',
+                                    'FrshFlux_VolumeTotal', 'swsum', 'heatabs'
+/
+
+&output_nml
+      filetype                    = 5
+      output_filename             = "${EXPNAME}_P1M_mon"
+      output_start                = "${start_date}"
+      output_end                  = "${end_date}"
+      output_interval             = "P1M"
+      filename_format             = "<output_filename>_<datetime2>"
+      file_interval               = "${file_interval}"
+      mode                        = 1
+      include_last                = .FALSE.
+      output_grid                 = .TRUE.
+      operation                   = "mean"
+      ml_varlist                  = 'group:ocean_monitor'
+/
+
+&output_nml
+      filetype                    = 5
+      output_filename             = "${EXPNAME}_P1M_moc"
+      output_start                = "${start_date}"
+      output_end                  = "${end_date}"
+      output_interval             = "P1M"
+      file_interval               = "${file_interval}"
+      filename_format             = "<output_filename>_<datetime2>"
+      mode                        = 1
+      include_last                = .FALSE.
+      output_grid                 = .TRUE.
+      operation                   = "mean"
+      ml_varlist                  = 'group:ocean_moc'
+/
+
+&output_nml
+      filetype                    = 5
+      output_filename             = "${EXPNAME}_P1Y_tke"
+      output_start                = "${start_date}"
+      output_end                  = "${end_date}"
+      output_interval             = "P1Y"
+      file_interval               = "${file_interval}"
+      filename_format             = "<output_filename>_<datetime2>"
+      mode                        = 1
+      include_last                = .FALSE.
+      output_grid                 = .TRUE.
+      operation                   = "mean"
+      ml_varlist                  = 'group:oce_vmix_tke', 'group:oce_vmix_iwe'
+/
+EOF
 fi
 
 cat >> ${ocean_namelist} << EOF
 !
 &parallel_nml
   nproma                          = ${nproma}
+  nblocks_c                       = ${nblocks_c}
   p_test_run                      = .FALSE.
   l_fast_sum                      = .TRUE.
   num_prefetch_proc               = 0
-  pio_type                        = 0
-  num_io_procs                    = 0
+  pio_type                        = 1
+!  io_process_stride               = 8
+!  io_proc_chunk_size              = 16
+  num_io_procs                    = ${num_io_procs}
+  num_restart_procs               = ${no_of_nodes}
 /
 
 &grid_nml
@@ -622,7 +764,7 @@ cat >> ${ocean_namelist} << EOF
   select_solver                   = 4         ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                               ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .TRUE.
-  solver_tolerance                = 1.0E-10   ! this may further be reduced
+  solver_tolerance                = 1.0E-9   ! this may further be reduced
   select_lhs                      = ${select_lhs}       ! 1=operator based (default) 2=matrix based
   l_lhs_direct                    = ${l_lhs_direct} ! .TRUE.= use lhs implementation directly  .FALSE.= matrix scanner (default)
   solver_FirstGuess               = 2         ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
@@ -651,16 +793,15 @@ cat >> ${ocean_namelist} << EOF
 /
 
 &ocean_horizontal_diffusion_nml
-  laplacian_form                              = ${laplacian_form}                   ! 1=curlcurl-graddiv
-  VelocityDiffusion_order                     = ${VelocityDiffusion_order}          ! 21=biharmonic+laplacian (for the laplacian leith)
+  laplacian_form                              = 1                ! 1=curlcurl-graddiv
+  VelocityDiffusion_order                     = 2                ! 21=biharmonic+laplacian (for the laplacian leith)
 
-  BiharmonicViscosity_scaling                 = ${BiharmonicViscosity_scaling}
-  BiharmonicViscosity_reference               = ${BiharmonicViscosity_reference}  !  [m2/s] constant horizontal viscosity coefficient for velocity
-  BiharmonicViscosity_background              = ${BiharmonicViscosity_background}  ! [m2/s] constant horizontal viscosity coefficient for velocity
-
-  HarmonicViscosity_scaling                   = ${HarmonicViscosity_scaling}
-  HarmonicViscosity_reference                 = ${HarmonicViscosity_reference}  !  [m2/s] constant horizontal viscosity coefficient for velocity
-  HarmonicViscosity_background                = ${HarmonicViscosity_background}
+  BiharmonicViscosity_scaling                 = 4
+  BiharmonicViscosity_reference               = 2.7e-2  !  [m2/s] constant horizontal viscosity coefficient for velocity
+  BiharmonicViscosity_background              = 0.0  ! [m2/s] constant horizontal viscosity coefficient for velocity
+  HarmonicViscosity_scaling                   = 1
+  HarmonicViscosity_reference                 = 0.0  !  [m2/s] constant horizontal viscosity coefficient for velocity
+  HarmonicViscosity_background                = 0.0
 
   TracerHorizontalDiffusion_scaling           = 1
   Temperature_HorizontalDiffusion_Background  = 0.0
@@ -699,7 +840,7 @@ cat >> ${ocean_namelist} << EOF
   vert_mix_type                   = 2  ! 1: PP; 2: TKE; 4 TKE+IDEMIX
   only_tke                        = .TRUE. ! .TRUE. for TKE; .FALSE. for TKE+IDEMIX
   ! vmix/tke parameters
-  c_k                             = 0.3
+  c_k                             = 0.1
   c_eps                           = 0.7
   alpha_tke                       = 30.0
   mxl_min                         = 1.d-8
@@ -709,7 +850,7 @@ cat >> ${ocean_namelist} << EOF
   tke_min                         = 1.d-6
   tke_mxl_choice                  = 2
   tke_surf_min                    = 1.d-4
-  l_lc                            = .FALSE.   ! Use Langmuir parameterisation (Axell, 2002)
+  l_lc                            = .TRUE.   ! Use Langmuir parameterisation (Axell, 2002)
   clc                             = 0.15      ! Factor in the vertical velocity profile of the Langmuir circulation (default clc=0.1 in Axell (2002))
   use_ubound_dirichlet            = .FALSE.
   use_lbound_dirichlet            = .FALSE.
@@ -743,19 +884,28 @@ cat >> ${ocean_namelist} << EOF
 
 &sea_ice_nml
   i_ice_therm                     = 1         ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
-  i_ice_dyn                       = 1         ! 1/0=switch on/off AWI ice dynamics
+  i_ice_dyn                       = ${DYN}    ! 1/0=switch on/off AWI ice dynamics
 ! i_Qio_type                      = 3         ! 3 (default): energy of whole grid-area used for melting (MPIOM-type)
 ! use_constant_tfreez             = .TRUE.    ! default: true
 ! use_no_flux_gradients           = .FALSE.   ! default: true
   leadclose_1                     = 0.25      ! default: 0.5 - value of MPIOM: 0.25
-  leadclose_2n                    = 0.666     ! default: 0.0 - value of MPIOM: 2/3
+ leadclose_2n                    =   0.    ! default: 0.0 - value of MPIOM: 2/3
   albedoW_sim                     = 0.10      ! albedo of the ocean used in sea ice model
   albs                            = 0.80      ! Albedo of snow (not melting)
   albsm                           = 0.65      ! Albedo of snow (melting)
   albi                            = 0.70      ! Albedo of ice (not melting)
   albim                           = 0.65      ! Albedo of ice (melting)
+  seaice_stress_diag              = .TRUE.
 
-! Pstar                           = 40000
+
+ initialize_seaice_fromfile = .true.
+!evp
+! alpha_evp = 800
+! beta_evp = 800
+! n_ice_iter = 120
+ delta_min = 2.0e-09
+ cd_io = 5.5e-3
+! luse_replacement_pressure = .true.
 /
 
 &ocean_forcing_nml
@@ -777,7 +927,7 @@ cat >> ${ocean_namelist} << EOF
 ! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false
                                               ! salt-change due to internal fluxes only
   limit_seaice                    = .TRUE.    ! default: true
-  seaice_limit                    = 0.8       ! hard limit set to 80% of upper layer for sea ice
+  seaice_limit                    = ${LIMIT}       ! hard limit set to 80% of upper layer for sea ice
   limit_elevation                 = .TRUE.
   atm_pressure_included_in_ocedyn = .FALSE.   ! use atm. pressure in the ocean dynamics
   atm_pressure_included_in_icedyn = .FALSE.   ! use atm. pressure in the ice dynamics
@@ -792,10 +942,13 @@ cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type           = 1         ! read from file
   initial_temperature_type        = 1         ! read from file
+  sea_surface_height_type         = 0
+  initial_velocity_type           = 0
 /
 
 &ocean_diagnostics_nml
-  use_age_tracer                  = .FALSE.
+  diagnose_age                    = .FALSE.
+  diagnose_green                  = .FALSE.
   diagnostics_level               = 1
   diagnose_for_horizontalvelocity = .FALSE.
   diagnose_for_heat_content       = .TRUE.
@@ -806,8 +959,8 @@ cat >> ${ocean_namelist} << EOF
 &io_nml
   restart_file_type               = 5
   write_last_restart              = .TRUE.
-! lkeep_in_sync                   = .TRUE.    ! sync after each timestep
-! restart_write_mode              = "joint procs multifile"
+  lkeep_in_sync                   = .TRUE.    ! sync after each timestep
+  restart_write_mode              = "joint procs multifile"
 /
 EOF
 #-----------------------------------------------------------------------------
@@ -819,7 +972,7 @@ EOF
 #. ${thisdir}/add_required_ocean_files
 
 
-add_link_file ${ocean_data_InputFolder}/${SUBDIR}${GRID}${LEV}_initial_state.nc initial_state.nc
+add_link_file ${ocean_data_InputFolder}/${GRID}${LEV}_oras5-2010-01-01.nc initial_state.nc
 add_link_file ${ocean_data_InputFolder}/${GRID}_ocean-flux.nc ocean-flux.nc
 add_link_file ${ocean_data_InputFolder}/${GRID}_ocean-relax.nc ocean-relax.nc
 # IDEMIX forcing fields

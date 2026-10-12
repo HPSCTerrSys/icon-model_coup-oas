@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -142,7 +142,7 @@ cat > ${atmo_namelist} << EOF
 /
 &grid_nml
  dynamics_grid_filename       =  'iconR2B08_DOM01.nc',
- radiation_grid_filename      = ''          ! 
+ radiation_grid_filename      = ''          !
  dynamics_parent_grid_id      = 0
  lredgrid_phys                = .FALSE.,.FALSE.,.FALSE.,
  lfeedback                    = .TRUE.
@@ -250,12 +250,12 @@ cat > ${atmo_namelist} << EOF
  steps_per_file               =  1
  mode                         =  1  ! 1: fc mode (rel t-axis), 2: clim mode (abs t-axis)
  include_last                 = .FALSE.
- output_filename              = 'dei4_NARVALII_2016081700_rh_omega' 
+ output_filename              = 'dei4_NARVALII_2016081700_rh_omega'
  p_levels                     = 5000,7000,10000,15000,20000,25000,30000,40000,50000,60000,70000,
                                 80000,85000,90000,92500,95000,97500,100000
  pl_varlist                   = 'omega', 'rh'
  output_grid                  = .FALSE.
- remap                        = 0                  
+ remap                        = 0
 /
 &output_nml
  filetype                     =  4                        ! output format: 2=GRIB2, 4=NETCDFv2
@@ -310,7 +310,7 @@ cat > ${atmo_namelist} << EOF
 &nwp_phy_nml
  inwp_gscp                    = 2,    ! 1: default, 2: graupel, 4: for two-moment
  inwp_convection              = 0,0,0
- inwp_radiation               = 1,
+ inwp_radiation               = 4,
  inwp_cldcover                = 1     ! 0: no cld, 1: new diagnostic, 3: COSMO, 5: grid scale
  inwp_turb                    = 1     ! 1/10: Raschendorfer, 2: GME
  inwp_satad                   = 1
@@ -327,8 +327,8 @@ cat > ${atmo_namelist} << EOF
  icapdcycl                    = 3
 /
 !&synsat_nml
-! lsynsat = .true.,.true.  
-!/ 
+! lsynsat = .true.,.true.
+!/
 &nwp_tuning_nml
  itune_albedo = 1
  tune_zceff_min = 0.075
@@ -342,7 +342,7 @@ cat > ${atmo_namelist} << EOF
  ltkesso                      = .true.
  frcsmot                      = 0.2      ! these 2 switches together apply vertical smoothing of the TKE source terms
  imode_frcsmot                = 2  ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
-  itype_sher    = 3    
+  itype_sher    = 3
   ltkeshs       = .true.
   a_hshr        = 2.0
   alpha0        = 0.0123
@@ -371,6 +371,7 @@ cat > ${atmo_namelist} << EOF
  vmr_o2                       = 0.20946
  vmr_cfc11                    = 240.e-12
  vmr_cfc12                    = 532.e-12
+ ecrad_data_path              = '${basedir}/externals/ecrad/data'
 /
 &nonhydrostatic_nml
  iadv_rhotheta                = 2

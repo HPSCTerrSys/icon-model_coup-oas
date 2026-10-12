@@ -1,12 +1,7 @@
-!
-! This module contains the I/O routines for initicon
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,17 +9,20 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! This module contains the I/O routines for initicon
+
 !----------------------------
 #include "omp_definitions.inc"
 !----------------------------
 
 MODULE mo_initicon
 
-  USE mo_kind,                ONLY: dp, wp, vp, sp
+  USE mo_kind,                ONLY: wp, vp, sp, i8
   USE mo_io_units,            ONLY: filename_max
   USE mo_parallel_config,     ONLY: nproma
   USE mo_run_config,          ONLY: iqv, iqc, iqi, iqr, iqs, iqg, iqm_max, iforcing, check_uuid_gracefully, &
-                                    iqh, iqnc, iqnr, iqni, iqns, iqng, iqnh
+    &                               iqh, iqnc, iqnr, iqni, iqns, iqng, iqnh,                                &
+    &                               msg_level, ltimer, timers_level
   USE mo_dynamics_config,     ONLY: nnow, nnow_rcf
   USE mo_model_domain,        ONLY: t_patch
   USE mo_nonhydro_types,      ONLY: t_nh_state, t_nh_prog, t_nh_diag
@@ -34,34 +32,34 @@ MODULE mo_initicon
   USE mo_ext_data_types,      ONLY: t_external_data
   USE mo_grf_intp_data_strc,  ONLY: t_gridref_state
   USE mo_initicon_types,      ONLY: t_initicon_state, ana_varnames_dict, t_init_state_const
-  USE mo_initicon_config,     ONLY: init_mode, dt_iau, lvert_remap_fg, lread_ana, ltile_init, &
-    &                               lp2cintp_incr, lp2cintp_sfcana, ltile_coldstart, lconsistency_checks, &
-    &                               niter_divdamp, niter_diffu, lanaread_tseasfc, qcana_mode, qiana_mode, &
-    &                               qrsgana_mode, fgFilename, anaFilename, ana_varnames_map_file,         &
-    &                               icpl_da_sfcevap, icpl_da_skinc, adjust_tso_tsnow,                     &
-    &                               lcouple_ocean_coldstart, icpl_da_seaice, smi_relax_timescale
+  USE mo_initicon_config,     ONLY: init_mode, dt_iau, lvert_remap_fg, lread_ana, ltile_init,                &
+    &                               lp2cintp_incr, lp2cintp_sfcana, ltile_coldstart, lconsistency_checks,    &
+    &                               niter_divdamp, niter_diffu, lanaread_tseasfc, qcana_mode, qiana_mode,    &
+    &                               qrsgana_mode, fgFilename, anaFilename, ana_varnames_map_file,            &
+    &                               icpl_da_sfcevap, icpl_da_skinc, adjust_tso_tsnow,                        &
+    &                               lcouple_ocean_coldstart, icpl_da_seaice, smi_relax_timescale, itype_sma, &
+    &                               parallel_grib_decoding
   USE mo_apt_routines,        ONLY: compute_filtincs
   USE mo_limarea_config,      ONLY: latbc_config
   USE mo_advection_config,    ONLY: advection_config
   USE mo_nwp_tuning_config,   ONLY: max_freshsnow_inc
   USE mo_impl_constants,      ONLY: SUCCESS, MODE_DWDANA, max_dom,   &
-    &                               MODE_IAU, MODE_IAU_OLD, MODE_IFSANA,              &
-    &                               MODE_ICONVREMAP, MODE_COMBINED, MODE_COSMO,       &
-    &                               min_rlcell, INWP, iaes, min_rledge_int, grf_bdywidth_c, &
-    &                               min_rlcell_int
-  USE mo_physical_constants,  ONLY: rd, cpd, cvd, p0ref, vtmpc1, rd_o_cpd, tmelt, tf_salt
+    &                               MODE_IAU, MODE_IFSANA, MODE_ICONVREMAP, MODE_COMBINED, MODE_COSMO, &
+    &                               min_rlcell, INWP, iaes, min_rledge_int, grf_bdywidth_c,            &
+    &                               min_rlcell_int, vname_len
+  USE mo_physical_constants,  ONLY: rd, cpd, cvd, p0ref, vtmpc1, rd_o_cpd, tmelt
   USE mo_exception,           ONLY: message, finish
   USE mo_grid_config,         ONLY: n_dom, l_limited_area
   USE mo_nh_init_utils,       ONLY: convert_thdvars, init_w
   USE mo_nh_init_nest_utils,  ONLY: interpolate_vn_increments
   USE mo_util_phys,           ONLY: virtual_temp
   USE mo_util_string,         ONLY: int2string
-  USE mo_satad,               ONLY: sat_pres_ice, spec_humi
-  USE mo_lnd_nwp_config,      ONLY: nlev_soil, ntiles_total, ntiles_lnd, llake, &
+  USE mo_thdyn_functions,     ONLY: sat_pres_ice, spec_humi
+  USE mo_lnd_nwp_config,      ONLY: nlev_soil, ntiles_total, ntiles_lnd, llake, loskin, &
     &                               isub_lake, isub_water, lsnowtile, frlnd_thrhld, &
     &                               frlake_thrhld, lprog_albsi, dzsoil_icon => dzsoil, &
-    &                               frsi_min
-  USE mo_atm_phy_nwp_config,  ONLY: iprog_aero, atm_phy_nwp_config
+    &                               frsi_min, tf_salt
+  USE mo_atm_phy_nwp_config,  ONLY: i2daero_dust, i2daero_seas, i2daero_anthro, atm_phy_nwp_config
   USE sfc_terra_data,         ONLY: cporv, cadp, cpwp, cfcap, crhosmaxf, crhosmin_ml, crhosmax_ml
   USE sfc_terra_init,         ONLY: get_wsnow
   USE mo_nh_vert_interp,      ONLY: vert_interp_atm, vert_interp_sfc
@@ -81,11 +79,15 @@ MODULE mo_initicon
   USE mo_input_request_list,  ONLY: t_InputRequestList, InputRequestList_create
   USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_input_instructions,  ONLY: t_readInstructionListPtr, readInstructionList_make, kInputSourceAna, &
-                                    kInputSourceBoth, kInputSourceCold, kInputSourceAnaI, kInputSourceFgAnaI
+                                  & kInputSourceBoth, kInputSourceCold, kInputSourceAnaI, kInputSourceFgAnaI, kInputSourceFg, &
+                                  & collectGroupAnaIncrement
   USE mo_util_uuid_types,     ONLY: t_uuid
   USE mo_nwp_sfc_utils,       ONLY: seaice_albedo_coldstart
   USE mo_fortran_tools,       ONLY: init
   USE mo_coupling_config,     ONLY: is_coupled_to_ocean
+  USE mo_util_vgrid_types,    ONLY: vgrid_buffer
+  USE mo_scatter_pattern_base,    ONLY: t_scatterPattern
+  USE mo_scatter_pattern_scatter, ONLY: t_scatterPatternScatter
 
 
   IMPLICIT NONE
@@ -116,13 +118,14 @@ MODULE mo_initicon
     TYPE(t_gridref_state),    INTENT(IN)              :: p_grf_state(:)
     TYPE(t_nh_state),         INTENT(INOUT)           :: p_nh_state(:)
     TYPE(t_nwp_phy_diag),     INTENT(INOUT), OPTIONAL :: prm_diag(:)
-    TYPE(t_nwp_phy_stochconv),INTENT(INOUT), OPTIONAL :: prm_nwp_stochconv(:)    
+    TYPE(t_nwp_phy_stochconv),INTENT(INOUT), OPTIONAL :: prm_nwp_stochconv(:)
     TYPE(t_lnd_state),        INTENT(INOUT), OPTIONAL :: p_lnd_state(:)
     TYPE(t_external_data),    INTENT(INOUT), OPTIONAL :: ext_data(:)
 
     CHARACTER(LEN = *), PARAMETER :: routine = modname//':init_icon'
-    INTEGER :: jg, ist
+    INTEGER :: jg, ist, ip
     TYPE(t_readInstructionListPtr) :: inputInstructions(n_dom)
+    CLASS(t_ScatterPattern), POINTER :: scpat
 
     ! Allocate initicon data type
     ALLOCATE (initicon(n_dom), initicon_const(n_dom),  &
@@ -194,21 +197,42 @@ MODULE mo_initicon
     ! dependence on p_diag_lnd.
 !DR    CALL init_sea_lists(p_patch, ext_data, p_diag_lnd, lseaice)
 
+    IF (parallel_grib_decoding .AND. .NOT. my_process_is_stdio()) THEN
+      ! deallocate scatter pattern information on worker PEs to free memory;
+      ! stdio is excluded because there might be applications in which data are read during runtime,
+      ! whose distribution requires the scatter patterns on the IO PE.
+      DO jg = 1, n_dom
+        DO ip = 1, 2
+          IF (ip == 1) THEN
+            scpat => p_patch(jg)%comm_pat_scatter_c
+          ELSE
+            scpat => p_patch(jg)%comm_pat_scatter_e
+          ENDIF
+          SELECT TYPE (scpat)
+          CLASS IS (t_scatterPatternScatter)
+            ! deallocates allocatable components of (child) type t_scatterPatternScatter
+            ! by invoking the child-only destructor.
+            ! i.e. deallocates the arrays pointIndices and point_counts
+            CALL scpat%destruct_child()
+          CLASS default
+            ! no child components to clean
+          END SELECT
+        ENDDO
+      ENDDO
+    ENDIF
+
   END SUBROUTINE init_icon
 
   ! Write an output line that informs the user of the init_mode we are using (failing the program if init_mode is invalid).
   SUBROUTINE print_init_mode()
     SELECT CASE(init_mode)
-        CASE(MODE_DWDANA)   
+        CASE(MODE_DWDANA)
             CALL message(modname,'MODE_DWD: perform initialization with DWD analysis')
-        CASE(MODE_ICONVREMAP)   
+        CASE(MODE_ICONVREMAP)
             CALL message(modname,'MODE_VREMAP: read ICON data and perform vertical remapping')
-        CASE (MODE_IAU_OLD)
-            CALL message(modname,'MODE_IAU_OLD: perform initialization with incremental analysis update &
-                                 &(retained for backward compatibility)')
         CASE (MODE_IAU)
             CALL message(modname,'MODE_IAU: perform initialization with incremental analysis update, including snow increments')
-        CASE(MODE_IFSANA)   
+        CASE(MODE_IFSANA)
             CALL message(modname,'MODE_IFS: perform initialization with IFS analysis')
         CASE(MODE_COMBINED)
             CALL message(modname,'MODE_COMBINED: IFS-atm + ICON-soil')
@@ -239,15 +263,12 @@ MODULE mo_initicon
     INTEGER :: jg, jg1
     CLASS(t_InputRequestList), POINTER :: requestList
     CHARACTER(LEN=filename_max) :: fgFilename_str(max_dom)
+    CHARACTER(LEN=vname_len), ALLOCATABLE :: ana_incr_list(:)
+    INTEGER :: fname_len, ist
 
     !The input file paths & types are NOT initialized IN all modes, so we need to avoid creating InputRequestLists IN these cases.
-    SELECT CASE(init_mode)
-        CASE(MODE_IFSANA)    !MODE_IFSANA uses the read_extana_*() routines, which directly use NetCDF input.
-            RETURN
-        CASE(MODE_DWDANA, MODE_IAU_OLD, MODE_IAU, MODE_ICONVREMAP, MODE_COMBINED, MODE_COSMO)
-        CASE DEFAULT
-            CALL finish(routine, "assertion failed: unknown init_mode")
-    END SELECT
+    ! MODE_IFSANA uses the read_extana_*() routines, which directly use NetCDF input.
+    IF (init_mode == MODE_IFSANA) RETURN
 
     ! Create a request list for all the relevant variable names.
     requestList => InputRequestList_create()
@@ -256,6 +277,13 @@ MODULE mo_initicon
         CALL inputInstructions(jg)%ptr%fileRequests(requestList, lIsFg = .TRUE.)
       ENDIF
     END DO
+
+    ! Dummy allocation
+    IF (parallel_grib_decoding) THEN
+      ALLOCATE (ana_incr_list(1), STAT=ist)
+      IF (ist /= SUCCESS) CALL finish(routine, 'Allocation of ana_incr_list failed')
+      ana_incr_list(1) = " "
+    ENDIF
 
     DO jg = 1, n_dom
       fgFilename_str(jg) = " "
@@ -280,18 +308,59 @@ MODULE mo_initicon
     ! Scan the input files AND distribute the relevant variables across the processes.
     DO jg = 1, n_dom
       IF(p_patch(jg)%ldom_active) THEN
+        ! Get length of filename
+        ! (used to reduce overhead of repeated TRIMs)
+        fname_len = LEN_TRIM(fgFilename_str(jg))
         IF(my_process_is_stdio()) THEN
-          CALL message(routine, 'read atm_FG fields from '//TRIM(fgFilename_str(jg)))
+          CALL message(routine, 'read atm_FG fields from '//fgFilename_str(jg)(1:fname_len))
         ENDIF  ! p_io
-        IF (ana_varnames_map_file /= ' ') THEN
-          CALL requestList%readFile(p_patch(jg), TRIM(fgFilename_str(jg)), .TRUE., &
-            &                       opt_dict = ana_varnames_dict)
+
+        ! There are different strategies for distributing
+        ! the reading and decoding of input data between the Work PEs:
+        ! - "Decoding by single process":
+        !   - Standard case
+        !   - Workroot PE reads and decodes input data
+        !   - Used library: CDI
+        !   - Allowed filetypes: (NetCDF), GRIB2
+        ! - "Decoding by multiple processes":
+        !   - Workroot PE reads data and distributes them to all other Work PEs for decoding
+        !   - Other Work PEs decode data
+        !   - Used library: ecCodes
+        !   - Allowed filetypes: GRIB2
+        IF (.NOT. parallel_grib_decoding) THEN
+          ! Standard case
+          IF (ana_varnames_map_file /= ' ') THEN
+            CALL requestList%readFile(p_patch(jg), fgFilename_str(jg)(1:fname_len), .TRUE., opt_dict = ana_varnames_dict)
+          ELSE
+            CALL requestList%readFile(p_patch(jg), fgFilename_str(jg)(1:fname_len), .TRUE.)
+          END IF
         ELSE
-          CALL requestList%readFile(p_patch(jg), TRIM(fgFilename_str(jg)), .TRUE.)
-        END IF
-      END IF
-    END DO
-    IF(my_process_is_stdio()) THEN
+          ! Distributed input-data decoding
+          ! (to keep the following interface structurally simple, neither the full p_patch is handed over,
+          ! nor optional arguments (e.g., for h/vgrid_uuid) are used.)
+          CALL requestList%readFile_grib(grib_file_path       = fgFilename_str(jg)(1:fname_len),           & ! in
+            &                            lIsFg                = .TRUE.,                                    & ! in
+            &                            dict                 = ana_varnames_dict,                         & ! in
+            &                            jg                   = p_patch(jg)%id,                            & ! in
+            &                            ncells_global        = INT(p_patch(jg)%n_patch_cells_g, KIND=i8), & ! in
+            &                            nedges_global        = INT(p_patch(jg)%n_patch_edges_g, KIND=i8), & ! in
+            &                            hgrid_uuid           = p_patch(jg)%grid_uuid,                     & ! in
+            &                            vgrid_uuid           = vgrid_buffer(jg)%uuid,                     & ! in
+            &                            ana_incr_list        = ana_incr_list,                             & ! in
+            &                            verify_hgrid_uuid    = lconsistency_checks .AND.                  &
+            &                                                   (.NOT. check_uuid_gracefully),             & ! in
+            &                            verify_vgrid_uuid    = .FALSE.,                                   & ! in
+            &                            verify_ana_incr_list = .FALSE.,                                   & ! in
+            &                            verbose              = (msg_level > 4),                           & ! in
+            &                            timing               = ltimer .AND. (timers_level > 8),           & ! in
+            &                            inventory            = .TRUE.                                     ) ! in
+        END IF ! IF (.NOT. parallel_grib_decoding)
+
+      END IF ! IF(p_patch(jg)%ldom_active)
+    END DO ! jg
+
+    ! Printing a file inventory is included in "requestList%readFile_grib"
+    IF(my_process_is_stdio() .AND. (.NOT. parallel_grib_decoding)) THEN
         CALL requestList%printInventory()
         IF(lconsistency_checks) THEN
           CALL requestList%checkRuntypeAndUuids([CHARACTER(LEN=1)::], gridUuids(p_patch), lIsFg=.TRUE., &
@@ -301,7 +370,7 @@ MODULE mo_initicon
 
     ! Fetch the input DATA from the request list.
     SELECT CASE(init_mode)
-        CASE(MODE_DWDANA, MODE_IAU_OLD, MODE_IAU)
+        CASE(MODE_DWDANA, MODE_IAU)
             CALL fetch_dwdfg_atm(requestList, p_patch, p_nh_state, initicon, inputInstructions)
             CALL fetch_dwdfg_sfc(requestList, p_patch, prm_diag, prm_nwp_stochconv, p_nh_state, p_lnd_state, inputInstructions)
         CASE(MODE_ICONVREMAP)
@@ -314,6 +383,10 @@ MODULE mo_initicon
     ! Cleanup.
     CALL requestList%destruct()
     DEALLOCATE(requestList)
+    IF (ALLOCATED(ana_incr_list)) THEN
+      DEALLOCATE(ana_incr_list, STAT=ist)
+      IF (ist /= SUCCESS) CALL finish(routine, 'Deallocation of ana_incr_list failed')
+    ENDIF
   END SUBROUTINE read_dwdfg
 
   ! Do postprocessing of data from first-guess file.
@@ -331,8 +404,8 @@ MODULE mo_initicon
 
     SELECT CASE(init_mode)
         CASE(MODE_ICONVREMAP)
-            if (iforcing /= iaes) CALL process_input_dwdfg_sfc (p_patch, inputInstructions, p_lnd_state, ext_data)
-        CASE(MODE_DWDANA, MODE_IAU_OLD, MODE_IAU, MODE_COMBINED, MODE_COSMO)
+            IF (iforcing /= iaes) CALL process_input_dwdfg_sfc (p_patch, inputInstructions, p_lnd_state, ext_data)
+        CASE(MODE_DWDANA, MODE_IAU, MODE_COMBINED, MODE_COSMO)
             IF (lvert_remap_fg) THEN ! apply vertical remapping of FG input (requires that the number of model levels
                                      ! does not change; otherwise, init_mode = 7 must be used based on a full analysis)
                 CALL copy_fg2initicon(p_patch, initicon, p_nh_state)
@@ -340,7 +413,7 @@ MODULE mo_initicon
                 CALL copy_initicon2prog_atm(p_patch, initicon, p_nh_state)
             END IF
             CALL process_input_dwdfg_sfc (p_patch, inputInstructions, p_lnd_state, ext_data)
-            IF(ANY((/MODE_IAU_OLD, MODE_IAU/) == init_mode)) THEN
+            IF (init_mode == MODE_IAU) THEN
                 ! In case of tile coldstart, fill sub-grid scale land
                 ! and water points with reasonable data from
                 ! neighboring grid points where possible; In case of
@@ -354,7 +427,7 @@ MODULE mo_initicon
             END IF
     END SELECT
     ! Init aerosol field from climatology if no first-guess data have been available
-    IF (iprog_aero >= 1) CALL init_aerosol(p_patch, ext_data, prm_diag)
+    IF ( ANY( (/i2daero_dust, i2daero_seas, i2daero_anthro/) > 0) ) CALL init_aerosol(p_patch, ext_data, prm_diag)
   END SUBROUTINE process_dwdfg
 
   ! Read data from analysis files.
@@ -366,23 +439,21 @@ MODULE mo_initicon
 
     CHARACTER(LEN = *), PARAMETER :: routine = modname//":read_dwdana"
     CHARACTER(LEN = :), ALLOCATABLE :: incrementsList(:)
+    CHARACTER(LEN = vname_len), ALLOCATABLE :: ana_incr_list(:)
     CLASS(t_InputRequestList), POINTER :: requestList
     CHARACTER(LEN=filename_max) :: anaFilename_str(max_dom)
     INTEGER :: jg, jg1
+    INTEGER :: fname_len, ana_incr_list_size, ist
 
     !The input file paths & types are NOT initialized IN all modes, so we need to avoid creating InputRequestLists IN these cases.
-    SELECT CASE(init_mode)
-        CASE(MODE_IFSANA)
-            CALL read_extana_atm(p_patch, initicon)
-            ! Perform vertical interpolation from intermediate
-            ! IFS2ICON grid to ICON grid and convert variables to the
-            ! NH set of prognostic variables
-            IF (iforcing == inwp) CALL read_extana_sfc(p_patch, initicon)
-            RETURN
-        CASE(MODE_DWDANA, MODE_IAU_OLD, MODE_IAU, MODE_ICONVREMAP, MODE_COMBINED, MODE_COSMO)
-        CASE DEFAULT
-            CALL finish(routine, "assertion failed: unknown init_mode")
-    END SELECT
+    IF (init_mode == MODE_IFSANA) THEN
+      CALL read_extana_atm(p_patch, initicon)
+      ! Perform vertical interpolation from intermediate
+      ! IFS2ICON grid to ICON grid and convert variables to the
+      ! NH set of prognostic variables
+      IF (iforcing == inwp) CALL read_extana_sfc(p_patch, initicon)
+      RETURN
+    ENDIF
 
     ! Create a request list for all the relevant variable names.
     requestList => InputRequestList_create()
@@ -395,6 +466,11 @@ MODULE mo_initicon
         CALL inputInstructions(jg)%ptr%fileRequests(requestList, lIsFg = .FALSE.)
       ENDIF
     END DO
+
+    ! Get list of all input variables that may be provided as analysis increments
+    ana_incr_list_size = 0
+    IF (parallel_grib_decoding) &
+      & CALL collectGroupAnaIncrement(outGroup=ana_incr_list, outGroupSize=ana_incr_list_size, init_mode=init_mode)
 
     ! Scan the input files AND distribute the relevant variables across the processes.
     DO jg = 1, n_dom
@@ -418,51 +494,82 @@ MODULE mo_initicon
     END DO
 
     DO jg = 1, n_dom
-        IF(p_patch(jg)%ldom_active .AND. lread_ana) THEN
-            IF (lp2cintp_incr(jg) .AND. lp2cintp_sfcana(jg)) CYCLE
-            IF(my_process_is_stdio()) THEN
-                CALL message(routine, 'read atm_ANA fields from '//TRIM(anaFilename_str(jg)))
-            ENDIF  ! p_io
-            IF (ana_varnames_map_file /= ' ') THEN
-              CALL requestList%readFile(p_patch(jg), TRIM(anaFilename_str(jg)), .FALSE., &
-                &                       opt_dict = ana_varnames_dict)
-            ELSE
-              CALL requestList%readFile(p_patch(jg), TRIM(anaFilename_str(jg)), .FALSE.)
-            END IF
-        END IF
-    END DO
-    IF(my_process_is_stdio()) THEN
+      IF(p_patch(jg)%ldom_active .AND. lread_ana) THEN
+        IF (lp2cintp_incr(jg) .AND. lp2cintp_sfcana(jg)) CYCLE
+        ! Get length of filename
+        ! (used to reduce overhead of repeated TRIMs)
+        fname_len = LEN_TRIM(anaFilename_str(jg))
+        IF(my_process_is_stdio()) THEN
+          CALL message(routine, 'read atm_ANA fields from '//anaFilename_str(jg)(1:fname_len))
+        ENDIF  ! p_io
+
+        ! See read_dwdfg above for the two modes of input-data decoding
+        IF (.NOT. parallel_grib_decoding) THEN
+          ! Standard case
+          IF (ana_varnames_map_file /= ' ') THEN
+            CALL requestList%readFile(p_patch(jg), anaFilename_str(jg)(1:fname_len), .FALSE., opt_dict = ana_varnames_dict)
+          ELSE
+            CALL requestList%readFile(p_patch(jg), anaFilename_str(jg)(1:fname_len), .FALSE.)
+          END IF
+        ELSE
+          ! Distributed input-data decoding
+          ! (to keep the following interface structurally simple, neither the full p_patch is handed over,
+          ! nor optional arguments (e.g., for h/vgrid_uuid) are used.)
+          CALL requestList%readFile_grib(grib_file_path       = anaFilename_str(jg)(1:fname_len),          & ! in
+            &                            lIsFg                = .FALSE.,                                   & ! in
+            &                            dict                 = ana_varnames_dict,                         & ! in
+            &                            jg                   = p_patch(jg)%id,                            & ! in
+            &                            ncells_global        = INT(p_patch(jg)%n_patch_cells_g, KIND=i8), & ! in
+            &                            nedges_global        = INT(p_patch(jg)%n_patch_edges_g, KIND=i8), & ! in
+            &                            hgrid_uuid           = p_patch(jg)%grid_uuid,                     & ! in
+            &                            vgrid_uuid           = vgrid_buffer(jg)%uuid,                     & ! in
+            &                            ana_incr_list        = ana_incr_list,                             & ! in
+            &                            verify_hgrid_uuid    = lconsistency_checks .AND.                  &
+            &                                                   (.NOT. check_uuid_gracefully),             & ! in
+            &                            verify_vgrid_uuid    = .FALSE.,                                   & ! in
+            &                            verify_ana_incr_list = lconsistency_checks     .AND.              &
+            &                                                   (init_mode == MODE_IAU) .AND.              &
+            &                                                   (ana_incr_list_size > 0),                  & ! in
+            &                            verbose              = (msg_level > 4),                           & ! in
+            &                            timing               = ltimer .AND. (timers_level > 8),           & ! in
+            &                            inventory            = .TRUE.                                     ) ! in
+        END IF ! IF (.NOT. parallel_grib_decoding)
+
+      END IF ! IF(p_patch(jg)%ldom_active .AND. lread_ana)
+    END DO ! jg
+
+    ! Printing a file inventory is included in "requestList%readFile_grib".
+    ! (Note that "requestList%checkRuntypeAndUuids" does not work for parallel GRIB decoding.
+    ! The potential check of the "gridUuid" and "incrementsList" is taken over by "requestList%readFile_grib".)
+    IF(my_process_is_stdio() .AND. (.NOT. parallel_grib_decoding)) THEN
         CALL requestList%printInventory()
         IF(lconsistency_checks) THEN
-            SELECT CASE(init_mode)
-                CASE(MODE_IAU)
-                    incrementsList = [CHARACTER(LEN=9) :: 'u', 'v', 'pres', 'temp', 'qv', 'qc', 'qi', 'qr', 'qs', 'qg', &
-                                                          'qh', 'qnc', 'qni', 'qnr', 'qns', 'qng', 'qnh', &
-                                                        & 'w_so', 'h_snow', 'freshsnow', 't_2m']
-                CASE(MODE_IAU_OLD)
-                    incrementsList = [CHARACTER(LEN=4) :: 'u', 'v', 'pres', 'temp', 'qv', 'w_so']
-                CASE DEFAULT
-                    incrementsList = [CHARACTER(LEN=1) :: ]
-            END SELECT
+            IF (init_mode == MODE_IAU) THEN
+              incrementsList = [CHARACTER(LEN=9) :: 'u', 'v', 'pres', 'temp', 'qv', 'qc', 'qi', 'qr', 'qs', 'qg', &
+                &              'qh', 'qnc', 'qni', 'qnr', 'qns', 'qng', 'qnh', 'w_so', 'h_snow', 'freshsnow', 't_2m']
+            ELSE
+              incrementsList = [CHARACTER(LEN=1) :: ]
+            ENDIF
             CALL requestList%checkRuntypeAndUuids(incrementsList, gridUuids(p_patch), lIsFg = .FALSE., &
-              lHardCheckUuids = .NOT.check_uuid_gracefully)
+              &                                   lHardCheckUuids = .NOT.check_uuid_gracefully)
         END IF
     END IF
 
     ! Fetch the input DATA from the request list.
-    SELECT CASE(init_mode)
-        CASE(MODE_DWDANA, MODE_IAU_OLD, MODE_IAU)
-            IF(lread_ana) CALL fetch_dwdana_atm(requestList, p_patch, p_nh_state, initicon, inputInstructions)
-            IF(lread_ana) CALL fetch_dwdana_sfc(requestList, p_patch, p_lnd_state, initicon, inputInstructions)
-        CASE(MODE_COMBINED, MODE_COSMO)
-            IF(lread_ana) CALL fetch_dwdana_sfc(requestList, p_patch, p_lnd_state, initicon, inputInstructions)
-        CASE(MODE_ICONVREMAP)
-            IF(lread_ana) CALL fetch_dwdana_sfc(requestList, p_patch, p_lnd_state, initicon, inputInstructions)
-    END SELECT
+    IF (lread_ana) THEN
+      IF (ANY([MODE_DWDANA, MODE_IAU, MODE_COMBINED, MODE_COSMO, MODE_ICONVREMAP] == init_mode)) &
+        & CALL fetch_dwdana_sfc(requestList, p_patch, p_lnd_state, initicon, inputInstructions)
+      IF (ANY([MODE_DWDANA, MODE_IAU] == init_mode)) &
+        & CALL fetch_dwdana_atm(requestList, p_patch, p_nh_state, initicon, inputInstructions)
+    ENDIF ! IF (lread_ana)
 
     ! Cleanup.
     CALL requestList%destruct()
     DEALLOCATE(requestList)
+    IF (ALLOCATED(ana_incr_list)) THEN
+      DEALLOCATE(ana_incr_list, STAT=ist)
+      IF (ist /= SUCCESS) CALL finish(routine, 'Deallocation of ana_incr_list failed')
+    ENDIF
   END SUBROUTINE read_dwdana
 
   ! Do postprocessing of data from analysis files.
@@ -481,14 +588,17 @@ MODULE mo_initicon
     INTEGER :: i_rlstart, i_rlend, i_nchdom
     INTEGER :: i_startblk, i_endblk
 
+    ! Switch, .TRUE. if FLake cold start initialization is required in 'MODE_COMBINED'
+    LOGICAL :: l_flake_coldinit_combined
+
     SELECT CASE(init_mode)
         CASE(MODE_DWDANA)
             ! process DWD atmosphere analysis data
             IF(lread_ana) CALL process_input_dwdana_atm(p_patch, initicon)
-            ! merge first guess with DA analysis and 
+            ! merge first guess with DA analysis and
             ! convert variables to the NH set of prognostic variables
             CALL create_dwdana_atm(p_patch, p_nh_state, p_int_state)
-        CASE(MODE_IAU_OLD, MODE_IAU)
+        CASE(MODE_IAU)
             ! process DWD atmosphere analysis increments
             IF(lread_ana) CALL process_input_dwdana_atm(p_patch, initicon)
             ! Compute DA increments in terms of the NH set of
@@ -511,24 +621,21 @@ MODULE mo_initicon
     END SELECT
 
     SELECT CASE(init_mode)
-        CASE(MODE_DWDANA, MODE_ICONVREMAP, MODE_IAU_OLD, MODE_IAU, MODE_COMBINED, MODE_COSMO)
+        CASE(MODE_DWDANA, MODE_ICONVREMAP, MODE_IAU, MODE_COMBINED, MODE_COSMO)
             ! process DWD land/surface analysis data / increments
             IF(lread_ana) CALL process_input_dwdana_sfc(p_patch, p_lnd_state, initicon, inputInstructions)
             ! Add increments to time-shifted first guess in one go.
             ! The following CALL must not be moved after create_dwdana_sfc()!
-            IF(ANY((/MODE_IAU_OLD, MODE_IAU/) == init_mode)) THEN
-                CALL create_iau_sfc (p_patch, p_nh_state, p_lnd_state, ext_data)
-            END IF
+            IF (init_mode == MODE_IAU) CALL create_iau_sfc (p_patch, p_nh_state, p_lnd_state, ext_data)
             ! get SST from first soil level t_so or t_seasfc
             ! perform consistency checks
-            if (iforcing /= iaes) CALL create_dwdana_sfc(p_patch, p_lnd_state, ext_data, inputInstructions)
-            IF (ANY((/MODE_IAU_OLD, MODE_IAU/) == init_mode) .AND. ntiles_total > 1) THEN
-                ! Call neighbor-filling routine for a second time in
-                ! order to ensure that fr_seaice is filled with
-                ! meaningful data near coastlines if this field is
-                ! read from the analysis
-                CALL fill_tile_points(p_patch, p_lnd_state, ext_data, process_ana_vars=.TRUE.)
-            END IF
+            IF (iforcing /= iaes) CALL create_dwdana_sfc(p_patch, p_lnd_state, ext_data, inputInstructions)
+            ! Call neighbor-filling routine for a second time in
+            ! order to ensure that fr_seaice is filled with
+            ! meaningful data near coastlines if this field is
+            ! read from the analysis
+            IF (init_mode == MODE_IAU .AND. ntiles_total > 1) &
+              & CALL fill_tile_points(p_patch, p_lnd_state, ext_data, process_ana_vars=.TRUE.)
         CASE(MODE_IFSANA)
             IF (iforcing == inwp) THEN
                 ! Perform vertical interpolation from intermediate
@@ -546,43 +653,62 @@ MODULE mo_initicon
             ! FLake. The procedure is the same as in "int2lm". Note
             ! that no lake ice is assumed at the cold start.
             IF (llake) THEN
-                DO jg = 1, n_dom
-                    IF (.NOT. p_patch(jg)%ldom_active) CYCLE
-                    i_rlstart  = 1
-                    i_rlend    = min_rlcell
-                    i_nchdom   =  MAX(1,p_patch(jg)%n_childdom)
-                    i_startblk = p_patch(jg)%cells%start_blk(i_rlstart,1)
-                    i_endblk   = p_patch(jg)%cells%end_blk(i_rlend,i_nchdom)
+                loop_over_n_dom: DO jg = 1, n_dom
+                    IF (.NOT. p_patch(jg)%ldom_active) CYCLE loop_over_n_dom
+
+                    ! 'flake_coldinit' should be executed in 'MODE_COSMO'.
+                    ! It should also be executed in 'MODE_COMBINED'
+                    ! if at least one of the FLake prognostic variables is not available in the first-guess file.
+                    ! Note that in 'MODE_COSMO' inputInstructions(jg)%ptr%sourceOfVar('...')' for FLake prognostic
+                    ! variables are not set as a result of 'fetchSurface' calls
+                    ! (hence 'l_flake_coldinit_combined=.TRUE.' for 'MODE_COSMO').
+                    l_flake_coldinit_combined = .TRUE.
+                    IF(init_mode == MODE_COMBINED) THEN
+                      l_flake_coldinit_combined = MERGE(l_flake_coldinit_combined, .FALSE.,             &
+                        &  (inputInstructions(jg)%ptr%sourceOfVar('t_mnw_lk') == kInputSourceCold .OR.  &
+                        &   inputInstructions(jg)%ptr%sourceOfVar('t_wml_lk') == kInputSourceCold .OR.  &
+                        &   inputInstructions(jg)%ptr%sourceOfVar('h_ml_lk')  == kInputSourceCold .OR.  &
+                        &   inputInstructions(jg)%ptr%sourceOfVar('t_bot_lk') == kInputSourceCold .OR.  &
+                        &   inputInstructions(jg)%ptr%sourceOfVar('c_t_lk')   == kInputSourceCold) )
+                    END IF
+
+                    IF(l_flake_coldinit_combined) THEN
+                      i_rlstart  = 1
+                      i_rlend    = min_rlcell
+                      i_nchdom   =  MAX(1,p_patch(jg)%n_childdom)
+                      i_startblk = p_patch(jg)%cells%start_blk(i_rlstart,1)
+                      i_endblk   = p_patch(jg)%cells%end_blk(i_rlend,i_nchdom)
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jb)
-                    DO jb = i_startblk, i_endblk
-                        CALL flake_coldinit(                                        &
-                            &   nflkgb      = ext_data(jg)%atm%list_lake%ncount(jb),&
-                            &   idx_lst_fp  = ext_data(jg)%atm%list_lake%idx(:,jb), &
-                            &   depth_lk    = ext_data(jg)%atm%depth_lk  (:,jb),    &
-                            &   tskin       = p_lnd_state(jg)%prog_lnd(nnow_rcf(jg))%t_so_t(:,1,jb,1),&
-                            &   t_snow_lk_p = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_snow_lk(:,jb), &
-                            &   h_snow_lk_p = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_snow_lk(:,jb), &
-                            &   t_ice_p     = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice    (:,jb), &
-                            &   h_ice_p     = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_ice    (:,jb), &
-                            &   t_mnw_lk_p  = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_mnw_lk (:,jb), &
-                            &   t_wml_lk_p  = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_wml_lk (:,jb), &
-                            &   t_bot_lk_p  = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_bot_lk (:,jb), &
-                            &   c_t_lk_p    = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%c_t_lk   (:,jb), &
-                            &   h_ml_lk_p   = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_ml_lk  (:,jb), &
-                            &   t_b1_lk_p   = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_b1_lk  (:,jb), &
-                            &   h_b1_lk_p   = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_b1_lk  (:,jb), &
-                            &   t_g_lk_p    = p_lnd_state(jg)%prog_lnd(nnow_rcf(jg))%t_g_t    (:,jb,isub_lake) )
-                    ENDDO
+                      DO jb = i_startblk, i_endblk
+                          CALL flake_coldinit(                                        &
+                              &   nflkgb      = ext_data(jg)%atm%list_lake%ncount(jb),&
+                              &   idx_lst_fp  = ext_data(jg)%atm%list_lake%idx(:,jb), &
+                              &   depth_lk    = ext_data(jg)%atm%depth_lk  (:,jb),    &
+                              &   tskin       = p_lnd_state(jg)%prog_lnd(nnow_rcf(jg))%t_so_t(:,1,jb,1),&
+                              &   t_snow_lk_p = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_snow_lk(:,jb), &
+                              &   h_snow_lk_p = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_snow_lk(:,jb), &
+                              &   t_ice_p     = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice    (:,jb), &
+                              &   h_ice_p     = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_ice    (:,jb), &
+                              &   t_mnw_lk_p  = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_mnw_lk (:,jb), &
+                              &   t_wml_lk_p  = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_wml_lk (:,jb), &
+                              &   t_bot_lk_p  = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_bot_lk (:,jb), &
+                              &   c_t_lk_p    = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%c_t_lk   (:,jb), &
+                              &   h_ml_lk_p   = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_ml_lk  (:,jb), &
+                              &   t_b1_lk_p   = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_b1_lk  (:,jb), &
+                              &   h_b1_lk_p   = p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_b1_lk  (:,jb), &
+                              &   t_g_lk_p    = p_lnd_state(jg)%prog_lnd(nnow_rcf(jg))%t_g_t    (:,jb,isub_lake) )
+                      ENDDO
 !$OMP END DO
 !$OMP END PARALLEL
-                ENDDO
+                    END IF
+                ENDDO loop_over_n_dom
             ENDIF
     END SELECT
 
     !
-    ! coldstart for prognostic sea-ice albedo in case that alb_si was 
-    ! not found in the FG 
+    ! coldstart for prognostic sea-ice albedo in case that alb_si was
+    ! not found in the FG
     !
     DO jg = 1, n_dom
       IF (.NOT. p_patch(jg)%ldom_active) CYCLE
@@ -601,7 +727,7 @@ MODULE mo_initicon
       CALL new_land_from_ocean(p_patch, p_nh_state, p_lnd_state, ext_data)
 
     ENDIF
-  
+
   END SUBROUTINE process_dwdana
 
   ! Reads the data from the first-guess and analysis files, and does any required processing of that input data.
@@ -720,7 +846,8 @@ MODULE mo_initicon
 
       ! Recompute u and v from the first guess in order to compute the wind increment
       ! coming from the data assimilation
-      CALL rbf_vec_interpol_cell(p_prog_now%vn, p_patch(jg), p_int_state(jg), p_diag%u, p_diag%v)
+      CALL rbf_vec_interpol_cell(p_prog_now%vn, p_patch(jg), p_int_state(jg), p_diag%u, p_diag%v, &
+                                 lacc=.FALSE.)
 
       ! 1) first guess in terms of rho, theta_v, qx is converted to
       ! T, p, qx. Note, that zpres_nh is the full (nonhydrostatic) pressure field, whereas
@@ -795,7 +922,8 @@ MODULE mo_initicon
 
       ! Recompute the hydrostatically integrated pressure from the first guess
       CALL diagnose_pres_temp (p_nh_state(jg)%metrics, p_prog_now, p_prog_now_rcf, p_diag, &
-        &                      p_patch(jg), opt_calc_temp=.FALSE., opt_calc_pres=.TRUE.    )
+        &                      p_patch(jg), lacc=.FALSE.,                                  &
+        &                      opt_calc_temp=.FALSE., opt_calc_pres=.TRUE.    )
 
 
       IF (lread_ana) THEN
@@ -883,10 +1011,11 @@ MODULE mo_initicon
 !$OMP END PARALLEL
 
         ! required to avoid crash in nabla4_vec
-        CALL sync_patch_array(SYNC_E,p_patch(jg),vn_incr)
+        CALL sync_patch_array(SYNC_E,p_patch(jg),vn_incr,lacc=.FALSE.)
 
         ! Compute diffusion term
-        CALL nabla4_vec(vn_incr, p_patch(jg), p_int_state(jg), nabla4_vn_incr, opt_rlstart=5)
+        CALL nabla4_vec(vn_incr, p_patch(jg), p_int_state(jg), nabla4_vn_incr, &
+                        lacc=.FALSE., opt_rlstart=5)
 
         ! Compute vertical wind increment consistent with the vn increment
         ! (strictly spoken, this should be done after the filtering step,
@@ -950,8 +1079,8 @@ MODULE mo_initicon
 !$OMP ENDDO
 !$OMP END PARALLEL
 
-        CALL sync_patch_array(SYNC_E,p_patch(jg),p_prog_now%vn)
-        CALL sync_patch_array(SYNC_C,p_patch(jg),p_prog_now%w)
+        CALL sync_patch_array(SYNC_E,p_patch(jg),p_prog_now%vn,lacc=.FALSE.)
+        CALL sync_patch_array(SYNC_C,p_patch(jg),p_prog_now%w,lacc=.FALSE.)
 
 
         ! TO DO: remove qc, where rh<90%
@@ -1030,12 +1159,12 @@ MODULE mo_initicon
 
 
   !>
-  !! Transform atmospheric analysis increments originating from DWD's assimilation 
+  !! Transform atmospheric analysis increments originating from DWD's assimilation
   !! system.
   !!
-  !! Transform atmospheric analysis increments originating from DWD's assimilation 
-  !! system into increments of ICON's prognostic variables. 
-  !! I.e. the increment state vector (u,v,p,T,qv) is transformed 
+  !! Transform atmospheric analysis increments originating from DWD's assimilation
+  !! system into increments of ICON's prognostic variables.
+  !! I.e. the increment state vector (u,v,p,T,qv) is transformed
   !! into the increment state vector (vn, rho, exner (or rho*theta_v), rho*qv).
   !!
   SUBROUTINE transform_dwdana_increment_atm (p_patch, p_nh_state, p_int_state)
@@ -1072,7 +1201,7 @@ MODULE mo_initicon
     REAL(wp), ALLOCATABLE, DIMENSION(:,:) :: alpha
 
     ! List of tracer IDs which contain prognostic condensate.
-    ! Required for computing the water loading term 
+    ! Required for computing the water loading term
     INTEGER, POINTER :: condensate_list(:)
 
     INTEGER :: iter, npts
@@ -1129,11 +1258,11 @@ MODULE mo_initicon
 
 
       ! 1) Compute analysis increments for rho, exner (rho*theta_v), and rho*qv
-      ! 
-      !    The prognostic state variables which enter the increment computation 
+      !
+      !    The prognostic state variables which enter the increment computation
       !    are approximated with the first guess values.
-      !    Note that this is an approximation w.r.t. time, as the state variables 
-      !    should actually be taken from the first guess whose validity date 
+      !    Note that this is an approximation w.r.t. time, as the state variables
+      !    should actually be taken from the first guess whose validity date
       !    matches that of the analysis increments.
       !
       !
@@ -1156,7 +1285,7 @@ MODULE mo_initicon
           & i_startidx, i_endidx, rl_start, rl_end)
 
         ! Sum up the hydrometeor species for the water loading term
-        CALL calc_qsum (p_prog_now_rcf%tracer, z_qsum, condensate_list, jb, i_startidx, i_endidx, 1, 1, nlev)
+        CALL calc_qsum (p_prog_now_rcf%tracer, z_qsum, condensate_list, jb, i_startidx, i_endidx, 1, 1, nlev, lacc=.FALSE.)
 
         DO jk = 1, nlev
           DO jc = i_startidx, i_endidx
@@ -1198,7 +1327,7 @@ MODULE mo_initicon
               &                        * vtmpc1* initicon(jg)%atm_inc%qv(jc,jk,jb)
 
 
-            ! APPROXIMATION: neglect density increment for the time being, in order to be consistent with 
+            ! APPROXIMATION: neglect density increment for the time being, in order to be consistent with
             ! the (currently inaccurate) IAU tracer update in iau_update_tracer
             !   p_diag%rhov_incr(jc,jk,jb) = p_prog_now%rho(jc,jk,jb) * initicon(jg)%atm_inc%qv(jc,jk,jb) &
             !     &                        + p_diag%rho_incr(jc,jk,jb) * p_prog_now_rcf%tracer(jc,jk,jb,iqv)
@@ -1323,14 +1452,15 @@ MODULE mo_initicon
 !$OMP END PARALLEL
 
       IF (.NOT. lp2cintp_incr(jg)) THEN ! apply synchronization
-        CALL sync_patch_array(SYNC_E,p_patch(jg),initicon(jg)%atm_inc%vn)
+        CALL sync_patch_array(SYNC_E,p_patch(jg),initicon(jg)%atm_inc%vn,lacc=.FALSE.)
       END IF
 
       p_diag%vn_incr(:,:,:) = initicon(jg)%atm_inc%vn(:,:,:)
 
       ! Apply diffusion on wind increment
       DO iter = 1, niter_diffu
-        CALL nabla2_vec(REAL(p_diag%vn_incr,wp), p_patch(jg), p_int_state(jg), nabla2_vn_incr, opt_rlstart=3)
+        CALL nabla2_vec(REAL(p_diag%vn_incr,wp), p_patch(jg), p_int_state(jg), nabla2_vn_incr, &
+                             lacc=.FALSE., opt_rlstart=3)
 
 !$OMP PARALLEL PRIVATE(rl_start,rl_end,i_startblk,i_endblk)
 
@@ -1359,7 +1489,7 @@ MODULE mo_initicon
         ENDDO  ! jb
 !$OMP ENDDO
 !$OMP END PARALLEL
-        CALL sync_patch_array(SYNC_E,p_patch(jg),p_diag%vn_incr)
+        CALL sync_patch_array(SYNC_E,p_patch(jg),p_diag%vn_incr,lacc=.FALSE.)
       ENDDO
 
       ! Apply divergence damping on wind increment
@@ -1429,7 +1559,7 @@ MODULE mo_initicon
 !$OMP ENDDO
 !$OMP END PARALLEL
 
-          CALL sync_patch_array(SYNC_E,p_patch(jg),p_diag%vn_incr)
+          CALL sync_patch_array(SYNC_E,p_patch(jg),p_diag%vn_incr,lacc=.FALSE.)
 
         ENDDO
       ENDIF
@@ -1494,7 +1624,7 @@ MODULE mo_initicon
               p_prog_now%exner(jc,jk,jb) = p_prog_now%exner(jc,jk,jb) + p_diag%exner_incr(jc,jk,jb)
 
 
-              ! use this version and corresponding update equation below, as soon as the approximation 
+              ! use this version and corresponding update equation below, as soon as the approximation
               ! to rhov_incr is removed (see above)
               !
               ! analysed water vapour partial density
@@ -1627,8 +1757,8 @@ MODULE mo_initicon
 !$OMP ENDDO
 !$OMP END PARALLEL
 
-        CALL sync_patch_array(SYNC_C,p_patch(jg),p_prog_now%w)
-        CALL sync_patch_array(SYNC_E,p_patch(jg),p_prog_now%vn)
+        CALL sync_patch_array(SYNC_C,p_patch(jg),p_prog_now%w,lacc=.FALSE.)
+        CALL sync_patch_array(SYNC_E,p_patch(jg),p_prog_now%vn,lacc=.FALSE.)
 
         ! deallocate temporary arrays
         DEALLOCATE( w_incr, STAT=ist )
@@ -1640,7 +1770,8 @@ MODULE mo_initicon
 
       ! Recompute the hydrostatically integrated pressure from the first guess
       CALL diagnose_pres_temp (p_nh_state(jg)%metrics, p_prog_now, p_prog_now_rcf, p_diag, &
-        &                      p_patch(jg), opt_calc_temp=.FALSE., opt_calc_pres=.TRUE.    )
+        &                      p_patch(jg), lacc=.FALSE.,                                  &
+        &                      opt_calc_temp=.FALSE., opt_calc_pres=.TRUE.    )
 
     ENDDO  ! jg domain loop
 
@@ -1679,7 +1810,7 @@ MODULE mo_initicon
 
     IF (init_mode == MODE_IAU)  CALL create_iau_snowana (p_patch, p_nh_state, p_lnd_state, ext_data)
 
-    CALL create_iau_soilana(p_patch, p_nh_state, p_lnd_state, ext_data, initicon)  
+    IF (itype_sma == 1) CALL create_iau_soilana(p_patch, p_nh_state, p_lnd_state, ext_data, initicon)
 
 
     DO jg = 1, n_dom
@@ -1734,8 +1865,12 @@ MODULE mo_initicon
         ! on mixed land-water (sea ice) points.
         IF (icpl_da_seaice >= 1) THEN
           DO jc = i_startidx, i_endidx
-            IF (p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_ice(jc,jb) > 0.0_wp) p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice(jc,jb) = &
-              MIN(tmelt, p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice(jc,jb) + p_diag%t_avginc(jc,jb))
+            IF (p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_ice(jc,jb) > 0.0_wp) THEN
+              p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice(jc,jb) = &
+                MIN(tmelt, p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice(jc,jb) + p_diag%t_avginc(jc,jb))
+              p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_snow_si(jc,jb) = &
+                MIN(tmelt, p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_snow_si(jc,jb) + p_diag%t_avginc(jc,jb))
+            ENDIF
           ENDDO
         ENDIF
 
@@ -1772,7 +1907,7 @@ MODULE mo_initicon
     TYPE(t_lnd_diag), POINTER :: lnd_diag          ! shortcut to diagnostic land state
 
     REAL(wp) :: h_snow_t_fg(nproma,ntiles_total)   ! intermediate storage of h_snow first guess
-    REAL(wp) :: snowfrac_lim, wfac
+    REAL(wp) :: snowfrac_lim, wfac, gl_frac(nproma)
 
     REAL(wp), PARAMETER :: min_hsnow_inc=0.001_wp  ! minimum hsnow increment (1mm absolute value)
                                                    ! in order to avoid grib precision problems
@@ -1793,7 +1928,7 @@ MODULE mo_initicon
       lnd_diag     =>p_lnd_state(jg)%diag_lnd
 
 !$OMP PARALLEL
-!$OMP DO PRIVATE(jb,jt,ic,jc,i_startidx,i_endidx,h_snow_t_fg,snowfrac_lim,wfac)
+!$OMP DO PRIVATE(jb,jt,ic,jc,i_startidx,i_endidx,h_snow_t_fg,snowfrac_lim,wfac,gl_frac)
       DO jb = 1, nblks_c
 
         CALL get_indices_c(p_patch(jg), jb, 1, nblks_c, &
@@ -1802,6 +1937,26 @@ MODULE mo_initicon
 
         ! store a copy of FG field for subsequent consistency checks
         h_snow_t_fg(:,:) = lnd_diag%h_snow_t(:,jb,:)
+
+        ! set snow increments on sub-grid land points to zero because the snow analysis artificially removes
+        ! existing snow there (this is fixed in snowana versions higher than 2.26)
+        WHERE (ext_data(jg)%atm%fr_land(i_startidx:i_endidx,jb) < 0.5_wp)
+          initicon(jg)%sfc_inc%h_snow(i_startidx:i_endidx,jb) = 0._wp
+        END WHERE
+
+        ! in addition, artificial snow increments on the non-glaciated part of partial glacier points need to be ignored
+        ! for the time being.
+        ! As a preparation, determine if a grid point has a glacier tile (note that ext_data%fr_glac contains
+        ! the glacier fraction of the raw data, which is not what is needed here)
+        gl_frac(:) = 0._wp
+        DO jt = 1, ntiles_lnd
+!NEC$ ivdep
+          DO ic = 1, ext_data(jg)%atm%lp_count_t(jb,jt)
+            jc = ext_data(jg)%atm%idx_lst_lp_t(ic,jb,jt)
+            IF (ext_data(jg)%atm%lc_class_t(jc,jb,jt) == ext_data(jg)%atm%i_lc_snow_ice) &
+              gl_frac(jc) = ext_data(jg)%atm%lc_frac_t(jc,jb,jt)
+          ENDDO
+        ENDDO
 
         ! add h_snow and freshsnow increments onto respective first guess fields
         DO jt = 1, ntiles_total
@@ -1819,7 +1974,10 @@ MODULE mo_initicon
             IF (ABS(initicon(jg)%sfc_inc%h_snow(jc,jb)) < min_hsnow_inc) THEN
               ! h_snow increment is neglected in order to avoid artefacts due to GRIB2 precision limitation
               ! minimum height: 0m; maximum height: 40m
-              lnd_diag%h_snow_t   (jc,jb,jt) = MIN(40._wp,MAX(0._wp,lnd_diag%h_snow_t(jc,jb,jt)))
+              lnd_diag%h_snow_t(jc,jb,jt) = MIN(40._wp,MAX(0._wp,lnd_diag%h_snow_t(jc,jb,jt)))
+            ELSE IF (gl_frac(jc) > 0._wp .AND. ext_data(jg)%atm%lc_class_t(jc,jb,jt) /= ext_data(jg)%atm%i_lc_snow_ice) THEN
+              ! in addition, ignore snow increment on glacier-free part of a partly glaciated grid point
+              lnd_diag%h_snow_t(jc,jb,jt) = MIN(40._wp,MAX(0._wp,lnd_diag%h_snow_t(jc,jb,jt)))
             ELSE
               IF (lsnowtile .AND. (jt > ntiles_lnd .OR. ltile_coldstart) ) THEN
                 ! in case of tile warmstart, add increment to snow-covered tiles only, rescaled with the snow-cover fraction
@@ -2050,6 +2208,9 @@ MODULE mo_initicon
                 lerr = .TRUE.
               END SELECT
 
+              ! ensure that the soil ice content does not exceed the total soil water content
+              lnd_prog_now%w_so_ice_t(jc,jk,jb,jt) = MIN(lnd_prog_now%w_so_ice_t(jc,jk,jb,jt),lnd_prog_now%w_so_t(jc,jk,jb,jt))
+
             ENDDO  ! ic
           ENDDO  ! jk
 
@@ -2058,7 +2219,7 @@ MODULE mo_initicon
         IF (lerr) THEN
           CALL finish(routine, "Landpoint has invalid soiltype (sea water or sea ice)")
         ENDIF
- 
+
 
         ! Calculate weighted T-RH bias as a predictor for the soil-moisture adjustment
         DO jc = i_startidx, i_endidx
@@ -2126,15 +2287,16 @@ MODULE mo_initicon
     INTEGER :: jg, ic, jc, jk, jb, jt, ist     ! loop indices
     INTEGER :: ntlr
     INTEGER :: nblks_c
-    REAL(dp):: missval
+    REAL(wp):: missval                         ! cast from double-precision provided by cdiInqMissval
     INTEGER :: rl_start, rl_end
     INTEGER :: i_startidx, i_endidx, i_endblk
     LOGICAL :: lp_mask(nproma)
-    REAL(wp):: z_t_seasfc(nproma)              ! temporary field containing both SST 
+    REAL(wp):: z_t_seasfc(nproma)              ! temporary field containing both SST
                                                ! and lake-surface temperatures
 
     INTEGER :: source_ana_tseasfc(2)           ! possible input sources for t_seasfc analysis
     INTEGER :: source_ana_tso(4)               ! possible input sources for t_so analysis
+    LOGICAL :: lfgread_tseasfc                 ! TRUE: t_seasfc is read from first guess
   !-------------------------------------------------------------------------
 
     ! possible input sources for t_so/t_seasfc analysis
@@ -2143,7 +2305,7 @@ MODULE mo_initicon
 
 
     ! get CDImissval
-    missval = cdiInqMissval()
+    missval = REAL(cdiInqMissval(), KIND=wp)
 
     DO jg = 1, n_dom
 
@@ -2161,6 +2323,10 @@ MODULE mo_initicon
          &     .OR.                                                                           &
          &     ANY( source_ana_tso == inputInstructions(jg)%ptr%sourceOfVar('t_so'))
 
+      lfgread_tseasfc = ANY(inputInstructions(jg)%ptr%sourceOfVar('t_seasfc') == (/kInputSourceFg,kInputSourceAna/))
+
+      IF (loskin .AND. .NOT. lfgread_tseasfc)  CALL message('create_dwdana_sfc', &
+         't_seasfc must be present in ANA or FG if ocean skin layer scheme is used')
 
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jc,ic,jk,jb,jt,i_startidx,i_endidx,lp_mask,ist,z_t_seasfc) ICON_OMP_DEFAULT_SCHEDULE
@@ -2170,6 +2336,20 @@ MODULE mo_initicon
                            i_startidx, i_endidx, rl_start, rl_end)
 
 
+        IF (lfgread_tseasfc) THEN
+
+          ! Reset t_seasfc to 0 over land points if they carry an explicit missing value (-9e33)
+          ! This is needed to obtain correct masking when writing the field into the output
+          !
+          ! Unfortunately, the missval returned from cdiInqMissval() is not bit-identical to the missval
+          ! appearing in the field. Thus, checking for an exact match fails.
+          DO jc = i_startidx, i_endidx
+            IF (p_lnd_state(jg)%diag_lnd%t_seasfc(jc,jb) < 0.99_wp*missval) THEN
+              p_lnd_state(jg)%diag_lnd%t_seasfc(jc,jb) = 0._wp
+            ENDIF
+          ENDDO
+
+        ENDIF
 
         IF (lanaread_tseasfc(jg)) THEN
           !
@@ -2178,11 +2358,23 @@ MODULE mo_initicon
           !
 !NEC$ ivdep
           DO ic = 1, ext_data(jg)%atm%list_sea%ncount(jb)
-             jc = ext_data(jg)%atm%list_sea%idx(ic,jb)
-             p_lnd_state(jg)%diag_lnd%t_seasfc(jc,jb) = MAX(tf_salt,initicon(jg)%sfc%sst(jc,jb))
+            jc = ext_data(jg)%atm%list_sea%idx(ic,jb)
+            p_lnd_state(jg)%diag_lnd%t_seasfc(jc,jb) = MAX(tf_salt,initicon(jg)%sfc%sst(jc,jb))
           END DO
 
-        ELSE  ! SST is not read from the analysis
+        ELSE IF (lfgread_tseasfc) THEN
+
+          ! If the number of sea points changes w.r.t. the input data (e.g. because of updating the extpar file),
+          ! missing data in t_seasfc need to be recovered from t_g_t(isub_water)
+!NEC$ ivdep
+          DO ic = 1, ext_data(jg)%atm%list_sea%ncount(jb)
+            jc = ext_data(jg)%atm%list_sea%idx(ic,jb)
+            IF (p_lnd_state(jg)%diag_lnd%t_seasfc(jc,jb) == 0._wp) THEN
+              p_lnd_state(jg)%diag_lnd%t_seasfc(jc,jb) = MAX(tf_salt, p_lnd_state(jg)%prog_lnd(ntlr)%t_g_t(jc,jb,isub_water))
+            ENDIF
+          END DO
+
+        ELSE  ! t_seasfc is neither read from the analysis nor from the FG
           !
           ! get SST from first guess T_G
           !
@@ -2197,7 +2389,6 @@ MODULE mo_initicon
           END DO
 
         ENDIF  ! lanaread_tseasfc
-
 
         ! construct temporary field containing both SST and lake-surface temperatures
         ! which is needed for initializing T_SO at pure water points
@@ -2356,6 +2547,12 @@ MODULE mo_initicon
           IF (p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice(jc,jb) == missval) THEN
             p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice(jc,jb) = tf_salt
           ENDIF
+          IF (p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_snow_si(jc,jb) == missval) THEN
+            p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%h_snow_si(jc,jb) = 0._wp
+          ENDIF
+          IF (p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_snow_si(jc,jb) == missval) THEN
+            p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_snow_si(jc,jb) = tf_salt
+          ENDIF
         ENDDO  ! jc
 
       END DO  ! jb
@@ -2395,7 +2592,7 @@ MODULE mo_initicon
       ENDIF
 
       ! This sync is needed because of the subsequent neighbor point filling
-      CALL sync_patch_array(SYNC_C,p_patch(jg),p_lnd_state(jg)%diag_lnd%t_seasfc)
+      CALL sync_patch_array(SYNC_C,p_patch(jg),p_lnd_state(jg)%diag_lnd%t_seasfc,lacc=.FALSE.)
 
       ! Initialization of t_g_t(:,:,isub_water) and t_s_t(:,:,isub_water)
       ! with t_seasfc is performed in mo_nwp_sfc_utils:nwp_surface_init (nnow and nnew)
@@ -2407,4 +2604,3 @@ MODULE mo_initicon
 
 
 END MODULE mo_initicon
-

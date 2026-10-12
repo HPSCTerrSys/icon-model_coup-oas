@@ -1,19 +1,18 @@
-!
-! Additional storage for Spectral Bin Microphysics (SBM)
-!
-! Stores temperature and humidity fields, which are specific to the
-! Spectral Bin Microphysics scheme.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Additional storage for Spectral Bin Microphysics (SBM)
+!
+! Stores temperature and humidity fields, which are specific to the
+! Spectral Bin Microphysics scheme.
 
 MODULE mo_sbm_storage
 
@@ -53,9 +52,6 @@ MODULE mo_sbm_storage
   ! SBM specific storage object
   TYPE t_sbm_storage
     REAL(wp), POINTER, CONTIGUOUS ::  &
-     &  qv_before_satad   (:,:,:),    &    !< water vapour mass fraction after dynamics and transport
-                                           !  right before the first satad call [kg/kg]
-     &  temp_before_satad (:,:,:),    &    !< same for air temperature [K]
      &  qv_old            (:,:,:),    &    !< water vapour mass fraction at the end of a physics time step [kg/kg]
      &  temp_old          (:,:,:)          !< Temperature at the end of a physics time step [K]
   END TYPE t_sbm_storage
@@ -164,8 +160,6 @@ CONTAINS
     ! Ensure that all pointers have a defined association status
     !
     NULLIFY( &
-      &     sbm_storage%qv_before_satad,   &
-      &     sbm_storage%temp_before_satad, &
       &     sbm_storage%qv_old,            &
       &     sbm_storage%temp_old           &
       &     )
@@ -179,27 +173,6 @@ CONTAINS
     CALL vlr_add(sbm_storage_list, TRIM(listname), patch_id=p_patch%id, &
       &          lrestart=.TRUE., model_type=get_my_process_name())
 
-
-    ! &      sbm_storage%qv_before_satad(nproma,nlev,nblks_c)
-    cf_desc    = t_cf_var('qv_before_satad', 'kg kg-1', &
-      &                   'qv before satad (after dynamics and transport)', datatype_flt)
-    grib2_desc = grib2_var(0, 1, 0, ibits, GRID_UNSTRUCTURED, GRID_CELL)
-    CALL add_var( sbm_storage_list, 'qv_before_satad', sbm_storage%qv_before_satad, &
-                & GRID_UNSTRUCTURED_CELL, ZA_REFERENCE, cf_desc, grib2_desc, &
-                & ldims=shape3d_c, loutput=.TRUE.,                           &
-                & isteptype=TSTEP_INSTANT, lopenacc=.FALSE. )
-
-
-    ! &      sbm_storage%temp_before_satad(nproma,nlev,nblks_c)
-    cf_desc    = t_cf_var('temp_before_satad', 'K', &
-      &                   'temperature before satad (after dynamics and transport)', datatype_flt)
-    grib2_desc = grib2_var(0, 0, 0, ibits, GRID_UNSTRUCTURED, GRID_CELL)
-    CALL add_var( sbm_storage_list, 'temp_before_satad', sbm_storage%temp_before_satad, &
-                & GRID_UNSTRUCTURED_CELL, ZA_REFERENCE, cf_desc, grib2_desc, &
-                & ldims=shape3d_c, loutput=.TRUE.,                           &
-                & isteptype=TSTEP_INSTANT, lopenacc=.FALSE. )
-
-
     ! &      sbm_storage%qv_old(nproma,nlev,nblks_c)
     cf_desc    = t_cf_var('qv_old', 'kg kg-1', &
       &                   'qv at the end of a physics time step', datatype_flt)
@@ -208,7 +181,6 @@ CONTAINS
                 & GRID_UNSTRUCTURED_CELL, ZA_REFERENCE, cf_desc, grib2_desc, &
                 & ldims=shape3d_c, loutput=.TRUE.,                           &
                 & isteptype=TSTEP_INSTANT, lopenacc=.FALSE. )
-
 
     ! &      sbm_storage%temp_old(nproma,nlev,nblks_c)
     cf_desc    = t_cf_var('temp_old', 'K', &

@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -159,6 +159,9 @@ cat > ${wave_namelist} << EOF
  depth_max    = 999.
  niter_smooth = 3
 /
+&io_nml
+ output_nml_dict = 'dict.waves'
+/
 &output_nml
  filetype                =                          4         ! output format: 2=GRIB2, 4=NETCDFv2
  dom                     =                         -1         ! write all domains
@@ -170,6 +173,68 @@ cat > ${wave_namelist} << EOF
  output_grid             =                      .TRUE.        ! flag whether grid information is added to output.
  ml_varlist              = 'bathymetry_c','sp10m','group:wave_short'
 /
+&output_nml
+ filetype                =                          2         ! output format: 2=GRIB2, 4=NETCDFv2
+ dom                     =                         -1         ! write all domains
+ output_bounds           =     0., 10000000., 172800.         ! output: start, end, increment
+ steps_per_file          =                          1         ! number of output steps in one output file
+ mode                    =                          1         ! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)
+ include_last            =                      .TRUE.        ! flag whether to include the last time step
+ output_filename         =  'wave_oper_out_icon_names'        ! file name base
+ filename_format         =  '<output_filename>_DOM<physdom>_<datetime2>'
+ output_grid             =                      .FALSE.        ! flag whether grid information is added to output.
+ ml_varlist              = 'sp10m', 'dir10m',
+                           'sea_ice_c', 'sp_soce_c', 'dir_soce_c',
+                           'ustar',
+                           'hmax',
+                           'hs', 'hs_dir', 'tpp', 'tmp', 'tm1', 'tm2', 'ds',
+                           'hs_sea', 'hs_sea_dir', 'pp_sea', 'mp_sea',
+                           'hs_swell', 'hs_swell_dir', 'pp_swell', 'mp_swell'
+/
+&output_nml
+ filetype                =                          2         ! output format: 2=GRIB2, 4=NETCDFv2
+ dom                     =                         -1         ! write all domains
+ output_bounds           =     0., 10000000., 172800.         ! output: start, end, increment
+ steps_per_file          =                          1         ! number of output steps in one output file
+ mode                    =                          1         ! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)
+ include_last            =                      .TRUE.        ! flag whether to include the last time step
+ output_filename         =  'wave_oper_out_grib_names'        ! file name base
+ filename_format         =  '<output_filename>_DOM<physdom>_<datetime2>'
+ output_grid             =                      .FALSE.        ! flag whether grid information is added to output.
+ ml_varlist              = 'SP_10M', 'DD_10M',
+                           'FR_ICE', 'CURS', 'CURD',
+                           'USTR',
+                           'MXWH',
+                           'SWH', 'MWD', 'PP1D', 'TM10', 'TM01', 'TM02', 'SPRD',
+                           'SHWW', 'MDWW', 'PPWW', 'MPWW',
+                           'SHTS', 'MDTS', 'PPTS', 'MPTS'
+/
+EOF
+
+cat >  dict.waves << EOF
+# GRIB2 shortName  internal name
+SP_10M           sp10m
+DD_10M           dir10m
+FR_ICE           sea_ice_c
+CURS             sp_soce_c
+CURD             dir_soce_c
+USTR             ustar
+MXWH             hmax
+SWH              hs
+MWD              hs_dir
+PP1D             tpp
+TM10             tmp
+TM01             tm1
+TM02             tm2
+SPRD             ds
+SHWW             hs_sea
+MDWW             hs_sea_dir
+PPWW             pp_sea
+MPWW             mp_sea
+SHTS             hs_swell
+MDTS             hs_swell_dir
+PPTS             pp_swell
+MPTS             mp_swell
 EOF
 
 

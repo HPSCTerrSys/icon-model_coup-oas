@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -83,8 +83,8 @@ end_date="1969-06-27T00:00:00Z"
 #-----------------------------------------------------------------------------
 DT_DATA=`expr 1 \* 3600`      # output each n hours
 DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000              # number of time steps per output file 
+#n_in_ofile=60                # number of time steps per output file
+n_in_ofile=10000              # number of time steps per output file
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -143,7 +143,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
@@ -187,7 +187,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12           ! detailed report during integration
  output         = 'nml','totint'
 /
@@ -226,12 +226,13 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing       = .FALSE.
  is_nudging           = .FALSE.
  is_nudging_uv        = .FALSE.
- is_nudging_tq        = .FALSE.
+ is_nudging_t         = .FALSE.
+ is_nudging_q         = .FALSE.
 /
 
 &turbdiff_nml
  tkhmin        = 0.75   ! new default since rev. 16527
- tkmmin        = 0.75   !           " 
+ tkmmin        = 0.75   !           "
  pat_len       = 750.
  c_diff        = 0.2
  rat_sea       = 8.5    ! new value since rev. 25646 (reduced saturation vapor pressure over salt water)
@@ -239,7 +240,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 !frcsmot       = 0.2    ! these 2 switches together apply vertical smoothing of the TKE source terms
 !imode_frcsmot = 2      ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 0    
+ itype_sher    = 0
  ltkeshs       = .false.
  a_hshr        = 2.0
  !lconst_z0    = .TRUE.
@@ -258,7 +259,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 &nonhydrostatic_nml
  ivctype        = 2         ! sleve vertical coordinate
  damp_height    = 5000.     ! top_height-damp_height should be about 15km
- l_open_ubc     = .false.   ! top open upper boundary condition. might help to go higher
  rayleigh_coeff = 0.0
  htop_moist_proc= 22500.
  hbot_qvsubstep	= 22500.    ! Default: 22500  ! M. Koehler: 19000; at least as large as htop_moist_proc
@@ -274,8 +274,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &dynamics_nml
- iequations     = 3       ! equation system
- idiv_method    = 1
  divavg_cntrwgt = 0.50
  lcoriolis      = .TRUE.
 /
@@ -292,7 +290,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  filename_format  = "<output_filename>_<levtype>_<datetime2>"
  ml_varlist       = 'z_ifc','z_mc','u','v','w','temp','pres','rho','theta_v','pres_sfc','div',
                     'qv','qc','qi','qs','qr','rh',
-                    'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t', 
+                    'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t',
                     'ddt_temp_radsw', 'ddt_temp_radlw', 'ddt_temp_turb', 'ddt_temp_drag', 'ddt_temp_pconv',
                     'ddt_qv_turb','ddt_qc_turb','ddt_qv_conv','ddt_qc_conv','u_10m', 'v_10m', 't_2m', 't_g',
                     'qv_s','z_mc','lhfl_s','shfl_s','umfl_s','vmfl_s','tcm','tch','clc','tke','rcld','qhfl_s',

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -187,8 +187,8 @@ ocean_refinement="R02B06"
 
 # namelist files
 # --------------
-atm_namelist=NAMELIST_${EXPNAME}_atm
-oce_namelist=NAMELIST_${EXPNAME}_ocean
+atmo_namelist=NAMELIST_${EXPNAME}_atm
+ocean_namelist=NAMELIST_${EXPNAME}_ocean
 
 #--------------------------------------------------------------------------------------------------
 #
@@ -276,7 +276,7 @@ output_oce_dbg=yes
 #--------------------------------------------------------------------------------------------------
 
 if [ $mpi_total_procs -lt 2 ] ; then
-  check_error 0 "This setup requires at least 2 mpi processes. Exit"
+  check_error 1 "This setup requires at least 2 mpi processes. Exit"
 fi
 
 # I.1 Split the number of total procs and assign to each component
@@ -293,14 +293,14 @@ oce_inc_rank=1
 # I.2 Fill model list
 # -------------------
 
-namelist_list[0]="$atm_namelist"
+namelist_list[0]="$atmo_namelist"
 modelname_list[0]="atmo"
 modeltype_list[0]=1
 minrank_list[0]=$atm_min_rank
 maxrank_list[0]=$atm_max_rank
 incrank_list[0]=$atm_inc_rank
 
-namelist_list[1]="$oce_namelist"
+namelist_list[1]="$ocean_namelist"
 modelname_list[1]="ocean"
 modeltype_list[1]=2
 minrank_list[1]=$oce_min_rank
@@ -326,35 +326,37 @@ riv_lag=1
 #
 cat > coupling.yaml << EOF
 definitions:
+  components:
+    atm: &atm
+      component: ${modelname_list[0]}
+      grid: icon_atmos_grid
+    oce: &oce
+      component: ${modelname_list[1]}
+      grid: icon_ocean_grid
+    riv: &riv
+      component: ${modelname_list[2]}
+      grid: HD_GRID
   atm2oce: &atm2oce
-    src_component: ${modelname_list[0]}
-    src_grid: icon_atmos_grid
-    tgt_component: ${modelname_list[1]}
-    tgt_grid: icon_ocean_grid
+    source: *atm
+    target: *oce
     time_reduction: average
     src_lag: ${atm_lag}
     tgt_lag: ${oce_lag}
   oce2atm: &oce2atm
-    src_component: ${modelname_list[1]}
-    src_grid: icon_ocean_grid
-    tgt_component: ${modelname_list[0]}
-    tgt_grid: icon_atmos_grid
+    source: *oce
+    target: *atm
     time_reduction: average
     src_lag: ${oce_lag}
     tgt_lag: ${atm_lag}
   atm2riv: &atm2riv
-    src_component: ${modelname_list[0]}
-    src_grid: icon_atmos_grid
-    tgt_component: ${modelname_list[2]}
-    tgt_grid: HD_GRID
+    source: *atm
+    target: *riv
     time_reduction: average
     src_lag: ${atm_lag}
     tgt_lag: ${riv_lag}
   riv2oce: &riv2oce
-    src_component: ${modelname_list[2]}
-    src_grid: HD_GRID
-    tgt_component: ${modelname_list[1]}
-    tgt_grid: icon_ocean_grid
+    source: *riv
+    target: *oce
     time_reduction: average
     src_lag: ${riv_lag}
     tgt_lag: ${oce_lag}
@@ -414,10 +416,6 @@ coupling:
     coupling_period: ${rivcouplingTimeStep}
     field: [surface_water_runoff,
             soil_water_runoff]
-#  - <<: [ *oce2atm, *conserv_interp_stack ]
-#    coupling_period: ${ocecouplingTimeStep}
-#    field: [eastward_sea_water_velocity,
-#            northward_sea_water_velocity]
   - <<: [ *riv2oce, *spmap_interp_stack ]
     coupling_period: ${rivcouplingTimeStep}
     field: river_runoff
@@ -484,8 +482,8 @@ add_link_file $HD_DIR/hd_receive_0012_R02B04.nc  hd_receive.nc
 # If the model runs with mpi_procs=1, then this script exits without error:
 if [[ ${mpi_total_procs} = 1 ]]; then
   echo "This test must not be started if mpi_procs=1 --> exit test without error"
-  check_error 0 "exp.nat_jww_nwp_mpiomp"
-  exit 0
+  check_error 1 "exp.nat_jww_nwp_mpiomp"
+  exit 1
 fi
 
 # If running in parallel, mpi_procs*no_of_nodes must be bigger than 2:
@@ -504,7 +502,7 @@ fi
 # ------------------------
 # For a complete list see Namelist_overview and Namelist_overview.pdf
 
-cat > ${atm_namelist} << EOF
+cat > ${atmo_namelist} << EOF
 !
 &coupling_mode_nml
  coupled_to_ocean        = .TRUE.
@@ -768,6 +766,8 @@ cat > ${atm_namelist} << EOF
  lsnowtile               = .true.
  lseaice                 = .true.
  llake                   = .true.
+ itype_oskin_warm        = 1
+ itype_oskin_cold        = 1
  itype_lndtbl            = 4
  itype_evsl              = 4
  itype_trvg              = 3
@@ -785,7 +785,7 @@ EOF
 
 
 if [[ "$pi_control" == "yes" ]]; then
-   cat >> ${atm_namelist} << EOF
+   cat >> ${atmo_namelist} << EOF
 &radiation_nml
  irad_o3                 = 79
  irad_aero               = 12                   ! 6: default, 12: Kinne aerosols (Trang) 1850
@@ -808,7 +808,7 @@ if [[ "$pi_control" == "yes" ]]; then
 EOF
 
 else
-   cat >> ${atm_namelist} << EOF
+   cat >> ${atmo_namelist} << EOF
 &radiation_nml
  irad_o3                 = 79
  irad_aero               = 6                ! 6: default, 12: Kinne aerosols (Trang)
@@ -1007,7 +1007,7 @@ fi
 # ocean namelist
 # --------------
 
-cat > ${oce_namelist} << EOF
+cat > ${ocean_namelist} << EOF
 !
 &coupling_mode_nml
  coupled_to_atmo             = .TRUE.
@@ -1039,7 +1039,7 @@ cat > ${oce_namelist} << EOF
 EOF
 
 # output of fixed geometry
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O fixed geometry
 !--------------------------------------------------------------------------------
@@ -1063,7 +1063,7 @@ cat >> ${oce_namelist} << EOF
 EOF
 
 if [[ "$output_oce_def" == "yes" ]]; then
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O 3D Output
 !--------------------------------------------------------------------------------
@@ -1085,7 +1085,7 @@ EOF
 fi
 
 if [[ "$output_oce_ice" == "yes" ]]; then
-  cat >> ${oce_namelist} <<EOF
+  cat >> ${ocean_namelist} <<EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O ice and snow output
 !--------------------------------------------------------------------------------
@@ -1108,7 +1108,7 @@ fi
 
 if [[ "$output_oce_grib" == "yes" ]]; then
    #
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 &output_nml
   filetype                   = 2
   output_filename            = "${EXPNAME}_oce_grb"
@@ -1121,13 +1121,13 @@ if [[ "$output_oce_grib" == "yes" ]]; then
                                                                 ! 2: climate mode (absolute t-axis)
   include_last               = .FALSE.
   output_grid                = .TRUE.
-  ml_varlist                 = 'zos','to_k','so','u','v','hi','hs','conc','column_thick_c','rho','rhopot','delhi','ice_u','ice_v'
+  ml_varlist                 = 'zos','SWPT','so','u','v','hi','hs','conc','column_thick_c','rho','rhopot','delhi','ice_u','ice_v'
 /
 EOF
 fi
 
 if [[ "$output_oce_mon" == "yes" ]]; then
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O Output monitoring
 !--------------------------------------------------------------------------------
@@ -1149,7 +1149,7 @@ EOF
 fi
 
 if [[ "$output_oce_moc" == "yes" ]]; then
-   cat >> ${oce_namelist} << EOF
+   cat >> ${ocean_namelist} << EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O AMOC
 !--------------------------------------------------------------------------------
@@ -1171,7 +1171,7 @@ EOF
 fi
 
 if [[ "$output_oce_dbg" == "yes" ]]; then
-  cat >> ${oce_namelist} <<EOF
+  cat >> ${ocean_namelist} <<EOF
 !--------------------------------------------------------------------------------
 ! OUTPUT pyICON: ICON-O Output debug
 !--------------------------------------------------------------------------------
@@ -1199,7 +1199,7 @@ EOF
 fi
 
 
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 &dbg_index_nml
   idbg_mxmn                  = 4                                ! initialize MIN/MAX  debug output
   idbg_val                   = 0                                ! initialize one cell debug output
@@ -1221,8 +1221,8 @@ cat >> ${oce_namelist} << EOF
 
   l_edge_based                               = .FALSE.     ! edge- or cell-based mimetic discretization
 ! l_partial_cells                            = .FALSE.     ! partial bottom cells=TRUE: local varying bottom depth
-  select_solver                              = 4           ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
-                                                           ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
+  select_solver                              = 40           ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
+                                                           ! 4=CG (default) 40=CG-OPT 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance              = .TRUE.
   solver_tolerance                           = 1.0E-9      ! 1e-10 in omip-YVF - enlarged to 1e-9 (LL opt)
   select_lhs                             = ${select_lhs}   ! 1=operator based (default) 2=matrix based - 2=error?
@@ -1351,7 +1351,7 @@ cat >> ${oce_namelist} << EOF
 /
 EOF
 
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 &ocean_forcing_nml
   iforc_oce                                  = 14          ! ocean forcing: 14 from coupling via YAC
   type_surfRelax_Temp                        = -1          ! -1: use net surface heat flux from atmosphere
@@ -1376,7 +1376,7 @@ EOF
 
 if [[ "$initialiseOcean" == "fromRestart" ]] || [[ "$initialiseOcean" == "fromRestartwithHamocc" ]]; then
 
-  cat >> ${oce_namelist} << EOF
+  cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 0                ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 0                ! 0: none, 1: read T from initial_state.nc
@@ -1387,7 +1387,7 @@ EOF
 else
 
   if [[ "$initialiseOcean" == "fromClimatology" ]]; then
-    cat >> ${oce_namelist} << EOF
+    cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 1                ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 1                ! 0: none, 1: read T from initial_state.nc
@@ -1396,7 +1396,7 @@ else
 EOF
   else
     if [[ "$initialiseOcean" == "coldStart" ]]; then
-      cat >> ${oce_namelist} << EOF
+      cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 200              ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 200              ! 0: none, 1: read T from initial_state.nc
@@ -1408,7 +1408,7 @@ EOF
 /
 EOF
     else
-      cat >> ${oce_namelist} << EOF
+      cat >> ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type                      = 0                ! 0: none, 1: read S from initial_state.nc
   initial_temperature_type                   = 0                ! 0: none, 1: read T from initial_state.nc
@@ -1419,7 +1419,7 @@ EOF
   fi
 fi
 
-cat >> ${oce_namelist} << EOF
+cat >> ${ocean_namelist} << EOF
 &ocean_diagnostics_nml
   diagnostics_level                          = 1
   diagnose_for_horizontalVelocity            = .FALSE.
@@ -1434,7 +1434,7 @@ cat >> ${oce_namelist} << EOF
 /
 EOF
 
-add_required_file ${basedir}/run/${oce_namelist} ./
+add_required_file ${basedir}/run/${ocean_namelist} ./
 
 #-----------------------------------------------------------------------------
 #
@@ -1491,8 +1491,8 @@ fi
 if [ $mpi_total_procs -lt `expr $mpi_oce_procs + 1` ] ; then
    echo "Too few mpi_total_procs for requested mpi_oce_procs."
    echo "-> check mpi_total_procs and mpi_oce_procs. Exiting."
-   check_error 0
-   exit
+   check_error 1
+   exit 1
 fi
 
 #-----------------------------------------------------------------------------
@@ -1521,9 +1521,9 @@ if [ x$namelist_list = x ]; then
   minrank_list[0]=0
   maxrank_list[0]=65535
   incrank_list[0]=1
-  if [ x$atm_namelist != x ]; then
+  if [ x$atmo_namelist != x ]; then
     # this is the atmo model
-    namelist_list[0]="$atm_namelist"
+    namelist_list[0]="$atmo_namelist"
     modelname_list[0]="atmo"
     modeltype_list[0]=1
     run_atmo="true"
@@ -1588,7 +1588,7 @@ fi
 # fill some checks
 
 run_atmo=${run_atmo="false"}
-if [ x$atm_namelist != x ]; then
+if [ x$atmo_namelist != x ]; then
   run_atmo="true"
 fi
 run_ocean=${run_ocean="false"}
@@ -1748,9 +1748,19 @@ done
 #
 # HD Namelist
 #
+
+# HD start time
 YYYYMMDD_start=${start_date:0:4}${start_date:5:2}${start_date:8:2}
-YYYYMMDD_end=${end_date:0:4}${end_date:5:2}${end_date:8:2}
-#
+
+# HD is using sequential coupling with blocks of A-O|HD.  The last HD is saving fluxes
+# in the restart file for the next simulation.  The last block has the time step of the
+# last call of A-O|HD.  Therefore we need to reduce end_date by 1 HD time step.
+
+# Compute offset in human-readable format (e.g., "- 86400 seconds")
+offset="- ${dtime_riv} seconds"
+# Apply offset using GNU date
+YYYYMMDD_end=$(date -u -d "${end_date} ${offset}" +'%Y%m%d')
+
 ## Log output for gridboxes if nhd_diag=100
 xlon1=8.5
 xlat1=54.5
@@ -1847,7 +1857,8 @@ ICON_COMPONENT3_VE_procs=$mpi_hd_procs
 ICON_COMPONENT3_VE_bin=$MODEL_HD
 ICON_COMPONENT3_proc0_shift=0
 
-rm -f finish.status
+rm -f finish_atmo.status
+rm -f finish_ocean.status
 date
 
 $START_MODEL
@@ -1875,7 +1886,7 @@ EXIT_STATUS=$?
 
 date
 
-if [ -r finish.status ] ; then
+if [ -r finish_atmo.status ] && [ -r finish_ocean.status ]; then
   check_final_status 0
 else
   check_final_status -1
@@ -1883,10 +1894,17 @@ fi
 #
 #-----------------------------------------------------------------------------
 #
-finish_status=`cat finish.status`
-echo $finish_status
+#Read the finish_status files and cut off whitespaces.
+finish_status_atm=`cat finish_atmo.status`
+finish_status_atm="${finish_status_atm# }"
+finish_status_oce=`cat finish_ocean.status`
+finish_status_oce="${finish_status_oce# }"
+
+echo "${finish_status_atm}"
+echo "${finish_status_oce}"
 echo "============================"
-echo "Script run successfully: $finish_status"
+echo "Script run (atmo) successfully: $finish_status_atm"
+echo "Script run (oce) successfully: $finish_status_oce"
 echo "============================"
 
 #-----------------------------------------------------------------------------
@@ -1907,7 +1925,7 @@ namelist_list=""
 #-----------------------------------------------------------------------------
 # check if we have to restart, ie resubmit
 #   Note: this is a different mechanism from checking the restart
-if [ $finish_status = "RESTART" ] ; then
+if [ "${finish_status_atm}" = "RESTART" ] || [ "${finish_status_oce}" = "RESTART" ] ; then
   echo "restart next experiment..."
   this_script="${RUNSCRIPTDIR}/${job_name}"
   echo 'this_script: ' "$this_script"
@@ -1959,14 +1977,33 @@ EOF
 diffrc=$?
 if [ $diffrc -ne 0 ] ; then
   echo "GRIB triplets not written as expected"
-  finish_status="FAILED"
+  finish_status_oce="FAILED"
 else
   echo "GRIB file OK"
 fi
 
+hd_end=$( tail -n 1 hd_outflow_07.log )
+hd_end="${hd_end#"${hd_end%%[![:space:]]*}"}"
+hd_end="${hd_end::8}"
+#The following two lines are only needed if the date is given in the format YYYYMMDDThh:mm:ss
+#In that case, the line above has to be changed to "hd_end::17"
+
+#hd_end=$(sed -e "s/\(....\)\(..\)\(..\)/\1-\2-\3/" <<< "${hd_end}" )
+#hd_end="${hd_end// /T}"
+
+#HD indicates the end with the start of the coupling period. Thus, we have to shift the end date by this period when comparing.
+
+end_date_comp=$(date -u -d "${end_date} ${offset}" +'%Y%m%d')
+
+if [ "${hd_end}" = "${end_date_comp}" ] ; then
+  finish_status_hd='OK'
+else
+  finish_status_hd='FAILED'
+fi
+
 #-----------------------------------------------------------------------------
 
-if [ ${finish_status} == 'OK' ]; then
+if [ "${finish_status_atm}" = 'OK' -a "${finish_status_oce}" = 'OK' -a "${finish_status_hd}" = 'OK' ] ; then
   EXIT_STATUS=0
 else
   EXIT_STATUS=1

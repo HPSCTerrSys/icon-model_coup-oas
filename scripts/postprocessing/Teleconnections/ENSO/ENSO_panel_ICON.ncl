@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ---------------------------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -32,24 +32,24 @@ begin
 
     res@mpProjection = "WinkelTripel"
     res@mpGeophysicalLineColor = "gray42"
-     
+
     res@mpPerimOn    = False
     res@mpGridLatSpacingF =  45.            ; change latitude  line spacing
     res@mpGridLonSpacingF =  90.           ; change longitude line spacing
 ;    res@mpGridLineColor   = "grey"  ; trick ncl into drawing perimeter
-    res@mpGridAndLimbOn   = True           ; turn on lat/lon lines  
+    res@mpGridAndLimbOn   = True           ; turn on lat/lon lines
     res@mpFillOn = False
     res@mpCenterLonF = 210.
-    res@mpOutlineOn = True  
+    res@mpOutlineOn = True
     res@mpDataSetName = "Earth..4"
 
 
     res@cnFillOn              = True             ; turn on color
     res@cnLinesOn             = False            ; turn off contour lines
     res@cnLineLabelsOn        = False            ; turn off contour line labels
-    res@lbLabelBarOn         = False   
-    res@gsnLeftString        = " " 
-    res@gsnRightString       = " " 
+    res@lbLabelBarOn         = False
+    res@gsnLeftString        = " "
+    res@gsnRightString       = " "
 
     res@gsnSpreadColors      = True     ; use full range of colors
 
@@ -63,13 +63,13 @@ begin
     return(contour_object)
 
 end
-;***end function 
+;***end function
 
 ;*********************************************************
 ;           MAIN
 ;*********************************************************
 begin
- 
+
 
 
   values    = asciiread("var.txt",7,"string")
@@ -90,7 +90,7 @@ begin
 
   GridDir="/pool/data/ICON/post/"+atm_RES+"_amip"
   GridInfoFileName=GridDir+"/"+atm_RES+"_amip.nc"
- 
+
   print(GridInfoFileName)
 
   GridInfoFile= addfile( GridInfoFileName, "r" )
@@ -102,7 +102,7 @@ begin
   cArea = GridInfoFile->cell_area   ; area of grid cell
 
 ; note: clon and clat are longitude and latitude of triangle centers.
-;       Locations of the cell corners are given by 
+;       Locations of the cell corners are given by
 ;       clon_vertices and clat_vertices in the nc file.
 
 
@@ -116,7 +116,7 @@ begin
   vlat = GridInfoFile->clat_vertices * rad2deg    ; cell lattitude vertices
 
 ;***define plot
-   pltType = "pdf"                        ;-- set to pdf 
+   pltType = "pdf"                        ;-- set to pdf
    pltName  = diri+"/ENSO_"+run
    print("pltName:  "+pltName)
    wks  = gsn_open_wks(pltType,pltName)       ; specifies a plot
@@ -126,9 +126,9 @@ begin
    listplots_tas = new(4,graphic)
    listplots_psl = new(4,graphic)
    noPlot=-1
- 
+
   seas  = (/"DJF","MAM","JJA","SON"/)
-  
+
    do i=0,dimsizes(seas)-1
 print("seas "+seas(i))
 
@@ -136,27 +136,27 @@ print("seas "+seas(i))
 ;************************************************
 ; Read from netCDF File: psl
 ;************************************************
-   
-   fili   = "psl_"+run+"_"+seas(i)+"_"+atm_RES+"_detrend.nc"
-   f      = addfile(diri+fili,"r") 
 
-   x_psl      = f->psl(time|:,ncells|:)   ; dims: (time,ncells)                       
+   fili   = "psl_"+run+"_"+seas(i)+"_"+atm_RES+"_detrend.nc"
+   f      = addfile(diri+fili,"r")
+
+   x_psl      = f->psl(time|:,ncells|:)   ; dims: (time,ncells)
    x_psl_new  = x_psl(ncells|:,time|:)
-   
-   printVarSummary(x_psl_new)                            
+
+   printVarSummary(x_psl_new)
 
 ;exit
 ;************************************************
 ; Read from netCDF File: tas
 ;************************************************
-  
-   fili   = "tas_"+run+"_"+seas(i)+"_"+atm_RES+"_detrend.nc"
-   f      = addfile(diri+fili,"r") 
 
-   x_tas      = f->tas(time|:,ncells|:)   ; dims: (time,ncells)        
+   fili   = "tas_"+run+"_"+seas(i)+"_"+atm_RES+"_detrend.nc"
+   f      = addfile(diri+fili,"r")
+
+   x_tas      = f->tas(time|:,ncells|:)   ; dims: (time,ncells)
    x_tas_new  = x_tas(ncells|:,time|:)
-   
-   printVarSummary(x_tas_new)                            
+
+   printVarSummary(x_tas_new)
 
    yyyymm = cd_calendar(x_tas&time, -1)
    yyyy   = yyyymm/100
@@ -170,27 +170,27 @@ print("seas "+seas(i))
 ;****************************
 ; Read from netCDF file: ts nino3.4
 ;***********************************************
-  
+
    fili   = "ts_"+run+"_"+seas(i)+"_"+atm_RES+"_nino34_detrend.nc"
-   f      = addfile(diri+fili,"r") 
-   printVarSummary(f) 
-    print(f)          
+   f      = addfile(diri+fili,"r")
+   printVarSummary(f)
+    print(f)
    ts_nino34      = f->ts(time|:,lat|0,lon|0)
 
 ;   ts_n      = f->ts(time|:,lat|0,lon|0)
 
-   printVarSummary(ts_nino34)                           
-;  printVarSummary(ts_n) 
+   printVarSummary(ts_nino34)
+;  printVarSummary(ts_n)
 
 
 ;************************************************
-; Calculate the regression coefficients tas   
+; Calculate the regression coefficients tas
 ;************************************************
 
-  rc_tas           = regCoef(ts_nino34,x_tas_new(ncells|:,time|:))            
-   
-;   printVarSummary(rc_tas)  
-     
+  rc_tas           = regCoef(ts_nino34,x_tas_new(ncells|:,time|:))
+
+;   printVarSummary(rc_tas)
+
   rc_tas!0   = "ncells"    ; name dimensions
 
    printVarSummary(rc_tas)
@@ -207,14 +207,14 @@ print("seas "+seas(i))
 ;;cdo -setgrid,/pool/data/ICON/post/r2b4_amip/r2b4_amip.nc rc_tasmbe0780_SON.nc rc_tasmbe0780_SONgrid.nc
 
 ;exit
-  
+
 
 
 ;************************************************
-; Calculate the regression coefficients psl   
+; Calculate the regression coefficients psl
 ;************************************************
-   rc_psl           = regCoef(ts_nino34,x_psl_new(ncells|:,time|:))            
-   
+   rc_psl           = regCoef(ts_nino34,x_psl_new(ncells|:,time|:))
+
    rc_psl!0   = "ncells"    ; name dimensions
 
    printVarSummary(rc_psl)
@@ -222,11 +222,11 @@ print("seas "+seas(i))
 ;exit
 
 ;************************************************
-; plotting parameters 
+; plotting parameters
 ;************************************************
 
-   
-   res                       = True     
+
+   res                       = True
 ;   res@gsnMaximize           = True             ; make large
 
    res@cnLevelSelectionMode = "ExplicitLevels"
@@ -241,7 +241,7 @@ print("seas "+seas(i))
      res3 = True                        ; PSL resources
      res3@cnLineColor = "black"
      res3@cnLineLabelsOn = False
-     
+
      if (noPlot.eq.3)then
         res3@cnInfoLabelOn = True
      else
@@ -249,8 +249,8 @@ print("seas "+seas(i))
      end if
      res3@cnInfoLabelString =  "Contour from "+ contourMin+" to "+contourMax+" by "+contourInc+" hPa"
      res3@gsnContourZeroLineThicknessF = 2.       ; thickness of zero contour
-     res3@tiMainOn = False      
-     res3@gsnContourNegLineDashPattern  = 1   
+     res3@tiMainOn = False
+     res3@gsnContourNegLineDashPattern  = 1
      res3@cnLineDashSegLenF = 0.08
      res3@gsnDraw = False
      res3@gsnFrame = False
@@ -266,14 +266,14 @@ print("seas "+seas(i))
      listplots_tas(noPlot) =     plot_cont ( wks,rc_tas,x,y,cArea,res)
 
      rc_psl=rc_psl/100
-     listplots_psl(noPlot) = gsn_csm_contour(wks,rc_psl,res3) 
+     listplots_psl(noPlot) = gsn_csm_contour(wks,rc_psl,res3)
 
      overlay(listplots_tas(noPlot),listplots_psl(noPlot))
 
      delete([/ts_nino34,x_tas,x_psl,x_tas_new,x_psl_new,rc_tas,rc_psl,yyyymm,yyyy/])
    end do
-  
-   
+
+
   pres          =  True
   pres@txString           = run+ " -  Nino3.4 regression: tas(color), psl    "
   pres@gsnPanelLabelBar    = True                ; add common colorbar

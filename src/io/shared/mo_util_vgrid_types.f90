@@ -1,15 +1,15 @@
-! Module containing types for the reading / on-the-fly generation and the writing of the vertical grid.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module containing types for the reading / on-the-fly generation and the writing of the vertical grid.
 
 MODULE mo_util_vgrid_types
 
@@ -26,7 +26,7 @@ MODULE mo_util_vgrid_types
 
 
   TYPE t_vgrid_buffer
-    ! Geom. height at vertical interface of cells and vertices (nproma,nlevp1,nblks_c/nblks_v): 
+    ! Geom. height at vertical interface of cells and vertices (nproma,nlevp1,nblks_c/nblks_v):
     !
     ! Note: This array is deallocated after being used in
     !       mo_vertical_grid::set_nh_metrics

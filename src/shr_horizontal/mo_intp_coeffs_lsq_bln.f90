@@ -1,27 +1,23 @@
-! Contains the implementation of interpolation and reconstruction
-! routines used by the shallow water model, including the RBF
-! reconstruction routines.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------  
+! ---------------------------------------------------------------
+
+! Contains the implementation of interpolation and reconstruction
+! routines used by the shallow water model, including the RBF
+! reconstruction routines.
 
 #ifdef __xlC__
 ! @PROCESS nosmp
 ! @PROCESS NOOPTimize
 ! @PROCESS smp=noopt
 @PROCESS noopt
-#endif
-#ifdef __PGI
-!pgi$g opt=1
 #endif
 
 !----------------------------
@@ -53,7 +49,7 @@ USE mo_loopindices,         ONLY: get_indices_c, get_indices_e, get_indices_v
 USE mo_advection_config,    ONLY: advection_config
 USE mo_sync,                ONLY: SYNC_C, SYNC_E, SYNC_V, sync_patch_array, sync_idx
 USE mo_grid_config,         ONLY: grid_sphere_radius
-USE mo_grid_geometry_info,  ONLY: planar_torus_geometry, sphere_geometry
+USE mo_lib_grid_geometry_info,  ONLY: planar_torus_geometry, sphere_geometry
 USE mo_intp_data_strc,      ONLY: t_lsq, t_int_state
 USE mo_fortran_tools,       ONLY: copy
 
@@ -80,7 +76,7 @@ CONTAINS
   !!
   SUBROUTINE lsq_stencil_create( ptr_patch, ptr_int_lsq, lsq_dim_c)
     !
-    TYPE(t_patch), INTENT(INOUT) :: ptr_patch
+    TYPE(t_patch), INTENT(IN)    :: ptr_patch
     TYPE(t_lsq),   INTENT(INOUT) :: ptr_int_lsq
     INTEGER,       INTENT(IN)    :: lsq_dim_c    !< specifies size of the lsq stencil
 
@@ -141,9 +137,9 @@ CONTAINS
 
     DO cnt = 1, lsq_dim_c
       CALL sync_idx(SYNC_C, SYNC_C, ptr_patch, ptr_int_lsq%lsq_idx_c(:,:,cnt), &
-        &                                      ptr_int_lsq%lsq_blk_c(:,:,cnt))
+        &                                      ptr_int_lsq%lsq_blk_c(:,:,cnt), lacc=.FALSE.)
     ENDDO
-    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int_lsq%lsq_dim_stencil)
+    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int_lsq%lsq_dim_stencil, lacc=.FALSE.)
 
   END SUBROUTINE lsq_stencil_create
 
@@ -542,7 +538,7 @@ SUBROUTINE lsq_compute_coeff_cell( ptr_patch, ptr_int_lsq, llsq_rec_consv, &
 !
 
 !
-TYPE(t_patch), INTENT(INOUT) ::  ptr_patch
+TYPE(t_patch), INTENT(IN) ::  ptr_patch
 
 TYPE(t_lsq), TARGET, INTENT(INOUT) ::  ptr_int_lsq
 
@@ -559,7 +555,7 @@ INTEGER, INTENT(IN)  ::  &  ! least squares weighting exponent
   &  lsq_wgt_exp
 
  !Local variable
- CHARACTER(LEN=*), PARAMETER :: method_name = 'mo_intp_coeffs_lsq_bln:lsq_compute_coeff_cell'
+ CHARACTER(len=*), PARAMETER :: method_name = modname//':lsq_compute_coeff_cell'
 
     !
     SELECT CASE(ptr_patch%geometry_info%geometry_type)
@@ -601,7 +597,7 @@ SUBROUTINE lsq_compute_coeff_cell_sphere( ptr_patch, ptr_int_lsq, llsq_rec_consv
 !
 
 !
-TYPE(t_patch), INTENT(INOUT) ::  ptr_patch
+TYPE(t_patch), INTENT(IN) ::  ptr_patch
 
 TYPE(t_lsq), TARGET, INTENT(INOUT) ::  ptr_int_lsq
 
@@ -625,7 +621,7 @@ REAL(wp), DIMENSION(ptr_patch%geometry_info%cell_type,2)   ::  &  ! geogr. coord
 
 REAL(wp), DIMENSION(nproma,ptr_patch%nblks_c,lsq_dim_c,2) ::  &
   & z_dist_g                                ! for each cell:
-                                            ! distance vectors from control volume cell center 
+                                            ! distance vectors from control volume cell center
                                             ! to cell centers of all cells in the stencil
 
 REAL(wp), DIMENSION(ptr_patch%geometry_info%cell_type,2)   ::  &  ! lat/lon distance vector edge midpoint -> cvertex
@@ -665,17 +661,15 @@ INTEGER, DIMENSION(ptr_patch%geometry_info%cell_type) :: jlv, jbv      ! line an
 INTEGER :: cnt                         ! counter
 INTEGER :: jrow                        ! matrix row-identifier
 INTEGER :: nel                         ! number of matrix elements
-INTEGER :: nblks_c
 INTEGER :: pid                         ! patch ID
 INTEGER :: jb                          ! index of current block
 INTEGER :: jc                          ! index of current cell
 INTEGER :: js                          ! index of current control volume in the stencil
 INTEGER :: ju                          ! loop index for column of lsq matrix
 INTEGER :: jec                         ! loop index for cell's edge
-INTEGER :: i_startblk                  ! start block
-INTEGER :: i_startidx                  ! start index
-INTEGER :: i_endidx                    ! end index
-INTEGER :: i_rcstartlev                ! refinement control start level
+INTEGER :: i_rlstart, i_rlend
+INTEGER :: i_startblk, i_endblk        ! start/end block
+INTEGER :: i_startidx, i_endidx        ! start/end index
 INTEGER :: ist, icheck                 ! status
 INTEGER :: nverts
 INTEGER :: jecp
@@ -696,19 +690,25 @@ INTEGER, PARAMETER  :: &     ! size of work array for SVD lapack routine
 REAL(wp) ::   &              ! work array for SVD lapack routine
   &  zwork(lwork)
 INTEGER  ::   &              ! work array for SVD lapack routine
-  & ziwork(8*min(lsq_dim_c,lsq_dim_unk))
+  & ziwork(8*MIN(lsq_dim_c,lsq_dim_unk))
 
 
 !DR for DEBUG purposes
 ! #ifdef DEBUG_COEFF LL it's used in openmp directives,
 REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
 ! #endif
+
+CHARACTER(len=*), PARAMETER :: routine = modname//':lsq_compute_coeff_cell_sphere'
 !--------------------------------------------------------------------
 
 
-  CALL message('mo_interpolation:lsq_compute_coeff_cell_sphere', '')
+  CALL message(routine, '')
 
-  i_rcstartlev = 2
+  i_rlstart = 2
+  i_rlend   = min_rlcell_int
+
+  i_startblk = ptr_patch%cells%start_block(i_rlstart)
+  i_endblk   = ptr_patch%cells%end_block(i_rlend)
 
   ! get patch id
   pid = ptr_patch%id
@@ -716,21 +716,15 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
   ! stencil size
   ptr_ncells => ptr_int_lsq%lsq_dim_stencil(:,:)
 
-  ! values for the blocking
-  nblks_c  = ptr_patch%nblks_c
-
-  ! The start block depends on the width of the stencil
-  i_startblk = ptr_patch%cells%start_blk(i_rcstartlev,1)
-
 
 !!$OMP PARALLEL
 !!$OMP DO PRIVATE(jb,jc,js,jec,i_startidx,i_endidx,jlv,jbv,ilc_s,ibc_s, &
 !!$OMP            xloc,yloc,xytemp_c,xytemp_v,z_norm,distxy_v,z_rcarea, &
 !!$OMP            delx,dely,fx,fy,fxx,fyy,fxy,jecp,nverts) ICON_OMP_DEFAULT_SCHEDULE
-  DO jb = i_startblk, nblks_c
+  DO jb = i_startblk, i_endblk
 
-    CALL get_indices_c(ptr_patch, jb, i_startblk, nblks_c,     &
-                       i_startidx, i_endidx, i_rcstartlev)
+    CALL get_indices_c(ptr_patch, jb, i_startblk, i_endblk,     &
+                       i_startidx, i_endidx, i_rlstart, i_rlend)
 
     !
     ! for each cell, calculate weights, moments, matrix coefficients
@@ -1031,10 +1025,10 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
 !!$OMP END PARALLEL
 
   DO jb = 1, lsq_dim_c
-    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_weights_c(:,jb,:))
+    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_weights_c(:,jb,:), lacc=.FALSE.)
   ENDDO
   DO jb = 1, lsq_dim_unk
-    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_moments(:,:,jb))
+    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_moments(:,:,jb), lacc=.FALSE.)
   ENDDO
 
 
@@ -1042,10 +1036,10 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
 !$OMP            z_lsq_mat_c,zs,zu,zv_t,zwork,ziwork,ist,icheck,za_debug, &
 !$OMP            z_qmat,z_rmat,cnt,jrow,nel)
 !$OMP DO ICON_OMP_DEFAULT_SCHEDULE
-  DO jb = i_startblk, nblks_c
+  DO jb = i_startblk, i_endblk
 
-    CALL get_indices_c(ptr_patch, jb, i_startblk, nblks_c, &
-                       i_startidx, i_endidx, i_rcstartlev)
+    CALL get_indices_c(ptr_patch, jb, i_startblk, i_endblk,     &
+                       i_startidx, i_endidx, i_rlstart, i_rlend)
 
     !
     ! 4. for each cell, calculate LSQ design matrix A
@@ -1230,32 +1224,52 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
       !
       ! z_lsq_mat_c : M x N least squares design matrix A            (IN)
       ! zu          : M x M orthogonal matrix U                      (OUT)
-      ! zv_t        : N x N orthogonal matrix V                      (OUT)
+      ! zv_t        : N x N orthogonal matrix transpose(V)           (OUT)
       ! zs          : min(M,N) Singular values of A                  (OUT)
       ! zwork       : workspace(1,LWORK)                             (OUT)
       ! lwork       : 3*min(M,N)                                     (IN)
       !              + max(max(M,N),4*min(M,N)*min(M,N)+4*min(M,N))  (IN)
       ! iwork       : workspace(8*min(M,N))                          (IN)
-
-      CALL DGESDD('A',                 & !in
-        &         lsq_dim_c,           & !in
-        &         lsq_dim_unk,         & !in
-        &         z_lsq_mat_c(jc,:,:), & !inout Note: destroyed on output
-        &         lsq_dim_c,           & !in
-        &         zs(:,jc),            & !out
-        &         zu(:,:,jc),          & !out
-        &         lsq_dim_c,           & !in
-        &         zv_t(:,:,jc),        & !out
-        &         lsq_dim_unk,         & !in
-        &         zwork,               & !out
-        &         lwork,               & !in
-        &         ziwork,              & !inout
-        &         icheck               ) !out
-      ist = ist + icheck
+      !
+      ! Please note that keyword arguments have been omitted explicitly,
+      ! as this would require an explicit interface for DGESDD.
+      ! For clarity, the keyword arguments are provided as a comment.
+      !
+#ifdef __SINGLE_PRECISION
+      CALL SGESDD('A',                 & !JOBZ  (in)
+        &         lsq_dim_c,           & !M     (in)
+        &         lsq_dim_unk,         & !N     (in)
+        &         z_lsq_mat_c(jc,:,:), & !A     (inout) Note: destroyed on output
+        &         lsq_dim_c,           & !LDA   (in)
+        &         zs(:,jc),            & !S     (out)
+        &         zu(:,:,jc),          & !U     (out)
+        &         lsq_dim_c,           & !LDU   (in)
+        &         zv_t(:,:,jc),        & !VT    (out)
+        &         lsq_dim_unk,         & !LDVT  (in)
+        &         zwork,               & !WORK  (out)
+        &         lwork,               & !LWORK (in)
+        &         ziwork,              & !IWORK (inout)
+        &         icheck               ) !INFO  (out)
+#else
+      CALL DGESDD('A',                 & !JOBZ  (in)
+        &         lsq_dim_c,           & !M     (in)
+        &         lsq_dim_unk,         & !N     (in)
+        &         z_lsq_mat_c(jc,:,:), & !A     (inout) Note: destroyed on output
+        &         lsq_dim_c,           & !LDA   (in)
+        &         zs(:,jc),            & !S     (out)
+        &         zu(:,:,jc),          & !U     (out)
+        &         lsq_dim_c,           & !LDU   (in)
+        &         zv_t(:,:,jc),        & !VT    (out)
+        &         lsq_dim_unk,         & !LDVT  (in)
+        &         zwork,               & !WORK  (out)
+        &         lwork,               & !LWORK (in)
+        &         ziwork,              & !IWORK (inout)
+        &         icheck               ) !INFO  (out)
+#endif
+      ist = ist + ABS(icheck)                    ! icheck can be positive, negative, or zero
     ENDDO
     IF (ist /= SUCCESS) THEN
-      CALL finish ('mo_interpolation:lsq_compute_coeff_cell_sphere',   &
-        &             'singular value decomposition failed')
+      CALL finish (routine, 'singular value decomposition failed')
     ENDIF
 
     ! compute Moore-Penrose inverse
@@ -1308,17 +1322,17 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
 
   DO ju = 1, lsq_dim_unk
     DO jc = 1, lsq_dim_c
-      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_moments_hat(:,:,jc,ju))
-      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_pseudoinv(:,ju,jc,:))
-      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_qtmat_c(:,ju,jc,:))
+      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_moments_hat(:,:,jc,ju), lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_pseudoinv(:,ju,jc,:), lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_qtmat_c(:,ju,jc,:), lacc=.FALSE.)
     ENDDO
   ENDDO
 
   DO jc = 1, UBOUND(ptr_int_lsq%lsq_rmat_utri_c, 2)
-    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_rmat_utri_c(:,jc,:))
+    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_rmat_utri_c(:,jc,:), lacc=.FALSE.)
   ENDDO
   DO ju = 1,lsq_dim_unk
-    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_rmat_rdiag_c(:,ju,:))
+    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_rmat_rdiag_c(:,ju,:), lacc=.FALSE.)
   ENDDO
 
 END SUBROUTINE lsq_compute_coeff_cell_sphere
@@ -1334,7 +1348,7 @@ SUBROUTINE lsq_compute_coeff_cell_torus( ptr_patch, ptr_int_lsq, llsq_rec_consv,
 !
 
 !
-TYPE(t_patch), INTENT(INOUT) ::  ptr_patch
+TYPE(t_patch), INTENT(IN) ::  ptr_patch
 
 TYPE(t_lsq), TARGET, INTENT(INOUT) ::  ptr_int_lsq
 
@@ -1356,7 +1370,7 @@ TYPE(t_cartesian_coordinates) :: cc_cv, cc_cell(lsq_dim_c), cc_vert(ptr_patch%ge
 
 REAL(wp), DIMENSION(nproma,ptr_patch%nblks_c,lsq_dim_c,2) ::  &
   & z_dist_g                                ! for each cell:
-                                            ! distance vectors from control volume cell center 
+                                            ! distance vectors from control volume cell center
                                             ! to cell centers of all cells in the stencil
 
 REAL(wp), DIMENSION(ptr_patch%geometry_info%cell_type,2)   ::  &  ! lat/lon distance vector edge midpoint -> cvertex
@@ -1756,10 +1770,10 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
 !!$OMP END PARALLEL
 
   DO jb = 1, lsq_dim_c
-    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_weights_c(:,jb,:))
+    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_weights_c(:,jb,:), lacc=.FALSE.)
   ENDDO
   DO jb = 1, lsq_dim_unk
-    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_moments(:,:,jb))
+    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_moments(:,:,jb), lacc=.FALSE.)
   ENDDO
 
 
@@ -1962,7 +1976,8 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
       !              + max(max(M,N),4*min(M,N)*min(M,N)+4*min(M,N))  (IN)
       ! iwork       : workspace(8*min(M,N))                          (IN)
 
-      CALL DGESDD('A',                 & !in
+#ifdef __SINGLE_PRECISION
+      CALL SGESDD('A',                 & !JOBZ  (in)
         &         lsq_dim_c,           & !in
         &         lsq_dim_unk,         & !in
         &         z_lsq_mat_c(jc,:,:), & !inout Note: destroyed on output
@@ -1976,6 +1991,22 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
         &         lwork,               & !in
         &         ziwork,              & !inout
         &         icheck               ) !out
+#else
+      CALL DGESDD('A',                 & !JOBZ  (in)
+        &         lsq_dim_c,           & !in
+        &         lsq_dim_unk,         & !in
+        &         z_lsq_mat_c(jc,:,:), & !inout Note: destroyed on output
+        &         lsq_dim_c,           & !in
+        &         zs(:,jc),            & !out
+        &         zu(:,:,jc),          & !out
+        &         lsq_dim_c,           & !in
+        &         zv_t(:,:,jc),        & !out
+        &         lsq_dim_unk,         & !in
+        &         zwork,               & !out
+        &         lwork,               & !in
+        &         ziwork,              & !inout
+        &         icheck               ) !out
+#endif
       ist = ist + icheck
     ENDDO
     IF (ist /= SUCCESS) THEN
@@ -2033,17 +2064,17 @@ REAL(wp) :: za_debug(nproma,lsq_dim_c,lsq_dim_unk)
 
   DO ju = 1, lsq_dim_unk
     DO jc = 1, lsq_dim_c
-      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_moments_hat(:,:,jc,ju))
-      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_pseudoinv(:,ju,jc,:))
-      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_qtmat_c(:,ju,jc,:))
+      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_moments_hat(:,:,jc,ju), lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_pseudoinv(:,ju,jc,:), lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_qtmat_c(:,ju,jc,:), lacc=.FALSE.)
     ENDDO
   ENDDO
 
   DO jc = 1, UBOUND(ptr_int_lsq%lsq_rmat_utri_c, 2)
-    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_rmat_utri_c(:,jc,:))
+    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_rmat_utri_c(:,jc,:), lacc=.FALSE.)
   ENDDO
   DO ju = 1,lsq_dim_unk
-    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_rmat_rdiag_c(:,ju,:))
+    CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_lsq%lsq_rmat_rdiag_c(:,ju,:), lacc=.FALSE.)
   ENDDO
 
 END SUBROUTINE lsq_compute_coeff_cell_torus
@@ -2251,10 +2282,10 @@ INTEGER :: i_endidx                  ! end index
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
-  CALL sync_patch_array(SYNC_E,ptr_patch,ptr_int_state%c_lin_e)
-  CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%verts_aw_cells)
-  CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_inn_c)
-  CALL sync_patch_array(SYNC_V,ptr_patch,ptr_int_state%cells_aw_verts)
+  CALL sync_patch_array(SYNC_E,ptr_patch,ptr_int_state%c_lin_e, lacc=.FALSE.)
+  CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%verts_aw_cells, lacc=.FALSE.)
+  CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_inn_c, lacc=.FALSE.)
+  CALL sync_patch_array(SYNC_V,ptr_patch,ptr_int_state%cells_aw_verts, lacc=.FALSE.)
 
 END SUBROUTINE scalar_int_coeff
 !-------------------------------------------------------------------------
@@ -2422,7 +2453,7 @@ END DO !block loop
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
-CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_bln_c_s)
+CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_bln_c_s, lacc=.FALSE.)
 
 
 END SUBROUTINE spherical_scalar_coeffs
@@ -2571,8 +2602,8 @@ END DO !block loop
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
-CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_bln_c_u)
-CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_bln_c_v)
+CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_bln_c_u, lacc=.FALSE.)
+CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_bln_c_v, lacc=.FALSE.)
 
 END SUBROUTINE vector_coeffs
 !-------------------------------------------------------------------------
@@ -2628,7 +2659,7 @@ wgt = 1._wp/3._wp
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
-CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_bln_c_s)
+CALL sync_patch_array(SYNC_C,ptr_patch,ptr_int_state%e_bln_c_s, lacc=.FALSE.)
 
 
 END SUBROUTINE flat_scalar_coeffs

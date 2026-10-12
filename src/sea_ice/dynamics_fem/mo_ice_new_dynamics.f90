@@ -1,9 +1,7 @@
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -59,7 +57,7 @@ MODULE mo_ice_new_dynamics
 
 
   USE mo_name_list_output,       ONLY: write_name_list_output
-  
+
   IMPLICIT NONE
 
   PUBLIC  :: ice_new_dynamics
@@ -82,7 +80,7 @@ CONTAINS
 
   SUBROUTINE ice_new_dynamics( p_patch_3D, p_ice, p_os, p_as, atmos_fluxes, p_op_coeff, p_oce_sfc)
 
-  
+
     TYPE(t_patch_3D), TARGET, INTENT(IN)     :: p_patch_3D
     TYPE(t_sea_ice),          INTENT(INOUT)  :: p_ice
     TYPE(t_hydro_ocean_state),INTENT(IN)     :: p_os
@@ -141,14 +139,14 @@ CONTAINS
     TYPE(t_cartesian_coordinates) :: p_tau_n_c(nproma,p_patch_3D%p_patch_2D(1)%alloc_cell_blocks)
     TYPE(t_cartesian_coordinates) :: ocean_c(nproma,p_patch_3D%p_patch_2D(1)%alloc_cell_blocks)
  REAL(wp)                      :: tau_n(nproma,p_patch_3D%p_patch_2D(1)%nblks_e)
-     Real(wp)                      :: ocean_n(nproma,p_patch_3D%p_patch_2D(1)%nblks_e) 
+     Real(wp)                      :: ocean_n(nproma,p_patch_3D%p_patch_2D(1)%nblks_e)
      TYPE(t_cartesian_coordinates) :: p_tau_n_dual(nproma,p_patch_3D%p_patch_2D(1)%nblks_v)
      TYPE(t_cartesian_coordinates) :: p_ocean_n_dual(nproma,p_patch_3D%p_patch_2D(1)%nblks_v)
 
    INTEGER ::time_iter,outer_iter, time, edge_block_i,start_index,end_index,edge_index_i, cell_block, cell_index, neigbor,&
         &edge_block_1,edge_block_2,edge_block_3,edge_index_1,edge_index_2,edge_index_3, inner_iter&
        &,cell_index1,cell_index2,cell_block1,cell_block2,doy,vert_index,vert_block,vert_index_1,vert_index_2,vert_block_1,vert_block_2 !, vtkeverystep, vtk_iter
-   
+
 
 
 
@@ -157,12 +155,12 @@ CONTAINS
    REAL(wp) ::  Oi, Oj, ei, e11, e22, e21, e12, e31,e32,P, zeta,eta, x1,x2,x3, y1,y2,y3, tix1,tix2,tix3,tiy2,tiy3,tiy1,ux,uy,uz,&
         &sc_pn, l_sn, nix_1,niy_1,niz_1, tix_1,tiy_1,tiz_1,nix_l, niy_l, tix_l,tiy_l,U,V,W, U_ana, V_ana,W_ana, ice_z, u_rel,v_rel,w_rel,ocean_z,&
         &atop_n,atop_t,abot_n,abot_t,btop_n,btop_t,bbot_n,bbot_t,aaa,bbb,x_shift,y_shift,L,diff_n,diff_t,vdw,tp,U_xx,U_yy,atm_u,atm_v,mass_ice
-   REAL(wp) :: alpha,vmax, ws,wx,wy,mx,my,rw, C_imp, vda, weight      
-       
+   REAL(wp) :: alpha,vmax, ws,wx,wy,mx,my,rw, C_imp, vda, weight
+
    CHARACTER(*), PARAMETER :: &
           method_name = 'mo_ice_new_dynamics:ice_new_dynamics'
    !--------------------------------------------------------------------------------------------------
-   
+
     patch_2D => p_patch_3D%p_patch_2D(1)
     all_cells     => p_patch_3d%p_patch_2d(1)%cells%all
     all_edges =>     p_patch_3d%p_patch_2d(1)%edges%all
@@ -206,12 +204,12 @@ CONTAINS
     alpha_evp=1500 !1500
 
     beta_evp=alpha_evp
-    
+
     doy=0
 
 
 !     CALL dbg_print('start 0 vn', p_ice%vn_e ,str_module, 2, in_subset=patch_2D%edges%owned)
-    
+
     DO cell_block = all_cells%start_block, all_cells%end_block
 !      CALL get_index_range(all_cells, cell_block, start_index, end_index)
 !       DO cell_index = start_index, end_index
@@ -233,11 +231,11 @@ CONTAINS
 !       ENDDO ! cell_index = start_index, end_index
     ENDDO !cell_block = owned_cells%start_block, owned_cells%end_block
 
-!Boundary_cell_marker and boundary_edge_marker are used to marke the cells and edge where sea ice is present. This changes in every time step  
+!Boundary_cell_marker and boundary_edge_marker are used to marke the cells and edge where sea ice is present. This changes in every time step
     CALL interface_boundary_cell_marker(boundary_cell_marker, p_patch_3D, p_ice)
     CALL interface_boundary_edge_marker(boundary_edge_marker,boundary_cell_marker, p_patch_3D, p_ice)
     CALL cell_area(cell_area_c, p_patch_3D)  ! why in the timeloop ?this can be moved to init file, this is needed for the integration of the stress tensor
-    CALL init_mass_matrix(mass,cell_area_c,p_patch_3D) !this can be moved to init file, This is needed for the mass lumping in the momentum equation 
+    CALL init_mass_matrix(mass,cell_area_c,p_patch_3D) !this can be moved to init file, This is needed for the mass lumping in the momentum equation
 
 !     CALL dbg_print('start 0.1 vn', p_ice%vn_e ,str_module, 2, in_subset=patch_2D%edges%owned)
 
@@ -247,20 +245,20 @@ CONTAINS
        DO cell_block = all_cells%start_block, owned_cells%end_block
           CALL get_index_range(all_cells, cell_block, start_index, end_index)
           DO cell_index = start_index, end_index
-             
-             DO neigbor=1,3 !no_primal_edges                                                                                                                                                                           
+
+             DO neigbor=1,3 !no_primal_edges
                 edge_index_i =patch_2D%cells%edge_idx(cell_index, cell_block, neigbor)
                 edge_block_i = patch_2D%cells%edge_blk(cell_index, cell_block, neigbor)
-                
+
                 x = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(1)
                 y = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(2)
                 z = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(3)
-                
+
                 x1_c(cell_index,1,cell_block)=x1_c(cell_index,1,cell_block) + 1.0_wp/3.0_wp * x
                 x2_c(cell_index,1,cell_block)=x2_c(cell_index,1,cell_block) + 1.0_wp/3.0_wp * y
                 x3_c(cell_index,1,cell_block)=x3_c(cell_index,1,cell_block) + 1.0_wp/3.0_wp * z
-            
-                
+
+
             ENDDO
 
             IF ( boundary_cell_marker(cell_index,1,cell_block)>1.0_wp) THEN
@@ -271,39 +269,35 @@ CONTAINS
              x123 = sqrt(x1_c(cell_index,1,cell_block)*x1_c(cell_index,1,cell_block) + &
                   &x2_c(cell_index,1,cell_block)*x2_c(cell_index,1,cell_block) + &
                   &x3_c(cell_index,1,cell_block)*x3_c(cell_index,1,cell_block))
-          
+
              x1_c(cell_index,1,cell_block)=x1_c(cell_index,1,cell_block)/x123
              x2_c(cell_index,1,cell_block)=x2_c(cell_index,1,cell_block)/x123
              x3_c(cell_index,1,cell_block)=x3_c(cell_index,1,cell_block)/x123
           ENDDO
        ENDDO
-       
-      CALL sync_patch_array_mult(sync_c, patch_2D, 3, x1_c, x2_c,x3_c) 
-       
-!        CALL sync_patch_array(SYNC_C, patch_2D, x1_c)
-!        CALL sync_patch_array(SYNC_C, patch_2D, x2_c)
-!        CALL sync_patch_array(SYNC_C, patch_2D, x3_c)
+
+      CALL sync_patch_array_mult(sync_c, patch_2D, 3, lacc=.FALSE., f3din1=x1_c, f3din2=x2_c, f3din3=x3_c)
 
     !**************************************************************
     ! (1) Convert lat-lon wind ocean  stress to cartesian coordinates
     !**************************************************************
        CALL  gvec2cvec_c_2d(p_patch_3D, atmos_fluxes%stress_x, atmos_fluxes%stress_y, p_tau_n_c)
 !       CALL dbg_print('start 0.2 vn', p_ice%vn_e ,str_module, 2, in_subset=patch_2D%edges%owned)
-                      
-!        CALL sync_patch_array(SYNC_C, patch_2D, p_tau_n_c(:,:)%x(1))
-!        CALL sync_patch_array(SYNC_C, patch_2D, p_tau_n_c(:,:)%x(2))
-!        CALL sync_patch_array(SYNC_C, patch_2D, p_tau_n_c(:,:)%x(3))
+
+!        CALL sync_patch_array(SYNC_C, patch_2D, p_tau_n_c(:,:)%x(1), lacc=.FALSE.)
+!        CALL sync_patch_array(SYNC_C, patch_2D, p_tau_n_c(:,:)%x(2), lacc=.FALSE.)
+!        CALL sync_patch_array(SYNC_C, patch_2D, p_tau_n_c(:,:)%x(3), lacc=.FALSE.)
 
        CALL gvec2cvec_c_2d(p_patch_3D, p_os%p_diag%u(:,1,:), p_os%p_diag%v(:,1,:), ocean_c)
- 
+
 !        CALL dbg_print('start 0.21 vn', p_ice%vn_e ,str_module, 2, in_subset=patch_2D%edges%owned)
- 
-!       CALL sync_patch_array(SYNC_C, patch_2D, ocean_c(:,:)%x(1))
-!       CALL sync_patch_array(SYNC_C, patch_2D, ocean_c(:,:)%x(2))
-!       CALL sync_patch_array(SYNC_C, patch_2D, ocean_c(:,:)%x(3))
-       
+
+!       CALL sync_patch_array(SYNC_C, patch_2D, ocean_c(:,:)%x(1), lacc=.FALSE.)
+!       CALL sync_patch_array(SYNC_C, patch_2D, ocean_c(:,:)%x(2), lacc=.FALSE.)
+!       CALL sync_patch_array(SYNC_C, patch_2D, ocean_c(:,:)%x(3), lacc=.FALSE.)
+
 !      CALL dbg_print('start 0.3 vn', p_ice%vn_e ,str_module, 2, in_subset=patch_2D%edges%owned)
-       
+
     !**************************************************************
     ! (2) Interpolate 3D wind stress and ocean  from cell centers to edges
     !calculating normal and tangent component of wind/ocean
@@ -314,11 +308,11 @@ CONTAINS
        ocean_n=0.0_wp
 #endif
         CALL map_cell2edges_3D(p_patch_3D, p_tau_n_c, tau_n ,p_op_coeff, 1)
-        CALL sync_patch_array(SYNC_E, patch_2D, tau_n)
-  
-        !**************************************************************                                                                                                               
-        ! (3) Interpolate 3D wind stress from normal value to vertices 3D                                                                                                                       
-        !**************************************************************                                                                                                               
+        CALL sync_patch_array(SYNC_E, patch_2D, tau_n, lacc=.FALSE.)
+
+        !**************************************************************
+        ! (3) Interpolate 3D wind stress from normal value to vertices 3D
+        !**************************************************************
 #ifdef NAGFOR
     p_tau_n_dual(:,:)%x(1) = 0.0_wp
     p_tau_n_dual(:,:)%x(2) = 0.0_wp
@@ -336,22 +330,22 @@ CONTAINS
           ocean_n(edge_index_i,edge_block_i)=p_os%p_prog(nold(1))%vn(edge_index_i,1,edge_block_i)
        ENDDO
     ENDDO
-       
-!     CALL sync_patch_array(SYNC_E, patch_2D, ocean_n)
+
+!     CALL sync_patch_array(SYNC_E, patch_2D, ocean_n, lacc=.FALSE.)
 !     CALL dbg_print('start 1 vn', p_ice%vn_e ,str_module, 2, in_subset=patch_2D%edges%owned)
-           
+
     CALL map_edges2verts(patch_2D, tau_n, p_op_coeff%edge2vert_coeff_cc, p_tau_n_dual)
     CALL map_edges2verts(patch_2D, ocean_n, p_op_coeff%edge2vert_coeff_cc, p_ocean_n_dual)
 
-!     CALL sync_patch_array(SYNC_V, patch_2D, p_tau_n_dual(:,:)%x(1))
-!     CALL sync_patch_array(SYNC_V, patch_2D, p_tau_n_dual(:,:)%x(2))
-!     CALL sync_patch_array(SYNC_V, patch_2D, p_tau_n_dual(:,:)%x(3))
-         
+!     CALL sync_patch_array(SYNC_V, patch_2D, p_tau_n_dual(:,:)%x(1), lacc=.FALSE.)
+!     CALL sync_patch_array(SYNC_V, patch_2D, p_tau_n_dual(:,:)%x(2), lacc=.FALSE.)
+!     CALL sync_patch_array(SYNC_V, patch_2D, p_tau_n_dual(:,:)%x(3), lacc=.FALSE.)
+
     !**************************************************************
     ! (4.1) Interpolate 3D wind stress from vertices to 3D vector on edges to calculate normal and tangential componantes.
     !The step via vertices is nesessarty to get a smooth representation of the wind field.
-    !(4.2) The same is done for the ocean                                                        
-    !**************************************************************   
+    !(4.2) The same is done for the ocean
+    !**************************************************************
     DO edge_block_i = edges_in_domain%start_block, edges_in_domain%end_block
       CALL get_index_range(edges_in_domain, edge_block_i, start_index, end_index)
       DO edge_index_i =  start_index, end_index
@@ -373,7 +367,7 @@ CONTAINS
         tix=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(1)
         tiy=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(2)
         tiz=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(3)
-        
+
         vert_index_1= patch_2D%edges%vertex_idx(edge_index_i,edge_block_i,1)
         vert_index_2=patch_2D%edges%vertex_idx(edge_index_i,edge_block_i,2)
         vert_block_1=patch_2D%edges%vertex_blk(edge_index_i,edge_block_i,1)
@@ -383,19 +377,19 @@ CONTAINS
         atm_t(edge_index_i,edge_block_i)=0.0_wp
         u_ocean_n(edge_index_i,edge_block_i)=0.0_wp
         u_ocean_t(edge_index_i,edge_block_i)=0.0_wp
-        
+
         IF (p_patch_3d%lsm_e(edge_index_i,1,edge_block_i) <= sea_boundary) THEN
             atm_n(edge_index_i,edge_block_i)=&
                   &( p_tau_n_dual(vert_index_1,vert_block_1)%x(1)+ p_tau_n_dual(vert_index_2,vert_block_2)%x(1))*0.5_wp*nix+&
                   &(p_tau_n_dual(vert_index_1,vert_block_1)%x(2)+ p_tau_n_dual(vert_index_2,vert_block_2)%x(2))*0.5_wp*niy+&
                   &(p_tau_n_dual(vert_index_1,vert_block_1)%x(3)+ p_tau_n_dual(vert_index_2,vert_block_2)%x(3))*0.5_wp*niz
-      
-            
+
+
               atm_t(edge_index_i,edge_block_i)=&
                   &(p_tau_n_dual(vert_index_1,vert_block_1)%x(1)+ p_tau_n_dual(vert_index_2,vert_block_2)%x(1))*0.5_wp*tix+&
                   &(p_tau_n_dual(vert_index_1,vert_block_1)%x(2)+ p_tau_n_dual(vert_index_2,vert_block_2)%x(2))*0.5_wp*tiy+&
                   &(p_tau_n_dual(vert_index_1,vert_block_1)%x(3)+ p_tau_n_dual(vert_index_2,vert_block_2)%x(3))*0.5_wp*tiz
-                  
+
 
               u_ocean_n(edge_index_i,edge_block_i)=&
                   &(p_ocean_n_dual(vert_index_1,vert_block_1)%x(1)+ p_ocean_n_dual(vert_index_2,vert_block_2)%x(1))*0.5_wp*nix+&
@@ -407,30 +401,30 @@ CONTAINS
                   &(p_ocean_n_dual(vert_index_1,vert_block_1)%x(1)+ p_ocean_n_dual(vert_index_2,vert_block_2)%x(1))*0.5_wp*tix+&
                   &(p_ocean_n_dual(vert_index_1,vert_block_1)%x(2)+ p_ocean_n_dual(vert_index_2,vert_block_2)%x(2))*0.5_wp*tiy+&
                   &(p_ocean_n_dual(vert_index_1,vert_block_1)%x(3)+ p_ocean_n_dual(vert_index_2,vert_block_2)%x(3))*0.5_wp*tiz
-        
+
 
         ENDIF
 
       ENDDO
     ENDDO
-       
-!     CALL sync_patch_array_mult(sync_e, patch_2D, 4, atm_n, atm_t, u_ocean_n,  u_ocean_t)
-          
-    CALL sync_patch_array(SYNC_E, patch_2D, atm_n)
-    CALL sync_patch_array(SYNC_E, patch_2D, atm_t)
-    CALL sync_patch_array(SYNC_E, patch_2D, u_ocean_n)
-    CALL sync_patch_array(SYNC_E, patch_2D, u_ocean_t)
- 
+
+!     CALL sync_patch_array_mult(sync_e, patch_2D, 4, atm_n, atm_t, u_ocean_n,  u_ocean_t) ! caution: dead code. lacc=.FALSE. would have to be added
+
+    CALL sync_patch_array(SYNC_E, patch_2D, atm_n, lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_E, patch_2D, atm_t, lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_E, patch_2D, u_ocean_n, lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_E, patch_2D, u_ocean_t, lacc=.FALSE.)
+
 !        CALL dbg_print('start 2 vn', p_ice%vn_e ,str_module, 2, in_subset=patch_2D%edges%owned)
-   
+
 !       WRITE(message_text,'(a,3i10)') 'ocean/atm/ice_old',MAXVAL(u_ocean_n) , MAXVAL(atm_n), MAXVAL(ice_x)
 !        write(0,*) "ocean/atm/ice_old:", p_ice%ice_iter, maxval(u_ocean_n) , maxval(atm_n), maxval(ice_x)
 
-    
+
     DO outer_iter=1, n_ice_iter
-        
+
 !        write(0,*) "outer_iter=", outer_iter
-       !This loop calculates the stresses for the ice 
+       !This loop calculates the stresses for the ice
        DO cell_block = all_cells%start_block, all_cells%end_block
           CALL get_index_range(all_cells, cell_block, start_index, end_index)
           DO cell_index = start_index, end_index
@@ -442,7 +436,7 @@ CONTAINS
                 CALL compute_2Dvector_grad(cell_index,cell_block,e11,e12,e21,e22,cell_area_c(cell_index,1,cell_block),&
                      &x1_c(cell_index,1,cell_block),x2_c(cell_index,1,cell_block),x3_c(cell_index,1,cell_block),p_patch_3D, p_ice)
 
-                p_ice%Delta(cell_index,cell_block)=dsqrt(delta_min*delta_min+ e12*e12 + 1.25_wp*(e11*e11+e22*e22)+1.5_wp*e11*e22)
+                p_ice%Delta(cell_index,cell_block)=sqrt(delta_min*delta_min+ e12*e12 + 1.25_wp*(e11*e11+e22*e22)+1.5_wp*e11*e22)
 
                 P=p_ice%hi(cell_index,1,cell_block)*Pstar*EXP(-20.0_wp*(1.0_wp-p_ice%conc(cell_index,1,cell_block)))
 
@@ -451,7 +445,7 @@ CONTAINS
                 zeta_stabi(cell_index,1,cell_block)=P/(2* max(p_ice%Delta(cell_index,cell_block),0.000000002_wp*10.0_wp))!*&
                     ! &boundary_cell_marker(cell_index,1,cell_block)
 
-                  !this updates the stresses   
+                  !this updates the stresses
                 Call mEVP(alpha_evp,e11,e12,e21,e22,s11(cell_index,1,cell_block),s12(cell_index,1,cell_block),&
                      &s21(cell_index,1,cell_block),s22(cell_index,1,cell_block),sigma_I(cell_index,1,cell_block),&
                      &sigma_II(cell_index,1,cell_block),zeta_c(cell_index,1,cell_block),P)
@@ -461,27 +455,27 @@ CONTAINS
           ENDDO ! cell_index = start_index, end_index
 
        ENDDO !cell_block = owned_cells%start_block, owned_cells%end_block
-       
-!         CALL sync_patch_array(SYNC_C, patch_2D, s11(:,:,:))
-!         CALL sync_patch_array(SYNC_C, patch_2D, s12(:,:,:))
-!         CALL sync_patch_array(SYNC_C, patch_2D, s21(:,:,:))
-!         CALL sync_patch_array(SYNC_C, patch_2D, s22(:,:,:))
-!         CALL sync_patch_array(SYNC_C, patch_2D, sigma_I(:,:,:))
-!         CALL sync_patch_array(SYNC_C, patch_2D, sigma_II(:,:,:))
-!         CALL sync_patch_array(SYNC_C, patch_2D, zeta_c(:,:,:))
-!         CALL sync_patch_array(SYNC_C, patch_2D, zeta_stabi(:,:,:))
-!         CALL sync_patch_array(SYNC_C, patch_2D, p_ice%Delta)
-        
+
+!         CALL sync_patch_array(SYNC_C, patch_2D, s11(:,:,:), lacc=.FALSE.)
+!         CALL sync_patch_array(SYNC_C, patch_2D, s12(:,:,:), lacc=.FALSE.)
+!         CALL sync_patch_array(SYNC_C, patch_2D, s21(:,:,:), lacc=.FALSE.)
+!         CALL sync_patch_array(SYNC_C, patch_2D, s22(:,:,:), lacc=.FALSE.)
+!         CALL sync_patch_array(SYNC_C, patch_2D, sigma_I(:,:,:), lacc=.FALSE.)
+!         CALL sync_patch_array(SYNC_C, patch_2D, sigma_II(:,:,:), lacc=.FALSE.)
+!         CALL sync_patch_array(SYNC_C, patch_2D, zeta_c(:,:,:), lacc=.FALSE.)
+!         CALL sync_patch_array(SYNC_C, patch_2D, zeta_stabi(:,:,:), lacc=.FALSE.)
+!         CALL sync_patch_array(SYNC_C, patch_2D, p_ice%Delta, lacc=.FALSE.)
+
        !This loop averages the cell values to the edges.This is needed for the momentum equation
        DO edge_block_i = edges_in_domain%start_block, edges_in_domain%end_block
           CALL get_index_range(edges_in_domain, edge_block_i, start_index, end_index)
           DO edge_index_i =  start_index, end_index
-             
+
              zeta_e(edge_index_i,edge_block_i)=0.0_wp
              h_e(edge_index_i,edge_block_i)=0.0_wp
              A_e(edge_index_i,edge_block_i)=0.0_wp
              s_e(edge_index_i,edge_block_i)=0.0_wp
-             
+
            IF (p_patch_3d%lsm_e(edge_index_i,1,edge_block_i) <= sea_boundary) THEN
              cell_index1 = patch_2D%edges%cell_idx(edge_index_i,edge_block_i,1)
              cell_block1 = patch_2D%edges%cell_blk(edge_index_i,edge_block_i,1)
@@ -495,78 +489,78 @@ CONTAINS
              endif
 
 
-             
+
              zeta_e(edge_index_i,edge_block_i)=weight*boundary_edge_marker(edge_index_i,edge_block_i)*(zeta_stabi(cell_index1,1,cell_block1)+zeta_stabi(cell_index2,1,cell_block2))
-             
+
              h_e(edge_index_i,edge_block_i)=weight*boundary_edge_marker(edge_index_i,edge_block_i)*(p_ice%hi(cell_index1,1,cell_block1)+&
                   &p_ice%hi(cell_index2,1,cell_block2))
-             
-             
+
+
              A_e(edge_index_i,edge_block_i)=weight*boundary_edge_marker(edge_index_i,edge_block_i)*(p_ice%conc(cell_index1,1,cell_block1)+p_ice%conc(cell_index2,1,cell_block2))
 
 
              s_e(edge_index_i,edge_block_i)=weight*boundary_edge_marker(edge_index_i,edge_block_i)*( p_ice%hs(cell_index1,1,cell_block1)+&
-            
+
                   &p_ice%hs(cell_index2,1,cell_block2))! *p_ice%conc(cell_index2,1,cell_block2))
 
-             
+
           ENDIF
 
           ENDDO
        ENDDO
-       
+
       IF (ice_free_drift_only) THEN
-  
+
         Au_n=0.0_wp
         Au_t=0.0_wp
 
         S_n=0.0_wp
         S_t=0.0_wp
       ELSE
-      CALL sync_patch_array(SYNC_E, patch_2D, zeta_e)
-      CALL sync_patch_array(SYNC_E, patch_2D, h_e)
-      CALL sync_patch_array(SYNC_E, patch_2D, A_e)
-      CALL sync_patch_array(SYNC_E, patch_2D, s_e)
+      CALL sync_patch_array(SYNC_E, patch_2D, zeta_e, lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_E, patch_2D, h_e, lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_E, patch_2D, A_e, lacc=.FALSE.)
+      CALL sync_patch_array(SYNC_E, patch_2D, s_e, lacc=.FALSE.)
 !       IF ( outer_iter==2) &
 !        CALL finish('sea-ice dynamics','Test sync ok')
-       
+
        Au_n=0.0_wp
        Au_t=0.0_wp
 
-       !This function computes div(sigma) 
+       !This function computes div(sigma)
          CALL compute_sigma(Au_n,Au_t,boundary_cell_marker,h_e,A_e,s_e,s11,s12,s21,s22,cell_area_c,x1_c,x2_c,x3_c,p_patch_3D,p_ice,p_os)
-  
-       CALL sync_patch_array(SYNC_E, patch_2D, Au_n)
-       CALL sync_patch_array(SYNC_E, patch_2D, Au_t)
+
+       CALL sync_patch_array(SYNC_E, patch_2D, Au_n, lacc=.FALSE.)
+       CALL sync_patch_array(SYNC_E, patch_2D, Au_t, lacc=.FALSE.)
 !        CALL dbg_print(' Au_n '  , Au_n , str_module, 2, in_subset=patch_2D%cells%owned)
 !        CALL dbg_print(' Au_t '  , Au_t , str_module, 2, in_subset=patch_2D%cells%owned)
-       
+
 !        IF ( outer_iter==2) &
 !         CALL finish('sea-ice dynamics','Test sync ok')
- 
+
        S_x=0.0_wp
        S_y=0.0_wp
          S_n=0.0_wp
          S_t=0.0_wp
          IF ( ice_stabilization ) THEN
-!        CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vn_e)
-!        CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vt_e)
-!        CALL sync_patch_array(SYNC_C, patch_2D,x1_c)
-!        CALL sync_patch_array(SYNC_C, patch_2D,x2_c)
-!        CALL sync_patch_array(SYNC_C, patch_2D,x3_c)
-!        CALL sync_patch_array(SYNC_C, patch_2D,boundary_cell_marker)
-       
-!        IF ( outer_iter==2) &
-!          CALL finish('sea-ice dynamics','Test sync ok')
-        
-       Call  Stabilization_sum(S_x,S_y,boundary_cell_marker,x1_c,x2_c,x3_c,p_ice,p_patch_3D)
-      
-       CALL sync_patch_array(SYNC_E, patch_2D, S_x)
-       CALL sync_patch_array(SYNC_E, patch_2D, S_y)
+!        CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vn_e, lacc=.FALSE.)
+!        CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vt_e, lacc=.FALSE.)
+!        CALL sync_patch_array(SYNC_C, patch_2D,x1_c, lacc=.FALSE.)
+!        CALL sync_patch_array(SYNC_C, patch_2D,x2_c, lacc=.FALSE.)
+!        CALL sync_patch_array(SYNC_C, patch_2D,x3_c, lacc=.FALSE.)
+!        CALL sync_patch_array(SYNC_C, patch_2D,boundary_cell_marker, lacc=.FALSE.)
+
 !        IF ( outer_iter==2) &
 !          CALL finish('sea-ice dynamics','Test sync ok')
 
-       
+       Call  Stabilization_sum(S_x,S_y,boundary_cell_marker,x1_c,x2_c,x3_c,p_ice,p_patch_3D)
+
+       CALL sync_patch_array(SYNC_E, patch_2D, S_x, lacc=.FALSE.)
+       CALL sync_patch_array(SYNC_E, patch_2D, S_y, lacc=.FALSE.)
+!        IF ( outer_iter==2) &
+!          CALL finish('sea-ice dynamics','Test sync ok')
+
+
        DO edge_block_i = all_edges%start_block, all_edges%end_block
          CALL get_index_range(all_edges, edge_block_i, start_index, end_index)
          DO edge_index_i =  start_index, end_index
@@ -578,9 +572,9 @@ CONTAINS
        S_n=0.0_wp
        S_t=0.0_wp
        CALL  Stabilization(S_x,S_y,S_n,S_t,boundary_cell_marker,x1_c,x2_c,x3_c,zeta_e,p_patch_3D)
-       
-       CALL sync_patch_array(SYNC_E, patch_2D, S_n)
-       CALL sync_patch_array(SYNC_E, patch_2D, S_t)
+
+       CALL sync_patch_array(SYNC_E, patch_2D, S_n, lacc=.FALSE.)
+       CALL sync_patch_array(SYNC_E, patch_2D, S_t, lacc=.FALSE.)
 !        IF ( outer_iter==2) &
 !          CALL finish('sea-ice dynamics','Test sync ok')
          ENDIF ! ice_stabilization
@@ -591,11 +585,11 @@ CONTAINS
         DO edge_block_i = all_edges%start_block, all_edges%end_block
           CALL get_index_range(all_edges, edge_block_i, start_index, end_index)
           DO edge_index_i =  start_index, end_index
-             
-             
+
+
              if(p_patch_3D%lsm_e(edge_index_i,1,edge_block_i) <= sea_boundary ) THEN
              if(A_e(edge_index_i,edge_block_i)>0.01_wp) then
-                
+
              x = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(1)
              y = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(2)
              z = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(3)
@@ -608,12 +602,12 @@ CONTAINS
              tiy=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(2)
              tiz=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(3)
 
-                         
-             
+
+
              !vwd update ocean stress
              diff_n= u_ocean_n(edge_index_i,edge_block_i)-p_ice%vn_e(edge_index_i,edge_block_i)
              diff_t= u_ocean_t(edge_index_i,edge_block_i)-p_ice%vt_e(edge_index_i,edge_block_i)
-             
+
              vdw=sqrt(diff_n*diff_n+diff_t*diff_t)*boundary_edge_marker(edge_index_i,edge_block_i)
 
              mass_ice=MAX(rhoi*h_e(edge_index_i,edge_block_i)+rhos*s_e(edge_index_i,edge_block_i),9.0_wp)
@@ -660,33 +654,33 @@ CONTAINS
           ENDDO
        ENDDO
 
-       CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vn_e)
-       CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vt_e)
+       CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vn_e, lacc=.FALSE.)
+       CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vt_e, lacc=.FALSE.)
 
 !        IF ( outer_iter==2) &
 !          CALL finish('sea-ice dynamics','Test sync ok')
-          
+
     ENDDO !outer iter
-    
+
 !     CALL dbg_print('end outloop vn', p_ice%vn_e ,str_module, 2, in_subset=patch_2D%edges%owned)
-  
+
 !     CALL finish('sea-ice dynamics','Test sync ok')
-!     CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vn_e)
-!     CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vt_e)
+!     CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vn_e, lacc=.FALSE.)
+!     CALL sync_patch_array(SYNC_E, patch_2D, p_ice%vt_e, lacc=.FALSE.)
 !     CALL finish('sea-ice dynamics','Test sync ok')
-   
+
   ! write(0,*) "ice_old/ice_up:",  maxval(ice_x), maxval( p_ice%vn_e)
  !write(0,*) "huhu endout"
 
       !visualisierung
-      
+
       DO cell_block = owned_cells%start_block, owned_cells%end_block
          CALL get_index_range(owned_cells, cell_block, start_index, end_index)
          DO cell_index = start_index, end_index
             DO neigbor=1,3 !no_primal_edges
                edge_index_i = patch_2D%cells%edge_idx(cell_index, cell_block, neigbor)
                edge_block_i = patch_2D%cells%edge_blk(cell_index, cell_block, neigbor)
-                              
+
                x = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(1)
                y = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(2)
                z = patch_2D%edges%cartesian_center(edge_index_i,edge_block_i)%x(3)
@@ -694,17 +688,17 @@ CONTAINS
                nix=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(1)
                niy=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(2)
                niz=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(3)
-               
+
                tix=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(1)
                tiy=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(2)
                tiz=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(3)
 
                ice_x(edge_index_i,edge_block_i)=boundary_edge_marker(edge_index_i,edge_block_i)*&
-                    &(u_ocean_t(edge_index_i,edge_block_i)*tix+u_ocean_n(edge_index_i,edge_block_i)*nix)   
+                    &(u_ocean_t(edge_index_i,edge_block_i)*tix+u_ocean_n(edge_index_i,edge_block_i)*nix)
                ice_y(edge_index_i,edge_block_i)=boundary_edge_marker(edge_index_i,edge_block_i)*&
                     & (p_ice%vn_e(edge_index_i,edge_block_i)*nix+p_ice%vt_e(edge_index_i,edge_block_i)*tix)
-               
-                
+
+
              ENDDO
           ENDDO
        ENDDO
@@ -773,22 +767,22 @@ CONTAINS
     patch_2D         => p_patch_3D%p_patch_2D(1)
     all_cells        =>patch_2D%cells%all
 
-!    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%conc )
+!    CALL sync_patch_array(SYNC_C, patch_2D, p_ice%conc, lacc=.FALSE.)
 
     DO cell_block = all_cells%start_block, all_cells%end_block
        CALL get_index_range(all_cells, cell_block, start_index, end_index)
        DO cell_index =  start_index, end_index
           boundary_cell_marker(cell_index,1,cell_block)=0.0_wp
-          if(p_patch_3D%lsm_c(cell_index,1,cell_block) <= sea_boundary ) THEN  
+          if(p_patch_3D%lsm_c(cell_index,1,cell_block) <= sea_boundary ) THEN
              if ( p_ice%conc(cell_index,1,cell_block)>0.0_wp) then
                 boundary_cell_marker(cell_index,1,cell_block)=1.0_wp
              endif
           endif
-          
+
        END DO
     END DO
 
-    CALL sync_patch_array(SYNC_C, patch_2D, boundary_cell_marker(:,1,:))
+    CALL sync_patch_array(SYNC_C, patch_2D, boundary_cell_marker(:,1,:), lacc=.FALSE.)
 
 
   END SUBROUTINE interface_boundary_cell_marker
@@ -835,7 +829,7 @@ CONTAINS
       ENDDO
     ENDDO
 
-    CALL sync_patch_array(SYNC_E, patch_2D, boundary_edge_marker)
+    CALL sync_patch_array(SYNC_E, patch_2D, boundary_edge_marker, lacc=.FALSE.)
 
 
   END SUBROUTINE interface_boundary_edge_marker
@@ -883,7 +877,7 @@ CONTAINS
       ENDDO ! cell_index = start_index, end_index
     ENDDO !cell_block = owned_cells%start_block, owned_cells%end_block
 
-    CALL sync_patch_array(SYNC_C, patch_2D, cell_area_c)
+    CALL sync_patch_array(SYNC_C, patch_2D, cell_area_c, lacc=.FALSE.)
 
   END SUBROUTINE cell_area
 
@@ -903,7 +897,7 @@ CONTAINS
      all_cells => patch_2D%cells%all
      owned_cells => patch_2D%cells%owned
 
-     CALL sync_patch_array(SYNC_E, patch_2D, mass)
+     CALL sync_patch_array(SYNC_E, patch_2D, mass, lacc=.FALSE.)
 
      DO cell_block = all_cells%start_block, all_cells%end_block
        CALL get_index_range(all_cells, cell_block, start_index, end_index)
@@ -922,7 +916,7 @@ CONTAINS
        ENDDO ! cell_index = start_index, end_index
      ENDDO !cell_block = owned_cells%start_block, owned_cells%end_block
 
-     CALL sync_patch_array(SYNC_E, patch_2D, mass)
+     CALL sync_patch_array(SYNC_E, patch_2D, mass, lacc=.FALSE.)
 
   END SUBROUTINE init_mass_matrix
 
@@ -952,9 +946,9 @@ CONTAINS
 
     REAL(wp) :: ei,h_ei,Pi,Oi,l_sn,sc_pn,l_st,tix_1,tiy_1,tiz_1,tjx_1,tjy_1,tjz_1,correct_n,correct_t,&
          &nix_l,niy_l,tix_l, tiy_l,nix,niz,niy,tix,tiy,tiz,O1,nix_1,niy_1,niz_1,njx_1,njy_1,njz_1,&
-         & U,V,Z,uxx_l,uxy_l,uyy_l,uyx_l,uzx_l,uzy_l, tix_k,tiy_k,tiz_k,nix_k,niy_k,niz_k, Ux,Vx,Uy,Vy,Uz,Vz 
+         & U,V,Z,uxx_l,uxy_l,uyy_l,uyx_l,uzx_l,uzy_l, tix_k,tiy_k,tiz_k,nix_k,niy_k,niz_k, Ux,Vx,Uy,Vy,Uz,Vz
 
-    
+
 
     patch_2D   => p_patch_3D%p_patch_2D(1)
 
@@ -969,7 +963,7 @@ CONTAINS
     uzx_l=0.0_wp
     uzy_l=0.0_wp
 
-    DO neigbor=1,3 !no_primal_edges                                                                                                                                                                               
+    DO neigbor=1,3 !no_primal_edges
 
        edge_index_i =patch_2D%cells%edge_idx(cell_index, cell_block, neigbor)
        edge_block_i =patch_2D%cells%edge_blk(cell_index, cell_block, neigbor)
@@ -982,32 +976,32 @@ CONTAINS
        Oi=patch_2D%cells%edge_orientation(cell_index,cell_block,neigbor)
 
        !       call  cell_local_N_T(edge_index_i,edge_block_i,neigbor,Oi,nix_l,niy_l,tix_l,tiy_l, x1_c,x2_c,x3_c,p_patch_3D)
-       
+
        !Alt-----------------
        nix=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(1)
        niy=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(2)
        niz=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(3)
-                   
+
        tix=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(1)
        tiy=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(2)
        tiz=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(3)
 
-       !       U=p_ice%vn_e(edge_index_i,edge_block_i)*nix+&                                                                                 
-       !            &p_ice%vt_e(edge_index_i,edge_block_i)*tix  
-        
+       !       U=p_ice%vn_e(edge_index_i,edge_block_i)*nix+&
+       !            &p_ice%vt_e(edge_index_i,edge_block_i)*tix
+
        !      V=p_ice%vn_e(edge_index_i,edge_block_i)*niy+&
        !           &p_ice%vt_e(edge_index_i,edge_block_i)*tiy
-       
+
         !     Z=p_ice%vn_e(edge_index_i,edge_block_i)*niz+&
-        !        &p_ice%vt_e(edge_index_i,edge_block_i)*tiz    
+        !        &p_ice%vt_e(edge_index_i,edge_block_i)*tiz
        nix=nix*Oi
        niy=niy*Oi
        niz=niz*Oi
-       
+
        tix=tix*Oi
        tiy=tiy*Oi
        tiz=tiz*Oi
-                   
+
        if(neigbor==1) then
           O1=Oi
 
@@ -1019,7 +1013,7 @@ CONTAINS
           nix_1=nix_1/l_sn
           niy_1=niy_1/l_sn
           niz_1=niz_1/l_sn
-          
+
           sc_pn=tix*x1_c + tiy*x2_c + tiz*x3_c
           tix_1=tix-sc_pn*x1_c
           tiy_1=tiy-sc_pn*x2_c
@@ -1029,8 +1023,8 @@ CONTAINS
           tiy_1=tiy_1/l_sn
           tiz_1=tiz_1/l_sn
        endif
-       
-       !Projection in Ebene     
+
+       !Projection in Ebene
        sc_pn=nix*x1_c + niy*x2_c + niz*x3_c
        nix=nix-sc_pn*x1_c
        niy=niy-sc_pn*x2_c
@@ -1039,36 +1033,36 @@ CONTAINS
        nix=nix/l_sn
        niy=niy/l_sn
        niz=niz/l_sn
-       
+
        sc_pn=tix*x1_c + tiy*x2_c + tiz*x3_c
        tix=tix-sc_pn*x1_c
        tiy=tiy-sc_pn*x2_c
-       tiz=tiz-sc_pn*x3_c          
+       tiz=tiz-sc_pn*x3_c
        l_sn=sqrt(tix*tix + tiy*tiy + tiz*tiz)
        tix=tix/l_sn
        tiy=tiy/l_sn
        tiz=tiz/l_sn
 
-       !Projektion ende 
+       !Projektion ende
        nix_l =   tix_1*nix + tiy_1*niy + tiz_1*niz
        niy_l = - nix_1*nix - niy_1*niy - niz_1*niz
-        
+
        tix_l =   tix_1*tix + tiy_1*tiy + tiz_1*tiz
        tiy_l = - nix_1*tix - niy_1*tiy - niz_1*tiz
-       !ENDE ALT 
+       !ENDE ALT
        !      !neu mit nix_l+ niy_l
-       U=(p_ice%vn_e(edge_index_i,edge_block_i)*nix_l + p_ice%vt_e(edge_index_i,edge_block_i)*tix_l)*Oi          
+       U=(p_ice%vn_e(edge_index_i,edge_block_i)*nix_l + p_ice%vt_e(edge_index_i,edge_block_i)*tix_l)*Oi
        V=(p_ice%vn_e(edge_index_i,edge_block_i)*niy_l + p_ice%vt_e(edge_index_i,edge_block_i)*tiy_l)*Oi
 
        IF (ice_laplace_dynamics) THEN
        !Komponentenweise 2d Laplace
          uxx_l=uxx_l+1.0_wp*nix_l*Pi*U
          uxy_l=uxy_l+1.0_wp*niy_l*Pi*U
-       
+
          uyx_l=uyx_l+1.0_wp*nix_l*Pi*V
          uyy_l=uyy_l+1.0_wp*niy_l*Pi*V
        ELSE
-        
+
        ! strain rate tensor: 0.5*(nabal u +nabla u^T)
        uxx_l=uxx_l+1.0_wp*nix_l*Pi*U
        uxy_l=uxy_l+0.5_wp*niy_l*Pi*U+0.5_wp*nix_l*Pi*V
@@ -1078,11 +1072,11 @@ CONTAINS
        ENDIF
        !       uzx_l=uzx_l+1.0_wp*nix_l*Pi*Z
        !       uzy_l=uzy_l+1.0_wp*niy_l*Pi*Z
-       
+
     ENDDO !neigbor=1,patch_2D%num_edges i
     !%% Visulaisierung__________________________________________
     !trafo kartesisch Visu
-    ! neu 
+    ! neu
     ! ! Ux    Vx  0
     ! ! Uy    Vy  0
     ! ! Uz    Vz  0
@@ -1096,19 +1090,19 @@ CONTAINS
     !Vz=tiz_1*uxy_l-niz_1*uyy_l
 
     !uxx=uxx_l * tix_1 - uxy_l * nix_1
-    !uyx=uyx_l * tiy_1 - uyy_l * niy_1       
+    !uyx=uyx_l * tiy_1 - uyy_l * niy_1
     !neu:
-    uxx=Ux * tix_1 - Vx * nix_1   
+    uxx=Ux * tix_1 - Vx * nix_1
     ! uyx=Uy * tiy_1 - Vy * niy_1
     uxy=Ux * tiy_1 - Vx * niy_1
     !neu:
-    !uzx=Uz * tiz_1 - Vz * niz_1    
+    !uzx=Uz * tiz_1 - Vz * niz_1
     ! uzx=uzx_l * tiz_1 - uzy_l * niz_1
-    
+
 !    p_ice%hi(cell_index,1,cell_block)  = uxx!nix_1*sc_pn+tix_1*l_sn
-!    p_ice%conc(cell_index,1,cell_block)= uxy!uyx_l * tiy_1 - uyy_l * niy_1 
+!    p_ice%conc(cell_index,1,cell_block)= uxy!uyx_l * tiy_1 - uyy_l * niy_1
     !return value 3d Laplace
-    
+
     !     uxx=Ux!uxx_l
     !     uxy=Vx!uxy_l
     !     uyx=Uy!uyx_l
@@ -1121,10 +1115,10 @@ CONTAINS
     uxy=uxy_l
     uyx=uyx_l
     uyy=uyy_l
-    !uzx=uzx_l                                                                                                                                                          
+    !uzx=uzx_l
     !uzy=uzy_l
 
-  
+
   END SUBROUTINE compute_2Dvector_grad
 
 
@@ -1147,7 +1141,7 @@ CONTAINS
     REAL(wp),TARGET,INTENT(in) :: s12(nproma,n_zlev,p_patch_3D%p_patch_2d(1)%alloc_cell_blocks)
     REAL(wp),TARGET,INTENT(in) :: s22(nproma,n_zlev,p_patch_3D%p_patch_2d(1)%alloc_cell_blocks)
     REAL(wp),TARGET,INTENT(in) :: s21(nproma,n_zlev,p_patch_3D%p_patch_2d(1)%alloc_cell_blocks)
- 
+
     REAL(wp), TARGET, INTENT(in) ::  h_e(nproma,p_patch_3d%p_patch_2d(1)%nblks_e)
     REAL(wp), TARGET, INTENT(in) ::  A_e(nproma,p_patch_3d%p_patch_2d(1)%nblks_e)
     REAL(wp), TARGET, INTENT(in) ::  s_e(nproma,p_patch_3d%p_patch_2d(1)%nblks_e)
@@ -1258,7 +1252,7 @@ CONTAINS
 
            tix_l =   tix_1*tix + tiy_1*tiy + tiz_1*tiz
            tiy_l = - nix_1*tix - niy_1*tiy - niz_1*tiz
-    !need to think about this if       
+    !need to think about this if
     !       IF (p_patch_3d%lsm_e(edge_index_i,1,edge_block_i) <= sea_boundary) THEN
            cell_index1 = patch_2D%edges%cell_idx(edge_index_i,edge_block_i,1)
            cell_block1 = patch_2D%edges%cell_blk(edge_index_i,edge_block_i,1)
@@ -1298,45 +1292,45 @@ CONTAINS
    TYPE(t_patch_3D), TARGET, INTENT(IN)     :: p_patch_3D
    TYPE(t_sea_ice),          INTENT(IN)  :: p_ice
    TYPE(t_patch),  POINTER                  :: patch_2D
-   
+
    REAL(wp), TARGET, INTENT(inout) ::  S_x(nproma,p_patch_3d%p_patch_2d(1)%nblks_e)
    REAL(wp), TARGET, INTENT(inout) ::  S_y(nproma,p_patch_3d%p_patch_2d(1)%nblks_e)
    REAL(wp),TARGET,INTENT(in) :: boundary_cell_marker(nproma,n_zlev,p_patch_3D%p_patch_2d(1)%alloc_cell_blocks)
-   REAL(wp),TARGET, INTENT(in) :: x1_c(nproma,n_zlev,p_patch_3D%p_patch_2D(1)%alloc_cell_blocks) 
-   REAL(wp),TARGET, INTENT(in) :: x2_c(nproma,n_zlev,p_patch_3D%p_patch_2D(1)%alloc_cell_blocks) 
+   REAL(wp),TARGET, INTENT(in) :: x1_c(nproma,n_zlev,p_patch_3D%p_patch_2D(1)%alloc_cell_blocks)
+   REAL(wp),TARGET, INTENT(in) :: x2_c(nproma,n_zlev,p_patch_3D%p_patch_2D(1)%alloc_cell_blocks)
    REAL(wp),TARGET, INTENT(in) :: x3_c(nproma,n_zlev,p_patch_3D%p_patch_2D(1)%alloc_cell_blocks)
-   
+
    REAL(wp) ::nx1,ny1,nx2,ny2,nx3,ny3,tx1,ty1,tx2,ty2,tx3,ty3
-   
+
    INTEGER :: cell_block, start_index,  end_index, cell_index,&
         &edge_index_1,edge_index_2,edge_index_3,edge_block_1,edge_block_2,edge_block_3
-   
+
    INTEGER :: edge_index_i, edge_block_i, neigbor
-   
+
    REAL(wp) :: Oi,l_sn,sc_pn,tix_1,tiy_1,tiz_1,&
         &nix,niz,niy,tix,tiy,tiz,O1,O2,O3,nix_1,niy_1,niz_1,&
         &cell_area,x1,x2,x3,  Sx1,Sx2,Sx3,Sy1,Sy2,Sy3, a1,a2,a3,z1,z2,z3
    REAL(wp) :: v2_x,v2_y,v2_z,v3_x,v3_y, v3_z, p1,p2,p3,sc_p
-   
+
    TYPE(t_subset_range), POINTER :: owned_cells
    TYPE(t_subset_range), POINTER :: all_edges
    TYPE(t_subset_range), POINTER :: all_cells
-    
+
    patch_2D   => p_patch_3D%p_patch_2D(1)
    owned_cells =>patch_2D%cells%owned
    all_cells =>patch_2D%cells%all
    all_edges => patch_2D%edges%all
-   
+
    DO cell_block = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, cell_block, start_index, end_index)
       DO cell_index = start_index, end_index
 
-         if(p_patch_3D%lsm_c(cell_index,1,cell_block) <= sea_boundary ) THEN    
+         if(p_patch_3D%lsm_c(cell_index,1,cell_block) <= sea_boundary ) THEN
          if(boundary_cell_marker(cell_index,1,cell_block)>0.0)then
          x1=x1_c(cell_index,1,cell_block)
          x2=x2_c(cell_index,1,cell_block)
          x3=x3_c(cell_index,1,cell_block)
-         
+
          DO neigbor=1,3 !no_primal_edges
             edge_index_i =patch_2D%cells%edge_idx(cell_index, cell_block, neigbor)
             edge_block_i =patch_2D%cells%edge_blk(cell_index, cell_block, neigbor)
@@ -1346,11 +1340,11 @@ CONTAINS
             nix=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(1)*Oi
             niy=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(2)*Oi
             niz=patch_2D%edges%primal_cart_normal(edge_index_i,edge_block_i)%x(3)*Oi
-            
+
             tix=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(1)*Oi
             tiy=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(2)*Oi
             tiz=patch_2D%edges%dual_cart_normal(edge_index_i,edge_block_i)%x(3)*Oi
-            
+
             if(neigbor==1) then
                O1=Oi
                sc_pn=nix*x1 + niy*x2 + niz*x3
@@ -1361,7 +1355,7 @@ CONTAINS
                nix_1=nix_1/l_sn
                niy_1=niy_1/l_sn
                niz_1=niz_1/l_sn
-               
+
                sc_pn=tix*x1 + tiy*x2 + tiz*x3
                tix_1=tix-sc_pn*x1
                tiy_1=tiy-sc_pn*x2
@@ -1380,7 +1374,7 @@ CONTAINS
             nix=nix/l_sn
             niy=niy/l_sn
             niz=niz/l_sn
-            
+
             sc_pn=tix*x1 + tiy*x2 + tiz*x3
             tix=tix-sc_pn*x1
             tiy=tiy-sc_pn*x2
@@ -1389,11 +1383,11 @@ CONTAINS
             tix=tix/l_sn
             tiy=tiy/l_sn
             tiz=tiz/l_sn
-            
+
             if(neigbor==1) then
                nx1 =(   tix_1*nix + tiy_1*niy + tiz_1*niz)*Oi
                ny1 =( - nix_1*nix - niy_1*niy - niz_1*niz)*Oi
-               
+
                tx1 = (  tix_1*tix + tiy_1*tiy + tiz_1*tiz)*Oi
                ty1 = (- nix_1*tix - niy_1*tiy - niz_1*tiz)*Oi
             endif
@@ -1401,7 +1395,7 @@ CONTAINS
                O2=Oi
                nx2 =  ( tix_1*nix + tiy_1*niy + tiz_1*niz)*Oi
                ny2 = (- nix_1*nix - niy_1*niy - niz_1*niz)*Oi
-               
+
                tx2 =  ( tix_1*tix + tiy_1*tiy + tiz_1*tiz)*Oi
                ty2 = (- nix_1*tix - niy_1*tiy - niz_1*tiz)*Oi
             endif
@@ -1409,12 +1403,12 @@ CONTAINS
                O3=Oi
                nx3 =  ( tix_1*nix + tiy_1*niy + tiz_1*niz)*Oi
                ny3 = (- nix_1*nix - niy_1*niy - niz_1*niz)*Oi
-               
+
                tx3 =  ( tix_1*tix + tiy_1*tiy + tiz_1*tiz)*Oi
                ty3 = (- nix_1*tix - niy_1*tiy - niz_1*tiz)*Oi
             endif
-         ENDDO !neigbor=1,patch_2D%num_edges i     
-         
+         ENDDO !neigbor=1,patch_2D%num_edges i
+
          edge_index_1 = patch_2D%cells%edge_idx(cell_index, cell_block, 1)
          edge_block_1 = patch_2D%cells%edge_blk(cell_index, cell_block, 1)
 
@@ -1428,13 +1422,13 @@ CONTAINS
          ! ny1=patch_2D%edges%primal_normal(edge_index_1,edge_block_1)%v2
          ! tx1=patch_2D%edges%dual_normal(edge_index_1,edge_block_1)%v1
          ! ty1=patch_2D%edges%dual_normal(edge_index_1,edge_block_1)%v2
-         
+
          !nx2=patch_2D%edges%primal_normal(edge_index_2,edge_block_2)%v1
          !ny2=patch_2D%edges%primal_normal(edge_index_2,edge_block_2)%v2
          !tx2=patch_2D%edges%dual_normal(edge_index_2,edge_block_2)%v1
          !ty2=patch_2D%edges%dual_normal(edge_index_2,edge_block_2)%v2
-         
-         
+
+
          ! nx3=patch_2D%edges%primal_normal(edge_index_3,edge_block_3)%v1
          ! ny3=patch_2D%edges%primal_normal(edge_index_3,edge_block_3)%v2
          ! tx3=patch_2D%edges%dual_normal(edge_index_3,edge_block_3)%v1
@@ -1468,62 +1462,62 @@ CONTAINS
            a1=-1.0_wp
            a2=-1.0_wp
            a3=-1.0_wp
-         endif 
+         endif
 
 
          Sx1 = p_ice%vn_e(edge_index_2,edge_block_2)*(nx2)-p_ice%vn_e(edge_index_3,edge_block_3)*(nx3)+&
               &p_ice%vt_e(edge_index_2,edge_block_2)*(tx2)-p_ice%vt_e(edge_index_3,edge_block_3)*(tx3)
-         
+
          Sx2 = p_ice%vn_e(edge_index_3,edge_block_3)*(nx3)-p_ice%vn_e(edge_index_1,edge_block_1)*(nx1)+&
               &p_ice%vt_e(edge_index_3,edge_block_3)*(tx3)-p_ice%vt_e(edge_index_1,edge_block_1)*(tx1)
-         
+
          Sx3 = p_ice%vn_e(edge_index_1,edge_block_1)*(nx1)-p_ice%vn_e(edge_index_2,edge_block_2)*(nx2)+&
-              &p_ice%vt_e(edge_index_1,edge_block_1)*(tx1)-p_ice%vt_e(edge_index_2,edge_block_2)*(tx2) 
-         
+              &p_ice%vt_e(edge_index_1,edge_block_1)*(tx1)-p_ice%vt_e(edge_index_2,edge_block_2)*(tx2)
+
          Sy1 = p_ice%vn_e(edge_index_2,edge_block_2)*(ny2)-p_ice%vn_e(edge_index_3,edge_block_3)*(ny3)+&
               &p_ice%vt_e(edge_index_2,edge_block_2)*(ty2)-p_ice%vt_e(edge_index_3,edge_block_3)*(ty3)
-         
+
          Sy2 = p_ice%vn_e(edge_index_3,edge_block_3)*(ny3)-p_ice%vn_e(edge_index_1,edge_block_1)*(ny1)+&
               &p_ice%vt_e(edge_index_3,edge_block_3)*(ty3)-p_ice%vt_e(edge_index_1,edge_block_1)*(ty1)
-         
+
          Sy3 = p_ice%vn_e(edge_index_1,edge_block_1)*(ny1)-p_ice%vn_e(edge_index_2,edge_block_2)*(ny2)+&
-              &p_ice%vt_e(edge_index_1,edge_block_1)*(ty1)-p_ice%vt_e(edge_index_2,edge_block_2)*(ty2)                            
+              &p_ice%vt_e(edge_index_1,edge_block_1)*(ty1)-p_ice%vt_e(edge_index_2,edge_block_2)*(ty2)
 
          ! normal- und tangentialkompoenente aufaddieren auf die Kanten, evtl. mit Oi multiplizieren?
          S_x(edge_index_1,edge_block_1)=S_x(edge_index_1,edge_block_1)+ (Sx1 * nx1 + Sy1 * ny1)*a1
          S_x(edge_index_2,edge_block_2)=S_x(edge_index_2,edge_block_2)+ (Sx2 * nx2 + Sy2 * ny2)*a2
          S_x(edge_index_3,edge_block_3)=S_x(edge_index_3,edge_block_3)+ (Sx3 * nx3 + Sy3 * ny3)*a3
-         
+
          S_y(edge_index_1,edge_block_1)=S_y(edge_index_1,edge_block_1)+ (Sx1 * tx1 + Sy1 * ty1)*a1
          S_y(edge_index_2,edge_block_2)=S_y(edge_index_2,edge_block_2)+ (Sx2 * tx2 + Sy2 * ty2)*a2
          S_y(edge_index_3,edge_block_3)=S_y(edge_index_3,edge_block_3)+ (Sx3 * tx3 + Sy3 * ty3)*a3
-         
 
-         
-         
+
+
+
 !          S_x(edge_index_1,edge_block_1)=S_x(edge_index_1,edge_block_1)+&
 !               &(p_ice%vn_e(edge_index_2,edge_block_2)*(nx2)-p_ice%vn_e(edge_index_3,edge_block_3)*(nx3)+&
 !               & p_ice%vt_e(edge_index_2,edge_block_2)*(tx2)-p_ice%vt_e(edge_index_3,edge_block_3)*(tx3))
-!          
+!
 !          S_x(edge_index_2,edge_block_2)=S_x(edge_index_2,edge_block_2)+&
 !               &p_ice%vn_e(edge_index_3,edge_block_3)*(nx3)-p_ice%vn_e(edge_index_1,edge_block_1)*(nx1)+&
 !               &p_ice%vt_e(edge_index_3,edge_block_3)*(tx3)-p_ice%vt_e(edge_index_1,edge_block_1)*(tx1)
-!          
+!
 !          S_x(edge_index_3,edge_block_3)=S_x(edge_index_3,edge_block_3)+&
 !               &p_ice%vn_e(edge_index_1,edge_block_1)*(nx1)-p_ice%vn_e(edge_index_2,edge_block_2)*(nx2)+&
-!               &p_ice%vt_e(edge_index_1,edge_block_1)*(tx1)-p_ice%vt_e(edge_index_2,edge_block_2)*(tx2) 
-!          
+!               &p_ice%vt_e(edge_index_1,edge_block_1)*(tx1)-p_ice%vt_e(edge_index_2,edge_block_2)*(tx2)
+!
 !          S_y(edge_index_1,edge_block_1)=S_y(edge_index_1,edge_block_1)+&
 !               &p_ice%vn_e(edge_index_2,edge_block_2)*(ny2)-p_ice%vn_e(edge_index_3,edge_block_3)*(ny3)+&
 !               &p_ice%vt_e(edge_index_2,edge_block_2)*(ty2)-p_ice%vt_e(edge_index_3,edge_block_3)*(ty3)
-!          
+!
 !          S_y(edge_index_2,edge_block_2)=S_y(edge_index_2,edge_block_2)+&
 !               &p_ice%vn_e(edge_index_3,edge_block_3)*(ny3)-p_ice%vn_e(edge_index_1,edge_block_1)*(ny1)+&
 !               &p_ice%vt_e(edge_index_3,edge_block_3)*(ty3)-p_ice%vt_e(edge_index_1,edge_block_1)*(ty1)
-!          
+!
 !          S_y(edge_index_3,edge_block_3)=S_y(edge_index_3,edge_block_3)+&
 !               &p_ice%vn_e(edge_index_1,edge_block_1)*(ny1)-p_ice%vn_e(edge_index_2,edge_block_2)*(ny2)+&
-!               &p_ice%vt_e(edge_index_1,edge_block_1)*(ty1)-p_ice%vt_e(edge_index_2,edge_block_2)*(ty2)                            
+!               &p_ice%vt_e(edge_index_1,edge_block_1)*(ty1)-p_ice%vt_e(edge_index_2,edge_block_2)*(ty2)
 
       endif
    endif
@@ -1531,7 +1525,7 @@ CONTAINS
 ENDDO !cell_block = owned_cells%start_block, owned_cells%end_block
 
 
- 
+
   END SUBROUTINE Stabilization_sum
 
 
@@ -1585,8 +1579,8 @@ ENDDO !cell_block = owned_cells%start_block, owned_cells%end_block
          !IF ((boundary_cell_marker(cell_index,1,cell_block).GT.0.0_wp) .AND. &
          !     (p_patch_3d%lsm_c(cell_index,1,cell_block) <= sea_boundary)) THEN
           if(p_patch_3D%lsm_c(cell_index,1,cell_block) <= sea_boundary ) THEN
-          if(boundary_cell_marker(cell_index,1,cell_block)>0.0) then 
-          
+          if(boundary_cell_marker(cell_index,1,cell_block)>0.0) then
+
            x1=x1_c(cell_index,1,cell_block)
            x2=x2_c(cell_index,1,cell_block)
            x3=x3_c(cell_index,1,cell_block)
@@ -1730,7 +1724,7 @@ ENDDO !cell_block = owned_cells%start_block, owned_cells%end_block
             a1=-1.0_wp
             a2=-1.0_wp
             a3=-1.0_wp
-          endif 
+          endif
 
 
 
@@ -1793,6 +1787,6 @@ ENDDO !cell_block = owned_cells%start_block, owned_cells%end_block
 END SUBROUTINE Stabilization
 
 
-  
+
 
 END MODULE mo_ice_new_dynamics

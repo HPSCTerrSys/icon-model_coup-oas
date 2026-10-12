@@ -1,21 +1,20 @@
-!
-! This module provides derived types for mo_aerosol_source which is used
-! to calculate source terms for different aerosol species.
-!
-! Implemented up to now:
-! - Mineral dust look-up tables for the clay content of different soil types
-!   and the bare soil fraction of different land use classes
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides derived types for mo_aerosol_source which is used
+! to calculate source terms for different aerosol species.
+!
+! Implemented up to now:
+! - Mineral dust look-up tables for the clay content of different soil types
+!   and the bare soil fraction of different land use classes
 
 MODULE mo_aerosol_sources_types
 
@@ -78,7 +77,7 @@ CONTAINS
   !! * Provide emission scaling factors for different soil types and land use classes
   !!
   SUBROUTINE init_aerosol_dust_aod_source (this_source,                             &
-    &                                      i_lc_shrub_eg,  i_lc_shrub,  i_lc_grass, & 
+    &                                      i_lc_shrub_eg,  i_lc_shrub,  i_lc_grass, &
     &                                      i_lc_bare_soil, i_lc_sparse,             &
     &                                      i_st_sand, i_st_sandyloam, i_st_loam,    &
     &                                      i_st_clayloam, i_st_clay,                &
@@ -131,7 +130,7 @@ CONTAINS
       this_source%f_bare(i_lc_bare_soil) = 1._wp
       this_source%f_bare(i_lc_sparse)    = 0.5_wp
 
-      ! First set f_clay for all soil types to 0. Then set it to specific values for specfic 
+      ! First set f_clay for all soil types to 0. Then set it to specific values for specfic
       ! soil types. The values are chosen from the USDA soil texture triangle. The emissions
       ! for specific soil types can be linearly scaled with this parameter
       this_source%f_clay(:)              = 0._wp
@@ -166,7 +165,7 @@ CONTAINS
   !>
   !! SUBROUTINE init_aerosol_fire_source_info
   !!
-  !! * Initializes the t_fire_source_info derived type. 
+  !! * Initializes the t_fire_source_info derived type.
   !! * Sets pointer to ICON memory where the wildfire data is stored
   !!
   SUBROUTINE init_aerosol_fire_source_info(this_info, bcfire, ocfire, so2fire)

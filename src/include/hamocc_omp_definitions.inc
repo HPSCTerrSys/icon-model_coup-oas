@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -32,12 +32,11 @@
 !! #define HAMOCC_OMP_DEFAULT_SCHEDULE SCHEDULE(guided)
 !! #define HAMOCC_OMP_RUNTIME_SCHEDULE SCHEDULE(runtime)
 !! #define HAMOCC_OMP_GUIDED_SCHEDULE  SCHEDULE(guided)
-!! #else 
+!! #else
 !! #define HAMOCC_OMP_DEFAULT_SCHEDULE SCHEDULE(dynamic,1)
 !! #define HAMOCC_OMP_RUNTIME_SCHEDULE SCHEDULE(runtime)
 !! #define HAMOCC_OMP_GUIDED_SCHEDULE  SCHEDULE(guided)
 !! #endif
-!! 
-!! 
+!!
+!!
 !! !-----------------------------------------------
-

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -20,14 +20,14 @@
 #                             soil model input - 6 soil types)
 #   mars4icon_smi_32r2-:      assuming model input from pre 32r3 cycles
 #                             (single soil type)
-#   mars4icon_smi_ERAinterim: using ERA-Interim data 
+#   mars4icon_smi_ERAinterim: using ERA-Interim data
 #                             (31r1 model with 36r4 land model data)
 #                             2 options:
 #                             exp=fiv7: ERA-Interim forced land model
 #                             exp=fiv8: ERA-Interim + GPCP corrected precip
 #   mars4icon_monmean:        monthly means of daily means from ERA-Interim (sst and ci)
 #
-# attention: 
+# attention:
 #   * at DWD requires ECMWF login by eccert
 #   * requires mars version 1.9.9       ??
 #     (. ${GRIB_API}/bin/grib_api-setenv -r -V1.9.9)
@@ -87,7 +87,7 @@ MARS_IFS2ICON_EOF.$$
     exit $rc_mars
   fi
 
-  print "Retrieved ERA interim analysis for "${var} $year $month 
+  print "Retrieved ERA interim analysis for "${var} $year $month
 
   ls -al ${grib_file}
   rm -f ${tempdir}/MARS_IN.$$

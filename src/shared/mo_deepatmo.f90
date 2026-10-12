@@ -1,16 +1,15 @@
-! This module contains routines related to the deep atmosphere.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains routines related to the deep atmosphere.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -68,9 +67,9 @@ CONTAINS !..................................................
 
     !-----------------------------------------------------------------------
 
-    ! Unfortunately, there are subroutines, 
+    ! Unfortunately, there are subroutines,
     ! which are conditionally calling this subroutine,
-    ! that allow for execution on GPUs. Therefore, we have no other choice 
+    ! that allow for execution on GPUs. Therefore, we have no other choice
     ! but to implement OpenACC directives here, too.
     CALL set_acc_host_or_device(lzacc, lacc)
 
@@ -107,17 +106,17 @@ CONTAINS !..................................................
       RETURN
     ENDIF
 
-    SELECT CASE(trafo_type) 
-    CASE('zgpot2z')  
-      ! Transform geopotential height z_gpot into 
-      ! geometric height z by means of 
-      ! z = z_gpot / ( 1 - z_gpot / a ), 
+    SELECT CASE(trafo_type)
+    CASE('zgpot2z')
+      ! Transform geopotential height z_gpot into
+      ! geometric height z by means of
+      ! z = z_gpot / ( 1 - z_gpot / a ),
       ! where a is radius of Earth
       trafo_factor = -1._wp / radius
     CASE('z2zgpot')
-      ! Transform geometric height z into 
-      ! geopotential height z_gpot by means of 
-      ! z_gpot = z / ( 1 + z / a ), 
+      ! Transform geometric height z into
+      ! geopotential height z_gpot by means of
+      ! z_gpot = z / ( 1 + z / a ),
       ! where a is radius of Earth
       trafo_factor = 1._wp / radius
     CASE DEFAULT
@@ -146,7 +145,7 @@ CONTAINS !..................................................
         ENDDO  !jk
         !$ACC END PARALLEL
       ENDIF
-      
+
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP GANG VECTOR COLLAPSE(2)
       DO jk = start_end_levels(1), start_end_levels(2)
@@ -204,9 +203,9 @@ CONTAINS !..................................................
 
     !-----------------------------------------------------------------------
 
-    ! Unfortunately, there are subroutines, 
+    ! Unfortunately, there are subroutines,
     ! which are conditionally calling this subroutine,
-    ! that allow for execution on GPUs. Therefore, we have no other choice 
+    ! that allow for execution on GPUs. Therefore, we have no other choice
     ! but to implement OpenACC directives here, too.
     CALL set_acc_host_or_device(lzacc, lacc)
 
@@ -247,17 +246,17 @@ CONTAINS !..................................................
       RETURN
     ENDIF
 
-    SELECT CASE(trafo_type) 
-    CASE('zgpot2z')  
-      ! Transform geopotential height z_gpot into 
-      ! geometric height z by means of 
-      ! z = z_gpot / ( 1 - z_gpot / a ), 
+    SELECT CASE(trafo_type)
+    CASE('zgpot2z')
+      ! Transform geopotential height z_gpot into
+      ! geometric height z by means of
+      ! z = z_gpot / ( 1 - z_gpot / a ),
       ! where a is radius of Earth
       trafo_factor = -1._wp / radius
     CASE('z2zgpot')
-      ! Transform geometric height z into 
-      ! geopotential height z_gpot by means of 
-      ! z_gpot = z / ( 1 + z / a ), 
+      ! Transform geometric height z into
+      ! geopotential height z_gpot by means of
+      ! z_gpot = z / ( 1 + z / a ),
       ! where a is radius of Earth
       trafo_factor = 1._wp / radius
     CASE DEFAULT
@@ -268,7 +267,7 @@ CONTAINS !..................................................
     !$ACC DATA &
     !$ACC   PRESENT(z_in, z_out, nblks_nproma_npromz, start_end_levels) &
     !$ACC   IF(lzacc)
-      
+
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jb,jk,jc,nlen) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = 1, nblks_nproma_npromz(1)

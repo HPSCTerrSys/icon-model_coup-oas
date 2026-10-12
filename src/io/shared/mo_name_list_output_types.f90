@@ -1,14 +1,7 @@
-! Module containing type definitions and constants for synchronous
-! and asynchronous output.
-!
-! @note: The spelling "name_list" (with underscore) is intended to make
-!        clear that this does not pertain to a FORTRAN namelist but rather
-!        to a list of names of output variables
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -16,9 +9,16 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Module containing type definitions and constants for synchronous
+! and asynchronous output.
+!
+! @note: The spelling "name_list" (with underscore) is intended to make
+!        clear that this does not pertain to a FORTRAN namelist but rather
+!        to a list of names of output variables
+
 MODULE mo_name_list_output_types
 
-  USE mo_kind,                  ONLY: wp, dp, sp
+  USE mo_kind,                  ONLY: dp, sp
   USE mo_impl_constants,        ONLY: vname_len,                                       &
     &                                 max_var_ml, max_var_pl, max_var_hl, max_var_il,  &
     &                                 MAX_TIME_LEVELS, MAX_NUM_IO_PROCS,               &
@@ -48,7 +48,7 @@ MODULE mo_name_list_output_types
   PUBLIC :: msg_io_shutdown
   PUBLIC :: IRLON, IRLAT, ILATLON
   PUBLIC :: ICELL, IEDGE, IVERT
-  PUBLIC :: FILETYPE_YAC
+  PUBLIC :: FILETYPE_NONE
   PUBLIC :: GRP_PREFIX
   PUBLIC :: TILE_PREFIX
   PUBLIC :: GRB2_GRID_INFO_NAME, GRB2_GRID_INFO
@@ -98,7 +98,7 @@ MODULE mo_name_list_output_types
   INTEGER, PARAMETER :: IEDGE                 = 2
   INTEGER, PARAMETER :: IVERT                 = 3
 
-  INTEGER, PARAMETER :: FILETYPE_YAC          = 999
+  INTEGER, PARAMETER :: FILETYPE_NONE          = 999
 
   ! The following parameter decides whether physical or logical patches are output
   ! and thus whether the domain number in output name lists pertains to physical
@@ -122,8 +122,9 @@ MODULE mo_name_list_output_types
   !
   TYPE t_grid_info
     ! only used when copying grid info from file (grid_info_mode = GRID_INFO_BCAST):
-    REAL(wp), ALLOCATABLE :: lon   (:), lat   (:)
-    REAL(wp), ALLOCATABLE :: lonv(:,:), latv(:,:)
+    ! dp for compability with c_double in cdi routines
+    REAL(dp), ALLOCATABLE :: lon   (:), lat   (:)
+    REAL(dp), ALLOCATABLE :: lonv(:,:), latv(:,:)
 
     !> Global number of points in the associated logical patch
     INTEGER :: n_log
@@ -202,6 +203,15 @@ MODULE mo_name_list_output_types
     LOGICAL                               :: output_grid       ! Flag whether grid information is output (in NetCDF output)
 
     INTEGER                               :: taxis_tunit       ! 1 = TUNIT_SECOND, 2 = TUNIT_MINUTE, 3 TUNIT_HOUR ... (see cdi.inc)
+    INTEGER                               :: compression_type  ! compression type (applicable to GRIB2 output files only):
+                                                               ! -1 (default): take over setting of gribout_nml:lgribout_compress_ccsds
+                                                               ! 0 (CDI_COMPRESS_NONE): no (special) data compression
+                                                               ! 1 (CDI_COMPRESS_SZIP): CCSDS compression
+                                                               ! other GRIB2 compression options are currently unsupported
+
+    INTEGER                               :: number_of_bits    ! set number of significant bits for all NetCDF output variables
+    INTEGER                               :: chunk_size        ! set the chunk size for all NetCDF output fields [number of data elements]
+    CHARACTER(len=MAX_CHAR_LENGTH)        :: filter_spec       ! specify a compression algorithm for all NetCDF output variables
 
     !> There are two alternative implementations for setting the
     !  output intervals, "output_bounds" and "output_start" /
@@ -209,7 +219,7 @@ MODULE mo_name_list_output_types
     !  events relative to the simulation start (in seconds) and the
     !  latter define the output events by setting ISO8601-conforming
     !  date-time strings.
-    REAL(wp)                              :: output_bounds(3*MAX_TIME_INTERVALS)
+    REAL(dp)                              :: output_bounds(3*MAX_TIME_INTERVALS)
 
     !> Output event steps happen at regular intervals. These are given
     !  by an interval size and the time stamps for begin and end.
@@ -256,9 +266,9 @@ MODULE mo_name_list_output_types
 
     CHARACTER(len=MAX_CHAR_LENGTH) :: m_levels  ! model levels (indices)
 
-    REAL(wp) :: p_levels(MAX_NPLEVS) ! pressure levels
-    REAL(wp) :: z_levels(MAX_NZLEVS) ! height levels
-    REAL(wp) :: i_levels(MAX_NILEVS) ! isentropic levels
+    REAL(dp) :: p_levels(MAX_NPLEVS) ! pressure levels
+    REAL(dp) :: z_levels(MAX_NZLEVS) ! height levels
+    REAL(dp) :: i_levels(MAX_NILEVS) ! isentropic levels
 
     ! -------------------------------------
     ! data operations
@@ -276,7 +286,7 @@ MODULE mo_name_list_output_types
   ! Unfortunately, Fortran does not allow arrays of pointers, so we
   ! have to define extra types
   TYPE t_rptr_5d
-    REAL(wp), POINTER :: p(:,:,:,:,:) => NULL()
+    REAL(dp), POINTER :: p(:,:,:,:,:) => NULL()
   END TYPE t_rptr_5d
 
   TYPE t_sptr_5d
@@ -289,8 +299,8 @@ MODULE mo_name_list_output_types
 
 
   TYPE t_var_desc
-    !> Pointer to time level independent REAL data (or NULL)
-    REAL(wp), POINTER                     :: r_ptr(:,:,:,:,:) => NULL()
+    !> Pointer to time level independent REAL(dp) data (or NULL)
+    REAL(dp), POINTER                     :: r_ptr(:,:,:,:,:) => NULL()
     !> Pointer to time level independent REAL(sp) data (or NULL)
     REAL(sp), POINTER                     :: s_ptr(:,:,:,:,:) => NULL()
     !> Pointer to time level independent INTEGER data (or NULL)
@@ -357,6 +367,8 @@ MODULE mo_name_list_output_types
     INTEGER                               :: output_type                      !< CDI format
     INTEGER                               :: phys_patch_id                    !< ID of physical output patch
     INTEGER                               :: log_patch_id                     !< ID of logical output patch
+    INTEGER                               :: compression_type                 !< compression type of output file
+
     !> level type: level_type_ml/level_type_pl/level_type_hl/level_type_il
     INTEGER                               :: ilev_type
     INTEGER                               :: max_vars                         !< maximum number of variables allocated

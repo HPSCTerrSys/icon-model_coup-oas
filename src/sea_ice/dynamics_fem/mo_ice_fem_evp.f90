@@ -7,7 +7,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, AWI
+! Copyright (C) 2004-2026, AWI
 !
 ! Authors: Sergey Danilov, Qiang Wang
 ! See LICENSES/ for license information
@@ -74,6 +74,7 @@ subroutine index_si_elements(lacc)
     buffy_array(:) = 0._wp
     si_nod2D = 0
 
+    !$ACC UPDATE SELF(m_ice, a_ice) IF(lzacc)
     DO i=1, myDim_nod2D
         row=myList_nod2D(i)
 
@@ -125,7 +126,7 @@ subroutine precalc4rhs(lacc)
 ! with the subcycles. Hence, can be precalculated and stored.
 ! Those are rhs_a, rhs_m, mass
 
-  use mo_physical_constants,  ONLY: rhoi, rhos
+  use mo_physical_constants,  ONLY: rhoi, rhos, grav
 
 IMPLICIT NONE
 
@@ -144,7 +145,7 @@ CALL set_acc_host_or_device(lzacc, lacc)
 !ICON_OMP_PARALLEL
 
 !ICON_OMP_DO PRIVATE(i,row) SCHEDULE(static,4)
- !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+ !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
  DO i=1, myDim_nod2D
      row=myList_nod2D(i)
      rhs_a(row)=0.0_wp    ! these are used as temporal storage here
@@ -158,7 +159,7 @@ CALL set_acc_host_or_device(lzacc, lacc)
 !ICON_OMP_END_DO
 
 !ICON_OMP_DO PRIVATE(i,elem) SCHEDULE(static,4)
- !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+ !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
  DO i=1, myDim_elem2D
      elem=myList_elem2D(i)
      da(elem)=0.0_wp    ! initialize
@@ -168,25 +169,25 @@ CALL set_acc_host_or_device(lzacc, lacc)
 !ICON_OMP_END_DO
 
 !ICON_OMP_DO PRIVATE(i,elem,elnodes,aa,dx,dy,elevation_elem) SCHEDULE(static,4)
- !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(elnodes, dx, dy, elevation_elem) IF(lzacc)
+ !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(elnodes, dx, dy, elevation_elem) ASYNC(1) IF(lzacc)
  DO i=1,si_elem2D
      elem=si_idx_elem(i)
-     elnodes=elem2D_nodes(:,elem)
+     elnodes(:)=elem2D_nodes(:,elem)
 
-     dx=bafux(:,elem)
-     dy=bafuy(:,elem)
-     elevation_elem=elevation(elnodes)
+     dx(:)=bafux(:,elem)
+     dy(:)=bafuy(:,elem)
+     elevation_elem(:)=elevation(elnodes(:))
 
      ! use rhs_m and rhs_a for storing the contribution from elevation:
-     aa=9.81_wp*voltriangle(elem)/3.0_wp
-     da(elem)=-aa*sum(dx*elevation_elem)
-     dm(elem)=-aa*sum(dy*elevation_elem)
+     aa=grav*voltriangle(elem)/3.0_wp
+     da(elem)=-aa*sum(dx(:)*elevation_elem(:))
+     dm(elem)=-aa*sum(dy(:)*elevation_elem(:))
  END DO
  !$ACC END PARALLEL LOOP
 !ICON_OMP_END_DO
 
 !ICON_OMP_DO  PRIVATE(i,row,nodels,k,elem)  SCHEDULE(static,4)
- !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(nodels) IF(lzacc)
+ !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(nodels) ASYNC(1) IF(lzacc)
  DO i=1,si_nod2D
     row=si_idx_nodes(i)
     nodels=nod2D_elems(:,row)
@@ -204,7 +205,7 @@ CALL set_acc_host_or_device(lzacc, lacc)
 !ICON_OMP_END_DO
 
 !ICON_OMP_DO  PRIVATE(i,row,cluster_area,mass) SCHEDULE(static,4)
- !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+ !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
  DO i=1,si_nod2D
      row=si_idx_nodes(i)
      cluster_area=lmass_matrix(row)
@@ -218,6 +219,7 @@ CALL set_acc_host_or_device(lzacc, lacc)
 !ICON_OMP_END_DO
 !ICON_OMP_END_PARALLEL
 
+!$ACC WAIT(1)
 !$ACC END DATA
 
 end subroutine precalc4rhs
@@ -253,7 +255,8 @@ subroutine stress_tensor(si_elem2D, si_idx_elem, lacc)
 ! velocity field. They are stored as elemental arrays (sigma11, sigma22 and
 ! sigma12).
 
-  USE mo_sea_ice_nml,         ONLY: delta_min, Tevp_inv, Pstar, c_pressure, luse_replacement_pressure
+  USE mo_sea_ice_nml,         ONLY: delta_min, Tevp_inv, Pstar, c_pressure, luse_replacement_pressure, &
+                                    seaice_stress_diag
 
 implicit none
 
@@ -261,10 +264,10 @@ implicit none
     INTEGER, INTENT(IN), DIMENSION(:) :: si_idx_elem
     LOGICAL, INTENT(IN), OPTIONAL     :: lacc
 
-    REAL(wp)   :: eps11, eps12, eps22, pressure, P, delta, delta_inv!, aa
+    REAL(wp)   :: pressure, P, delta_inv!, aa
     INTEGER    :: elnodes(3), elem, i
     REAL(wp)   :: asum, msum, dx(3), dy(3)
-    REAL(wp)   :: r1, r2, r3, si1, si2
+    REAL(wp)   :: r1, r2, r3
     REAL(wp)   :: zeta, usum, vsum
     LOGICAL    :: lzacc
 
@@ -272,11 +275,10 @@ implicit none
 
     !$ACC DATA CREATE(elnodes, dx, dy) IF(lzacc)
 
-! !ICON_OMP_DO        PRIVATE(i,elem,elnodes,dx,dy,vsum,usum,eps11,eps22,eps12,delta,msum,asum,pressure, &
-! !ICON_OMP                   delta_inv,zeta,r1,r2,r3,si1,si2)  SCHEDULE(static,4)
+! !ICON_OMP_DO        PRIVATE(i,elem,elnodes,dx,dy,vsum,usum,msum,asum,pressure, &
+! !ICON_OMP                   delta_inv,zeta,r1,r2,r3)  SCHEDULE(static,4)
 !NEC$ ivdep
-    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(elem, usum, vsum, eps11, eps12, eps22) &
-    !$ACC   PRIVATE(delta, msum, asum, pressure, delta_inv, zeta, r1, r2, r3, si1, si2) IF(lzacc)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     DO i=1,si_elem2D
      elem = si_idx_elem(i)
 
@@ -293,15 +295,15 @@ implicit none
      usum=sum(u_ice(elnodes))                           !metrics
 
       ! ===== Deformation rate tensor on element elem:
-     eps11=sum(dx*u_ice(elnodes))
-     eps11=eps11-val3*vsum*metrics_elem2D(elem)                !metrics
-     eps22=sum(dy*v_ice(elnodes))
-     eps12=0.5_wp*sum(dy*u_ice(elnodes) + dx*v_ice(elnodes))
-     eps12=eps12+0.5_wp*val3*usum*metrics_elem2D(elem)          !metrics
+     eps11(elem)=sum(dx*u_ice(elnodes))
+     eps11(elem)=eps11(elem)-val3*vsum*metrics_elem2D(elem)                !metrics
+     eps22(elem)=sum(dy*v_ice(elnodes))
+     eps12(elem)=0.5_wp*sum(dy*u_ice(elnodes) + dx*v_ice(elnodes))
+     eps12(elem)=eps12(elem)+0.5_wp*val3*usum*metrics_elem2D(elem)          !metrics
       ! ===== moduli:
-     delta=(eps11**2+eps22**2)*(1.0_wp+vale)+4.0_wp*vale*eps12**2 + &
-            2.0_wp*eps11*eps22*(1.0_wp-vale)
-     delta=sqrt(delta)
+     delta(elem)=(eps11(elem)**2+eps22(elem)**2)*(1.0_wp+vale)+4.0_wp*vale*eps12(elem)**2 + &
+            2.0_wp*eps11(elem)*eps22(elem)*(1.0_wp-vale)
+     delta(elem)=sqrt(delta(elem))
      msum=sum(m_ice(elnodes))*val3
      asum=sum(a_ice(elnodes))*val3
 
@@ -316,14 +318,20 @@ implicit none
      !if(delta>pressure/zeta_min) delta=pressure/zeta_min
       ! ===== if viscosity is too big, it is limited too
       ! (done via correcting delta_inv)
-     delta_inv=1.0_wp/max(delta,delta_min)
+     delta_inv=1.0_wp/max(delta(elem),delta_min)
 
      IF (luse_replacement_pressure) THEN
        !pressure=pressure*delta*delta_inv    ! Limiting pressure --- may not
        !                                     ! be needed. Should be tested
-       P=pressure*delta/(delta+delta_min)
+       P=pressure*delta(elem)/(delta(elem)+delta_min)
      ELSE
        P=pressure
+     END IF
+
+     IF (seaice_stress_diag) THEN
+       ! ice strength / replacement pressure diagnostics
+       p0_diag(elem) = pressure*2.0_wp ! compensate for 0.5*pressure above
+       p_diag(elem) = p*2.0_wp         ! same for replacement pressure
      END IF
 
       ! ===== Limiting pressure/Delta  (zeta): still it may happen that zeta is too
@@ -340,22 +348,48 @@ implicit none
       P=P*Tevp_inv
       zeta=zeta*Tevp_inv
 
-     r1=zeta*(eps11+eps22) - P
-     r2=zeta*(eps11-eps22)
-     r3=zeta*eps12
-     si1=sigma11(elem)+sigma22(elem)
-     si2=sigma11(elem)-sigma22(elem)
+     r1=zeta*(eps11(elem)+eps22(elem)) - P
+     r2=zeta*(eps11(elem)-eps22(elem))
+     r3=zeta*eps12(elem)
+     si1(elem)=sigma11(elem)+sigma22(elem)
+     si2(elem)=sigma11(elem)-sigma22(elem)
 
-     si1=det1*(si1+dte*r1)
-     si2=det2*(si2+dte*r2)
+     si1(elem)=det1*(si1(elem)+dte*r1)
+     si2(elem)=det2*(si2(elem)+dte*r2)
      sigma12(elem)=det2*(sigma12(elem)+dte*r3)
-     sigma11(elem)=0.5_wp*(si1+si2)
-     sigma22(elem)=0.5_wp*(si1-si2)
+     sigma11(elem)=0.5_wp*(si1(elem)+si2(elem))
+     sigma22(elem)=0.5_wp*(si1(elem)-si2(elem))
+
+     ! Diagnostics only, not used in EVP time stepping
+     IF (seaice_stress_diag) THEN
+       ! =========================================
+       ! Stress invariants (diagnostic)
+       ! =========================================
+
+       ! Normal stress invariant (mean normal stress)
+       sigma_i(elem) = 0.5_wp * ( sigma11(elem) + sigma22(elem) )
+
+       ! Shear stress invariant
+       sigma_ii(elem) = sqrt( &
+         (0.5_wp * (sigma11(elem) - sigma22(elem)))**2 &
+         + sigma12(elem)**2 )
+
+       ! ==========================================================
+       ! Principal stresses (diagnostic)
+       ! ==========================================================
+
+       ! Maximum principal stress
+       sigma_1(elem) = sigma_i(elem) + sigma_ii(elem)
+
+       ! Minimum principal stress
+       sigma_2(elem) = sigma_i(elem) - sigma_ii(elem)
+     END IF
 
     END DO
     !$ACC END PARALLEL LOOP
 ! !ICON_OMP_END_DO
 
+    !$ACC WAIT(1)
     !$ACC END DATA
 end subroutine stress_tensor
 !===================================================================
@@ -370,39 +404,35 @@ INTEGER, INTENT(IN) :: si_nod2D
 INTEGER, INTENT(IN), DIMENSION(:) :: si_idx_nodes
 LOGICAL, INTENT(IN), OPTIONAL     :: lacc
 
-INTEGER  :: row, elem, nodels(6), k, i
-REAL(wp) :: dx(6), dy(6)
+INTEGER  :: row, elem, k, i
+REAL(wp) :: dx, dy
 LOGICAL  :: lzacc
 
   CALL set_acc_host_or_device(lzacc, lacc)
 
-  !$ACC DATA CREATE(nodels, dx, dy) IF(lzacc)
-
-! !ICON_OMP_DO        PRIVATE(i,k,row,elem,nodels,dx,dy) ICON_OMP_DEFAULT_SCHEDULE
+! !ICON_OMP_DO        PRIVATE(i,k,row,elem,dx,dy) ICON_OMP_DEFAULT_SCHEDULE
 !NEC$ ivdep
-  !$ACC PARALLEL LOOP GANG VECTOR PRIVATE(row, elem) DEFAULT(PRESENT) IF(lzacc)
+  !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
   DO i=1,si_nod2D
 
      row = si_idx_nodes(i)
-
-     nodels=nod2D_elems(:,row)
-
-     dx=bafux_nod(:,row)
-     dy=bafuy_nod(:,row)
 
      ! initialize
      rhs_u(row)=0.0_wp
      rhs_v(row)=0.0_wp
 
      DO k=1,6
-        elem=nodels(k)
+        elem=nod2D_elems(k,row)
+        dx=bafux_nod(k,row)
+        dy=bafuy_nod(k,row)
+
         IF (elem > 0) THEN
 
         rhs_u(row)=rhs_u(row) - voltriangle(elem) * &
-             (sigma11(elem)*dx(k)+sigma12(elem)*(dy(k)) &
+             (sigma11(elem)*dx+sigma12(elem)*dy &
              +sigma12(elem)*val3*metrics_elem2D(elem))                          !metrics
         rhs_v(row)=rhs_v(row) - voltriangle(elem) * &
-             (sigma12(elem)*dx(k)+sigma22(elem)*dy(k) &
+             (sigma12(elem)*dx+sigma22(elem)*dy &
              -sigma11(elem)*val3*metrics_elem2D(elem))
         END IF
      END DO
@@ -415,7 +445,7 @@ LOGICAL  :: lzacc
   !$ACC END PARALLEL LOOP
 ! !ICON_OMP_END_DO
 
-  !$ACC END DATA
+  !$ACC WAIT(1)
 end subroutine stress2rhs
 !===================================================================
 
@@ -438,6 +468,9 @@ logical     :: lzacc
 
  !$ACC DATA COPY(elem2D_nodes, bafux, bafuy, metrics_elem2D) &
  !$ACC   COPY(sigma11, sigma12, sigma22) &
+ !$ACC   COPY(eps11, eps12, eps22) &
+ !$ACC   COPY(si1, si2) &
+ !$ACC   COPY(delta) &
  !$ACC   COPY(u_ice, v_ice, m_ice, a_ice, m_snow) &
  !$ACC   COPY(elevation, u_w, v_w, stress_atmice_x, stress_atmice_y) &
  !$ACC   COPY(myList_nod2D) &
@@ -447,29 +480,27 @@ logical     :: lzacc
  !$ACC   COPY(lmass_matrix, myList_elem2D) &
  !$ACC   IF(lzacc)
 
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
-    sigma11(:) = 0._wp
-    sigma12(:) = 0._wp
-    sigma22(:) = 0._wp
-    !$ACC END KERNELS
+! We start evp iteration with stresses (sigma11,sigma12,sigma22) from the
+! previous timestep for better convergence.
 
 ! index elements/nodes where sea ice is present for faster loops
-    call index_si_elements(lacc=lzacc)
+    CALL index_si_elements(lacc=lzacc)
 ! precalculate several arrays that do not change during subcycling
-    call precalc4rhs(lacc=lzacc)
+    CALL precalc4rhs(lacc=lzacc)
 
  DO shortstep=1, evp_rheol_steps
 
      ! ===== Boundary conditions
-     !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(i) IF(lzacc)
-     do j=1, myDim_nod2D+eDim_nod2D
+     !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+     DO j=1, myDim_nod2D+eDim_nod2D
         i=myList_nod2D(j)
-        if(index_nod2D(i)==1) then
+        IF(index_nod2D(i)==1) THEN
           u_ice(i)=0.0_wp
           v_ice(i)=0.0_wp
-        end if
-     end do
+        END IF
+     END DO
      !$ACC END PARALLEL LOOP
+     !$ACC WAIT(1)
 
      call stress_tensor(si_elem2D, si_idx_elem, lacc=lzacc)
 
@@ -478,11 +509,11 @@ logical     :: lzacc
 !ICON_OMP_PARALLEL
 !ICON_OMP_DO        PRIVATE(j,i,inv_mass,umod,drag,rhsu,rhsv,det) ICON_OMP_DEFAULT_SCHEDULE
 !NEC$ ivdep
-     !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(i, inv_mass, umod, drag, rhsu, rhsv, det) IF(lzacc)
+     !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
      DO j=1,si_nod2D
        i=si_idx_nodes(j)
-       if (index_nod2D(i)>0) CYCLE          ! Skip boundary nodes
-       if (a_ice(i) > 0.01_wp) then             ! If ice is present, update velocities
+       IF (index_nod2D(i)>0) CYCLE          ! Skip boundary nodes
+       IF (a_ice(i) > 0.01_wp) THEN             ! If ice is present, update velocities
          inv_mass=(rhoi*m_ice(i)+rhos*m_snow(i))/a_ice(i)
          inv_mass=max(inv_mass, 9.0_wp)        ! Limit the weighted mass
                                            ! if it is too small
@@ -498,12 +529,19 @@ logical     :: lzacc
          det=1.0_wp/det
          u_ice(i)=det*((1.0_wp+ax*drag*dte)*rhsu+dte*(coriolis_nod2D(i)+ay*drag)*rhsv)
          v_ice(i)=det*((1.0_wp+ax*drag*dte)*rhsv-dte*(coriolis_nod2D(i)+ay*drag)*rhsu)
-      ! else                           ! Set ice velocity equal to water velocity
+
+       ELSE !Set velocity to 0 if ice absent
+         u_ice(i) = 0.0_wp
+         v_ice(i) = 0.0_wp
+      ! better set ice velocity equal to water velocity
       ! u_ice(i)=u_w(i)
       ! v_ice(i)=v_w(i)
-       end if
+
+       END IF
+
      END DO
      !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
 !ICON_OMP_END_DO
 !ICON_OMP_END_PARALLEL
 

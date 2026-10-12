@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -88,7 +88,7 @@ CONTAINS
     END SUBROUTINE upd_dev
 
     SUBROUTINE upd_host()
-      
+
       SELECT CASE(info%data_type)
       CASE (REAL_T)
         !$ACC UPDATE HOST(element%r_ptr) ASYNC(1) IF(info%lopenacc)

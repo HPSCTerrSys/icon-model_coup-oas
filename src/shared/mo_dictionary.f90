@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Module for associating pairs of strings,
 ! e.g. for translating between variable names.
 !
@@ -9,18 +20,6 @@
 ! @note When loading key-value pairs from an external text file, the
 !       current implementation is restricted to strings that do not
 !       contain spaces.
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_dictionary
 
@@ -47,7 +46,7 @@ MODULE mo_dictionary
   END TYPE t_dictionary
 
   PUBLIC :: t_dictionary, DICT_MAX_STRLEN
- 
+
 CONTAINS
 
   SUBROUTINE dict_bcast(dict, root, comm)
@@ -55,7 +54,7 @@ CONTAINS
     INTEGER, INTENT(IN) :: root, comm
 
     CALL dict%dic%bcast(root, comm)
-    CALL dict%dic%output(inverse=dict%idic)
+    CALL dict%idic%bcast(root, comm)
   END SUBROUTINE dict_bcast
 
   SUBROUTINE dict_init(dict, lcase_sensitive)
@@ -120,7 +119,7 @@ CONTAINS
   !--------------------------------------------------------------------------
   !> Load the contents of a text file into the given dictionary data
   !  structure.
-  ! 
+  !
   !  @note The file format is assumed to be as follows: Each line of
   !        the text file contains a key-value pair, where both strings
   !        are separated by one or more spaces. Comment lines
@@ -134,7 +133,7 @@ CONTAINS
     INTEGER :: iunit, ist, llen, klen
     CHARACTER(LEN=256), TARGET :: line
 ! Cray Fortran Compiler < 8.7.11 (tested with 8.7.7) does not interpret the strings put into the dictionary correctly.
-! Hence, for older cray compiler versions, the following code circumvents this bug. 
+! Hence, for older cray compiler versions, the following code circumvents this bug.
 ! This can be removed when recent cray compiler versions are available at ECMWF's Cray
 #if (_CRAYFTN == 1) && ( _RELEASE_MAJOR <= 8)
     CHARACTER(LEN=DICT_MAX_STRLEN) :: key, val

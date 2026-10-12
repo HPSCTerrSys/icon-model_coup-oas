@@ -1,16 +1,14 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ---------------------------------------------------------------
 
-# ================================================================================
-# @author: ralf mueller, ralf.mueller@dkrz.de
-# ================================================================================
 function diffWithExitCode {
 #   set -x
   fileA=$1
@@ -59,7 +57,7 @@ function directoryDiff {
   # - full path to the reference data is provided
   refList=$(find ${refDir} -maxdepth 1 -type f)
 
-  for refFile in ${refList}; do 
+  for refFile in ${refList}; do
     refFileBasename=$(basename ${refFile})
     case "${refFileBasename}" in
       *.nc*) # only netcdf files are taken into account

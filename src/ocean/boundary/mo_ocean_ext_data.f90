@@ -1,18 +1,17 @@
-! Allocation/deallocation and reading of ocean external datasets
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Allocation/deallocation and reading of ocean external datasets
+
 #include "omp_definitions.inc"
-!----------------------------
 
 MODULE mo_ocean_ext_data
 
@@ -270,7 +269,7 @@ CONTAINS
     CALL add_var( p_ext_oce_list, 'lsm_ctr_e', p_ext_oce%lsm_ctr_e,      &
       &           GRID_UNSTRUCTURED_EDGE, ZA_SURFACE, cf_desc, grib2_desc, ldims=shape2d_e )
 
-    ! omip forcing data on cell edge
+    ! omip forcing data on cell edge (dont need this with iforc_oce == era5_provider)
     !
     IF (iforc_oce == OMIP_FluxFromFile) THEN
       cf_desc    = t_cf_var('Ocean model OMIP forcing data at cell edge', 'Pa, K', &
@@ -398,7 +397,7 @@ CONTAINS
         & 'Number of patch verts and verts in bathymetry file do not match.')
       ENDIF
 
-      WRITE(message_text,'(3(a,i6))') 'No of cells =', no_cells, &
+      WRITE(message_text,'(3(a,i9))') 'No of cells =', no_cells, &
         &                           '  no of edges =', p_patch(jg)%n_patch_edges_g, &
         &                           '  no of verts =', no_verts
       CALL message( TRIM(routine),TRIM(message_text))
@@ -441,6 +440,9 @@ CONTAINS
     !
     CALL closeFile(stream_id)
 
+    !$ACC ENTER DATA COPYIN(ext_data(jg)%oce%bathymetry_c, ext_data(jg)%oce%bathymetry_e) &
+    !$ACC   COPYIN(ext_data(jg)%oce%lsm_ctr_c, ext_data(jg)%oce%lsm_ctr_e)
+
     !ENDDO ! jg
 
     CALL message( TRIM(routine),'Ocean bathymetry for external data read' )
@@ -450,7 +452,7 @@ CONTAINS
     !  READ OMIP FORCING
 
     !-------------------------------------------------------------------------
-
+    ! dont need this with iforc_oce == era5_provider
     IF ( use_omip_forcing .AND. iforc_oce == OMIP_FluxFromFile) THEN
 
     !DO jg = 1,n_dom
@@ -657,6 +659,8 @@ CONTAINS
       ! close file
       !
       CALL closeFile(stream_id)
+
+      !$ACC ENTER DATA COPYIN(ext_data(jg)%oce%flux_forc_mon_c)
 
     !ENDDO
 

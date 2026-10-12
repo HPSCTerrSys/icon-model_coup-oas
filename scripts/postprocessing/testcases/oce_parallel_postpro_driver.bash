@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -12,10 +12,10 @@
 
 #
 #==========================================================================
-#      Driver script for postprocessing and visulization for the 
+#      Driver script for postprocessing and visulization for the
 #==========================================================================
 #
-# History: 
+# History:
 # Initial version by Stephan Lorenz (MPI-M, 2011-01)
 #
 # Short description:
@@ -24,7 +24,7 @@
 #  - now using "planet" bathymetry, experiment name including bathy-file (2011-10)
 #
 # Software needed:
-# - CDO (Climate Data Operators, www.mpimet.mpg.de/cdo) 
+# - CDO (Climate Data Operators, www.mpimet.mpg.de/cdo)
 #   for interplation and for the spectral transform;
 # - NCL (NCAR Command Language, www.ncl.ucar.edu)
 #   module ncl/5.2.0-bin for visualization using icon_plot.ncl
@@ -34,9 +34,9 @@
 check_error()
 {
 
-# Check if the first parameter (return status) is not OK 
+# Check if the first parameter (return status) is not OK
 
-  if [ $1 -ne 0 ] 
+  if [ $1 -ne 0 ]
   then
 
 # Stop running this script and return the error status
@@ -51,13 +51,13 @@ set -ex
 
 if [ "x$1" != "x" ]
 then
-  set_env=$1 
+  set_env=$1
 else
   set_env=/null
 fi
 
-if [ -f ${set_env} ] 
-then 
+if [ -f ${set_env} ]
+then
   echo " "
   echo " !!!!! Use setting from ./${set_env}"
   echo " "
@@ -65,7 +65,7 @@ then
 fi
 
 #==========================================================================
-# The directory in which the model output can be found. 
+# The directory in which the model output can be found.
 # Don't forget the trailing "/".
 #
 # for automatic testing
@@ -84,15 +84,15 @@ echo
 echo "**********************************************************"
 echo "***       ICON Tool Kit for Idealized Test Cases       ***"
 echo "**********************************************************"
-echo 
+echo
 echo "=== Postprocessing started for the hydrostatic ocean $EXP Shallow Water test."
 
 mkdir -p $model_data_path
 cd $model_data_path
 
 # Parameters for ncl including double quotes
-otype="png"                      
-varname="S"         
+otype="png"
+varname="S"
 ifile="${ExpName}_0001.nc"
 ofile="${plotBaseName}_${varname}"
 plotstep=20                                     #  3 days, 6-hourly data
@@ -128,6 +128,6 @@ mv ${ofile}.${otype} plots/.
 #rm scr_${EXP}_nclcmd.here
 echo "=== Done."
 
-echo 
+echo
 echo "=== Postprocessing finished for the hydrostatic ocean $EXP Shallow Water test."
 echo "=== The plots can be found in "${dir}

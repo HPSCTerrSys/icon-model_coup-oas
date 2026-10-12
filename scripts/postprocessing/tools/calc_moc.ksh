@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -39,11 +39,11 @@ fi
 basename=$(basename $IFILE .ext) # ext files expected
 
 if [ ! -f "$MASK" ]; then
-  cdo -f nc selvar,var777 $IFILE scr_moc_glb.nc 
+  cdo -f nc selvar,var777 $IFILE scr_moc_glb.nc
   cdo -f nc selvar,var778 $IFILE scr_moc_atl.nc
   cdo -f nc selvar,var779 $IFILE scr_moc_pac.nc
 else
-  cdo -f nc selvar,var777 $IFILE scr_moc_glb.nc 
+  cdo -f nc selvar,var777 $IFILE scr_moc_glb.nc
   cdo -div scr_moc_glb.nc -selname,var777 $MASK tmp.nc
   mv tmp.nc scr_moc_glb.nc
 
@@ -67,7 +67,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 ;************************************************
 
 begin
-         
+
  f = addfile("scr_moc_atl.nc","r")
  g = addfile("scr_moc_glb.nc","r")
  h = addfile("scr_moc_pac.nc","r")
@@ -157,7 +157,7 @@ begin
 
 ; res@lbLabelFontHeightF    = 0.014             ; label bar font
   res@lbLabelStride         = 2                 ; labelling interval at color bar and contour lines
-; res@lbLabelPosition       = "Left"  
+; res@lbLabelPosition       = "Left"
 ; res@pmLabelBarOrthogonalPosF = 0.1            ; move label bar closer
 
   res@cnMissingValFillColor        = "gray30"    ; not defined?
@@ -170,7 +170,7 @@ begin
 
 ; res@gsnRightString	        = "[Sv]"         ; set below differently
   res@gsnLeftString	        = "$basename"    ; filename string
-                            
+
   res@trYReverse                = True           ; reverse the Y-axis
 
   res@tiXAxisOn                 =  True        ;  false: x-axis title removed - cannot be redrawn?
@@ -230,11 +230,11 @@ begin
   res@tmXBLabels 	       = ispan(-90,90,30)
   res@gsnRightString	       = "Global [Sv]"
 
-; delete(res@tiXAxisOn)  
+; delete(res@tiXAxisOn)
 ; delete(res@tmXBLabelsOn)
 ; delete(res@tmXBOn)
 ; res@tiXAxisOn                = True         ;  false: x-axis title removed
-  res@tiXAxisOffsetYF          =  0.010 
+  res@tiXAxisOffsetYF          =  0.010
   res@tiXAxisString            = "latitude"
   plot     = gsn_csm_contour(wks,moc_glo,res)
   aplot(2) = plot
@@ -271,7 +271,7 @@ begin
   resP@lbLabelFontHeightF        = 0.014       ; size of labelbar font
   resP@lbAutoManage              = False
   resP@lbLabelStride             = 2                 ; skip every other label
-  resP@pmLabelBarWidthF          = 0.1  
+  resP@pmLabelBarWidthF          = 0.1
   resP@pmLabelBarHeightF         = 0.94
   resP@lbOrientation             = "vertical"
 ; resP@lbTopMarginF              = 0.0         ; no effect
@@ -290,4 +290,3 @@ rm scr_plot_moc_my.ncl
 rm scr_moc_???.nc
 
 exit
-

@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Subroutines to initialize the Baldauf, Brdar (2013) QJRMS test case
 ! (linear gravity/sound waves expansion in a channel)
 ! for the NH-Core in a quasi-2D limited area mode
@@ -7,18 +18,6 @@
 !    An analytic solution for linear gravity waves in a channel
 !    as a test for numerical models using the non-hydrostatic, compressible Euler equations,
 !    Quart. J. Royal Met. Soc., 139, 1977-1989
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_nh_bb13_exp
 
@@ -57,12 +56,12 @@ MODULE mo_nh_bb13_exp
    IMPLICIT NONE
 
    PUBLIC  :: init_nh_env_bb13, init_nh_bubble_bb13
-  
+
    PRIVATE
 
 
    REAL(wp), PARAMETER :: T_bb13 = 250.0_wp    ! background atmosphere [K]
-  
+
 !--------------------------------------------------------------------
 
    CONTAINS
@@ -70,7 +69,7 @@ MODULE mo_nh_bb13_exp
 !
 
   !>
-  !! Initialization of prognostic state vector for the Baldauf, Brdar (2013) test case 
+  !! Initialization of prognostic state vector for the Baldauf, Brdar (2013) test case
   !! here: define the horizontally homogenous environmental state
   !!
   SUBROUTINE init_nh_env_bb13( ptr_patch, ptr_nh_prog, ptr_nh_diag, &
@@ -87,7 +86,7 @@ MODULE mo_nh_bb13_exp
 
 
     TYPE(t_nh_metrics), INTENT(IN)      :: p_metrics !< NH metrics state
-    LOGICAL, INTENT(IN)                 :: l_hydro_adjust !if .TRUE. hydrostatically balanced 
+    LOGICAL, INTENT(IN)                 :: l_hydro_adjust !if .TRUE. hydrostatically balanced
                                                          ! initial condition
 
     INTEGER        ::  jc, jb, jk, je,   &
@@ -106,7 +105,7 @@ MODULE mo_nh_bb13_exp
       z_full(jk) = 0.5_wp*( vct_a(jk) + vct_a(jk+1) )
     ENDDO
 
-    ! profiles for T = const 
+    ! profiles for T = const
     DO jk = 1, ptr_patch%nlev
       temp(jk)  = T_bb13
       pres(jk)  = p0ref * exp( - grav / ( Rd * T_bb13 ) * z_full(jk) )
@@ -128,14 +127,14 @@ MODULE mo_nh_bb13_exp
       ENDIF
 
       DO jk = ptr_patch%nlev, 1, -1
-        DO jc = 1, nlen  
+        DO jc = 1, nlen
           ptr_nh_prog%theta_v(jc,jk,jb)     = theta_v(jk)
           ptr_nh_prog%exner  (jc,jk,jb)     = exner(jk)
           ptr_nh_prog%tracer (jc,jk,jb,iqv) = qv(jk)
           ptr_nh_prog%rho    (jc,jk,jb)     = ptr_nh_prog%exner(jc,jk,jb)**cvd_o_rd * p0ref   &
                                                          /rd/ptr_nh_prog%theta_v(jc,jk,jb)
         ENDDO  !jc
-      ENDDO  !jk     
+      ENDDO  !jk
     ENDDO  !jb
 
     ! Achtung: das muss noch numerisch hydrostatisch balanciert werden!
@@ -177,18 +176,19 @@ MODULE mo_nh_bb13_exp
     ptr_nh_prog%w(:,:,:) = 0.0_wp
 
     CALL diagnose_pres_temp (p_metrics, ptr_nh_prog,ptr_nh_prog, ptr_nh_diag,     &
-                             ptr_patch, opt_calc_pres=.TRUE., opt_calc_temp=.TRUE.)
+      &                      ptr_patch, lacc=.FALSE.,                             &
+      &                      opt_calc_pres=.TRUE., opt_calc_temp=.TRUE.)
 
 
-    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_nh_prog%w)
+    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_nh_prog%w, lacc=.FALSE.)
 
   END SUBROUTINE init_nh_env_bb13
 
 !--------------------------------------------------------------------
 !-------------------------------------------------------------------------
-!    
+!
 
-  !> 
+  !>
   !! warm, dry bubble test case initialization of Baldauf, Brdar (2013) QJRMS
   !!
   SUBROUTINE init_nh_bubble_bb13( ptr_patch, p_metrics, ptr_nh_prog, ptr_nh_diag )
@@ -204,7 +204,7 @@ MODULE mo_nh_bb13_exp
 
     TYPE(t_nh_diag), INTENT(INOUT)      :: &  !< diagnostic state vector
       &  ptr_nh_diag
- ! local variables  
+ ! local variables
 
     REAL(KIND=wp)   :: model_height
 
@@ -212,7 +212,7 @@ MODULE mo_nh_bb13_exp
     REAL(KIND=wp)            :: dT_breth, dT
     REAL(KIND=wp)            :: delta_B, fac_breth
 
-    INTEGER        ::  jc, jb, jk, nlen 
+    INTEGER        ::  jc, jb, jk, nlen
     TYPE(t_cartesian_coordinates)   :: p
 
     call message( "init_nh_bubble_bb13", "ACHTUNG: model_height sollte extern vorgegeben sein!" )
@@ -232,12 +232,12 @@ MODULE mo_nh_bb13_exp
         DO jc = 1, nlen
 
           ! Koordinaten dieses Punktes:
-          p = gc2cc( ptr_patch%cells%center(jc,jb), ptr_patch%geometry_info ) 
+          p = gc2cc( ptr_patch%cells%center(jc,jb), ptr_patch%geometry_info )
           !z_full = 0.5_wp * ( p_metrics%z_ifc(jc,jk,  jb)     &
           !  &               + p_metrics%z_ifc(jc,jk+1,jb) )
           z_full = p_metrics%z_mc(jc,jk,jb)
 
-          fac_breth = EXP( 0.5 * delta_B * z_full ) 
+          fac_breth = EXP( 0.5 * delta_B * z_full )
 
           dT_breth = bub_amp                          &
             &    * SIN( z_full * pi / model_height )    &
@@ -252,19 +252,19 @@ MODULE mo_nh_bb13_exp
                                                     /rd/ptr_nh_prog%theta_v(jc,jk,jb)
 
         ENDDO
-        
+
       ENDDO
     ENDDO
 
     CALL diagnose_pres_temp ( p_metrics, ptr_nh_prog,         &
             &                     ptr_nh_prog, ptr_nh_diag,   &
             &                     ptr_patch,                  &
+            &                     lacc=.FALSE.,               &
             &                     opt_calc_temp=.TRUE.,       &
             &                     opt_calc_pres=.FALSE.,      &
             &                     opt_rlend=min_rlcell_int )
-     
+
   END SUBROUTINE init_nh_bubble_bb13
 
 !--------------------------------------------------------------------
 END MODULE mo_nh_bb13_exp
-

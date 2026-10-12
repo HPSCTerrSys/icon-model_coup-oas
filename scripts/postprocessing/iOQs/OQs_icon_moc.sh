@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 set -e
 
@@ -27,7 +28,7 @@ CATFILE=moc.nc
 
 CODE='777,778,779'
 
-for YEAR in $(seq $Y1 $CHUNK $Y2) 
+for YEAR in $(seq $Y1 $CHUNK $Y2)
 do
 
     INFILE=$(printf $DATADIR/$EXPID/MOC.%04.0f-01-01T00:00:00.000 $YEAR)

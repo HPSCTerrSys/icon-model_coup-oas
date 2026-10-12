@@ -26,14 +26,14 @@ MODULE mo_cudescn
     &                  jpim=>i4
 
 !  USE yomhook   ,ONLY : lhook,   dr_hook
-  
+
   !KF new - use modules instead of include files
   USE mo_adjust      , ONLY: cuadjtq
   USE mo_cufunctions , ONLY: foelhmcu
   USE mo_cuparameters, ONLY: lphylin  ,rlptrc, rg ,rcpd     ,retv,&
     &                        rlvtt    ,rlstt, rmfcmin,       &
     &                        rmfdeps  ,rmfdeps_ocean, lmfdd,   &
-    &                        lhook,   dr_hook
+    &                        lhook,   dr_hook, cdnc_low, cdnc_delt
 
   IMPLICIT NONE
 
@@ -46,13 +46,13 @@ CONTAINS
 
   SUBROUTINE cudlfsn &
     & (kidia,    kfdia,    klon,    ktdia,  klev,&
-    & kcbot,    kctop,     ldcum, fac_rmfdeps, &
+    & kcbot,    kctop,     ldcum, lcdnc_interp, fac_rmfdeps, &
     & ptenh,    pqenh,   &
     & pten,     pqsen,    pgeo,&
     & pgeoh,    paph,     ptu,      pqu,  &
     & pmfub,    prfl,&
     & ptd,      pqd,&
-    & pmfd,     pmfds,    pmfdq,    pdmfdp,&
+    & pmfd,     pmfds,    pmfdq,    pdmfdp,  pcloudnum, &
     & kdtop,    lddraf, ldland,   ldlake, lacc)
     !!
     !! Description:
@@ -165,6 +165,7 @@ CONTAINS
     INTEGER(KIND=jpim)               :: kcbot(klon) ! Argument NOT used
     INTEGER(KIND=jpim)               :: kctop(klon) ! Argument NOT used
     LOGICAL           ,INTENT(in)    :: ldcum(klon)
+    LOGICAL           ,INTENT(in)    :: lcdnc_interp
     REAL(KIND=jprb)   ,INTENT(in)    :: ptenh(klon,klev)
     REAL(KIND=jprb)   ,INTENT(in)    :: pqenh(klon,klev)
     REAL(KIND=jprb)   ,INTENT(in)    :: pten(klon,klev)
@@ -176,6 +177,7 @@ CONTAINS
     REAL(KIND=jprb)   ,INTENT(in)    :: pqu(klon,klev)
 !    REAL(KIND=jprb)                  :: plu(klon,klev) ! Argument NOT used
     REAL(KIND=jprb)   ,INTENT(in)    :: pmfub(klon)
+    REAL(KIND=jprb)   ,INTENT(in)    :: pcloudnum(klon)
     REAL(KIND=jprb)   ,INTENT(in)    :: fac_rmfdeps(klon)
     REAL(KIND=jprb)   ,INTENT(inout) :: prfl(klon)
     REAL(KIND=jprb)   ,INTENT(inout) :: ptd(klon,klev)
@@ -198,7 +200,7 @@ CONTAINS
     INTEGER(KIND=jpim) :: icall, ik, ike, is, jk, jl
 
     REAL(KIND=jprb) :: zbuo, zhsk, zmftop, zoealfa,&
-      & zoelhm, zqtest, ztarg, zttest
+      & zoelhm, zqtest, ztarg, zttest, zcdnc
     REAL(KIND=jprb) :: zhook_handle
 
     !#include "cuadjtq.intfb.h"
@@ -213,7 +215,7 @@ CONTAINS
     !$ACC DATA &
     !$ACC   PRESENT(kcbot, kctop, ptenh, pqenh, pten, pqsen, pgeo, pgeoh, paph, ptu) &
     !$ACC   PRESENT(pqu, pmfub, prfl, ptd, pqd, pmfd, pmfds, pmfdq, pdmfdp, kdtop) &
-    !$ACC   PRESENT(ldland, ldlake, lddraf, ldcum, fac_rmfdeps) &
+    !$ACC   PRESENT(ldland, ldlake, lddraf, ldcum, fac_rmfdeps, pcloudnum) &
 
     !$ACC   CREATE(ikhsmin, ztenwb, zqenwb, zcond, zph, zhsmin, llo2) &
     !$ACC   IF(lacc)
@@ -346,7 +348,7 @@ CONTAINS
 
 !DIR$ IVDEP
 !OCL NOVREC
-        !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(zttest, zqtest, zbuo, zmftop)
+        !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(zttest, zqtest, zbuo, zmftop, zcdnc)
         DO jl=kidia,kfdia
           IF(llo2(jl)) THEN
             zttest=0.5_JPRB*(ptu(jl,jk)+ztenwb(jl,jk))
@@ -354,7 +356,13 @@ CONTAINS
             zbuo=zttest*(1.0_JPRB+retv  *zqtest)-&
               & ptenh(jl,jk)*(1.0_JPRB+retv  *pqenh(jl,jk))
             zcond(jl)=pqenh(jl,jk)-zqenwb(jl,jk)
-            zmftop=-fac_rmfdeps(jl)*MERGE(rmfdeps,rmfdeps_ocean,ldland(jl).OR.ldlake(jl))*pmfub(jl)
+            IF (lcdnc_interp) THEN
+              zcdnc=MIN(MAX(0._JPRB,(pcloudnum(jl)-cdnc_low)/cdnc_delt),1.0_JPRB)
+              zmftop=rmfdeps_ocean*(1.0_JPRB-zcdnc)+rmfdeps*zcdnc
+            ELSE
+              zmftop=MERGE(rmfdeps,rmfdeps_ocean,ldland(jl).OR.ldlake(jl))
+            END IF
+            zmftop=-fac_rmfdeps(jl)*zmftop*pmfub(jl)
             IF(zbuo < 0.0_JPRB.AND.prfl(jl) > 10._jprb*zmftop*zcond(jl)) THEN
               kdtop(jl)=jk
               lddraf(jl)=.TRUE.
@@ -511,7 +519,7 @@ CONTAINS
     REAL(KIND=jprb)   ,INTENT(inout) :: pdmfde(klon,klev)
     REAL(KIND=jprb)   ,INTENT(inout) :: pmfdde_rate(klon,klev)
     REAL(KIND=jprb)   ,INTENT(inout) :: pkined(klon,klev)
-    REAL(KIND=jprb)   ,INTENT(OUT)   :: pvbuo(klon)  ! buoyancy for convective gusts 
+    REAL(KIND=jprb)   ,INTENT(OUT)   :: pvbuo(klon)  ! buoyancy for convective gusts
     LOGICAL           ,INTENT(in)    :: lacc
 
     REAL(KIND=jprb) ::     zdmfen(klon),           zdmfde(klon),&
@@ -736,4 +744,3 @@ CONTAINS
   END SUBROUTINE cuddrafn
 
 END MODULE mo_cudescn
-

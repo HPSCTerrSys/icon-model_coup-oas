@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Configuration of the parameterization for vertical diffusion,
 ! that is used in the AES physics package.
 !
@@ -8,17 +19,6 @@
 !     Mauritsen, T., & Svensson, G. (2007).
 !           Observations of stably stratified shear-driven atmospheric turbulence at low and high Richardson numbers.
 !           Journal of the Atmospheric Sciences, 64(2), 645-655. https://doi.org/10.1175/JAS3856.1
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_aes_vdf_config
 
@@ -114,11 +114,17 @@ CONTAINS
        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% turb           ',aes_vdf_config(jg)% turb           )
        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% use_tmx        ',aes_vdf_config(jg)% use_tmx        )
        IF (aes_vdf_config(jg)% use_tmx) THEN
-        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% solver_type    ',aes_vdf_config(jg)% solver_type   )
-        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% energy_type    ',aes_vdf_config(jg)% energy_type   )
-        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% dissipation_factor',aes_vdf_config(jg)% dissipation_factor)
-        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% use_louis     ',aes_vdf_config(jg)% use_louis      )
-        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% louis_constant_b',aes_vdf_config(jg)% louis_constant_b)
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% solver_type                ',aes_vdf_config(jg)% solver_type       )
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% energy_type                ',aes_vdf_config(jg)% energy_type       )
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% dissipation_factor         ',aes_vdf_config(jg)% dissipation_factor)
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% use_louis                  ',aes_vdf_config(jg)% use_louis         )
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% use_louis_land             ',aes_vdf_config(jg)% use_louis_land    )
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% use_louis_ice              ',aes_vdf_config(jg)% use_louis_ice     )
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% louis_constant_b           ',aes_vdf_config(jg)% louis_constant_b  )
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% use_km_const               ',aes_vdf_config(jg)% use_km_const      )
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% km_const                   ',aes_vdf_config(jg)% km_const          )
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% use_scale_turb_energy_flux ',aes_vdf_config(jg)% use_scale_turb_energy_flux)
+        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% scale_turb_energy_flux     ',aes_vdf_config(jg)% scale_turb_energy_flux)
        END IF
        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% smag_constant  ',aes_vdf_config(jg)% smag_constant  )
        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% turb_prandtl   ',aes_vdf_config(jg)% turb_prandtl   )
@@ -126,6 +132,8 @@ CONTAINS
        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% km_min         ',aes_vdf_config(jg)% km_min         )
        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% max_turb_scale ',aes_vdf_config(jg)% max_turb_scale )
        CALL print_value('    aes_vdf_config('//TRIM(cg)//')% min_sfc_wind   ',aes_vdf_config(jg)% min_sfc_wind   )
+       CALL print_value('    aes_vdf_config('//TRIM(cg)//')% wind_g         ',aes_vdf_config(jg)% wind_g   )
+       CALL print_value('    aes_vdf_config('//TRIM(cg)//')% lcuda_graph_vdf ',aes_vdf_config(jg)% lcuda_graph_vdf)
        CALL message    ('','')
        !
     END DO

@@ -1,17 +1,17 @@
-! @brief variables for marine aggregate settling
-!
-! Definition of variables and allocation of memory
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief variables for marine aggregate settling
+!
+! Definition of variables and allocation of memory
 
 MODULE mo_memory_agg
 
@@ -22,10 +22,10 @@ MODULE mo_memory_agg
 
   PUBLIC
 
-  REAL(wp) :: AJ1, AJ2, AJ3, BJ1, BJ2, BJ3 ! constants for CD 
+  REAL(wp) :: AJ1, AJ2, AJ3, BJ1, BJ2, BJ3 ! constants for CD
 
 ! for fix b (numbers distribution slope of aggregates)
-  ! primary particle diameter for POM & PIM species involved in parametrized aggregation (m) 
+  ! primary particle diameter for POM & PIM species involved in parametrized aggregation (m)
   REAL(wp) :: dp_dust ! primary particle diameter dust
   REAL(wp) :: dp_det  ! primary particle diameter detritus
   REAL(wp) :: dp_calc ! primary particle diameter calc

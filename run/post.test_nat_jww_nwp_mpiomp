@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -38,14 +38,14 @@ FILE2="${EXP}_${GRID2}_0001.nc"
 
 if [[ ! -f ${FILED}/${FILE1} && ! -f ${FILED}/${FILE2} ]]; then
   echo "Both data files have not been generated --> exit postprocessing"
-  check_error 0 "post.nat_jww_nwp_mpiomp"
-  exit 0
+  check_error 1 "post.nat_jww_nwp_mpiomp"
+  exit 1
 fi
 
 VARN="pres_sfc"
 OUTD="${FILED}plots/"
 if [ ! -d ${OUTD} ]; then
-   mkdir -p ${OUTD} 
+   mkdir -p ${OUTD}
 fi
 OUTF1="${OUTD}${EXP}_global"
 OUTF2="${OUTD}${EXP}_refined"

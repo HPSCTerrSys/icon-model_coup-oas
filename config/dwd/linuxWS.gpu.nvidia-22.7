@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -144,10 +144,10 @@ ICON_FCFLAGS='-g -O2'
 ICON_ECRAD_FCFLAGS="-D__ECRAD_LITTLE_ENDIAN"
 
 # NVIDIA CUDA Compiler command
-NVCC="${PGI_ROOT}/compilers/bin/nvcc"
+CUDACXX="${PGI_ROOT}/compilers/bin/nvcc"
 # NVIDIA CUDA Compiler flags
-#NVCFLAGS='--std=c++11 -arch=sm_60 -g -O3'
-NVCFLAGS='--std=c++11 -g -O3'
+#CUDAFLAGS='--std=c++11 -arch=sm_60 -g -O3'
+CUDAFLAGS='--std=c++11 -g -O3'
 
 LDFLAGS="-L${HDF5_LIBDIR} -L${NETCDF_LIBDIR} -L${ECCODES_LIBDIR} -L${OPENJPB_LIBDIR} -L${AEC_LIBDIR} -L${XML2_LIBDIR} -L${PGI_LIBDIR} -L${RTTOV_LIB_ROOT} -L${CUDA_LIBDIR}"
 if [[ $SERIALBOX2_STATIC_LINKING == no ]]; then
@@ -180,8 +180,8 @@ ICON_BUNDLED_CFLAGS="${ICON_BUNDLED_CFLAGS}" \
 FC="${FC}" \
 FCFLAGS="${FCFLAGS}" \
 ICON_FCFLAGS="${ICON_FCFLAGS}" \
-NVCC="${NVCC}" \
-NVCFLAGS="${NVCFLAGS}" \
+CUDACXX="${CUDACXX}" \
+CUDAFLAGS="${CUDAFLAGS}" \
 LDFLAGS="${LDFLAGS}" \
 LIBS="${LIBS}" \
 MPI_LAUNCH="${MPI_LAUNCH}" \
@@ -201,9 +201,15 @@ done
 if test $(pwd) != $(cd "${ICON_DIR}"; pwd); then
   echo "Copying runscript input files from the source directory..."
   rsync -uavz ${ICON_DIR}/run . --exclude='*in' --exclude='.*'
-  rsync -uavz ${ICON_DIR}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${ICON_DIR}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${ICON_DIR}/make_runscripts .
   ln -sf ${ICON_DIR}/data
   ln -sf ${ICON_DIR}/vertical_coord_tables
 fi
-

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -14,7 +14,7 @@
 ;------------------------------------
 ; Script type: visualization
 ;---------------------------------------------------------------
-; This script makes contour plots of 850 hPa temperature 
+; This script makes contour plots of 850 hPa temperature
 ; for the Jablonowski-Williamson steady state test.
 ;---------------------------------------------------------------
  load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
@@ -22,11 +22,11 @@
 ;---------------------------------------------------------------
  begin
 
-  PlotFormat = getenv("plot_file_format") 
+  PlotFormat = getenv("plot_file_format")
   Model      = getenv("Model")
   DataPath   = getenv("DataPath")
   PlotPath   = getenv("PlotPath")
-  Resolution = getenv("Resolution") 
+  Resolution = getenv("Resolution")
   ConfigStr  = getenv("ConfigStr")
   ExpName    = getenv("ExpName")
   plotBaseName = getenv("plotBaseName")
@@ -61,7 +61,7 @@
   if (Model.eq."ECHAM5") then
      tid = OutFrq*iday -1  ; ECHAM doesn't write out initial data
   else
-     tid = OutFrq*iday 
+     tid = OutFrq*iday
   end if
 
 ;---------------------------------------------------------------
@@ -74,8 +74,8 @@
   CenterString = LeftString
 
   if (VarName.eq."T") then
-     LeftString(0)       = "850 hPa T (K) at day "+ iday(0) 
-     LeftString(ndays-1) = "850 hPa T (K) at day "+ iday(ndays-1) 
+     LeftString(0)       = "850 hPa T (K) at day "+ iday(0)
+     LeftString(ndays-1) = "850 hPa T (K) at day "+ iday(ndays-1)
   else
      LeftString(0)       = "ps (hPa) at day "+ iday(0)
      LeftString(ndays-1) = "ps (hPa) at day "+ iday(ndays-1)
@@ -85,8 +85,8 @@
   CenterString(0)       = ""
   CenterString(ndays-1) = ""
 
-  RightString(0)        = ConfigStr   ;+" "+Resolution 
-  RightString(ndays-1)  = ConfigStr   ;+" "+Resolution 
+  RightString(0)        = ConfigStr   ;+" "+Resolution
+  RightString(ndays-1)  = ConfigStr   ;+" "+Resolution
 
 ;---------------------------------------------------------------
 ; lat./lon. of cell center (ICOHDC only)
@@ -135,7 +135,7 @@
      print("Problem encountered: found only "+ ndays_in_data_file+ \
            " day(s) of data in the model output")
      print(nmax_needed +" days are needed for visualising "       \
-           +"the evolution of temperature and surface pressure")  
+           +"the evolution of temperature and surface pressure")
      status_exit (1)
   end if
 
@@ -186,26 +186,26 @@
 
      ResC@gsnLeftString   = LeftString(it)
      ResC@gsnCenterString = CenterString(it)
-     ResC@gsnRightString  = RightString(it) 
-     ResC@lbLabelBarOn    = False 
+     ResC@gsnRightString  = RightString(it)
+     ResC@lbLabelBarOn    = False
 
      if (VarName.eq."T") then
-        ResC@cnMinLevelValF       = tempMin 
-        ResC@cnMaxLevelValF       = tempMax 
-        ResC@cnLevelSpacingF      = tempInt 
-     else 
+        ResC@cnMinLevelValF       = tempMin
+        ResC@cnMaxLevelValF       = tempMax
+        ResC@cnLevelSpacingF      = tempInt
+     else
 
       if (iday(it).lt.7) then
-        ResC@cnMinLevelValF       = psMin1 
-        ResC@cnMaxLevelValF       = psMax1 
-        ResC@cnLevelSpacingF      = psInt1 
+        ResC@cnMinLevelValF       = psMin1
+        ResC@cnMaxLevelValF       = psMax1
+        ResC@cnLevelSpacingF      = psInt1
         ResC@cnFillColors         = (/2,2,4,4,7,7,8,8,9,9,10,10,11,11/)
       else
-        ResC@cnMinLevelValF       = psMin2 
-        ResC@cnMaxLevelValF       = psMax2 
-        ResC@cnLevelSpacingF      = psInt2 
-       
-        if (isatt(ResC,"cnFillColors")) then 
+        ResC@cnMinLevelValF       = psMin2
+        ResC@cnMaxLevelValF       = psMax2
+        ResC@cnLevelSpacingF      = psInt2
+
+        if (isatt(ResC,"cnFillColors")) then
             delete(ResC@cnFillColors)
         end if
       end if
@@ -278,14 +278,13 @@
      end if
   end if
 
-  ResC@gsnDraw        = True 
+  ResC@gsnDraw        = True
   ResC@gsnFrame       = True
 
   ResC@gsnLeftString   = LeftString(it)
   ResC@gsnCenterString = CenterString(it)
-  ResC@gsnRightString  = RightString(it) 
-  ResC@lbLabelBarOn    = True 
+  ResC@gsnRightString  = RightString(it)
+  ResC@lbLabelBarOn    = True
 
   plot2 = gsn_csm_contour_map(wks,var,ResC)
 end
-

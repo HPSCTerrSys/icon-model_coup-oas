@@ -1,0 +1,155 @@
+#! %{JOB.python3} #%# -*- mode: python -*- vi: set ft=python :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# %{EXP_ID}.%{JOB.id}
+#
+# %{mkexp_input}
+#
+#%include ['mkexp/environments/'+ENVIRONMENT+'.tmpl', 'mkexp/environments/DEFAULT.tmpl'] ignore missing
+
+'''\
+Link output files from work to data directory (only within file system)
+
+$Id: run/mkexp/defaults/DEFAULT.link.tmpl 1 2025-08-28 14:08:00Z m221078 $
+'''
+
+#%#
+#%#-# Generate list of all active file definitions
+#%#-
+#%- set extension_map = {1: 'grb', 2: 'grb', 3: 'nc', 4: 'nc', 5: 'nc', 6: 'nc'}
+#%- set format_map = {'grb': 'grib', 'nc': 'netcdf'}
+#%- set file_infos = []
+#%  for namelist in namelists:
+#%-   set namelist_data = namelists[namelist]
+#%-   set remove_list = namelist_data['.remove']|d([])|list
+#%    for group in namelist_data.sections if group|match('^output_nml'):
+#%-     set group_data = namelist_data[group]
+#%-     set hidden = (group_data['.hide'] is set) or (group in remove_list)
+#%      if not hidden:
+#%#-      # Get level types from "_varlist" names, discard all but the last
+#%-       set level_types = []
+#%        for name in group_data.scalars if name|match('^(.+)_varlist$')
+#%          do level_types.append(name|match('^(.+)_varlist$'))
+#%        endfor
+#%-       set levtype_l = level_types[-1]
+#%#-
+#%-       set filename_format = group_data.filename_format
+#%-       set output_filename = group_data.output_filename
+#%-       set extension = extension_map[group_data.filetype|d(4)|int]
+#%-       set filename_tmpl = filename_format|replace('<output_filename>', output_filename)|replace('<levtype_l>', levtype_l)+'.'+extension
+#%        do file_infos.append(filename_tmpl)
+#%      endif
+#%    endfor
+#%  endfor
+
+import argparse
+import glob
+import os
+import re
+import sys
+
+#% include 'mkexp/defaults/mtime.tmpl'
+#% include 'mkexp/defaults/logging.tmpl'
+
+# Process command line options
+
+def check_date(arg):
+    try:
+        value = mtime.DateTime(arg)
+    except ValueError as ve:
+        raise argparse.ArgumentTypeError(ve)
+    return value
+
+doc_lines = description=__doc__.split('\n')
+
+command_line = argparse.ArgumentParser(description=doc_lines[0])
+command_line.add_argument('start_date', type=check_date, help=
+    'first date of period (YYYY-MM-DD... or YYYYMMDD...)')
+command_line.add_argument('-N', '--next_date', type=check_date, help=
+    'date of next period (YYYY-MM-DD... or YYYYMMDD...)')
+command_line.add_argument('-I', '--input-dir',
+    default='%{JOB.work_dir}/%{jobs.run.subdir}',
+    help='directory to take files from [%(default)s]')
+command_line.add_argument('-V', '--version', action='version', version=f"""
+{doc_lines[-1]}
+%{VERSIONS_|join('\n')}
+""")
+args = command_line.parse_args()
+
+# Do time computations using mtime
+
+initial_date = mtime.DateTime('%{INITIAL_DATE}')
+start_date = args.start_date
+next_date = args.next_date
+
+if not next_date:
+    interval = mtime.TimeDelta('%{JOB.interval|d(INTERVAL)}')
+    next_date = start_date + interval
+
+offset = mtime.TimeDelta('-%{namelists.NAMELIST_atm.run_nml.modeltimestep}')
+end_date = next_date + offset
+
+# Determine time stamp format conversion
+
+weed = re.compile(r'[-:]|\.\d+$') # for re-formatting of date/time stamps
+def data_stamp(date):
+    return re.sub(weed, '', str(date.date))
+def run_stamp(date):
+    return re.sub(weed, '', str(date))
+def work_stamp(date):
+    return run_stamp(date) + 'Z'
+
+start_stamp = data_stamp(start_date)
+end_stamp = data_stamp(end_date)
+
+stamp_glob = re.sub(r'\d', '?', work_stamp(start_date))
+
+# Determine directory to read files from
+
+input_dir = args.input_dir.format(
+    start_stamp=run_stamp(start_date), end_stamp=run_stamp(end_date))
+output_dir = '%{DATA_DIR}'
+
+# Start processing
+
+logging.info('%{JOB.id} process started for %s-%s', start_stamp, end_stamp)
+
+# Define file metadata
+
+file_infos = [
+#%  for info in file_infos:
+    '%{info}',
+#%  endfor
+]
+
+os.chdir(input_dir)
+
+for info in file_infos:
+
+    # Use wildcards to expand timestamps in file names
+    file_glob = info.replace('<datetime2>', stamp_glob)
+
+    for file_name in glob.glob(file_glob):
+
+        file_path = os.path.join(input_dir, file_name)
+        other_path = os.path.join(output_dir, file_name)
+        try:
+            os.link(file_path, other_path)
+        except OSError as oe:
+            logging.error(str(oe))
+            sys.exit(1)
+
+# Finish processing
+
+logging.info('%{JOB.id} process finished for %s-%s', start_stamp, end_stamp)
+
+#% include 'mkexp/defaults/trigger.tmpl'

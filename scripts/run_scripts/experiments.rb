@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,7 +24,7 @@ module NmlLib
             f << INDENT
             f << if vv.kind_of?(Array)
               "#{[kk,vv.join(',')].join(' = ')}\n"
-            else 
+            else
               "#{[kk,vv].join(' = ')}\n"
             end
           }
@@ -87,7 +87,7 @@ module TestCases
 end
 
 # Implements the main functionality for running an experiment:
-# * 
+# *
 class Experiment
   @@defaulCompiler = 'gcc'
   @@defaultMpi     = 'openmpi'

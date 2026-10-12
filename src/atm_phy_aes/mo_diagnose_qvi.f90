@@ -1,16 +1,15 @@
-!
-! Module containing subroutine computing the vertical integral of tracer mass
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module containing subroutine computing the vertical integral of tracer mass
 
 MODULE mo_diagnose_qvi
 
@@ -43,13 +42,13 @@ CONTAINS
     jtl_trc = nnew_rcf(jg)
 
     DO jt = 1,ntracer
-      !
-      IF (ASSOCIATED(prm_field(jg)%mtrcvi_ptr(jt)%p)) THEN
-        ! 
+        !
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !
         !$ACC LOOP GANG VECTOR
         DO jc = jcs, jce
           prm_field(jg)%mtrcvi(jc,jb,jt) = 0.0_wp
+          prm_tend (jg)%mtrcvi_phy(jc,jb,jt) = 0.0_wp
         END DO ! jc
         !
         !$ACC LOOP SEQ
@@ -61,35 +60,15 @@ CONTAINS
             prm_field(jg)%mtrcvi(jc,jb,jt) =   prm_field(jg)%mtrcvi(jc,jb,jt) &
                   & + p_nh_state(jg)%diag%airmass_new(jc,jk,jb)*p_nh_state(jg)%prog(jtl_trc)%tracer(jc,jk,jb,jt)
             !
-          END DO ! jc
-        END DO ! jk
-        !$ACC END PARALLEL
-        !
-      END IF
-      !
-      IF (ASSOCIATED(prm_tend(jg)%mtrcvi_phy_ptr(jt)%p)) THEN
-        !
-        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-        !$ACC LOOP GANG VECTOR
-        DO jc = jcs, jce
-          prm_tend(jg)%mtrcvi_phy(jc,jb,jt) = 0.0_wp
-        END DO ! jc
-        !
-        !$ACC LOOP SEQ
-        DO jk = 1,num_lev(jg)
-          !$ACC LOOP GANG VECTOR
-          DO jc = jcs, jce
-            !
             ! tendency of tracer path
             prm_tend(jg)%mtrcvi_phy(jc,jb,jt) = prm_tend(jg)%mtrcvi_phy(jc,jb,jt) &
                   & + p_nh_state(jg)%diag%airmass_new(jc,jk,jb)*prm_tend(jg)%qtrc_phy(jc,jk,jb,jt)
             !
           END DO ! jc
         END DO ! jk
+        !
         !$ACC END PARALLEL
         !
-      END IF
-      !
     END DO ! jt
 
     IF (ltimer) call timer_stop(timer_qvi)

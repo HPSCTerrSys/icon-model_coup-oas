@@ -1,16 +1,15 @@
-! A class to make sending/receiving of data packets easier.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! A class to make sending/receiving of data packets easier.
 
 #include "handle_mpi_error.inc"
 
@@ -87,7 +86,7 @@ MODULE mo_packed_message
     INTEGER(C_SIGNED_CHAR), ALLOCATABLE :: messageBuffer(:)
     INTEGER :: messageSize = 0, readPosition = 0
   CONTAINS
-    PROCEDURE :: reset => PackedMessage_reset   
+    PROCEDURE :: reset => PackedMessage_reset
 
     PROCEDURE, PRIVATE :: packBlock => PackedMessage_packBlock
 
@@ -125,7 +124,7 @@ MODULE mo_packed_message
     PROCEDURE, PRIVATE :: unpackIntCcharScalar => PackedMessage_unpackIntCcharScalar
 
     PROCEDURE, PRIVATE :: unpackIntArray => PackedMessage_unpackIntArray
-    PROCEDURE, PRIVATE :: unpackLongArray => PackedMessage_unpackLongArray        
+    PROCEDURE, PRIVATE :: unpackLongArray => PackedMessage_unpackLongArray
     PROCEDURE, PRIVATE :: unpackSingleArray => PackedMessage_unpackSingleArray
     PROCEDURE, PRIVATE :: unpackDoubleArray => PackedMessage_unpackDoubleArray
     PROCEDURE, PRIVATE :: unpackLogicalArray => PackedMessage_unpackLogicalArray
@@ -148,7 +147,7 @@ MODULE mo_packed_message
     PROCEDURE, PRIVATE :: packerIntCcharScalar => PackedMessage_packerIntCcharScalar
 
     PROCEDURE, PRIVATE :: packerIntArray => PackedMessage_packerIntArray
-    PROCEDURE, PRIVATE :: packerLongArray => PackedMessage_packerLongArray        
+    PROCEDURE, PRIVATE :: packerLongArray => PackedMessage_packerLongArray
     PROCEDURE, PRIVATE :: packerSingleArray => PackedMessage_packerSingleArray
     PROCEDURE, PRIVATE :: packerDoubleArray => PackedMessage_packerDoubleArray
     PROCEDURE, PRIVATE :: packerLogicalArray => PackedMessage_packerLogicalArray
@@ -230,10 +229,10 @@ CONTAINS
 
 ! ********************************************************************
 ! * new implementation replaces the old implementation via TRANSFER
-! * basically this resembles somewhat of a "reinterpret cast" of a 
+! * basically this resembles somewhat of a "reinterpret cast" of a
 ! * (void*) pointer "cptr" (obtained via C_LOC() in calling routine)
 ! * to a (char*) pointer "vptr" using C_F_POINTER()
-! * then copy the full body of the payload (length=asize) at once 
+! * then copy the full body of the payload (length=asize) at once
 ! * exploiting fortan array syntax
 ! *
 ! * avdantages:

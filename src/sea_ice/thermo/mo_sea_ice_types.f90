@@ -1,21 +1,20 @@
-! This module provides definition of types of the ICON ocean surface module,
-! i.e. the sea ice and coupling between the atmopshere and the ocean model.
-!
-! Types are grouped as follows:
-! - Sea ice:                                   t_sea_ice, t_sea_ice_budgets
-! - Surface fluxes (categories):               t_atmos_fluxes
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides definition of types of the ICON ocean surface module,
+! i.e. the sea ice and coupling between the atmopshere and the ocean model.
+!
+! Types are grouped as follows:
+! - Sea ice:                                   t_sea_ice, t_sea_ice_budgets
+! - Surface fluxes (categories):               t_atmos_fluxes
 
 MODULE mo_sea_ice_types
   USE mo_kind,                ONLY: wp
@@ -64,6 +63,8 @@ MODULE mo_sea_ice_types
       & concSum    (:,:)         ,   & ! Total ice concentration within a grid cell
       & vol        (:,:,:)       ,   & ! Ice volume                                             [m^3]
       & vols       (:,:,:)       ,   & ! Snow volume                                            [m^3]
+      & sivol      (:,:,:)       ,   & ! equivalence ice thickness                               [m]
+      & snvol      (:,:,:)       ,   & ! equivalence snow thickness                              [m]
       & delhi      (:,:,:)       ,   & ! Change in mean ice thickness due to growth/melt        [m]
       & delhs      (:,:,:)       ,   & ! Change in mean snow thickness due to growth/melt       [m]
       ! functionality of hiold and hsold was replaced by delhi and delhs
@@ -73,8 +74,8 @@ MODULE mo_sea_ice_types
       ! thermodynamics, fast
       & Tsurf      (:,:,:)       ,   & ! Surface temperature                                    [C]
       & Tfw        (:,:)         ,   & ! Ocean surface freezing temperature                     [C]
-      & Qtop       (:,:,:)       ,   & ! Energy flux available for surface melting              [W/m2]
-      & Qbot       (:,:,:)       ,   & ! Conductive heat flux at ice-ocean interface (fast)     [W/m2]
+      & Qtop       (:,:,:)       ,   & ! Energy flux available for surface melting              [W/m^2]
+      & Qbot       (:,:,:)       ,   & ! Conductive heat flux at ice-ocean interface (fast)     [W/m^2]
       & alb        (:,:,:)       ,   & ! Albedo of snow-ice system
       ! thermodynamics, slow
       ! Note: variables like zHeatOceI and heatOceI SHOULD NOT have kice dimension
@@ -100,7 +101,7 @@ MODULE mo_sea_ice_types
       ! thermodynamics, slow (winton scheme only -- not currently functional)
       & surfmelt   (:,:,:)       ,   & ! Surface melt water running into ocean                  [m]
       & surfmeltT  (:,:,:)       ,   & ! Mean temperature of surface melt water                 [C]
-      & evapwi     (:,:,:)             ! Amount of evaporated water if no ice left              [kg/m2]
+      & evapwi     (:,:,:)             ! Amount of evaporated water if no ice left              [kg/m^2]
 
       ! dynamics
     REAL(wp), POINTER :: &
@@ -108,9 +109,23 @@ MODULE mo_sea_ice_types
       & v_prog     (:,:)         ,   & ! Meridional velocity (prognostic, rotated)              [m/s]
       & u          (:,:)         ,   & ! Zonal velocity on cell centre (diagnostic)             [m/s]
       & v          (:,:)         ,   & ! Meridional velocity on cell centre (diagn.)            [m/s]
-      & vn_e       (:,:)         ,   &  ! Edge normal velocity(prognostic)                      [m/s]
-      & vt_e       (:,:)         ,   & ! Edge tangential velocity prognostic                     [m/s]
-      & Delta      (:,:)           ! Delta                                               [1/s]   
+      & vn_e       (:,:)         ,   & ! Edge normal velocity(prognostic)                       [m/s]
+      & vt_e       (:,:)         ,   & ! Edge tangential velocity prognostic                    [m/s]
+      & delta      (:,:)         ,   & ! total deformation rate                                 [1/s]
+      & s11        (:,:)         ,   & ! normal stress component (sigma_11)                     [N/m^2]
+      & s12        (:,:)         ,   & ! shear stress component (sigma_12)                      [N/m^2]
+      & s22        (:,:)         ,   & ! normal stress component (sigma_22)                     [N/m^2]
+      & e11        (:,:)         ,   & ! strain rate (eps11)                                    [s-1]
+      & e12        (:,:)         ,   & ! strain rate (eps12)                                    [s-1]
+      & e22        (:,:)         ,   & ! strain rate (eps22)                                    [s-1]
+      ! stress diagnostics
+      & p0         (:,:)         ,   & ! ice strength                                           [N/m^1]
+      & p          (:,:)         ,   & ! replacement pressure                                   [N/m^1]
+      & sigma_1    (:,:)         ,   & ! maximum principal stress                               [N/m^1]
+      & sigma_2    (:,:)         ,   & ! minimum principal stress                               [N/m^1]
+      & sigma_i    (:,:)         ,   & ! normal stress                                          [N/m^1]
+      & sigma_ii   (:,:)               ! shear stress                                           [N/m^1]
+
     ! not currently used categorywise limiter
     REAL(wp), ALLOCATABLE :: hi_lim(:) ! Thickness limit                                        [m]
 

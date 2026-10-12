@@ -1,15 +1,15 @@
-! Contains the ocean time keeping and events
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the ocean time keeping and events
 
 MODULE mo_ocean_time_events
   !-------------------------------------------------------------------------
@@ -22,7 +22,7 @@ MODULE mo_ocean_time_events
        &                               ASSIGNMENT(=), OPERATOR(==), OPERATOR(>=), OPERATOR(/=),     &
        &                               event, eventGroup, newEvent,                                 &
        &                               addEventToEventGroup, isCurrentEventActive
-  USE mo_event_manager,          ONLY: initEventManager, addEventGroup, getEventGroup, printEventGroup  
+  USE mo_event_manager,          ONLY: initEventManager, addEventGroup, getEventGroup, printEventGroup
   USE mo_impl_constants,         ONLY: max_char_length
   USE mo_exception,              ONLY: message, message_text, finish
   USE mo_master_config,          ONLY: isRestart
@@ -41,8 +41,8 @@ MODULE mo_ocean_time_events
   PUBLIC :: getCurrentDate_to_String
   PUBLIC :: isStartdate
   PUBLIC :: newNullDatetime
-  
-  PUBLIC :: get_OceanCurrentTime_Pointer 
+
+  PUBLIC :: get_OceanCurrentTime_Pointer
 
 
   CHARACTER(LEN=20)  :: str_module = 'mo_ocean_time_events'  ! Output of module for 1 line debug
@@ -64,9 +64,9 @@ MODULE mo_ocean_time_events
 
   TYPE(event), POINTER                :: checkpointEvent => NULL()
   TYPE(event), POINTER                :: restartEvent    => NULL()
-  
+
   INTEGER                             :: checkpointEvents
-    
+
   REAL(wp):: ocean_dtime           !< [s] length of a time step
 
 CONTAINS
@@ -77,7 +77,7 @@ CONTAINS
   SUBROUTINE init_ocean_time_events()
 
     CHARACTER(len=*), PARAMETER :: method_name = "init_ocean_time_events"
-    
+
     INTEGER :: ierr
     LOGICAL :: return_status
     CHARACTER(LEN=MAX_DATETIME_STR_LEN)    :: dstring
@@ -92,14 +92,14 @@ CONTAINS
     eventEndDate        => time_config%tc_exp_stopdate
     ocean_time_step     => time_config%tc_dt_model
 
-    ! the time varibales for returning 
+    ! the time varibales for returning
     return_current_time => newNullDatetime()
 
 
     ! for debugging purposes the referenece (anchor) date for checkpoint
     ! and restart may be switched to be relative to current jobs start
     ! date instead of the experiments start date.
-    
+
     IF (time_config%is_relative_time) THEN
       checkpointRefDate => time_config%tc_startdate
       restartRefDate    => time_config%tc_startdate
@@ -107,14 +107,14 @@ CONTAINS
       checkpointRefDate => time_config%tc_exp_startdate
       restartRefDate    => time_config%tc_exp_startdate
     ENDIF
-    
+
     ! create an event manager, ie. a collection of different events
     CALL initEventManager(time_config%tc_exp_refdate)
 
     ! --- create an event group for checkpointing and restart
     checkpointEvents =  addEventGroup('checkpointEventGroup')
     checkpointEventGroup => getEventGroup(checkpointEvents)
-    
+
     ! --- --- create checkpointing event
     eventInterval  => time_config%tc_dt_checkpoint
     checkpointEvent => newEvent('checkpoint', checkpointRefDate, eventStartDate, eventEndDate, eventInterval, errno=ierr)
@@ -144,22 +144,22 @@ CONTAINS
     CALL message('','')
 
    CALL printEventGroup(checkpointEvents)
-  
+
   END SUBROUTINE init_ocean_time_events
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
   FUNCTION newNullDatetime()
-    TYPE(datetime), POINTER:: newNullDatetime 
-    
+    TYPE(datetime), POINTER:: newNullDatetime
+
     newNullDatetime => newDatetime('0001-01-01T00:00:00')
   END FUNCTION newNullDatetime
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
-  FUNCTION ocean_time_nextStep() 
-    TYPE(datetime), POINTER:: ocean_time_nextStep 
-     
+  FUNCTION ocean_time_nextStep()
+    TYPE(datetime), POINTER:: ocean_time_nextStep
+
     ocean_previous_time = ocean_current_time
     ocean_current_time = ocean_current_time + ocean_time_step
     return_current_time = ocean_current_time
@@ -178,13 +178,13 @@ CONTAINS
   LOGICAL FUNCTION isCheckpoint()
 
     LOGICAL :: isRestart,isThisCheckpoint,doWriteRestart
-    
+
     isCheckpoint = .false.
 
     isRestart      = isCurrentEventActive(restartEvent, ocean_current_time)
     isThisCheckpoint = isCurrentEventActive(checkpointEvent, ocean_current_time)
     doWriteRestart = time_config%tc_write_restart
-        
+
     isCheckpoint = (isRestart .OR. isThisCheckpoint) .AND. .NOT. isStartdate() .AND. doWriteRestart
 
     isCheckpoint = isCheckpoint .OR. (write_last_restart .AND. isEndOfThisRun())
@@ -202,7 +202,7 @@ CONTAINS
 !              & ) THEN
 !           isCheckpoint = .TRUE.
 !         END IF
- 
+
   END FUNCTION isCheckpoint
   !-------------------------------------------------------------------------
 
@@ -211,16 +211,16 @@ CONTAINS
     isEndOfThisRun = ocean_current_time >= time_config%tc_stopdate
   END FUNCTION isEndOfThisRun
   !-------------------------------------------------------------------------
- 
+
   !-------------------------------------------------------------------------
-  FUNCTION getCurrentDate_to_String() 
+  FUNCTION getCurrentDate_to_String()
     CHARACTER(LEN=MAX_DATETIME_STR_LEN) :: getCurrentDate_to_String
-   
+
     CALL datetimeToString(ocean_current_time, getCurrentDate_to_String)
 
   END FUNCTION getCurrentDate_to_String
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   ! this will be removed, do not use !
   FUNCTION get_OceanCurrentTime_Pointer()
@@ -254,7 +254,7 @@ CONTAINS
 
     CHARACTER(LEN=32)               :: datestring
    ! the current time is advanced in the beginning of the loop, so for forcing we need the previous one
-    isOceanPreEventActive = isCurrentEventActive(oceanEvent, ocean_previous_time) 
+    isOceanPreEventActive = isCurrentEventActive(oceanEvent, ocean_previous_time)
 !     CALL datetimeToString(ocean_previous_time, datestring)
 !     write(0,*) "Ocean Event at", datestring, " is ", isOceanPreEventActive
 

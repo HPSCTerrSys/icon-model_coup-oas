@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -31,7 +30,10 @@ MODULE mo_aes_convect_tables
   USE mo_kind,      ONLY: wp
   USE mo_exception, ONLY: message_text, message, finish
   USE mo_physical_constants, ONLY: alv, als, rd, rv, tmelt, cpd
+#ifndef __NO_AES__
   USE mo_aes_cop_config,     ONLY: aes_cop_config
+#endif
+  USE mo_fortran_tools,      ONLY: assert_acc_device_only
 
   USE mo_model_domain,       ONLY: p_patch  ! for debugging only
   USE mo_math_constants,     ONLY: rad2deg  ! for debugging only
@@ -118,6 +120,10 @@ MODULE mo_aes_convect_tables
   !
   REAL(wp), PARAMETER :: tlbound =  50.0_wp  ! lower bound [K]
   REAL(wp), PARAMETER :: tubound = 400.0_wp  ! upper bound [K]
+
+  !> Maximum temperature when the upper bound has been extended [K].
+  REAL(wp), PARAMETER :: tmax_extended = 3000._wp
+
   !
   !-- full table:
   !
@@ -438,54 +444,60 @@ CONTAINS
     REAL(wp) :: a, b, c, d, dx, ddx, x, bxa
     INTEGER :: jl
 
-    !$ACC DATA PRESENT(idx, zalpha, table)
-
-    IF (PRESENT(ua) .AND. .NOT. PRESENT(dua)) THEN
-      !$ACC DATA PRESENT(ua)
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR PRIVATE(x, dx, ddx, a, b, c, d, bxa)
-      DO jl = jcs,size
-        x = zalpha(jl)
-        ! derivative and second derivative approximations (2 flops)
-        dx   = table(1,idx(jl)+1) - table(1,idx(jl))
-        ddx  = table(2,idx(jl)+1) + table(2,idx(jl))
-        ! determine coefficients (2 fma + 1 flop)
-        a = ddx - 2.0_wp*dx
-        b = 3.0_wp*dx - ddx - table(2,idx(jl))
-        c = table(2,idx(jl))
-        d = table(1,idx(jl))
-        ! Horner's scheme to compute the spline functions (3 fmas)
-        bxa = b + x*a
-        ua(jl) = d + x*(c + x*bxa)
-      END DO
-      !$ACC END PARALLEL
-      !$ACC END DATA
-    ELSE IF (PRESENT(ua) .AND. PRESENT(dua)) THEN
-      !$ACC DATA PRESENT(ua, dua)
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR PRIVATE(x, dx, ddx, a, b, c, d, bxa)
-      DO jl = jcs,size
-        x = zalpha(jl)
-        ! derivate and second derivate approximations (2 flops)
-        dx   = table(1,idx(jl)+1) - table(1,idx(jl))
-        ddx  = table(2,idx(jl)+1) + table(2,idx(jl))
-        ! determine coefficients (2 fma + 1 flop)
-        a = ddx - 2.0_wp*dx
-        b = 3.0_wp*dx - ddx - table(2,idx(jl))
-        c = table(2,idx(jl))
-        d = table(1,idx(jl))
-        ! Horner's scheme to compute the spline functions (5 fmas + 1 flop)
-        bxa = b + x*a
-        ua(jl)  = d + x*(c + x*bxa)
-        dua(jl) = rsdeltat*(c + x*(3.0_wp*bxa - b))
-      END DO
-      !$ACC END PARALLEL
-      !$ACC END DATA
-    END IF
-
-    !$ACC END DATA
+    !$ACC PARALLEL DEFAULT(PRESENT) NO_CREATE(dua) ASYNC(1)
+    !$ACC LOOP GANG VECTOR PRIVATE(x, dx, ddx, a, b, c, d, bxa)
+    DO jl = jcs,size
+      x = zalpha(jl)
+      ! derivative and second derivative approximations (2 flops)
+      dx   = table(1,idx(jl)+1) - table(1,idx(jl))
+      ddx  = table(2,idx(jl)+1) + table(2,idx(jl))
+      ! determine coefficients (2 fma + 1 flop)
+      a = ddx - 2.0_wp*dx
+      b = 3.0_wp*dx - ddx - table(2,idx(jl))
+      c = table(2,idx(jl))
+      d = table(1,idx(jl))
+      ! Horner's scheme to compute the spline functions (3 fmas)
+      bxa = b + x*a
+      ua(jl) = d + x*(c + x*bxa)
+      IF (PRESENT(dua)) dua(jl) = rsdeltat*(c + x*(3.0_wp*bxa - b))
+    END DO
+    !$ACC END PARALLEL
 
   END SUBROUTINE fetch_ua_spline
+  !----------------------------------------------------------------------------
+  SUBROUTINE fetch_ua_spline_async(jcs,size,kidx,idx,zalpha,table,ua,dua)
+    INTEGER,            INTENT(in)  :: jcs, size
+    INTEGER,            INTENT(inout)  :: kidx ! kidx is in device, use inout to avoid copyin
+    INTEGER,            INTENT(in)  :: idx(size)
+    REAL(wp),           INTENT(in)  :: zalpha(size)
+    REAL(wp),           INTENT(in)  :: table(1:2,lucupmin-2:lucupmax+1)
+    REAL(wp), OPTIONAL, INTENT(out) :: ua(size), dua(size)
+
+    REAL(wp) :: a, b, c, d, dx, ddx, x, bxa
+    INTEGER :: jl
+
+    !$ACC DATA COPYIN(kidx) ASYNC(1)
+    !$ACC PARALLEL PRESENT(kidx) DEFAULT(PRESENT) NO_CREATE(dua) ASYNC(1)
+    !$ACC LOOP GANG VECTOR PRIVATE(x, dx, ddx, a, b, c, d, bxa)
+    DO jl = jcs,kidx
+      x = zalpha(jl)
+      ! derivative and second derivative approximations (2 flops)
+      dx   = table(1,idx(jl)+1) - table(1,idx(jl))
+      ddx  = table(2,idx(jl)+1) + table(2,idx(jl))
+      ! determine coefficients (2 fma + 1 flop)
+      a = ddx - 2.0_wp*dx
+      b = 3.0_wp*dx - ddx - table(2,idx(jl))
+      c = table(2,idx(jl))
+      d = table(1,idx(jl))
+      ! Horner's scheme to compute the spline functions (3 fmas)
+      bxa = b + x*a
+      ua(jl) = d + x*(c + x*bxa)
+      IF (PRESENT(dua)) dua(jl) = rsdeltat*(c + x*(3.0_wp*bxa - b))
+    END DO
+    !$ACC END PARALLEL
+    !$ACC END DATA
+
+  END SUBROUTINE fetch_ua_spline_async
   !----------------------------------------------------------------------------
   SUBROUTINE fetch_ua(size, idx, table, u)
     INTEGER,  INTENT(in)  :: size
@@ -584,16 +596,19 @@ CONTAINS
     dua = rsdeltat*(c + x*(3.0_wp*bxa - b))
   END SUBROUTINE ua_spline
 
-  SUBROUTINE fetch_ua_spline_batch(jcs,jce,batch_size,idx,zalpha,table,ua,dua)
+  SUBROUTINE fetch_ua_spline_batch(jcs,jce,batch_size,idx,zalpha,table,lacc,ua,dua)
     INTEGER,            INTENT(in)  :: jcs, jce, batch_size
     INTEGER,            INTENT(in)  :: idx(:, :)
     REAL(wp),           INTENT(in)  :: zalpha(:, :)
     REAL(wp),           INTENT(in)  :: table(1:2,lucupmin-2:lucupmax+1)
+    LOGICAL,            INTENT(in)  :: lacc
     REAL(wp), OPTIONAL, INTENT(out) :: ua(:, :), dua(:, :)
 
     REAL(wp) :: mydua
     INTEGER :: jl, batch
     LOGICAL :: need_dua
+
+    CALL assert_acc_device_only ('fetch_ua_spline_batch', lacc)
 
     need_dua = PRESENT(dua)
 
@@ -777,13 +792,14 @@ CONTAINS
 
   END SUBROUTINE lookup_ua_spline
   !----------------------------------------------------------------------------
-  SUBROUTINE lookup_ua_spline_batch(jcs, jce, batch_size, idx, zalpha, ua, dua)
+  SUBROUTINE lookup_ua_spline_batch(jcs, jce, batch_size, idx, zalpha, lacc, ua, dua)
     INTEGER,            INTENT(in)  :: jcs, jce, batch_size
     INTEGER,            INTENT(in)  :: idx(:,:)
     REAL(wp),           INTENT(in)  :: zalpha(:,:)
+    LOGICAL,            INTENT(IN)  :: lacc
     REAL(wp), OPTIONAL, INTENT(out) :: ua(:,:), dua(:,:)
 
-    CALL fetch_ua_spline_batch(jcs, jce, batch_size, idx, zalpha, tlucu, ua, dua)
+    CALL fetch_ua_spline_batch(jcs, jce, batch_size, idx, zalpha, tlucu, lacc=lacc, ua=ua, dua=dua)
 
   END SUBROUTINE lookup_ua_spline_batch
   !----------------------------------------------------------------------------
@@ -847,15 +863,19 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
     !$ACC DATA PRESENT(temp, idx, zalpha) &
     !$ACC   NO_CREATE(xi, zphase, iphase)
     !
+#ifndef __NO_AES__
     csecfrl = aes_cop_config(jg)%csecfrl
     cthomi  = aes_cop_config(jg)%cthomi
+#else
+    CALL finish('prepare_ua_index_spline', 'Error: remove --disable-aes and reconfigure')
+#endif
 
     zinbounds = 1._wp
     ztmin = flucupmin
     ztmax = flucupmax
     IF (PRESENT(xi)) THEN
       znphase = 0.0_wp
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+      !$ACC PARALLEL DEFAULT(PRESENT) COPY(znphase) ASYNC(1)
       !$ACC LOOP GANG VECTOR PRIVATE(ztshft, ztt, ztest) REDUCTION(+: znphase) PRIVATE(zinbounds)
       DO jl = jcs,size
         ztshft = FSEL(tmelt-temp(jl),1.0_wp,0.0_wp)
@@ -921,15 +941,17 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
   END SUBROUTINE prepare_ua_index_spline
   !----------------------------------------------------------------------------
   SUBROUTINE prepare_ua_index_spline_batch(name, jcs, jce, batch_size,                &
-    &                                      temp, idx, zalpha,                         &
+    &                                      temp, idx, zalpha, lacc,                   &
     &                                      xi, nphase, zphase, iphase,                &
     &                                      kblock, kblock_size, opt_need_host_nphase, &
-    &                                      opt_sanitize_index, csecfrl, cthomi)
+    &                                      opt_sanitize_index, csecfrl, cthomi,       &
+    &                                      extend_upper_limit)
     CHARACTER(len=*),   INTENT(in)    :: name
     INTEGER,            INTENT(in)    :: jcs, jce, batch_size ! start and end index of block
     REAL(wp),           INTENT(in)    :: temp(:,:)
     INTEGER,            INTENT(inout) :: idx(:,:)
     REAL(wp),           INTENT(inout) :: zalpha(:,:)
+    LOGICAL,            INTENT(IN) :: lacc
 
     INTEGER,  OPTIONAL, INTENT(in)    :: kblock
     INTEGER,  OPTIONAL, INTENT(in)    :: kblock_size
@@ -943,15 +965,20 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
     REAL(wp), INTENT(IN) :: csecfrl ! [kg/kg]  minimum in-cloud water mass mixing ratio in mixed phase clouds
     REAL(wp), INTENT(IN) :: cthomi ! [K]      maximum temperature for homogeneous freezing
 
+    !> Extend upper temperature limit beyond table bounds.
+    LOGICAL, OPTIONAL, INTENT(IN) :: extend_upper_limit
+
     LOGICAL :: sanitize_index
+    LOGICAL :: lextend_upper_limit
 
     REAL(wp) :: ztt, ztshft, ztmin,ztmax,znphase(batch_size),ztest,myznphase
     INTEGER :: jl, jgang, jvec, batch, zoutofbounds, myzoutofbounds
     INTEGER :: zoutofbounds_vec(batch_size)
     INTEGER, PARAMETER :: tile_size = 1024
 
+    CALL assert_acc_device_only ('prepare_ua_index_spline_batch', lacc)
     !
-    !$ACC DATA PRESENT(temp, idx, zalpha)
+    !$ACC DATA PRESENT(temp, idx, zalpha) ASYNC(1)
     !
 
     zoutofbounds = 0
@@ -959,15 +986,14 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
     ztmax = flucupmax
 
     sanitize_index = .FALSE.
-    IF (PRESENT(opt_sanitize_index)) THEN
-      IF (opt_sanitize_index) THEN
-        sanitize_index = .TRUE.
-      END IF
-    END IF
+    IF (PRESENT(opt_sanitize_index)) sanitize_index = opt_sanitize_index
+
+    lextend_upper_limit = .FALSE.
+    IF (PRESENT(extend_upper_limit)) lextend_upper_limit = extend_upper_limit
 
     IF (PRESENT(xi)) THEN
       !$ACC DATA PRESENT(xi, zphase, iphase, nphase) &
-      !$ACC   CREATE(znphase, zoutofbounds_vec)
+      !$ACC   CREATE(znphase, zoutofbounds_vec) ASYNC(1)
 
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1)
       DO batch = 1,batch_size
@@ -989,6 +1015,9 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
 
             ztshft = FSEL(tmelt-temp(jl,batch),1.0_wp,0.0_wp)
             ztt = rsdeltat*temp(jl,batch)
+            IF (lextend_upper_limit .AND. ztt >= ztmax .AND. ztt < rsdeltat * tmax_extended) &
+                & ztt = ztmax - 1e-6_wp
+
             zalpha(jl,batch) = ztt - AINT(ztt)
             idx(jl,batch) = INT(ztt-ztshft)
             IF ( ztt <= ztmin .OR. ztt >= ztmax ) myzoutofbounds = myzoutofbounds + 1
@@ -1018,7 +1047,7 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
       !$ACC END PARALLEL
 
       IF (sanitize_index) THEN
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: zoutofbounds) ASYNC(1)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: zoutofbounds) ASYNC(1) COPY(zoutofbounds)
         DO batch = 1,batch_size
           nphase = INT(znphase)
           zoutofbounds = zoutofbounds + zoutofbounds_vec(batch)
@@ -1037,11 +1066,14 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
     ELSE
 
       IF (sanitize_index) THEN
-        !$ACC PARALLEL LOOP DEFAULT(PRESENT) REDUCTION(+: zoutofbounds) GANG VECTOR COLLAPSE(2) ASYNC(1)
+        !$ACC PARALLEL LOOP DEFAULT(PRESENT) REDUCTION(+: zoutofbounds) GANG VECTOR COLLAPSE(2) ASYNC(1) COPY(zoutofbounds)
         DO batch = 1,batch_size
           DO jl = jcs, jce
             ztshft = FSEL(tmelt-temp(jl,batch),1.0_wp,0.0_wp)
             ztt = rsdeltat*temp(jl,batch)
+            IF (lextend_upper_limit .AND. ztt >= ztmax .AND. ztt < rsdeltat * tmax_extended) &
+                & ztt = ztmax - 1e-6_wp
+
             zalpha(jl,batch) = ztt - AINT(ztt)
             idx(jl,batch) = INT(ztt-ztshft)
             IF ( ztt <= ztmin .OR. ztt >= ztmax ) zoutofbounds = zoutofbounds + 1
@@ -1053,6 +1085,9 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
           DO jl = jcs, jce
             ztshft = FSEL(tmelt-temp(jl,batch),1.0_wp,0.0_wp)
             ztt = rsdeltat*temp(jl,batch)
+            IF (lextend_upper_limit .AND. ztt >= ztmax .AND. ztt < rsdeltat * tmax_extended) &
+                & ztt = ztmax - 1e-6_wp
+
             zalpha(jl,batch) = ztt - AINT(ztt)
             idx(jl,batch) = INT(ztt-ztshft)
           END DO
@@ -1070,7 +1105,9 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
         DO batch = 1,batch_size
           DO jl = jcs, jce
             ztt = rsdeltat*temp(jl,batch)
-            IF ( ztt <= ztmin .OR. ztt >= ztmax ) THEN
+            IF (ztt <= ztmin &
+                & .OR. (.NOT. lextend_upper_limit .AND. ztt >= ztmax) &
+                & .OR. (lextend_upper_limit .AND. ztt >= rsdeltat * tmax_extended)) THEN
               WRITE ( 0 , '(a,a,a,a,i5,a,i8,a,f8.2,a,f8.2,a,f8.2)' )                               &
                  & ' Lookup table problem in ', TRIM(name), ' at ',                                &
                  & ' level   =',batch,                                                             &
@@ -1105,10 +1142,14 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
 
     ! Shortcuts to components of aes_cop_config
     !
-    REAL(wp), POINTER :: csecfrl, cthomi
+    REAL(wp) :: csecfrl, cthomi
     !
-    csecfrl => aes_cop_config(jg)% csecfrl
-    cthomi  => aes_cop_config(jg)% cthomi
+#ifndef __NO_AES__
+    csecfrl = aes_cop_config(jg)% csecfrl
+    cthomi  = aes_cop_config(jg)% cthomi
+#else
+    CALL finish('prepare_ua_index', 'Error: remove --disable-aes and reconfigure')
+#endif
 
     ! first compute all lookup indices and check if they are all within allowed bounds
 
@@ -1149,7 +1190,8 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
   SUBROUTINE lookup_ua_list_spline(name, jcs, size, kidx, list, temp, ua, dua, &
     &                              klev, kblock, kblock_size)
     CHARACTER(len=*),   INTENT(in)  :: name
-    INTEGER,            INTENT(in)  :: jcs, size, kidx
+    INTEGER,            INTENT(in)  :: jcs, size
+    INTEGER,            INTENT(inout)  :: kidx  ! kidx is in device, use inout to avoid copyin
     INTEGER,            INTENT(in)  :: list(:)
     REAL(wp),           INTENT(in)  :: temp(:)
     REAL(wp), OPTIONAL, INTENT(out) :: ua(:), dua(:)
@@ -1164,8 +1206,8 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
     INTEGER :: nl, jl
 
     !$ACC DATA PRESENT(list, temp) &
-    !$ACC   NO_CREATE(ua, dua) &
-    !$ACC   CREATE(idx, zalpha)
+    !$ACC   CREATE(idx, zalpha) &
+    !$ACC   COPYIN(kidx) ASYNC(1)
 
     zinbounds = 1.0_wp
     ztmin = flucupmin
@@ -1174,7 +1216,7 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
     ! first compute all lookup indices and check if they are all within allowed bounds
 
 !IBM* ASSERT(NODEPS)
-    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC PARALLEL PRESENT(kidx) DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP GANG VECTOR PRIVATE(jl, ztshft, ztt) PRIVATE(zinbounds)
     DO nl = jcs, kidx
       jl = list(nl)
@@ -1210,9 +1252,8 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
       CALL lookuperror(name, 'lookup_ua_list_spline')
     ENDIF
 #endif
-    CALL fetch_ua_spline(jcs, kidx, idx, zalpha, tlucu, ua, dua)
+    CALL fetch_ua_spline_async(jcs, size, kidx, idx, zalpha, tlucu, ua, dua)
 
-    !$ACC WAIT(1)
     !$ACC END DATA
   END SUBROUTINE lookup_ua_list_spline
   !----------------------------------------------------------------------------
@@ -1334,4 +1375,3 @@ SUBROUTINE prepare_ua_index_spline(jg, name, jcs, size, temp, idx, zalpha, &
   END SUBROUTINE lookuperror
   !----------------------------------------------------------------------------
 END MODULE mo_aes_convect_tables
-

@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -61,7 +61,7 @@ init_relax=0   # 1: use relaxation initialization file
 #   ts_surf_annual-iconR${R}B0{B}-${init_rel_suff}
 #
 #-----------------------------------------------------------------------------
-# ocean forcing (iforc=12) needs an additional flux file 
+# ocean forcing (iforc=12) needs an additional flux file
 # NO_FORCING                 = 10
 # ANALYT_FORC                = 11  - dependent on testcase
 # FORCING_FROM_FILE_FLUX     = 12  - OMIP or NCEP type forcing
@@ -153,7 +153,7 @@ dzlev_m(1:128) = 11.0,   9.0,     8.0,   8.0,     8.0,    8.0,    8.0,    8.0,  
               8.0,    8.0,    8.0,    8.25,   8.5,    8.75,   9.0,   9.25,    9.5,   9.75,
              10.0,   10.0,   10.0,   10.0,   10.0,   10.0,   10.0,   10.0,   10.0,   10.0,
              10.5,   11.0,   11.5,   12.0,   12.5,   13.0,   13.5,   14.0,   14.5,   15.0,
-             15.5,   16.0,   16.5,   17.0,   17.5,   18.0,   18.5,   19.0,   19.5,   20.0, 
+             15.5,   16.0,   16.5,   17.0,   17.5,   18.0,   18.5,   19.0,   19.5,   20.0,
              20.5,   21.0,   21.5,   22.0,   22.5,   23.0,   23.5,   24.0,   24.5,   25.0,
              25.5,   26.0,   26.5,   27.0,   28.5,   29.0,   29.5,   30.0,   30.5,   31.0,
              31.0,   32.0,   33.0,   34.0,   35.0,   36.0,   37.0,   38.0,   39.0,   40.0,
@@ -218,11 +218,11 @@ dzlev_m(1:128) = 11.0,   9.0,     8.0,   8.0,     8.0,    8.0,    8.0,    8.0,  
 /
 &ocean_initialConditions_nml
   ! itestcase_oce = 1050
-  initial_salinity_type      = 200    
+  initial_salinity_type      = 200
   initial_salinity_top       = 35.0
   initial_salinity_bottom    = 35.0
   initial_temperature_type   = 208 ! 301
-  initial_temperature_top    = 35.0 
+  initial_temperature_top    = 35.0
   initial_temperature_bottom = 5.0
 /
 EOF
@@ -231,4 +231,3 @@ EOF
 # add standard atmo_non-hydrostatic_files
 . ${thisdir}/add_required_ocean_files
 #-----------------------------------------------------------------------------
-

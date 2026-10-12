@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,7 +24,7 @@
 #   - without arguments only the linker is invoked
 #   - the current directory must be below the ICON main directory (e.g. run or src)
 
-#  - caution: new module binaries are written to src/module.o, i.e. not to modules/module.mod 
+#  - caution: new module binaries are written to src/module.o, i.e. not to modules/module.mod
 #  - caution: compile as much as necessary since no dependicies as in make are known
 
 # Revisions:
@@ -82,7 +82,7 @@ elif [ $COMP == "nagfor" ] ; then
 #elif [ $COMP == "ifort" ] ; then
 
   # compiler and options intel:
-  # compopt="ifort -I../include -I/sw/etch-ia32/netcdf-3.6.3/include    -I/sw/etch-ia32/mpich2-1.2.1-intel11/include   -module ../module -I../module -O3 -msse2 -mieee-fp -fpe0 -pc64 -fpp -traceback -DNOMPI -c ../../../src" 
+  # compopt="ifort -I../include -I/sw/etch-ia32/netcdf-3.6.3/include    -I/sw/etch-ia32/mpich2-1.2.1-intel11/include   -module ../module -I../module -O3 -msse2 -mieee-fp -fpe0 -pc64 -fpp -traceback -DNOMPI -c ../../../src"
   # loader with objects and options intel:
   # loadobj="ifort -I../module -O3 -msse2 -mieee-fp -fpe0 -pc64 -fpp -traceback $objects -L/sw/etch-ia32/mpich2-1.2.1-intel11/lib -lmpichf90 -lmpich -lpthread -lrt"
 
@@ -112,4 +112,3 @@ done
 
 echo " *** *** *** linking objects to control_model"
 $loadobj
-

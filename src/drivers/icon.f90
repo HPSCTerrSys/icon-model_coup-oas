@@ -1,15 +1,16 @@
-! This is the master program of the ICON model.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This is the master program of the ICON model.
+
 PROGRAM icon
 
 #if defined (__INTEL_COMPILER) || defined (__PGI) || defined (NAGFOR)
@@ -27,12 +28,15 @@ PROGRAM icon
   USE mo_exception,           ONLY: message_text, message, finish, enable_logging
   USE mo_io_units,            ONLY: filename_max
   USE mo_mpi,                 ONLY: start_mpi , stop_mpi, my_process_is_global_root,    &
-    &                               my_process_is_stdio
+    &                               my_process_is_stdio, my_process_is_mpi_workroot
   USE mo_master_init,         ONLY: init_master_control
   USE mo_master_control,      ONLY: get_my_namelist_filename, get_my_process_type,      &
-    &                               atmo_process, ocean_process, ps_radiation_process,  &
-    &                               hamocc_process, jsbach_process, icon_output_process,&
-    &                               wave_process
+    &                               atmo_process, ocean_process, hamocc_process, &
+    &                               jsbach_process, icon_output_process
+#ifndef __NO_ICON_WAVES__
+  USE mo_master_control,      ONLY: wave_process
+#endif
+  USE mo_coupling_config,     ONLY: is_coupled_run
 #ifndef __NO_ICON_TESTBED__
   USE mo_master_control,      ONLY: testbed_process
 #endif
@@ -74,14 +78,18 @@ PROGRAM icon
   USE mo_mtrace,            ONLY: start_memory_tracing
 #  endif
 #endif
-
+#ifndef __NO_AES__
+  USE memman,           ONLY: mm_initialize, mm_finalize
+#endif
 #ifndef __NO_ICON_COMIN__
+  USE iso_c_binding, ONLY: C_BOOl
   USE mo_kind, ONLY: wp
   USE comin_host_interface,  ONLY: comin_setup_check,      &
     &                              comin_setup_errhandler, &
     &                              t_comin_setup_version_info, &
     &                              comin_setup_get_version,    &
     &                              comin_setup_init
+  USE mo_comin_adapter, ONLY: icon_comin_finish_c
 #endif /* ifndef __NO_ICON_COMIN__ */
 
   IMPLICIT NONE
@@ -100,7 +108,6 @@ PROGRAM icon
 
 #ifndef __NO_ICON_COMIN__
   TYPE(t_comin_setup_version_info) :: comin_version
-  INTEGER                      :: ierr
 #endif /* ifndef __NO_ICON_COMIN__ */
 
   ! handling of comand-line arguments:
@@ -148,6 +155,11 @@ PROGRAM icon
 
   !-------------------------------------------------------------------
   ! Initialize MPI, this should always be the first call
+  ! unless OpenACC is in use: then we should initialize the device before
+  ! Cray compiler doesn't know ACC INIT
+#ifdef __NVCOMPILER
+  !$ACC INIT
+#endif
   CALL start_mpi('ICON')
 
   !-------------------------------------------------------------------
@@ -207,22 +219,22 @@ PROGRAM icon
   ! Initialize the master control
 
   master_control_status = init_master_control(TRIM(master_namelist_filename))
+#ifndef __NO_AES__
+  IF (mm_initialize() /= 0) CALL finish('icon.f90', 'mm_initialize() failed')
+#endif
 
 #ifndef __NO_ICON_COMIN__
   !-------------------------------------------------------------------
-  ! Initialize ICON community interfaces - UNDER DEVELOPMENT
-  CALL comin_setup_init(my_process_is_stdio() , ierr)
-  IF (ierr /= 0) STOP
+  ! Initialize ICON community interfaces
+  CALL comin_setup_init(LOGICAL(my_process_is_stdio(), C_BOOL))
   comin_version = comin_setup_get_version()
   WRITE(message_text,'(2(a,i0))') &
     &  "        linked to ICON Community Interface v", &
     &  comin_version%version_no_major, ".", comin_version%version_no_minor
   CALL message('', message_text)
 
-  CALL comin_setup_errhandler(finish, ierr)
-  IF (ierr /= 0) STOP
-  CALL comin_setup_check("icon", wp, ierr)
-  IF (ierr /= 0) STOP
+  CALL comin_setup_errhandler(icon_comin_finish_c)
+  CALL comin_setup_check("icon", wp)
 
   CALL message('', '')
 #endif /* ifndef __NO_ICON_COMIN__ */
@@ -277,7 +289,62 @@ PROGRAM icon
 
   IF (ASSOCIATED(time_config%tc_exp_stopdate) .AND. ASSOCIATED(time_config%tc_stopdate)) THEN
     ! write the control.status file
-    IF (my_process_is_global_root()) THEN
+    IF(is_coupled_run()) THEN
+      !Write the file for each component to make sure no component crashes between the last MPI command and here.
+      SELECT CASE (my_process_component)
+
+#ifndef __NO_ICON_ATMO__
+        CASE (atmo_process)
+          IF(my_process_is_mpi_workroot()) THEN
+            OPEN (500, FILE="finish_atmo.status")
+            IF ((time_config%tc_exp_stopdate > time_config%tc_stopdate) .AND. time_config%tc_write_restart) THEN
+              WRITE(500,*) "RESTART"
+            ELSE
+              WRITE(500,*) "OK"
+            ENDIF
+            CLOSE(500)
+          ENDIF
+#endif
+
+#ifndef __NO_ICON_OCEAN__
+        CASE (ocean_process)
+          IF(my_process_is_mpi_workroot()) THEN
+            OPEN (500, FILE="finish_ocean.status")
+            IF ((time_config%tc_exp_stopdate > time_config%tc_stopdate) .AND. time_config%tc_write_restart) THEN
+              WRITE(500,*) "RESTART"
+            ELSE
+              WRITE(500,*) "OK"
+            ENDIF
+            CLOSE(500)
+          ENDIF
+
+        CASE (hamocc_process)
+          IF(my_process_is_mpi_workroot()) THEN
+            OPEN (500, FILE="finish_hamocc.status")
+            IF ((time_config%tc_exp_stopdate > time_config%tc_stopdate) .AND. time_config%tc_write_restart) THEN
+              WRITE(500,*) "RESTART"
+            ELSE
+              WRITE(500,*) "OK"
+            ENDIF
+            CLOSE(500)
+          ENDIF
+#endif
+
+#ifndef __NO_ICON_WAVES__
+        CASE (wave_process)
+          IF(my_process_is_mpi_workroot()) THEN
+            OPEN (500, FILE="finish_waves.status")
+            IF ((time_config%tc_exp_stopdate > time_config%tc_stopdate) .AND. time_config%tc_write_restart) THEN
+              WRITE(500,*) "RESTART"
+            ELSE
+              WRITE(500,*) "OK"
+            ENDIF
+            CLOSE(500)
+          ENDIF
+#endif
+      END SELECT
+
+    ELSEIF (my_process_is_global_root()) THEN
       OPEN (500, FILE="finish.status")
       IF ((time_config%tc_exp_stopdate > time_config%tc_stopdate) .AND. time_config%tc_write_restart) THEN
         WRITE(500,*) "RESTART"
@@ -287,6 +354,10 @@ PROGRAM icon
       CLOSE(500)
     END IF
   END IF
+
+#ifndef __NO_AES__
+  IF (mm_finalize() /= 0) CALL finish('icon.f90', 'mm_finalize() failed')
+#endif
 
   ! Shut down MPI
   CALL stop_mpi

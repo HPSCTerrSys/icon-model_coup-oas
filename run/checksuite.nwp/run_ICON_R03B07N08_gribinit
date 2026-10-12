@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,7 +14,7 @@
 # =====================================
 # mistral batch job parameters
 #-----------------------------------------------------------------------------
-#SBATCH --account=mh0287 
+#SBATCH --account=mh0287
 ##SBATCH --job-name=icon-nwp-test
 #SBATCH --partition=compute
 #SBATCH --nodes=20
@@ -103,10 +103,6 @@ ln -sf $EXTPARDIR/icon_extpar_0027_R03B08_N02_20150805_tiles.nc extpar_iconR3B08
  ln -sf $INDATADIR/iefff2016071021-0130R.grb fg_R03B08_DOM02.grb
 
 
-# files needed for radiation
-ln -sf ${basedir}/data/ECHAM6_CldOptProps.nc rrtm_cldopt.nc
-ln -sf ${basedir}/data/rrtmg_lw.nc .
-
 # map file for analysis variable names
 ln -sf ${basedir}/run/ana_varnames_map_file.txt .
 
@@ -162,7 +158,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_nwptest << EOF
 
@@ -176,7 +172,7 @@ cat > NAMELIST_nwptest << EOF
 /
 &grid_nml
  dynamics_grid_filename       =  ${dynamics_grid_filename}
- radiation_grid_filename      =  ${radiation_grid_filename} 
+ radiation_grid_filename      =  ${radiation_grid_filename}
  dynamics_parent_grid_id      = 0,1
  lredgrid_phys                = .true.,.true.
  lfeedback                    = .true.
@@ -218,7 +214,7 @@ cat > NAMELIST_nwptest << EOF
 &nwp_phy_nml
  inwp_gscp                    = 1
  inwp_convection              = 1
- inwp_radiation               = 1
+ inwp_radiation               = 4
  inwp_cldcover                = 1
  inwp_turb                    = 1
  inwp_satad                   = 1
@@ -235,7 +231,6 @@ cat > NAMELIST_nwptest << EOF
  dt_conv                      = 360., 180.,
  dt_sso                       = 720.,
  dt_gwd                       = 720.,
- cldopt_filename              = 'rrtm_cldopt.nc'
 /
 &nwp_tuning_nml
  itune_albedo   = 1     ! somewhat reduced albedo (w.r.t. MODIS data) over Sahara
@@ -279,6 +274,7 @@ cat > NAMELIST_nwptest << EOF
  vmr_o2                       = 0.20946
  vmr_cfc11                    = 240.e-12
  vmr_cfc12                    = 532.e-12
+ ecrad_data_path              = '${basedir}/externals/ecrad/data'
 /
 &nonhydrostatic_nml
  iadv_rhotheta                = 2
@@ -322,7 +318,7 @@ cat > NAMELIST_nwptest << EOF
  hdiff_order                  = 5
  itype_vn_diffu               = 1
  itype_t_diffu                = 2
- hdiff_efdt_ratio             = 24.0 
+ hdiff_efdt_ratio             = 24.0
  hdiff_smag_fac               = 0.025
  lhdiff_vn                    = .true.
  lhdiff_temp                  = .true.
@@ -387,7 +383,7 @@ cat > NAMELIST_nwptest << EOF
 &nh_pzlev_nml
  nplev             = 29   ! number of p level output (attention: levels in [Pa] and top-down)
  plevels           = 10,    30,    50,    100,   200,   300,   500,   700,
-                   1000,  1500,  2000,   3000,  5000,  7000, 10000, 15000, 
+                   1000,  1500,  2000,   3000,  5000,  7000, 10000, 15000,
                   20000, 25000, 30000,  40000, 50000, 60000, 70000, 80000,
                   85000, 90000, 92500,  95000,100000
 /
@@ -424,7 +420,7 @@ cat > NAMELIST_nwptest << EOF
  output_filename        = 'ini_latlon'                ! file name base
  pl_varlist             = 'temp','u','v','geopot','rh','w'
  p_levels = 10,    30,    50,    100,   200,   300,   500,   700,
-          1000,  1500,  2000,   3000,  5000,  7000, 10000, 15000, 
+          1000,  1500,  2000,   3000,  5000,  7000, 10000, 15000,
          20000, 25000, 30000,  40000, 50000, 60000, 70000, 80000,
          85000, 90000, 92500,  95000,100000
  ml_varlist             = 'pres_msl','clct','clcl','clcm','clch','group:precip_vars'
@@ -490,7 +486,7 @@ cat > NAMELIST_nwptest << EOF
  filename_format        = '<output_filename>_DOM<physdom>_<levtype>_<hhhmmss>'
  pl_varlist             = 'temp','u','v','geopot','rh','w'
  p_levels = 10,    30,    50,    100,   200,   300,   500,   700,
-          1000,  1500,  2000,   3000,  5000,  7000, 10000, 15000, 
+          1000,  1500,  2000,   3000,  5000,  7000, 10000, 15000,
          20000, 25000, 30000,  40000, 50000, 60000, 70000, 80000,
          85000, 90000, 92500,  95000,100000
  ml_varlist             = 'pres_msl','clct','clcl','clcm','clch','group:precip_vars'
@@ -556,7 +552,7 @@ cat > NAMELIST_nwptest << EOF
  filename_format        = '<output_filename>_DOM<physdom>_<levtype>_<hhhmmss>'
  pl_varlist             = 'temp','u','v','geopot','rh','w'
  p_levels = 10,    30,    50,    100,   200,   300,   500,   700,
-          1000,  1500,  2000,   3000,  5000,  7000, 10000, 15000, 
+          1000,  1500,  2000,   3000,  5000,  7000, 10000, 15000,
          20000, 25000, 30000,  40000, 50000, 60000, 70000, 80000,
          85000, 90000, 92500,  95000,100000
  ml_varlist             = 'pres_msl','clct','clcl','clcm','clch','group:precip_vars'
@@ -575,4 +571,3 @@ EOF
 
 echo ${START} ${MODEL}
 ${START} ${MODEL}
-

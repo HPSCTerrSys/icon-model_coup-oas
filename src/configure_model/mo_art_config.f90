@@ -1,10 +1,7 @@
-! @brief configuration setup for ART-package
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,14 +9,16 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! @brief configuration setup for ART-package
+
 MODULE mo_art_config
 
   USE mo_kind,                 ONLY: wp
   USE mo_impl_constants,       ONLY: max_dom
   USE mo_impl_constants,       ONLY: MAX_CHAR_LENGTH
-  
+
   IMPLICIT NONE
-  
+
   PRIVATE
 
   PUBLIC :: nart_tendphy
@@ -37,30 +36,33 @@ MODULE mo_art_config
   INTEGER, PARAMETER  :: npreslay      = 7   !Number of pressure layers for diagnostic output of maximum concentration
   INTEGER, PARAMETER  :: IART_PATH_LEN = 200 !Maximum length of file- and pathnames
 
-  INTEGER             :: nart_tendphy  = 0  !Maximum number of tracers that are effected by deep convective transport 
-  
-  
+  INTEGER             :: nart_tendphy  = 0  !Maximum number of tracers that are effected by deep convective transport
+
+
   TYPE t_art_config ! Namelist variables for ART
-    
+
     ! Namelist variables
-    
+
     ! General control variables (Details: cf. Tab. 2.2 ICON-ART User Guide)
     CHARACTER(LEN=IART_PATH_LEN) :: &
-      &  cart_input_folder               !< Absolute Path to ART input files 
+      &  cart_input_folder               !< Absolute Path to ART input files
     INTEGER :: iart_ntracer              !< number of transported ART tracers
     INTEGER :: iart_init_aero            !< Initialization of aerosol species
     INTEGER :: iart_init_gas             !< Initialization of gaseous species
     INTEGER :: iart_fplume               !< run FPlume model (Volcanic plumes)
     INTEGER :: iart_volc_numb            !< number of volcanoes in FPlume
+    INTEGER :: iart_solvar_type          !< type of solar variability
     CHARACTER(LEN=IART_PATH_LEN)  ::   &
       &  cart_fplume_inp                 !< Path to FPlume input files (insert without extension)
     LOGICAL :: lart_diag_out             !< Enable output of diagnostic fields
+    LOGICAL :: lart_diag_xml             !< Create diagnostic fields only if they are defined in diagnostics.xml
     LOGICAL :: lart_pntSrc               !< Enables point sources
+    LOGICAL :: lart_excl_end_pntSrc      !< Main switch to exclude endTime from active time interval of point sources
     LOGICAL :: lart_emiss_turbdiff       !< Switch if emission should be included as surface flux condition
-    CHARACTER(LEN=20) :: cart_io_suffix  !< user given suffix instead of automatically generated grid number 
-                                         !  in ICON-ART input filename convention: 
+    CHARACTER(LEN=20) :: cart_io_suffix  !< user given suffix instead of automatically generated grid number
+                                         !  in ICON-ART input filename convention:
                                          !  ART_iconR<n>B<kk>-grid-<yyyy-mm-dd-hh>_<grid_suffix>.nc
-    
+
     ! Atmospheric Chemistry (Details: cf. Tab. 2.3 ICON-ART User Guide)
     LOGICAL :: lart_chem               !< Main switch to enable chemistry
     LOGICAL :: lart_chemtracer         !< switch for parametrised tracers
@@ -97,6 +99,8 @@ MODULE mo_art_config
                                       !  datasets which can prescribe tracers
     CHARACTER(LEN=IART_PATH_LEN) :: &
       &  cart_aero_emiss_xml          !< Path to XML file for aerosol emission routines
+    CHARACTER(LEN=IART_PATH_LEN) :: &
+      &  cart_opt_props_nc            !< Path to NetCDF file for prescribed optical properties
 
     ! Atmospheric Aerosol (Details: cf. Tab. 2.4 ICON-ART User Guide)
     LOGICAL :: lart_aerosol            !< Main switch for the treatment of atmospheric aerosol
@@ -104,6 +108,7 @@ MODULE mo_art_config
     INTEGER :: iart_dust               !< Treatment of mineral dust aerosol
     INTEGER :: iart_anthro             !< Treatment of anthropogenic aerosol
     INTEGER :: iart_fire               !< Treatment of wildfire aerosol
+    INTEGER :: iart_gfas_dt_ovrwrite   !< Interval of overwriting biomass burning emissions
     INTEGER :: iart_volcano            !< Treatment of volcanic ash aerosol
     INTEGER :: iart_nonsph             !< Treatment of nonspherical particles
     INTEGER :: iart_isorropia          !< Treatment of gas aerosol partioning
@@ -115,7 +120,7 @@ MODULE mo_art_config
       &  cart_radioact_file            !< Absolute path + filename of input file for radioactive emissions
     INTEGER :: iart_pollen             !< Treatment of pollen
     INTEGER :: iart_modeshift          !< Doing mode shift (only temporary switch for debug)
-    
+
     ! Feedback processes (Details: cf. Tab. 2.5 ICON-ART User Guide)
     INTEGER :: iart_aci_warm           !< Nucleation of aerosol to cloud droplets
     INTEGER :: iart_aci_cold           !< Nucleation of aerosol to cloud ice
@@ -135,15 +140,32 @@ MODULE mo_art_config
 
     ! Fast Physics Processes (Details: cf. Tab. 2.6 ICON-ART User Guide)
     LOGICAL :: lart_conv               !< Convection of aerosol (TRUE/FALSE)
-    INTEGER :: nconv_tracer            !< number of tracers in convection 
+    INTEGER :: nconv_tracer            !< number of tracers in convection
     LOGICAL :: lart_turb               !< Turbulent diffusion of aerosol (TRUE/FALSE)
     INTEGER :: nturb_tracer            !< number of tracers in turbulence
 
     ! Write DEBUG-Restartfile
     LOGICAL :: lart_debugRestart
-    
+
+    ! MieAI (internal mixing)
+    INTEGER :: iart_MieAI
+    CHARACTER(LEN=IART_PATH_LEN)  :: &
+      &  cart_MieAI_files              !< Path to MieAI model files like ANN model parameters,
+                                       ! quantile mapping parmaters and min/max values
+                                       ! used for preprocessing
+    CHARACTER(LEN=IART_PATH_LEN)  :: &
+      &  cart_ri                       !< Path to Directory containing refractive indices data
+
     ! Time interval over which maximum of air concentration of radionuclides is taken
     REAL(wp):: radioact_maxtint
+
+    ! Type of radiation multiple call scheme to use
+    INTEGER :: irad_multicall
+    ! Enhancment of wildfire sensible heat release
+    REAL(wp) :: rart_shfl_fire          !< Treatment of wildfire sensible heat release
+    ! Enhancment of wildfire moisture release
+    REAL(wp) :: rart_qv_fire            !< Treatment of wildfire moisture release
+
   END TYPE t_art_config
 
   TYPE(t_art_config), TARGET :: art_config(0:max_dom)
@@ -157,17 +179,17 @@ CONTAINS
   !>
   !! setup components of ICON-ART depending on this namelist
   !!
-  !! Setup of additional ICON-ART control variables depending on the 
-  !! art-NAMELIST and potentially other namelists. This routine is 
-  !! called, after all namelists have been read and a synoptic consistency 
+  !! Setup of additional ICON-ART control variables depending on the
+  !! art-NAMELIST and potentially other namelists. This routine is
+  !! called, after all namelists have been read and a synoptic consistency
   !! check has been done.
   !!
   SUBROUTINE configure_art(jg)
-    INTEGER, INTENT(IN) :: jg          !< patch 
+    INTEGER, INTENT(IN) :: jg          !< patch
 
     art_config(jg)%nconv_tracer=0
     art_config(jg)%nturb_tracer=0
- 
+
   END SUBROUTINE configure_art
 
 

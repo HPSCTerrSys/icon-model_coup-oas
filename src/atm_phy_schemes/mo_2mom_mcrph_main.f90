@@ -1,21 +1,21 @@
-!NEC$ options "-finline-max-depth=3 -finline-max-function-size=10000"
-!
-! Two-moment bulk microphysics after Seifert, Beheng and Blahak
-!
-! Description:
-! This module contains the main subroutine for the two-moment microphysics, and
-! the initialization subroutines that calculated the run-time coefficients
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Two-moment bulk microphysics after Seifert, Beheng and Blahak
+!
+! Description:
+! This module contains the main subroutine for the two-moment microphysics, and
+! the initialization subroutines that calculated the run-time coefficients
+
+!NEC$ options "-finline-max-depth=3 -finline-max-function-size=50000"
 
 MODULE mo_2mom_mcrph_main
 
@@ -70,16 +70,14 @@ MODULE mo_2mom_mcrph_main
 !   which are calculated once in the driver
 !===============================================================================!
 
-  USE mo_kind,               ONLY: sp, wp
+  USE mo_kind,               ONLY: wp
   USE mo_exception,          ONLY: finish, message, txt => message_text
   USE mo_math_constants,     ONLY: pi, pi4 => pi_4
   USE mo_2mom_mcrph_types, ONLY: &
-       & particle, particle_frozen, particle_lwf, atmosphere, &
-       & particle_sphere, particle_rain_coeffs, particle_cloud_coeffs, &
-       & particle_ice_coeffs, particle_snow_coeffs, particle_graupel_coeffs, &
+       & particle, atmosphere, &
        & aerosol_ccn, aerosol_in, &
        & particle_coeffs, collection_coeffs, rain_riming_coeffs, dep_imm_coeffs, &
-       & coll_coeffs_ir_pm, &
+       & coll_coeffs_ir_pm, t_diag_coeffs_2mom, &
        & ltabdminwgg, ltabdminwgh, ltab_estick_ice, ltab_estick_snow, ltab_estick_parti
   USE mo_2mom_mcrph_util, ONLY: &
        & gamlookuptable,             &  ! For look-up table of incomplete Gamma function
@@ -90,29 +88,29 @@ MODULE mo_2mom_mcrph_main
        & dmin_wg_gr_ltab_equi,       &  ! For look-up table of wet growth diameter
        & init_estick_ltab_equi
   USE mo_2mom_mcrph_processes, ONLY:                                         &
-       &  particle_assign, particle_frozen_assign, particle_lwf_assign,      &
        &  sedi_vel_rain, init_2mom_sedi_vel, autoconversionSB,               &
        &  accretionSB, rain_selfcollectionSB, autoconversionKB, accretionKB, &
        &  autoconversionKK, accretionKK, rain_evaporation, evaporation,      &
        &  cloud_freeze, ice_nucleation_homhet,                               &
        &  vapor_dep_relaxation, rain_freeze_gamlook,                         &
-       &  setup_particle_coeffs, setup_cloud_autoconversion,                 &
-       &  setup_ice_selfcollection, ice_selfcollection,                      &
-       &  setup_snow_selfcollection, snow_selfcollection,                    &
-       &  setup_particle_collection_type1,                                   &
-       &  setup_particle_collection_type2,                                   &
-       &  setup_particle_coll_pm_type1_bfull,                                &
        &  snow_melting, particle_particle_collection,                        &
        &  particle_melting_lwf,prepare_melting_lwf,                          &
-       &  setup_graupel_selfcollection, graupel_selfcollection, ice_melting, &
+       &  ice_selfcollection, snow_selfcollection,                           &
+       &  graupel_selfcollection, ice_melting,                               &
        &  particle_cloud_riming, particle_rain_riming, graupel_melting,      &
        &  hail_melting_simple, graupel_hail_conv_wet_gamlook, ice_riming,    &
        &  snow_riming, ccn_activation_sk, ccn_activation_hdcp2,              &
-       &  ccn_activation_sk_4d, set_default_n, cfg_params
-
-  ! Some switches...
-  USE mo_2mom_mcrph_processes, ONLY:                                         &
-       &  ice_typ, nuc_i_typ, nuc_c_typ, auto_typ, isdebug, isprint
+       &  ccn_activation_sk_4d, set_default_n,                               &
+       &  ice_typ, nuc_i_typ, nuc_c_typ, auto_typ, isdebug
+  USE mo_2mom_mcrph_setup, ONLY: cfg_params,                                 &
+       &  setup_particle_coeffs, setup_cloud_autoconversion_sb,              &
+       &  setup_ice_selfcollection, setup_snow_selfcollection,               &
+       &  setup_graupel_selfcollection,                                      &
+       &  setup_particle_collection_type1,                                   &
+       &  setup_particle_collection_type2,                                   &
+       &  setup_particle_coll_pm_type1_bfull,                                &
+       &  setup_diag_coeffs
+USE mo_atm_phy_nwp_config,  ONLY: atm_phy_nwp_config
 
   USE mo_timer, ONLY: timers_level, timer_start, timer_stop, timer_phys_2mom_wetgrowth
 
@@ -127,14 +125,9 @@ MODULE mo_2mom_mcrph_main
   real(wp) :: qnc_const = 200.0e6_wp
 
   ! Derived types that contain run-time coefficients for each particle type
-  TYPE(particle_ice_coeffs)      :: ice_coeffs
-  TYPE(particle_snow_coeffs)     :: snow_coeffs
-  TYPE(particle_graupel_coeffs)  :: graupel_coeffs
-  TYPE(particle_sphere)          :: hail_coeffs
-  TYPE(particle_cloud_coeffs)    :: cloud_coeffs
-  TYPE(particle_rain_coeffs)     :: rain_coeffs
-  TYPE(aerosol_ccn)              :: ccn_coeffs
-  TYPE(aerosol_in)               :: in_coeffs
+  TYPE(particle_coeffs):: ice_coeffs, snow_coeffs, graupel_coeffs, hail_coeffs, cloud_coeffs, rain_coeffs
+  TYPE(aerosol_ccn)    :: ccn_coeffs
+  TYPE(aerosol_in)     :: in_coeffs
 
   ! .. Look up tables for graupel_hail_conv_wet_gamlook and rain_freeze_gamlook
   TYPE(gamlookuptable) :: graupel_ltable1, graupel_ltable2
@@ -151,7 +144,7 @@ MODULE mo_2mom_mcrph_main
                           gshedr_ltab_tgg_05, gshedr_ltab_tgg_03, gshedr_ltab_tgr_04
   TYPE(gamlookuptable) :: hshedr_ltab_dhh_03, hshedr_ltab_drr_01, hshedr_ltab_dhr_02, &
                           hshedr_ltab_thh_05, hshedr_ltab_thh_03, hshedr_ltab_thr_04
-  
+
   ! choice of mu-D relation for rain, default is mu_Dm_rain_typ = 1
   INTEGER, PARAMETER     :: mu_Dm_rain_typ = 1     ! see init_twomoment() for possible choices
 
@@ -166,34 +159,12 @@ MODULE mo_2mom_mcrph_main
   LOGICAL, PARAMETER     :: enhanced_melting   = .TRUE.  ! default is .true.
   LOGICAL, PARAMETER     :: classic_melting_in_lwf_scheme = .False.
 
-  !..Pre-defined particle types (used in init_2mom_scheme)
-  TYPE(particle_frozen), PARAMETER :: & ! WE KEEP THIS FOR REFERENCE TO ORIGINAL COSMO SETTING
-       &        graupelhail_cosmo5_orig = particle_frozen( & ! graupelhail2test4
-       &        'graupelhail_cosmo5_o' ,& !.name
-       &        1.000000, & !..nu.........1st shape parameter of the distribution
-       &        0.333333, & !..mu.........2nd shape parameter of the distribution
-       &        5.30d-04, & !..x_max......maximum particle mean mass
-       &        4.19d-09, & !..x_min......minimum particle mean mass
-       &        1.42d-01, & !..a_geo......particle geometry prefactor
-       &        0.314000, & !..b_geo......particle geometry exponent = 1/3.10
-       &        86.89371, & !..a_vel......terminal fall velocity prefactor
-       &        0.268325, & !..b_vel......terminal fall velocity exponent
-       &        0.780000, & !..a_ven......1st ventilation coefficient (PK, S.541)
-       &        0.308000, & !..b_ven......2nd ventilation coefficient (PK, S.541)
-       &        2.00,     & !..cap........capacity coefficient
-       &        30.0,     & !..vsedi_max..maximum bulk sedimentation velocity
-       &        0.10,     & !..vsedi_min..minimum bulk sedimentation velocity
-       &        null(),   & !..n pointer..pointer to number density array
-       &        null(),   & !..q pointer..pointer to mass density array
-       &        null(),   & !..rho_v......pointer to density correction array
-       &        1.0,      & !..ecoll_c....maximum collision efficiency with cloud droplets
-       &        100.0d-6, & !..D_crit_c...D-threshold for cloud riming
-       &        1.000d-6, & !..q_crit_c...q-threshold for cloud riming
-       &        0.0       & !..sigma_vel..dispersion of fall velocity for collection kernel
-       &        )
+  ! The following parameter is supposed to raise an error, if mistakenly used.
+  ! ieee_signaling_nan is not allowed as a parameter by some compiler
+  REAL(wp), PARAMETER    :: missing =  -HUGE(1.0_wp)
 
-  TYPE(particle_frozen), PARAMETER :: &
-       &        graupelhail_cosmo5 = particle_frozen( & ! graupelhail2test5
+  TYPE(particle), PARAMETER :: &
+       &        graupelhail_cosmo5 = particle( & ! graupelhail2test5
        &        'graupelhail_cosmo5' ,& !.name
        &        1.000000, & !..nu.........1st shape parameter of the distribution
        &        0.333333, & !..mu.........2nd shape parameter of the distribution
@@ -214,10 +185,16 @@ MODULE mo_2mom_mcrph_main
        &        1.0,      & !..ecoll_c....maximum collision efficiency with cloud droplets
        &        100.0d-6, & !..D_crit_c...D-threshold for cloud riming
        &        1.000d-6, & !..q_crit_c...q-threshold for cloud riming
-       &        0.0       & !..sigma_vel..dispersion of fall velocity for collection kernel
+       &        0.0,      & !..sigma_vel..dispersion of fall velocity for collection kernel
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        null() &
        &        )
 
-  TYPE(particle_lwf), PARAMETER :: graupel_vivek = particle_lwf( & ! graupelhail2test5
+  TYPE(particle), PARAMETER :: graupel_vivek = particle( & ! graupelhail2test5
        &        'graupel_vivek' ,& !.name...Bezeichnung
        &        1.000000, & !..nu.....Breiteparameter der Verteil.
        &        0.333333, & !..mu.....Exp.-parameter der Verteil.
@@ -247,8 +224,8 @@ MODULE mo_2mom_mcrph_main
        &        null()    ) !..ql pointer
 
 
-  TYPE(particle_frozen), PARAMETER :: &
-       &        hail_cosmo5 = particle_frozen( & ! hailULItest
+  TYPE(particle), PARAMETER :: &
+       &        hail_cosmo5 = particle( & ! hailULItest
        &        'hail_cosmo5' ,& !.name...Bezeichnung
        &        1.000000, & !..nu.....Breiteparameter der Verteil.
        &        0.333333, & !..mu.....Exp.-parameter der Verteil.
@@ -269,10 +246,16 @@ MODULE mo_2mom_mcrph_main
        &        1.0,      & !..ecoll_c
        &        100.0d-6, & !..D_crit_c
        &        1.000d-6, & !..q_crit_c
-       &        0.0       & !..sigma_vel
+       &        0.0,      & !..sigma_vel
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        null() &
        &        )
 
-  TYPE(particle_lwf), PARAMETER :: hail_vivek = particle_lwf( & ! hailULItest
+  TYPE(particle), PARAMETER :: hail_vivek = particle( & ! hailULItest
        &        'hail_vivek' ,& !.name...Bezeichnung
        &        1.000000, & !..nu.....Breiteparameter der Verteil.
        &        0.333333, & !..mu.....Exp.-parameter der Verteil.
@@ -301,26 +284,7 @@ MODULE mo_2mom_mcrph_main
        &        0.666666, & !..cmelt2 (melting intgral)   !!NEEDS TO BE ADJUSTED
        &        null()    ) !..ql pointer
 
-  TYPE(particle), PARAMETER :: cloud_cosmo5 = PARTICLE( &
-       &      'cloud_cosmo5',  & !.name...Bezeichnung der Partikelklasse
-       &        0.0,      & !..nu.....Breiteparameter der Verteil.
-       &        0.333333, & !..mu.....Exp.-parameter der Verteil.
-       &        2.60d-10, & !..x_max..maximale Teilchenmasse D=80e-6m
-       &        4.20d-15, & !..x_min..minimale Teilchenmasse D=2.e-6m
-       &        1.24d-01, & !..a_geo..Koeff. Geometrie
-       &        0.333333, & !..b_geo..Koeff. Geometrie = 1/3
-       &        3.75d+05, & !..a_vel..Koeff. Fallgesetz
-       &        0.666667, & !..b_vel..Koeff. Fallgesetz
-       &        0.780000, & !..a_ven..Koeff. Ventilation (PK, S.541)
-       &        0.308000, & !..b_ven..Koeff. Ventilation (PK, S.541)
-       &        2.00,     & !..cap....Koeff. Kapazitaet
-       &        1.0,      & !..vsedi_max
-       &        0.0,      & !..vsedi_min
-       &        null(),   & !..n pointer
-       &        null(),   & !..q pointer
-       &        null() )    !..rho_v pointer
-
-  TYPE(particle), PARAMETER :: cloud_nue1mue1 = PARTICLE( &
+  TYPE(particle), PARAMETER :: cloud_nue1mue1 = particle( &
        &        'cloud_nue1mue1',  & !.name...Bezeichnung der Partikelklasse
        &        1.000000, & !..nu.....Breiteparameter der Verteil.
        &        1.000000, & !..mu.....Exp.-parameter der Verteil.
@@ -337,10 +301,20 @@ MODULE mo_2mom_mcrph_main
        &        0.0,      & !..vsedi_min
        &        null(),   & !..n pointer
        &        null(),   & !..q pointer
-       &        null() )    !..rho_v pointer
+       &        null(),   & !..rho_v pointer
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        null()    )
 
-  TYPE(particle_frozen), PARAMETER :: &
-       &        ice_cosmo5 =  particle_frozen( & ! iceCRY2test
+  TYPE(particle), PARAMETER :: &
+       &        ice_cosmo5 =  particle( & ! iceCRY2test
        &        'ice_cosmo5', & !.name...Bezeichnung der Partikelklasse
        &        0.000000, & !..nu...e..Breiteparameter der Verteil.
        &        0.333333, & !..mu.....Exp.-parameter der Verteil.
@@ -361,36 +335,17 @@ MODULE mo_2mom_mcrph_main
        &        0.80,     & !..ecoll_c
        &        150.0d-6, & !..D_crit_c
        &        1.000d-5, & !..q_crit_c
-       &        0.25      & !..sigma_vel
+       &        0.25,     & !..sigma_vel
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        null() &
        &        )
 
-  TYPE(particle_frozen), PARAMETER :: &
-       &        snow_cosmo5 = particle_frozen( & ! nach Andy Heymsfield (CRYSTAL-FACE)
-       &        'snow_cosmo5', & !.name...Bezeichnung der Partikelklasse
-       &        0.000000, & !..nu.....Breiteparameter der Verteil.
-       &        0.500000, & !..mu.....Exp.-parameter der Verteil.
-       &        2.00d-05, & !..x_max..maximale Teilchenmasse D=???e-2m
-       &        1.00d-10, & !..x_min..minimale Teilchenmasse D=200e-6m
-       &        2.400000, & !..a_geo..Koeff. Geometrie
-       &        0.455000, & !..b_geo..Koeff. Geometrie
-       &        8.800000, & !..a_vel..Koeff. Fallgesetz
-       &        0.150000, & !..b_vel..Koeff. Fallgesetz
-       &        0.780000, & !..a_ven..Koeff. Ventilation (PK, S.541)
-       &        0.308000, & !..b_ven..Koeff. Ventilation (PK, S.541)
-       &        3.00,     & !..cap....Koeff. Kapazitaet
-       &        3.0,      & !..vsedi_max
-       &        0.1,      & !..vsedi_min
-       &        null(),   & !..n pointer
-       &        null(),   & !..q pointer
-       &        null(),   & !..rho_v pointer
-       &        0.80,     & !..ecoll_c
-       &        150.0d-6, & !..D_crit_c
-       &        1.000d-5, & !..q_crit_c
-       &        0.25      & !..sigma_vel
-       &        )
-
-  TYPE(particle_frozen), PARAMETER :: &
-       &        snowSBB =  particle_frozen(   & !
+  TYPE(particle), PARAMETER :: &
+       &        snowSBB =  particle(   & !
        &        'snowSBB',& !..name...Bezeichnung der Partikelklasse
        &        0.000000, & !..nu.....Breiteparameter der Verteil.
        &        0.500000, & !..mu.....Exp.-parameter der Verteil.
@@ -411,58 +366,20 @@ MODULE mo_2mom_mcrph_main
        &        0.80,     & !..ecoll_c
        &        150.0d-6, & !..D_crit_c
        &        1.000d-5, & !..q_crit_c
-       &        0.25      & !..sigma_vel
+       &        0.25,     & !..sigma_vel
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        missing,  &
+       &        null() &
        &        )
-
-  TYPE(particle_frozen), PARAMETER :: &
-       &        snowSBBcorr =  particle_frozen(   & !
-       &        'snowSBBcorr',& !..name...Bezeichnung der Partikelklasse
-       &        0.000000, & !..nu.....Breiteparameter der Verteil.
-       &        0.500000, & !..mu.....Exp.-parameter der Verteil.
-       &        2.00d-05, & !..x_max..maximale Teilchenmasse
-       &        3.00d-11, & !..x_min..minimale Teilchenmasse
-       &        6.500000, & !..a_geo..Koeff. Geometrie, x = 0.038*D**2
-       &        0.495000, & !..b_geo..Koeff. Geometrie = 1/2
-       &        7.500000, & !..a_vel..Koeff. Fallgesetz
-       &        0.125000, & !..b_vel..Koeff. Fallgesetz
-       &        0.780000, & !..a_ven..Koeff. Ventilation (PK, S.541)
-       &        0.308000, & !..b_ven..Koeff. Ventilation (PK, S.541)
-       &        3.00,     & !..cap....Koeff. Kapazitaet
-       &        1.2,      & !..vsedi_max
-       &        0.01,     & !..vsedi_min
-       &        null(),   & !..n pointer
-       &        null(),   & !..q pointer
-       &        null(),   & !..rho_v pointer
-       &        0.80,     & !..ecoll_c
-       &        150.0d-6, & !..D_crit_c
-       &        1.000d-5, & !..q_crit_c
-       &        0.25      & !..sigma_vel
-       &        )
-
-  TYPE(particle), PARAMETER :: rainULI = particle( & ! Blahak, v=v(x) gefittet 6.9.2005
-       &        'rainULI', & !..name
-       &        0.000000,  & !..nu
-       &        0.333333,  & !..mu
-       &        3.00d-06,  & !..x_max
-       &        2.60d-10,  & !..x_min
-       &        1.24d-01,  & !..a_geo
-       &        0.333333,  & !..b_geo
-       &        114.0137,  & !..a_vel
-       &        0.234370,  & !..b_vel
-       &        0.780000,  & !..a_ven
-       &        0.308000,  & !..b_ven
-       &        2.00,      & !..cap
-       &        20.0,      & !..vsedi_max
-       &        0.1,       & !..vsedi_min
-       &        null(),    & !..n pointer
-       &        null(),    & !..q pointer
-       &        null() )     !..rho_v pointer
 
   TYPE(particle), PARAMETER :: rainSBB = particle( &
        &        'rainSBB', & !..name
        &        1.000000,  & !..nu
        &        0.333333,  & !..mu
-       &        6.50d-05,  & !..x_max  ! 5 mm 
+       &        6.50d-05,  & !..x_max  ! 5 mm
        &        2.60d-10,  & !..x_min  ! 80 mum
        &        1.24d-01,  & !..a_geo
        &        0.333333,  & !..b_geo
@@ -475,10 +392,21 @@ MODULE mo_2mom_mcrph_main
        &        0.1,       & !..vsedi_min
        &        null(),    & !..n pointer
        &        null(),    & !..q pointer
-       &        null() )     !..rho_v pointer
+       &        null(),    & !..rho_v pointer
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        null()    )
 
-  TYPE(particle_rain_coeffs), PARAMETER :: rainSBBcoeffs = particle_rain_coeffs( &
-       &        0.0,0.0,0.0,0.0, & !
+  TYPE(particle_coeffs), PARAMETER :: rainSBBcoeffs = particle_coeffs( &
+       &        missing,missing,missing,missing, & !
+       &        missing,missing,missing, & !
        &        9.292000,  & !..alfa
        &        9.623000,  & !..beta
        &        6.222d+2,  & !..gama
@@ -487,7 +415,15 @@ MODULE mo_2mom_mcrph_main
        &        1.000d+3,  & !..cmu2
        &        1.100d-3,  & !..cmu3 = D_br
        &        1.0000d0,  & !..cmu4
-       &        2 )          !..cmu5
+       &        2,         & !..cmu5
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing,   &
+       &        missing    &
+       &        )
 
   REAL(wp), PARAMETER :: pi6 = pi/6.0_wp, pi8 = pi/8.0_wp ! more pieces of pi
 
@@ -510,11 +446,13 @@ MODULE mo_2mom_mcrph_main
   TYPE(coll_coeffs_ir_pm), SAVE :: gshedr_coeffs ! graupel shedding during rain riming
   TYPE(coll_coeffs_ir_pm), SAVE :: hshedr_coeffs ! hail shedding during rain riming
 
-  PUBLIC :: atmosphere, particle, particle_lwf, particle_frozen
-  PUBLIC :: init_2mom_scheme, init_2mom_scheme_once, clouds_twomoment
+  TYPE(t_diag_coeffs_2mom) :: diag_coeffs_2mom
+
+  PUBLIC :: init_2mom_types_base, init_2mom_scheme, init_2mom_scheme_once, clouds_twomoment
   PUBLIC :: rain_coeffs, ice_coeffs, snow_coeffs, graupel_coeffs, hail_coeffs, &
        &    ccn_coeffs, in_coeffs, cloud_coeffs
   PUBLIC :: qnc_const
+  PUBLIC :: get_diag_coeffs_2mom
 
   ! DR: The following block is necessarily public as these parameters/coefficients
   !     are required by the ART code
@@ -543,19 +481,19 @@ CONTAINS
   !*******************************************************************************
 
   SUBROUTINE clouds_twomoment(ik_slice, dt, use_prog_in, atmo, &
-       cloud, rain, ice, snow, graupel, hail, n_inact, n_cn, n_inpot)
+       cloud, rain, ice, snow, graupel, hail, n_inact, n_cn, n_inpot, msg_level)
 
     ! start and end indices for 2D slices
     ! istart = slice(1), iend = slice(2), kstart = slice(3), kend = slice(4)
     INTEGER, INTENT(in) :: ik_slice(4)
+    INTEGER, INTENT(in) :: msg_level
 
     ! time step within two-moment scheme
     REAL(wp), INTENT(in) :: dt
 
     LOGICAL, INTENT(in) :: use_prog_in
-    TYPE(atmosphere), INTENT(inout)       :: atmo
-    CLASS(particle),  INTENT(inout)       :: cloud, rain
-    CLASS(particle_frozen), INTENT(inout) :: ice, snow, graupel, hail
+    TYPE(atmosphere), INTENT(inout)      :: atmo
+    TYPE(particle),  INTENT(inout)       :: cloud, rain, ice, snow, graupel, hail
 
     REAL(wp), DIMENSION(:,:) :: n_inact
 
@@ -684,7 +622,7 @@ CONTAINS
       IF (ischeck) CALL check(ik_slice, 'graupel_hail_conv_wet_gamlook',cloud,rain,ice,snow,graupel,hail)
 
       ! hail collisions
-      CALL particle_particle_collection(ik_slice, dt, atmo, ice, hail, hic_coeffs, ltab_estick_parti)    ! Important?
+      CALL particle_particle_collection(ik_slice, dt, atmo, ice, hail, hic_coeffs, ltab_estick_parti)
       CALL particle_particle_collection(ik_slice, dt, atmo, snow, hail, hsc_coeffs, ltab_estick_parti)
       IF (ischeck) CALL check(ik_slice, 'hail collection',cloud,rain,ice,snow,graupel,hail)
 
@@ -729,25 +667,19 @@ CONTAINS
       CALL snow_melting(ik_slice,dt,snow_coeffs,atmo,snow,rain)
 
       ! melting of graupel and hail can be simple or LWF-based
-      SELECT TYPE (graupel)
-      TYPE IS (particle_frozen)
-        CALL graupel_melting(ik_slice,dt,graupel_coeffs,atmo,graupel,rain)
-      TYPE IS (particle_lwf)
+
+      IF (atm_phy_nwp_config(1)%inwp_gscp == 7) THEN
 #ifdef _OPENACC
-        CALL finish('graupel','particle_lwf not supported on GPU')
+        CALL finish('graupel and hail','particle_lwf not supported on GPU')
 #endif
         CALL prepare_melting_lwf(ik_slice, atmo, gmelting)
         CALL particle_melting_lwf(ik_slice, dt, graupel, rain, gmelting)
-      END SELECT
-      SELECT TYPE (hail)
-      TYPE IS (particle_frozen)
-        CALL hail_melting_simple(ik_slice,dt,hail_coeffs,atmo,hail,rain)
-      TYPE IS (particle_lwf)
-#ifdef _OPENACC
-        CALL finish('hail','particle_lwf not supported on GPU')
-#endif
         CALL particle_melting_lwf(ik_slice, dt, hail, rain, gmelting)
-      END SELECT
+      ELSE
+        CALL graupel_melting(ik_slice,dt,graupel_coeffs,atmo,graupel,rain)
+        CALL hail_melting_simple(ik_slice,dt,hail_coeffs,atmo,hail,rain)
+      ENDIF
+
       IF (ischeck) CALL check(ik_slice, 'melting',cloud,rain,ice,snow,graupel,hail)
 
       ! evaporation from melting ice particles
@@ -778,7 +710,7 @@ CONTAINS
        CALL accretionKK(ik_slice, dt, cloud, rain)
        CALL rain_selfcollectionSB(ik_slice, dt, atmo, rain)
     ELSE IF (auto_typ == 3) THEN
-       CALL autoconversionSB(ik_slice, dt, atmo, cloud_coeffs, cloud, rain) 
+       CALL autoconversionSB(ik_slice, dt, atmo, cloud_coeffs, cloud, rain)
        CALL accretionSB(ik_slice, dt, atmo, cloud, rain)
        CALL rain_selfcollectionSB(ik_slice, dt, atmo, rain)
     ENDIF
@@ -797,7 +729,7 @@ CONTAINS
           cloud%n(i,k) = MIN(cloud%n(i,k), cloud%q(i,k)/cloud%x_min)
           cloud%n(i,k) = MAX(cloud%n(i,k), cloud%q(i,k)/cloud%x_max)
           ! Hard upper limit for cloud number conc.
-          cloud%n(i,k) = MIN(cloud%n(i,k), 5000d6)
+          cloud%n(i,k) = MIN(cloud%n(i,k), 5000e6_wp)
         END DO
       END IF
 
@@ -827,22 +759,18 @@ CONTAINS
   END SUBROUTINE clouds_twomoment
 
   !*******************************************************************************
-  ! This subroutine has to be called once per time step to properly sets
+  ! This subroutine has to be called once per time step to properly set
   ! the different hydrometeor classes according to predefined parameter sets
   !*******************************************************************************
 
   SUBROUTINE init_2mom_scheme(cloud,rain,ice,snow,graupel,hail)
-    CLASS(particle),INTENT(inout)        :: cloud, rain
-    CLASS(particle_frozen),INTENT(inout) :: ice, snow, graupel, hail
+    TYPE(particle), INTENT(inout) :: cloud, rain, ice, snow, graupel, hail
 
-    CALL particle_assign(cloud,cloud_nue1mue1)
-    CALL particle_assign(rain,rainSBB)
+    ! set a base set of parameters from the fixed particle types above:
+    CALL init_2mom_types_base(cloud,rain,ice,snow,graupel,hail)
 
+    ! adjust according to namelist config /twomom_mcrph_nml/:
     IF (cfg_params % nu_r > -900.0_wp) rain%nu = cfg_params%nu_r
-
-    CALL particle_frozen_assign(ice,ice_cosmo5)
-    CALL particle_frozen_assign(snow,snowSBB)
-!!$    CALL particle_frozen_assign(snow,snowSBBcorr)
 
     IF (cfg_params % nu_i > -900.0_wp) ice%nu = cfg_params%nu_i
     IF (cfg_params % mu_i > -900.0_wp) ice%mu = cfg_params%mu_i
@@ -861,13 +789,6 @@ CONTAINS
     IF (cfg_params % cap_snow > -900.0_wp) snow%cap = cfg_params%cap_snow
     IF (cfg_params % vsedi_max_s > -900.0_wp) snow%vsedi_max = cfg_params%vsedi_max_s
 
-    SELECT TYPE (graupel)
-    TYPE IS (particle_frozen)
-      CALL particle_frozen_assign(graupel,graupelhail_cosmo5)
-    TYPE IS (particle_lwf)
-      CALL particle_lwf_assign(graupel,graupel_vivek)
-    END SELECT
-
     IF (cfg_params % nu_g > -900.0_wp) graupel%nu = cfg_params%nu_g
     IF (cfg_params % mu_g > -900.0_wp) graupel%mu = cfg_params%mu_g
     IF (cfg_params % ageo_g > -900.0_wp) graupel%a_geo = cfg_params%ageo_g
@@ -875,21 +796,35 @@ CONTAINS
     IF (cfg_params % avel_g > -900.0_wp) graupel%a_vel = cfg_params%avel_g
     IF (cfg_params % bvel_g > -900.0_wp) graupel%b_vel = cfg_params%bvel_g
 
-    SELECT TYPE (hail)
-    TYPE IS (particle_frozen)
-      CALL particle_frozen_assign(hail,hail_cosmo5)
-    TYPE IS (particle_lwf)
-      CALL particle_lwf_assign(hail,hail_vivek)
-    END SELECT
-
     IF (cfg_params % nu_h > -900.0_wp) hail%nu = cfg_params%nu_h
     IF (cfg_params % mu_h > -900.0_wp) hail%mu = cfg_params%mu_h
     IF (cfg_params % ageo_h > -900.0_wp) hail%a_geo = cfg_params%ageo_h
     IF (cfg_params % bgeo_h > -900.0_wp) hail%b_geo = cfg_params%bgeo_h
     IF (cfg_params % avel_h > -900.0_wp) hail%a_vel = cfg_params%avel_h
     IF (cfg_params % bvel_h > -900.0_wp) hail%b_vel = cfg_params%bvel_h
+    IF (cfg_params % xmax_h > -900.0_wp) hail%x_max = cfg_params%xmax_h
 
   END SUBROUTINE init_2mom_scheme
+
+  ! Subroutine to set a base set of parameters from the fixed particle types above:
+  SUBROUTINE init_2mom_types_base(cloud,rain,ice,snow,graupel,hail)
+    TYPE(particle), INTENT(inout) :: cloud, rain, ice, snow, graupel, hail
+
+    cloud = cloud_nue1mue1
+    rain = rainSBB
+    ice = ice_cosmo5
+    snow = snowSBB
+
+    IF (atm_phy_nwp_config(1)%inwp_gscp == 7) THEN
+      graupel = graupel_vivek
+      hail = hail_vivek
+    ELSE
+      graupel = graupelhail_cosmo5
+      hail = hail_cosmo5
+    ENDIF
+
+
+  END SUBROUTINE init_2mom_types_base
 
   !*******************************************************************************
   ! This subroutine has to be called once at the start of the model run by
@@ -897,17 +832,25 @@ CONTAINS
   ! classes according to predefined parameter sets (see above).
   !*******************************************************************************
 
-  SUBROUTINE init_2mom_scheme_once(cloud,rain,ice,snow,graupel,hail,cloud_type)
-    INTEGER, INTENT(in)  :: cloud_type
-    CLASS(particle), INTENT(inout) :: cloud, rain
-    CLASS(particle_frozen), INTENT(inout) :: ice, snow, graupel, hail
+  SUBROUTINE init_2mom_scheme_once(cloud,rain,ice,snow,graupel,hail,cloud_type,msg_level)
+    INTEGER, INTENT(in)           :: cloud_type
+    INTEGER, INTENT(in), OPTIONAL :: msg_level
+    TYPE(particle), INTENT(inout) :: cloud, rain, ice, snow, graupel, hail
 
     CHARACTER(len=*), PARAMETER :: routine = 'init_2mom_scheme_once'
     REAL(wp), DIMENSION(1:1) :: q_r,x_r,q_c,vn_rain_min, vq_rain_min, vn_rain_max, vq_rain_max, rhocorr
     REAL(wp) :: nu, mu, x_s_i
 
+    LOGICAL :: isprint      ! print-out initialization values
+
+    IF (.not.PRESENT(msg_level)) THEN
+      isprint = .true.
+    ELSE
+      isprint = (msg_level > 7)
+    END IF
+
     rhocorr = 1.0_wp
-    
+
     CALL init_2mom_scheme(cloud,rain,ice,snow,graupel,hail)
 
     ice_typ   = cloud_type/1000           ! (0) no ice, (1) no hail (2) with hail
@@ -930,14 +873,16 @@ CONTAINS
     rain_coeffs%cmu3 = cfg_params%rain_cmu3
     rain_coeffs%cmu4 = cfg_params%rain_cmu4
 
-    CALL message(TRIM(routine), "calculate run-time coefficients")
-    WRITE (txt,'(A,I10)') "  cloud_type = ",cloud_type ; CALL message(routine,TRIM(txt))
-    WRITE (txt,'(2A)') "     cloud   = ",cloud%name    ; CALL message(routine,TRIM(txt))
-    WRITE (txt,'(2A)') "     rain    = ",rain%name     ; CALL message(routine,TRIM(txt))
-    WRITE (txt,'(2A)') "     ice     = ",ice%name      ; CALL message(routine,TRIM(txt))
-    WRITE (txt,'(2A)') "     snow    = ",snow%name     ; CALL message(routine,TRIM(txt))
-    WRITE (txt,'(2A)') "     graupel = ",graupel%name  ; CALL message(routine,TRIM(txt))
-    WRITE (txt,'(2A)') "     hail    = ",hail%name     ; CALL message(routine,TRIM(txt))
+    IF (isprint) THEN
+      CALL message(TRIM(routine), "calculate run-time coefficients")
+      WRITE (txt,'(A,I10)') "  cloud_type = ",cloud_type ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "     cloud   = ",cloud%name    ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "     rain    = ",rain%name     ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "     ice     = ",ice%name      ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "     snow    = ",snow%name     ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "     graupel = ",graupel%name  ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "     hail    = ",hail%name     ; CALL message(routine,TRIM(txt))
+    END IF
 
     ! initialize bulk sedimentation velocities
     ! calculates coeff_alfa_n, coeff_alfa_q, and coeff_lambda
@@ -945,6 +890,25 @@ CONTAINS
     call init_2mom_sedi_vel(snow,snow_coeffs)
     call init_2mom_sedi_vel(graupel,graupel_coeffs)
     call init_2mom_sedi_vel(hail,hail_coeffs)
+    IF (isprint) THEN
+      CALL message(TRIM(routine), "sedimentation coefficients")
+      WRITE (txt,'(2A)') "    name  = ",ice%name ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     c_lam = ",ice_coeffs%coeff_lambda ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     alf_n = ",ice_coeffs%coeff_alfa_n ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     alf_q = ",ice_coeffs%coeff_alfa_q ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "    name  = ",snow%name ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     c_lam = ",snow_coeffs%coeff_lambda ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     alf_n = ",snow_coeffs%coeff_alfa_n ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     alf_q = ",snow_coeffs%coeff_alfa_q ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "    name  = ",graupel%name ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     c_lam = ",graupel_coeffs%coeff_lambda ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     alf_n = ",graupel_coeffs%coeff_alfa_n ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     alf_q = ",graupel_coeffs%coeff_alfa_q ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(2A)') "    name  = ",hail%name ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     c_lam = ",hail_coeffs%coeff_lambda ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     alf_n = ",hail_coeffs%coeff_alfa_n ; CALL message(routine,TRIM(txt))
+      WRITE (txt,'(A,D14.7)') "     alf_q = ",hail_coeffs%coeff_alfa_q ; CALL message(routine,TRIM(txt))
+    END IF
 
     ! look-up table and parameters for rain_freeze_gamlook
     rain_nm1 = (rain%nu+1.0)/rain%mu
@@ -964,74 +928,52 @@ CONTAINS
     graupel_g1 = graupel_ltable1%igf(graupel_ltable1%n) ! ordinary gamma function of nm1 is the last value in table 1
     graupel_g2 = graupel_ltable2%igf(graupel_ltable2%n) ! ordinary gamma function of nm2 is the last value in table 2
 
-    
     ! .. tables and parameters for graupel shedding during cloud riming:
     !    graupel: partial moment; cloud: full moment
     CALL setup_particle_coll_pm_type1_bfull(graupel,cloud,gshedc_coeffs)
-    !    for delta_gg-part:
     CALL incgfct_lower_lookupcreate(gshedc_coeffs%moma(0,3), gshedc_ltab_dgg_03, nlookup, nlookuphr_dummy)
-    !    for delta_gr-part:
     CALL incgfct_lower_lookupcreate(gshedc_coeffs%moma(0,2), gshedc_ltab_dgr_02, nlookup, nlookuphr_dummy)
-    !    for delta_rr-part:
     CALL incgfct_lower_lookupcreate(gshedc_coeffs%moma(0,1), gshedc_ltab_drr_01, nlookup, nlookuphr_dummy)
-    !    for theta_gg-part:
     CALL incgfct_lower_lookupcreate(gshedc_coeffs%moma(0,5), gshedc_ltab_tgg_05, nlookup, nlookuphr_dummy)
     CALL incgfct_lower_lookupcreate(gshedc_coeffs%moma(0,3), gshedc_ltab_tgg_03, nlookup, nlookuphr_dummy)
-    !    for theta_gr-part:
     CALL incgfct_lower_lookupcreate(gshedc_coeffs%moma(0,4), gshedc_ltab_tgr_04, nlookup, nlookuphr_dummy)
-   
+
     ! .. tables and parameters for hail shedding during cloud riming:
     !    hail: partial moment; cloud: full moment
     CALL setup_particle_coll_pm_type1_bfull(hail,cloud,hshedc_coeffs)
-    !    for delta_hh-part:
     CALL incgfct_lower_lookupcreate(hshedc_coeffs%moma(0,3), hshedc_ltab_dhh_03, nlookup, nlookuphr_dummy)
-    !    for delta_hr-part:
     CALL incgfct_lower_lookupcreate(hshedc_coeffs%moma(0,2), hshedc_ltab_dhr_02, nlookup, nlookuphr_dummy)
-    !    for delta_rr-part:
     CALL incgfct_lower_lookupcreate(hshedc_coeffs%moma(0,1), hshedc_ltab_drr_01, nlookup, nlookuphr_dummy)
-    !    for theta_hh-part:
     CALL incgfct_lower_lookupcreate(hshedc_coeffs%moma(0,5), hshedc_ltab_thh_05, nlookup, nlookuphr_dummy)
     CALL incgfct_lower_lookupcreate(hshedc_coeffs%moma(0,3), hshedc_ltab_thh_03, nlookup, nlookuphr_dummy)
-    !    for theta_hr-part:
     CALL incgfct_lower_lookupcreate(hshedc_coeffs%moma(0,4), hshedc_ltab_thr_04, nlookup, nlookuphr_dummy)
 
 
     ! .. tables and parameters for graupel shedding during rain riming:
     !    graupel: partial moment; rain: full moment
     CALL setup_particle_coll_pm_type1_bfull(graupel,rain,gshedr_coeffs)
-    !    for delta_gg-part:
     CALL incgfct_lower_lookupcreate(gshedr_coeffs%moma(0,3), gshedr_ltab_dgg_03, nlookup, nlookuphr_dummy)
-    !    for delta_gr-part:
     CALL incgfct_lower_lookupcreate(gshedr_coeffs%moma(0,2), gshedr_ltab_dgr_02, nlookup, nlookuphr_dummy)
-    !    for delta_rr-part:
     CALL incgfct_lower_lookupcreate(gshedr_coeffs%moma(0,1), gshedr_ltab_drr_01, nlookup, nlookuphr_dummy)
-    !    for theta_gg-part:
     CALL incgfct_lower_lookupcreate(gshedr_coeffs%moma(0,5), gshedr_ltab_tgg_05, nlookup, nlookuphr_dummy)
     CALL incgfct_lower_lookupcreate(gshedr_coeffs%moma(0,3), gshedr_ltab_tgg_03, nlookup, nlookuphr_dummy)
-    !    for theta_gr-part:
     CALL incgfct_lower_lookupcreate(gshedr_coeffs%moma(0,4), gshedr_ltab_tgr_04, nlookup, nlookuphr_dummy)
-   
+
     ! .. tables and parameters for hail shedding during rain riming:
     !    hail: partial moment; rain: full moment
     CALL setup_particle_coll_pm_type1_bfull(hail,rain,hshedr_coeffs)
-    !    for delta_hh-part:
     CALL incgfct_lower_lookupcreate(hshedr_coeffs%moma(0,3), hshedr_ltab_dhh_03, nlookup, nlookuphr_dummy)
-    !    for delta_hr-part:
     CALL incgfct_lower_lookupcreate(hshedr_coeffs%moma(0,2), hshedr_ltab_dhr_02, nlookup, nlookuphr_dummy)
-    !    for delta_rr-part:
     CALL incgfct_lower_lookupcreate(hshedr_coeffs%moma(0,1), hshedr_ltab_drr_01, nlookup, nlookuphr_dummy)
-    !    for theta_hh-part:
     CALL incgfct_lower_lookupcreate(hshedr_coeffs%moma(0,5), hshedr_ltab_thh_05, nlookup, nlookuphr_dummy)
     CALL incgfct_lower_lookupcreate(hshedr_coeffs%moma(0,3), hshedr_ltab_thh_03, nlookup, nlookuphr_dummy)
-    !    for theta_hr-part:
     CALL incgfct_lower_lookupcreate(hshedr_coeffs%moma(0,4), hshedr_ltab_thr_04, nlookup, nlookuphr_dummy)
-
 
     ! .. Lookup tables for sticking efficiencies:
     CALL init_estick_ltab_equi (ltab_estick_ice,   cfg_params%iice_stick,   'estick_cloudice')
     CALL init_estick_ltab_equi (ltab_estick_snow,  cfg_params%isnow_stick,  'estick_snow')
     CALL init_estick_ltab_equi (ltab_estick_parti, cfg_params%iparti_stick, 'estick_inter-categorical')
-    
+
     ! other options for mue-D-relation of raindrops (for sensitivity studies)
     IF (mu_Dm_rain_typ.EQ.0) THEN
       !..constant mue value
@@ -1442,7 +1384,7 @@ CONTAINS
 
     ! setup run-time coeffs for cloud, e.g., used in cloud_freeze and autoconversionSB
     CALL setup_particle_coeffs(cloud,cloud_coeffs)
-    CALL setup_cloud_autoconversion(cloud,cloud_coeffs)
+    CALL setup_cloud_autoconversion_sb(cloud,cloud_coeffs)
 
     IF (isprint) THEN
       CALL message(routine, "rain_coeffs:")
@@ -1463,10 +1405,14 @@ CONTAINS
       ENDIF
     END IF
 
+    ! Init coefficients for some diagnostics:
+    CALL setup_diag_coeffs (hail, diag_coeffs_2mom)
+
     !$ACC ENTER DATA COPYIN(rain_coeffs, ice_coeffs, snow_coeffs, graupel_coeffs, hail_coeffs, cloud_coeffs) &
     !$ACC   COPYIN(sic_coeffs, gic_coeffs, gsc_coeffs, hic_coeffs, hsc_coeffs, scr_coeffs, srr_coeffs) &
     !$ACC   COPYIN(irr_coeffs, icr_coeffs, hrr_coeffs, grr_coeffs, hcr_coeffs, gcr_coeffs) &
-    !$ACC   COPYIN(gshedc_coeffs, gshedr_coeffs, hshedc_coeffs, hshedr_coeffs)
+    !$ACC   COPYIN(gshedc_coeffs, gshedr_coeffs, hshedc_coeffs, hshedr_coeffs) &
+    !$ACC   COPYIN(diag_coeffs_2mom)
 
     !$ACC ENTER DATA COPYIN(ltab_estick_ice)
     !$ACC ENTER DATA COPYIN(ltab_estick_ice%x1, ltab_estick_ice%ltable)
@@ -1486,7 +1432,7 @@ CONTAINS
     !$ACC ENTER DATA COPYIN(rain_ltable2%x, rain_ltable2%xhr, rain_ltable2%igf, rain_ltable2%igfhr)
     !$ACC ENTER DATA COPYIN(rain_ltable3)
     !$ACC ENTER DATA COPYIN(rain_ltable3%x, rain_ltable3%xhr, rain_ltable3%igf, rain_ltable3%igfhr)
-    
+
     !$ACC ENTER DATA COPYIN(gshedc_ltab_dgg_03)
     !$ACC ENTER DATA COPYIN(gshedc_ltab_dgg_03%x, gshedc_ltab_dgg_03%xhr, gshedc_ltab_dgg_03%igf, gshedc_ltab_dgg_03%igfhr)
     !$ACC ENTER DATA COPYIN(gshedc_ltab_drr_01)
@@ -1541,12 +1487,20 @@ CONTAINS
 
   END SUBROUTINE init_2mom_scheme_once
 
+  ! .. Getter function for coefficients needed for diagnostics outside the 2-moment scheme scope,
+  !    which have been precomputed during initialization stage and stored in type diag_coeffs_2mom.
+  !    Can be used on CPU and GPU during time stepping:
+  FUNCTION get_diag_coeffs_2mom () RESULT (c)
+    TYPE(t_diag_coeffs_2mom) :: c
+    c = diag_coeffs_2mom
+  END FUNCTION get_diag_coeffs_2mom
+
   SUBROUTINE check(ik_slice, mtxt, cloud, rain, ice, snow, graupel, hail)
     ! start and end indices for 2D slices
     ! istart = slice(1), iend = slice(2), kstart = slice(3), kend = slice(4)
     INTEGER, INTENT(in) :: ik_slice(4)
     CHARACTER(len=*), INTENT(in) :: mtxt
-    CLASS(particle), INTENT(in) :: cloud, rain, ice, snow, graupel, hail
+    TYPE(particle), INTENT(in) :: cloud, rain, ice, snow, graupel, hail
 
     INTEGER :: k, kstart, kend, k_neg(6), jcs, jce
     REAL(wp), PARAMETER  :: meps = -1e-12_wp

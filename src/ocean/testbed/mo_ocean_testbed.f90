@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! @brief Testbed for ocean
 !
 ! The test_mode variable of the run_nml defines the mode of running the ocean.
@@ -9,17 +20,6 @@
 ! test_mode=99-999: ocean_test_operators; test consistency, properties, round-off errors of operators
 !
 ! test_mode=1000-1100: ocean_test_performance; reserved for performance tests of individual routines
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_ocean_testbed
 
@@ -44,7 +44,7 @@ MODULE mo_ocean_testbed
   USE mo_ocean_math_operators,      ONLY: update_height_depdendent_variables
   USE mtime,                        ONLY: datetime
   USE mo_ocean_output
-  USE mo_ocean_time_events,         ONLY: get_OceanCurrentTime_Pointer  
+  USE mo_ocean_time_events,         ONLY: get_OceanCurrentTime_Pointer
 !-------------------------------------------------------------------------
 IMPLICIT NONE
 PRIVATE
@@ -52,7 +52,7 @@ PRIVATE
 PUBLIC :: ocean_testbed
 
 CONTAINS
-  
+
 
   !-------------------------------------------------------------------------
   !>
@@ -103,11 +103,11 @@ CONTAINS
           & oceans_atmosphere_fluxes, ocean_ice,operators_coefficients)
 
       ! 1101 -  other tests
-      CASE (1101) 
+      CASE (1101)
         CALL ocean_test_read( namelist_filename, shr_namelist_filename, &
           & patch_3d)
 
-      CASE (1102) 
+      CASE (1102)
         CALL ocean_test_quads( namelist_filename, shr_namelist_filename, &
           & patch_3d)
 
@@ -135,4 +135,3 @@ CONTAINS
   !-------------------------------------------------------------------------
 
 END MODULE mo_ocean_testbed
-

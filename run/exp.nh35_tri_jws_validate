@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,7 +14,7 @@
 # The specifications are passed by namelist to the program.
 # For a complete list see Namelist_overview.pdf
 #
-# EXPNAME and NPROMA must be defined in as environment variables or must 
+# EXPNAME and NPROMA must be defined in as environment variables or must
 # they must be substituted with appropriate values.
 #
 # DWD, 2010-08-31
@@ -78,7 +78,7 @@ atmo_dyn_grids="${grid_name}.nc"
 #
 # ICON namelist parameters
 # ------------------------
-# for a complete list see doc/Namelist_overview.pdf
+# for a complete list see Namelist_overview.pdf
 #
 cat > ${atmo_namelist} << EOF
 !
@@ -92,7 +92,7 @@ cat > ${atmo_namelist} << EOF
 /
 &grid_nml
  dynamics_grid_filename = "${atmo_dyn_grids}",
-/ 
+/
 &run_nml
  num_lev          = ${nlev},         ! number of full levels of vertical grid
  dtime            = 300.             ! [s] timestep in seconds

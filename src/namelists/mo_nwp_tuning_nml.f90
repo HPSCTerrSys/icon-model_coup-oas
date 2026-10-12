@@ -1,18 +1,18 @@
-! Namelist for tuning and/or perturbing nwp physics
-!
-! These subroutines are called by read_atmo_namelists and do some
-! nwp physics tuning
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Namelist for tuning and/or perturbing nwp physics
+!
+! These subroutines are called by read_atmo_namelists and do some
+! nwp physics tuning
 
 MODULE mo_nwp_tuning_nml
 
@@ -39,6 +39,7 @@ MODULE mo_nwp_tuning_nml
     &                               config_tune_gcstar           => tune_gcstar,           &
     &                               config_tune_zceff_min        => tune_zceff_min,        &
     &                               config_tune_v0snow           => tune_v0snow,           &
+    &                               config_tune_zcsg             => tune_zcsg,             &
     &                               config_tune_zvz0i            => tune_zvz0i,            &
     &                               config_tune_icesedi_exp      => tune_icesedi_exp,      &
     &                               config_tune_entrorg          => tune_entrorg,          &
@@ -47,8 +48,13 @@ MODULE mo_nwp_tuning_nml
     &                               config_tune_capdcfac_et      => tune_capdcfac_et,      &
     &                               config_tune_capdcfac_tr      => tune_capdcfac_tr,      &
     &                               config_tune_capethresh       => tune_capethresh,       &
+    &                               config_tune_grzdc_offset     => tune_grzdc_offset,     &
     &                               config_tune_rhebc_land       => tune_rhebc_land,       &
     &                               config_tune_rhebc_ocean      => tune_rhebc_ocean,      &
+    &                               config_tune_rmfdeps_land     => tune_rmfdeps_land,     &
+    &                               config_tune_rmfdeps_ocean    => tune_rmfdeps_ocean,    &
+    &                               config_tune_detrainment_profile => tune_detrainment_profile, &
+    &                               config_tune_entrainment_profile => tune_entrainment_profile, &
     &                               config_tune_rcucov           => tune_rcucov,           &
     &                               config_tune_rhebc_land_trop  => tune_rhebc_land_trop,  &
     &                               config_tune_rhebc_ocean_trop => tune_rhebc_ocean_trop, &
@@ -57,12 +63,17 @@ MODULE mo_nwp_tuning_nml
     &                               config_tune_qexc             => tune_qexc,             &
     &                               config_tune_rcapqadv         => tune_rcapqadv,         &
     &                               config_tune_minsnowfrac      => tune_minsnowfrac,      &
+    &                               config_tune_tau_shallow      => tune_tau_shallow,      &
+    &                               config_tune_tau_mid          => tune_tau_mid,          &
+    &                               config_tune_tau_deep         => tune_tau_deep,         &
     &                               config_tune_box_liq          => tune_box_liq,          &
+    &                               config_tune_box_ice          => tune_box_ice,          &
     &                               config_tune_box_liq_asy      => tune_box_liq_asy,      &
     &                               config_tune_box_liq_sfc_fac  => tune_box_liq_sfc_fac,  &
     &                               config_allow_overcast        => allow_overcast,        &
     &                               config_tune_thicklayfac      => tune_thicklayfac,      &
     &                               config_tune_sgsclifac        => tune_sgsclifac,        &
+    &                               config_tune_supsat_limfac    => tune_supsat_limfac,    &
     &                               config_icpl_turb_clc         => icpl_turb_clc,         &
     &                               config_tune_dust_abs         => tune_dust_abs,         &
     &                               config_tune_difrad_3dcont    => tune_difrad_3dcont,    &
@@ -71,9 +82,12 @@ MODULE mo_nwp_tuning_nml
     &                               config_tune_gustsso_lim      => tune_gustsso_lim,      &
     &                               config_tune_gustlim_agl      => tune_gustlim_agl,      &
     &                               config_tune_gustlim_fac      => tune_gustlim_fac,      &
+    &                               config_itune_vis_diag        => itune_vis_diag,        &
+    &                               config_itune_ceiling_diag    => itune_ceiling_diag,    &
     &                               config_itune_albedo          => itune_albedo,          &
     &                               config_tune_albedo_wso       => tune_albedo_wso,       &
     &                               config_itune_slopecorr       => itune_slopecorr,       &
+    &                               config_tune_ssolim_sfcfric   => tune_ssolim_sfcfric,   &
     &                               config_itune_o3              => itune_o3,              &
     &                               config_lcalib_clcov          => lcalib_clcov,          &
     &                               config_max_calibfac_clcl     => max_calibfac_clcl,     &
@@ -82,11 +96,21 @@ MODULE mo_nwp_tuning_nml
     &                               config_tune_sc_eis           => tune_sc_eis,           &
     &                               config_tune_sc_invmin        => tune_sc_invmin,        &
     &                               config_tune_sc_invmax        => tune_sc_invmax,        &
+    &                               config_tune_cu_alfa          => tune_cu_alfa,          &
+    &                               config_tune_cu_cdnc          => tune_cu_cdnc,          &
+    &                               config_tune_dice_conv        => tune_dice_conv,        &
+    &                               config_tune_reff_qi          => tune_reff_qi,          &
+    &                               config_tune_cdnc             => tune_cdnc,             &
     &                               config_tune_dursun_scaling   => tune_dursun_scaling,   &
     &                               config_tune_sbmccn           => tune_sbmccn,           &
     &                               config_tune_urbahf           => tune_urbahf,           &
-    &                               config_tune_urbisa           => tune_urbisa
-  
+    &                               config_tune_urbisa           => tune_urbisa,           &
+    &                               config_tune_demax_hail_s     => tune_demax_hail_s,     &
+    &                               config_prhthresh_demax_hail_s=> prhthresh_demax_hail_s,&
+    &                               config_kefthresh_demax_hail_s=> kefthresh_demax_hail_s,&
+    &                               config_qnhthresh_demax_hail_s=> qnhthresh_demax_hail_s,&
+    &                               config_lwindeffect_kef_hail_s=> lwindeffect_kef_hail_s
+
   IMPLICIT NONE
   PRIVATE
 
@@ -123,14 +147,17 @@ MODULE mo_nwp_tuning_nml
 
   REAL(wp) :: &                    !< constant in saturation wave spectrum (non-orographic GWD)
     &  tune_gcstar
-  
+
   REAL(wp) :: &                    !< Minimum value for sticking efficiency
     &  tune_zceff_min
 
   REAL(wp) :: &                    !< factor in the terminal velocity for snow
     &  tune_v0snow
 
-  REAL(wp) :: &                    !< Terminal fall velocity of ice 
+  REAL(wp) :: &                    !< efficiency for cloud-graupel riming
+    &  tune_zcsg
+
+  REAL(wp) :: &                    !< Terminal fall velocity of ice
     &  tune_zvz0i
 
   REAL(wp) :: &                    !< Exponent for density correction of cloud ice sedimentation
@@ -139,13 +166,13 @@ MODULE mo_nwp_tuning_nml
   REAL(wp) :: &                    !< sbm ccn factor
     &  tune_sbmccn
 
-  REAL(wp) :: &                    !< Entrainment parameter for deep convection valid at dx=20 km 
+  REAL(wp) :: &                    !< Entrainment parameter for deep convection valid at dx=20 km
     &  tune_entrorg
 
-  REAL(wp) :: &                    !< Coefficient for conversion of cloud water into precipitation in convection scheme 
+  REAL(wp) :: &                    !< Coefficient for conversion of cloud water into precipitation in convection scheme
     &  tune_rprcon
 
-  REAL(wp) :: &                    !< Maximum allowed shallow convection depth (Pa) 
+  REAL(wp) :: &                    !< Maximum allowed shallow convection depth (Pa)
     &  tune_rdepths
 
   REAL(wp) :: &                    !< Fraction of CAPE diurnal cycle correction applied in the extratropics
@@ -157,11 +184,26 @@ MODULE mo_nwp_tuning_nml
   REAL(wp) :: &                    !< CAPE threshold above which the convective adjustment time scale and entrainment
     &  tune_capethresh             !< are reduced for numerical stability [J/kg]
 
+  REAL(wp) :: &                    !< Tuning factor for offset in CAPE closure for grayzone deep convection
+    &  tune_grzdc_offset           !
+
   REAL(wp) :: &                    !< RH threshold for onset of evaporation below cloud base over land
     &  tune_rhebc_land
 
   REAL(wp) :: &                    !< RH threshold for onset of evaporation below cloud base over sea
     &  tune_rhebc_ocean
+
+  REAL(wp) :: &                    !< fractional mass flux for downdrafts over land
+    &  tune_rmfdeps_land
+
+  REAL(wp) :: &                    !< fractional mass flux for downdrafts over sea
+    &  tune_rmfdeps_ocean
+
+  REAL(wp) :: &                    !< prefactor in RH-dependent detrainment profile
+    &  tune_detrainment_profile(2)
+
+  REAL(wp) :: &                    !< prefactor in RH-dependent entrainment profile
+    &  tune_entrainment_profile(2)
 
   REAL(wp) :: &                    !< Convective area fraction
     &  tune_rcucov
@@ -187,8 +229,20 @@ MODULE mo_nwp_tuning_nml
   REAL(wp) :: &                    !< Minimum value to which the snow cover fraction is artificially reduced
     &  tune_minsnowfrac            !  in case of melting show (in case of idiag_snowfrac = 20)
 
+  REAL(wp) :: &                    !< Decay time scale for shallow convective anvils
+    &  tune_tau_shallow            ! (in case of inwp_cldcover = 1)
+
+  REAL(wp) :: &                    !< Decay time scale for mid-level convective anvils
+    &  tune_tau_mid                ! (in case of inwp_cldcover = 1)
+
+  REAL(wp) :: &                    !< Decay time scale for deep convective anvils
+    &  tune_tau_deep               ! (in case of inwp_cldcover = 1)
+
   REAL(wp) :: &                    !< Box width for liquid clouds assumed in the cloud cover scheme
     &  tune_box_liq                ! (in case of inwp_cldcover = 1)
+
+  REAL(wp) :: &                    !< Box width for ice clouds assumed in the cloud cover scheme
+    &  tune_box_ice                ! (in case of inwp_cldcover = 1)
 
   REAL(wp) :: &                    !< Factor for increasing the box width in case of thick model layers
     &  tune_thicklayfac            ! (in case of inwp_cldcover = 1)
@@ -205,6 +259,9 @@ MODULE mo_nwp_tuning_nml
 
   REAL(wp) :: &                    !< Scaling factor for subgrid-scale contribution to diagnosed cloud ice
     &  tune_sgsclifac              ! (in case of inwp_cldcover = 1)
+
+  REAL(wp) :: &                    !< Limiting factor for allowed supersaturation in satad
+    &  tune_supsat_limfac          !
 
   INTEGER :: &                     !< Mode of coupling between turbulence and cloud cover
     &  icpl_turb_clc               ! 1: strong dependency of box width on rcld with upper and lower limit
@@ -232,7 +289,10 @@ MODULE mo_nwp_tuning_nml
   INTEGER :: &                     !< slope-dependent tuning of parameters affecting stable PBLs
     &  itune_slopecorr             ! 1: slope-dependent reduction of rlam_heat and near-surface tkhmin
 
-  INTEGER :: &                     !< type of artificial ozone tuning 
+  REAL(wp):: &                     ! SSO stdev limit (m) above which adaptive surface friction is reduced
+    & tune_ssolim_sfcfric(max_dom)
+
+  INTEGER :: &                     !< type of artificial ozone tuning
     &  itune_o3                    ! 0: no tuning
                                    ! 1: old tuning for RRTM radiation
                                    ! 2: (default) standard tuning for EcRad with RRTM gas optics
@@ -251,6 +311,15 @@ MODULE mo_nwp_tuning_nml
   REAL(wp) :: &                    !< Tuning factor for gust limitation
     &  tune_gustlim_fac(max_dom)   !
 
+  INTEGER :: &                     !< Type of visbility tuning
+    &  itune_vis_diag              ! 1: first operational implementation
+                                   ! 2: optimized day-night factor
+                                   ! 3: (2) plus retuned RH dependency
+
+  INTEGER :: &                     !< Type of ceiling calculation
+    &  itune_ceiling_diag          ! 1: purely layer-wise
+                                   ! 2: vertical integration with overlap assumption like for cloud cover diagnostic
+
   LOGICAL :: &                     ! cloud cover calibration over land points
     &  lcalib_clcov
 
@@ -259,7 +328,7 @@ MODULE mo_nwp_tuning_nml
 
   REAL(wp) :: &                    !< maximum allowed positive freshsnow increment
        &  max_freshsnow_inc
-  
+
   REAL(wp) :: &                    !< critical threshold for lower tropospheric stability (K)
        &  tune_eiscrit             !< to switch off conv param in stratocumulus regions
 
@@ -272,22 +341,52 @@ MODULE mo_nwp_tuning_nml
   REAL(wp) :: &                    !< maximum inversion height (m) used to define region with
        &  tune_sc_invmax           !< enhanced stratocumulus cloud cover
 
+  REAL(wp) :: &                    !< scaling factor for low cloud cover modification
+       &  tune_cu_alfa             !< used for more U-shaped low cloud cover
+
+  REAL(wp) :: &                    !< threshold cloud droplet number concentration for low cloud cover modification
+       &  tune_cu_cdnc             !< used for more U-shaped low cloud cover
+
+  REAL(wp) :: &                    !< mean diameter of detrained cloud ice of parameterized convection
+       &  tune_dice_conv           !< for two-moment schemes
+
+  REAL(wp) :: &                    !< linear tuning factor for effective radius of cloud ice
+       &  tune_reff_qi
+
+  REAL(wp), DIMENSION(3) :: &      !< tuning parameters for 2d cloud droplet number cloud_num (1/m3)
+       &  tune_cdnc                !  1: lower bound, 2: upper bound, 3: scaling factor
+
   REAL(wp) :: &                    !< scaling of direct solar rediation to tune sunshine duration
        &  tune_dursun_scaling      !< in corresponding diagnostic
 
   REAL(wp) :: &                    !< tuning of anthropogenic heat flux
        &  tune_urbahf(4)
 
-  REAL(wp) :: &                    !< lower and upper bound for variable ISA paraeterization 
+  REAL(wp) :: &                    !< lower and upper bound for variable ISA paraeterization
        &  tune_urbisa(2)           !< depending on smoothed urban fraction
-  
-  
+
+  REAL(wp) :: &                    !< scaling factor to compute estim. max. hail diam.
+       &  tune_demax_hail_s        !< at surface from mean mass diameter of hail
+
+  REAL(wp) :: &                    !< prh (= precip rate hail = hail_gscp_rate kg/(m**2 s)) threshold above to compute
+       &  prhthresh_demax_hail_s   !< estim. max. hail diam. at surface from mean mass diameter of hail
+
+  REAL(wp) :: &                    !< kef (= hail kinetic energy flux = kef_hail_s W/(m**2)) threshold above to compute
+       &  kefthresh_demax_hail_s   !< estim. max. hail diam. at surface from mean mass diameter of hail
+
+  REAL(wp) :: &                    !< qnh (= hail number density 1/m**3) threshold above to compute
+       &  qnhthresh_demax_hail_s   !< estim. max. hail diam. at surface from mean mass diameter of hail
+
+  LOGICAL :: &                     !< switch for taking into account effects of near-surface winds (u,v,w)
+       lwindeffect_kef_hail_s      !< on the kinetic energy flux of hail stones in an approximate way
+
   NAMELIST/nwp_tuning_nml/ tune_gkwake, tune_gkdrag, tune_gfluxlaun, tune_gcstar, &
-    &                      tune_zceff_min, tune_v0snow, tune_zvz0i,               &
+    &                      tune_zceff_min, tune_v0snow, tune_zvz0i, tune_zcsg,    &
     &                      tune_entrorg, itune_albedo, tune_albedo_wso,           &
     &                      max_freshsnow_inc,                                     &
     &                      tune_capdcfac_et, tune_box_liq, tune_rhebc_land,       &
     &                      tune_rhebc_ocean, tune_rcucov, tune_texc,              &
+    &                      tune_rmfdeps_land, tune_rmfdeps_ocean, tune_detrainment_profile, &
     &                      tune_qexc, tune_minsnowfrac,tune_rhebc_land_trop,      &
     &                      tune_rhebc_ocean_trop, tune_rcucov_trop,               &
     &                      tune_dust_abs, tune_gfrcrit, tune_grcrit,              &
@@ -299,26 +398,33 @@ MODULE mo_nwp_tuning_nml
     &                      tune_blockred, itune_gust_diag, tune_rcapqadv,         &
     &                      tune_gustsso_lim, tune_eiscrit, itune_o3,              &
     &                      tune_sc_eis, tune_sc_invmin, tune_sc_invmax,           &
+    &                      tune_cu_alfa, tune_cu_cdnc, tune_dice_conv,            &
     &                      tune_capethresh, tune_gkdrag_enh, tune_grcrit_enh,     &
     &                      tune_minsso_gwd, tune_dursun_scaling, tune_sbmccn,     &
     &                      itune_slopecorr, tune_gustlim_agl, tune_gustlim_fac,   &
-    &                      tune_urbahf, tune_urbisa
+    &                      tune_urbahf, tune_urbisa, tune_box_ice, tune_supsat_limfac,  &
+    &                      tune_grzdc_offset, itune_vis_diag, tune_entrainment_profile, &
+    &                      tune_tau_shallow, tune_tau_mid, tune_tau_deep,               &
+    &                      tune_ssolim_sfcfric, itune_ceiling_diag, tune_reff_qi, tune_cdnc, &
+    &                      prhthresh_demax_hail_s, kefthresh_demax_hail_s,        &
+    &                      qnhthresh_demax_hail_s, tune_demax_hail_s,             &
+    &                      lwindeffect_kef_hail_s
 
 CONTAINS
 
 
   !-------------------------------------------------------------------------
   !
-  !! Read Namelist for NWP physics tuning. 
+  !! Read Namelist for NWP physics tuning.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for NWP physics tuning
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)   
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_nwp_tuning_namelist( filename )
 
@@ -332,12 +438,12 @@ CONTAINS
       &  routine = 'mo_nwp_tuning_nml: read_tuning_namelist'
 
     !-----------------------
-    ! 1. default settings   
+    ! 1. default settings
     !-----------------------
 
-    ! Comment: In case we want to draw from a normal distribution, the namelist 
-    ! parameters could be extended to arrays of size 2. The first value is the mean, 
-    ! while the second one is the standard deviation. 
+    ! Comment: In case we want to draw from a normal distribution, the namelist
+    ! parameters could be extended to arrays of size 2. The first value is the mean,
+    ! while the second one is the standard deviation.
 
     ! SSO tuning
     gkwake_def  = 1.5_wp       ! original COSMO value 0.5
@@ -366,6 +472,7 @@ CONTAINS
     ! grid scale microphysics
     tune_zceff_min   = 0.01_wp
     tune_v0snow      = -1.0_wp      ! defaults are set in data_gscp depending on igscp
+    tune_zcsg        = 0.5_wp       ! original value from COSMO
     tune_zvz0i       = 1.25_wp      ! original value of Heymsfield+Donner 1990: 3.29
     tune_icesedi_exp = 0.30_wp      ! exponent for density correction of cloud ice sedimentation
     tune_sbmccn      = 1.0_wp       ! [0-1] scaling factor to reduce the ccn concentration initial profile with respect to the polluted case
@@ -375,7 +482,7 @@ CONTAINS
     !
 
     !> entrainment parameter for deep convection:
-    tune_entrorg     = 1.95e-3_wp   
+    tune_entrorg     = 1.95e-3_wp
 
     !> coefficient for conversion of cloud water into precipitation
     tune_rprcon      = 1.4e-3_wp
@@ -393,11 +500,26 @@ CONTAINS
     !  are reduced for numerical stability [J/kg]
     tune_capethresh  = 7000._wp
 
+    !< Tuning factor for offset in CAPE closure for grayzone deep convection
+    tune_grzdc_offset = 0._wp
+
     !> RH threshold for onset of evaporation below cloud base over land (original IFS value 0.7)
     tune_rhebc_land  = 0.75_wp
 
     !> RH threshold for onset of evaporation below cloud base over sea (original IFS value 0.9)
     tune_rhebc_ocean = 0.85_wp
+
+    !> fractional mass flux for downdrafts over land
+    tune_rmfdeps_land  = 0.25_wp
+
+    !> fractional mass flux for downdrafts over ocean
+    tune_rmfdeps_ocean = 0.15_wp
+
+    !> prefactor in RH-dependent detrainment profile
+    tune_detrainment_profile(:) =  (/1._wp, 0._wp/)
+
+    !> prefactor in RH-dependent entrainment profile
+    tune_entrainment_profile(:) =  (/1.3_wp, 1._wp/)
 
     !> Convective area fraction used for computing evaporation below cloud base (original IFS value 0.05)
     tune_rcucov      = 0.05_wp
@@ -423,12 +545,17 @@ CONTAINS
                                    ! in case of melting show (in case of idiag_snowfrac = 20)
     !
     ! cloud cover
+    tune_tau_shallow = 1500.0_wp   ! decay time scale for shallow convective anvils (s)
+    tune_tau_mid     = 1500.0_wp   ! decay time scale for mid-level convective anvils (s)
+    tune_tau_deep    = 1500.0_wp   ! decay time scale for deep convective anvils (s)
     tune_box_liq     = 0.05_wp     ! box width scale of liquid clouds
+    tune_box_ice     = 0.05_wp     ! box width scale of ice clouds
     tune_thicklayfac = 0.005_wp    ! factor [1/m] for increasing the box with for layer thicknesses exceeding 150 m
     tune_box_liq_asy = 3._wp       ! asymmetry factor for liquid cloud parameterization
     tune_box_liq_sfc_fac(:) = 1._wp   ! Tuning factor for box_liq reduction near the surface
     allow_overcast   = 1._wp       ! Tuning factor for steeper dependence CLC(RH)
     tune_sgsclifac   = 0._wp       ! Scaling factor for subgrid-scale contribution to diagnosed cloud ice
+    tune_supsat_limfac = 0._wp     ! Limiting factor for allowed supersaturation in satad
     lcalib_clcov     = .TRUE.      ! use calibration of layer-wise cloud cover diagnostics over land
     max_calibfac_clcl = 4._wp      ! maximum calibration factor for low cloud cover (CLCL); affects diagnostics only
     icpl_turb_clc    = 1           ! use strong dependency of box with on rcld (with factor 4) and upper and lower limit
@@ -439,12 +566,21 @@ CONTAINS
     tune_gustlim_agl(:) = 1500._wp ! AGL height used for gust limitation in case of itune_gust_diag=4
     tune_gustlim_fac(:) = 0.0_wp   ! Corresponding tuning factor (0 means that limiting is deactivated)
 
+    itune_vis_diag = 1             ! Variant of visibility diagnostics
+    itune_ceiling_diag = 1         ! Variant of ceiling diagnostics
+
     tune_dust_abs   = 0._wp        ! no tuning of LW absorption of mineral dust
     tune_difrad_3dcont = 0.5_wp    ! tuning factor for 3D contribution to diagnosed diffuse radiation (no impact on prognostic results!)
     itune_albedo    = 0            ! original (measured) albedo
     tune_albedo_wso = (/0._wp, 0._wp/) ! no bare soil albedo correction for soil types 3-6 (dry soil, wet soil)
     itune_o3        = 2            ! standard ozone tuning for EcRad
     itune_slopecorr  = 0           ! slope-dependent reduction of rlam_heat and near-surface tkhmin
+    tune_reff_qi    = 1._wp        ! tuning factor for effective radius of cloud ice
+    tune_cdnc       = (/ 10.0e6_wp,  & ! lower bound for 2d cloud droplet number cloud_num
+                         300.0e6_wp, & ! upper bound for 2d cloud droplet number cloud_num
+                         1.0_wp/)      ! scaling factor for 2d cloud droplet number cloud_num
+    tune_ssolim_sfcfric(:) = 1.e4_wp   ! SSO stdev limit (m) above which adaptive surface friction is reduced
+
     !
     ! IAU increment tuning
     max_freshsnow_inc = 0.025_wp   ! maximum allowed positive freshsnow increment
@@ -464,9 +600,19 @@ CONTAINS
     tune_sc_eis      = 1000.0_wp
 
     !> min/max inversion height (m) to identify stratocumulus region for cloud cover
-    !> enhancement. 
+    !> enhancement.
     tune_sc_invmin   = 200._wp
     tune_sc_invmax   = 1500._wp
+
+    !> scaling parameter for low cloud cover modification and cloud droplet number
+    !> threshold to identify region for cloud cover modification
+    !> The parameter tune_cu_alfa is zero as default to turn off the modification.
+    tune_cu_alfa     = 0.0_wp
+    tune_cu_cdnc     = 150e6_wp
+
+    !> mean diameter of detrained cloud ice of parameterized convection
+    !> needed for two-moment microphysical schemes
+    tune_dice_conv   = 100e-6_wp
 
     !> scaling of direct solar radiation in sunshine duration diagnostic
     tune_dursun_scaling = 1._wp
@@ -475,13 +621,19 @@ CONTAINS
     tune_urbahf = (/0._wp,2._wp,2._wp,50._wp/)   ! anthropogenic heat flux; base values and gradients for heating and cooling; upper limit
     tune_urbisa = (/0.6_wp,1._wp/)        ! lower and upper bound for variable ISA parameterization depending on smoothed urban fraction
 
+    tune_demax_hail_s = 1.6_wp       ! for now, we set the factor between max. and mean hail size to 1.0; subject to change after crowd data analysis
+    prhthresh_demax_hail_s = 5e-4_wp ! prh (=hail_gsp_rate in kg/(m**2 s)) threshold above to compute estim. max. hail diam.; subject to change after crowd data analysis
+    kefthresh_demax_hail_s = 1.5e-1_wp ! kef (=kef_hail_s in W/m**2) threshold above to compute estim. max. hail diam.; subject to change after crowd data analysis
+    qnhthresh_demax_hail_s = 1.5e-2_wp ! qnh (=hail number density in 1/m**3) threshold above to compute estim. max. hail diam.; subject to change after crowd data analysis
+    lwindeffect_kef_hail_s = .FALSE.
+
     IF (my_process_is_stdio()) THEN
       iunit = temp_defaults()
       WRITE(iunit, nwp_tuning_nml)   ! write defaults to temporary text file
     END IF
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -571,6 +723,7 @@ CONTAINS
     config_tune_gcstar           = tune_gcstar
     config_tune_zceff_min        = tune_zceff_min
     config_tune_v0snow           = tune_v0snow
+    config_tune_zcsg             = tune_zcsg
     config_tune_zvz0i            = tune_zvz0i
     config_tune_icesedi_exp      = tune_icesedi_exp
     config_tune_entrorg          = tune_entrorg
@@ -579,8 +732,13 @@ CONTAINS
     config_tune_capdcfac_et      = tune_capdcfac_et
     config_tune_capdcfac_tr      = tune_capdcfac_tr
     config_tune_capethresh       = tune_capethresh
+    config_tune_grzdc_offset     = tune_grzdc_offset
     config_tune_rhebc_land       = tune_rhebc_land
     config_tune_rhebc_ocean      = tune_rhebc_ocean
+    config_tune_rmfdeps_land     = tune_rmfdeps_land
+    config_tune_rmfdeps_ocean    = tune_rmfdeps_ocean
+    config_tune_detrainment_profile = tune_detrainment_profile
+    config_tune_entrainment_profile = tune_entrainment_profile
     config_tune_rcucov           = tune_rcucov
     config_tune_rhebc_land_trop  = tune_rhebc_land_trop
     config_tune_rhebc_ocean_trop = tune_rhebc_ocean_trop
@@ -589,12 +747,17 @@ CONTAINS
     config_tune_qexc             = tune_qexc
     config_tune_rcapqadv         = tune_rcapqadv
     config_tune_minsnowfrac      = tune_minsnowfrac
+    config_tune_tau_shallow      = tune_tau_shallow
+    config_tune_tau_mid          = tune_tau_mid
+    config_tune_tau_deep         = tune_tau_deep
     config_tune_box_liq          = tune_box_liq
+    config_tune_box_ice          = tune_box_ice
     config_tune_box_liq_asy      = tune_box_liq_asy
     config_tune_box_liq_sfc_fac  = tune_box_liq_sfc_fac
     config_allow_overcast        = allow_overcast
     config_tune_thicklayfac      = tune_thicklayfac
     config_tune_sgsclifac        = tune_sgsclifac
+    config_tune_supsat_limfac    = tune_supsat_limfac
     config_icpl_turb_clc         = icpl_turb_clc
     config_tune_dust_abs         = tune_dust_abs
     config_tune_difrad_3dcont    = tune_difrad_3dcont
@@ -603,9 +766,12 @@ CONTAINS
     config_tune_gustsso_lim      = tune_gustsso_lim
     config_tune_gustlim_agl      = tune_gustlim_agl
     config_tune_gustlim_fac      = tune_gustlim_fac
+    config_itune_vis_diag        = itune_vis_diag
+    config_itune_ceiling_diag    = itune_ceiling_diag
     config_itune_albedo          = itune_albedo
-    config_tune_albedo_wso       = tune_albedo_wso    
+    config_tune_albedo_wso       = tune_albedo_wso
     config_itune_slopecorr       = itune_slopecorr
+    config_tune_ssolim_sfcfric   = tune_ssolim_sfcfric
     config_itune_o3              = itune_o3
     config_lcalib_clcov          = lcalib_clcov
     config_max_calibfac_clcl     = max_calibfac_clcl
@@ -614,21 +780,36 @@ CONTAINS
     config_tune_sc_eis           = tune_sc_eis
     config_tune_sc_invmin        = tune_sc_invmin
     config_tune_sc_invmax        = tune_sc_invmax
+    config_tune_cu_alfa          = tune_cu_alfa
+    config_tune_cu_cdnc          = tune_cu_cdnc
+    config_tune_dice_conv        = tune_dice_conv
+    config_tune_reff_qi          = tune_reff_qi
+    config_tune_cdnc             = tune_cdnc
     config_tune_dursun_scaling   = tune_dursun_scaling
     config_tune_sbmccn           = tune_sbmccn
     config_tune_urbisa           = tune_urbisa
     config_tune_urbahf           = tune_urbahf
+    config_tune_demax_hail_s     = tune_demax_hail_s
+    config_prhthresh_demax_hail_s= prhthresh_demax_hail_s
+    config_kefthresh_demax_hail_s= kefthresh_demax_hail_s
+    config_qnhthresh_demax_hail_s= qnhthresh_demax_hail_s
+    config_lwindeffect_kef_hail_s= lwindeffect_kef_hail_s
 
-    !$ACC UPDATE DEVICE(config_tune_gust_factor, config_itune_gust_diag, config_tune_gustsso_lim) ASYNC(1)
-    !$ACC UPDATE DEVICE(config_tune_gustlim_agl, config_tune_gustlim_fac, config_tune_albedo_wso) ASYNC(1)
+    !$ACC UPDATE DEVICE(config_tune_gust_factor, config_itune_gust_diag, config_itune_vis_diag, config_tune_gustsso_lim) ASYNC(1)
+    !$ACC UPDATE DEVICE(config_tune_gustlim_agl, config_tune_gustlim_fac, config_tune_albedo_wso, config_tune_supsat_limfac) ASYNC(1)
+    !$ACC UPDATE DEVICE(config_itune_ceiling_diag, config_tune_reff_qi) ASYNC(1)
+    !$ACC UPDATE DEVICE(config_tune_tau_shallow, config_tune_tau_mid, config_tune_tau_deep) ASYNC(1)
+    !$ACC UPDATE DEVICE(config_tune_demax_hail_s, config_prhthresh_demax_hail_s) ASYNC(1)
+    !$ACC UPDATE DEVICE(config_kefthresh_demax_hail_s, config_qnhthresh_demax_hail_s) ASYNC(1)
+    !$ACC UPDATE DEVICE(config_lwindeffect_kef_hail_s) ASYNC(1)
 
     !-----------------------------------------------------
     ! 6. Store the namelist for restart
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=nwp_tuning_nml)                    
-      CALL store_and_close_namelist(funit, 'nwp_tuning_nml')             
+      WRITE(funit,NML=nwp_tuning_nml)
+      CALL store_and_close_namelist(funit, 'nwp_tuning_nml')
     ENDIF
 
     !--------------------------------------------------------

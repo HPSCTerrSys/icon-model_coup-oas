@@ -1,15 +1,15 @@
-!! mm: modularized aggregation scheme following Maerz et al. (2020)
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! mm: modularized aggregation scheme following Maerz et al. (2020)
 
 MODULE mo_aggregates
 
@@ -40,7 +40,7 @@ MODULE mo_aggregates
 
      USE mo_sedmnt,         ONLY : claydens, calcdens, opaldens,&
           &                        opalwei, calcwei
- 
+
      USE mo_bgc_memory_types, ONLY  : t_bgc_memory, t_sediment_memory, t_aggregates_memory
 
      IMPLICIT NONE
@@ -77,7 +77,7 @@ MODULE mo_aggregates
      REAL(wp) :: rho_V_dp_dust,rho_V_dp_det,rho_V_dp_calc,rho_V_dp_opal ! mass of primary particles (M)
      REAL(wp) :: V_frustule_inner                         ! volume of hollow part in diatom frustule (L^3)
      REAL(wp) :: V_frustule_opal                          ! volume of opal shell material (L^3)
-     REAL(wp) :: rho_V_frustule_opal                      ! mass of frustule material (M) 
+     REAL(wp) :: rho_V_frustule_opal                      ! mass of frustule material (M)
 
    CONTAINS
 
@@ -91,7 +91,7 @@ MODULE mo_aggregates
      REAL(wp) :: Rm_SiP                                   ! molar mass ratio opal (SiO_2) to POM
      REAL(wp) :: thick_shell                              ! diatom frustule shell thickness (L)
      REAL(wp) :: d_frustule_inner                         ! diameter of hollow part in diatom frustule (L)
-      
+
      V_dp_dust = one6th * pi * dp_dust**3._wp * num_fac
      V_dp_det  = one6th * pi * dp_det**3._wp  * num_fac
      V_dp_calc = one6th * pi * dp_calc**3._wp * num_fac
@@ -130,7 +130,7 @@ MODULE mo_aggregates
 !                                       ppo, ptho, psao, lon, lat)
      TYPE(t_bgc_memory), POINTER    :: local_bgc_mem
      TYPE(t_aggregates_memory), POINTER :: aggr_mem
-     
+
      !-----------------------------------------------------------------------
      !>
      !! calculates the mass concentration-weighted mean sinking velocity of marine
@@ -150,6 +150,11 @@ MODULE mo_aggregates
 
 !     REAL(wp), INTENT(in)           :: lon(bgc_nproma), lat(bgc_nproma)
 
+#ifdef __LVECTOR__
+     INTEGER :: max_klevs
+     max_klevs = MAXVAL(klev(start_idx:end_idx))
+#endif
+
      ! molecular dynamic viscosity
      CALL calc_dynvis(aggr_mem%dynvis, klev, start_idx, end_idx, pddpo, ppo, ptho, psao)
 
@@ -158,10 +163,18 @@ MODULE mo_aggregates
      ! calculate the mean sinking velocity of aggregates
      CALL ws_Re_approx(aggr_mem, klev, start_idx, end_idx, pddpo)
 
+#ifdef __LVECTOR__
+     !NEC$ nomove
+     DO k = 1, max_klevs
+        !NEC$ nomove
+        DO j = start_idx, end_idx
+            IF( (pddpo(j,k) > EPSILON(0.5_wp)) .and. (k <= klev(j)) ) THEN
+#else
      DO j = start_idx, end_idx
         kpke=klev(j)
         DO k = 1,kpke
            IF(pddpo(j,k) > EPSILON(0.5_wp))THEN
+#endif
 
 !              aggdiag(j,k,kwsagg)    = ws_agg(j,k) * 86400._wp / dtbgc ! conversion  m/time_step   to  m/d for output
 !              aggdiag(j,k,kdynvis)   = dynvis(j,k)
@@ -196,7 +209,7 @@ MODULE mo_aggregates
      IMPLICIT NONE
 
      REAL(wp) :: n_det,n_opal,n_calc,n_dust,n_total       ! total primary particle number (#)
-     REAL(wp) :: mf                                       ! mass factor for aggregates 
+     REAL(wp) :: mf                                       ! mass factor for aggregates
      REAL(wp) :: V_det,V_opal,V_calc,V_dust,V_solid       ! total volume of primary particles in a unit volume (L^3/L^3)
      REAL(wp) :: stickiness_mapped                        ! mapped mean stickiness of particles on range (0,1)
      REAL(wp) :: cell_det_mass                            ! mass of detritus material in diatoms
@@ -205,8 +218,8 @@ MODULE mo_aggregates
      REAL(wp) :: V_POM_cell                               ! volume of POM in frustule
      REAL(wp) :: V_aq                                     ! volume of water space in frustule
      REAL(wp) :: rho_frustule                             ! density of diatom frustule incl. opal, detritus and water
-     REAL(wp) :: rho_diatom                               ! ensity of either hollow frustule 
- 
+     REAL(wp) :: rho_diatom                               ! ensity of either hollow frustule
+
      TYPE(t_bgc_memory), POINTER    :: local_bgc_mem
      TYPE(t_aggregates_memory), POINTER :: aggr_mem
 
@@ -216,9 +229,9 @@ MODULE mo_aggregates
 
      REAL(wp), INTENT(in), TARGET   :: pddpo(bgc_nproma,bgc_zlevs)      !< size of scalar grid cell (3rd dimension) [m]
      REAL(wp), INTENT(in), TARGET   :: ptho(bgc_nproma,bgc_zlevs)       !< ocean potential temperature [degC]
- 
+
      INTEGER  :: j,k,kpke
-     
+
      REAL(wp),POINTER :: av_dp(:,:),               &  ! mean primary particle diameter
                        &  av_rho_p(:,:),           &  ! mean primary particle density
                        &  df_agg(:,:),             &  ! fractal dimension of aggregates
@@ -231,18 +244,30 @@ MODULE mo_aggregates
                        &  av_rhof_V(:,:)
      REAL(wp), POINTER :: aggdiag(:,:,:)    ! 3d concentration EU
 
-       av_dp              =>  aggr_mem%av_dp              
-       av_rho_p           =>  aggr_mem%av_rho_p           
-       df_agg             =>  aggr_mem%df_agg             
-       b_agg              =>  aggr_mem%b_agg              
-       Lmax_agg           =>  aggr_mem%Lmax_agg           
-       ws_agg             =>  aggr_mem%ws_agg             
-       stickiness_agg     =>  aggr_mem%stickiness_agg     
+#ifdef __LVECTOR__
+     INTEGER :: max_klevs
+     max_klevs = MAXVAL(klev(start_idx:end_idx))
+#endif
+
+       av_dp              =>  aggr_mem%av_dp
+       av_rho_p           =>  aggr_mem%av_rho_p
+       df_agg             =>  aggr_mem%df_agg
+       b_agg              =>  aggr_mem%b_agg
+       Lmax_agg           =>  aggr_mem%Lmax_agg
+       ws_agg             =>  aggr_mem%ws_agg
+       stickiness_agg     =>  aggr_mem%stickiness_agg
        stickiness_frustule=>  aggr_mem%stickiness_frustule
-       dynvis             =>  aggr_mem%dynvis             
+       dynvis             =>  aggr_mem%dynvis
        av_rhof_V          =>  aggr_mem%av_rhof_V
        aggdiag            =>  aggr_mem%aggdiag
 
+#ifdef __LVECTOR__
+     !NEC$ nomove
+     DO k = 1, max_klevs
+        !NEC$ nomove
+        DO j = start_idx, end_idx
+            IF( (pddpo(j,k) > EPSILON(0.5_wp)) .and. (k <= klev(j)) ) THEN
+#else
      DO j = start_idx, end_idx
         kpke=klev(j)
         IF(kpke > 0)THEN
@@ -250,6 +275,7 @@ MODULE mo_aggregates
         DO k = 1,kpke
 
          IF(pddpo(j,k) > EPSILON(0.5_wp))THEN
+#endif
 
               n_det   = 0._wp ! number of primary particles
               n_opal  = 0._wp
@@ -392,11 +418,11 @@ MODULE mo_aggregates
                ! sum(n_i) not changing - can be pulled out and thus cancels out
                av_dp(j,k) = &
                  & (n_calc*dp_calc**3._wp + n_dust*dp_dust**3._wp + n_opal*dp_opal**3._wp + n_det*dp_det**3._wp)
-               
+
                av_dp(j,k) = av_dp(j,k) / &
                  & (n_calc*dp_calc**df_agg(j,k) + n_dust*dp_dust**df_agg(j,k) &
                  & + n_opal*dp_opal**df_agg(j,k) + n_det*dp_det**df_agg(j,k) + eps_one)
-               
+
                av_dp(j,k) = av_dp(j,k)**(1._wp/(3._wp-df_agg(j,k)))
 
                ! density of mean primary particles
@@ -412,16 +438,24 @@ MODULE mo_aggregates
 
             ENDIF
          ENDDO
+#ifndef __LVECTOR__
          ENDIF
+#endif
       ENDDO
- 
- 
+
+
 
    ! calculate the maximum diameter of aggregates based on agg props
 !   CALL max_agg_diam(kpie, kpje, kpke, pddpo)
    CALL max_agg_diam(aggr_mem, klev, start_idx, end_idx, pddpo)
 
- 
+#ifdef __LVECTOR__
+   !NEC$ nomove
+   DO k = 1, max_klevs
+      !NEC$ nomove
+      DO j = start_idx, end_idx
+          IF( (pddpo(j,k) > EPSILON(0.5_wp)) .and. (k <= klev(j)) ) THEN
+#else
      DO j = start_idx, end_idx
         kpke=klev(j)
         IF(kpke > 0)THEN
@@ -429,6 +463,7 @@ MODULE mo_aggregates
         DO k = 1,kpke
 
          IF(pddpo(j,k) > EPSILON(0.5_wp))THEN
+#endif
 
              ! mass factor  ! mm: only used to calculate number of aggregates n_agg; see unmodularized MAGO version
 !             mf = mass_factor(av_dp(j,k), df_agg(j,k), av_rho_p(j,k))
@@ -473,10 +508,12 @@ MODULE mo_aggregates
 
             ENDIF
          ENDDO
+#ifndef __LVECTOR__
          ENDIF
+#endif
       ENDDO
- 
- 
+
+
 
   END SUBROUTINE aggregate_properties
 
@@ -501,20 +538,32 @@ MODULE mo_aggregates
      INTEGER, INTENT(in)            :: end_idx                !< end index  for j loop  (ICON cells, MPIOM lat dir)
      REAL(wp), INTENT(in), TARGET   :: pddpo(bgc_nproma,bgc_zlevs)      !< size of scalar grid cell (3rd dimension) [m]
 
- 
+#ifdef __LVECTOR__
+     INTEGER :: max_klevs
+     max_klevs = MAXVAL(klev(start_idx:end_idx))
+
+     !NEC$ nomove
+     DO k = 1, max_klevs
+        !NEC$ nomove
+        DO j = start_idx, end_idx
+            IF( (pddpo(j,k) > EPSILON(0.5_wp)) .and. (k <= klev(j)) ) THEN
+#else
      DO j = start_idx, end_idx
         kpke=klev(j)
         IF(kpke > 0)THEN
         DO k = 1,kpke
            IF(pddpo(j,k) > EPSILON(0.5_wp))THEN
+#endif
               ! ws_Re is a function
               aggr_mem%ws_agg(j,k) = ws_Re(aggr_mem,j,k)
            ENDIF
         ENDDO
-        ENDIF
+#ifndef __LVECTOR__
+        ENDIF ! kpke > 0
+#endif
      ENDDO
- 
- 
+
+
 
   END SUBROUTINE ws_Re_approx
 
@@ -582,6 +631,7 @@ MODULE mo_aggregates
 
     ! Local
     REAL(wp) :: d_Re01, d_Re10, d_low, ws_agg_ints
+#ifndef __LVECTOR__
     REAL(wp),POINTER :: av_dp(:,:),               &  ! mean primary particle diameter
                        &  av_rho_p(:,:),           &  ! mean primary particle density
                        &  df_agg(:,:),             &  ! fractal dimension of aggregates
@@ -593,15 +643,15 @@ MODULE mo_aggregates
                        &  dynvis(:,:),             &  ! molecular dynamic viscosity
                        &  av_rhof_V(:,:)
 
-       av_dp              =>  aggr_mem%av_dp              
-       av_rho_p           =>  aggr_mem%av_rho_p           
-       df_agg             =>  aggr_mem%df_agg             
-       b_agg              =>  aggr_mem%b_agg              
-       Lmax_agg           =>  aggr_mem%Lmax_agg           
-       ws_agg             =>  aggr_mem%ws_agg             
-       stickiness_agg     =>  aggr_mem%stickiness_agg     
+       av_dp              =>  aggr_mem%av_dp
+       av_rho_p           =>  aggr_mem%av_rho_p
+       df_agg             =>  aggr_mem%df_agg
+       b_agg              =>  aggr_mem%b_agg
+       Lmax_agg           =>  aggr_mem%Lmax_agg
+       ws_agg             =>  aggr_mem%ws_agg
+       stickiness_agg     =>  aggr_mem%stickiness_agg
        stickiness_frustule=>  aggr_mem%stickiness_frustule
-       dynvis             =>  aggr_mem%dynvis             
+       dynvis             =>  aggr_mem%dynvis
        av_rhof_V          =>  aggr_mem%av_rhof_V
 
     ! for Re-dependent, it should always be agg_Re_crit>10
@@ -610,7 +660,7 @@ MODULE mo_aggregates
     ! Re=0.1
     d_Re01 = get_dRe(dynvis(j,k), df_agg(j,k), av_rho_p(j,k), av_dp(j,k), &
       & AJ1, BJ1, 0.1_wp)
-    
+
     ! Re=10
     d_Re10 = get_dRe(dynvis(j,k), df_agg(j,k), av_rho_p(j,k), av_dp(j,k), &
       & AJ2, BJ2, 10._wp)
@@ -652,6 +702,62 @@ MODULE mo_aggregates
             & - av_dp(j,k)**(1._wp + df_agg(j,k) - b_agg(j,k)))  &
             & / (1._wp + df_agg(j,k) - b_agg(j,k))))*dtbgc   ! (m/s -> m/d)  *dtb
 
+#else
+    ! ******************************************************************************************************************
+    ! This code block, which accesses structure members directly, is used to bypass the NEC compiler
+    ! limitation: "*** Structure assignment obstructs vectorization."
+    ! ******************************************************************************************************************
+
+    d_Re01 = get_dRe(aggr_mem%dynvis(j,k), aggr_mem%df_agg(j,k), aggr_mem%av_rho_p(j,k), aggr_mem%av_dp(j,k), &
+      & AJ1, BJ1, 0.1_wp)
+
+    ! Re=10
+    d_Re10 = get_dRe(aggr_mem%dynvis(j,k), aggr_mem%df_agg(j,k), aggr_mem%av_rho_p(j,k), aggr_mem%av_dp(j,k), &
+      & AJ2, BJ2, 10._wp)
+    d_low = aggr_mem%av_dp(j,k)
+
+    ws_agg_ints = 0._wp
+    IF(aggr_mem%Lmax_agg(j,k) >= d_Re01)THEN ! Re > 0.1
+                                    ! - collect full range up to
+                                    ! 0.1, (dp->d_Re1) and set lower bound to
+                                    ! Re=0.1 val
+                                    ! aj=AJ1, bj=1
+      ws_agg_ints = get_ws_agg_integral(aggr_mem%dynvis(j,k), aggr_mem%av_rho_p(j,k), aggr_mem%av_dp(j,k), &
+        & aggr_mem%df_agg(j,k), aggr_mem%b_agg(j,k), &
+        & AJ1, BJ1, aggr_mem%av_dp(j,k), d_Re01)
+        d_low = d_Re01
+    ENDIF
+
+    IF(aggr_mem%Lmax_agg(j,k) >= d_Re10)THEN ! Re > 10
+                                         ! - collect full range Re=0.1-10 (d_Re1-> d_Re2)
+                                         ! and set lower bound to
+                                         ! Re=10 val
+                                         ! aj=AJ2, bj=0.871
+        ws_agg_ints = ws_agg_ints  + &
+         get_ws_agg_integral(aggr_mem%dynvis(j,k), aggr_mem%av_rho_p(j,k), aggr_mem%av_dp(j,k), &
+          & aggr_mem%df_agg(j,k), aggr_mem%b_agg(j,k), &
+          AJ2, BJ2, d_Re01, d_Re10)
+        d_low = d_Re10
+    ENDIF
+
+    IF(d_low < d_Re01)THEN ! Re<0.1 and Lmax < d_Re1
+        ws_agg_ints = get_ws_agg_integral(aggr_mem%dynvis(j,k), aggr_mem%av_rho_p(j,k), aggr_mem%av_dp(j,k), &
+          & aggr_mem%df_agg(j,k), aggr_mem%b_agg(j,k), &
+          & AJ1, BJ1, aggr_mem%av_dp(j,k), aggr_mem%Lmax_agg(j,k))
+    ELSE ! Re > 10, aj=AJ3, bj=BJ3
+        ws_agg_ints = ws_agg_ints + &
+          & get_ws_agg_integral(aggr_mem%dynvis(j,k), aggr_mem%av_rho_p(j,k), aggr_mem%av_dp(j,k), &
+          & aggr_mem%df_agg(j,k), aggr_mem%b_agg(j,k), AJ3, BJ3, d_low, aggr_mem%Lmax_agg(j,k))
+    ENDIF
+
+    ! concentration-weighted mean sinking velocity
+    ws_Re = (ws_agg_ints &
+            & /((aggr_mem%Lmax_agg(j,k)**(1._wp + aggr_mem%df_agg(j,k) - aggr_mem%b_agg(j,k))  &
+            & - aggr_mem%av_dp(j,k)**(1._wp + aggr_mem%df_agg(j,k) - aggr_mem%b_agg(j,k)))  &
+            & / (1._wp + aggr_mem%df_agg(j,k) - aggr_mem%b_agg(j,k))))*dtbgc   ! (m/s -> m/d)  *dtb
+
+#endif
+
   END FUNCTION ws_Re
 
   !=====================================================================================
@@ -664,7 +770,7 @@ MODULE mo_aggregates
      !!
 
      TYPE(t_aggregates_memory), POINTER :: aggr_mem
-     
+
      INTEGER  :: j,k,kpke
 
      INTEGER, INTENT(in), TARGET    :: klev(bgc_nproma)       !<  vertical levels
@@ -676,7 +782,16 @@ MODULE mo_aggregates
      ! Local variables
      REAL(wp) :: nu_vis
 
- 
+#ifdef __LVECTOR__
+     INTEGER :: max_klevs
+     max_klevs = MAXVAL(klev(start_idx:end_idx))
+
+     !NEC$ nomove
+     DO k = 1, max_klevs
+        !NEC$ nomove
+        DO j = start_idx, end_idx
+            IF( (pddpo(j,k) > EPSILON(0.5_wp)) .and. (k <= klev(j)) ) THEN
+#else
      DO j = start_idx, end_idx
         kpke=klev(j)
         IF(kpke > 0)THEN
@@ -684,6 +799,7 @@ MODULE mo_aggregates
         DO k = 1,kpke
 
            IF(pddpo(j,k) > EPSILON(0.5_wp))THEN
+#endif
 
 ! ori:
 !              Lmax_agg(j,k) = ((agg_Re_crit * 18._wp *  dynvis(j,k) * dynvis(j,k) / rhoref_water)&
@@ -699,10 +815,12 @@ MODULE mo_aggregates
 
            ENDIF
         ENDDO
+#ifndef __LVECTOR__
         ENDIF
+#endif
      ENDDO
- 
- 
+
+
 
   END SUBROUTINE max_agg_diam
 
@@ -757,7 +875,7 @@ MODULE mo_aggregates
 
      IMPLICIT NONE
      REAL(wp) :: dynvis(:,:)
-     
+
      INTEGER  :: j,k,kpke
 
      INTEGER, INTENT(in), TARGET    :: klev(bgc_nproma)       !<  vertical levels
@@ -770,9 +888,18 @@ MODULE mo_aggregates
      REAL(wp), INTENT(in), TARGET   :: psao(bgc_nproma,bgc_zlevs)       !< ocean salinity
 
      ! Local variables
-     REAL(wp):: press_val  ! Pascal/rho -> dbar 
+     REAL(wp):: press_val  ! Pascal/rho -> dbar
 
- 
+#ifdef __LVECTOR__
+     INTEGER :: max_klevs
+     max_klevs = MAXVAL(klev(start_idx:end_idx))
+
+     !NEC$ nomove
+     DO k = 1, max_klevs
+        !NEC$ nomove
+        DO j = start_idx, end_idx
+            IF( (pddpo(j,k) > EPSILON(0.5_wp)) .and. (k <= klev(j)) ) THEN
+#else
      DO j = start_idx, end_idx
         kpke=klev(j)
         IF(kpke > 0)THEN
@@ -780,6 +907,7 @@ MODULE mo_aggregates
         DO k = 1,kpke
 
            IF(pddpo(j,k) > EPSILON(0.5_wp))THEN
+#endif
 
 !              press_val = ppo(j,k) * rhoref_water * 1.e-5_wp ! Pascal/rho -> dbar
               press_val = ppo(j,k) * rhoref_water/g * 1.e-4_wp ! mm
@@ -801,12 +929,13 @@ MODULE mo_aggregates
 
            ENDIF
         ENDDO
+#ifndef __LVECTOR__
         ENDIF
+#endif
      ENDDO
- 
- 
+
+
 
   END SUBROUTINE calc_dynvis
 
 END MODULE mo_aggregates
-

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -60,8 +60,8 @@ done
 for var in 'u' 'v' 'temp' 'theta_v' 'qv' 'qc' 'qi' 'qr' 'qs' 'clc'    \
   'tot_qv' 'tot_qc' 'tot_qi' 'qtvar'                                  \
   'ddt_temp_radsw' 'ddt_temp_radlw'  'ddt_temp_turb' 'ddt_temp_pconv' \
-  'ddt_u_turb' 'ddt_u_pconv' 'ddt_v_turb' 'ddt_v_pconv' 'ddt_qv_turb' 'ddt_qv_conv' 
- # 'z_ifc' 'z_mc' 'pres' 
+  'ddt_u_turb' 'ddt_u_pconv' 'ddt_v_turb' 'ddt_v_pconv' 'ddt_qv_turb' 'ddt_qv_conv'
+ # 'z_ifc' 'z_mc' 'pres'
 do
   echo "---------------------------------- plotting:"  $var " -----------------"
   oFile=${plotdir}/${var}_prof_${case}"_"${turb}

@@ -42,7 +42,8 @@ MODULE mo_cuflxtends
     &                        rmfsoltq,  rmfsoluv                    ,&
     &                        rmfsolct, rmfcmin,rg       ,rcpd       ,&
     &                        rlvtt   , rlstt    ,rlmlt    ,rtt      ,&
-    &                        lhook, dr_hook, lmfglac, lmfwetb
+    &                        lhook, dr_hook, lmfglac, lmfwetb       ,&
+    &                        cdnc_low, cdnc_delt
 
   USE mo_cufunctions, ONLY: foelhmcu, foeewmcu, foealfcu, &
     & foeewl,   foeewi
@@ -60,6 +61,9 @@ MODULE mo_cuflxtends
 
 
   PUBLIC :: cuflxn, cudtdqn,cududv,cuctracer
+#ifdef __MSGWAM
+  PUBLIC :: compute_msgwam_heating
+#endif
 
 CONTAINS
 
@@ -67,8 +71,9 @@ CONTAINS
   !OPTIONS XOPT(HSFUN)
   SUBROUTINE cuflxn &
     & (  kidia,    kfdia,    klon,   ktdia,   klev, rmfcfl, &
-    & rhebc_land, rhebc_ocean, rcucov, rhebc_land_trop,     &  
-    & rhebc_ocean_trop, rcucov_trop, lmfdsnow, trop_mask, ptsphy, &
+    & rhebc_land, rhebc_ocean, rcucov, rhebc_land_trop,     &
+    & rhebc_ocean_trop, rcucov_trop, lmfdsnow, lcdnc_interp, &
+    & trop_mask, pcloudnum, ptsphy,  &
     & pten,     pqen,     pqsen,    ptenh,    pqenh,&
     & paph,     pap,      pgeoh,    ldland,   ldlake, ldcum,&
     & kcbot,    kctop,    kdtop,    ktopm2,&
@@ -193,6 +198,7 @@ CONTAINS
     REAL(KIND=jprb)   ,INTENT(in)    :: rhebc_land, rhebc_ocean
     REAL(KIND=jprb)   ,INTENT(in)    :: rhebc_land_trop, rhebc_ocean_trop
     LOGICAL           ,INTENT(in)    :: lmfdsnow
+    LOGICAL           ,INTENT(in)    :: lcdnc_interp
     REAL(KIND=jprb)   ,INTENT(in)    :: rcucov, rcucov_trop
     REAL(KIND=jprb)   ,INTENT(in)    :: trop_mask(klon)
     REAL(KIND=jprb)   ,INTENT(in)    :: pten(klon,klev)
@@ -203,6 +209,7 @@ CONTAINS
     REAL(KIND=jprb)   ,INTENT(in)    :: paph(klon,klev+1)
     REAL(KIND=jprb)   ,INTENT(in)    :: pap(klon,klev)
     REAL(KIND=jprb)   ,INTENT(in)    :: pgeoh(klon,klev+1)
+    REAL(KIND=jprb)   ,INTENT(in)    :: pcloudnum(klon)
     LOGICAL           ,INTENT(in)    :: ldland(klon)
     LOGICAL           ,INTENT(in)    :: ldlake(klon)
     LOGICAL           ,INTENT(in)    :: ldcum(klon)
@@ -242,7 +249,7 @@ CONTAINS
       & zdenom, zdrfl, zdrfl1, zfac, & !, zfoeewi, zfoeewl, &
       & zoealfa, zoeewm, zoelhm, zpdr, zpds, &
       & zrfl, zrfln, zrmin, zrnew, zsnmlt, ztarg, &
-      & ztmst, zzp, zten, zwetb , zglac
+      & ztmst, zzp, zten, zwetb , zglac, zland, zocean, zcdnc
     REAL(KIND=jprb) :: zhook_handle
 
     ! Numerical fit to wet bulb temperature
@@ -299,11 +306,18 @@ CONTAINS
       IF(.NOT.ldcum(jl).OR.kdtop(jl) < kctop(jl)) lddraf(jl)=.FALSE.
       IF(.NOT.ldcum(jl)) ktype(jl)=0
       idbas(jl)=klev
-      IF(ldland(jl) .OR. ldlake(jl)) THEN
-        zrhebc(jl) = rhebc_land*(1._jprb - trop_mask(jl))  + rhebc_land_trop*trop_mask(jl)
+      IF (lcdnc_interp) THEN
+          zland  = rhebc_land*(1._jprb - trop_mask(jl))  + rhebc_land_trop*trop_mask(jl)
+          zocean = rhebc_ocean*(1._jprb - trop_mask(jl)) + rhebc_ocean_trop*trop_mask(jl)
+          zcdnc  = MIN(MAX(0._JPRB,(pcloudnum(jl)-cdnc_low)/cdnc_delt),1.0_JPRB)
+          zrhebc(jl) = zocean*(1.0_JPRB-zcdnc)+zland*zcdnc
       ELSE
-        zrhebc(jl) = rhebc_ocean*(1._jprb - trop_mask(jl)) + rhebc_ocean_trop*trop_mask(jl)
-      ENDIF
+        IF(ldland(jl) .OR. ldlake(jl)) THEN
+          zrhebc(jl) = rhebc_land*(1._jprb - trop_mask(jl))  + rhebc_land_trop*trop_mask(jl)
+        ELSE
+          zrhebc(jl) = rhebc_ocean*(1._jprb - trop_mask(jl)) + rhebc_ocean_trop*trop_mask(jl)
+        ENDIF
+      END IF
       zrcucov(jl) = rcucov*(1._jprb - trop_mask(jl)) + rcucov_trop*trop_mask(jl)
     ENDDO
 
@@ -1142,7 +1156,7 @@ CONTAINS
     ztsphy=1.0_JPRB/ptsphy
 
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lacc)
- 
+
     !$ACC LOOP SEQ
     DO jk=1,klev
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -1356,7 +1370,7 @@ CONTAINS
   !=======================================================================
 
   !US this subroutine is only used for ktrac>0 in ART, which is not supported by GPUs
-  
+
   SUBROUTINE cuctracer &
     & ( kidia,    kfdia,   klon,   ktdia, klev, ktrac,&
     & kctop,     kdtop,   &
@@ -1899,5 +1913,169 @@ CONTAINS
 
   END SUBROUTINE cubidiag
 
-END MODULE mo_cuflxtends
+#ifdef __MSGWAM
+  SUBROUTINE compute_msgwam_heating( &
+    & nsrc_cgw, rmfsoltq, kidia, kfdia, ktdia, klev, itopm2,  &
+    & heat_cgw, tupd_cgw, test_cgw,                          &
+    & ktype_cgw, kctop_cgw, kcbot_cgw,                       &
+    & plude_expl, plude, zmfdq, llddraf, idtop,              &
+    & ldcum, kctop, kcbot, paph, pten,                       &
+    & ptu, zmful, zdmfup, psnde, zlglac, zdpmel,             &
+    & zmfus, zmfds, zmfuq,                           &
+    & rlmlt, rg, ptsphy,ktype,pqen)
 
+    IMPLICIT NONE
+
+    ! Arguments
+    INTEGER, INTENT(IN) :: nsrc_cgw, kidia, kfdia, ktdia, klev, itopm2
+    REAL(KIND=JPRB), INTENT(IN) :: rmfsoltq, rlmlt, rg
+
+    REAL(KIND=JPRB), INTENT(IN) :: paph(:,:), pten(:,:), ptu(:,:)
+    REAL(KIND=JPRB), INTENT(IN) :: zmful(:,:), zdmfup(:,:), zmfus(:,:), zmfds(:,:)
+    REAL(KIND=JPRB), INTENT(IN) :: zmfdq(:,:), plude(:,:), zlglac(:,:), zdpmel(:,:)
+    REAL(KIND=JPRB), INTENT(IN) :: psnde(:,:,:)
+    REAL(KIND=JPRB), INTENT(IN) :: zmfuq(:,:)
+    REAL(KIND=jprb) :: zmfdq_expl(klev)
+
+    LOGICAL, INTENT(IN) :: llddraf(:), ldcum(:)
+    INTEGER, INTENT(IN) :: idtop(:), kctop(:), kcbot(:)
+    INTEGER, INTENT(INOUT) :: ktype(:)
+
+    REAL(KIND=JPRB), INTENT(INOUT) :: heat_cgw(:,:), tupd_cgw(:,:), test_cgw(:,:)
+    INTEGER, INTENT(INOUT) :: ktype_cgw(:), kctop_cgw(:), kcbot_cgw(:)
+    REAL(KIND=JPRB), INTENT(OUT) :: plude_expl(:,:)
+    REAL(KIND=jprb) ::  zalv, zdz, zmfa
+    INTEGER(KIND=jpim) :: jk, ik, jl
+    REAL(KIND=jprb)   ,INTENT(in)    :: ptsphy
+    REAL(KIND=jprb)   ,INTENT(in)    :: pqen(:,:)
+
+    ! MS-GWaM (beginning of the main part)
+  IF ( nsrc_cgw > 0 ) THEN
+
+    ! Initialization
+    heat_cgw(:,:) = 0.0_JPRB
+    tupd_cgw(:,:) = 1.0_JPRB   ! will be a denominator
+    test_cgw(:,:) = 0.0_JPRB
+
+    ktype_cgw(:) = 0
+    kctop_cgw(:) = 0
+    kcbot_cgw(:) = 0
+
+    ! Because we need only a part of terms in the total convective tendency,
+    ! it cannot be simply taken from the output of the routine 'cudtdqn' but has
+    ! to be manually calculated. It will be calculated explicitly below, even if
+    ! this cumulus solver could be implicit (rmfsoltq != 0.0).
+    ! If the solver is implicit, some variables (that are required for our
+    ! explicit calculation) may have been calculated differently from those for
+    ! the case of rmfsoltq == 0. As of the current code, 'plude' is such a
+    ! variable, and thus we need to re-calculate one ('plude_expl') by repeating
+    ! the above code manually as if rmfsoltq == 0.
+    !
+    ! [WARNING] Any code update should be taken into account carefully to confirm
+    ! whether some further modifications that can affect our calculation have been
+    ! made.
+
+    IF(rmfsoltq==0.0_JPRB) THEN      ! if this cumulus solver is explicit
+      plude_expl(:,:) = plude(:,:)   ! no modification
+    ELSE
+
+      DO jl=kidia,kfdia
+
+        ! Re-calculation of 'zmfdq' --> 'zmfdq_expl': used in 'plude' calculation
+        !
+        zmfdq_expl(:)=zmfdq(jl,:)
+        ! avoid negative humidities at ddraught top
+        IF(llddraf(jl)) THEN
+          jk=idtop(jl)
+          ik=MIN(jk+1,klev)
+          IF(zmfdq_expl(jk)<0.3_JPRB*zmfdq_expl(ik)) THEN
+              zmfdq_expl(jk)=0.3_JPRB*zmfdq_expl(ik)
+          ENDIF
+        ENDIF
+
+        ! Re-calculation of 'plude' --> 'plude_expl': used in the tendency calcul.
+        !
+        ! avoid negative humidities near cloud top because gradient of precip flux
+        ! and detrainment / liquid water flux too large
+        DO jk=ktdia+1,klev
+          IF(ldcum(jl).AND.jk>=kctop(jl)-1.AND.jk<kcbot(jl)) THEN
+            ZDZ=PTSPHY*RG/(PAPH(JL,JK+1)-PAPH(JL,JK))
+            zmfa=zmfuq(jl,jk+1)+zmfdq_expl(jk+1)-zmfuq(jl,jk)-zmfdq_expl(jk)  &
+              &  +zmful(jl,jk+1)-zmful(jl,jk)+zdmfup(jl,jk)
+            zmfa=(zmfa-plude_expl(jl,jk))*zdz
+            IF(pqen(jl,jk)+zmfa<0.0_JPRB) THEN
+              plude_expl(jl,jk)=plude_expl(jl,jk)+2.0_JPRB*(pqen(jl,jk)+zmfa)/zdz
+            ENDIF
+            IF(plude_expl(jl,jk)<0.0_JPRB) THEN
+              plude_expl(jl,jk)=0.0_JPRB
+            ENDIF
+          ENDIF
+        ENDDO
+
+      ENDDO
+
+    ENDIF   ! rmfsoltq
+
+    ! Heating calculation ('heat_cgw'):
+    ! A part of terms are taken from the equation in the routine 'cudtdqn'.
+    !
+    ! Description of terms
+    !-----------------------------------------------------------------------------
+    ! ZMFUL  | moist, updraft   | cloud liquid water flux diff.
+    ! PLUDE  | moist, updraft+? | detrained liquid water
+    ! ZDMFUP | moist, updraft   | precipitation flux diff.
+    ! PSNDE  | moist, updraft+? | detrained snow/rain (currently off)
+    ! ZLGLAC | moist, updraft   | freezing cloud water
+    ! ZDPMEL | moist,           | melting cloud water
+    ! ZMFUS  | dry  , updraft   | adiabatic energy transport by updraft
+    ! ZMFDS  | dry  , downdraft | adiabatic energy transport by downdraft
+    !-----------------------------------------------------------------------------
+
+    DO jl=kidia, kfdia
+      IF ( ktype(jl) == 1 .AND. ldcum(jl) ) THEN   !CGW conv_type
+
+        tupd_cgw(jl,ktdia-1+itopm2:klev) = ptu(jl,ktdia-1+itopm2:klev)
+
+        DO jk=ktdia-1+itopm2, klev-1
+
+          zalv = foelhmcu(pten(jl,jk))
+
+          heat_cgw(jl,jk) = (rg/(paph(jl,jk+1)-paph(jl,jk)))  &
+            &  *( -zalv*( zmful(jl,jk+1)-zmful(jl,jk)         &
+            &             -plude_expl(jl,jk)-zdmfup(jl,jk)    &
+            &             -psnde(jl,jk,1)-psnde(jl,jk,2) )    &
+            &     + rlmlt*zlglac(jl,jk) )
+
+          test_cgw(jl,jk) = (rg/(paph(jl,jk+1)-paph(jl,jk)))  &
+            &  *( - rlmlt*zdpmel(jl,jk)                       &
+            &     + ( zmfus(jl,jk+1) - zmfus(jl,jk) +         &
+            &         zmfds(jl,jk+1) - zmfds(jl,jk) ) )       &
+            &  + heat_cgw(jl,jk)
+
+        ENDDO
+
+        jk = klev
+        zalv = foelhmcu(pten(jl,jk))
+
+        heat_cgw(jl,jk) = (rg/(paph(jl,jk+1)-paph(jl,jk)))  &
+          &  *( zalv*(zmful(jl,jk)+zdmfup(jl,jk)) )
+
+        test_cgw(jl,jk) = (rg/(paph(jl,jk+1)-paph(jl,jk)))  &
+          &  *( - rlmlt*zdpmel(jl,jk)                       &
+          &     - zmfus(jl,jk)                              &
+          &     - zmfds(jl,jk) )                            &
+          &  + heat_cgw(jl,jk)
+
+        ktype_cgw(jl) = ktype(jl)
+        kctop_cgw(jl) = kctop(jl)
+        kcbot_cgw(jl) = kcbot(jl)
+
+      END IF
+    ENDDO
+
+  END IF   ! nsrc_cgw > 0
+  ! MS-GWaM (end of the main part)
+  END SUBROUTINE compute_msgwam_heating
+#endif
+
+END MODULE mo_cuflxtends

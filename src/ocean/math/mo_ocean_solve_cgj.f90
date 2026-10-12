@@ -1,16 +1,15 @@
-! contains extension to solver backend type: CG + Jacobi preconditioner
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! contains extension to solver backend type: CG + Jacobi preconditioner
 
 #if (defined(_OPENMP) && defined(OCE_SOLVE_OMP))
 #include "omp_definitions.inc"
@@ -22,11 +21,11 @@ MODULE mo_ocean_solve_cgj
   USE mo_exception, ONLY: finish
   USE mo_ocean_solve_backend, ONLY: t_ocean_solve_backend
   USE mo_fortran_tools, ONLY: set_acc_host_or_device
- 
+
   IMPLICIT NONE
-  
+
   PRIVATE
- 
+
   PUBLIC :: t_ocean_solve_cgj
   CHARACTER(LEN=*), PARAMETER :: this_mod_name = 'mo_ocean_solve_cgj'
 
@@ -48,11 +47,11 @@ MODULE mo_ocean_solve_cgj
 
 CONTAINS
 
-! get solver arrays (alloc them, if not done so, yet) - wp-variant  
+! get solver arrays (alloc them, if not done so, yet) - wp-variant
 SUBROUTINE ocean_solve_cgj_recover_arrays_wp(this, x, b, z, d, r, r2, &
     & h)
     CLASS(t_ocean_solve_cgj), INTENT(INOUT), TARGET :: this
-    REAL(KIND=wp), INTENT(OUT), POINTER, DIMENSION(:,:) :: &
+    REAL(KIND=wp), INTENT(INOUT), POINTER, DIMENSION(:,:) :: &
       & x, b, z, d, r, r2, h
 
     IF (.NOT.ALLOCATED(this%z_wp)) THEN
@@ -79,8 +78,11 @@ SUBROUTINE ocean_solve_cgj_recover_arrays_wp(this, x, b, z, d, r, r2, &
     REAL(KIND=wp) :: alpha, beta, dz_glob, tol, tol2
     REAL(KIND=wp) :: rh_glob, rh_glob_o, rn
     INTEGER :: nidx_a, nidx_e, nblk, iblk, k, m, k_final
-    REAL(KIND=wp), POINTER, DIMENSION(:,:), CONTIGUOUS :: &
-      & x, b, z, d, r, r2, invaii, h
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(KIND=wp), POINTER, DIMENSION(:,:) :: x, b, z, d, r, r2, invaii, h
+#else
+    REAL(KIND=wp), POINTER, DIMENSION(:,:), CONTIGUOUS :: x, b, z, d, r, r2, invaii, h
+#endif
     LOGICAL :: done, lzacc
 
     CALL set_acc_host_or_device(lzacc, lacc)

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -164,7 +164,7 @@ cat > ${ocean_namelist} << EOF
  nproma         = 752
  p_test_run     = .false.
  l_fast_sum     = .true.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -193,28 +193,28 @@ cat > ${ocean_namelist} << EOF
   str_mod_tst='all'               ! define modules to print out in debug mode
 /
 &ocean_dynamics_nml
-! 64 unevenly spaced levels 
+! 64 unevenly spaced levels
  n_zlev             =   64
- dzlev_m(1:64)  =  12,  10,  10,  10,  10,  10,  10,  10,  10,  10, 
-                   11,  12,  13,  14,  15,  16,  17,  18,  20,  22, 
-                   24,  26,  28,  30,  32,  35,  38,  41,  45,  49, 
-                   53,  58,  62,  66,  71,  75,  80,  85,  91,  97, 
-                  104, 111, 118, 125, 132, 138, 145, 152, 160, 167, 
-                  175, 182, 188, 195, 201, 208, 213, 219, 224, 230, 
+ dzlev_m(1:64)  =  12,  10,  10,  10,  10,  10,  10,  10,  10,  10,
+                   11,  12,  13,  14,  15,  16,  17,  18,  20,  22,
+                   24,  26,  28,  30,  32,  35,  38,  41,  45,  49,
+                   53,  58,  62,  66,  71,  75,  80,  85,  91,  97,
+                  104, 111, 118, 125, 132, 138, 145, 152, 160, 167,
+                  175, 182, 188, 195, 201, 208, 213, 219, 224, 230,
                   235, 241, 250, 260
 
   l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
   l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-9 ! this may further be reduced
   select_lhs                      = 2       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
-  solver_max_iter_per_restart     =  14   
+  solver_max_iter_per_restart     =  14
   solver_max_restart_iterations   = 100       ! outer (restart solver)
 
   fast_performance_level          = 200       ! performance level 12: for cell-based; 5: default
@@ -233,7 +233,7 @@ cat > ${ocean_namelist} << EOF
   fct_high_order_flux   = 5      ! horizontal high order method: 1=upwind, 2=central, 3=lax_friedrichs, 4=miura_order1
   fct_limiter_horz      = 100    ! zalesak
   threshold_min_T       = -2.0   ! to avoid abort
-  
+
 /
 &ocean_horizontal_diffusion_nml
   laplacian_form = 1                   ! 1=curlcurl-graddiv
@@ -250,7 +250,7 @@ cat > ${ocean_namelist} << EOF
   Temperature_HorizontalDiffusion_Reference  = 0 !  40
   Salinity_HorizontalDiffusion_Background    = 0.0
   Salinity_HorizontalDiffusion_Reference     = 0 !  40
-  
+
 /
 &ocean_vertical_diffusion_nml
   vert_mix_type                            = 2  ! 1: PP; 2: TKE; ; 4 TKE+IDEMIX
@@ -278,17 +278,17 @@ cat > ${ocean_namelist} << EOF
   kappaM_max = 100.0
   cd         = 3.75
   tke_min    = 1.d-6
-  tke_mxl_choice = 2                                                              
+  tke_mxl_choice = 2
   tke_surf_min = 1.d-4
-  only_tke = .true.                                                               
-  use_ubound_dirichlet = .false.                                                  
-  use_lbound_dirichlet = .false. 
+  only_tke = .true.
+  use_ubound_dirichlet = .false.
+  use_lbound_dirichlet = .false.
 /
 &ocean_GentMcWilliamsRedi_nml
   GMRedi_configuration           =   0       ! 0=cartesian diffusion 1=GM-Redi: bolus advection + isopycnal diffusion
   tapering_scheme=1
   GMRedi_usesRelativeMaxSlopes = .false.
-  S_max=1.0e-3                               
+  S_max=1.0e-3
   S_d=0.0001                                 ! 1e-3 to 1e-4
   k_tracer_GM_kappa_parameter     = 400.0     !
   k_tracer_isoneutral_parameter   = 400.0     ! value for cell-based cartesian diffusion - mpiom: 1000/400km = 400/160km
@@ -303,7 +303,7 @@ cat > ${ocean_namelist} << EOF
 /
 &ocean_physics_nml
   i_sea_ice                       =   1       ! 0 = no sea ice; 1 = sea ice model on; default=1
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                     =   1       ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
   i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics
@@ -336,7 +336,7 @@ cat > ${ocean_namelist} << EOF
   forcing_fluxes_type             =   1       ! read from file
 ! forcing_enable_freshwater       = .TRUE.    ! apply freshwater forcing boundary condition (OMIP only)
 ! forcing_set_runoff_to_zero      = .FALSE.   ! set runoff to zero for comparison to MPIOM; default: false
-! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false 
+! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false
                                               ! salt-change due to internal fluxes only
   limit_seaice                    = .TRUE.    ! default: true
   seaice_limit                    =   0.8     ! hard limit set to 80% of upper layer for sea ice
@@ -352,7 +352,7 @@ cat > ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type           = 1         ! read from file
   initial_temperature_type        = 1         ! read from file
-/                                    
+/
 &ocean_diagnostics_nml
   diagnostics_level            = 0
   diagnose_for_horizontalvelocity = .false.
@@ -374,7 +374,7 @@ EOF
 #!/bin/ksh
 #=============================================================================
 #
-# This section of the run script prepares and starts the model integration. 
+# This section of the run script prepares and starts the model integration.
 #
 # MODEL and START must be defined as environment variables or
 # they must be substituted with appropriate values.
@@ -440,7 +440,7 @@ if [ x$namelist_list = x ]; then
     modeltype_list[0]=99
   else
     check_error 1 "No namelist is defined"
-  fi 
+  fi
 fi
 
 #-----------------------------------------------------------------------------
@@ -498,7 +498,7 @@ for gridfile in ${all_grids}; do
   ls -l ${HGRIDDIR}/$gridfile
   check_error $? "${HGRIDDIR}/$gridfile does not exist."
   add_link_file ${HGRIDDIR}/${gridfile} ./
-  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then    
+  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then
     add_link_file ${HGRIDDIR}/${grfinfofile} ./
   fi
 done
@@ -545,9 +545,9 @@ cat > $master_namelist << EOF
  lrestart            = $restart
 /
 &master_time_control_nml
- experimentStartDate  = "$start_date" 
- restartTimeIntval    = "$restart_interval" 
- checkpointTimeIntval = "$checkpoint_interval" 
+ experimentStartDate  = "$start_date"
+ restartTimeIntval    = "$restart_interval"
+ checkpointTimeIntval = "$checkpoint_interval"
 /
 &time_nml
  is_relative_time = .false.
@@ -568,10 +568,10 @@ cat > $master_namelist << EOF
 /
 &master_time_control_nml
  calendar             = "$calendar"
- checkpointTimeIntval = "$checkpoint_interval" 
- restartTimeIntval    = "$restart_interval" 
- experimentStartDate  = "$start_date" 
- experimentStopDate   = "$end_date" 
+ checkpointTimeIntval = "$checkpoint_interval"
+ restartTimeIntval    = "$restart_interval"
+ experimentStartDate  = "$start_date"
+ experimentStopDate   = "$end_date"
 /
 &time_nml
  is_relative_time = .false.
@@ -585,14 +585,14 @@ fi
 # add model component to master_namelist
 add_component_to_master_namelist()
 {
-    
+
   model_namelist_filename="$1"
   model_name=$2
   model_type=$3
   model_min_rank=$4
   model_max_rank=$5
   model_inc_rank=$6
-  
+
 cat >> $master_namelist << EOF
 &master_model_nml
   model_name="$model_name"
@@ -611,7 +611,7 @@ EOF
 #     check_error $? "mv -f ${RUNSCRIPTDIR}/$model_namelist_filename"
 #   else
 #     check_error 1 "${RUNSCRIPTDIR}/$model_namelist_filename does not exist"
-#   fi  
+#   fi
 
 }
 #-----------------------------------------------------------------------------
@@ -774,7 +774,7 @@ cd $RUNSCRIPTDIR
 
 #-----------------------------------------------------------------------------
 
-	
+
 # exit 0
 #
 # vim:ft=sh

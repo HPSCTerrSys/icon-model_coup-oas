@@ -1,17 +1,17 @@
-! This module provides basic methods to send
-! and receive file data using asynchronous
-! communication.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides basic methods to send
+! and receive file data using asynchronous
+! communication.
 
 MODULE mo_latbc_read_recv
 
@@ -24,19 +24,19 @@ MODULE mo_latbc_read_recv
   USE mo_impl_constants,     ONLY: SUCCESS
   USE mo_cdi_constants,      ONLY: GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_EDGE
   USE mo_mpi,                ONLY: p_pe_work,  &
-    &                              num_work_procs, p_real_sp               
+    &                              num_work_procs, p_real_sp
   USE mo_util_cdi,           ONLY: get_cdi_varID
   USE mo_async_latbc_types,  ONLY: t_patch_data, t_latbc_data
   USE mo_reorder_info,       only: t_reorder_info
   USE mo_cdi,                ONLY: streamInqVlist, vlistInqVarZaxis, vlistInqVarGrid, gridInqSize, zaxisInqSize, &
                                  & streamReadVarSliceF
   USE mo_limarea_config,     ONLY: latbc_config
-  
+
   IMPLICIT NONE
 
   PRIVATE
 
-  PUBLIC  :: prefetch_cdi_2d 
+  PUBLIC  :: prefetch_cdi_2d
   PUBLIC  :: prefetch_cdi_3d
   PUBLIC  :: compute_data_receive
 
@@ -46,9 +46,9 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   !> Read 3D dataset from file.
-  ! 
+  !
   !  Note: This implementation uses a 2D buffer.
-  ! 
+  !
   SUBROUTINE prefetch_cdi_3d(streamID, varname, latbc_data, nlevs, hgrid, ioff)
 #ifndef NOMPI
     INTEGER(KIND=MPI_ADDRESS_KIND), INTENT(INOUT) :: ioff(0:)
@@ -61,7 +61,7 @@ CONTAINS
     TYPE(t_latbc_data), TARGET, INTENT(IN) :: latbc_data
     INTEGER,                 INTENT(OUT) :: nlevs        !< return value: no. of vertical levels
     INTEGER,                 INTENT(IN)  :: hgrid        !< stored variable location indication
-    
+
     ! local constants:
     CHARACTER(len=*), PARAMETER :: routine = modname//'prefetch_cdi_3d'
     ! local variables:
@@ -103,7 +103,7 @@ CONTAINS
 
     ! get var ID
     vlistID   = streamInqVlist(streamID)
-    varID     = get_cdi_varID(streamID, name=TRIM(varname)) 
+    varID     = get_cdi_varID(streamID, name=TRIM(varname))
     zaxisID   = vlistInqVarZaxis(vlistID, varID)
     gridID    = vlistInqVarGrid(vlistID, varID)
     dimlen(1) = gridInqSize(gridID)
@@ -126,12 +126,12 @@ CONTAINS
 
       ! send 2d buffer using MPI_PUT
       CALL prefetch_proc_send(latbc_data%patch_data%mem_win%mpi_win, read_buf, 1, p_ri, ioff)
-    ENDDO ! jk=1,nlevs 
-  
+    ENDDO ! jk=1,nlevs
+
     DEALLOCATE(read_buf, STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish(routine, "DEALLOCATE failed!")
 #endif
-  
+
   END SUBROUTINE prefetch_cdi_3d
 
   !-------------------------------------------------------------------------
@@ -146,7 +146,7 @@ CONTAINS
     CHARACTER(len=*), PARAMETER :: routine = modname//'prefetch_cdi_2d'
     INTEGER,                 INTENT(IN) :: streamID     !< ID of CDI file stream
     CHARACTER(len=*),        INTENT(IN) :: varname      !< Varname of field to be read
-    TYPE(t_latbc_data),      INTENT(IN) :: latbc_data   !< patch data containing information for prefetch 
+    TYPE(t_latbc_data),      INTENT(IN) :: latbc_data   !< patch data containing information for prefetch
     INTEGER,                 INTENT(IN) :: hgrid        !< stored variable location indication
     INTEGER :: nlevs_read
 
@@ -156,9 +156,9 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   !> compute processor copy 2D or 3D dataset from memory window buffer.
-  ! 
+  !
   SUBROUTINE compute_data_receive (hgrid, nlevs, var_out, eoff, patch_data)
- 
+
     INTEGER,             INTENT(IN)    :: hgrid          !< stored variable location indication
     INTEGER,             INTENT(IN)    :: nlevs          !< vertical levels of netcdf file
     REAL(sp),            INTENT(INOUT) :: var_out(:,:,:) !< output field
@@ -169,7 +169,7 @@ CONTAINS
     CHARACTER(len=*), PARAMETER :: &
          routine = modname//'compute_data_receive'
     ! local variables:
-    INTEGER     :: j, jl, jb, jk, mpi_error      
+    INTEGER     :: j, jl, jb, jk, mpi_error
 
 #ifndef NOMPI
     ! Get pointer to appropriate reorder_info
@@ -188,24 +188,24 @@ CONTAINS
     var_out(:,:,:) = 0._sp
 
     DO jk=1, nlevs
-      DO j = 1,  p_ri%n_own 
+      DO j = 1,  p_ri%n_own
         jb = p_ri%own_blk(j) ! Block index in distributed patch
         jl = p_ri%own_idx(j) ! Line  index in distributed patch
         var_out(jl,jk,jb) = REAL(patch_data%mem_win%mem_ptr_sp(eoff+INT(j,i8)),sp)
       ENDDO
-      eoff = eoff + INT(p_ri%n_own,i8) 
+      eoff = eoff + INT(p_ri%n_own,i8)
     END DO ! jk=1,nlevs
 
     CALL MPI_Win_unlock(p_pe_work, patch_data%mem_win%mpi_win, mpi_error)
 #endif
 
   END SUBROUTINE compute_data_receive
- 
+
   !-------------------------------------------------------------------------
   !> routine on the prefetch PE to write variable values to memory window
   !
   !  @note This subroutine is called by prefetch PE only.
-  !  Initial revision by M. Pondkule, DWD (2014-05-27) 
+  !  Initial revision by M. Pondkule, DWD (2014-05-27)
   !
   ! fixme: allow actually using more than nlevs = 1
   SUBROUTINE prefetch_proc_send(win, var1_sp, nlevs, p_ri, ioff)
@@ -214,14 +214,14 @@ CONTAINS
 #else
     INTEGER, INTENT(INOUT)                        :: ioff(0:)
 #endif
-    ! local variables  
+    ! local variables
     INTEGER, INTENT(IN) :: win
     REAL(sp),                   INTENT(IN) :: var1_sp(:)
     INTEGER,                    INTENT(IN) :: nlevs
     TYPE(t_reorder_info), INTENT(in) :: p_ri
 
     CHARACTER(len=*), PARAMETER :: routine = modname//'prefetch_proc_send'
-    INTEGER                        :: voff(0:num_work_procs-1) 
+    INTEGER                        :: voff(0:num_work_procs-1)
     INTEGER                        :: nv_off_np(0:num_work_procs)
     REAL(sp), ALLOCATABLE          :: var3_sp(:)
     INTEGER                        :: np, nval, nv_off, mpi_error, ierrstat
@@ -251,7 +251,7 @@ CONTAINS
 
     ALLOCATE(var3_sp(p_ri%n_glb), STAT=ierrstat) ! Must be allocated to exact size
     IF (ierrstat /= SUCCESS) CALL finish (routine, 'ALLOCATE failed.')
-      
+
 !$OMP PARALLEL
 !$OMP DO PRIVATE(dst_start, dst_end, src_start, src_end)
           DO np = 0, num_work_procs-1
@@ -281,7 +281,7 @@ CONTAINS
 
        ! fixme: use mpi_win_lock_all here
        CALL MPI_Win_lock(MPI_LOCK_EXCLUSIVE, np, lock_assert, win, mpi_error)
-         
+
        ! consistency check:
        IF (SIZE(var3_sp) < nv_off+nval) THEN
          WRITE (0,*) "SIZE(var3_sp) = ", SIZE(var3_sp), " < nv_off+nval = ", nv_off+nval
@@ -289,8 +289,8 @@ CONTAINS
        END IF
 
        CALL MPI_PUT(var3_sp(nv_off+1), nval, p_real_sp, np, ioff(np), nval, p_real_sp, &
-         & win, mpi_error) !MPI_WIN_NULL) 
-         
+         & win, mpi_error) !MPI_WIN_NULL)
+
        CALL MPI_Win_unlock(np, win, mpi_error)
 
        ! Update the offset in var1

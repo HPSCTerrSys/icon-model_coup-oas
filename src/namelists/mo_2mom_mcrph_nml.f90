@@ -1,15 +1,15 @@
-!  Namelist for configuration of 2-moment cloud microphysics scheme
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Namelist for configuration of 2-moment cloud microphysics scheme
 
 MODULE mo_2mom_mcrph_nml
 
@@ -35,22 +35,22 @@ MODULE mo_2mom_mcrph_nml
 
   ! module name
   CHARACTER(*), PARAMETER :: modname = "mo_2mom_mcrph_nml"
-  
+
 CONTAINS
 
   !-------------------------------------------------------------------------
   !
-  !! Read Namelist for the 2-moment cloud microphysics. 
+  !! Read Namelist for the 2-moment cloud microphysics.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for NWP physics
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - performs sanity checks
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)    
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_2mom_mcrph_namelist( filename )
 
@@ -71,7 +71,7 @@ CONTAINS
     REAL(wp) :: ccn_Ncn0     ! CN concentration at ground; if > -900 will override Ncn0 of ccn_type, but will use other configs of ccn_type
     REAL(wp) :: ccn_wcb_min  ! if > -900 min updraft speed for Segal&Khain cloud nucleation, otherwise 0.1 m/s hardcoded
     REAL(wp) :: alpha_spacefilling  !..factor involved in the conversion of ice/snow to graupel by riming
-    REAL(wp) :: D_conv_ii    ! D-threshold for conversion to snow ice_selfcollection 
+    REAL(wp) :: D_conv_ii    ! D-threshold for conversion to snow ice_selfcollection
     REAL(wp) :: D_rainfrz_ig ! rain --> ice oder graupel
     REAL(wp) :: D_rainfrz_gh ! rain --> graupel oder hail
     LOGICAL  :: luse_mu_Dm_rain ! Use mu-Dm-Relation of Seifert (2008). If false use the constant in rain type
@@ -79,14 +79,14 @@ CONTAINS
     REAL(wp) :: rain_cmu0    ! asymptotic mue-value for small D_m in the mu-Dm-Relation of Seifert (2008)
     REAL(wp) :: rain_cmu1    ! asymptotic mue-value for large D_m in the mu-Dm-Relation of Seifert (2008)
     REAL(wp) :: rain_cmu3    ! D_br: equilibrium diameter for breakup and selfcollection
-    REAL(wp) :: rain_cmu4    ! mue-value at D_br in the mu-Dm-Relation of Seifert (2008) 
-    REAL(wp) :: melt_h_tune_fak ! Factor to increase/decrease hail melting rate of hail
+    REAL(wp) :: rain_cmu4    ! mue-value at D_br in the mu-Dm-Relation of Seifert (2008)
+    REAL(wp) :: melt_h_tune_fac ! Factor to increase/decrease hail melting rate of hail
     REAL(wp) :: Tmax_gr_rime    ! Allow formation of graupel by riming ice/snow only at T < this threshold [K]
     LOGICAL  :: lturb_enhc   ! Enhancesment of collisons by turbulence (only warm microphysics)
     REAL(wp) :: ecoll_gg        ! Collision efficiency for graupel autoconversion (dry graupel)
     REAL(wp) :: ecoll_gg_wet    ! Collision efficiency for graupel autoconversion (wet graupel)
     REAL(wp) :: Tcoll_gg_wet ! Temperature threshold for switching to wet graupel autoconversion
-    REAL(wp) :: melt_g_tune_fak     ! Factor multiplying melting of graupel
+    REAL(wp) :: melt_g_tune_fac     ! Factor multiplying melting of graupel
     INTEGER  :: iice_stick     ! Formulation for sticking efficiency of cloud ice
     INTEGER  :: isnow_stick     ! Formulation for sticking efficiency of snow/graupel
     INTEGER  :: iparti_stick     ! Formulation for sticking efficiency of frozen inter-categorical collisions
@@ -118,13 +118,14 @@ CONTAINS
     REAL(wp) :: bgeo_h    ! bgeo for hail, D = ageo*x^bgeo
     REAL(wp) :: avel_h    ! avel for hail, v = avel*x^bvel
     REAL(wp) :: bvel_h    ! bvel for hail, v = avel*x^bvel
+    REAL(wp) :: xmax_h    ! x_max for hail
     INTEGER  :: iicephase    ! (0) warm-phase 2M, (1) mixed-phase 2M
     INTEGER  :: itype_shedding_gh ! Choice of shedding parameterization during collisions
                                   ! of graupel and hail WITH water droplets: 0=off, 1=simple, 2=more physical
     REAL(wp) :: D_shed_gh  ! Shedding happens if:
                            ! itype_shedding_gh = 1: D_meanmass > D_shed_gh
                            ! itype_shedding_gh = 2: in the PSD-part where D > MAX(D_wetgr,D_shed_gh) - that is
-                           !                        for wet growth but not below the Rasmussen&Heymsfield stable diameter  
+                           !                        for wet growth but not below the Rasmussen&Heymsfield stable diameter
     LOGICAL  :: llim_gr_prod_rain_riming ! whether to limit the graupel production by rain riming of ice/snow by
                              ! a bulk-density-based criterion on the mean-mass-particles
     REAL(wp) :: wgt_D_coll_limgrprod ! weight for the collided mean-mass-particle's diameter D_coll: how much does the
@@ -135,15 +136,15 @@ CONTAINS
     NAMELIST /twomom_mcrph_nml/ i2mom_solver, ccn_type, alpha_spacefilling,             &
          &                      D_conv_ii, D_rainfrz_ig, D_rainfrz_gh,                  &
          &                      luse_mu_Dm_rain, nu_r, rain_cmu0, rain_cmu1, rain_cmu3, &
-         &                      rain_cmu4, melt_h_tune_fak, Tmax_gr_rime, lturb_enhc,   &
+         &                      rain_cmu4, melt_h_tune_fac, Tmax_gr_rime, lturb_enhc,   &
          &                      ecoll_gg, ecoll_gg_wet, Tcoll_gg_wet,                   &
-         &                      melt_g_tune_fak, isnow_stick, iice_stick, iparti_stick, &
+         &                      melt_g_tune_fac, isnow_stick, iice_stick, iparti_stick, &
          &                      nu_i, mu_i, ageo_i, bgeo_i, avel_i, bvel_i, cap_ice,    &
          &                      in_fact, ccn_Ncn0, ccn_wcb_min,                         &
          &                      nu_s, mu_s, ageo_s, bgeo_s, avel_s, bvel_s, cap_snow,   &
          &                      vsedi_max_s,                                            &
          &                      nu_g, mu_g, ageo_g, bgeo_g, avel_g, bvel_g,             &
-         &                      nu_h, mu_h, ageo_h, bgeo_h, avel_h, bvel_h,             &
+         &                      nu_h, mu_h, ageo_h, bgeo_h, avel_h, bvel_h, xmax_h,     &
          &                      iicephase, itype_shedding_gh, D_shed_gh,                &
          &                      llim_gr_prod_rain_riming, wgt_D_coll_limgrprod, wgt_rho_coll_limgrprod
 
@@ -167,20 +168,20 @@ CONTAINS
     D_rainfrz_gh       = cfg_2mom_default % D_rainfrz_gh
     luse_mu_Dm_rain    = cfg_2mom_default % luse_mu_Dm_rain
     nu_r               = cfg_2mom_default % nu_r
-    rain_cmu0          = cfg_2mom_default % rain_cmu0     
+    rain_cmu0          = cfg_2mom_default % rain_cmu0
     rain_cmu1          = cfg_2mom_default % rain_cmu1
     rain_cmu3          = cfg_2mom_default % rain_cmu3
     rain_cmu4          = cfg_2mom_default % rain_cmu4
-    melt_g_tune_fak    = cfg_2mom_default % melt_g_tune_fak     
-    melt_h_tune_fak    = cfg_2mom_default % melt_h_tune_fak     
-    Tmax_gr_rime       = cfg_2mom_default % Tmax_gr_rime        
+    melt_g_tune_fac    = cfg_2mom_default % melt_g_tune_fac
+    melt_h_tune_fac    = cfg_2mom_default % melt_h_tune_fac
+    Tmax_gr_rime       = cfg_2mom_default % Tmax_gr_rime
     lturb_enhc         = cfg_2mom_default % lturb_enhc
     ecoll_gg           = cfg_2mom_default % ecoll_gg
     ecoll_gg_wet       = cfg_2mom_default % ecoll_gg_wet
     Tcoll_gg_wet       = cfg_2mom_default % Tcoll_gg_wet
-    iice_stick         = cfg_2mom_default % iice_stick 
-    isnow_stick        = cfg_2mom_default % isnow_stick 
-    iparti_stick       = cfg_2mom_default % iparti_stick 
+    iice_stick         = cfg_2mom_default % iice_stick
+    isnow_stick        = cfg_2mom_default % isnow_stick
+    iparti_stick       = cfg_2mom_default % iparti_stick
     nu_i               = cfg_2mom_default % nu_i
     mu_i               = cfg_2mom_default % mu_i
     ageo_i             = cfg_2mom_default % ageo_i
@@ -209,20 +210,21 @@ CONTAINS
     bgeo_h             = cfg_2mom_default % bgeo_h
     avel_h             = cfg_2mom_default % avel_h
     bvel_h             = cfg_2mom_default % bvel_h
+    xmax_h             = cfg_2mom_default % xmax_h
     iicephase          = cfg_2mom_default % iicephase
     itype_shedding_gh  = cfg_2mom_default % itype_shedding_gh
     D_shed_gh          = cfg_2mom_default % D_shed_gh
     llim_gr_prod_rain_riming = cfg_2mom_default % llim_gr_prod_rain_riming
-    wgt_D_coll_limgrprod     = cfg_2mom_default % wgt_D_coll_limgrprod  
+    wgt_D_coll_limgrprod     = cfg_2mom_default % wgt_D_coll_limgrprod
     wgt_rho_coll_limgrprod   = cfg_2mom_default % wgt_rho_coll_limgrprod
-    
+
     IF (my_process_is_stdio()) THEN
       iunit = temp_defaults()
       WRITE(iunit, twomom_mcrph_nml)   ! write defaults to temporary text file
     END IF
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -245,7 +247,7 @@ CONTAINS
 
       ! SHOULD THERE BE DOMAIN DEPENDENCE IN THE FUTURE:
       ! Restore default values for global domain WHERE nothing at all has been specified
-     
+
       ! Copy values of parent domain (in case of linear nesting) to nested domains where nothing has been specified
 
       ! Is currently not needed, because cfg_2mom should be the same for all domains, but here is a blueprint:
@@ -267,7 +269,7 @@ CONTAINS
     !----------------------------------------------------
     ! 4. Sanity check
     !----------------------------------------------------
-    
+
     ! check for valid parameters in namelists:
 
     IF (ALL(i2mom_solver /= (/0, 1/)) ) THEN
@@ -288,12 +290,12 @@ CONTAINS
 
     IF (ccn_Ncn0 < 0.0_wp .AND. ccn_Ncn0 >= -900.0_wp ) THEN
       CALL finish( TRIM(routine), 'Incorrect setting for ccn_Ncn0. Must be > 0.0 or < -900.')
-    END IF    
-    
+    END IF
+
     IF (ccn_wcb_min < 0.0_wp .AND. ccn_wcb_min >= -900.0_wp ) THEN
       CALL finish( TRIM(routine), 'Incorrect setting for ccn_wcb_min. Must be > 0.0 or < -900.')
-    END IF    
-    
+    END IF
+
     !----------------------------------------------------
     ! 5. Fill the configuration state
     !----------------------------------------------------
@@ -314,16 +316,16 @@ CONTAINS
       atm_phy_nwp_config(jg) % cfg_2mom % rain_cmu1           = rain_cmu1
       atm_phy_nwp_config(jg) % cfg_2mom % rain_cmu3           = rain_cmu3
       atm_phy_nwp_config(jg) % cfg_2mom % rain_cmu4           = rain_cmu4
-      atm_phy_nwp_config(jg) % cfg_2mom % melt_h_tune_fak     = melt_h_tune_fak     
-      atm_phy_nwp_config(jg) % cfg_2mom % Tmax_gr_rime        = Tmax_gr_rime        
+      atm_phy_nwp_config(jg) % cfg_2mom % melt_h_tune_fac     = melt_h_tune_fac
+      atm_phy_nwp_config(jg) % cfg_2mom % Tmax_gr_rime        = Tmax_gr_rime
       atm_phy_nwp_config(jg) % cfg_2mom % lturb_enhc          = lturb_enhc
       atm_phy_nwp_config(jg) % cfg_2mom % ecoll_gg            = ecoll_gg
       atm_phy_nwp_config(jg) % cfg_2mom % ecoll_gg_wet        = ecoll_gg_wet
       atm_phy_nwp_config(jg) % cfg_2mom % Tcoll_gg_wet        = Tcoll_gg_wet
-      atm_phy_nwp_config(jg) % cfg_2mom % melt_g_tune_fak     = melt_g_tune_fak
-      atm_phy_nwp_config(jg) % cfg_2mom % iice_stick          = iice_stick    
-      atm_phy_nwp_config(jg) % cfg_2mom % isnow_stick         = isnow_stick    
-      atm_phy_nwp_config(jg) % cfg_2mom % iparti_stick        = iparti_stick    
+      atm_phy_nwp_config(jg) % cfg_2mom % melt_g_tune_fac     = melt_g_tune_fac
+      atm_phy_nwp_config(jg) % cfg_2mom % iice_stick          = iice_stick
+      atm_phy_nwp_config(jg) % cfg_2mom % isnow_stick         = isnow_stick
+      atm_phy_nwp_config(jg) % cfg_2mom % iparti_stick        = iparti_stick
       atm_phy_nwp_config(jg) % cfg_2mom % nu_i                = nu_i
       atm_phy_nwp_config(jg) % cfg_2mom % mu_i                = mu_i
       atm_phy_nwp_config(jg) % cfg_2mom % ageo_i              = ageo_i
@@ -352,13 +354,14 @@ CONTAINS
       atm_phy_nwp_config(jg) % cfg_2mom % bgeo_h              = bgeo_h
       atm_phy_nwp_config(jg) % cfg_2mom % avel_h              = avel_h
       atm_phy_nwp_config(jg) % cfg_2mom % bvel_h              = bvel_h
+      atm_phy_nwp_config(jg) % cfg_2mom % xmax_h              = xmax_h
       atm_phy_nwp_config(jg) % cfg_2mom % iicephase           = iicephase
       atm_phy_nwp_config(jg) % cfg_2mom % itype_shedding_gh   = itype_shedding_gh
       atm_phy_nwp_config(jg) % cfg_2mom % D_shed_gh           = D_shed_gh
       atm_phy_nwp_config(jg) % cfg_2mom % llim_gr_prod_rain_riming = llim_gr_prod_rain_riming
-      atm_phy_nwp_config(jg) % cfg_2mom % wgt_D_coll_limgrprod   = wgt_D_coll_limgrprod  
+      atm_phy_nwp_config(jg) % cfg_2mom % wgt_D_coll_limgrprod   = wgt_D_coll_limgrprod
       atm_phy_nwp_config(jg) % cfg_2mom % wgt_rho_coll_limgrprod = wgt_rho_coll_limgrprod
-      
+
     ENDDO
 
     !-----------------------------------------------------
@@ -366,8 +369,8 @@ CONTAINS
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=twomom_mcrph_nml)                    
-      CALL store_and_close_namelist(funit, 'twomom_mcrph_nml') 
+      WRITE(funit,NML=twomom_mcrph_nml)
+      CALL store_and_close_namelist(funit, 'twomom_mcrph_nml')
     ENDIF
     ! 7. write the contents of the namelist to an ASCII file
     !
@@ -376,4 +379,3 @@ CONTAINS
   END SUBROUTINE read_2mom_mcrph_namelist
 
 END MODULE mo_2mom_mcrph_nml
-

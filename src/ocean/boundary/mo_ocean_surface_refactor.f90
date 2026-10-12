@@ -1,12 +1,7 @@
-! Provide an implementation of the ocean surface module.
-!
-! Provide an implementation of the parameters used for surface forcing
-! of the hydrostatic ocean model.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,6 +9,15 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Provide an implementation of the ocean surface module.
+!
+! Provide an implementation of the parameters used for surface forcing
+! of the hydrostatic ocean model.
+
+!----------------------------
+#include "omp_definitions.inc"
+#include "icon_definitions.inc"
+!----------------------------
 MODULE mo_ocean_surface_refactor
 !-------------------------------------------------------------------------
 !
@@ -24,7 +28,7 @@ MODULE mo_ocean_surface_refactor
 !
   USE mo_kind,                ONLY: wp
   USE mo_parallel_config,     ONLY: nproma
-  USE mo_run_config,          ONLY: dtime
+  USE mo_run_config,          ONLY: dtime, ltimer
   USE mo_dynamics_config,     ONLY: nold
   USE mo_exception,           ONLY: finish, message
   USE mo_util_dbg_prnt,       ONLY: dbg_print
@@ -33,13 +37,13 @@ MODULE mo_ocean_surface_refactor
   USE mo_grid_subset,         ONLY: t_subset_range, get_index_range
 
   USE mo_ocean_nml,           ONLY: iforc_oce, no_tracer, type_surfRelax_Temp, type_surfRelax_Salt, &
-    &  No_Forcing, Analytical_Forcing, OMIP_FluxFromFile, Coupled_FluxFromAtmo,                     &
+    &  No_Forcing, Analytical_Forcing, OMIP_FluxFromFile, Coupled_FluxFromAtmo,era5_provider,        &
     &  i_sea_ice, zero_freshwater_flux, atmos_flux_analytical_type, atmos_precip_const, &  ! atmos_evap_constant
     &  limit_elevation, lhamocc, lswr_jerlov, lhamocc, lfb_bgc_oce, lcheck_salt_content, &
     &  lfix_salt_content, ice_flux_type, heatflux_forcing_on_sst, &
     &  lfwflux_enters_with_sst, vert_cor_type
 
-  USE mo_sea_ice_nml,        ONLY: sice
+  USE mo_sea_ice_nml,        ONLY: sice, Tf
 
   USE mo_ocean_nml,           ONLY: atmos_flux_analytical_type, relax_analytical_type, &
     &  n_zlev, para_surfRelax_Salt, para_surfRelax_Temp, atmos_precip_const, &  ! atmos_evap_constant
@@ -49,7 +53,7 @@ MODULE mo_ocean_surface_refactor
     &  basin_center_lat, basin_center_lon, basin_width_deg, basin_height_deg
 
   USE mo_math_constants,      ONLY: pi, deg2rad, rad2deg
-  USE mo_physical_constants,  ONLY: rhoi, rhos, rho_ref, alv, tmelt, tf, clw, stbo, zemiss_def
+  USE mo_physical_constants,  ONLY: rhoi, rhos, rho_ref, alv, tmelt, clw, stbo, zemiss_def
   USE mo_impl_constants,      ONLY: max_char_length, sea_boundary, MIN_DOLIC
 
   USE mo_ocean_types,         ONLY: t_hydro_ocean_state
@@ -72,6 +76,7 @@ MODULE mo_ocean_surface_refactor
 
   USE mo_mpi, only: get_my_mpi_work_id
   USE mo_fortran_tools,       ONLY: set_acc_host_or_device
+  USE mo_timer,               ONLY: timer_start, timer_stop, timer_coupling
 
   IMPLICIT NONE
 
@@ -132,6 +137,7 @@ CONTAINS
         ! sst-change in surface module after sea-ice thermodynamics using HeatFlux_Total and old freeboard
         ! freeboard before sea ice model (used for thermal boundary condition (Eq.1))
         ! by construction, is stored in p_oce_sfc%cellThicknessUnderIce
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, heatflux_surface_layer) ICON_OMP_DEFAULT_SCHEDULE
         DO jb = all_cells%start_block, all_cells%end_block
           CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
           !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(heatflux_surface_layer) ASYNC(1) IF(lzacc)
@@ -153,6 +159,7 @@ CONTAINS
           ENDDO
           !$ACC END PARALLEL LOOP
         ENDDO
+!ICON_OMP_END_PARALLEL_DO
         !$ACC WAIT(1)
       ENDIF
     END IF
@@ -161,6 +168,8 @@ CONTAINS
     !  - add to h_old before explicit term
     !  - change in salt concentration applied here
     !    i.e. for salinity relaxation only, no volume flux is applied
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, &
+!ICON_OMP zUnderIceArt, sss_inter, zUnderIceOld, zUnderIce_ini) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(zUnderIce_ini) ASYNC(1) IF(lzacc)
@@ -206,7 +215,7 @@ CONTAINS
           p_ice%zUnderIce(jc,jb) = zUnderIceOld + p_oce_sfc%FrshFlux_VolumeTotal(jc,jb) * dtime
           p_oce_sfc%SSS(jc,jb)   = sss_inter * zUnderIceOld / p_ice%zUnderIce(jc,jb)
 
-         zUnderIce_ini=  p_patch_3D%p_patch_1D(1)%prism_thick_flat_sfc_c(jc,1,jb) &
+          zUnderIce_ini =  p_patch_3D%p_patch_1D(1)%prism_thick_flat_sfc_c(jc,1,jb) &
               &                    + p_os%p_prog(nold(1))%h(jc,jb) - p_ice%draftave_old(jc,jb)
           !******  (Thermodynamic Eq. 5)  ******
           !! Finally, let sea-level change from P-E+RO plus snow fall on ice, net total volume forcing to ocean surface
@@ -219,13 +228,14 @@ CONTAINS
             &                    - p_ice%draftave(jc,jb)
 
           p_oce_sfc%top_dilution_coeff(jc,jb) = zUnderIce_ini / p_ice%zUnderIce(jc,jb)
-          
+
           !! set correct cell thickness under ice
           p_oce_sfc%cellThicknessUnderIce(jc,jb) = p_ice%zUnderIce(jc,jb)
         ENDIF  !  dolic>0
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+!ICON_OMP_END_PARALLEL_DO
     !$ACC WAIT(1)
 
     !---------DEBUG DIAGNOSTICS-------------------------------------------
@@ -264,7 +274,7 @@ CONTAINS
 
 
     IF (no_tracer > 0) THEN
-!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc,zunderice_old) SCHEDULE(dynamic)
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc,zunderice_old) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         DO jc = i_startidx_c, i_endidx_c
@@ -346,6 +356,7 @@ CONTAINS
     all_cells       => p_patch%cells%all
     !-----------------------------------------------------------------------
 
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -354,6 +365,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+!ICON_OMP_END_PARALLEL_DO
     !$ACC WAIT(1)
 
     IF (no_tracer>=1) p_oce_sfc%sst => p_os%p_prog(nold(1))%tracer(:,1,:,1)
@@ -415,6 +427,7 @@ CONTAINS
     !---------------------------------------------------------------------
     CALL update_atmos_fluxes(p_patch_3D, p_as, atmos_fluxes, p_oce_sfc, p_os, p_ice, this_datetime, lacc=lzacc)
 
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -431,6 +444,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+!ICON_OMP_END_PARALLEL_DO
     !$ACC WAIT(1)
 
     IF ( i_sea_ice > 0 ) THEN ! sea ice is on
@@ -448,6 +462,7 @@ CONTAINS
 
       ! for the setup without sea ice the SST is set to freezing temperature Tf
       ! should not be done here! Move to apply_surface_fluxes
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -456,6 +471,7 @@ CONTAINS
         END DO
         !$ACC END PARALLEL LOOP
       END DO
+!ICON_OMP_END_PARALLEL_DO
       !$ACC WAIT(1)
 
     ENDIF
@@ -480,6 +496,7 @@ CONTAINS
 
     IF ( lswr_jerlov ) THEN
 
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -489,10 +506,12 @@ CONTAINS
         END DO
         !$ACC END PARALLEL LOOP
       END DO
+!ICON_OMP_END_PARALLEL_DO
       !$ACC WAIT(1)
 
     ELSE
 
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -501,6 +520,7 @@ CONTAINS
         END DO
         !$ACC END PARALLEL LOOP
       END DO
+!ICON_OMP_END_PARALLEL_DO
       !$ACC WAIT(1)
 
     END IF
@@ -611,6 +631,7 @@ CONTAINS
     CALL dbg_print('UpdSfcSTART: oce_sfc%SST ',p_oce_sfc%SST, str_module, 2, in_subset=p_patch%cells%owned)
     CALL dbg_print('UpdSfcSTART: oce_sfc%SSS ',p_oce_sfc%SSS, str_module, 2, in_subset=p_patch%cells%owned)
 
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -628,10 +649,12 @@ CONTAINS
           &                                   + p_oce_sfc%FrshFlux_TotalOcean(jc,jb)
       END DO
     END DO
+!ICON_OMP_END_PARALLEL_DO
     !$ACC WAIT(1)
 
     IF (no_tracer > 0) THEN
       IF ( heatflux_forcing_on_sst ) THEN
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, heatflux_surface_layer) ICON_OMP_DEFAULT_SCHEDULE
         DO jb = all_cells%start_block, all_cells%end_block
           CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
           !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(heatflux_surface_layer) ASYNC(1) IF(lzacc)
@@ -654,19 +677,23 @@ CONTAINS
           ENDDO
           !$ACC END PARALLEL LOOP
         ENDDO
+!ICON_OMP_END_PARALLEL_DO
         !$ACC WAIT(1)
       ENDIF
 
       CALL dbg_print('UpdSfc: eta-old', eta_c,    str_module, 1, in_subset=p_patch%cells%owned)
-      
+
       ! apply volume flux to surface elevation
 #ifdef __LVECTOR__
+      !$ACC DATA CREATE(dz_new, z_change, temp_stretch) IF(lzacc)
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, jt, &
+!ICON_OMP max_lev, bt_lev, d_c, min_h, temp_stretch, dz_old, lev, dz_new, z_change) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
 
         max_lev = MAXVAL(dolic_c(i_startidx_c:i_endidx_c, jb))
 
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(dz_new, z_change, temp_stretch) ASYNC(1) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jc = i_startidx_c, i_endidx_c
           IF (dolic_c(jc,jb) > 0) THEN
 
@@ -782,11 +809,14 @@ CONTAINS
         !$ACC END PARALLEL
         !$ACC WAIT(1)
       END DO ! jb
+!ICON_OMP_END_PARALLEL_DO
+      !$ACC END DATA
 #else
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, jt, &
+!ICON_OMP bt_lev, d_c, min_h, temp_stretch, dz_old, dz_new, z_change) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         !$ACC PARALLEL DEFAULT(PRESENT) PRIVATE(dz_old, dz_new, z_change) ASYNC(1) IF(lzacc)
-        !$ACC LOOP SEQ
         DO jc = i_startidx_c, i_endidx_c
           IF (dolic_c(jc,jb) > 0) THEN
 
@@ -827,7 +857,6 @@ CONTAINS
             ENDDO
 
             !! Loop through T and S
-            !$ACC LOOP SEQ
             DO jt = 1,2
 
               IF (p_oce_sfc%top_dilution_coeff(jc,jb) > 1.0_wp) THEN
@@ -881,11 +910,13 @@ CONTAINS
         END DO
         !$ACC END PARALLEL
       END DO
+!ICON_OMP_END_PARALLEL_DO
       !$ACC WAIT(1)
 #endif
 
     ENDIF
 
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -895,6 +926,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+!ICON_OMP_END_PARALLEL_DO
     !$ACC WAIT(1)
 
     CALL dbg_print('UpdSfcEND: oce_sfc%SST ',p_oce_sfc%SST, str_module, 2, in_subset=p_patch%cells%owned)
@@ -918,6 +950,9 @@ CONTAINS
   !
 !<Optimize_Used>
   SUBROUTINE update_atmos_fluxes(p_patch_3D, p_as, atmos_fluxes, p_oce_sfc, p_os, p_ice, this_datetime, lacc)
+
+    USE mo_ocean_era5_provider_coupling, ONLY : couple_ocean_to_era5_provider
+    USE mo_coupling_config, only : is_coupled_to_era5
 
     TYPE(t_patch_3D ),TARGET,  INTENT(IN)       :: p_patch_3D
     TYPE(t_atmos_for_ocean)                     :: p_as
@@ -949,10 +984,23 @@ CONTAINS
 
       CALL update_atmos_fluxes_analytical(p_patch_3D, p_os, p_ice, atmos_fluxes, p_oce_sfc, lacc=lzacc)
 
-    CASE (OMIP_FluxFromFile)         !  12      !  Driving the ocean with OMIP fluxes
+    CASE (OMIP_FluxFromFile, era5_provider)         !  12,13      !  Driving the ocean with OMIP fluxes
 
       !   a) read OMIP data into p_as
-      CALL update_flux_fromFile(p_patch_3D, p_as, this_datetime, lacc=lzacc)
+
+      ! read eradata into p_as
+      IF ( is_coupled_to_era5() ) THEN
+        IF (ltimer) CALL timer_start(timer_coupling)
+        CALL couple_ocean_to_era5_provider(p_patch_3D, p_as%tafo, &
+             p_as%ftdew, p_as%fu10, &
+             p_as%topBoundCond_windStress_u, p_as%topBoundCond_windStress_v, &
+             p_as%flwr, p_as%fswr, &
+             p_as%FrshFlux_Precipitation, p_as%FrshFlux_Runoff, &
+             p_as%pao, p_as%fclou, p_as%u, p_as%v, lacc=lzacc)
+        IF (ltimer) CALL timer_stop(timer_coupling)
+      ELSE
+        CALL update_flux_fromFile(p_patch_3D, p_as, this_datetime, lacc=lzacc)
+      END IF
 
       !   b) calculate heat fluxes from p_as
       CALL calc_omip_budgets_oce(p_patch_3d, p_as, p_os, p_ice, atmos_fluxes, lacc=lzacc)
@@ -990,10 +1038,11 @@ CONTAINS
       ELSE   !  no sea ice
 
 #ifdef _OPENACC
-        IF (lzacc) CALL finish(routine, 'OpenACC version currently not tested/validated')
+        IF (lzacc) CALL finish(routine, 'OpenACC version for i_sea_ice < 1 currently not tested/validated')
 #endif
 
         ! apply net surface heat flux in W/m2 for OMIP case, since these fluxes are calculated in calc_omip_budgets_oce
+        !ICON_OMP PARALLEL DO PRIVATE(i_startidx_c, i_endidx_c,jc) ICON_OMP_DEFAULT_SCHEDULE
         DO jb = all_cells%start_block, all_cells%end_block
           CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
           !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -1016,6 +1065,7 @@ CONTAINS
           END DO
           !$ACC END PARALLEL LOOP
         END DO
+        !ICON_OMP END PARALLEL DO
         !$ACC WAIT(1)
 
       ENDIF
@@ -1023,6 +1073,7 @@ CONTAINS
       ! c) wind stress is assigned in calc_omip_budgets_oce
       !    over ice: stress_x, stress_y; and over open water: stress_xw, stress_yw
       ! d) freshwater fluxes from p_as
+      !ICON_OMP PARALLEL DO PRIVATE(i_startidx_c, i_endidx_c,jc) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -1055,18 +1106,18 @@ CONTAINS
         !$ACC END PARALLEL LOOP
       END DO
       !$ACC WAIT(1)
-
+      !ICON_OMP END PARALLEL DO
     CASE (Coupled_FluxFromAtmo)
 
 #ifdef _OPENACC
-      IF (lzacc) CALL finish(routine, 'OpenACC version currently not tested/validated')
+      IF (lzacc) CALL finish(routine, 'OpenACC version for Coupled_FluxFromAtmo currently not tested/validated')
 #endif
 
       !  Driving the ocean in a coupled mode:
       !  nothing to be done, atmospheric fluxes are provided at the end of time stepping
       !  atmospheric fluxes drive the ocean; fluxes are calculated by atmospheric model
       !  use atmospheric fluxes directly, i.e. no bulk formula as for OMIP is applied
-
+      !ICON_OMP PARALLEL DO PRIVATE(i_startidx_c, i_endidx_c,jc) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -1108,6 +1159,7 @@ CONTAINS
         END DO
         !$ACC END PARALLEL LOOP
       END DO
+      !ICON_OMP END PARALLEL DO
       !$ACC WAIT(1)
 
     CASE DEFAULT
@@ -1120,9 +1172,9 @@ CONTAINS
 
     IF (zero_freshwater_flux) THEN
 #ifdef _OPENACC
-      IF (lzacc) CALL finish(routine, 'OpenACC version currently not tested/validated')
+      IF (lzacc) CALL finish(routine, 'OpenACC version for zero_freshwater_flux currently not tested/validated')
 #endif
-
+      !ICON_OMP PARALLEL DO PRIVATE(jc,i_startidx_c, i_endidx_c) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -1140,6 +1192,7 @@ CONTAINS
         END DO
         !$ACC END PARALLEL LOOP
       END DO
+      !ICON_OMP END PARALLEL DO
       !$ACC WAIT(1)
 
     ENDIF
@@ -1454,7 +1507,7 @@ CONTAINS
         p_oce_sfc%HeatFlux_Total(jc,jb)=p_oce_sfc%TopBC_Temp_vdiff(jc,jb)
 
         ! provide dLWdt for ice_fast as for OMIP
-        atmos_fluxes%dLWdT (jc,jb,:)  = -4._wp*zemiss_def*stbo*(p_ice%tsurf(jc,jb,:)+tmelt)**3
+        atmos_fluxes%dLWdT (jc,:,jb)  = -4._wp*zemiss_def*stbo*(p_ice%tsurf(jc,:,jb)+tmelt)**3
 
         ! provide evaporation from latent heat flux
         p_oce_sfc%FrshFlux_Evaporation(jc,jb) = atmos_fluxes%latw(jc,jb) / (alv*rho_ref)

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,7 +13,7 @@
 ;                                                                       ;
 ; Author: Hui Wan (MPI-M, 2011-04-08)                                   ;
 ;                                                                       ;
-; Returns pressure in mb given array z (geopotential height in km).     ; 
+; Returns pressure in mb given array z (geopotential height in km).     ;
 ; Z must lie between -0.3 km and 119.7 km                               ;
 ;                                                                       ;
 ; This procedure is simply the inverse of procedure gsn_geop_hgt        ;
@@ -22,11 +22,11 @@
 ; "gsn_geop_hgt".                                                       ;
 ;                                                                       ;
 ;***********************************************************************;
- 
+
 undef("hgt_to_pres")
 function hgt_to_pres( z[*]:numeric )
 local nsa,psa,zsa,nz,found,i,j
- 
+
 begin
 
   nsa = 53
@@ -60,7 +60,7 @@ begin
     print("Execution halted.")
     exit
   end if
- 
+
   nz   = dimsizes(z)
   pres = new(nz,float)
 
@@ -72,16 +72,15 @@ begin
      if ( ( z(i) .ge. zsa(j) ) .and. ( z(i) .le. zsa(j+1) ) ) then
        pres(i) = psa(j)* \
                 ( psa(j+1)/psa(j) )^( (z(i)-zsa(j))/(zsa(j+1)-zsa(j)) )
-       found = True 
+       found = True
      end if
      j = j + 1
     end do
   end do
- 
+
   delete(psa)
   delete(zsa)
- 
-  return(pres)
- 
-end
 
+  return(pres)
+
+end

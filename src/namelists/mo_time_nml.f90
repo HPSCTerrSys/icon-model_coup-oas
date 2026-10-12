@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -23,7 +23,7 @@ MODULE mo_time_nml
   USE mo_io_units,              ONLY: nnml, nnml_output
   USE mo_master_control,        ONLY: isRestart
   USE mo_namelist,              ONLY: position_nml, positioned, open_nml, close_nml
-  USE mo_mpi,                   ONLY: my_process_is_stdio 
+  USE mo_mpi,                   ONLY: my_process_is_stdio
   USE mo_restart_nml_and_att,   ONLY: open_and_restore_namelist, close_tmpfile, &
                                     & open_tmpfile, store_and_close_namelist
   USE mo_nml_annotate,          ONLY: temp_defaults, temp_settings
@@ -54,7 +54,7 @@ CONTAINS
    CHARACTER(len=*), PARAMETER         :: routine = modname//'::read_time_namelist'
 
    INTEGER            ::  calendar         ! calendar type
-   REAL(wp)           ::  dt_restart       ! [s] length of a restart cycle 
+   REAL(wp)           ::  dt_restart       ! [s] length of a restart cycle
 
    CHARACTER(len=32)  ::  ini_datetime_string, end_datetime_string
 
@@ -94,15 +94,15 @@ CONTAINS
      ! 2.1 Overwrite the defaults above by values in the restart file
      funit = open_and_restore_namelist('time_nml')
      READ(funit,NML=time_nml)
-     CALL close_tmpfile(funit) 
+     CALL close_tmpfile(funit)
 
      ! store the namelist settings originating from the restart file:
      restart_calendar            = calendar
      restart_ini_datetime_string = ini_datetime_string
      restart_end_datetime_string = end_datetime_string
-     
+
    END IF
-    
+
    !------------------------------------------------------------------------
    !  Read user's (new) specifications. (Done so far by all MPI processes)
    !------------------------------------------------------------------------

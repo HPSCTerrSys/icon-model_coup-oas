@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -40,7 +40,9 @@ MODULE mo_run_nml
                          & config_restart_filename  => restart_filename, &
                          & config_profiling_output => profiling_output, &
                          & config_check_uuid_gracefully => check_uuid_gracefully, &
-                         & cfg_modelTimeStep => modelTimeStep
+                         & cfg_modelTimeStep => modelTimeStep,        &
+                         & config_disable_print_gpu_mem => l_disable_print_gpu_mem,        &
+                         &config_lmsgwam            => lmsgwam
 #ifdef COUP_OAS_ECLM
   USE mo_run_config, ONLY: config_loascplscheme_exchcoef => loascplscheme_exchcoef
 #endif
@@ -55,14 +57,14 @@ MODULE mo_run_nml
   USE mo_io_units,       ONLY: nnml, nnml_output
   USE mo_namelist,       ONLY: position_nml, positioned, open_nml, close_nml
   USE mo_mpi,            ONLY: my_process_is_stdio
-  USE mo_master_control,      ONLY: use_restart_namelists
+  USE mo_master_control, ONLY: use_restart_namelists
   USE mo_util_string,    ONLY: one_of
   USE mo_nml_annotate,   ONLY: temp_defaults, temp_settings
 
   USE mo_restart_nml_and_att, ONLY: open_tmpfile, store_and_close_namelist,   &
        &                            open_and_restore_namelist, close_tmpfile
   USE mtime,                  ONLY: max_timedelta_str_len
-  
+
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: read_run_namelist
@@ -100,11 +102,14 @@ CONTAINS
     !> switch for assimilation of radar data using latent heat nudging
     LOGICAL :: ldass_lhn
 
+    !logical switch for MS-GWaM GW parametrisation submodule
+    LOGICAL :: lmsgwam(max_dom)
+
     LOGICAL :: luse_radarfwo(max_dom)  !< switch for radar forward operator EMVORADO
     CHARACTER(LEN=255) :: radarnmlfile !< name of the file containing the radar namelist
     LOGICAL :: lvert_nest         ! if .TRUE., switch on vertical nesting
     INTEGER :: num_lev(max_dom)   ! number of full levels for each domain
-    INTEGER :: nshift (max_dom)   ! half level of parent domain which coincides 
+    INTEGER :: nshift (max_dom)   ! half level of parent domain which coincides
     ! with the upper boundary of the current domain jg
 
     INTEGER  :: nsteps            ! number of time steps
@@ -119,10 +124,9 @@ CONTAINS
 
     LOGICAL :: logmaxrss     ! log maxrss for three mpi ranks
     LOGICAL :: logmaxrss_all ! log maxrss for all mpi ranks
-    
+
     INTEGER :: msg_level     ! how much printout is generated during runtime
     LOGICAL :: msg_timestamp ! If .TRUE.: Precede output messages by time stamp.
-
 
     INTEGER :: test_mode  ! if =0 then run the standard version,
     ! otherwise special setup for (performance) tests, see Namelist_overview
@@ -142,6 +146,9 @@ CONTAINS
     !> substition patterns)
     CHARACTER(len=MAX_CHAR_LENGTH) :: restart_filename
 
+    !> default is GPU memory usage is enabled
+    LOGICAL :: l_disable_print_gpu_mem
+
     NAMELIST /run_nml/ ltestcase, ldynamics, iforcing, ltransport,     &
       &                ntracer, lart, ldass_lhn, luse_radarfwo,        &
       &                radarnmlfile, ltimer,                           &
@@ -150,7 +157,8 @@ CONTAINS
       &                logmaxrss_all, msg_level, test_mode, output,    &
       &                msg_timestamp, debug_check_level,               &
       &                restart_filename, profiling_output,             &
-      &                check_uuid_gracefully, modelTimeStep
+      &                check_uuid_gracefully, modelTimeStep,           &
+      &                l_disable_print_gpu_mem, lmsgwam
 #ifdef COUP_OAS_ECLM
     NAMELIST /run_nml/ loascplscheme_exchcoef
 #endif
@@ -176,8 +184,8 @@ CONTAINS
     lvert_nest = .FALSE. ! no vertical nesting
     num_lev(:) = 31      ! number of full levels for each domain
     nshift(:)  = 0       ! please do not change the default.
-                         ! otherwise the initialization of 
-                         ! p_patch(jg)%nshift in "import patches" 
+                         ! otherwise the initialization of
+                         ! p_patch(jg)%nshift in "import patches"
                          ! will not work properly.
 
     nsteps = -999
@@ -189,7 +197,7 @@ CONTAINS
     ! concurrent namelist parameters to specify these values:
     modelTimeStep = ''
     dtime         = 0._wp
-    
+
     ltimer               = .TRUE.
     timers_level         = 1
     activate_sync_timers = .FALSE.
@@ -207,8 +215,12 @@ CONTAINS
     profiling_output = config_profiling_output
     check_uuid_gracefully = .FALSE.
 
+    l_disable_print_gpu_mem = .FALSE.
+
+    lmsgwam(:) = .FALSE.      ! logical switch for MS-GWaM (instead of default GWD scheme)
+
     !------------------------------------------------------------------
-    ! If this is a resumed integration, overwrite the defaults above 
+    ! If this is a resumed integration, overwrite the defaults above
     ! by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -239,7 +251,7 @@ CONTAINS
     !----------------------------------------------------
     ! Sanity check
     !----------------------------------------------------
-    SELECT CASE (iforcing)                                                     
+    SELECT CASE (iforcing)
     CASE(INOFORCING,IHELDSUAREZ,INWP,iaes,ILDF_DRY,ILDF_ECHAM,IMPIOM)
     CASE DEFAULT
       CALL finish( TRIM(routine),'wrong value for iforcing')
@@ -261,16 +273,25 @@ CONTAINS
 #endif
     END IF
 
+    IF (ANY(lmsgwam)) THEN
+#ifndef __MSGWAM
+      CALL finish( routine,'model set to run with MSGWAM but compiled without --enable-msgwam')
+#endif
+#ifdef _OPENACC
+       CALL finish(routine,'GPU version not available for MSGWAM (lmsgwam=.TRUE.).')
+#endif
+    END IF
+
     !----------------------------------------------------
     ! Fill part of the configuration state
     !----------------------------------------------------
 
-    config_ltestcase       = ltestcase 
-    config_ldynamics       = ldynamics 
-    config_iforcing        = iforcing 
+    config_ltestcase       = ltestcase
+    config_ldynamics       = ldynamics
+    config_iforcing        = iforcing
 
-    config_ltransport      = ltransport 
-    config_ntracer         = ntracer 
+    config_ltransport      = ltransport
+    config_ntracer         = ntracer
     config_lart            = lart
     config_ldass_lhn       = ldass_lhn
 
@@ -285,8 +306,8 @@ CONTAINS
     config_num_lev(:)      = num_lev(:)
     config_nshift(:)       = nshift(:)
 
-    config_nsteps          = nsteps  
-    config_dtime           = dtime 
+    config_nsteps          = nsteps
+    config_dtime           = dtime
 #ifdef COUP_OAS_ECLM
     config_loascplscheme_exchcoef = loascplscheme_exchcoef
 #endif
@@ -309,6 +330,10 @@ CONTAINS
 
     cfg_modelTimeStep       = modelTimeStep
 
+    config_disable_print_gpu_mem = l_disable_print_gpu_mem
+
+    config_lmsgwam(:)            = lmsgwam(:)
+
     IF (TRIM(output(1)) /= "default") THEN
       config_output(:) = output(:)
     ELSE
@@ -317,7 +342,7 @@ CONTAINS
       config_output(2) = "totint"
     END IF
     CALL parse_output_mode(config_output, config_output_mode)
-    
+
     !-----------------------------------------------------
     ! Store the namelist for restart
     !-----------------------------------------------------

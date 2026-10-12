@@ -1,21 +1,20 @@
-! Processing of nudging parameters for the nudging types:
-! - Upper boundary nudging
-! - Global nudging
-! For the lateral boundary nudging, please see:
-! - src/namelists/mo_limarea_nml
-! - src/namelists/mo_interpol_nml
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Processing of nudging parameters for the nudging types:
+! - Upper boundary nudging
+! - Global nudging
+! For the lateral boundary nudging, please see:
+! - src/namelists/mo_limarea_nml
+! - src/namelists/mo_interpol_nml
 
 MODULE mo_nudging_nml
 
@@ -61,19 +60,19 @@ CONTAINS
     CHARACTER(LEN=MAX_CHAR_LENGTH), PARAMETER :: &
       & routine = modname//":read_nudging_namelist"
 
-    ! Defaults, which are reasonable for upper-boundary nudging 
-    ! are not necessarily reasonable for global nudging, unfortunately. 
-    ! For our approach to handle this, some of the namelist variables 
-    ! need to become arrays effectively, although "officially", 
-    ! i.e. in the namelist description they go as non-arrays. 
+    ! Defaults, which are reasonable for upper-boundary nudging
+    ! are not necessarily reasonable for global nudging, unfortunately.
+    ! For our approach to handle this, some of the namelist variables
+    ! need to become arrays effectively, although "officially",
+    ! i.e. in the namelist description they go as non-arrays.
     ! So here, we define some array tools:
-    ! The number of entries is the number of nudging types + 2. 
-    ! One additional entry is for the actual namelist entry, 
-    ! so it gets the index 1 (-> 'inml'). Since we prefer to work 
-    ! with the already existing type identifiers 'indg_type%...', 
-    ! we introduce the offset 'ishift = 1' (alternatively, we might use 
-    ! a start index of zero for the arrays, but that might be more error-prone). 
-    ! The other additional entry is for reference, 
+    ! The number of entries is the number of nudging types + 2.
+    ! One additional entry is for the actual namelist entry,
+    ! so it gets the index 1 (-> 'inml'). Since we prefer to work
+    ! with the already existing type identifiers 'indg_type%...',
+    ! we introduce the offset 'ishift = 1' (alternatively, we might use
+    ! a start index of zero for the arrays, but that might be more error-prone).
+    ! The other additional entry is for reference,
     ! so it becomes the last entry (-> 'iref').
     INTEGER, PARAMETER :: initem = indg_type%nitem + 2
     INTEGER, PARAMETER :: ishift = 1
@@ -101,8 +100,8 @@ CONTAINS
                                                      ! - 4 -> trapezoidal profile (for global nudging only)
     REAL(wp) :: nudge_end_height(initem)             ! Nudging end height
     REAL(wp) :: nudge_scale_height(initem)           ! Scale height for profiles
-    CHARACTER(LEN=NDG_VARLIST_STR_LEN) :: nudge_var(initem)  ! Nudging variable(s) (for global nudging only): 
-                                                     ! - 'vn'       -> horizontal wind 
+    CHARACTER(LEN=NDG_VARLIST_STR_LEN) :: nudge_var(initem)  ! Nudging variable(s) (for global nudging only):
+                                                     ! - 'vn'       -> horizontal wind
                                                      ! - 'thermdyn' -> thermodynamic variables
                                                      ! - 'qv'       -> water vapour
                                                      ! - string with a comma-separated list with variables, e.g., 'vn,thermdyn'
@@ -111,7 +110,7 @@ CONTAINS
 
     !.................................................................................................................
 
-    
+
     NAMELIST /nudging_nml/ nudge_type, max_nudge_coeff_vn, max_nudge_coeff_thermdyn,         &
       &                    nudge_start_height, nudge_var, nudge_profile, max_nudge_coeff_qv, &
       &                    nudge_end_height, nudge_scale_height, thermdyn_type
@@ -124,18 +123,18 @@ CONTAINS
 
     nudge_type(:)               = indg_type%off    ! 0 -> nudging switched off
 
-    ! For the following variables, 
-    ! it might be reasonable to indtroduce 
+    ! For the following variables,
+    ! it might be reasonable to indtroduce
     ! type-dependent defaults
 
-    ! Initialization 
+    ! Initialization
     max_nudge_coeff_vn(:)       = -999._wp
     max_nudge_coeff_thermdyn(:) = -999._wp
     max_nudge_coeff_qv(:)       = -999._wp
     nudge_start_height(:)       = -999._wp
     nudge_end_height(:)         = -999._wp
-    nudge_scale_height(:)       = -999._wp 
-    thermdyn_type(:)            = -ithermdyn_type%nitem 
+    nudge_scale_height(:)       = -999._wp
+    thermdyn_type(:)            = -ithermdyn_type%nitem
     nudge_profile(:)            = -indg_profile%nitem
     nudge_var(:)                = " "
 
@@ -149,14 +148,14 @@ CONTAINS
     nudge_start_height(iitem)       = 12000._wp                  ! (m) Nudging start height
     ! Not namelist-controllable
     ! (technically, a namelist entry would be possible, but is disregarded)
-    thermdyn_type(iitem)            = ithermdyn_type%hydrostatic ! 1 -> diagnostic variables: hydrostatic pressure 
-                                                                 !      and temperature are nudged 
+    thermdyn_type(iitem)            = ithermdyn_type%hydrostatic ! 1 -> diagnostic variables: hydrostatic pressure
+                                                                 !      and temperature are nudged
     nudge_profile(iitem)            = indg_profile%sqrddist      ! 1 -> inverse squared scaled vertical distance from start height
     nudge_end_height(iitem)         = -1._wp                     ! (m) Nudging end height,
-                                                                 ! negative value means: 'nudge_end_height = top_height' 
+                                                                 ! negative value means: 'nudge_end_height = top_height'
                                                                  ! ('sleve_nml: top_height' -> height of model top)
     nudge_scale_height(iitem)       = -1._wp                     ! (m) Scale height for nudging strength profile,
-                                                                 ! negative value means: 
+                                                                 ! negative value means:
                                                                  ! 'nudge_scale_height = nudge_end_height - nudge_start_height'
     max_nudge_coeff_qv(iitem)       = 0._wp                      ! Max. nudging coefficient for water vapour
     nudge_var(iitem)                = "vn,thermdyn"              ! Horizontal wind and thermodynamic variables are nudged
@@ -169,19 +168,19 @@ CONTAINS
     max_nudge_coeff_vn(iitem)       = 0.016_wp                     ! Max. nudging coefficient for horizontal wind
     max_nudge_coeff_thermdyn(iitem) = 0.03_wp                      ! Max. nudging coefficient for thermodynamic variables
     max_nudge_coeff_qv(iitem)       = 0.008_wp                     ! Max. nudging coefficient for water vapour
-    nudge_start_height(iitem)       = 2000._wp                     ! (m) Nudging start height 
+    nudge_start_height(iitem)       = 2000._wp                     ! (m) Nudging start height
                                                                    ! (maybe better omit the planetary boundary layer)
     nudge_end_height(iitem)         = 40000._wp                    ! (m) Nudging end height
-                                                                   ! (IFS analysis as driving data: exclude most of 
+                                                                   ! (IFS analysis as driving data: exclude most of
                                                                    ! that sponge layer of the IFS, which starts above 10 hPa)
     nudge_scale_height(iitem)       = 3000._wp                     ! (m) Scale height for nudging strength profile
     nudge_profile(iitem)            = indg_profile%trapid          ! 4 -> trapezoidal profile
-    thermdyn_type(iitem)            = ithermdyn_type%hydrostatic   ! 1 -> diagnostic variables: hydrostatic pressure 
-                                                                   !      and temperature are nudged 
+    thermdyn_type(iitem)            = ithermdyn_type%hydrostatic   ! 1 -> diagnostic variables: hydrostatic pressure
+                                                                   !      and temperature are nudged
     nudge_var(iitem)                = TRIM(cndg_var(indg_var%all)) ! 'all' -> nudge all variables
 
     !------------------------------------------------------------------------
-    ! If this is a resumed integration, overwrite the defaults above 
+    ! If this is a resumed integration, overwrite the defaults above
     ! by values used in the previous integration.
     !------------------------------------------------------------------------
 
@@ -240,12 +239,12 @@ CONTAINS
       ! Store the other namelist variables in the nudging config type
       !---------------------------------------------------------------
 
-      ! NOTE: historically, the nudging tendency was scaled by 
-      !       the physics-dynamics timestep ratio. 
-      !       Removing the scaling while keeping results the same, requires 
-      !       to redefine (scale) the default nudging coefficient and adapt 
-      !       all run scripts. In order to avoid changing the run scripts, 
-      !       we scale the user value by the default physics-dynamics timestep 
+      ! NOTE: historically, the nudging tendency was scaled by
+      !       the physics-dynamics timestep ratio.
+      !       Removing the scaling while keeping results the same, requires
+      !       to redefine (scale) the default nudging coefficient and adapt
+      !       all run scripts. In order to avoid changing the run scripts,
+      !       we scale the user value by the default physics-dynamics timestep
       !       ratio (i.e. 5).
 
       jitem       = nudge_type(jg) + ishift
@@ -264,7 +263,7 @@ CONTAINS
       lentry = lapplicable .AND. (ABS(nudge_start_height(inml) - nudge_start_height(iref)) > eps)
       iitem  = MERGE(inml, jitem, lentry)
       nudging_config(jg)%nudge_start_height = nudge_start_height(iitem)
-      ! 
+      !
       ! The following namelist variables are for global nudging only
       lapplicable = nudge_type(jg) == indg_type%globn
       ! Max. nudging coefficient for water vapour
@@ -273,19 +272,19 @@ CONTAINS
       nudging_config(jg)%max_nudge_coeff_qv = 5._wp * max_nudge_coeff_qv(iitem)
       ! Nudging end height
       lentry = lapplicable .AND. (ABS(nudge_end_height(inml) - nudge_end_height(iref)) > eps)
-      iitem  = MERGE(inml, jitem, lentry)    
+      iitem  = MERGE(inml, jitem, lentry)
       nudging_config(jg)%nudge_end_height = nudge_end_height(iitem)
       ! Scale height for nudging strength profile
       lentry = lapplicable .AND. (ABS(nudge_scale_height(inml) - nudge_scale_height(iref)) > eps)
-      iitem  = MERGE(inml, jitem, lentry)    
+      iitem  = MERGE(inml, jitem, lentry)
       nudging_config(jg)%nudge_scale_height = nudge_scale_height(iitem)
-      ! Type of thermodynamic variables 
+      ! Type of thermodynamic variables
       lentry = lapplicable .AND. (thermdyn_type(inml) /= thermdyn_type(iref))
-      iitem  = MERGE(inml, jitem, lentry)    
+      iitem  = MERGE(inml, jitem, lentry)
       nudging_config(jg)%thermdyn_type = thermdyn_type(iitem)
       ! Profile of nudging strength
       lentry = lapplicable .AND. (nudge_profile(inml) /= nudge_profile(iref))
-      iitem  = MERGE(inml, jitem, lentry)    
+      iitem  = MERGE(inml, jitem, lentry)
       nudging_config(jg)%nudge_profile = nudge_profile(iitem)
       ! Nudging variable(s)
       lentry = lapplicable .AND. (TRIM(nudge_var(inml)) /= TRIM(nudge_var(iref)))
@@ -298,7 +297,7 @@ CONTAINS
     ! Consistency checks
     !------------------------------------------------------------------------
 
-    ! For reasons of clarity, we check nudging-type-wise, 
+    ! For reasons of clarity, we check nudging-type-wise,
     ! although this means some code redundancy.
 
     DO jg = 1,max_dom
@@ -312,7 +311,7 @@ CONTAINS
         ELSEIF(nudging_config(jg)%max_nudge_coeff_thermdyn < 0._wp) THEN
           CALL finish(TRIM(routine), 'max_nudge_coeff_thermdyn >= 0 required.')
         ELSEIF (nudging_config(jg)%nudge_start_height < 0._wp) THEN
-          CALL finish(TRIM(routine), 'nudge_start_height >= 0 required.') 
+          CALL finish(TRIM(routine), 'nudge_start_height >= 0 required.')
         ENDIF
       !
       ! Global nudging
@@ -332,9 +331,9 @@ CONTAINS
         ELSEIF(nudging_config(jg)%max_nudge_coeff_qv < 0._wp) THEN
           CALL finish(TRIM(routine), 'max_nudge_coeff_qv >= 0 required.')
         ENDIF
-        ! 
-        ! For global nudging there is no check of start_height, 
-        ! end_height and scale_height, since for reasons of convenience 
+        !
+        ! For global nudging there is no check of start_height,
+        ! end_height and scale_height, since for reasons of convenience
         ! negative values mean:
         ! - start_height -> z = 0, nudging starts in the lowermost grid layer
         ! - end_height   -> z = top_height, nudging ends in the uppermost grid layer
@@ -361,7 +360,7 @@ CONTAINS
           ENDIF
         ENDDO  !jitem
         IF (lerror) CALL finish(TRIM(routine), 'Invalid nudge_profile: ' &
-          & //TRIM(int2string(nudging_config(jg)%nudge_profile))) 
+          & //TRIM(int2string(nudging_config(jg)%nudge_profile)))
         !
         ! Check 'nudge_var'
         lerror = .TRUE.
@@ -372,7 +371,7 @@ CONTAINS
           ENDIF
         ENDDO VAR_LOOP
         IF (lerror) THEN
-          CALL finish(TRIM(routine), 'Invalid nudge_var: '//TRIM(nudging_config(jg)%nudge_var))            
+          CALL finish(TRIM(routine), 'Invalid nudge_var: '//TRIM(nudging_config(jg)%nudge_var))
         ENDIF
       ENDIF  !nudging type
 
@@ -403,14 +402,14 @@ CONTAINS
   !!
   SUBROUTINE check_nudging( n_dom, iforcing, ivctype, top_height,                           &
     &                       l_limited_area, num_prefetch_proc, lsparse_latbc, itype_latbc,  &
-    &                       nudge_hydro_pres, latbc_varnames_map_file, LATBC_TYPE_CONST,    & 
+    &                       nudge_hydro_pres, latbc_varnames_map_file, LATBC_TYPE_CONST,    &
     &                       LATBC_TYPE_EXT, is_plane_torus, lart, ltransport  )
 
     ! In/out variables
-    ! (In order to avoid circular dependencies, 
-    ! we prefer to keep the number of USE-bindings small. 
+    ! (In order to avoid circular dependencies,
+    ! we prefer to keep the number of USE-bindings small.
     ! This is the reason, why there are so many in/out variables.)
-    INTEGER,          INTENT(IN) :: n_dom                   ! Number of model domains, 1=primary domain only 
+    INTEGER,          INTENT(IN) :: n_dom                   ! Number of model domains, 1=primary domain only
     INTEGER,          INTENT(IN) :: iforcing                ! Physics package
     INTEGER,          INTENT(IN) :: ivctype                 ! Type of vertical grid
     REAL(wp),         INTENT(IN) :: top_height              ! Height of model top
@@ -425,7 +424,7 @@ CONTAINS
     INTEGER,          INTENT(IN) :: LATBC_TYPE_EXT          ! Identifier for itype_latbc = time-dependent nudging target data
     LOGICAL,          INTENT(IN) :: is_plane_torus          ! .TRUE.: torus mode
     LOGICAL,          INTENT(IN) :: lart                    ! .TRUE.: ART interface cut in
-    LOGICAL,          INTENT(IN) :: ltransport              ! .TRUE.: tracer transport switched on 
+    LOGICAL,          INTENT(IN) :: ltransport              ! .TRUE.: tracer transport switched on
 
     ! Local variables
     INTEGER :: jg
@@ -471,7 +470,7 @@ CONTAINS
           ! (Note: this check is actually redundant, but we keep it as a safety net)
           CALL finish(routine, "Upper boundary nudging requires: l_limited_area = .true.")
         ELSEIF ((nudging_config(jg)%nudge_type == indg_type%ubn) .AND. lsparse_latbc) THEN
-          ! For upper boundary nudging it is essential that "latbc"-data are read in 
+          ! For upper boundary nudging it is essential that "latbc"-data are read in
           ! on the entire limited-area domain, not only on a small strip along the lateral boundary
           CALL finish(routine, "Upper boundary nudging requires read-in of nudging-data on entire domain.")
         ELSEIF ((nudging_config(jg)%nudge_type == indg_type%globn) .AND. .NOT. (num_prefetch_proc > 0)) THEN
@@ -486,15 +485,15 @@ CONTAINS
           WRITE(message_text,'(a)') "Global nudging requires: itype_latbc = "//TRIM(int2string(LATBC_TYPE_EXT))
           CALL finish(routine, message_text)
         ELSEIF ((nudging_config(jg)%nudge_type == indg_type%globn) .AND. (LEN_TRIM(latbc_varnames_map_file) == 0)) THEN
-          ! In case of asynchronous read-in of driving data in a limited-area configuration, 
-          ! the presence of a variable dictionary file is not mandatory 
-          ! (see 'src/configure_model/mo_limarea_config: configure_latbc'). 
-          ! However, when 'src/io/atmo/mo_async_latbc: check_variables' checks for a consistent set 
-          ! of variables in the driving data file, the allowed variation of short names is understandably limited 
-          ! (e.g. in case of pressure and temperature). So without a dictionary file you may quickly 
-          ! run into the situation that this subroutine does not recognize a variable in the data file,  
-          ! although it is there (for instance, you may have stored temperature under the short name "T" 
-          ! in the driving data files, but 'check_variables' locks for "TEMP"). 
+          ! In case of asynchronous read-in of driving data in a limited-area configuration,
+          ! the presence of a variable dictionary file is not mandatory
+          ! (see 'src/configure_model/mo_limarea_config: configure_latbc').
+          ! However, when 'src/io/atmo/mo_async_latbc: check_variables' checks for a consistent set
+          ! of variables in the driving data file, the allowed variation of short names is understandably limited
+          ! (e.g. in case of pressure and temperature). So without a dictionary file you may quickly
+          ! run into the situation that this subroutine does not recognize a variable in the data file,
+          ! although it is there (for instance, you may have stored temperature under the short name "T"
+          ! in the driving data files, but 'check_variables' locks for "TEMP").
           ! For this reason, we decided that a dictionary file is mandatory in case of global nudging.
           WRITE(message_text,'(a)') "Global nudging with num_prefetch_proc = 1 requires to specify " &
             & //"a dictionary file in latbc_varnames_map_file (try icon/run/dict.latbc)."
@@ -511,29 +510,29 @@ CONTAINS
         IF (lart) THEN
           ! Nudging + enabled ART-interface has not been checked yet
           WRITE(message_text,'(a)') 'WARNING, compatibility of ART and nudging has not been checked!'
-          CALL message(TRIM(routine), message_text)        
+          CALL message(TRIM(routine), message_text)
         ENDIF
         !
-        ! NOTE: The discrepancy between the upper limit in the IF-condition and the message text is due to 
+        ! NOTE: The discrepancy between the upper limit in the IF-condition and the message text is due to
         ! the internal scaling of the nudging coefficient by 5.
         !
         IF (nudging_config(jg)%max_nudge_coeff_vn > 1._wp) THEN
           ! The nudging coefficient should not be too large
           WRITE(message_text,'(2a)') 'WARNING, max_nudge_coeff_vn is quite large! ', &
             & 'It is recommended, to choose values according to: 0 <= max_nudge_coeff_vn << 0.2'
-          CALL message(TRIM(routine), message_text)                
+          CALL message(TRIM(routine), message_text)
         ENDIF
         !
-        ! NOTE: The discrepancy between the upper limit in the IF-condition and the message text is due to 
+        ! NOTE: The discrepancy between the upper limit in the IF-condition and the message text is due to
         ! the internal scaling of the nudging coefficient by 5.
         !
         IF (nudging_config(jg)%max_nudge_coeff_thermdyn > 1._wp) THEN
           WRITE(message_text,'(2a)') 'WARNING, max_nudge_coeff_thermdyn is quite large! ', &
             & 'It is recommended, to choose values according to: 0 <= max_nudge_coeff_thermdyn << 0.2'
-          CALL message(TRIM(routine), message_text)                
+          CALL message(TRIM(routine), message_text)
         ENDIF
         !
-        ! NOTE: The discrepancy between the upper limit in the IF-condition and the message text is due to 
+        ! NOTE: The discrepancy between the upper limit in the IF-condition and the message text is due to
         ! the internal scaling of the nudging coefficient by 5.
         !
         IF ((nudging_config(jg)%nudge_type == indg_type%globn) .AND.                &
@@ -541,20 +540,20 @@ CONTAINS
           ! (Applies to global nudging only)
           WRITE(message_text,'(2a)') 'WARNING, max_nudge_coeff_qv is quite large! ', &
             & 'It is recommended, to choose values according to: 0 <= max_nudge_coeff_qv << 0.2'
-          CALL message(TRIM(routine), message_text)                
+          CALL message(TRIM(routine), message_text)
         ENDIF
         IF ((nudging_config(jg)%nudge_type == indg_type%globn) .AND. l_limited_area) THEN
-          ! The web of infrastructure related to the limited-area mode has a high degree of complexity  
-          ! and we cannot yet exclude negative interferences between the limited-area mode and global nudging. 
+          ! The web of infrastructure related to the limited-area mode has a high degree of complexity
+          ! and we cannot yet exclude negative interferences between the limited-area mode and global nudging.
           ! Parts of the code that might still require modification are (non-exhaustive list!):
           ! * src/atm_dyn_iconam/mo_nh_diffusion: diffusion
           ! * src/atm_dyn_iconam/mo_solve_nonhydro: solve_nh (damping)
           ! * src/atm_dyn_iconam/mo_vertical_grid: set_nh_metrics ('nudge_c/e_idx/blk')
           ! * src/shr_horizontal/mo_intp_coeffs: init_nudgecoeffs ('nudgecoeff_c/e')
           ! * src/atm_dyn_iconam/mo_nh_stepping: integrate_nh:
-          !   We disabled lateral boundary nudging, if global nudging is switched on. 
-          !   This is because the measures that would be necessary to avoid double counting 
-          !   of nudging tendencies in the lateral boundary nudging zone 
+          !   We disabled lateral boundary nudging, if global nudging is switched on.
+          !   This is because the measures that would be necessary to avoid double counting
+          !   of nudging tendencies in the lateral boundary nudging zone
           !   would increase the computational costs and inflate the amount of code.
           WRITE (message_text,'(a)') &
             & 'WARNING, application of global nudging in limited area mode is in experimental stage! ...'
@@ -567,20 +566,20 @@ CONTAINS
           CALL message(TRIM(routine), message_text)
         ENDIF
 
-        ! Mixed criteria 
+        ! Mixed criteria
         ! + crosscheck-induced harmonizations:
 
-        ! For reasons of convenience and safety, 
-        ! we check nudging-type-wise, 
+        ! For reasons of convenience and safety,
+        ! we check nudging-type-wise,
         ! although this means some code redundancy.
 
         ! Upper-boundary nudging
         ! ----------------------
-        IF (nudging_config(jg)%nudge_type == indg_type%ubn) THEN 
+        IF (nudging_config(jg)%nudge_type == indg_type%ubn) THEN
           ! The nudging end height is always at the model top
           nudging_config(jg)%nudge_end_height = top_height
           !
-          ! If the nudging start height is > 0, 
+          ! If the nudging start height is > 0,
           ! has been checked in 'read_nudging_namelist' above
           !
           ! We have to check, if 'nudge_start_height < nudge_end_height' holds
@@ -594,19 +593,19 @@ CONTAINS
           ! The nudging scale height will be computed in 'src/configure_model/mo_nudging_config: configure_nudging'.
           !
           ! There are two options for the thermodynamic nudging variables:
-          ! (1) hydrostatic pressure and temperature 
+          ! (1) hydrostatic pressure and temperature
           ! (2) density and virtual potential temperature
           ! In case of upper boundary nudging, we should be consistent with the choice of 'latbc_config%nudge_hydro_pres'
           ! (see, e.g., the processes controlled by 'latbc_config%nudge_hydro_pres' in 'src/atm_dyn_iconam/mo_nh_stepping')
           nudging_config(jg)%thermdyn_type = MERGE( ithermdyn_type%hydrostatic,    & ! .TRUE.  -> option (1)
             &                                       ithermdyn_type%nonhydrostatic, & ! .FALSE. -> option (2)
             &                                       nudge_hydro_pres               ) ! Condition
-          ! 
-          ! The option to nudge the thermodynamic variables: hydrostatic pressure & temperature 
+          !
+          ! The option to nudge the thermodynamic variables: hydrostatic pressure & temperature
           ! is not available, if the nudging target data are constant in time
           IF ( nudging_config(jg)%llatbc_type_const .AND.                     &
             &  nudging_config(jg)%thermdyn_type == ithermdyn_type%hydrostatic ) THEN
-            ! If upper boundary nudging is switched on, we have to abort, 
+            ! If upper boundary nudging is switched on, we have to abort,
             ! since we should not change 'latbc_config%nudge_hydro_pres' at this place
             CALL finish(routine, "Nudging target data are constant in time. limarea_nml: nudge_hydro_pres = .false. required")
           ENDIF
@@ -625,11 +624,11 @@ CONTAINS
           !
           IF ( nudging_config(jg)%nudge_start_height < 0._wp      .OR. &
             &  nudging_config(jg)%nudge_start_height > top_height      ) THEN
-            ! We set start_height = 0 
+            ! We set start_height = 0
             nudging_config(jg)%nudge_start_height = 0._wp
-            WRITE(message_text,'(a)') 'Nudging start height set 0 m' 
+            WRITE(message_text,'(a)') 'Nudging start height set 0 m'
             CALL message(TRIM(routine), message_text)
-          ENDIF  !IF (nudging_config(jg)%nudge_start_height ...)    
+          ENDIF  !IF (nudging_config(jg)%nudge_start_height ...)
           !
           ! Check, if 'nudge_start_height < nudge_end_height' holds
           IF (nudging_config(jg)%nudge_start_height > nudging_config(jg)%nudge_end_height) THEN
@@ -641,7 +640,7 @@ CONTAINS
           !
           ! The nudging scale height will be computed in 'src/configure_model/mo_nudging_config: configure_nudging'.
           !
-          ! Nudging water vapour is not possible, if tracer transport is switched off 
+          ! Nudging water vapour is not possible, if tracer transport is switched off
           nudging_config(jg)%lqv_nudgable = ltransport
         ENDIF  !nudging type
 
@@ -650,13 +649,13 @@ CONTAINS
       ! Indicate that crosschecks took place
       nudging_config(jg)%lchecked = .TRUE.
 
-      ! If nudging is switch on, we checked above, if the conditions are met 
-      ! that will lead to a call of 'src/configure_model/mo_nudging_config: configure_nudging', 
-      ! where the switch 'nudging_config(jg)%lconfigured' is set to .TRUE. 
-      ! If nudging is switched off, it is well possible that 'configure_nudging' is not called at all. 
-      ! If a query for 'lconfigured' is executed somewhere in the program, 
-      ! this happens typically before a query for 'lnudging'. 
-      ! So we have to set 'lconfigured = .TRUE.', otherwise the program might stop inadvertently. 
+      ! If nudging is switch on, we checked above, if the conditions are met
+      ! that will lead to a call of 'src/configure_model/mo_nudging_config: configure_nudging',
+      ! where the switch 'nudging_config(jg)%lconfigured' is set to .TRUE.
+      ! If nudging is switched off, it is well possible that 'configure_nudging' is not called at all.
+      ! If a query for 'lconfigured' is executed somewhere in the program,
+      ! this happens typically before a query for 'lnudging'.
+      ! So we have to set 'lconfigured = .TRUE.', otherwise the program might stop inadvertently.
       IF (.NOT. nudging_config(jg)%lnudging) nudging_config(jg)%lconfigured = .TRUE.
 
     ENDDO  ! jg

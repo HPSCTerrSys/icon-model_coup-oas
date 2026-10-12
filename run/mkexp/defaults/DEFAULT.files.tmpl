@@ -1,0 +1,34 @@
+#! %{JOB.ksh} #%# -*- mode: sh -*- vi: set ft=sh :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# %{EXP_ID}.%{JOB.id}
+#
+# %{mkexp_input}
+#
+# $Id: run/mkexp/defaults/DEFAULT.files.tmpl 26 2025-07-02 09:15:02Z m221078 $
+#
+# %{VERSIONS_|join('\n# ')}
+#
+
+#%from 'mkexp/defaults/format.tmpl' import format_files
+
+(
+    initial_date=%{INITIAL_DATE}
+    final_date=%{FINAL_DATE}
+
+    y0=${initial_date%%-*}
+    yN=${final_date%%-*}
+
+    source_file () { readlink -m $1; }
+
+%{format_files(files, 'yr', 'y0', 'yN', indent=4, master_method='source_file')}
+) | sort -u

@@ -1,16 +1,16 @@
-! Contains the variables to set up the ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the variables to set up the ocean model.
+
 #include "iconfor_dsl_definitions.inc"
 
 MODULE mo_ocean_diagnostics_types
@@ -94,8 +94,8 @@ MODULE mo_ocean_diagnostics_types
     REAL(wp), ALLOCATABLE :: tracer_content(:)
   END TYPE t_ocean_monitor
 
-    
-  
+
+
   !----------------------------------------------------------------------------
   !
   ! Ocean areas/regions:
@@ -166,6 +166,5 @@ MODULE mo_ocean_diagnostics_types
       & atlantic = 1, pacific = 3
   END TYPE t_ocean_basins
   !-----------------------------
-  
-END MODULE mo_ocean_diagnostics_types
 
+END MODULE mo_ocean_diagnostics_types

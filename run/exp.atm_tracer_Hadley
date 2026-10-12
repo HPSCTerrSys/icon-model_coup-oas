@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -18,13 +18,13 @@ author_list="Daniel Reinert, DWD"
 #
 # In this experiment 3D tracer transport is performed in a prescribed
 # Hadley-like circulation. As the flow reverses its course at half time, an
-# analytical solution is available at the end of the simulation (after 1day). 
-# This test case is part of the DCMIP-2012 test suite. For more information, 
+# analytical solution is available at the end of the simulation (after 1day).
+# This test case is part of the DCMIP-2012 test suite. For more information,
 # see Kent,J. et al (2014): Dynamical core model intercomparison project:
-# Tracer transport test cases. QJRMS 140, 1279-1293  
+# Tracer transport test cases. QJRMS 140, 1279-1293
 #
-# The specific aim of this test case in the ICON-boildbit context is to check 
-# the equivalence of the vertical tracer transport routines 
+# The specific aim of this test case in the ICON-boildbit context is to check
+# the equivalence of the vertical tracer transport routines
 # * upwind_vflux_ppm
 # * upwind_vflux_ppm4gpu
 # While the former is used on x86 and SX architectures, the latter has been

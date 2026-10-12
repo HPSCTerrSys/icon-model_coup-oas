@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,7 +14,7 @@ set -ex
 name=$1
 echo $name
 exp=$2
-yStrt=$3 
+yStrt=$3
 yLast=$4
 atm_RES=$5
 datdir=$6
@@ -41,8 +41,8 @@ $lonR
 eof00
 
 
-YY1=`expr $yStrt + 1` 
-YY2=`expr $yLast - 1` 
+YY1=`expr $yStrt + 1`
+YY2=`expr $yLast - 1`
 cdo -r mergetime -selmon,3/12 -selyear,${yStrt} ${datdir}/${name}  -selyear,${YY1}/${YY2} ${datdir}/${name}  -selmon,1/11 -selyear,${yLast} ${datdir}/${name} monmean.nc
 
 seaslist="DJF JJA MAM SON"
@@ -61,16 +61,16 @@ for seas in $seaslist; do
     for var in $varlist; do
 
        cdo -f nc -selmon,${mon} -seasmean -selvar,${var} monmean.nc ${var}_${exp}_${seas}.nc
-       
+
     done
 done
 
 var=psl
 for seas in $seaslist; do
-    
+
     cdo sellonlatbox,${lonL},${lonR},${latS},${latN} ${var}_${exp}_${seas}.nc data.nc
     ${Qpath}/cdo_eof1_ICON data.nc
-    
+
     cp eof1var.txt  var_${exp}_${seas}.txt
 more var_${exp}_${seas}.txt
 

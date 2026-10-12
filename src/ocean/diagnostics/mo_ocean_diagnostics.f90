@@ -1,16 +1,15 @@
-! Contains basic diagnostics for ICON ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains basic diagnostics for ICON ocean model.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -58,7 +57,7 @@ MODULE mo_ocean_diagnostics
     & iforc_oce, No_Forcing, i_sea_ice, diagnostics_level, &
     & diagnose_for_horizontalVelocity, OceanReferenceDensity, &
     & eddydiag, &
-    & vert_cor_type, check_total_volume
+    & vert_cor_type, check_total_volume, fillValue
   USE mo_sea_ice_nml,        ONLY: kice, sice
   USE mo_dynamics_config,    ONLY: nold,nnew
   USE mo_parallel_config,    ONLY: nproma, p_test_run
@@ -93,7 +92,7 @@ MODULE mo_ocean_diagnostics
   USE mtime,                 ONLY: datetime, MAX_DATETIME_STR_LEN, datetimeToPosixString
   USE mo_ocean_check_total_content , ONLY : calc_total_salt_content, &
     & calc_total_salt_content_zstar
-  USE mo_fortran_tools,      ONLY: set_acc_host_or_device
+  USE mo_fortran_tools,      ONLY: set_acc_host_or_device,copy,init
 
   IMPLICIT NONE
   PRIVATE
@@ -112,6 +111,7 @@ MODULE mo_ocean_diagnostics
   PUBLIC :: calc_moc
   PUBLIC :: calc_psi
   PUBLIC :: diag_heat_salt_tendency
+  PUBLIC :: get_level_index_by_depth
 
   INTERFACE calc_moc
 ! 2023-11 dzo-DKRZ: Temporary until the difference in atlantic_moc and global_moc between both functions is solved
@@ -502,7 +502,9 @@ CONTAINS
     TYPE(t_sea_ice),          INTENT(inout)     :: ice
     LOGICAL, INTENT(IN), OPTIONAL                     :: lacc
 
-    REAL(wp) :: w(nproma, n_zlev + 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks)
+    REAL(wp), POINTER :: w(:,:,:)
+    REAL(wp) :: tmp_field(nproma, patch_3d%p_patch_2d(1)%alloc_cell_blocks)
+    REAL(wp) :: tmp_icefield(nproma, ice%kice, patch_3d%p_patch_2d(1)%alloc_cell_blocks)
     LOGICAL :: lzacc
 
     !Local variables
@@ -520,6 +522,7 @@ CONTAINS
 
     TYPE(t_subset_range), POINTER :: owned_cells, owned_edges
     TYPE(t_ocean_monitor),  POINTER :: monitor
+
     !-----------------------------------------------------------------------
     owned_cells    => patch_2d%cells%owned
     owned_edges    => patch_2d%edges%owned
@@ -527,12 +530,13 @@ CONTAINS
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
+    !$ACC DATA CREATE(tmp_field) IF(lzacc)
+
     !cell loop to calculate cell based monitored fields volume, kinetic energy and tracer content
     SELECT CASE (iswm_oce)
     CASE (1) ! shallow water mode
 
     CASE default !3D model
-
       ! {{{ compute global mean values of:
       ! total_salt
       total_salt = 0.0_wp
@@ -553,7 +557,6 @@ CONTAINS
             & ice, total_salt, total_saltinseaice, &
             & total_saltinliquidwater, lacc=lzacc )
         END IF
-
         monitor%total_salt = total_salt
         monitor%total_saltinseaice = total_saltinseaice
         monitor%total_saltinliquidwater = total_saltinliquidwater
@@ -562,6 +565,9 @@ CONTAINS
 
       END IF
 
+      ! FIXME 2025-01 DKRZ-dzo: levels_horizontal_mean yields a different result for ssh_global
+      !                         at the moment, therefore the calculation is temporarily on CPU
+
       ! {{{ compute global mean values of:
       ! sea surface height
       ssh_global_mean = 0.0_wp
@@ -569,13 +575,12 @@ CONTAINS
         CALL levels_horizontal_mean( sea_surface_height, &
             & patch_2d%cells%area(:,:), &
             & owned_cells, &
-            & ssh_global_mean, lopenacc=lzacc)
+            & ssh_global_mean, lopenacc=.FALSE.)
       END IF
       monitor%ssh_global = ssh_global_mean
       IF (my_process_is_stdio() .and. check_total_volume) THEN
         WRITE(0,*) ' -- monitor%ssh_global:', monitor%ssh_global
       ENDIF
-
 
       ! sea surface temperature
       sst_global = 0.0_wp
@@ -698,39 +703,76 @@ CONTAINS
           & totalsnowfall_flux, lopenacc=lzacc)
       END IF
       monitor%totalsnowfall = totalsnowfall_flux
-
       ! ice volume and extend
       ice_volume_nh = 0.0_wp
       IF (isRegistered('ice_volume_nh')) THEN
-      ice_volume_nh = subset_sum( ice%vol(:,1,:)*p_diag%northernHemisphere(:,:), &
-          & owned_cells, lopenacc=lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      !ICON_OMP PARALLEL DO COLLAPSE(2) SCHEDULE(GUIDED)
+      DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+        DO jc = 1, nproma
+          tmp_field(jc,blockNo) = ice%vol(jc,1,blockNo)*p_diag%northernHemisphere(jc,blockNo)
+        END DO
+      END DO
+      !ICON_OMP END PARALLEL DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
+      ice_volume_nh = subset_sum( tmp_field, owned_cells, lopenacc=lzacc)
       END IF
       monitor%ice_volume_nh = ice_volume_nh/1.0e9_wp !scaling to km^3
 
       ice_volume_sh = 0.0_wp
       IF (isRegistered('ice_volume_sh')) THEN
-      ice_volume_sh = subset_sum( ice%vol(:,1,:)*p_diag%southernHemisphere(:,:), &
-          & owned_cells, lopenacc=lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      !ICON_OMP PARALLEL DO COLLAPSE(2) SCHEDULE(GUIDED)
+      DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+        DO jc = 1, nproma
+          tmp_field(jc,blockNo) = ice%vol(jc,1,blockNo)*p_diag%southernHemisphere(jc,blockNo)
+        END DO
+      END DO
+      !ICON_OMP END PARALLEL DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
+      ice_volume_sh = subset_sum( tmp_field, owned_cells, lopenacc=lzacc)
       END IF
       monitor%ice_volume_sh = ice_volume_sh/1.0e9_wp !scaling to km^3
 
       ice_extent_nh = 0.0_wp
       IF (isRegistered('ice_extent_nh')) THEN
-      ice_extent_nh = subset_sum( ice%concsum*p_diag%northernHemisphere*patch_2d%cells%area, &
-          & owned_cells, lopenacc=lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      !ICON_OMP PARALLEL DO COLLAPSE(2) SCHEDULE(GUIDED)
+      DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+        DO jc = 1, nproma
+          tmp_field(jc,blockNo) = ice%concsum(jc,blockNo)*p_diag%northernHemisphere(jc,blockNo)*patch_2d%cells%area(jc,blockNo)
+        END DO
+      END DO
+      !ICON_OMP END PARALLEL DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
+      ice_extent_nh = subset_sum( tmp_field, owned_cells, lopenacc=lzacc)
       END IF
       monitor%ice_extent_nh = ice_extent_nh/1.0e6_wp !scaling to km^2
 
       ice_extent_sh = 0.0_wp
       IF (isRegistered('ice_extent_sh')) THEN
-      ice_extent_sh = subset_sum( ice%concsum*p_diag%southernHemisphere*patch_2d%cells%area, &
-          & owned_cells, lopenacc=lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      !ICON_OMP PARALLEL DO COLLAPSE(2) SCHEDULE(GUIDED)
+      DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+        DO jc = 1, nproma
+          tmp_field(jc,blockNo) = ice%concsum(jc,blockNo)*p_diag%southernHemisphere(jc,blockNo)*patch_2d%cells%area(jc,blockNo)
+        END DO
+      END DO
+      !ICON_OMP END PARALLEL DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
+      ice_extent_sh = subset_sum( tmp_field, owned_cells, lopenacc=lzacc)
       END IF
       monitor%ice_extent_sh = ice_extent_sh/1.0e6_wp !scaling to km^2
 
-      w = p_diag%w
-      IF ( ( vert_cor_type == 1 ) ) THEN
-        w = p_diag%w_deriv
+      ! Note that w is currently not used in offloaded context and therefore no ACC KERNELS are used
+      IF ( ( vert_cor_type == 0 ) ) THEN
+        w => p_diag%w(:,:,:)
+      ELSE
+        w => p_diag%w_deriv(:,:,:)
       ENDIF
 
       ! energy/enstrophy
@@ -755,7 +797,6 @@ CONTAINS
               & patch_3D%p_patch_1d(1)%prism_volume, &
               & owned_cells, lacc=lzacc)
          END IF
-
       END IF
       monitor%pot_energy = global_mean_potEnergy
 
@@ -763,7 +804,7 @@ CONTAINS
       IF (isRegistered('kin_energy_global')) THEN
          global_mean_kinEnergy = total_mean( p_diag%kin, &
           & patch_3d%p_patch_1d(1)%prism_volume, &
-          & owned_cells, lopenacc=lzacc )
+          & owned_cells, lopenacc=lzacc)
       END IF
       monitor%kin_energy = global_mean_kinEnergy
 
@@ -781,6 +822,12 @@ CONTAINS
       END IF
       monitor%potential_enstrophy = global_mean_potEnstrophy
       !}}}
+      !Keep in mind, that SWPT gets a Post-Op that adds 273.15 to get Kelvin for the GRIB output
+      IF( isRegistered('SWPT')) THEN
+        !ICON_OMP PARALLEL
+        CALL copy(tracers(:,:,:,1),p_diag%SWPT,lacc=lzacc)
+        !ICON_OMP END PARALLEL
+      ENDIF
 
       IF ( isRegistered('delta_ice') .OR. isRegistered('delta_snow') .OR. &
            isRegistered('delta_thetao') .OR. &
@@ -790,7 +837,7 @@ CONTAINS
            isRegistered('global_hfbasin') .OR. isRegistered('atlant_hfbasin') .OR. &
            isRegistered('pacind_hfbasin') ) THEN
 
-      	IF (vert_cor_type .EQ. 0) THEN
+      IF (vert_cor_type .EQ. 0) THEN
 
           CALL diag_heat_salt_tendency(patch_3d, 2, ice, tracers(:,:,:,1), tracers(:,:,:,2), &
              p_diag%delta_ice,                                      &
@@ -807,9 +854,7 @@ CONTAINS
              p_diag%delta_so, ocean_state%p_prog(nnew(1))%stretch_c(:, :), lacc=lzacc)
 
         ENDIF
-
       ENDIF
-
       ! calc moc each timestep from non-accumulated vertical veloc
       IF ( isRegistered('global_moc') .OR. isRegistered('atlant_moc') .OR. isRegistered('pacind_moc') .OR. &
            isRegistered('amoc26n') .OR. &
@@ -818,6 +863,7 @@ CONTAINS
            isRegistered('global_sltbasin') .OR. isRegistered('atlant_sltbasin') .OR. isRegistered('pacind_sltbasin') .OR. &
            isRegistered('global_hfbasin') .OR. isRegistered('atlant_hfbasin') .OR. isRegistered('pacind_hfbasin') ) THEN
         CALL timer_start(timer_calc_moc)
+
         CALL calc_moc(patch_2d, patch_3d, &
              & w, &
              & p_oce_sfc%heatflux_total, &
@@ -843,21 +889,20 @@ CONTAINS
              & p_diag%pacific_sltbasin, &
              & monitor%amoc26n, lacc=lzacc)
 
-
         CALL timer_stop(timer_calc_moc)
       ENDIF
-
       IF ( isRegistered('heat_content_liquid_water') .OR. isRegistered('heat_content_seaice') &
            .OR. isRegistered('heat_content_snow')   .OR. isRegistered('heat_content_total') &
+           .OR. isRegistered('heat_content_300m')   .OR. isRegistered('heat_content_700m') &
            .OR. isRegistered('global_heat_content') .OR. isRegistered('global_heat_content_solid') ) THEN
 
-      	IF (vert_cor_type .EQ. 0) THEN
-
+        IF (vert_cor_type .EQ. 0) THEN
           CALL calc_heat_content(patch_3d, prism_thickness, ice, tracers, &
              p_diag%heat_content_liquid_water, &
              p_diag%heat_content_seaice, &
              p_diag%heat_content_snow,&
-             p_diag%heat_content_total, lacc=lzacc )
+             p_diag%heat_content_total, &
+             p_diag%heat_content_300m, p_diag%heat_content_700m , lacc=lzacc )
 
         ELSEIF (vert_cor_type .EQ. 1) THEN
 
@@ -866,28 +911,47 @@ CONTAINS
              p_diag%heat_content_seaice, &
              p_diag%heat_content_snow,&
              p_diag%heat_content_total, &
+             p_diag%heat_content_300m, p_diag%heat_content_700m, &
              ocean_state%p_prog(nnew(1))%stretch_c(:, :), lacc=lzacc )
 
         ENDIF
-
         ! global_heat_content for monitoring
         IF (isRegistered('global_heat_content')) THEN
           global_heat_content = 0.0_wp
-          global_heat_content = global_sum_array(patch_2d%cells%area(:,:) * p_diag%heat_content_total(:,:) )
+          !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+          !ICON_OMP PARALLEL DO COLLAPSE(2) ICON_OMP_DEFAULT_SCHEDULE
+          DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+            DO jc = 1, nproma
+              tmp_field(jc,blockNo) = patch_2d%cells%area(jc,blockNo) * p_diag%heat_content_total(jc,blockNo)
+            END DO
+          END DO
+          !ICON_OMP END PARALLEL DO
+          !$ACC END PARALLEL LOOP
+          !$ACC WAIT(1)
+
+          global_heat_content = global_sum_array(tmp_field, lacc=lzacc)
           monitor%global_heat_content = global_heat_content
         END IF
 
         ! global_heat_content_solid (snow and ice heat content) for monitoring
         IF (isRegistered('global_heat_content_solid')) THEN
           global_heat_content_solid = 0.0_wp
-          global_heat_content_solid = global_sum_array( patch_2d%cells%area(:,:)* &
-            &                      (p_diag%heat_content_seaice(:,:) + p_diag%heat_content_snow(:,:)) )
+          !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+          !ICON_OMP PARALLEL DO COLLAPSE(2) ICON_OMP_DEFAULT_SCHEDULE
+          DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+            DO jc = 1, nproma
+              tmp_field(jc,blockNo) = patch_2d%cells%area(jc,blockNo) * &
+                & (p_diag%heat_content_seaice(jc,blockNo) + p_diag%heat_content_snow(jc,blockNo))
+            END DO
+          END DO
+          !ICON_OMP END PARALLEL DO
+          !$ACC END PARALLEL LOOP
+          !$ACC WAIT(1)
+          global_heat_content_solid = global_sum_array(tmp_field, lacc=lzacc)
           monitor%global_heat_content_solid = global_heat_content_solid
         END IF
 
-
       ENDIF
-
       ! bottom pressure
       IF (isRegistered('bottom_pressure')) THEN
         CALL calc_bottom_pressure(patch_3d, ocean_state, p_diag%bottom_pressure, &
@@ -895,7 +959,6 @@ CONTAINS
              prism_thickness(:,:,:),sea_surface_height(:,:), &
              ice,ocean_state%p_prog(nnew(1))%stretch_c(:, :), lacc=lzacc)
       END IF
-
 
       IF ( eddydiag .AND. &
          ( isRegistered('uT') .OR. isRegistered('uS') .OR. isRegistered('uR') .OR. &
@@ -921,6 +984,18 @@ CONTAINS
 
       ENDIF
 
+      IF (isRegistered('vort_on_cells')) THEN
+        CALL calc_vort_on_cells(patch_3d, ocean_state, lacc=lzacc)
+      ENDIF
+
+      IF (isRegistered('tos') .OR. isRegistered('sos') ) THEN
+        CALL calc_tos_sos(patch_3d, tracers, p_diag%tos, p_diag%sos, lacc=lzacc)
+      ENDIF
+
+      IF (isRegistered('sivol') .OR. isRegistered('snvol') ) THEN
+        CALL calc_sivol_snvol(patch_3d, ice, lacc=lzacc)
+      ENDIF
+
       IF (isRegistered('mld')) THEN
 
         CALL calc_mld(patch_3d, ocean_state%p_diag%mld, &
@@ -940,10 +1015,18 @@ CONTAINS
 
         IF (isRegistered('mlotstsq')) THEN
 
-          !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-          ocean_state%p_diag%mlotstsq= &
-               ocean_state%p_diag%mlotst*ocean_state%p_diag%mlotst
-          !$ACC END KERNELS
+          !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+          !ICON_OMP PARALLEL DO COLLAPSE(2) ICON_OMP_DEFAULT_SCHEDULE
+          DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+            DO jc = 1, nproma
+              IF( patch_3d%wet_c(jc,1,blockno) /= 0 ) then
+              ocean_state%p_diag%mlotstsq(jc,blockNo) = &
+                &  ocean_state%p_diag%mlotst(jc,blockNo)*ocean_state%p_diag%mlotst(jc,blockNo)
+              ENDIF
+            END DO
+          END DO
+          !ICON_OMP END PARALLEL DO
+          !$ACC END PARALLEL LOOP
           !$ACC WAIT(1)
 
           CALL dbg_print('Diag: mlotstsq',ocean_state%p_diag%mlotstsq, &
@@ -962,10 +1045,18 @@ CONTAINS
 
         IF (isRegistered('mlotst10sq')) THEN
 
-          !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-          ocean_state%p_diag%mlotst10sq= &
-               ocean_state%p_diag%mlotst10*ocean_state%p_diag%mlotst10
-          !$ACC END KERNELS
+          !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+          !ICON_OMP PARALLEL DO COLLAPSE(2) ICON_OMP_DEFAULT_SCHEDULE
+          DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+            DO jc = 1, nproma
+              IF( patch_3d%wet_c(jc,1,blockno) /= 0 ) then
+                ocean_state%p_diag%mlotst10sq(jc,blockNo) = &
+                  & ocean_state%p_diag%mlotst10(jc,blockNo)*ocean_state%p_diag%mlotst10(jc,blockNo)
+              ENDIF
+            END DO
+          END DO
+          !ICON_OMP END PARALLEL DO
+          !$ACC END PARALLEL LOOP
           !$ACC WAIT(1)
 
           CALL dbg_print('Diag: mlotst10sq',ocean_state%p_diag%mlotst10sq, &
@@ -985,14 +1076,26 @@ CONTAINS
 
       IF (isRegistered('ssh')) THEN
         IF (vert_cor_type .EQ. 1) THEN
-          !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-          p_diag%ssh = sea_surface_height + ice%draftave
-          !$ACC END KERNELS
+          !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+          !ICON_OMP PARALLEL DO COLLAPSE(2) ICON_OMP_DEFAULT_SCHEDULE
+          DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+            DO jc = 1, nproma
+              p_diag%ssh(jc,blockNo) = sea_surface_height(jc,blockNo) + ice%draftave(jc,blockNo)
+            END DO
+          END DO
+          !ICON_OMP END PARALLEL DO
+          !$ACC END PARALLEL LOOP
           !$ACC WAIT(1)
         ELSE
-          !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-          p_diag%ssh = sea_surface_height
-          !$ACC END KERNELS
+          !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+          !ICON_OMP PARALLEL DO COLLAPSE(2) ICON_OMP_DEFAULT_SCHEDULE
+          DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+            DO jc = 1, nproma
+              p_diag%ssh(jc,blockNo) = sea_surface_height(jc,blockNo)
+            END DO
+          END DO
+          !ICON_OMP END PARALLEL DO
+          !$ACC END PARALLEL LOOP
           !$ACC WAIT(1)
         ENDIF
       ENDIF
@@ -1000,7 +1103,24 @@ CONTAINS
       CALL dbg_print('Diag: mld',p_diag%mld,str_module,4,in_subset=owned_cells)
 
       ! square of ssh
-      p_diag%zos_square = merge(sea_surface_height*sea_surface_height,0.0_wp,isRegistered('zos_square'))
+      IF (isRegistered('zos_square')) THEN
+
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+        !ICON_OMP PARALLEL DO COLLAPSE(2) ICON_OMP_DEFAULT_SCHEDULE
+        DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+          DO jc = 1, nproma
+            IF( patch_3d%wet_c(jc,1,blockno) /= 0 ) THEN
+              p_diag%zos_square(jc,blockno) = sea_surface_height(jc,blockno)*sea_surface_height(jc,blockno)
+            ENDIF
+          END DO
+        END DO
+        !ICON_OMP END PARALLEL DO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+
+        CALL dbg_print('Diag: zos_square',ocean_state%p_diag%zos_square, &
+               str_module,4,in_subset=owned_cells)
+      ENDIF
 
       monitor%gibraltar = merge( section_flux(oce_sections(1),normal_veloc)*OceanReferenceDensity, &
           &                      0.0_wp, &
@@ -1029,13 +1149,24 @@ CONTAINS
       monitor%barentsOpening = merge( section_flux(oce_sections(9),normal_veloc)*OceanReferenceDensity, &
           &                      0.0_wp, &
           &                      isRegistered('barentsOpening'))
-      monitor%ice_framStrait = merge(section_ice_flux(oce_sections(7), ice%hi*ice%conc, ice%vn_e), &
+
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(3) COPYOUT(tmp_icefield) ASYNC(1) IF(lzacc)
+      !ICON_OMP PARALLEL DO COLLAPSE(2) ICON_OMP_DEFAULT_SCHEDULE
+      DO blockNo = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+        DO jk = 1, ice%kice
+          DO jc = 1, nproma
+            tmp_icefield(jc,jk,blockNo) = ice%hi(jc,jk,blockNo)*ice%conc(jc,jk,blockNo)
+          END DO
+        END DO
+      END DO
+      !ICON_OMP END PARALLEL DO
+      !$ACC WAIT(1)
+      !$ACC UPDATE SELF(ice%vn_e) IF(lzacc)
+      monitor%ice_framStrait = merge(section_ice_flux(oce_sections(7), tmp_icefield, ice%vn_e), &
           &                      0.0_wp, &
           &                      isRegistered('ice_framStrait'))
 
       IF (isRegistered('verticallyTotal_mass_flux_e')) THEN
-        IF(lzacc) CALL finish("calc_fast_oce_diagnostic", "verticallyIntegrated_field is ported to GPU &
-                              but not checked whether it gives correct results")
         CALL verticallyIntegrated_field(ocean_state%p_diag%verticallyTotal_mass_flux_e, &
           & ocean_state%p_diag%mass_flx_e, owned_edges, lacc=lzacc)
         CALL dbg_print('Total_mass_flux_e ', ocean_state%p_diag%verticallyTotal_mass_flux_e, &
@@ -1052,6 +1183,7 @@ CONTAINS
 !TODO       CASE (13)
 !TODO         monitor%florida_strait         = sflux*OceanReferenceDensity
     END SELECT
+    !$ACC END DATA
   END SUBROUTINE calc_fast_oce_diagnostics
   !-------------------------------------------------------------------------
 
@@ -1077,7 +1209,7 @@ CONTAINS
     REAL(wp), ALLOCATABLE :: sum_value(:,:), sum_weight(:,:), total_weight(:), total_sum(:)
     INTEGER :: block, level, start_index, end_index, idx, start_vertical, end_vertical
     INTEGER :: allocated_levels, no_of_threads, myThreadNo
-    REAL(wp) :: z_w, totalSum, totalWeight
+    REAL(wp) :: z_w, totalSum, totalWeight, tmp_value, tmp_weight, tmp_weight_first_level
 
     CHARACTER(LEN=*), PARAMETER :: method_name=module_name//':potential_energy'
     LOGICAL :: lzacc
@@ -1123,13 +1255,19 @@ CONTAINS
     !$ACC END KERNELS
     !$ACC WAIT(1)
     IF (ASSOCIATED(in_subset%vertical_levels)) THEN
-!ICON_OMP_DO PRIVATE(block, start_index, end_index, idx)
+!ICON_OMP_DO PRIVATE(block, level, idx, start_index, end_index) reduction(+:tmp_value, tmp_weight)
       DO block = in_subset%start_block, in_subset%end_block
         CALL get_index_range(in_subset, block, start_index, end_index)
+
+#if defined(__LVECTOR__) || defined(_OPENACC)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-        DO idx = start_index, end_index
-          !$ACC LOOP SEQ
-          DO level = start_vertical, MIN(end_vertical, in_subset%vertical_levels(idx,block)) - 1
+        DO level = start_vertical, end_vertical - 1
+          tmp_value = 0.0_wp
+          tmp_weight = 0.0_wp
+          !$ACC LOOP REDUCTION(+: tmp_value, tmp_weight)
+          DO idx = start_index, end_index
+            IF (level > in_subset%vertical_levels(idx,block) - 1) CYCLE
+
             z_w = MERGE( &
               & (w(idx,level,block)*h(idx,block) &
               &  + w(idx,level+1,block)*0.5_wp*del_zlev_i(level)) &
@@ -1141,29 +1279,71 @@ CONTAINS
               & , &
               & 1 .EQ. level)
 
-            sum_value(level, myThreadNo)  = sum_value(level, myThreadNo) + &
+            tmp_value = tmp_value + &
               & grav*z_w*rho(idx, level, block) * weights(idx, level, block)
 
-            sum_weight(level, myThreadNo)  = sum_weight(level, myThreadNo) + weights(idx, level, block)
+            tmp_weight = tmp_weight + weights(idx, level, block)
 
           ENDDO
+          sum_value(level, myThreadNo) = sum_value(level, myThreadNo) + tmp_value
+          sum_weight(level, myThreadNo) = sum_weight(level, myThreadNo) + tmp_weight
         ENDDO
         !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#else
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: sum_value, sum_weight) ASYNC(1) IF(lzacc)
+        DO idx = start_index, end_index
+          DO level = start_vertical, MIN(end_vertical, in_subset%vertical_levels(idx,block)) - 1
+
+            z_w = MERGE( &
+              & (w(idx,level,block)*h(idx,block) &
+              &  + w(idx,level+1,block)*0.5_wp*del_zlev_i(level)) &
+              & /(0.5_wp*del_zlev_i(level)+h(idx,block)) &
+              & , &
+              & (w(idx,level,block)*del_zlev_i(level) &
+              &  + w(idx,level+1,block)*del_zlev_i(level+1)) &
+              & /(del_zlev_i(level)+del_zlev_i(level+1)) &
+              & , &
+              & 1 .EQ. level)
+
+            sum_value(level, myThreadNo) = sum_value(level, myThreadNo) + &
+              & grav*z_w*rho(idx, level, block) * weights(idx, level, block)
+
+            sum_weight(level, myThreadNo) = sum_weight(level, myThreadNo) + weights(idx, level, block)
+          END DO
+        ENDDO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#endif
       ENDDO
-      !$ACC WAIT(1)
 !ICON_OMP_END_DO
 
     ELSE ! no in_subset%vertical_levels
 
-!ICON_OMP_DO PRIVATE(block, start_index, end_index)
+!ICON_OMP_DO PRIVATE(block, level, idx, start_index, end_index) reduction(+:tmp_value, tmp_weight)
       DO block = in_subset%start_block, in_subset%end_block
         CALL get_index_range(in_subset, block, start_index, end_index)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+#if defined(__LVECTOR__) || defined(_OPENACC)
+        CALL warning(method_name, "Branch with no associated in_subset%vertical_levels and " // &
+          & "__LVECTOR or _OPENACC not checked!")
+
+        tmp_weight_first_level = 0.0_wp
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: tmp_weight_first_level) ASYNC(1) IF(lzacc)
         DO idx = start_index, end_index
+          tmp_weight_first_level = tmp_weight_first_level + weights(idx, 1, block)
+        ENDDO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+        DO level = start_vertical+1, end_vertical - 1
           ! since we have the same numbder of vertical layers, the weight is the same
           ! for all levels. Compute it only for the first level, and then copy it
-          !$ACC LOOP SEQ
-          DO level = start_vertical, end_vertical - 1
+          tmp_value = 0.0_wp
+          tmp_weight = tmp_weight_first_level
+          !$ACC LOOP REDUCTION(+: tmp_value, tmp_weight)
+          DO idx = start_index, end_index
+
             z_w = MERGE( &
               & (w(idx,level,block)*h(idx,block) &
               &  + w(idx,level+1,block)*0.5_wp*del_zlev_i(level)) &
@@ -1175,14 +1355,39 @@ CONTAINS
               & , &
               & 1 .EQ. level)
 
-            sum_value(level, myThreadNo)  = sum_value(level, myThreadNo) + &
+            tmp_value = tmp_value + &
               & grav*z_w*rho(idx, level, block) * weights(idx,level, block)
-            sum_weight(level, myThreadNo)  = sum_weight(start_vertical, myThreadNo) + weights(idx, level, block)
+            sum_weight(level, myThreadNo) = tmp_weight + weights(idx, level, block)
           ENDDO
+          sum_value(level, myThreadNo) = sum_value(level, myThreadNo) + tmp_value
         ENDDO
         !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#else
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: sum_value, sum_weight) ASYNC(1) IF(lzacc)
+        DO idx = start_index, end_index
+          DO level = start_vertical, end_vertical - 1
+
+            z_w = MERGE( &
+              & (w(idx,level,block)*h(idx,block) &
+              &  + w(idx,level+1,block)*0.5_wp*del_zlev_i(level)) &
+              & /(0.5_wp*del_zlev_i(level)+h(idx,block)) &
+              & , &
+              & (w(idx,level,block)*del_zlev_i(level) &
+              &  + w(idx,level+1,block)*del_zlev_i(level+1)) &
+              & /(del_zlev_i(level)+del_zlev_i(level+1)) &
+              & , &
+              & 1 .EQ. level)
+
+            sum_value(level, myThreadNo) = sum_value(level, myThreadNo) + &
+              & grav*z_w*rho(idx, level, block) * weights(idx,level, block)
+            sum_weight(level, myThreadNo) = sum_weight(start_vertical, myThreadNo) + weights(idx, level, block)
+          END DO
+        ENDDO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#endif
       ENDDO
-      !$ACC WAIT(1)
 !ICON_OMP_END_DO
 
     ENDIF
@@ -1190,20 +1395,35 @@ CONTAINS
 
     ! gather the total level sum of this process in total_sum(level)
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    total_sum(:)     = 0.0_wp
+    total_sum(:)    = 0.0_wp
     total_weight(:) = 0.0_wp
     !$ACC END KERNELS
     !$ACC WAIT(1)
-    DO myThreadNo=0, no_of_threads-1
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      DO level = start_vertical, end_vertical - 1
+
+#if defined(__LVECTOR__) || defined(_OPENACC)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    DO level = start_vertical, end_vertical - 1
+      tmp_value = 0.0_wp
+      tmp_weight = 0.0_wp
+      !$ACC LOOP REDUCTION(+: tmp_value, tmp_weight)
+      DO myThreadNo=0, no_of_threads-1
         ! write(0,*) myThreadNo, level, " sum=", sum_value(level, myThreadNo), sum_weight(level, myThreadNo)
+        tmp_value  = tmp_value  + sum_value(level, myThreadNo)
+        tmp_weight = tmp_weight + sum_weight(level, myThreadNo)
+      ENDDO
+      total_sum(level) = tmp_value
+      total_weight(level) = tmp_weight
+    ENDDO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
+#else
+    DO myThreadNo=0, no_of_threads-1
+      DO level = start_vertical, end_vertical - 1
         total_sum(level)    = total_sum(level)    + sum_value(level, myThreadNo)
         total_weight(level) = total_weight(level) + sum_weight(level, myThreadNo)
-      ENDDO
-      !$ACC END PARALLEL LOOP
-    ENDDO
-    !$ACC WAIT(1)
+      END DO
+    END DO
+#endif
 
     ! Collect the value and weight sums (at all procs)
     CALL gather_sums(total_sum, total_weight, lopenacc=lzacc)
@@ -1211,7 +1431,7 @@ CONTAINS
 
     totalSum = 0.0_wp
     totalWeight = 0.0_wp
-    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: totalSum, totalWeight) ASYNC(1) IF(lzacc)
     DO level = start_vertical, end_vertical
       totalSum    = totalSum    + total_sum(level)
       totalWeight = totalWeight + total_weight(level)
@@ -1245,9 +1465,9 @@ CONTAINS
     REAL(wp), ALLOCATABLE :: sum_value(:,:), sum_weight(:,:), total_weight(:), total_sum(:)
     INTEGER :: block, level, start_index, end_index, idx, start_vertical, end_vertical
     INTEGER :: allocated_levels, no_of_threads, myThreadNo
-    REAL(wp) :: z_w, totalSum, totalWeight
+    REAL(wp) :: z_w, totalSum, totalWeight, tmp_value, tmp_weight, tmp_weight_first_level
 
-    CHARACTER(LEN=*), PARAMETER :: method_name=module_name//':potential_energy'
+    CHARACTER(LEN=*), PARAMETER :: method_name=module_name//':potential_energy_zstar'
     LOGICAL :: lzacc
 
     CALL set_acc_host_or_device(lzacc, lacc)
@@ -1276,88 +1496,163 @@ CONTAINS
     !$ACC DATA PRESENT(w, h, rho, del_zlev_i, stretch, weights, in_subset%vertical_levels) &
     !$ACC   CREATE(sum_value, sum_weight, total_sum, total_weight) IF(lzacc)
 
-    !ICON_OMP_PARALLEL PRIVATE(myThreadNo)
+!ICON_OMP_PARALLEL PRIVATE(myThreadNo)
 #ifdef _OPENMP
     myThreadNo = omp_get_thread_num()
 #endif
-    !ICON_OMP_SINGLE
+!ICON_OMP_SINGLE
 #ifdef _OPENMP
     no_of_threads = OMP_GET_NUM_THREADS()
 #endif
-    !ICON_OMP_END_SINGLE NOWAIT
+!ICON_OMP_END_SINGLE NOWAIT
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     sum_value(:,  myThreadNo) = 0.0_wp
     sum_weight(:,  myThreadNo) = 0.0_wp
     !$ACC END KERNELS
     !$ACC WAIT(1)
     IF (ASSOCIATED(in_subset%vertical_levels)) THEN
-    !ICON_OMP_DO PRIVATE(block, start_index, end_index, idx)
+!ICON_OMP_DO PRIVATE(block, level, idx, start_index, end_index, z_w) reduction(+:tmp_value, tmp_weight)
       DO block = in_subset%start_block, in_subset%end_block
         CALL get_index_range(in_subset, block, start_index, end_index)
+#if defined(__LVECTOR__) || defined(_OPENACC)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-        DO idx = start_index, end_index
-          !$ACC LOOP SEQ
-          DO level = start_vertical, MIN(end_vertical, in_subset%vertical_levels(idx,block)) - 1
+        DO level = start_vertical, end_vertical - 1
+          tmp_value = 0.0_wp
+          tmp_weight = 0.0_wp
+          !$ACC LOOP REDUCTION(+: tmp_value, tmp_weight)
+          DO idx = start_index, end_index
+            IF (level > in_subset%vertical_levels(idx,block) - 1) CYCLE
+
             z_w = (w(idx,level,block)*del_zlev_i(level) &
               &  + w(idx,level+1,block)*del_zlev_i(level+1)) &
               & /(del_zlev_i(level)+del_zlev_i(level+1))
 
-            sum_value(level, myThreadNo)  = sum_value(level, myThreadNo) + &
+            tmp_value = tmp_value + &
               & grav*z_w*rho(idx, level, block) * weights(idx, level, block)*stretch(idx, block)
 
-            sum_weight(level, myThreadNo)  = sum_weight(level, myThreadNo) + weights(idx, level, block)
+            tmp_weight = tmp_weight + weights(idx, level, block)
 
           ENDDO
+          sum_value(level, myThreadNo) = sum_value(level, myThreadNo) + tmp_value
+          sum_weight(level, myThreadNo) = sum_weight(level, myThreadNo) + tmp_weight
         ENDDO
         !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#else
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: sum_value, sum_weight) ASYNC(1) IF(lzacc)
+        DO idx = start_index, end_index
+          DO level = start_vertical, MIN(end_vertical, in_subset%vertical_levels(idx,block)) - 1
+
+            z_w = (w(idx,level,block)*del_zlev_i(level) &
+              &  + w(idx,level+1,block)*del_zlev_i(level+1)) &
+              & /(del_zlev_i(level)+del_zlev_i(level+1))
+
+            sum_value(level, myThreadNo) = sum_value(level, myThreadNo) + &
+              & grav*z_w*rho(idx, level, block) * weights(idx, level, block)*stretch(idx, block)
+
+            sum_weight(level, myThreadNo) = sum_weight(level, myThreadNo) + weights(idx, level, block)
+          END DO
+        ENDDO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#endif
       ENDDO
-      !$ACC WAIT(1)
-  !ICON_OMP_END_DO
+!ICON_OMP_END_DO
 
     ELSE ! no in_subset%vertical_levels
 
-  !ICON_OMP_DO PRIVATE(block, start_index, end_index)
+!ICON_OMP_DO PRIVATE(block, level, idx, start_index, end_index,z_w) reduction(+:tmp_value, tmp_weight, tmp_weight_first_level)
       DO block = in_subset%start_block, in_subset%end_block
         CALL get_index_range(in_subset, block, start_index, end_index)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+#if defined(__LVECTOR__) || defined(_OPENACC)
+        CALL warning(method_name, "Branch with no associated in_subset%vertical_levels and " // &
+          & "__LVECTOR or _OPENACC not checked!")
+
+        tmp_weight_first_level = 0.0_wp
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: tmp_weight_first_level) ASYNC(1) IF(lzacc)
         DO idx = start_index, end_index
+          tmp_weight_first_level = tmp_weight_first_level + weights(idx, 1, block)
+        ENDDO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+        DO level = start_vertical+1, end_vertical - 1
           ! since we have the same numbder of vertical layers, the weight is the same
           ! for all levels. Compute it only for the first level, and then copy it
-          !$ACC LOOP SEQ
+          tmp_value = 0.0_wp
+          tmp_weight = tmp_weight_first_level
+          !$ACC LOOP REDUCTION(+: tmp_value, tmp_weight)
+          DO idx = start_index, end_index
+
+            z_w = (w(idx,level,block)*del_zlev_i(level) &
+              &  + w(idx,level+1,block)*del_zlev_i(level+1)) &
+              & /(del_zlev_i(level)+del_zlev_i(level+1))
+
+            tmp_value  = tmp_value + &
+              & grav*z_w*rho(idx, level, block) * weights(idx,level, block)*stretch(idx, block)
+            sum_weight(level, myThreadNo)  = tmp_weight + weights(idx, level, block)
+          ENDDO
+          sum_value(level, myThreadNo) = sum_value(level, myThreadNo) + tmp_value
+        ENDDO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+
+#else
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: sum_value, sum_weight) ASYNC(1) IF(lzacc)
+        DO idx = start_index, end_index
           DO level = start_vertical, end_vertical - 1
+
             z_w = (w(idx,level,block)*del_zlev_i(level) &
               &  + w(idx,level+1,block)*del_zlev_i(level+1)) &
               & /(del_zlev_i(level)+del_zlev_i(level+1))
 
             sum_value(level, myThreadNo)  = sum_value(level, myThreadNo) + &
-              & grav*z_w*rho(idx, level, block) * weights(idx,level,block)*stretch(idx, block)
+              & grav*z_w*rho(idx, level, block) * weights(idx,level, block)*stretch(idx, block)
             sum_weight(level, myThreadNo)  = sum_weight(start_vertical, myThreadNo) + weights(idx, level, block)
-          ENDDO
+          END DO
         ENDDO
         !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
+#endif
       ENDDO
-      !$ACC WAIT(1)
-  !ICON_OMP_END_DO
+!ICON_OMP_END_DO
 
     ENDIF
-  !ICON_OMP_END_PARALLEL
+!ICON_OMP_END_PARALLEL
 
     ! gather the total level sum of this process in total_sum(level)
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    total_sum(:)     = 0.0_wp
+    total_sum(:)    = 0.0_wp
     total_weight(:) = 0.0_wp
     !$ACC END KERNELS
     !$ACC WAIT(1)
+
+#if defined(__LVECTOR__) || defined(_OPENACC)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    DO level = start_vertical, end_vertical - 1
+      tmp_value = 0.0_wp
+      tmp_weight = 0.0_wp
+      !$ACC LOOP REDUCTION(+: tmp_value, tmp_weight)
+      DO myThreadNo=0, no_of_threads-1
+        ! write(0,*) myThreadNo, level, " sum=", sum_value(level, myThreadNo), sum_weight(level, myThreadNo)
+        tmp_value  = tmp_value  + sum_value(level, myThreadNo)
+        tmp_weight = tmp_weight + sum_weight(level, myThreadNo)
+      ENDDO
+      total_sum(level) = tmp_value
+      total_weight(level) = tmp_weight
+    ENDDO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
+#else
     DO myThreadNo=0, no_of_threads-1
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO level = start_vertical, end_vertical - 1
-        ! write(0,*) myThreadNo, level, " sum=", sum_value(level, myThreadNo), sum_weight(level, myThreadNo)
         total_sum(level)    = total_sum(level)    + sum_value(level, myThreadNo)
         total_weight(level) = total_weight(level) + sum_weight(level, myThreadNo)
-      ENDDO
-      !$ACC END PARALLEL LOOP
-    ENDDO
-    !$ACC WAIT(1)
+      END DO
+    END DO
+#endif
 
     ! Collect the value and weight sums (at all procs)
     CALL gather_sums(total_sum, total_weight, lopenacc=lzacc)
@@ -1365,7 +1660,7 @@ CONTAINS
 
     totalSum = 0.0_wp
     totalWeight = 0.0_wp
-    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: totalSum, totalWeight) ASYNC(1) IF(lzacc)
     DO level = start_vertical, end_vertical
       totalSum    = totalSum    + total_sum(level)
       totalWeight = totalWeight + total_weight(level)
@@ -1924,9 +2219,20 @@ CONTAINS
     ! local variables
     INTEGER, PARAMETER ::  latSmooth = 3   !  latitudinal smoothing area is 2*jbrei-1 rows of 1 deg
     INTEGER :: BLOCK, level, start_index, end_index, idx, ilat, l, n
+    INTEGER :: tmp_level_index, tmp_deg
     INTEGER :: mpi_comm
 
-    REAL(wp) :: lat, deltaMoc, deltahfl, deltawfl, deltahfbasin, deltasltbasin, smoothWeight
+#ifdef _OPENACC
+    REAL(wp) :: lat(nproma,patch_3d%p_patch_2d(1)%alloc_cell_blocks)
+    REAL(wp) :: deltahfl(nproma,patch_3d%p_patch_2d(1)%alloc_cell_blocks)
+    REAL(wp) :: deltawfl(nproma,patch_3d%p_patch_2d(1)%alloc_cell_blocks)
+    REAL(wp) :: deltaMoc(nproma,n_zlev,patch_3d%p_patch_2d(1)%alloc_cell_blocks)
+    REAL(wp) :: deltahfbasin(nproma,patch_3d%p_patch_2d(1)%alloc_cell_blocks)
+    REAL(wp) :: deltasltbasin(nproma,patch_3d%p_patch_2d(1)%alloc_cell_blocks)
+#else
+    REAL(wp) :: lat, deltahfl, deltawfl, deltaMoc, deltahfbasin, deltasltbasin
+#endif
+    REAL(wp) :: smoothWeight, tmp_slt, tmp_hf
     REAL(wp), ALLOCATABLE :: allmocs(:,:,:)
 
     REAL(wp) :: factor_to_sv
@@ -1945,31 +2251,47 @@ CONTAINS
     n=MAX(12,n_zlev) !needs at leat 12 levels to store the wfl/hfl/hfbasin variables
     ALLOCATE(allmocs(4,n,nlat_moc))
 
-    !$ACC DATA CREATE(allmocs) IF(lzacc)
+    !$ACC DATA CREATE(lat, deltahfl, deltawfl, deltaMoc, deltahfbasin, deltasltbasin, allmocs) IF(lzacc)
 
-    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    allmocs(:,:,:)  = 0.0_wp
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(3) ASYNC(1) IF(lzacc)
+    DO ilat = 1, nlat_moc
+      DO level = 1, n
+        DO l = 1, 4
+          allmocs(l,level,ilat)  = 0.0_wp
+        END DO
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
 
-    global_moc(:,:) = 0.0_wp
-    pacind_moc(:,:) = 0.0_wp
-    atlant_moc(:,:) = 0.0_wp
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+    DO ilat = 1, 180
+      DO level = 1, n_zlev
+        global_moc(level,ilat) = 0.0_wp
+        pacind_moc(level,ilat) = 0.0_wp
+        atlant_moc(level,ilat) = 0.0_wp
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
 
-    global_hfl(:,:) = 0.0_wp
-    pacind_hfl(:,:) = 0.0_wp
-    atlant_hfl(:,:) = 0.0_wp
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    DO ilat = 1, 180
+      global_hfl(1,ilat) = 0.0_wp
+      pacind_hfl(1,ilat) = 0.0_wp
+      atlant_hfl(1,ilat) = 0.0_wp
 
-    global_wfl(:,:) = 0.0_wp
-    pacind_wfl(:,:) = 0.0_wp
-    atlant_wfl(:,:) = 0.0_wp
+      global_wfl(1,ilat) = 0.0_wp
+      pacind_wfl(1,ilat) = 0.0_wp
+      atlant_wfl(1,ilat) = 0.0_wp
 
-    global_hfbasin(:,:) = 0.0_wp
-    pacind_hfbasin(:,:) = 0.0_wp
-    atlant_hfbasin(:,:) = 0.0_wp
+      global_hfbasin(1,ilat) = 0.0_wp
+      pacind_hfbasin(1,ilat) = 0.0_wp
+      atlant_hfbasin(1,ilat) = 0.0_wp
 
-    global_sltbasin(:,:) = 0.0_wp
-    pacind_sltbasin(:,:) = 0.0_wp
-    atlant_sltbasin(:,:) = 0.0_wp
-    !$ACC END KERNELS
+      global_sltbasin(1,ilat) = 0.0_wp
+      pacind_sltbasin(1,ilat) = 0.0_wp
+      atlant_sltbasin(1,ilat) = 0.0_wp
+    END DO
+    !$ACC END PARALLEL LOOP
     !$ACC WAIT(1)
 
     ! limit cells to in-domain because of summation
@@ -1977,34 +2299,164 @@ CONTAINS
 
     smoothWeight = 1.0_wp / REAL(2*latSmooth + 1, wp)
 
+#ifdef _OPENACC
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+    DO BLOCK = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+      DO idx = 1, nproma
+        lat(idx,BLOCK) = patch_2d%cells%center(idx,BLOCK)%lat*rad2deg
+
+        deltahfl(idx,BLOCK) = patch_2d%cells%area(idx,BLOCK) * heatflux_total(idx,BLOCK) &
+                            * patch_3D%wet_c(idx,1,BLOCK)*smoothWeight
+
+        deltawfl(idx,BLOCK) = patch_2d%cells%area(idx,BLOCK) * frshflux_volumetotal(idx,BLOCK) &
+                            * patch_3D%wet_c(idx,1,BLOCK)*smoothWeight
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
+
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(3) ASYNC(1) IF(lzacc)
+    DO BLOCK = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+      DO level = 1, n_zlev
+        DO idx = 1, nproma
+          deltaMoc(idx,level,BLOCK) = patch_2d%cells%area(idx,BLOCK) * OceanReferenceDensity * w(idx,level,BLOCK)*smoothWeight
+        END DO
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
+
     DO BLOCK = cells%start_block, cells%end_block
       CALL get_index_range(cells, BLOCK, start_index, end_index)
-      ! 2023-08 psam-DKRZ: An alternate implementation with ACC LOOP GANG needs the use of atomic update,
-      ! but it does not give bit-identical results compared to the CPU results
-      !$ACC PARALLEL DEFAULT(PRESENT) &
-      !$ACC   PRIVATE(deltaMoc, deltahfbasin, deltasltbasin, deltahfl, deltawfl, ilat) ASYNC(1) IF(lzacc)
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      !$ACC LOOP GANG VECTOR
+      DO level = 1, n_zlev
+        !$ACC LOOP SEQ
+        DO idx = start_index, end_index
+          IF (level > cells%vertical_levels(idx,BLOCK)) CYCLE
+
+          ! lat: corresponding latitude row of 1 deg extension
+          !            1 south pole
+          ! nlat_moc=180 north pole
+
+          ! distribute MOC over (2*jbrei)+1 latitude rows
+          !  - no weighting with latitudes done
+          !  - lat: index of 180 X 1 deg meridional resolution
+          !$ACC LOOP SEQ
+          DO l = -latSmooth, latSmooth
+            ilat = NINT(REAL(nlat_moc, wp)*0.5_wp + lat(idx,BLOCK) + REAL(l, wp))
+            ilat = MAX(1,MIN(ilat,nlat_moc))
+
+            global_moc(level,ilat) = global_moc(level,ilat) - deltaMoc(idx,level,BLOCK)
+
+            IF (patch_3D%basin_c(idx,BLOCK) == 1) THEN
+              atlant_moc(level,ilat) = atlant_moc(level,ilat) - deltaMoc(idx,level,BLOCK)
+            END IF
+            IF (patch_3D%basin_c(idx,BLOCK) >= 2) THEN
+              pacind_moc(level,ilat) = pacind_moc(level,ilat) - deltaMoc(idx,level,BLOCK)
+            END IF
+
+            IF (level .EQ. 1) THEN
+              global_hfl(level,ilat) = global_hfl(level,ilat) - deltahfl(idx,BLOCK)
+              global_wfl(level,ilat) = global_wfl(level,ilat) - deltawfl(idx,BLOCK)
+
+              IF (patch_3D%basin_c(idx,BLOCK) == 1) THEN
+                atlant_hfl(level,ilat) = atlant_hfl(level,ilat) - deltahfl(idx,BLOCK)
+                atlant_wfl(level,ilat) = atlant_wfl(level,ilat) - deltawfl(idx,BLOCK)
+              END IF
+              IF (patch_3D%basin_c(idx,BLOCK) >= 2) THEN
+                pacind_hfl(level,ilat) = pacind_hfl(level,ilat) - deltahfl(idx,BLOCK)
+                pacind_wfl(level,ilat) = pacind_wfl(level,ilat) - deltawfl(idx,BLOCK)
+              END IF
+            END IF
+
+          END DO
+        END DO
+      END DO
+      !$ACC END PARALLEL
+      !$ACC WAIT(1)
+    END DO
+
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) REDUCTION(+: tmp_slt, tmp_hf) ASYNC(1) IF(lzacc)
+    DO BLOCK = 1, patch_3d%p_patch_2d(1)%alloc_cell_blocks
+      DO idx = 1, nproma
+        tmp_slt = 0.0_wp
+        tmp_hf = 0.0_wp
+        DO level = 1, n_zlev
+          IF (level > cells%vertical_levels(idx,BLOCK)) CYCLE
+
+          tmp_slt = tmp_slt + patch_2d%cells%area(idx,BLOCK) * delta_so(idx,level,BLOCK)*smoothWeight
+          tmp_hf = tmp_hf + patch_2d%cells%area(idx,BLOCK) * delta_thetao(idx,level,BLOCK)*smoothWeight
+
+          IF (level .EQ. 1) THEN
+            tmp_hf = tmp_hf + patch_2d%cells%area(idx,BLOCK) * ( delta_ice(idx,BLOCK) + delta_snow(idx,BLOCK) )*smoothWeight
+          ENDIF
+        END DO
+        deltasltbasin(idx,BLOCK) = tmp_slt
+        deltahfbasin(idx,BLOCK) = tmp_hf
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
+
+    DO BLOCK = cells%start_block, cells%end_block
+      CALL get_index_range(cells, BLOCK, start_index, end_index)
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP SEQ
       DO idx = start_index, end_index
-        lat = patch_2d%cells%center(idx,BLOCK)%lat*rad2deg
+
+        ! lat: corresponding latitude row of 1 deg extension
+        !            1 south pole
+        ! nlat_moc=180 north pole
+
+        ! distribute MOC over (2*jbrei)+1 latitude rows
+        !  - no weighting with latitudes done
+        !  - lat: index of 180 X 1 deg meridional resolution
         !$ACC LOOP SEQ
+        DO l = -latSmooth, latSmooth
+          ilat = NINT(REAL(nlat_moc, wp)*0.5_wp + lat(idx,BLOCK) + REAL(l, wp))
+          ilat = MAX(1,MIN(ilat,nlat_moc))
+
+          global_hfbasin(1,ilat) = global_hfbasin(1,ilat) - deltahfbasin(idx,BLOCK)
+          global_sltbasin(1,ilat) = global_sltbasin(1,ilat) - deltasltbasin(idx,BLOCK)
+
+          IF (patch_3D%basin_c(idx,BLOCK) == 1) THEN
+            atlant_hfbasin(1,ilat) = atlant_hfbasin(1,ilat) - deltahfbasin(idx,BLOCK)
+            atlant_sltbasin(1,ilat) = atlant_sltbasin(1,ilat) - deltasltbasin(idx,BLOCK)
+          END IF
+          IF (patch_3D%basin_c(idx,BLOCK) >= 2) THEN
+            pacind_hfbasin(1,ilat) = pacind_hfbasin(1,ilat) - deltahfbasin(idx,BLOCK)
+            pacind_sltbasin(1,ilat) = pacind_sltbasin(1,ilat) - deltasltbasin(idx,BLOCK)
+          END IF
+
+        END DO
+      END DO
+      !$ACC END PARALLEL
+      !$ACC WAIT(1)
+    END DO
+#else
+    DO BLOCK = cells%start_block, cells%end_block
+      CALL get_index_range(cells, BLOCK, start_index, end_index)
+      DO idx = start_index, end_index
+        lat = patch_2d%cells%center(idx,BLOCK)%lat*rad2deg
+
+        deltahfl = patch_2d%cells%area(idx,BLOCK) * heatflux_total(idx,BLOCK) &
+                * patch_3D%wet_c(idx,1,BLOCK)
+
+        deltawfl = patch_2d%cells%area(idx,BLOCK) * frshflux_volumetotal(idx,BLOCK) &
+                  * patch_3D%wet_c(idx,1,BLOCK)
+
         DO level = 1, cells%vertical_levels(idx,BLOCK)
 
           deltaMoc = patch_2d%cells%area(idx,BLOCK) * OceanReferenceDensity * w(idx,level,BLOCK)
 
-          deltahfbasin = patch_2d%cells%area(idx,BLOCK) * delta_thetao(idx,level,BLOCK)
-
           deltasltbasin = patch_2d%cells%area(idx,BLOCK) * delta_so(idx,level,BLOCK)
 
+          deltahfbasin = patch_2d%cells%area(idx,BLOCK) * delta_thetao(idx,level,BLOCK)
+
           IF (level .EQ. 1) THEN
-            deltahfl = patch_2d%cells%area(idx,BLOCK) * heatflux_total(idx,BLOCK) &
-                    * patch_3D%wet_c(idx,1,BLOCK)
-
-            deltawfl = patch_2d%cells%area(idx,BLOCK) * frshflux_volumetotal(idx,BLOCK) &
-                     * patch_3D%wet_c(idx,1,BLOCK)
-
             deltahfbasin = deltahfbasin                                &
                  + patch_2d%cells%area(idx,BLOCK) * ( delta_ice(idx,BLOCK) + delta_snow(idx,BLOCK) )
-
           ENDIF
 
           ! lat: corresponding latitude row of 1 deg extension
@@ -2016,7 +2468,6 @@ CONTAINS
           ! distribute MOC over (2*jbrei)+1 latitude rows
           !  - no weighting with latitudes done
           !  - lat: index of 180 X 1 deg meridional resolution
-          !$ACC LOOP SEQ
           DO l = -latSmooth, latSmooth
             ilat = NINT(REAL(nlat_moc, wp)*0.5_wp + lat + REAL(l, wp))
             ilat = MAX(1,MIN(ilat,nlat_moc))
@@ -2052,103 +2503,130 @@ CONTAINS
               pacind_wfl(level,ilat) = pacind_wfl(level,ilat) - MERGE(deltawfl*smoothWeight, &
                    0.0_wp, patch_3D%basin_c(idx,BLOCK) >= 2)
             END IF
-
           END DO
 
         END DO
       END DO
-      !$ACC END PARALLEL
     END DO
-    !$ACC WAIT(1)
+#endif
 
     ! compute point-wise sum over all mpi ranks and store results
-    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    allmocs(1,1:n_zlev,:) = global_moc(1:n_zlev,:)
-    allmocs(2,1:n_zlev,:) = atlant_moc(1:n_zlev,:)
-    allmocs(3,1:n_zlev,:) = pacind_moc(1:n_zlev,:)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+    DO ilat = 1, nlat_moc
+      DO level = 1, n_zlev
+        allmocs(1,level,ilat) = global_moc(level,ilat)
+        allmocs(2,level,ilat) = atlant_moc(level,ilat)
+        allmocs(3,level,ilat) = pacind_moc(level,ilat)
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
 
-    allmocs(4,1,:) = global_hfl(1,:)
-    allmocs(4,2,:) = atlant_hfl(1,:)
-    allmocs(4,3,:) = pacind_hfl(1,:)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    DO ilat = 1, 180
+      allmocs(4,1,ilat) = global_hfl(1,ilat)
+      allmocs(4,2,ilat) = atlant_hfl(1,ilat)
+      allmocs(4,3,ilat) = pacind_hfl(1,ilat)
 
-    allmocs(4,4,:) = global_hfbasin(1,:)
-    allmocs(4,5,:) = atlant_hfbasin(1,:)
-    allmocs(4,6,:) = pacind_hfbasin(1,:)
+      allmocs(4,4,ilat) = global_hfbasin(1,ilat)
+      allmocs(4,5,ilat) = atlant_hfbasin(1,ilat)
+      allmocs(4,6,ilat) = pacind_hfbasin(1,ilat)
 
-    allmocs(4,7,:) = global_wfl(1,:)
-    allmocs(4,8,:) = atlant_wfl(1,:)
-    allmocs(4,9,:) = pacind_wfl(1,:)
+      allmocs(4,7,ilat) = global_wfl(1,ilat)
+      allmocs(4,8,ilat) = atlant_wfl(1,ilat)
+      allmocs(4,9,ilat) = pacind_wfl(1,ilat)
 
-    allmocs(4,10,:) = global_sltbasin(1,:)
-    allmocs(4,11,:) = atlant_sltbasin(1,:)
-    allmocs(4,12,:) = pacind_sltbasin(1,:)
-    !$ACC END KERNELS
+      allmocs(4,10,ilat) = global_sltbasin(1,ilat)
+      allmocs(4,11,ilat) = atlant_sltbasin(1,ilat)
+      allmocs(4,12,ilat) = pacind_sltbasin(1,ilat)
+    END DO
+    !$ACC END PARALLEL LOOP
     !$ACC WAIT(1)
 
-    !$ACC UPDATE HOST(allmocs) ASYNC(1) IF(lzacc)
+    !$ACC UPDATE SELF(allmocs) ASYNC(1) IF(lzacc)
     !$ACC WAIT(1) IF(lzacc)
     allmocs = p_sum(allmocs,mpi_comm)
     !$ACC UPDATE DEVICE(allmocs) ASYNC(1) IF(lzacc)
     !$ACC WAIT(1) IF(lzacc) ! can be removed when all ACC compute regions are ASYNC(1)
 
 
-    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    global_moc(1:n_zlev,:) = allmocs(1,1:n_zlev,:)
-    atlant_moc(1:n_zlev,:) = allmocs(2,1:n_zlev,:)
-    pacind_moc(1:n_zlev,:) = allmocs(3,1:n_zlev,:)
-    global_hfl(1,:) = allmocs(4,1,:)
-    atlant_hfl(1,:) = allmocs(4,2,:)
-    pacind_hfl(1,:) = allmocs(4,3,:)
-    global_hfbasin(1,:) = allmocs(4,4,:)
-    atlant_hfbasin(1,:) = allmocs(4,5,:)
-    pacind_hfbasin(1,:) = allmocs(4,6,:)
-    global_wfl(1,:) = allmocs(4,7,:)
-    atlant_wfl(1,:) = allmocs(4,8,:)
-    pacind_wfl(1,:) = allmocs(4,9,:)
-    global_sltbasin(1,:) = allmocs(4,10,:)
-    atlant_sltbasin(1,:) = allmocs(4,11,:)
-    pacind_sltbasin(1,:) = allmocs(4,12,:)
-    !$ACC END KERNELS
-    !$ACC WAIT(1)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+    DO ilat = 1, nlat_moc
+      DO level = 1, n_zlev
+        global_moc(level,ilat) = allmocs(1,level,ilat)
+        atlant_moc(level,ilat) = allmocs(2,level,ilat)
+        pacind_moc(level,ilat) = allmocs(3,level,ilat)
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
+
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    DO ilat = 1, 180
+      global_hfl(1,ilat) = allmocs(4,1,ilat)
+      atlant_hfl(1,ilat) = allmocs(4,2,ilat)
+      pacind_hfl(1,ilat) = allmocs(4,3,ilat)
+      global_hfbasin(1,ilat) = allmocs(4,4,ilat)
+      atlant_hfbasin(1,ilat) = allmocs(4,5,ilat)
+      pacind_hfbasin(1,ilat) = allmocs(4,6,ilat)
+      global_wfl(1,ilat) = allmocs(4,7,ilat)
+      atlant_wfl(1,ilat) = allmocs(4,8,ilat)
+      pacind_wfl(1,ilat) = allmocs(4,9,ilat)
+      global_sltbasin(1,ilat) = allmocs(4,10,ilat)
+      atlant_sltbasin(1,ilat) = allmocs(4,11,ilat)
+      pacind_sltbasin(1,ilat) = allmocs(4,12,ilat)
+    END DO
+    !$ACC END PARALLEL LOOP
 
     ! compute partial sums along meridian
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC LOOP SEQ
     DO l=nlat_moc-1,1,-1   ! fixed to 1 deg meridional resolution
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      global_moc(:,l)=global_moc(:,l+1)+global_moc(:,l)
-      atlant_moc(:,l)=atlant_moc(:,l+1)+atlant_moc(:,l)
-      pacind_moc(:,l)=pacind_moc(:,l+1)+pacind_moc(:,l)
-      global_hfl(:,l)=global_hfl(:,l+1)+global_hfl(:,l)
-      atlant_hfl(:,l)=atlant_hfl(:,l+1)+atlant_hfl(:,l)
-      pacind_hfl(:,l)=pacind_hfl(:,l+1)+pacind_hfl(:,l)
-      global_hfbasin(:,l)=global_hfbasin(:,l+1)+global_hfbasin(:,l)
-      atlant_hfbasin(:,l)=atlant_hfbasin(:,l+1)+atlant_hfbasin(:,l)
-      pacind_hfbasin(:,l)=pacind_hfbasin(:,l+1)+pacind_hfbasin(:,l)
-      global_wfl(:,l)=global_wfl(:,l+1)+global_wfl(:,l)
-      atlant_wfl(:,l)=atlant_wfl(:,l+1)+atlant_wfl(:,l)
-      pacind_wfl(:,l)=pacind_wfl(:,l+1)+pacind_wfl(:,l)
-      global_sltbasin(:,l)=global_sltbasin(:,l+1)+global_sltbasin(:,l)
-      atlant_sltbasin(:,l)=atlant_sltbasin(:,l+1)+atlant_sltbasin(:,l)
-      pacind_sltbasin(:,l)=pacind_sltbasin(:,l+1)+pacind_sltbasin(:,l)
-      !$ACC END KERNELS
-      !$ACC WAIT(1)
+      !$ACC LOOP GANG VECTOR
+      DO level = 1, n_zlev
+        global_moc(level,l)=global_moc(level,l+1)+global_moc(level,l)
+        atlant_moc(level,l)=atlant_moc(level,l+1)+atlant_moc(level,l)
+        pacind_moc(level,l)=pacind_moc(level,l+1)+pacind_moc(level,l)
+      END DO
     END DO
+    !$ACC END PARALLEL
 
-    !$ACC UPDATE HOST(atlant_moc) ASYNC(1) IF(lzacc)
-    !$ACC WAIT(1) IF(lzacc)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC LOOP SEQ
+    DO l=nlat_moc-1,1,-1   ! fixed to 1 deg meridional resolution
+      global_hfl(1,l)=global_hfl(1,l+1)+global_hfl(1,l)
+      atlant_hfl(1,l)=atlant_hfl(1,l+1)+atlant_hfl(1,l)
+      pacind_hfl(1,l)=pacind_hfl(1,l+1)+pacind_hfl(1,l)
+      global_hfbasin(1,l)=global_hfbasin(1,l+1)+global_hfbasin(1,l)
+      atlant_hfbasin(1,l)=atlant_hfbasin(1,l+1)+atlant_hfbasin(1,l)
+      pacind_hfbasin(1,l)=pacind_hfbasin(1,l+1)+pacind_hfbasin(1,l)
+      global_wfl(1,l)=global_wfl(1,l+1)+global_wfl(1,l)
+      atlant_wfl(1,l)=atlant_wfl(1,l+1)+atlant_wfl(1,l)
+      pacind_wfl(1,l)=pacind_wfl(1,l+1)+pacind_wfl(1,l)
+      global_sltbasin(1,l)=global_sltbasin(1,l+1)+global_sltbasin(1,l)
+      atlant_sltbasin(1,l)=atlant_sltbasin(1,l+1)+atlant_sltbasin(1,l)
+      pacind_sltbasin(1,l)=pacind_sltbasin(1,l+1)+pacind_sltbasin(1,l)
+    END DO
+    !$ACC END PARALLEL
+    !$ACC WAIT(1)
+
     !find atlantic moc at 26n , depth=1000m
     factor_to_sv=1.0_wp/OceanReferenceDensity*1e-6_wp
-    amoc26n(1)=atlant_moc(get_level_index_by_depth(patch_3d, 1000.0_wp),116)*factor_to_sv
-    !$ACC UPDATE DEVICE(amoc26n) ASYNC(1) IF(lzacc)
-    !$ACC WAIT(1) IF(lzacc) ! can be removed when all ACC compute regions are ASYNC(1)
+    tmp_level_index = get_level_index_by_depth(patch_3d, 1000.0_wp)
+    tmp_deg = 116
+
+    !$ACC UPDATE SELF(atlant_moc) ASYNC(1) IF(lzacc)
+    !$ACC WAIT(1) IF(lzacc)
+    amoc26n(1)=atlant_moc(tmp_level_index, tmp_deg)*factor_to_sv
 
     ! calculate ocean heat transport as residual from the tendency in heat content (dH/dt)
     ! minus the integral of surface heat flux
 
-    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    global_hfbasin(:,:)=global_hfl(:,:)-global_hfbasin(:,:)
-    atlant_hfbasin(:,:)=atlant_hfl(:,:)-atlant_hfbasin(:,:)
-    pacind_hfbasin(:,:)=pacind_hfl(:,:)-pacind_hfbasin(:,:)
-    !$ACC END KERNELS
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    DO ilat = 1, 180
+      global_hfbasin(1,ilat)=global_hfl(1,ilat)-global_hfbasin(1,ilat)
+      atlant_hfbasin(1,ilat)=atlant_hfl(1,ilat)-atlant_hfbasin(1,ilat)
+      pacind_hfbasin(1,ilat)=pacind_hfl(1,ilat)-pacind_hfbasin(1,ilat)
+    END DO
+    !$ACC END PARALLEL LOOP
     !$ACC WAIT(1)
 
     !$ACC END DATA
@@ -2222,7 +2700,7 @@ CONTAINS
     ! (1) barotropic system:
     !     vertical integration of zonal velocity times vertical layer thickness [m/s*m]
 
-!ICON_OMP_PARALLEL_DO PRIVATE(jc, jk, start_index, end_index) SCHEDULE(dynamic)
+    !ICON_OMP_PARALLEL_DO PRIVATE(jc, jk, start_index, end_index) SCHEDULE(GUIDED)
     DO blockNo = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, blockNo, start_index, end_index)
       !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -2241,7 +2719,7 @@ CONTAINS
       !$ACC END PARALLEL LOOP
     END DO
     !$ACC WAIT(1)
-!ICON_OMP_END_PARALLEL_DO
+    !ICON_OMP_END_PARALLEL_DO
 
     !---------DEBUG DIAGNOSTICS-------------------------------------------
     idt_src=3  ! output print level (1-5, fix)
@@ -2251,15 +2729,16 @@ CONTAINS
     IF (idiag_psi == 1) RETURN
 
     ALLOCATE(z_uint_reg(nlon,nlat), psi_reg(nlon,nlat))
-    !$OMP PARALLEL WORKSHARE
-    z_uint_reg(:,:) = 0.0_wp
-    !$OMP END PARALLEL WORKSHARE
+
+    !$OMP PARALLEL
+    CALL init(z_uint_reg,lacc=.false.)
+    !$OMP BARRIER
     ! (2) distribute integrated zonal velocity (u*dz) on 1x1 deg grid
     !     this code is not mature yet
 
     ! in domain: count all cells only once
-    !$OMP PARALLEL DO PRIVATE(start_index,end_index,jc,z_lat_deg,z_lon_deg, &
-    !$OMP & jlat,jlon,jltx,jlt,jlnx,jln)
+    !$OMP DO PRIVATE(start_index,end_index,jc,z_lat_deg,z_lon_deg, &
+    !$OMP & jlat,jlon,jltx,jlt,jlnx,jln) SCHEDULE(GUIDED)
     DO blockNo = dom_cells%start_block, dom_cells%end_block
       CALL get_index_range(dom_cells, blockNo, start_index, end_index)
       DO jc = start_index, end_index
@@ -2298,12 +2777,16 @@ CONTAINS
 
       END DO
     END DO
-    !$OMP END PARALLEL DO
+    !$OMP END DO
 
     ! (3) calculate meridional integral on regular grid starting from south pole:
 
     DO jlt = nlat-1, 1, -1
-      z_uint_reg(:,jlt) = z_uint_reg(:,jlt) + z_uint_reg(:,jlt+1)
+      !ICON_OMP DO SCHEDULE(STATIC)
+      DO jc = 1, SIZE(z_uint_reg,1)
+        z_uint_reg(jc,jlt) = z_uint_reg(jc,jlt) + z_uint_reg(jc,jlt+1)
+      END DO
+      !ICON_OMP END DO
     END DO
 
     ! (4) calculate stream function: scale with length of 1 deg*rho [m/s*m*m*kg/m3=kg/s]
@@ -2311,9 +2794,14 @@ CONTAINS
     ! meridional distance of 1 deg
     ! ATTENTION - fixed 1 deg resolution should be related to icon-resolution
     z_lat_dist = 111111.0_wp  ! * 1.3_wp ??
-    !$OMP PARALLEL WORKSHARE
-    psi_reg(:,:) = z_uint_reg(:,:) * z_lat_dist * OceanReferenceDensity
-    !$OMP END PARALLEL WORKSHARE
+    !$OMP DO COLLAPSE(2) SCHEDULE(GUIDED)
+    DO blockNo = 1, SIZE(psi_reg,2)
+      DO jc = 1, nproma
+        psi_reg(jc,blockNo) = z_uint_reg(jc,blockNo) * z_lat_dist * OceanReferenceDensity
+      END DO
+    END DO
+    !$OMP END DO NOWAIT
+    !$OMP END PARALLEL
     ! stream function on icon grid without calculation of meridional integral
     !  - tbd after interpolation to regular grid externally
     !  psi    (:,:) = u_vint    (:,:)              * OceanReferenceDensity
@@ -2383,17 +2871,17 @@ CONTAINS
     patch_2d  => patch_3d%p_patch_2d(1)
     all_edges => patch_2d%edges%ALL
     all_cells => patch_2d%cells%ALL
-    !$OMP PARALLEL WORKSHARE
-    vn_vint  (:,:,:)    = 0.0_wp
-    vint_cc(:,:,:)%x(1) = 0.0_wp
-    vint_cc(:,:,:)%x(2) = 0.0_wp
-    vint_cc(:,:,:)%x(3) = 0.0_wp
-    u_2d       (:,:)    = 0.0_wp
-    v_2d       (:,:)    = 0.0_wp
-    !$OMP END PARALLEL WORKSHARE
+    !$OMP PARALLEL
+    CALL init(vn_vint,lacc=.false.)
+    CALL init(vint_cc(:,:,:)%x(1),lacc=.false.)
+    CALL init(vint_cc(:,:,:)%x(2),lacc=.false.)
+    CALL init(vint_cc(:,:,:)%x(3),lacc=.false.)
+    CALL init(u_2d,lacc=.false.)
+    CALL init(v_2d,lacc=.false.)
+    !$OMP END PARALLEL
     ! (1) barotropic system:
     !     vertical integration of normal velocity times vertical layer thickness [m/s*m]
-!ICON_OMP_PARALLEL_DO PRIVATE(je, jk, start_index, end_index) SCHEDULE(dynamic)
+    !ICON_OMP PARALLEL DO PRIVATE(je, jk, start_index, end_index) SCHEDULE(GUIDED)
     DO blockNo = all_edges%start_block, all_edges%end_block
       CALL get_index_range(all_edges, blockNo, start_index, end_index)
       vn_vint(:,1,blockNo) = 0.0_wp
@@ -2406,18 +2894,19 @@ CONTAINS
         END DO
       END DO
     END DO
-!ICON_OMP_END_PARALLEL_DO
+    !ICON_OMP END PARALLEL DO
 
     ! (2) remapping normal velocity to zonal and meridional velocity at cell centers
-    CALL sync_patch_array(sync_e, patch_2d, vn_vint)
+    CALL sync_patch_array(sync_e, patch_2d, vn_vint, lacc=.FALSE.)
 
     CALL map_edges2cell_3d(patch_3D, vn_vint, op_coeff, vint_cc)
-
-    CALL sync_patch_array(sync_c, patch_2d, vint_cc(:,:,:)%x(1))
-    CALL sync_patch_array(sync_c, patch_2d, vint_cc(:,:,:)%x(2))
-    CALL sync_patch_array(sync_c, patch_2d, vint_cc(:,:,:)%x(3))
+    !FIXME: HB sync patch mult?
+    CALL sync_patch_array(sync_c, patch_2d, vint_cc(:,:,:)%x(1), lacc=.FALSE.)
+    CALL sync_patch_array(sync_c, patch_2d, vint_cc(:,:,:)%x(2), lacc=.FALSE.)
+    CALL sync_patch_array(sync_c, patch_2d, vint_cc(:,:,:)%x(3), lacc=.FALSE.)
 
     ! calculate zonal and meridional velocity:
+    !ICON_OMP PARALLEL DO PRIVATE(start_index, end_index, jc) SCHEDULE(GUIDED)
     DO blockNo = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, blockNo, start_index, end_index)
       DO jc = start_index, end_index
@@ -2427,14 +2916,17 @@ CONTAINS
 !         &            u_vint(jc,blockNo), v_vint(jc,blockNo))
       END DO
     END DO
-    !CALL sync_patch_array(sync_c, patch_2d, u_vint)
-    !CALL sync_patch_array(sync_c, patch_2d, v_vint)
-    CALL sync_patch_array(sync_c, patch_2d, u_2d)
-    CALL sync_patch_array(sync_c, patch_2d, v_2d)
+    !ICON_OMP END PARALLEL DO
+    !CALL sync_patch_array(sync_c, patch_2d, u_vint, lacc=.FALSE.)
+    !CALL sync_patch_array(sync_c, patch_2d, v_vint, lacc=.FALSE.)
+    !FIXME: HB sync patch mult?
+    CALL sync_patch_array(sync_c, patch_2d, u_2d, lacc=.FALSE.)
+    CALL sync_patch_array(sync_c, patch_2d, v_2d, lacc=.FALSE.)
 
     ! hack for test: calc_psy for u_vint, calc_psi_vn for v_vint - accumulated and written out
-    v_vint(:,:) = u_2d(:,:)
-
+    !ICON_OMP PARALLEL
+    CALL copy(u_2d,v_vint,lacc=.false.)
+    !ICON_OMP END PARALLEL
     !---------DEBUG DIAGNOSTICS-------------------------------------------
     idt_src=3  ! output print level (1-5, fix)
     CALL dbg_print('calc_psi_vn: u_2d        ', u_2d        , str_module, idt_src, in_subset=patch_2d%cells%owned)
@@ -2458,12 +2950,9 @@ CONTAINS
 
     INTEGER :: jk
     INTEGER :: maxcondep     !< maximum convective penetration level
-    REAL(wp) :: masked_vertical_density_gradient(n_zlev)
+    REAL(wp) :: masked_vertical_density_gradient
 
     condep = 1
-
-    ! remove dbl_eps, which  is added in the vertical gradient computation
-    masked_vertical_density_gradient = MAX(vertical_density_gradient - dbl_eps,0.0_wp)
 
     !! diagnose maximum convection level
     !! condep = maximum model level penetrated by vertically continous
@@ -2472,7 +2961,9 @@ CONTAINS
     !! as snapshot at the end of the run
    maxcondep=1
     DO jk=2,max_lev
-      IF (masked_vertical_density_gradient(jk) .ne. 0.0_wp) THEN
+      ! remove dbl_eps, which  is added in the vertical gradient computation
+      masked_vertical_density_gradient = MAX(vertical_density_gradient(jk) - dbl_eps,0.0_wp)
+      IF (masked_vertical_density_gradient .ne. 0.0_wp) THEN
         maxcondep = jk
         EXIT
       ENDIF
@@ -2568,7 +3059,7 @@ CONTAINS
     subset => patch_3d%p_patch_2d(1)%cells%owned
 
     IF ( n .EQ. 1) THEN
-
+      !ICON_OMP PARALLEL DO PRIVATE(cell,level,cellStart, cellEnd)
       DO blk = subset%start_block, subset%end_block
         CALL get_index_range(subset, blk, cellStart, cellEnd)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -2577,7 +3068,6 @@ CONTAINS
           delta_ice(cell,blk) = SUM(ice%hi(cell,:,blk)*ice%conc(cell,:,blk))
           delta_snow(cell,blk) = SUM(ice%hs(cell,:,blk)*ice%conc(cell,:,blk))
 
-          !$ACC LOOP SEQ
           DO level = 1,subset%vertical_levels(cell,blk)
             delta_thetao(cell,level,blk) = thetao(cell,level,blk)
             delta_so(cell,level,blk) = so(cell,level,blk)
@@ -2587,13 +3077,13 @@ CONTAINS
         !$ACC END PARALLEL LOOP
       END DO ! blk
       !$ACC WAIT(1)
-
+      !ICON_OMP END PARALLEL DO
     ENDIF
 
     IF ( n .EQ. 2) THEN
 
       dti = 1.0_wp / dtime
-
+      !ICON_OMP PARALLEL DO PRIVATE(cell,level,cellStart, cellEnd,sithk,snthk,dz)
       DO blk = subset%start_block, subset%end_block
         CALL get_index_range(subset, blk, cellStart, cellEnd)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(sithk, snthk, dz) ASYNC(1) IF(lzacc)
@@ -2615,7 +3105,6 @@ CONTAINS
                * ( tmelt - tref )  )                                                      &
                - ( rhosnic * snthk * entmel )) * dti
 
-          !$ACC LOOP SEQ
           DO level = 1,subset%vertical_levels(cell,blk)
 
             IF (vert_cor_type .EQ. 1) THEN
@@ -2637,17 +3126,15 @@ CONTAINS
         !$ACC END PARALLEL LOOP
       END DO ! blk
       !$ACC WAIT(1)
-
+      !ICON_OMP END PARALLEL DO
     ENDIF
-    !$ACC UPDATE HOST(delta_ice, delta_snow, delta_so, delta_thetao) &
-    !$ACC   ASYNC(1) IF(lzacc)
-    !$ACC WAIT(1) IF(lzacc)
 
   END SUBROUTINE diag_heat_salt_tendency
 
   SUBROUTINE calc_heat_content(patch_3d, thickness, ice, tracers, &
        heat_content_liquid_water, heat_content_seaice,            &
-       heat_content_snow, heat_content_total, stretch_c, lacc)
+       heat_content_snow, heat_content_total, &
+       heat_content_300m, heat_content_700m, stretch_c, lacc)
 
     TYPE(t_patch_3d), TARGET, INTENT(in)  :: patch_3d
 
@@ -2657,7 +3144,16 @@ CONTAINS
     REAL(wp), INTENT(INOUT)  :: heat_content_seaice(:,:)
     REAL(wp), INTENT(INOUT)  :: heat_content_snow(:,:)
     REAL(wp), INTENT(INOUT)  :: heat_content_total(:,:)
+    REAL(wp), INTENT(INOUT)  :: heat_content_300m(:,:)
+    REAL(wp), INTENT(INOUT)  :: heat_content_700m(:,:)
     REAL(wp), INTENT(IN), OPTIONAL  :: stretch_c(:,:)
+
+#ifdef _OPENMP
+    REAL(wp), DIMENSION(nproma) ::  hcsi,hcsn,hctt,hct3,hct7
+    REAL(wp), DIMENSION(nproma,SIZE(heat_content_liquid_water,2)) ::  hclw
+    LOGICAL, DIMENSION(nproma,SIZE(heat_content_liquid_water,2)) :: lmsk
+    INTEGER :: li3, li7
+#endif
 
     TYPE(t_sea_ice), INTENT(IN)              :: ice
     TYPE(t_subset_range), POINTER            :: subset
@@ -2668,6 +3164,7 @@ CONTAINS
     REAL(wp) :: rhoicwa, rhosnic, rhosnwa, tfreeze, tmelt, &
          tref, entmel, rocp, sithk, snthk, dz
     LOGICAL  :: lzacc
+
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
@@ -2681,10 +3178,58 @@ CONTAINS
     entmel = rhoi * alf
 
     subset => patch_3d%p_patch_2d(1)%cells%owned
+#ifdef _OPENMP
+    li3 = get_level_index_by_depth(patch_3d, 300.0_wp)
+    li7 = get_level_index_by_depth(patch_3d, 700.0_wp)
+    !ICON_OMP PARALLEL DO PRIVATE(cellStart, cellEnd,hcsi,hcsn,hclw,level,hct3,lmsk)
+    DO blk = subset%start_block, subset%end_block
+      CALL get_index_range(subset, blk, cellStart, cellEnd)
+      lmsk(cellStart:cellEnd,1) = subset%vertical_levels(cellStart:cellEnd,blk) >= 1
+      WHERE(lmsk(cellStart:cellEnd,1))
+        hcsi(cellStart:cellEnd) = SUM(ice%hi(cellStart:cellEnd,:,blk)*ice%conc(cellStart:cellEnd,:,blk),2)
+        hcsn(cellStart:cellEnd) = SUM(ice%hs(cellStart:cellEnd,:,blk)*ice%conc(cellStart:cellEnd,:,blk),2)
+        hclw(cellStart:cellEnd,1) = (tmelt - tref + tracers(cellStart:cellEnd,1,blk,1) ) * rocp * ice%zUnderIce(cellStart:cellEnd,blk)
+      ELSE WHERE
+        hcsi(cellStart:cellEnd) = 0.0_wp
+        hcsn(cellStart:cellEnd) = 0.0_wp
+        hclw(cellStart:cellEnd,1) = 0.0_wp
+      END WHERE
+      hcsi(cellStart:cellEnd) = hcsi(cellStart:cellEnd) * (rhoicwa * rocp * (tfreeze + tmelt - tref) - entmel)
+      hcsn(cellStart:cellEnd) = hcsn(cellStart:cellEnd) * ( rhosnwa * rocp * (tmelt - tref) - rhosnic * entmel)
+      IF (vert_cor_type .EQ. 1) THEN
+        DO level = 2, SIZE(tracers,2)
+          lmsk(cellStart:cellEnd,level) = level .LE. subset%vertical_levels(cellStart:cellEnd,blk)
+          WHERE (lmsk(cellStart:cellEnd,level))
+            hclw(cellStart:cellEnd,level) = (tmelt - tref + tracers(cellStart:cellEnd,level,blk,1) ) * rocp * thickness(cellStart:cellEnd,level,blk)*stretch_c(cellStart:cellEnd,blk)
+          ELSE WHERE
+            hclw(cellStart:cellEnd,level) = 0.0_wp
+          END WHERE
+        END DO
+      ELSE
+        DO level = 2, SIZE(tracers,2)
+          lmsk(cellStart:cellEnd,level) = level .LE. subset%vertical_levels(cellStart:cellEnd,blk)
+          WHERE (lmsk(cellStart:cellEnd,level))
+            hclw(cellStart:cellEnd,level) = (tmelt - tref + tracers(cellStart:cellEnd,level,blk,1) ) * rocp * thickness(cellStart:cellEnd,level,blk)
+          ELSE WHERE
+            hclw(cellStart:cellEnd,level) = 0.0_wp
+          END WHERE
+        END DO
+      END IF
+      hct3(cellStart:cellEnd) = hcsi(cellStart:cellEnd) + hcsn(cellStart:cellEnd)
+      heat_content_total(cellStart:cellEnd,blk) = hct3(cellStart:cellEnd) + SUM(hclw(cellStart:cellEnd,:),2,lmsk(cellStart:cellEnd,:))
+      heat_content_700m(cellStart:cellEnd,blk) = hct3(cellStart:cellEnd) + SUM(hclw(cellStart:cellEnd,:li7),2,lmsk(cellStart:cellEnd,:li7))
+      heat_content_300m(cellStart:cellEnd,blk) = hct3(cellStart:cellEnd) + SUM(hclw(cellStart:cellEnd,:li3),2,lmsk(cellStart:cellEnd,:li3))
+      heat_content_seaice(cellStart:cellEnd,blk) = hcsi(cellStart:cellEnd)
+      heat_content_snow(cellStart:cellEnd,blk) = hcsn(cellStart:cellEnd)
+      heat_content_liquid_water(cellStart:cellEnd,:,blk) = hclw(cellStart:cellEnd,:)
+    END DO
+    !ICON_OMP END PARALLEL DO
+#else
     DO blk = subset%start_block, subset%end_block
       CALL get_index_range(subset, blk, cellStart, cellEnd)
       !$ACC PARALLEL LOOP GANG DEFAULT(PRESENT) PRIVATE(sithk, snthk, dz) ASYNC(1) IF(lzacc) ! 2023-07 psam-DKRZ: Use of GANG VECTOR introduces error here
       DO cell = cellStart, cellEnd
+        IF( subset%vertical_levels(cell,blk) >= 1) THEN
         ! surface:
         ! heat of ice : heat of water equivalent at tfreeze - latent heat of fusion
 
@@ -2710,7 +3255,6 @@ CONTAINS
              * ice%zUnderIce(cell,blk)
 
 
-        !$ACC LOOP SEQ
         DO level=2,subset%vertical_levels(cell,blk)
 
           ! 2023-07 dzo-DKRZ: The following MERGE command does not work as intended with NVIDIA compiler
@@ -2731,21 +3275,27 @@ CONTAINS
         heat_content_total(cell,blk) = heat_content_snow(cell,blk) &
              + heat_content_seaice(cell, blk)                      &
              + SUM(heat_content_liquid_water(cell,1:subset%vertical_levels(cell,blk),blk))
+        ! total heat upper 300m
+        heat_content_300m(cell,blk) = heat_content_snow(cell,blk) &
+             + heat_content_seaice(cell, blk)&
+             + SUM(heat_content_liquid_water(cell,1:MIN(get_level_index_by_depth(patch_3d, 300.0_wp) &
+             ,subset%vertical_levels(cell,blk)),blk))
+        ! total heat upper 700m
+        heat_content_700m(cell,blk) = heat_content_snow(cell,blk) &
+             + heat_content_seaice(cell, blk)                      &
+             + SUM(heat_content_liquid_water(cell,1:MIN(get_level_index_by_depth(patch_3d, 700.0_wp) &
+             ,subset%vertical_levels(cell,blk)),blk))
 
         ! rest of the underwater world
+        END IF ! only ocean values
       END DO ! cell
         !$ACC END PARALLEL LOOP
     END DO !block
     !$ACC WAIT(1)
-    ! 2023-07 psam-DKRZ: The following UPDATE SELF directive is necessary as the updated arrays are required elsewhere
-    ! for CPU-operations. This should not be necessary, I guess, when all subroutines are ported to GPU
-    !$ACC UPDATE HOST(heat_content_liquid_water, heat_content_seaice, heat_content_snow, heat_content_total) &
-    !$ACC   ASYNC(1) IF(lzacc)
-    !$ACC WAIT(1) IF(lzacc)
-
+#endif
   END SUBROUTINE calc_heat_content
 
-  
+
   SUBROUTINE calc_bottom_pressure(patch_3d,ocean_state,bottom_pressure,fslp,density,thickness,sea_surface_height,ice,stretch_c,lacc)
 
     TYPE(t_patch_3d), TARGET, INTENT(IN)  :: patch_3d
@@ -2778,7 +3328,7 @@ CONTAINS
     IF (vert_cor_type .EQ. 0) THEN
 
       ! compute and correct bottom pressure
-      !$OMP PARALLEL DO PRIVATE(cellstart,cellend,blk,cell,level) SCHEDULE(dynamic)
+      !$OMP PARALLEL DO PRIVATE(cellstart,cellend,blk,cell,level) SCHEDULE(GUIDED)
       DO blk = subset%start_block, subset%end_block
         CALL get_index_range(subset, blk, cellStart, cellEnd)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -2808,7 +3358,7 @@ CONTAINS
     IF (vert_cor_type .EQ. 1) THEN
 
       ! compute and correct bottom pressure
-      !$OMP PARALLEL DO PRIVATE(cellstart,cellend,blk,cell,level) SCHEDULE(dynamic)
+      !$OMP PARALLEL DO PRIVATE(cellstart,cellend,blk,cell,level) SCHEDULE(GUIDED)
       DO blk = subset%start_block, subset%end_block
         CALL get_index_range(subset, blk, cellStart, cellEnd)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -2899,6 +3449,7 @@ CONTAINS
     CALL set_acc_host_or_device(lzacc, lacc)
 
     subset => patch_3d%p_patch_2d(1)%cells%owned
+    !ICON OMP PARALLEL DO PRIVATE(cellStart,cellEnd,cell,level) SCHEDULE(GUIDED)
     DO blk = subset%start_block, subset%end_block
       CALL get_index_range(subset, blk, cellStart, cellEnd)
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -2910,7 +3461,6 @@ CONTAINS
           tauyv(cell,blk) = topbc_windstress_v(cell,blk) * V(cell,1,blk)
 
 
-        !$ACC LOOP SEQ
         DO level=1,subset%vertical_levels(cell,blk)
 
 
@@ -2944,49 +3494,93 @@ CONTAINS
       END DO ! cell
       !$ACC END PARALLEL LOOP
     END DO !block
+    !ICON OMP END PARALLEL DO
     !$ACC WAIT(1)
 
   END SUBROUTINE calc_eddydiag
 
+  SUBROUTINE calc_vort_on_cells(patch_3d, ocean_state,lacc) ! by_nils vort_on_cells
+
+    TYPE(t_patch_3D), INTENT(IN) :: patch_3d
+    TYPE(t_hydro_ocean_state), TARGET, INTENT(inout) :: ocean_state
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+
+    TYPE(t_patch), POINTER :: patch_2d
+    TYPE(t_subset_range), POINTER :: all_cells, owned_cells
+    INTEGER :: blockNo, jk, jc, start_index, end_index, max_level
+    INTEGER :: neigbor, vertex_idx, vertex_blk
+
+    LOGICAL  :: lzacc
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    patch_2d => patch_3d%p_patch_2d(1)
+    owned_cells => patch_2D%cells%owned
+    !ICON_OMP_PARALLEL_DO PRIVATE(blockNo,jk,jc,start_index, end_index, max_level, neigbor, vertex_idx, vertex_blk)
+    DO blockNo = owned_cells%start_block, owned_cells%end_block
+      CALL get_index_range(owned_cells, blockNo, start_index,  end_index)
+       max_level = MAXVAL(patch_3d%p_patch_1d(1)%dolic_c(start_index:end_index, blockNo))
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = start_index,  end_index
+        DO jk = 1, max_level
+          ocean_state%p_diag%vort_on_cells(jc,jk,blockNo) = 0.0_wp
+          DO neigbor=1,patch_2D%cells%max_connectivity
+            vertex_blk = patch_2d%cells%vertex_blk(jc,blockNo,neigbor)
+            vertex_idx = patch_2d%cells%vertex_idx(jc,blockNo,neigbor)
+            ocean_state%p_diag%vort_on_cells(jc,jk,blockNo) =  ocean_state%p_diag%vort_on_cells(jc,jk,blockNo) + &
+              & ocean_state%p_diag%vort(vertex_idx,jk,vertex_blk) * patch_3d%wet_c(jc,jk,blockNo)
+          ENDDO
+          ocean_state%p_diag%vort_on_cells(jc,jk,blockNo) = ocean_state%p_diag%vort_on_cells(jc,jk,blockNo) / &
+            & (REAL(patch_2D%cells%max_connectivity, wp))
+        ENDDO
+      ENDDO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
+    ENDDO
+    !ICON_OMP_END_PARALLEL_DO
+  END SUBROUTINE calc_vort_on_cells
+
 
   SUBROUTINE reset_ocean_monitor(monitor)
     TYPE(t_ocean_monitor) :: monitor
-    monitor%volume(:)                     = 0.0_wp
+    !ICON_OMP PARALLEL
+    CALL init(monitor%volume,lacc=.false.)
+    CALL init(monitor%total_salt,lacc=.false.)
+    CALL init(monitor%HeatFlux_ShortWave,lacc=.false.)
+    CALL init(monitor%HeatFlux_LongWave,lacc=.false.)
+    CALL init(monitor%HeatFlux_Sensible,lacc=.false.)
+    CALL init(monitor%HeatFlux_Latent,lacc=.false.)
+    CALL init(monitor%FrshFlux_SnowFall,lacc=.false.)
+    CALL init(monitor%FrshFlux_TotalSalt,lacc=.false.)
+    CALL init(monitor%FrshFlux_TotalOcean,lacc=.false.)
+    CALL init(monitor%FrshFlux_TotalIce,lacc=.false.)
+    CALL init(monitor%FrshFlux_VolumeIce,lacc=.false.)
+    CALL init(monitor%FrshFlux_VolumeTotal,lacc=.false.)
+    CALL init(monitor%HeatFlux_Relax,lacc=.false.)
+    CALL init(monitor%FrshFlux_Relax,lacc=.false.)
+    CALL init(monitor%TempFlux_Relax,lacc=.false.)
+    CALL init(monitor%SaltFlux_Relax,lacc=.false.)
+    CALL init(monitor%ice_framStrait,lacc=.false.)
+    CALL init(monitor%florida_strait,lacc=.false.)
+    CALL init(monitor%gibraltar,lacc=.false.)
+    CALL init(monitor%denmark_strait,lacc=.false.)
+    CALL init(monitor%drake_passage,lacc=.false.)
+    CALL init(monitor%indonesian_throughflow,lacc=.false.)
+    CALL init(monitor%scotland_iceland,lacc=.false.)
+    CALL init(monitor%mozambique,lacc=.false.)
+    CALL init(monitor%framStrait,lacc=.false.)
+    CALL init(monitor%beringStrait,lacc=.false.)
+    CALL init(monitor%barentsOpening,lacc=.false.)
+    CALL init(monitor%agulhas,lacc=.false.)
+    CALL init(monitor%agulhas_long,lacc=.false.)
+    CALL init(monitor%agulhas_longer,lacc=.false.)
 !   monitor%kin_energy(:)                 = 0.0_wp
 !   monitor%pot_energy(:)                 = 0.0_wp
 !   monitor%total_energy(:)               = 0.0_wp
-    monitor%total_salt(:)                 = 0.0_wp
 !   monitor%vorticity(:)                  = 0.0_wp
 !   monitor%enstrophy(:)                  = 0.0_wp
 !   monitor%potential_enstrophy(:)        = 0.0_wp
-    monitor%HeatFlux_ShortWave(:)         = 0.0_wp
-    monitor%HeatFlux_LongWave(:)          = 0.0_wp
-    monitor%HeatFlux_Sensible(:)          = 0.0_wp
-    monitor%HeatFlux_Latent(:)            = 0.0_wp
-    monitor%FrshFlux_SnowFall(:)          = 0.0_wp
-    monitor%FrshFlux_TotalSalt(:)         = 0.0_wp
-    monitor%FrshFlux_TotalOcean(:)        = 0.0_wp
-    monitor%FrshFlux_TotalIce(:)          = 0.0_wp
-    monitor%FrshFlux_VolumeIce(:)         = 0.0_wp
-    monitor%FrshFlux_VolumeTotal(:)       = 0.0_wp
-    monitor%HeatFlux_Relax(:)             = 0.0_wp
-    monitor%FrshFlux_Relax(:)             = 0.0_wp
-    monitor%TempFlux_Relax(:)             = 0.0_wp
-    monitor%SaltFlux_Relax(:)             = 0.0_wp
-    monitor%ice_framStrait(:)             = 0.0_wp
-    monitor%florida_strait(:)             = 0.0_wp
-    monitor%gibraltar(:)                  = 0.0_wp
-    monitor%denmark_strait(:)             = 0.0_wp
-    monitor%drake_passage(:)              = 0.0_wp
-    monitor%indonesian_throughflow(:)     = 0.0_wp
-    monitor%scotland_iceland(:)           = 0.0_wp
-    monitor%mozambique(:)                 = 0.0_wp
-    monitor%framStrait(:)                 = 0.0_wp
-    monitor%beringStrait(:)               = 0.0_wp
-    monitor%barentsOpening(:)             = 0.0_wp
-    monitor%agulhas(:)                    = 0.0_wp
-    monitor%agulhas_long(:)               = 0.0_wp
-    monitor%agulhas_longer(:)             = 0.0_wp
+    !ICON_OMP END PARALLEL
   END SUBROUTINE reset_ocean_monitor
 
   SUBROUTINE calc_condep(patch_3d, condep, zgrad_rho, lacc)
@@ -3010,7 +3604,7 @@ CONTAINS
     patch_2d => patch_3D%p_patch_2d(1)
     owned_cells => patch_2d%cells%owned
 
-    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index) SCHEDULE(dynamic)
+    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index, jc) SCHEDULE(GUIDED)
     DO blockNo = owned_cells%start_block, owned_cells%end_block
       CALL get_index_range(owned_cells, blockNo, start_index, end_index)
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -3038,9 +3632,9 @@ CONTAINS
 
 
     TYPE(t_patch), POINTER                   :: patch_2d
-    TYPE(t_subset_range), POINTER            :: owned_cells
+    TYPE(t_subset_range), POINTER            :: all_cells
 
-#ifdef __LVECTOR__
+#if defined(__LVECTOR__) || defined(_OPENACC)
     REAL(wp) :: sigh(nproma)
     REAL(wp) :: masked_vertical_density_gradient
     REAL(wp) :: delta_h
@@ -3055,30 +3649,32 @@ CONTAINS
 
 
     patch_2d => patch_3D%p_patch_2d(1)
-    owned_cells => patch_2d%cells%owned
+    all_cells => patch_2d%cells%all
 
-#ifndef __LVECTOR__
+#if !defined(__LVECTOR__) && !defined(_OPENACC)
     ! Non-vector variant
 
-    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index) SCHEDULE(dynamic)
-    DO blockNo = owned_cells%start_block, owned_cells%end_block
-      CALL get_index_range(owned_cells, blockNo, start_index, end_index)
+    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index, jc) SCHEDULE(GUIDED)
+    DO blockNo = all_cells%start_block, all_cells%end_block
+      CALL get_index_range(all_cells, blockNo, start_index, end_index)
       ! 2023-08 psam-DKRZ: use of GANG VECTOR here gives runtime error
       !$ACC PARALLEL LOOP VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc =  start_index, end_index
 
-         mld(jc,blockNo) = calc_mixed_layer_depth(zgrad_rho(jc,:,blockNo),&
+        IF( patch_3d%wet_c(jc,1,blockno) /= 0 ) then
+          mld(jc,blockNo) = calc_mixed_layer_depth(zgrad_rho(jc,:,blockNo),&
              sigcrit, &
              min_lev, &
              patch_3d%p_patch_1d(1)%dolic_c(jc,blockNo), &
              patch_3d%p_patch_1d(1)%prism_center_dist_c(jc,:,blockNo), &
              patch_3d%p_patch_1d(1)%zlev_m(min_lev))
-
+        ENDIF
       ENDDO
       !$ACC END PARALLEL LOOP
     ENDDO
     !$ACC WAIT(1)
     !ICON_OMP_END_PARALLEL_DO
+
 
 #else
     ! Vector variant
@@ -3086,9 +3682,9 @@ CONTAINS
     !$ACC DATA CREATE(sigh) IF(lzacc)
 
     !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index, jc, jk, max_lev, &
-    !ICON_OMP   & masked_vertical_density_gradient, delta_h, sigh) SCHEDULE(dynamic)
-    DO blockNo = owned_cells%start_block, owned_cells%end_block
-      CALL get_index_range(owned_cells, blockNo, start_index, end_index)
+    !ICON_OMP   & masked_vertical_density_gradient, delta_h, sigh) SCHEDULE(GUIDED)
+    DO blockNo = all_cells%start_block, all_cells%end_block
+      CALL get_index_range(all_cells, blockNo, start_index, end_index)
 
       ! This diagnostic calculates the mixed layer depth.
       ! It uses the incremental density increase between two
@@ -3100,16 +3696,20 @@ CONTAINS
       ! stabio(k) = insitu density gradient
       ! sigh = remaining density difference
 
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      mld(start_index:end_index,blockNo) = patch_3d%p_patch_1d(1)%zlev_m(min_lev)
-      sigh(start_index:end_index) = sigcrit
-
       max_lev = MAXVAL(patch_3d%p_patch_1d(1)%dolic_c(start_index:end_index,blockNo))
-      !$ACC END KERNELS
+
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = start_index, end_index
+        IF( patch_3d%wet_c(jc,1,blockno) /= 0 ) THEN
+          mld(jc,blockNo) = patch_3d%p_patch_1d(1)%zlev_m(min_lev)
+          sigh(jc) = sigcrit
+        ENDIF
+      END DO
+      !$ACC END PARALLEL LOOP
       !$ACC WAIT(1)
 
-      !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jk = min_lev+1, max_lev
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jc = start_index, end_index
           IF (jk <= patch_3d%p_patch_1d(1)%dolic_c(jc,blockNo)) THEN
             IF (sigh(jc) > 1.e-6_wp) THEN
@@ -3125,24 +3725,98 @@ CONTAINS
             END IF
           END IF
         END DO
+        !$ACC END PARALLEL LOOP
       END DO
-      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
     END DO
-    !$ACC WAIT(1)
     !ICON_OMP_END_PARALLEL_DO
+
 
     !$ACC END DATA
 #endif
   END SUBROUTINE calc_mld
 
+  SUBROUTINE calc_tos_sos(patch_3d, tracers, tos, sos, lacc)
+
+    TYPE(t_patch_3d), TARGET, INTENT(in)     :: patch_3d
+    REAL(wp), POINTER                        :: tracers(:,:,:,:)
+    REAL(wp), INTENT(out)                    :: tos(:,:)
+    REAL(wp), INTENT(out)                    :: sos(:,:)
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+
+
+    TYPE(t_patch), POINTER                   :: patch_2d
+    TYPE(t_subset_range), POINTER            :: owned_cells
+
+    INTEGER  :: blockNo, jc, start_index, end_index
+    LOGICAL  :: lzacc
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    patch_2d => patch_3D%p_patch_2d(1)
+    owned_cells => patch_2d%cells%owned
+
+
+    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index) SCHEDULE(GUIDED)
+    DO blockNo = owned_cells%start_block, owned_cells%end_block
+      CALL get_index_range(owned_cells, blockNo, start_index, end_index)
+      !$ACC PARALLEL LOOP VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc =  start_index, end_index
+
+        tos(jc,blockNo) = tracers(jc,1,blockNo,1) + 273.15_wp
+        sos(jc,blockNo) = tracers(jc,1,blockNo,2)
+
+      ENDDO
+      !$ACC END PARALLEL LOOP
+    ENDDO
+    !$ACC WAIT(1)
+    !ICON_OMP_END_PARALLEL_DO
+
+  END SUBROUTINE calc_tos_sos
+
+  SUBROUTINE calc_sivol_snvol(patch_3d, ice, lacc)
+
+    TYPE(t_patch_3d), TARGET, INTENT(in)     :: patch_3d
+    TYPE(t_sea_ice),          INTENT(inout)  :: ice
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+
+    TYPE(t_patch), POINTER                   :: patch_2d
+    TYPE(t_subset_range), POINTER            :: owned_cells
+
+    INTEGER  :: blockNo, jc, start_index, end_index
+    LOGICAL  :: lzacc
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    patch_2d => patch_3D%p_patch_2d(1)
+    owned_cells => patch_2d%cells%owned
+
+
+    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index) SCHEDULE(GUIDED)
+    DO blockNo = owned_cells%start_block, owned_cells%end_block
+      CALL get_index_range(owned_cells, blockNo, start_index, end_index)
+      !$ACC PARALLEL LOOP VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc =  start_index, end_index
+
+        ice%sivol(jc,:,blockNo) = ice%hi(jc,:,blockNo)*ice%conc(jc,:,blockNo)
+        ice%snvol(jc,:,blockNo) = ice%hs(jc,:,blockNo)*ice%conc(jc,:,blockNo)
+
+      ENDDO
+      !$ACC END PARALLEL LOOP
+    ENDDO
+    !$ACC WAIT(1)
+    !ICON_OMP_END_PARALLEL_DO
+
+  END SUBROUTINE calc_sivol_snvol
   !>
   !! Find level index of layer containing given depth.
   !!
   !! If depth is exactly at layer boundary, take layer above given depth.
   !! Return top layer for zero depth. Use bottom layer for too large depths.
   !!
-  FUNCTION get_level_index_by_depth(patch_3d, depth) RESULT(level_index)
 
+  FUNCTION get_level_index_by_depth(patch_3d, depth) RESULT(level_index)
+    !$ACC ROUTINE SEQ
 
     TYPE(t_patch_3d ),TARGET, INTENT(in)     :: patch_3D
     REAL(dp), INTENT(in) :: depth

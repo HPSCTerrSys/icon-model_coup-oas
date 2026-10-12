@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -63,7 +63,7 @@ MODULE mo_radiation_solar_data
        ! global mean insolation = 340.3 W/m2 rescaled from ssi_amip above
        ! with constant factor of app. 0.3183092
        ! sum of 14 bands is: 433.3371
-       ssi_RCEdiurnOFF(nbndsw) = (/ & 
+       ssi_RCEdiurnOFF(nbndsw) = (/ &
        & 3.803964_wp, 6.413186_wp, 7.44969_wp,  7.032908_wp, 17.63879_wp, &
        & 32.63096_wp, 7.861645_wp, 110.624_wp,  69.16621_wp, 109.3144_wp, &
        & 41.19017_wp, 15.00594_wp,1.009717_wp,  4.195554_wp  /),          &

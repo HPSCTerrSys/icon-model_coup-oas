@@ -1,10 +1,7 @@
-! Contains the implementation of interpolation onto regular grids.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,12 +9,11 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the implementation of interpolation onto regular grids.
+
 #ifdef __xlC__
   @PROCESS smp=noopt
   @PROCESS noopt
-#endif
-#ifdef __PGI
-  !pgi$g opt=1
 #endif
 
   MODULE mo_intp_lonlat
@@ -107,7 +103,7 @@
       INTEGER, ALLOCATABLE  :: tri_idx(:,:,:) ! 2, nproma, nblks_lonlat
 
 #ifdef _OPENMP
-      DOUBLE PRECISION       :: time_s_total, toc
+      REAL(wp)              :: time_s_total, toc
 #endif
 
       ! -----------------------------------------------------------
@@ -132,7 +128,7 @@
               &      STAT=ist )
             IF (ist /= SUCCESS) CALL finish (routine, 'allocation for lon-lat point distribution failed')
 
-            ! for each PE determine lon-lat points 
+            ! for each PE determine lon-lat points
             CALL distribute_lonlat_points(lonlat_grids%list(i)%grid,     &
               &                           gnat, p_patch(jg), tri_idx,   &
               &                           lonlat_grids%list(i)%intp(jg) )
@@ -154,7 +150,7 @@
 #ifdef _OPENMP
               time_s_total = omp_get_wtime()
 #endif
-              
+
               ! --- try to read auxiliary triangulation from file:
               triangulation_read_from_file = try_triangulation_readin(p_patch(jg), tri_global, p_global)
 
@@ -199,8 +195,8 @@
             ! Tentative fix: "lreduced_nestbdry_stencil" controls
             ! only barycentric interpolation.
             !
-            !            IF ((jg > 1) .AND. lreduced_nestbdry_stencil) THEN 
-            IF ((jg > 1) .OR. l_limited_area) THEN 
+            !            IF ((jg > 1) .AND. lreduced_nestbdry_stencil) THEN
+            IF ((jg > 1) .OR. l_limited_area) THEN
               CALL mask_out_boundary( p_patch(jg), lonlat_grids%list(i)%intp(jg) )
             END IF
 
@@ -232,7 +228,7 @@
             ! resize global data structures, after the setup only
             ! local information is needed:
             CALL lonlat_grids%list(i)%intp(jg)%contract()
-            
+
             CALL setup_comm_gather_pattern(n_points,                       &
               (/(my_id, i = 1, nthis_local_pts)/),                         &
               lonlat_grids%list(i)%intp(jg)%global_idx(1:nthis_local_pts), &
@@ -272,7 +268,7 @@
         i_startidx = 1
         i_endidx   = nproma
         IF (test_jb == nblks_lonlat) i_endidx = npromz_lonlat
-        
+
         DO test_jc=i_startidx,i_endidx
           test_coord = ptr_int_lonlat%ll_coord(test_jc,test_jb)
           IF ((ABS(test_coord%lon - query_lon) < ZERO_TOL) .AND.  &
@@ -342,15 +338,15 @@
 !$OMP DO PRIVATE(jb,jc,jec,jj,jtri,i_startidx,i_endidx,cnt,ilv,ibv, &
 !$OMP            ilc_v,ibc_v,ilc_n,ibc_n,jb_lonlat,jc_lonlat)
         DO jb_lonlat = 1,nblks_lonlat
-          
+
           i_startidx = 1
           i_endidx   = nproma
           IF (jb_lonlat == nblks_lonlat) i_endidx = npromz_lonlat
-          
+
           DO jc_lonlat = i_startidx, i_endidx
             jc = tri_idx(1,jc_lonlat, jb_lonlat)
             jb = tri_idx(2,jc_lonlat, jb_lonlat)
-          
+
             cnt = 1
 
             ! get get line and block indices of cell vertices
@@ -411,11 +407,11 @@
       ELSE IF (rbf_dim_c2l == rbf_c2grad_dim) THEN
 
         DO jb_lonlat = 1,nblks_lonlat
-          
+
           i_startidx = 1
           i_endidx   = nproma
           IF (jb_lonlat == nblks_lonlat) i_endidx = npromz_lonlat
-          
+
           DO jc_lonlat = i_startidx, i_endidx
             jc = tri_idx(1,jc_lonlat, jb_lonlat)
             jb = tri_idx(2,jc_lonlat, jb_lonlat)
@@ -882,7 +878,7 @@
       npromz_lonlat = ptr_int_lonlat%npromz_lonlat(nproma)
 
       ! communicate the largest global index of the lateral boundary cells.
-      ! 
+      !
       ! note that this implicitly assumes that the indices of the nest
       ! boundary region are stored at the beginning of the solution
       ! vector in a contiguous fashion.
@@ -1025,9 +1021,9 @@
 
         END IF
 
-      END DO  
+      END DO
       IF (dbg_level > 1)  CALL message(routine, "done.")
-      
+
     END SUBROUTINE mask_out_boundary
 
 
@@ -1039,7 +1035,7 @@
       REAL(gk), INTENT(IN)  :: p1(2), p2(2)
       ! local variables
       REAL(gk) :: val
-      
+
       ! spherical distance:
       val = SIN(p1(2))*SIN(p2(2)) + COS(p1(2))*COS(p2(2))*COS(p1(1)-p2(1))
       dist_p = ACOS( MIN(1._gk, MAX(-1._gk, val)) )
@@ -1131,7 +1127,7 @@
           ! if patch of triangular grid does intersect circle:
           ! recursion and further subdivision:
           CALL flag_ll_points(rotated_pts, s_lon2(icirc), e_lon2(icirc), s_lat2(icirc), e_lat2(icirc), &
-            &                 pts_flags, (recursion_depth+1), max_recursion, gnat, min_radius)          
+            &                 pts_flags, (recursion_depth+1), max_recursion, gnat, min_radius)
         END IF
       END DO
     END SUBROUTINE flag_ll_points
@@ -1470,10 +1466,10 @@
       ! -------------------------------------------------------------------------
 
       SELECT CASE (rbf_scale_mode_ll)
-      CASE (SCALE_MODE_TABLE) 
+      CASE (SCALE_MODE_TABLE)
         rbf_shape_param = rbf_vec_scale_ll(MAX(ptr_patch%id,1))
       CASE (SCALE_MODE_AUTO)
-        ! if no shape parameter has been set: compute an estimate 
+        ! if no shape parameter has been set: compute an estimate
         CALL estimate_rbf_parameter(nblks_lonlat, npromz_lonlat, ptr_patch%edges%center,              &
           &                         ptr_int_lonlat%rbf_vec%idx, ptr_int_lonlat%rbf_vec%blk,           &
           &                         ptr_int_lonlat%rbf_vec%stencil, rbf_vec_dim_c,                    &
@@ -1506,10 +1502,10 @@
       CALL rbf_c2l_index( ptr_patch, tri_idx, ptr_int, ptr_int_lonlat )
 
       SELECT CASE (rbf_scale_mode_ll)
-      CASE (SCALE_MODE_TABLE) 
+      CASE (SCALE_MODE_TABLE)
         rbf_shape_param = rbf_vec_scale_ll(MAX(ptr_patch%id,1))
       CASE (SCALE_MODE_AUTO)
-        ! if no shape parameter has been set: compute an estimate 
+        ! if no shape parameter has been set: compute an estimate
         CALL estimate_rbf_parameter(nblks_lonlat, npromz_lonlat, ptr_patch%cells%center,       &
           &                         ptr_int_lonlat%rbf_c2l%idx, ptr_int_lonlat%rbf_c2l%blk,    &
           &                         ptr_int_lonlat%rbf_c2l%stencil, rbf_dim_c2l,               &

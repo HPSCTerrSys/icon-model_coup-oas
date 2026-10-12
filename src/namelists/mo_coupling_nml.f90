@@ -1,16 +1,15 @@
-! Contains the variables to set up the coupling.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the variables to set up the coupling.
 
 MODULE mo_coupling_nml
 
@@ -28,7 +27,8 @@ MODULE mo_coupling_nml
   USE mo_coupling_config, ONLY: config_coupled_to_ocean, config_coupled_to_waves,    &
     &                           config_coupled_to_hydrodisc, config_coupled_to_atmo, &
     &                           config_coupled_to_output, config_coupled_to_aero,    &
-    &                           config_coupled_to_o3
+    &                           config_coupled_to_o3, config_coupled_to_era5,        &
+    &                           config_coupled_to_cleo
   USE mo_coupling_utils,  ONLY: cpl_config_file_exists
   USE mo_master_control,  ONLY: get_my_process_type, get_my_process_name,           &
     &                           atmo_process, ocean_process, ps_radiation_process,  &
@@ -60,10 +60,12 @@ CONTAINS
     LOGICAL :: coupled_to_ocean, can_couple_to_ocean, &
                coupled_to_waves, can_couple_to_waves, &
                coupled_to_atmo, can_couple_to_atmo, &
+               coupled_to_era5, can_couple_to_era5, &
                coupled_to_hydrodisc, can_couple_to_hydrodisc, &
                coupled_to_output, can_couple_to_output, &
                coupled_to_aero, can_couple_to_aero, &
-               coupled_to_o3, can_couple_to_o3
+               coupled_to_o3, can_couple_to_o3, &
+               coupled_to_cleo, can_couple_to_cleo
 
     LOGICAL :: coupled_mode
     INTEGER :: istat
@@ -73,28 +75,33 @@ CONTAINS
     CHARACTER(len=max_char_length), PARAMETER :: &
          &   routine = 'mo_coupling_nml:read_coupling_namelist'
 
-    NAMELIST /coupling_mode_nml/ coupled_to_ocean, coupled_to_waves, coupled_to_atmo, &
-         coupled_to_hydrodisc, coupled_to_output, coupled_to_aero, coupled_to_o3
+    NAMELIST /coupling_mode_nml/ coupled_to_ocean, coupled_to_waves, &
+         coupled_to_atmo, coupled_to_hydrodisc, coupled_to_output, &
+         coupled_to_aero, coupled_to_o3, coupled_to_era5, coupled_to_cleo
 
     !--------------------------------------------------------------------
     ! 1. Set default values
     !--------------------------------------------------------------------
 
-    coupled_to_ocean     = .FALSE.
-    coupled_to_waves     = .FALSE.
-    coupled_to_atmo      = .FALSE.
-    coupled_to_hydrodisc = .FALSE.
-    coupled_to_output    = .FALSE.
-    coupled_to_aero      = .FALSE.
-    coupled_to_o3        = .FALSE.
+    coupled_to_ocean        = .FALSE.
+    coupled_to_waves        = .FALSE.
+    coupled_to_atmo         = .FALSE.
+    coupled_to_hydrodisc    = .FALSE.
+    coupled_to_output       = .FALSE.
+    coupled_to_aero         = .FALSE.
+    coupled_to_o3           = .FALSE.
+    coupled_to_era5         = .FALSE.
+    coupled_to_cleo         = .FALSE.
 
-    can_couple_to_ocean     = .FALSE.
-    can_couple_to_waves     = .FALSE.
-    can_couple_to_atmo      = .FALSE.
-    can_couple_to_hydrodisc = .FALSE.
-    can_couple_to_output    = .FALSE.
-    can_couple_to_aero      = .FALSE.
-    can_couple_to_o3        = .FALSE.
+    can_couple_to_ocean        = .FALSE.
+    can_couple_to_waves        = .FALSE.
+    can_couple_to_atmo         = .FALSE.
+    can_couple_to_hydrodisc    = .FALSE.
+    can_couple_to_output       = .FALSE.
+    can_couple_to_aero         = .FALSE.
+    can_couple_to_o3           = .FALSE.
+    can_couple_to_era5         = .FALSE.
+    can_couple_to_cleo         = .FALSE.
 
     !--------------------------------------------------------------------
     ! 2. Read user's (new) specifications (done so far by all MPI processes)
@@ -113,21 +120,25 @@ CONTAINS
 
 #endif
 
-    config_coupled_to_ocean     = coupled_to_ocean
-    config_coupled_to_waves     = coupled_to_waves
-    config_coupled_to_atmo      = coupled_to_atmo
-    config_coupled_to_hydrodisc = coupled_to_hydrodisc
-    config_coupled_to_output    = coupled_to_output
-    config_coupled_to_aero      = coupled_to_aero
-    config_coupled_to_o3        = coupled_to_o3
+    config_coupled_to_ocean        = coupled_to_ocean
+    config_coupled_to_waves        = coupled_to_waves
+    config_coupled_to_atmo         = coupled_to_atmo
+    config_coupled_to_hydrodisc    = coupled_to_hydrodisc
+    config_coupled_to_output       = coupled_to_output
+    config_coupled_to_aero         = coupled_to_aero
+    config_coupled_to_o3           = coupled_to_o3
+    config_coupled_to_era5         = coupled_to_era5
+    config_coupled_to_cleo         = coupled_to_cleo
 
     coupled_mode = ANY((/coupled_to_ocean,     &
                          coupled_to_waves,     &
+                         coupled_to_era5,      &
                          coupled_to_atmo,      &
                          coupled_to_hydrodisc, &
                          coupled_to_output,    &
                          coupled_to_aero,      &
-                         coupled_to_o3/))
+                         coupled_to_o3,        &
+                         coupled_to_cleo/))
 
     !----------------------------------------------------
     ! 3. Sanity checks
@@ -153,14 +164,18 @@ CONTAINS
         can_couple_to_output = .TRUE.
         can_couple_to_aero = .TRUE.
         can_couple_to_o3 = .TRUE.
+        can_couple_to_cleo = .TRUE.
       CASE (ocean_process)
         can_couple_to_atmo = .TRUE.
+        can_couple_to_era5 = .TRUE.
+        can_couple_to_waves = .TRUE.
         can_couple_to_hydrodisc = .TRUE.
         can_couple_to_output = .TRUE.
       CASE (hamocc_process)
         can_couple_to_atmo = .TRUE.
       CASE (wave_process)
         can_couple_to_atmo = .TRUE.
+        can_couple_to_ocean = .TRUE.
       CASE (jsbach_process)
         can_couple_to_ocean = .TRUE.
       CASE (testbed_process)
@@ -180,6 +195,12 @@ CONTAINS
       CALL finish( &
         routine, 'Component ' // TRIM(get_my_process_name()) // &
         ' does not support coupling to waves')
+    ENDIF
+
+    IF (coupled_to_era5 .AND. .NOT. can_couple_to_era5) THEN
+      CALL finish( &
+        routine, 'Component ' // TRIM(get_my_process_name()) // &
+        ' does not support coupling to era5')
     ENDIF
 
     IF (coupled_to_atmo .AND. .NOT. can_couple_to_atmo) THEN
@@ -210,6 +231,12 @@ CONTAINS
       CALL finish( &
         routine, 'Component ' // TRIM(get_my_process_name()) // &
         ' does not support coupling to o3')
+    ENDIF
+
+    IF (coupled_to_cleo .AND. .NOT. can_couple_to_cleo) THEN
+      CALL finish( &
+        routine, 'Component ' // TRIM(get_my_process_name()) // &
+        ' does not support coupling to CLEO')
     ENDIF
 
     IF (coupled_mode .AND. .NOT. cpl_config_file_exists()) THEN

@@ -1,11 +1,7 @@
-! Contains the implementation of the mathematical operators for the ocean.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,14 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the implementation of the mathematical operators for the ocean.
+
 MODULE mo_ocean_testbed_coriolis
   !-------------------------------------------------------------------------
   USE mo_kind,               ONLY: wp
   USE mo_parallel_config,    ONLY: nproma
   USE mo_exception,          ONLY: message, message_text, finish
   USE mo_run_config,         ONLY: test_mode
-  USE mo_math_constants
-  USE mo_physical_constants
   USE mo_impl_constants,     ONLY: boundary, sea, sea_boundary !,sea,land, land_boundary, sea, max_char_length, &
   USE mo_model_domain,       ONLY: t_patch, t_patch_3D
   USE mo_ext_data_types,     ONLY: t_external_data
@@ -47,7 +43,7 @@ MODULE mo_ocean_testbed_coriolis
 
   PRIVATE
 
-  CHARACTER(len=12)           :: str_module    = 'test_coriolis  '  
+  CHARACTER(len=12)           :: str_module    = 'test_coriolis  '
   INTEGER                     :: idt_src       = 1               ! Level of detail for 1 line debug
 
 
@@ -73,14 +69,14 @@ CONTAINS
     patch_2d   => patch_3d%p_patch_2d(1)
     vn      => ocean_state%p_prog(nold(1))%vn
     vn_dual => ocean_state%p_diag%p_vn_dual
-    
+
     vn = 1.0_wp
     vort_v  = 0.0_wp
-    patch_2d%verts%f_v = 1.0_wp    
-    
+    patch_2d%verts%f_v = 1.0_wp
+
     ! vn_dual = 0.0_wp
     ! CALL rot_vertex_ocean_3d( patch_3d, vn, p_vn_dual, operators_coefficients, vort_v)
-    
+
     write(0,*) "-------------- original coriolis budget -----------------------"
     CALL testbed_nonlinear_coriolis_3d(patch_3d, vn, vort_v, &
        & operators_coefficients, vort_flux)
@@ -269,11 +265,11 @@ CONTAINS
                   & *operators_coefficients%edge2edge_viavert_coeff(je,level,blockNo,ictr)*(thick_edge/thick_vert)
               END DO
             END DO
-            
+
           ELSE
             vort_flux(je,level,blockNo)= 0.0_wp
           ENDIF
-          
+
         END DO edge_idx_loop
       END DO level_loop
     END DO ! blockNo = edges_inDomain%start_blockold, edges_inDomain%end_block
@@ -288,11 +284,11 @@ CONTAINS
     TYPE(t_patch_3d ),TARGET,INTENT(in)        :: patch_3d
     REAL(wp), INTENT(inout)                    :: vn(nproma,n_zlev,patch_3d%p_patch_2d(1)%nblks_e)
     REAL(wp), INTENT(inout)                    :: vort_flux(nproma,n_zlev,patch_3d%p_patch_2d(1)%nblks_e)
-    
+
     REAL(wp) :: vort_flux_budget_perlevel(n_zlev), volume(n_zlev)
     REAL(wp) :: vort_flux_budget_perlevel_pos(n_zlev),vort_flux_budget_perlevel_neg(n_zlev)
     REAL(wp) :: in_product
-    
+
     INTEGER :: startLevel, endLevel     ! vertical start and end level
     INTEGER :: je, level, blockNo
     INTEGER :: il_e, ib_e
@@ -319,7 +315,7 @@ CONTAINS
         DO level = startLevel, patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)
 
           in_product = vort_flux(je,level,blockNo) * vn(je,level,blockNo)
-          
+
           vort_flux_budget_perlevel(level)=vort_flux_budget_perlevel(level)&
             & +in_product &
             & *patch_2D%edges%primal_edge_length(je,blockNo)*patch_2D%edges%dual_edge_length(je,blockNo)&
@@ -336,10 +332,10 @@ CONTAINS
               & * patch_2D%edges%primal_edge_length(je,blockNo)*patch_2D%edges%dual_edge_length(je,blockNo)&
               & * patch_3D%p_patch_1d(1)%prism_thick_e(je,level,blockNo)
           ENDIF
-          
+
           volume(level)=volume(level)+patch_2D%edges%primal_edge_length(je,blockNo)*patch_2D%edges%dual_edge_length(je,blockNo)&
             & *patch_3D%p_patch_1d(1)%prism_thick_e(je,level,blockNo)
-          
+
        END DO
       END DO
     END DO ! blockNo = edges_inDomain%start_blockold, edges_inDomain%end_block
@@ -356,4 +352,3 @@ CONTAINS
 
 
 END MODULE mo_ocean_testbed_coriolis
-

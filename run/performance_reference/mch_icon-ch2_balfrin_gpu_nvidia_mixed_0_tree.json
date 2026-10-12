@@ -16,6 +16,15 @@
           ],
           "children": [
             {
+              "name": "gpu_mem_use",
+              "ancestry": [
+                "root",
+                "total",
+                "integrate_nh"
+              ],
+              "children": []
+            },
+            {
               "name": "nh_solve",
               "ancestry": [
                 "root",
@@ -160,28 +169,16 @@
                   ]
                 }
               ]
-            },
-            {
-              "name": "nesting",
-              "ancestry": [
-                "root",
-                "total",
-                "integrate_nh"
-              ],
-              "children": [
-                {
-                  "name": "nesting.bdy_interp",
-                  "ancestry": [
-                    "root",
-                    "total",
-                    "integrate_nh",
-                    "nesting"
-                  ],
-                  "children": []
-                }
-              ]
             }
           ]
+        },
+        {
+          "name": "action",
+          "ancestry": [
+            "root",
+            "total"
+          ],
+          "children": []
         }
       ]
     },
@@ -200,6 +197,13 @@
           "children": []
         }
       ]
+    },
+    {
+      "name": "acc_data_copies",
+      "ancestry": [
+        "root"
+      ],
+      "children": []
     },
     {
       "name": "global_sum",
@@ -481,6 +485,13 @@
           "children": []
         }
       ]
+    },
+    {
+      "name": "optional_diagnostics_atmosphere",
+      "ancestry": [
+        "root"
+      ],
+      "children": []
     }
   ]
 }

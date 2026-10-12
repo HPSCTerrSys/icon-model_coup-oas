@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -36,12 +36,12 @@ begin
  exp2       = "exp12"       ;control experiment for comparison
  Resolution1= "R2B04L31"
  Model      = "ICOHDC"      ;ICONAM or ICOHDC
- Model1     = "ICOHAM: " + exp1 
+ Model1     = "ICOHAM: " + exp1
           ; +      "~C~" \
           ; + " diffusion + convection + cloud      ~C~" \
           ; + " microphysics + new satad~C~" \
           ; + " radiation"
- Model2     = "ICOHAM: " + exp1 + " - " + exp2 
+ Model2     = "ICOHAM: " + exp1 + " - " + exp2
           ; + "~C~" \
           ; + " diffusion + convection + cloud                ~C~" \
           ; + " microphysics + new satad          ~C~" \
@@ -56,7 +56,7 @@ begin
  FileName   = testcase+"_"+Resolution1+"_"+day+".nc"
  Diro       = Diri+"plots/"
  PlotFile   = Diro+testcase+"."+Resolution1+"."+exp1+"-"+exp2+".maps"
- result     = systemfunc("mkdir -p "+Diro) 
+ result     = systemfunc("mkdir -p "+Diro)
 
 
 ;---------------------------------------------------------------
@@ -65,15 +65,15 @@ begin
 
  File1 = addfile(Diri +FileName, "r" )
  File2 = addfile(Diri2+FileName, "r" )
- 
- rad2deg = 45./atan(1.)        ; radians to degrees 
+
+ rad2deg = 45./atan(1.)        ; radians to degrees
 ;coordinates of global coarse grid
  x = File1->clon *rad2deg      ; cell center, lon
  y = File1->clat *rad2deg      ; cell center, lat
-;coordinates of refined grid  
+;coordinates of refined grid
 ;x_rf = File2->clon *rad2deg   ; cell center, lon
 ;y_rf = File2->clat *rad2deg   ; cell center, lat
- 
+
  LeftString   = Resolution1
  RightString  = testcase+"~C~"+Resolution1
  FontHeight   = 0.02
@@ -93,21 +93,21 @@ begin
 ;ResC@mpPerimOn            = False        ; turn off box around plot
  ResC@mpCenterLonF         = 180.         ; choose center lon
 ;ResC@mpCenterLatF         = 20.          ; choose center lat
- ResC@mpLimitMode          = "LatLon"     ; required 
+ ResC@mpLimitMode          = "LatLon"     ; required
  ResC@mpFillOn             = False
 ;ResC@mpCenterLonF         = 180.
  ResC@mpMinLatF            = -90.
  ResC@mpMaxLatF            = 90.
 ;ResC@mpGreatCircleLinesOn = True
 
-;ResC@gsnPolar             = "NH"  
+;ResC@gsnPolar             = "NH"
  ResC@gsnDraw              = False
  ResC@gsnFrame             = False
  ResC@gsnMaximize          = False
  ResC@gsnSpreadColors      = True
  ResC@gsnStringFontHeightF = FontHeight*0.8
- ResC@gsnLeftString        = LeftString 
- ResC@gsnRightString       = RightString  
+ ResC@gsnLeftString        = LeftString
+ ResC@gsnRightString       = RightString
  ResC@cnFillOn             = True
  ResC@cnLinesOn            = False
  ResC@cnInfoLabelOn        = False
@@ -118,20 +118,20 @@ begin
  ResC@sfYArray             = y  ; mesh will be created internally.
 
  ResC@tiMainFont           = 4
- ResC@tiMainFontHeightF    = FontHeight   
+ ResC@tiMainFontHeightF    = FontHeight
  ResC@tiMainFontThicknessF = 4
 ;ResC@tiMainOffsetYF       = 0.02
  ResC@tiXAxisFontHeightF   = 0.015;FontHeight
  ResC@tiXAxisOffsetYF      = 0.01
-   
+
  ResC@pmLabelBarHeightF        = 0.07
  ResC@pmLabelBarWidthF         = 0.7
  ResC@pmLabelBarOrthogonalPosF = 0.1
- ResC@lbLabelBarOn             = True 
+ ResC@lbLabelBarOn             = True
  ResC@lbLabelAutoStride        = True
  ResC@lbTitlePosition          = "Bottom"
  ResC@lbTitleFontHeightF       = 0.015
- 
+
  ResP                            = True
  ResP@gsnMaximize                = True
    ;ResP@gsnPaperMargin             = 0.2
@@ -175,7 +175,7 @@ begin
                  "V-wind (ms~S~-1~N~)"        , \
                  "OMEGA (Pas~S~-1~N~)"         /)
 ;Levels   = (/80, 69, 52, 38, 11/)  ; 1100m and 10100m on 60 levels
- Levels   = (/30,20,10,5/)  
+ Levels   = (/30,20,10,5/)
  greyscale = (/"white" ,"black" ,"gray100","gray95","gray90","gray85","gray80","gray75","gray70", \
                "gray65","gray60","gray55" ,"gray50","gray45","gray40","gray35","gray30","gray25","gray20","gray15"/)
 
@@ -200,13 +200,13 @@ begin
        height  = hyam                         ; full levels (assuming orography is 0)
      end if
    end if
- 
+
    print("Varname="+VarNames(i)+"   Level="+Levels(k)+"   Height="+height(Levels(k)-1))
    var  = File1->$VarNames(i)$(timestep,Levels(k)-1,:)         ; dims: (time,lev,cell)
    var2 = File2->$VarNames(i)$(timestep,Levels(k)-1,:)         ; dims: (time,lev,cell)
   ;printVarSummary(var)
 
-   if (VarNames(i).eq."T") then  
+   if (VarNames(i).eq."T") then
      scale      = 1.
      colormap   = "rainbow"
      varMin     = (/ 220./)
@@ -220,7 +220,7 @@ begin
      varMin     = (/  10./)
      varMax     = (/ 100./)
      varInt     = (/  10./)
-   end if 
+   end if
 
    if ( VarNames(i) .eq."Qv") then
      scale      = 1000.0
@@ -229,7 +229,7 @@ begin
      varMin     = (/  2./)
      varMax     = (/ 22./)
      varInt     = (/  2./)
-   end if 
+   end if
 
    if ( VarNames(i) .eq."Qw") then
      scale      = 1000.0
@@ -288,7 +288,7 @@ begin
    end if
 
    if (VarNames(i) .eq."DIV") then
-     scale      = 1.e3 * 3.6 
+     scale      = 1.e3 * 3.6
      colormap   = "ViBlGrWhYeOrRe"
      varMin     = (/-0.2/)
      varMax     = (/ 0.2/)
@@ -336,7 +336,7 @@ begin
      varInt     = (/ 0.005/)
      ResS       = ResC
      symMinMaxPlt (var,20,False,ResS)
-   end if 
+   end if
 
    var@long_name=VarNameLong(i)
   ;var@units    = VarUnit(i)
@@ -354,8 +354,8 @@ begin
    TitleString = var@long_name + "  [L" + Levels(k) + " = " + height(Levels(k)-1) + "m]"
 
    ResC@cnMinLevelValF  = varMin
-   ResC@cnMaxLevelValF  = varMax 
-   ResC@cnLevelSpacingF = varInt 
+   ResC@cnMaxLevelValF  = varMax
+   ResC@cnLevelSpacingF = varInt
    ResC@gsnLeftString   = dt_forecast/24.0 + " days"
    ResC@tiMainString    = TitleString
   ;ResC@lbTitleString   = var@long_name+" in "+var@units
@@ -370,11 +370,11 @@ begin
    plot(0) = gsn_csm_contour_map(wks,var,ResS)
    gsn_panel (wks, plot(0), (/1,1/), Res1)
 
-   gsn_define_colormap(wks,"ViBlGrWhYeOrRe") 
+   gsn_define_colormap(wks,"ViBlGrWhYeOrRe")
    ResS@tiXAxisString   = "Min "+min(vardiff)+"   Mean "+avg(vardiff)+"   Maximum "+max(vardiff)
    ResS@gsnCenterString = Model2
    symMinMaxPlt (vardiff,20,False,ResS)
-   plot(1) = gsn_csm_contour_map(wks,vardiff,ResS) 
+   plot(1) = gsn_csm_contour_map(wks,vardiff,ResS)
    gsn_panel (wks, plot(1), (/1,1/), Res2)
 
    frame(wks)
@@ -411,7 +411,7 @@ begin
    var2 = File2->$VarNames2D(i)$(timestep,:)   ; dims: (time,cell)
 
    if (VarNames2D(i) .eq."PS") then
-     scale      = 1.e-2    
+     scale      = 1.e-2
      var@units  = "hPa"
      colormap   = "ViBlGrWhYeOrRe"
      varMin     = (/ 940./)
@@ -530,7 +530,7 @@ begin
    vardiff= var-var2
 
    ResC@cnMinLevelValF  = varMin
-   ResC@cnMaxLevelValF  = varMax 
+   ResC@cnMaxLevelValF  = varMax
    ResC@cnLevelSpacingF = varInt
    ResC@tiMainString    = var@long_name+" ["+var@units+"]"
   ;ResC@lbTitleString   = var@long_name+" in "+var@units
@@ -544,8 +544,8 @@ begin
    ResS@gsnCenterString = Model1
    plot(0) = gsn_csm_contour_map(wks,var,ResS)
    gsn_panel (wks, plot(0), (/1,1/), Res1)
- 
-   gsn_define_colormap(wks,"ViBlGrWhYeOrRe") 
+
+   gsn_define_colormap(wks,"ViBlGrWhYeOrRe")
    ResS@tiXAxisString   = "Min "+min(vardiff)+"   Mean "+avg(vardiff)+"   Maximum "+max(vardiff)
    ResS@gsnCenterString = Model2
    symMinMaxPlt (vardiff,20,False,ResS)

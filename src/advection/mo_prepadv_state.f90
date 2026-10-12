@@ -1,19 +1,18 @@
-! Construction of a data object which is used to store mass fluxes
-! and velocities that are used to drive the tracer transport schemes.
-! In contrast to the mass fluxes in the dynamical core, these mass fluxes
-! are averaged over the dynamics substeps.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Construction of a data object which is used to store mass fluxes
+! and velocities that are used to drive the tracer transport schemes.
+! In contrast to the mass fluxes in the dynamical core, these mass fluxes
+! are averaged over the dynamics substeps.
 
 MODULE mo_prepadv_state
 
@@ -71,7 +70,7 @@ CONTAINS
 
 
     ! Allocate pointer arrays prep_adv, as well as the corresponding list arrays.
-    !   
+    !
     ALLOCATE(prep_adv(n_dom), prep_adv_list(n_dom),STAT=ist)
     IF(ist/=SUCCESS)THEN
       CALL finish (TRIM(routine), 'allocation of prep_adv array and list failed')
@@ -148,7 +147,7 @@ CONTAINS
 
     CHARACTER(*), PARAMETER :: routine = 'mo_prepadv_state:new_prep_adv_list'
 
-    CHARACTER(LEN=2) :: ctrnam
+    CHARACTER(LEN=4) :: ctrnam
     CHARACTER(LEN=vname_len+LEN(ctrnam)) :: tracer_name
     INTEGER :: tlen
     INTEGER :: jt
@@ -164,7 +163,7 @@ CONTAINS
     nlevp1 = p_patch%nlevp1
 
     ibits        = DATATYPE_PACK16   ! "entropy" of horizontal slice
-    datatype_flt = DATATYPE_FLT32 
+    datatype_flt = DATATYPE_FLT32
 
     shape3d_e     = (/nproma, nlev          , nblks_e /)
     shape3d_chalf = (/nproma, nlevp1        , nblks_c /)
@@ -249,8 +248,8 @@ CONTAINS
 
     ALLOCATE(prep_adv%q_int_ptr(ntracer))
     DO jt =1,ntracer
-      WRITE(ctrnam,'(I2)') jt
-      tracer_name = 'q_int'//ctrnam(1+MERGE(1,0,jt<=9):)
+      WRITE(ctrnam,'(I4.4)') jt
+      tracer_name = 'q_int'//ctrnam
       tlen = LEN_TRIM(tracer_name)
       CALL add_ref( prep_adv_list, 'q_int',                                       &
                   & tracer_name(1:tlen), prep_adv%q_int_ptr(jt)%p_2d,             &
@@ -276,8 +275,8 @@ CONTAINS
 
     ALLOCATE(prep_adv%q_ubc_ptr(ntracer))
     DO jt =1,ntracer
-      WRITE(ctrnam,'(I2)') jt
-      tracer_name = 'q_ubc'//ctrnam(1+MERGE(1,0,jt<=9):)
+       WRITE(ctrnam,'(I4.4)') jt
+      tracer_name = 'q_ubc'//ctrnam
       tlen = LEN_TRIM(tracer_name)
       CALL add_ref( prep_adv_list, 'q_ubc',                                       &
                   & tracer_name(1:tlen), prep_adv%q_ubc_ptr(jt)%p_2d,             &
@@ -292,4 +291,3 @@ CONTAINS
 
 
 END MODULE mo_prepadv_state
-

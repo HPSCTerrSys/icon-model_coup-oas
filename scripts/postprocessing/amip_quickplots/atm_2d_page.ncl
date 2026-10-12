@@ -1,22 +1,22 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
 ; SPDX-License-Identifier: BSD-3-Clause
 ; ------------------------------------------
 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl" 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl" 
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 
 
 undef("define_draw_strings")
  procedure define_draw_strings (Code,cArea,comment,wks,plot)
- 
+
 ;************************************************
 ;  Define min max mean
 ;  Draw text on plot using NDC coordinates.
@@ -40,7 +40,7 @@ begin
   txres                  =  True                 ; text mods desired
   txres@txFontHeightF    =  0.014                 ;-- smaller font
   txid = gsn_create_text(wks, statV, txres)
-  
+
   amres                  =  True
   amres@amParallelPosF   =  0.0                  ;-- center position
   amres@amOrthogonalPosF =  0.7                  ;-- move downward
@@ -48,7 +48,7 @@ begin
   annoid = gsn_add_annotation(plot, txid, amres)
 
 end
-;***end procedure 
+;***end procedure
 
 ;---------------------------------------
 ;-- function attach_labelbar
@@ -78,7 +78,7 @@ begin
 
   return(map)
 end
-;***end procedure 
+;***end procedure
 undef("fast_cell")
  function  fast_cell  (wks,var,x,y,cArea,vlon,vlat,cnres_in,missColor,\
                         mainTitle,subTitle,comment )
@@ -117,11 +117,11 @@ begin
   res@sfYArray             =  y            ;-- transform y to mesh scalar field
   res@sfXCellBounds        =  vlon         ;-- needed if cnFillMode= "CellFill"
   res@sfYCellBounds        =  vlat         ;-- needed if cnFillMod = "CellFill"
-  
+
   res@lbLabelBarOn         =  False        ;-- don't draw a labelbar yet
 
   res@mpFillOn             =  True         ;?-- fill map grey
-  res@mpOutlineOn          =  True 
+  res@mpOutlineOn          =  True
   res@mpLandFillColor      =  18
 
   res@mpMinLonF            =  lonMin         ;-- sub-region minimum longitude
@@ -129,15 +129,15 @@ begin
   res@mpMinLatF            =  latMin         ;-- sub-region minimum latitude
   res@mpMaxLatF            =  latMax         ;-- sub-region maximum latitude
   res@mpGreatCircleLinesOn =  False          ;-- important: v6.2.0 False !!
-  res@gsnSpreadColors      =  False  
-    
+  res@gsnSpreadColors      =  False
+
   res@tiMainString         =  mainTitle
   res@gsnCenterString      =  subTitle
-  res@gsnLeftString        = " " 
-  res@gsnRightString       = " " 
+  res@gsnLeftString        = " "
+  res@gsnRightString       = " "
 
 
-;***create the contour plot, but don't draw it. 
+;***create the contour plot, but don't draw it.
 ;***We need it to get the colors of the data values
   contour_object = gsn_csm_contour_map(wks,var,res)
 
@@ -153,7 +153,7 @@ begin
   nlevels = dimsizes(levels)        ;-- number of levels
 
 ;***clear plot, but keep all the information
-  contour_object = setColorContourClear(contour_object,min(var),max(var)) 
+  contour_object = setColorContourClear(contour_object,min(var),max(var))
 print("min: "+min(var)+" max: "+max(var))
 
 ;***attach a labelbar to the plot
@@ -180,7 +180,7 @@ print("min: "+min(var)+" max: "+max(var))
 ;***set colors for all cells in between var_min and var_max
   do i = 1, dimsizes(levels) - 1
 ;    get the indices of 'middle' values
-     vind := ind(var .ge. levels(i-1) .and. var .lt. levels(i))  
+     vind := ind(var .ge. levels(i-1) .and. var .lt. levels(i))
      if (.not. all(ismissing(vind))) then
         gscolors(vind) = colors(i)                  ;-- choose the colors
         ntri_calc = ntri_calc + dimsizes(vind)      ;-- number of triangles
@@ -209,7 +209,7 @@ print("min: "+min(var)+" max: "+max(var))
   pres@gsColors        = gscolors       ; set colors for polygons
   pres@gsSegments      = ispan(0,dimsizes(var) * 3,3)  ; assign segments array
 ;***draw all triangles
-  polygon = gsn_add_polygon(wks,contour_object,ndtooned(vlon),ndtooned(vlat),pres)  
+  polygon = gsn_add_polygon(wks,contour_object,ndtooned(vlon),ndtooned(vlat),pres)
 
 ;-- define attribute polygon to hold the polygon ids
   contour_object@polygon = polygon
@@ -242,8 +242,8 @@ begin
 
     res@tiMainString         = mainTitle
     res@gsnCenterString      = subTitle
-    res@gsnLeftString        = " " 
-    res@gsnRightString       = " " 
+    res@gsnLeftString        = " "
+    res@gsnRightString       = " "
 
     res@mpCenterLonF         = 0         ; center of map
     res@gsnSpreadColors      = False     ; use full range of colors
@@ -261,7 +261,7 @@ begin
   return(contour_object)
 
 end
-;***end function 
+;***end function
 
 ;************************************************
 ; main
@@ -287,15 +287,15 @@ begin
    pltType = "pdf"                        ; x11, eps, ps, pdf, png
    pltPath = workdir
    pltName = pltPath+"/"+run+"_atm_2d_"+typ+"_map"        ; plot name
-   wks     = gsn_open_wks(pltType, pltName) 
+   wks     = gsn_open_wks(pltType, pltName)
 ;***plot array for panel
    listplots = new(12,graphic)
    noPlot=-1  ;number of listplots
 ;***define colors
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map 
-    i = NhlNewColor(wks,0.6,0.6,0.6)               
-    i = NhlNewColor(wks,0.4,0.4,0.4)  
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map
+    i = NhlNewColor(wks,0.6,0.6,0.6)
+    i = NhlNewColor(wks,0.4,0.4,0.4)
     missColor = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
 
 ;************************************************
@@ -313,7 +313,7 @@ begin
   cArea = GridInfoFile->cell_area   ; area of grid cell
 
 ; note: clon and clat are longitude and latitude of triangle centers.
-;       Locations of the cell corners are given by 
+;       Locations of the cell corners are given by
 ;       clon_vertices and clat_vertices in the nc file.
 
 
@@ -339,16 +339,16 @@ begin
     mainTitle = "Zonal wind stress [mN/m~S~2~N~] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code tauu
-    File       = addfile (fili , "r") 
+    File       = addfile (fili , "r")
     var     = File->$Cvar$(time|0,ncells|:)  ; dims: (time,ncells)
     print("ploted: "+mainTitle)
 
@@ -366,7 +366,7 @@ if (isfilepresent(fili)) then
  if (fillKey.eq."cont") then
      plot0 = plot_cont ( wks,var,x,y,cArea,res,\
                  mainTitle,subTitle,comment )
- else 
+ else
     plot0 = fast_cell (  wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment)
  end if
@@ -387,16 +387,16 @@ end if
     mainTitle = "Zonal wind stress [mN/m~S~2~N~] "+typ
     subTitle  =  run+meantime+" - ERAinterim"+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code tauu
-    File       = addfile (fili , "r") 
+    File       = addfile (fili , "r")
     var     = File->$Cvar$(time|0,ncells|:)  ; dims: (time,ncells)
     print("ploted: "+mainTitle)
 
@@ -414,7 +414,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot1 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot1 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                             mainTitle,subTitle,comment)
 end if
@@ -434,17 +434,17 @@ end if
     mainTitle = "Total precipitation [mm/d] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
-    end if          
+       fillKey="cont"
+    end if
 
 if (isfilepresent(fili)) then
 
 ;***read code pr
-    File      = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)        
+    File      = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
@@ -461,7 +461,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot2 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot2 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -477,20 +477,20 @@ end if
 ;***setings
     Cvar="clt"
     fili     =  workdir+"/Ubusy_"+Cvar+".nc"
-  
+
     mainTitle = "Total cloud cover [%] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
-                
+
 if (isfilepresent(fili)) then
 ;***read code clt
-    File    = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File    = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
@@ -508,7 +508,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot3 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot3 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -519,7 +519,7 @@ end if
 end if
 
 ;************************************************
-;   Column water vapour CMOR: prw 
+;   Column water vapour CMOR: prw
 ;************************************************
 
 ;***setings
@@ -529,16 +529,16 @@ end if
     mainTitle = "Column water vapour [kg/m~S~2~N~] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 if (isfilepresent(fili)) then
 
-    File       = addfile (fili , "r")   
-    var     = File->$Cvar$(time|0,ncells|:)         
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
@@ -555,7 +555,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot4 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot4 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -576,16 +576,16 @@ end if
     mainTitle = "Column water vapour [kg/m~S~2~N~] "+typ
     subTitle  = run+meantime+" - ERAinterim"+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
 if (isfilepresent(fili)) then
 
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)         
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)
     print("ploted: "+mainTitle)
 
 ;***number of listplots
@@ -601,7 +601,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot5 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot5 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -621,17 +621,17 @@ end if
     mainTitle = "Sea Level Pressure (hPa-1000) "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code 151
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
     var     = var - 1000.
     print("ploted: "+mainTitle)
 
@@ -648,7 +648,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot6 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot6 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -668,17 +668,17 @@ end if
     mainTitle = "Sea Level Pressure (hPa-1000) "+typ
     subTitle  = run+meantime+" - ERAinterim "+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code 151
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
     var     = var
     print("ploted: "+mainTitle)
 
@@ -696,7 +696,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot7 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot7 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -718,18 +718,18 @@ end if
     mainTitle = "2 m Temperature [C] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 
 if (isfilepresent(fili)) then
 
 ;***read code 167
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
@@ -746,7 +746,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot8 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot8 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -766,17 +766,17 @@ end if
     subTitle  = run+meantime+" - ERAinterim "+eratime
 
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code 167
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
@@ -793,7 +793,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot9 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot9 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -810,28 +810,28 @@ end if
 ;***setings
     Cvar="ts"
     fili     =  workdir+"/Ubusy_"+Cvar+".nc"
-    
+
     mainTitle = "Surface temperature [C] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
-                
+
 if (isfilepresent(fili)) then
-;***read 
-    File    = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
-   
+;***read
+    File    = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
+
 print(fili+" fili  "+min(var)+"   "+max(var))
     print("ploted: "+mainTitle)
 
 ;***open plot
    noPlot=noPlot+1
 
-             
+
 ;***number of listplots
     res                       = True             ; plot mods desired
     res@cnLevelSelectionMode  = "ExplicitLevels" ; set explicit contour levels
@@ -842,7 +842,7 @@ print(fili+" fili  "+min(var)+"   "+max(var))
 if (fillKey.eq."cont") then
     plot10 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot10 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -854,31 +854,31 @@ print ("plot10: "+ noPlot)
 end if
 
 ;************************************************
-;   Liquid water + ice content code231_150 
+;   Liquid water + ice content code231_150
 ;************************************************
 ;***setings
     Cvar="clwvi"
     fili     =  workdir+"/Ubusy_"+Cvar+".nc"
-    
+
     mainTitle = "Liquid water + ice content [g/m~S~2~N~] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
-                
+
 if (isfilepresent(fili)) then
-;***read 
-    File    = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+;***read
+    File    = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
 ;***open plot
     noPlot=noPlot+1
-             
+
 ;***create plot
     res                      = True             ; plot mods desired
     res@cnLevelSelectionMode = "ExplicitLevels" ; set explicit contour levels
@@ -889,7 +889,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot11 = plot_cont ( wks,var,x,y,cArea,res,\
                 mainTitle,subTitle,comment )
-else 
+else
     plot11 = fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,\
                 mainTitle,subTitle,comment )
 end if
@@ -904,17 +904,17 @@ end if
 
 ;*** PANNEL
 print("pannel:  "+noPlot)
-;--KMF prepare plots for panel   
+;--KMF prepare plots for panel
    pltres          =  True
-   
+
 
 
    gsn_panel(wks, (/listplots(8),listplots(9),\
                     listplots(6),listplots(7),\
-                    listplots(0),listplots(1)/), (/3,2/), pltres)   
+                    listplots(0),listplots(1)/), (/3,2/), pltres)
    gsn_panel(wks, (/listplots(4),listplots(5),\
                     listplots(11),listplots(2),\
-                    listplots(3),listplots(10)/), (/3,2/), pltres)   
+                    listplots(3),listplots(10)/), (/3,2/), pltres)
 
 exit
 end

@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2024, MPI-M
+# Copyright (c) 2018-2026, MPI-M
 #
 # Author: Sergey Kosukhin <sergey.kosukhin@mpimet.mpg.de>
 #
@@ -35,7 +35,7 @@ try:
     from itertools import zip_longest as zip_longest23
 except ImportError:
     # noinspection PyUnresolvedReferences
-    from itertools import izip_longest as zip_longest23
+    from itertools import izip_longest as zip_longest23  # noqa: F401
 
 
 def open23(name, mode="r"):

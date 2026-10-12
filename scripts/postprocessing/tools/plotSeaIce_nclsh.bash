@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -87,9 +87,9 @@ if [[ $calc = y ]]; then
 
   if [[ "$suffix" = "nh" ]]; then datfile=$datnhem; fi
   if [[ "$suffix" = "sh" ]]; then datfile=$datshem; fi
-  
+
 fi  # calculate
-  
+
 # plot using icon_plot.ncl:
 # timestep=2/8: assumes to be March/Sept - monthly data in the file
 
@@ -110,16 +110,16 @@ if [[ $ncsl = y ]]; then
 # now in %
 # PLOTLVco="1,5,10,20,30,50,70,80,90,99"
   PLOTLVco="1,5,10,20,30,50,70,80,95,98"
-  
+
   $nclsh \
      -iFile=$datfile -oFile=$iceplot -timeStep=$ts -mapType=$mapt -varName=$vari \
      -plotLevs=$PLOTLVth \
      -colormap=WhiteBlueGreenYellowRed \
      $SHOWGRID \
      -tStrg="$TIT" \
-  
+
   convert -density $pldens $iceplot.eps $iceplot.png
-  
+
   ts=8
   iceplot=pl.$brfname.$suffix.${selyear}y.$vi.$ts
 
@@ -131,33 +131,33 @@ if [[ $ncsl = y ]]; then
      -tStrg="$TIT" \
 
   convert -density $pldens $iceplot.eps $iceplot.png
-  
+
   ts=2
   vc=conc
   varc=${vc}_acc
   iceplot=pl.$brfname.$suffix.${selyear}y.$vc.$ts
   TIT="MPIOM - ice concentration"
   TIT="ICON - ice concentration"
-  
+
   $nclsh \
      -iFile=$datfile -oFile=$iceplot -timeStep=$ts -mapType=$mapt -varName=$varc \
      -plotLevs=$PLOTLVco -scaleFactor=100 \
      -colormap=WhiteBlueGreenYellowRed \
      $SHOWGRID \
      -tStrg="$TIT" \
-  
+
   convert -density $pldens $iceplot.eps $iceplot.png
-  
+
   ts=8
   iceplot=pl.$brfname.$suffix.${selyear}y.$vc.$ts
-  
+
   $nclsh \
      -iFile=$datfile -oFile=$iceplot -timeStep=$ts -mapType=$mapt -varName=$varc \
      -plotLevs=$PLOTLVco -scaleFactor=100 \
      -colormap=WhiteBlueGreenYellowRed \
      $SHOWGRID \
      -tStrg="$TIT" \
-  
+
   convert -density $pldens $iceplot.eps $iceplot.png
 
 fi  # ncsl
@@ -169,7 +169,7 @@ if [[ $conv = y ]]; then
   splnam=pl.$brfname.$suffix.${selyear}y
   quadnhigh=quadpl.high.$brfname.$suffix.${selyear}y.$vi.png
   quadnlow=quadpl.low.$brfname.$suffix.${selyear}y.$vi.png
-  
+
   convert +append $splnam.${vc}.2.png $splnam.${vc}.8.png $x1dat
   convert +append $splnam.${vi}.2.png $splnam.${vi}.8.png $x2dat
   convert -geometry 1200x1200 -append $x1dat $x2dat $quadnhigh
@@ -191,15 +191,15 @@ if [[ $psst = y ]]; then
   if [[ "$suffix" = "sh" ]]; then mapt=SHps; fi
 
   PLOTLVtm="-2,-1.7,-1.5,-1,0,1,2,3,5,7,10"
-  
+
   $nclsh \
      -iFile=$datfile -oFile=$iceplot -timeStep=$ts -mapType=$mapt -varName=$vari \
      -plotLevs=$PLOTLVtm \
      -colormap=ViBlGrWhYeOrRe \
      $SHOWGRID \
-  
+
   convert -density $pldens $iceplot.eps $iceplot.png
-  
+
   ts=8
   iceplot=pl.$brfname.$suffix.${selyear}y.$vit.$ts
 
@@ -226,14 +226,5 @@ if [[ $mvpl = y ]]; then  # move to xplot.seaice
   mkdir -p xplot.seaice
   mv pl.$brfname.* xplot.seaice
 fi  # mvpl
-  
-exit
-  
 
-  
-  
-  
-  
-  
-  
-  
+exit

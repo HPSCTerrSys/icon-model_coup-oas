@@ -1,16 +1,15 @@
-! Contains averaging and interpolation routines (ICON <--> FEM)
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains averaging and interpolation routines (ICON <--> FEM)
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -78,7 +77,7 @@ CONTAINS
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c,i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c, i_endidx_c
         IF(patch_3d%lsm_c(jc,1,jb) <= sea_boundary)THEN
           CALL gvec2cvec(  gvec_u(jc,jb), gvec_v(jc,jb), &
@@ -91,6 +90,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE gvec2cvec_c_2d
@@ -126,7 +126,7 @@ CONTAINS
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c,i_endidx_c, jc) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c, i_endidx_c
         IF(patch_3d%lsm_c(jc,1,jb) <= sea_boundary)THEN
           CALL cvec2gvec(  cvec(jc,jb)%x(1),cvec(jc,jb)%x(2),cvec(jc,jb)%x(3), &
@@ -140,6 +140,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE cvec2gvec_c_2d
@@ -172,7 +173,7 @@ CONTAINS
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_v,i_endidx_v, jv) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_verts%start_block, all_verts%end_block
       CALL get_index_range(all_verts, jb, i_startidx_v, i_endidx_v)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jv = i_startidx_v, i_endidx_v
         ! Intrinsic function matmul not applied, due to poor performance.
         cvec_out(jv,jb)%x(1) = DOT_PRODUCT(rot_mat_3D(1,:),cvec_in(jv,jb)%x(:))
@@ -181,6 +182,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE rotate_cvec_v
@@ -218,7 +220,7 @@ CONTAINS
       IF (jb > all_verts%start_block) &
           CALL get_index_range(all_verts, jb-1, i_startidx_v_1, i_endidx_v_1)
 
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jv = i_startidx_v, i_endidx_v
         jk = jv-i_startidx_v+1 + &
             (jb-all_verts%start_block) * (i_endidx_v_1-i_startidx_v_1+1)
@@ -229,6 +231,7 @@ CONTAINS
       !$ACC END PARALLEL LOOP
 
     END DO
+    !$ACC WAIT(1)
 
   END SUBROUTINE cvec2gvec_v_fem
   !-------------------------------------------------------------------------
@@ -265,7 +268,7 @@ CONTAINS
       IF (jb > all_verts%start_block) &
           CALL get_index_range(all_verts, jb-1, i_startidx_v_1, i_endidx_v_1)
 
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jv = i_startidx_v, i_endidx_v
         jk = (jv-i_startidx_v+1) + (jb-all_verts%start_block) * (i_endidx_v_1-i_startidx_v_1+1)
         CALL gvec2cvec(  gvec_u(jk), gvec_v(jk),                   &
@@ -275,6 +278,7 @@ CONTAINS
       !$ACC END PARALLEL LOOP
 
     END DO
+    !$ACC WAIT(1)
 
   END SUBROUTINE gvec2cvec_v_fem
   !-------------------------------------------------------------------------
@@ -307,17 +311,19 @@ CONTAINS
     CALL set_acc_host_or_device(lzacc, lacc)
 
     verts_in_domain => p_patch%verts%in_domain
+#ifdef NAGFOR
     ! Set to zero for nag compiler
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
+    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     p_vn_dual(:,:)%x(1) = 0._wp
     p_vn_dual(:,:)%x(2) = 0._wp
     p_vn_dual(:,:)%x(3) = 0._wp
     !$ACC END KERNELS
+#endif
 
 !ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_v, i_endidx_v, jv, jev, ile, ibe) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = verts_in_domain%start_block, verts_in_domain%end_block
       CALL get_index_range(verts_in_domain, jb, i_startidx_v, i_endidx_v)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(ile, ibe) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jv = i_startidx_v, i_endidx_v
 
           p_vn_dual(jv,jb)%x = 0.0_wp
@@ -334,6 +340,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE map_edges2verts
@@ -374,7 +381,7 @@ CONTAINS
 !ICON_OMP  il_v1,ib_v1,il_v2,ib_v2,p_vn_dual_e) ICON_OMP_DEFAULT_SCHEDULE
     DO edge_block = edges_in_domain%start_block, edges_in_domain%end_block
       CALL get_index_range(edges_in_domain, edge_block, start_index_e, end_index_e)
-        !$ACC PARALLEL LOOP GANG VECTOR PRIVATE(p_vn_dual_e) DEFAULT(PRESENT) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR PRIVATE(p_vn_dual_e) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO edge_index = start_index_e, end_index_e
 
             !!--------------------------------------------------------------------
@@ -395,6 +402,7 @@ CONTAINS
         END DO
         !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE map_verts2edges
@@ -493,12 +501,12 @@ IF (ptr_patch%geometry_info%cell_type == 6) THEN
                        i_startidx, i_endidx, rl_start, rl_end)
 
 
+    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
 #ifdef __LOOP_EXCHANGE
     DO jv = i_startidx, i_endidx
       DO jk = slev, elev
 #else
 !CDIR UNROLL=6
-    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) IF(lzacc)
     DO jk = slev, elev
       DO jv = i_startidx, i_endidx
 #endif
@@ -512,6 +520,7 @@ IF (ptr_patch%geometry_info%cell_type == 6) THEN
     ENDDO
     !$ACC END PARALLEL LOOP
   ENDDO
+  !$ACC WAIT(1)
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 ELSE IF (ptr_patch%geometry_info%cell_type == 3) THEN
@@ -523,12 +532,12 @@ ELSE IF (ptr_patch%geometry_info%cell_type == 3) THEN
                        i_startidx, i_endidx, rl_start, rl_end)
 
 
+    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
 #ifdef __LOOP_EXCHANGE
     DO jv = i_startidx, i_endidx
       DO jk = slev, elev
 #else
 !CDIR UNROLL=6
-    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) PRIVATE(cell_index, cell_block) IF(lzacc)
     DO jk = slev, elev
       DO jv = i_startidx, i_endidx
 #endif
@@ -556,6 +565,7 @@ ELSE IF (ptr_patch%geometry_info%cell_type == 3) THEN
     ENDDO
     !$ACC END PARALLEL LOOP
   ENDDO
+  !$ACC WAIT(1)
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 ENDIF

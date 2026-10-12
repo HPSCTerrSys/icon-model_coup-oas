@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -12,17 +12,21 @@
 
 set -eu
 
-MY_DIR=$(cd "$(dirname "$0")"; pwd)
-ICON_DIR=$(cd "${MY_DIR}/../.."; pwd)
+unset CDPATH
+script_dir=$(cd "$(dirname "$0")"; pwd)
+icon_dir=$(cd "${script_dir}/../.."; pwd)
 
-if [ ! -z "${BB_NAME-}" ] ; then
-  MAKE_PROCS=22
+if test -n "${BB_NAME-}"; then
+  job_count=${SLURM_NTASKS:-22}
 else
-  MAKE_PROCS=8
+  job_count=8
 fi
 
-${ICON_DIR}/config/csc/exec.lumi.container.cce bash -i - <<EOF
-set -eu
-${ICON_DIR}/config/csc/lumi.gpu.cce --enable-mixed-precision
-make -j ${MAKE_PROCS} V=1
-EOF
+unset MAKEFLAGS
+makeflags="--jobs=${job_count} --no-print-directory --output-sync=target V=1"
+
+set -x
+
+${icon_dir}/config/csc/lumi.gpu.cce --enable-mixed-precision
+
+make ${makeflags}

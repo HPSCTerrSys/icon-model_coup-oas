@@ -1,4 +1,4 @@
-#    k     vct_a(k) [m]   vct_b(k) []    
+#    k     vct_a(k) [m]   vct_b(k) []
     1  44000.0000000000  0.0000000000
     2  42168.6364321343  0.0415745094
     3  40341.4810955512  0.0830534860
@@ -31,9 +31,8 @@
    30    121.7171757368  0.9960982689
    31    -50.1546821594  1.0000000000
 # ====================================
-# Source: 
+# Source:
 # - Levi Silvers, r9479
 # Comments:
-# based on equation (162) from the 
+# based on equation (162) from the
 # documentation for dcmip
-

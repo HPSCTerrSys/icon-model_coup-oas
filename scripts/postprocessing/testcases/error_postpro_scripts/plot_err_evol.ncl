@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -71,7 +71,7 @@ begin
 ;get data for (time) x-axis
  thour=table(:,0)
  tday=thour/24.0
- tdims=dimsizes(thour) 
+ tdims=dimsizes(thour)
 
 ;initialize arrays and get data for y-axis
  l_n=new((/3,tdims/),double)
@@ -105,9 +105,9 @@ do i=1,3                                    ;loop over different norms
 
  ResXY=True
  ResXY@tiXAxisString      = "Time (days)"
- ResXY@tiYAxisString      = title  
+ ResXY@tiYAxisString      = title
 ;ResXY@trYMinF            = 0.0
-;ResXY@trYMaxF            = 0.5 
+;ResXY@trYMaxF            = 0.5
  ResXY@tiMainString       = " "
  ResXY@gsnRightString     = ConfigStr
  ResXY@gsnDraw            = False
@@ -120,11 +120,11 @@ end if
 
  labelres(ResXY,legendl)
 
- plt_ind=i-1  
+ plt_ind=i-1
  plot(plt_ind)=gsn_csm_xy(wks,tday,l_n(plt_ind,:),ResXY)
-  
+
 end do                                      ;end norm loop
- 
- gsn_panel(wks,plot,(/1,3/),False)          ;draw panel plot 
+
+ gsn_panel(wks,plot,(/1,3/),False)          ;draw panel plot
 
 end

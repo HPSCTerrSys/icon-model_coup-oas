@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -22,7 +22,7 @@
 #PBS --venode=${NE}          # NE: number VE nodes, CPE: number cores on each VE
 #PBS --venum-lhost=2         # Number of VE per logical host
 #PBS -l cpunum_job=2         # number x86 cores per logical host (1ini+#IO)
-#PBS -l coresz_prc=0         
+#PBS -l coresz_prc=0
 #PBS -T necmpi               # parallel job mit NEC-MPI
 #PBS --use-hca=2             # number of HCA per logical host (2)
 ##PBS -N SCM_ICONini
@@ -115,8 +115,8 @@ end_date="1997-06-21T14:30:00Z"
 # ----------------------------------------------------------------------------
 DT_DATA=`expr 1 \* 3600`      # output each n hours
 DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000              # number of time steps per output file 
+#n_in_ofile=60                # number of time steps per output file
+n_in_ofile=10000              # number of time steps per output file
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -170,7 +170,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
@@ -214,7 +214,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12           ! detailed report during integration
  output         = 'nml','totint'
 /
@@ -253,13 +253,14 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing       = .FALSE.
  is_nudging           = .FALSE.
  is_nudging_uv        = .FALSE.
- is_nudging_tq        = .FALSE.
+ is_nudging_t         = .FALSE.
+ is_nudging_q         = .FALSE.
  is_sim_rad           = .FALSE.
 /
 
 &turbdiff_nml
  tkhmin        = 0.75   ! new default since rev. 16527
- tkmmin        = 0.75   !           " 
+ tkmmin        = 0.75   !           "
  pat_len       = 750.
  c_diff        = 0.2
  rat_sea       = 8.5    ! new value since rev. 25646 (reduced saturation vapor pressure over salt water)
@@ -267,7 +268,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 !frcsmot       = 0.2    ! these 2 switches together apply vertical smoothing of the TKE source terms
 !imode_frcsmot = 2      ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 0    
+ itype_sher    = 0
  ltkeshs       = .false.
  a_hshr        = 2.0
  !lconst_z0    = .TRUE.
@@ -286,7 +287,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 &nonhydrostatic_nml
  ivctype        = 2         ! sleve vertical coordinate
  damp_height    = 5000.     ! top_height-damp_height should be about 15km
- l_open_ubc     = .false.   ! top open upper boundary condition. might help to go higher
  rayleigh_coeff = 0.0
  htop_moist_proc= 22500.
  hbot_qvsubstep	= 22500.    ! Default: 22500  ! M. Koehler: 19000; at least as large as htop_moist_proc
@@ -295,7 +295,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 &sleve_nml
 !min_lay_thckn	= 20.       ! Default: 50     ! M. Koehler: 20
 !max_lay_thckn	= 400.      ! maximum layer thickness below htop_thcknlimit
-!htop_thcknlimit= 14000.    ! 
+!htop_thcknlimit= 14000.    !
 !top_height     = 6000.
  top_height     = 7000.
  min_lay_thckn  = 20.       ! thickness of lowest model layer
@@ -306,8 +306,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &dynamics_nml
- iequations     = 3         ! equation system
- idiv_method    = 1
  divavg_cntrwgt = 0.50
  lcoriolis      = .TRUE.
 /
@@ -355,7 +353,7 @@ date1=`date`
 
 /opt/nec/ve/bin/mpirun -v    -vh     -node 0        -np 1      -env OMP_NUM_THREADS 1 ${MODEL_VH} : \
                           -x -venode -node 0-${NE1} -np ${PPN} -env OMP_NUM_THREADS 1 ${MODEL_VE} : \
-                             -vh     -node 0        -np 4      -env OMP_NUM_THREADS 1 ${MODEL_VH} 
+                             -vh     -node 0        -np 4      -env OMP_NUM_THREADS 1 ${MODEL_VH}
 
 echo $date1 ; date
 

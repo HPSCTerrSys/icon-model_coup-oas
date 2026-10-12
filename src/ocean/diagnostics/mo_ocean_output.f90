@@ -1,16 +1,15 @@
-! Contains the main stepping routine the 3-dim hydrostatic ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the main stepping routine the 3-dim hydrostatic ocean model.
 
 MODULE mo_ocean_output
   !-------------------------------------------------------------------------
@@ -40,8 +39,8 @@ MODULE mo_ocean_output
   USE mo_sea_ice_nml,            ONLY: i_ice_dyn
   USE mo_util_dbg_prnt,          ONLY: dbg_print
   USE mtime,                     ONLY: datetime, MAX_DATETIME_STR_LEN, datetimeToPosixString
-  USE mo_mpi,                    ONLY: i_am_accel_node
-  
+  USE mo_fortran_tools,          ONLY: set_acc_host_or_device
+
   IMPLICIT NONE
 
   PRIVATE
@@ -64,7 +63,8 @@ CONTAINS
     & surface_fluxes,  &
     & sea_ice,         &
     & jstep, jstep0,   &
-    & force_output)
+    & force_output,    &
+    & lacc)
 
     TYPE(t_patch_3d ),TARGET, INTENT(inout)          :: patch_3d
     TYPE(t_hydro_ocean_state), TARGET, INTENT(inout) :: ocean_state(n_dom)
@@ -73,7 +73,8 @@ CONTAINS
     TYPE (t_sea_ice),         INTENT(inout)          :: sea_ice
     INTEGER,   INTENT(in)                            :: jstep, jstep0
     LOGICAL, OPTIONAL                                :: force_output
-   
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+
     ! local variables
     LOGICAL :: use_force_output
     INTEGER :: jg, jtrc, out_step
@@ -83,14 +84,17 @@ CONTAINS
     TYPE(t_patch_vert), POINTER :: patch_1d
     INTEGER, POINTER :: dolic(:,:)
     REAL(wp), POINTER :: prism_thickness(:,:,:)
-    
+
     CHARACTER(LEN=MAX_DATETIME_STR_LEN) :: datestring
     CHARACTER(len=32) :: fmtstr
-    
+
     !CHARACTER(LEN=filename_max)  :: outputfile, gridfile
     CHARACTER(LEN=max_char_length), PARAMETER :: &
       & routine = 'mo_ocean_output:output_ocean'
+    LOGICAL :: lzacc
     !------------------------------------------------------------------
+
+    CALL set_acc_host_or_device(lzacc, lacc)
 
     patch_2D      => patch_3d%p_patch_2d(1)
     jg = 1
@@ -115,11 +119,7 @@ CONTAINS
     WRITE(message_text,'(a,a)') 'Write output at:', TRIM(datestring)
     CALL message (TRIM(routine),message_text)
 
-#ifdef _OPENACC
-    IF (output_mode%l_nml) CALL write_name_list_output(out_step, lacc=i_am_accel_node)
-#else
-    IF (output_mode%l_nml) CALL write_name_list_output(out_step)
-#endif
+    IF (output_mode%l_nml) CALL write_name_list_output(out_step, lacc=lzacc)
 
   END SUBROUTINE output_ocean
   !-------------------------------------------------------------------------

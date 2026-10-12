@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -101,14 +101,14 @@ cat > ${ocean_namelist} << EOF
   l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
   l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-10 ! this may further be reduced
 
   select_lhs                      = 2       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
   fast_performance_level          = 200       ! performance level 12: for cell-based; 5: default
   use_continuity_correction       = .TRUE.    ! height adjustment according to vertical velocity in dynamics
@@ -131,8 +131,8 @@ cat > ${ocean_namelist} << EOF
   VelocityDiffusion_order = 2          ! 21=biharmonic+laplacian (for the laplacian leith)
 
   BiharmonicViscosity_scaling     =  4 ! scale ^3 with resolution
-  BiharmonicViscosity_reference   =  2.6E-2  ! 4.0E-2 
-  BiharmonicViscosity_background  =  0.0     
+  BiharmonicViscosity_reference   =  2.6E-2  ! 4.0E-2
+  BiharmonicViscosity_background  =  0.0
   BiharmonicVort_weight           = 1.0
   BiharmonicDiv_weight            = 1.0
 
@@ -143,11 +143,11 @@ cat > ${ocean_namelist} << EOF
   LeithClosure_order = 0   ! 1 ! harmonic
   LeithClosure_form  = 5 ! based on grad of w
   LeithHarmonicViscosity_scaling = 3 ! scale ^2
-  LeithHarmonicViscosity_reference =  1.0 
+  LeithHarmonicViscosity_reference =  1.0
 
   LeithViscosity_SmoothIterations = 1 ! we need to smooth the Leith coefficients once
-  LeithViscosity_SpatialSmoothFactor = 0.75 ! half smoothing comes for neigbors  
- 
+  LeithViscosity_SpatialSmoothFactor = 0.75 ! half smoothing comes for neigbors
+
   HorizontalViscosity_SmoothIterations = 3 ! this is for the biharmonic smoothing
   HorizontalViscosity_SpatialSmoothFactor = 0.5
 
@@ -160,11 +160,11 @@ cat > ${ocean_namelist} << EOF
 &ocean_vertical_diffusion_nml
   vert_mix_type                            = 2 ! 1=PP, 2=TKE
   PPscheme_type                            = 0
-/                                           
+/
 &ocean_GentMcWilliamsRedi_nml
   GMRedi_configuration           =   0       ! 0=cartesian diffusion 1=GM-Redi: bolus advection + isopycnal diffusion
   GMREDI_COMBINED_DIAGNOSTIC     = .false.
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                     =   1       ! 0: not allowed, 1=zero-layer, 2=Winton
   i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics
@@ -194,10 +194,10 @@ cat > ${ocean_namelist} << EOF
   !lswr_jerlov                     = .TRUE.    ! use jerlov water types for sw absorption
   !jerlov_atten                    = 0.08      ! jerlov water type IB
   !jerlov_bluefrac                 = 0.36      ! jerlov water type IB
-/                                    
+/
 &ocean_initialConditions_nml
   initial_salinity_type           = 1
-  initial_temperature_type        = 1  
+  initial_temperature_type        = 1
 /
 &ocean_diagnostics_nml
    diagnostics_level            = 1

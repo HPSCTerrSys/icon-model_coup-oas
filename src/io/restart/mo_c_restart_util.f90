@@ -1,17 +1,17 @@
-! Interfaces to the functions defined in support/util_multifile_restart.c
-!
-! Initial implementation: Nathanael Huebbe
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Interfaces to the functions defined in support/util_multifile_restart.c
+!
+! Initial implementation: Nathanael Huebbe
 
 MODULE mo_c_restart_util
     USE ISO_C_BINDING, ONLY: C_CHAR, C_INT, C_NULL_CHAR

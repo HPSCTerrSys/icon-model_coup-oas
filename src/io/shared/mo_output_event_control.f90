@@ -1,13 +1,7 @@
-! Routines that describe when regular output steps and ready file
-! events shall be triggered. The definitions in this module control
-! the behaviour of "mo_output_event_handler".
-!
-! See "mo_output_event_handler" for a detailed description.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -15,12 +9,18 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Routines that describe when regular output steps and ready file
+! events shall be triggered. The definitions in this module control
+! the behaviour of "mo_output_event_handler".
+!
+! See "mo_output_event_handler" for a detailed description.
+
 MODULE mo_output_event_control
 
   USE mo_mpi,                ONLY: my_process_is_mpi_test, my_process_is_mpi_workroot
   USE mo_impl_constants,     ONLY: SUCCESS, MAX_CHAR_LENGTH
   USE mo_exception,          ONLY: finish, message_text
-  USE mo_kind,               ONLY: wp, i4, i8
+  USE mo_kind,               ONLY: wp, dp, i4, i8
   USE mo_master_config,      ONLY: getModelBaseDir
   USE mtime,                 ONLY: MAX_DATETIME_STR_LEN,          &
     &                              MAX_TIMEDELTA_STR_LEN, datetime,                     &
@@ -50,7 +50,7 @@ MODULE mo_output_event_control
 
   !---------------------------------------------------------------
   ! constants
-  
+
   !> module name
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_output_event_control'
 
@@ -101,7 +101,7 @@ CONTAINS
     DO ilist = 1,num_dates
       ! check if domain is inactive:
       IF (((dates(ilist) >= mtime_dom_start) .AND. (dates(ilist) >= mtime_begin)) .OR.  &
-        & ((dates(ilist) <= mtime_end) .AND. (dates(ilist) <= mtime_dom_end))) THEN 
+        & ((dates(ilist) <= mtime_end) .AND. (dates(ilist) <= mtime_dom_end))) THEN
         CALL compute_step(dates(ilist), mtime_begin, mtime_end,                &
           &               sim_step_info%dtime, sim_step_info%jstep0,           &
           &               result_steps(ilist), result_exactdate(ilist))
@@ -140,9 +140,9 @@ CONTAINS
 
     ! first, we compute the dynamic time step which is equal or larger than
     ! the desired date "mtime_current"
-    ! intvlsec    = REAL(dtime)
+    ! intvlsec    = REAL(dtime, KIND=wp)
     ! step        = CEILING(datetimedividebyseconds(mtime_begin, mtime_date1, intvlsec))
-    CALL mtime_timedelta_from_fseconds(dtime, mtime_begin, vlsec)
+    CALL mtime_timedelta_from_fseconds(REAL(dtime,KIND=dp), mtime_begin, vlsec)
 
     CALL divideDatetimeDifferenceInSeconds(mtime_current, mtime_begin, vlsec, tq)
 
@@ -299,7 +299,7 @@ CONTAINS
       forecast_delta     = mtime_date - sim_start
       forecast_delta_str = ""
       WRITE (forecast_delta_str,'(i3.3,2(i2.2))') forecast_delta%day*24 + forecast_delta%hour, &
-        &                                         forecast_delta%minute, forecast_delta%second 
+        &                                         forecast_delta%minute, forecast_delta%second
       CALL associate_keyword("<hhhmmss>",        TRIM(forecast_delta_str),                                 keywords)
 
       ! keywords: compose other variants of the absolute date-time
@@ -311,7 +311,7 @@ CONTAINS
         & mtime_date%time%hour, mtime_date%time%minute, mtime_date%time%second, 'Z'
       CALL associate_keyword("<datetime2>",       TRIM(dtime_string),                                       keywords)
 
-      ! "YYYYMMDDThhmmss.sssZ" for the basic format of ISO8601 with 3-digit 
+      ! "YYYYMMDDThhmmss.sssZ" for the basic format of ISO8601 with 3-digit
       !                        fractions of seconds
       WRITE (dtime_string,'(i4.4,2(i2.2),a,3(i2.2),a,i3.3,a)')                                                 &
         &                      mtime_date%date%year, mtime_date%date%month, mtime_date%date%day, 'T',          &
@@ -325,7 +325,7 @@ CONTAINS
       !                produced:
       IF (fname_metadata%npartitions > 1) THEN
         total_index = fname_metadata%npartitions*(result_fnames(i)%jfile+skipped_dates-1) + &
-          &           fname_metadata%ifile_partition 
+          &           fname_metadata%ifile_partition
         this_jfile  = total_index
       ELSE
         total_index = result_fnames(i)%jfile

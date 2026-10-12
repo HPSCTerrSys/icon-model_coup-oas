@@ -1,21 +1,20 @@
-!
-! Data types for the two-moment bulk microphysics by Seifert and Beheng (2006)
-!                  with prognostic cloud droplet number parameterization
-!
-! This module provides the data types for the variables used to
-! configure the parameterization and to store the input and output
-! for the parameterization.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Data types for the two-moment bulk microphysics by Seifert and Beheng (2006)
+!            with prognostic cloud droplet number parameterization
+!
+! This module provides the data types for the variables used to
+! configure the parameterization and to store the input and output
+! for the parameterization.
 
 MODULE mo_cloud_two_types
 
@@ -27,7 +26,7 @@ MODULE mo_cloud_two_types
   PUBLIC :: t_cloud_two_config, t_cloud_two_input, t_cloud_two_output
 
   !-----------------------------------------------------------------------------
-  
+
   TYPE t_cloud_two_config
      !
      ! configuration parameters
@@ -41,7 +40,7 @@ MODULE mo_cloud_two_types
   END TYPE t_cloud_two_config
 
   !-----------------------------------------------------------------------------
-  
+
   TYPE t_cloud_two_input
      !
      ! Input arguments: parameters
@@ -88,7 +87,7 @@ MODULE mo_cloud_two_types
   END TYPE t_cloud_two_input
 
   !-----------------------------------------------------------------------------
-  
+
   TYPE t_cloud_two_output
      !
      ! Output arguments: fields
@@ -140,5 +139,5 @@ MODULE mo_cloud_two_types
   END TYPE t_cloud_two_output
 
   !-----------------------------------------------------------------------------
-  
+
 END MODULE mo_cloud_two_types

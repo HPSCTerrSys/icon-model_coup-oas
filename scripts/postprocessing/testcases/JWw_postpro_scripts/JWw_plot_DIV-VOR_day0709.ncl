@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -17,7 +17,7 @@
 ;------------------------------------
 ; Script type: visualization
 ;---------------------------------------------------------------
-; This script makes contour plots of 850 hPa vorticity and 
+; This script makes contour plots of 850 hPa vorticity and
 ; divergence for the Jablonowski-Williamson steady state test.
 ;---------------------------------------------------------------
  load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
@@ -88,7 +88,7 @@
            lonName    = "vlon"
         end if
      else
-        print("Wrong cell type. Should be 3 or 6") 
+        print("Wrong cell type. Should be 3 or 6")
      end if
      end if
   end if
@@ -109,12 +109,12 @@
      varString   = "850 hPa vor. (10~S~-5~N~s~S~-1~N~)"
 
 ;     if (Model.eq."ECHAM5") then
-        vname = "svo"  ; var name given by afterburner 
+        vname = "svo"  ; var name given by afterburner
 ;     else
 ;        vname = "ha_diag_rel_vort_c"
 ;     end if
 
-  else 
+  else
   if (VarName.eq."DIV") then ;divergence
 
      VarString  = " D "
@@ -126,10 +126,10 @@
      varMax     = (/  5.,  15./)
      varInt     = (/  1.,   3./)
 
-     varString   = "850 hPa div. (10~S~-6~N~ s~S~-1~N~) at day "+iday 
+     varString   = "850 hPa div. (10~S~-6~N~ s~S~-1~N~) at day "+iday
 
 ;     if (Model.eq."ECHAM5") then
-        vname = "sd"  ; var name given by afterburner 
+        vname = "sd"  ; var name given by afterburner
 ;     else
 ;        vname = "ha_diag_div"
 ;     end if
@@ -144,10 +144,10 @@
      varMax     = (/  0.1,  0.2/)
      varInt     = (/ 0.03,  0.1/)
 
-     varString   = "850 hPa omega (Pa s~S~-1~N~) at day "+iday 
+     varString   = "850 hPa omega (Pa s~S~-1~N~) at day "+iday
 
      if (Model.eq."ECHAM5") then
-        vname = "var135"  ; var name given by afterburner 
+        vname = "var135"  ; var name given by afterburner
      else
         vname = "wap"
      end if
@@ -155,7 +155,7 @@
   end if
 
   CenterString = " "
-  expString  = ConfigStr     ;+" "+Resolution 
+  expString  = ConfigStr     ;+" "+Resolution
 
 ;---------------------------------------------------------------
 ; horizontal domain to plot
@@ -168,7 +168,7 @@
   vpX = (/0.06 ,0.52/)
   vpW = (/0.36,0.45/)
   vpY = (/0.6, 0.6 /)
-  vpH = vpW/ (/4,5/) *5/3 
+  vpH = vpW/ (/4,5/) *5/3
 
 ;---------------------------------------------------------------
 ; open data file and get grid information
@@ -211,7 +211,7 @@
 
   ResC                = True
 
-  ResC@gsnDraw        = True 
+  ResC@gsnDraw        = True
   ResC@gsnFrame       = False
 
   ResC@cnFillOn       = True
@@ -230,15 +230,15 @@
 
   ResC@mpProjection   = "CylindricalEquidistant"
   ResC@mpLimitMode    = "LatLon"
-  ResC@mpMinLatF      = 25. 
-  ResC@mpMaxLatF      = 75. 
+  ResC@mpMinLatF      = 25.
+  ResC@mpMaxLatF      = 75.
 
   ResC@mpGeophysicalLineColor = "transparent"
   ResC@mpFillOn               = False
 
-  ResC@gsnMajorLatSpacing = 15. 
-  ResC@gsnMajorLonSpacing = 30. 
-  ResC@gsnMinorLatSpacing =  5. 
+  ResC@gsnMajorLatSpacing = 15.
+  ResC@gsnMajorLonSpacing = 30.
+  ResC@gsnMinorLatSpacing =  5.
   ResC@gsnMinorLonSpacing = 10.
 
   if (Model.eq."ICOHDC") then
@@ -246,9 +246,9 @@
      ResC@sfYArray = y
   end if
 
-  ResC@lbLabelBarOn             = True 
+  ResC@lbLabelBarOn             = True
   ResC@pmLabelBarHeightF        = 0.04
-  ResC@pmLabelBarOrthogonalPosF = 0.2 
+  ResC@pmLabelBarOrthogonalPosF = 0.2
   ResC@lbLabelAutoStride        = True
   ResC@lbLabelFontHeightF       = FontHeight
 
@@ -271,10 +271,10 @@
 
      var = var*scale
 
-     ResC@vpXF            = vpX(it)        
-     ResC@vpWidthF        = vpW(it)           
-     ResC@vpYF            = vpY(it) 
-     ResC@vpHeightF       = vpH(it) 
+     ResC@vpXF            = vpX(it)
+     ResC@vpWidthF        = vpW(it)
+     ResC@vpYF            = vpY(it)
+     ResC@vpHeightF       = vpH(it)
 
      ResC@pmLabelBarWidthF  = ResC@vpWidthF *0.9
 
@@ -282,13 +282,13 @@
      ResC@gsnRightString = expString
 
 
-     ResC@mpMinLonF      = MinLon(it) 
-     ResC@mpMaxLonF      = MaxLon(it) 
-     ResC@mpCenterLonF   = CtrLon(it) 
+     ResC@mpMinLonF      = MinLon(it)
+     ResC@mpMaxLonF      = MaxLon(it)
+     ResC@mpCenterLonF   = CtrLon(it)
 
-     ResC@cnMinLevelValF  = varMin(it) 
-     ResC@cnMaxLevelValF  = varMax(it) 
-     ResC@cnLevelSpacingF = varInt(it) 
+     ResC@cnMinLevelValF  = varMin(it)
+     ResC@cnMaxLevelValF  = varMax(it)
+     ResC@cnLevelSpacingF = varInt(it)
 
      if (VarName.eq."VOR") then
 
@@ -309,4 +309,3 @@
   frame(wks)
 
 end
-

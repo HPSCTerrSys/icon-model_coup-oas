@@ -1,0 +1,118 @@
+#!/bin/ksh
+
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+
+%manual
+  -------------------------------------------------
+  TESTDAY
+  -------------------------------------------------
+
+  This script is part of the ICON SMS suite
+  Initial implementation: F. Prill,   DWD (2012-05-07)
+  Conversion to ecFlow:   M. Koehler, DWD (2022-11)
+
+  Corresponding author:
+    Martin Koehler, DWD, mailto:martin.koehler@dwd.de
+
+  Task objectives:
+  - copy output and/or
+  - store in database and/or
+  - trigger transfer to DWD
+%end
+
+# include the standard header file
+%include <head_hpc.h>
+
+# -------------------------------------------------
+
+echo "TESTDAY"
+
+module load python3
+
+
+#========================================================================
+#  Is this the last cycle of the current month and did this experiment
+#  include the entire month, as well as the last day of the previous month?
+#========================================================================
+
+lquickshots=1
+
+
+####
+#lquickshots=0
+####
+
+
+# -------------------------------------------------
+# test end-of-month
+
+EOFM=`python3 %SCBASEDIR%/gen/date_calc.py -a endofmonth -d %YMD%%INIHOUR%`
+if [[ "${EOFM}" -eq "1" ]]
+then
+    echo "End of month!"
+    ecflow_client --event=time_eom
+fi
+
+
+# -------------------------------------------------
+# test if 2nd or 12th or 20th of month to do plotting like end-of-month
+# (see also eom_prepare.sms)
+
+# make intermediate plots for 2,12,20d only first month
+set -A MONTHSARR `echo %MONTHS% | sed 's/_/ /g'`
+MONTH1=${MONTHSARR[0]}
+
+if [[ $lquickshots -eq "1"  ]]
+then
+  if [[ `echo %YMD% | cut -c 7-8` -eq "2"  ]] && [[ `echo %YMD% | cut -c 1-6` -eq $MONTH1 ]]
+  then
+      echo "2nd of month - do some plots!"
+      ecflow_client --event=time_eom
+  fi
+#  if [[ `echo %YMD% | cut -c 7-8` -eq "12" ]] && [[ `echo %YMD% | cut -c 1-6` -eq $MONTH1 ]]
+#  then
+#      echo "12th of month - do some plots!"
+#      ecflow_client --event=time_eom
+#  fi
+#  if [[ `echo %YMD% | cut -c 7-8` -eq "20" ]] && [[ `echo %YMD% | cut -c 1-6` -eq $MONTH1 ]]
+#  then
+#      echo "20th of month - do some plots!"
+#      ecflow_client --event=time_eom
+#  fi
+fi
+
+# ssh cca-log ls -l
+
+
+## -------------------------------------------------
+# test for monthly mean runs if current month is selected
+
+YYYYMM=`echo %YMD% | cut -c 1-6`
+MONTHS=`echo %MONTHS% | sed 's/_/ /g'`
+set -A MON_IFS_ICON `echo %MON_IFS_ICON% | sed 's/_/ /g'`
+iii=0
+for month in ${MONTHS[*]} ; do
+  if [[ ${YYYYMM} -eq ${month} ]]
+  then
+    echo "Calculate this month!"
+    ecflow_client --event=time_domonth
+    if [[ ${MON_IFS_ICON[${iii}]} = 'ifs' ]]
+    then
+      ecflow_client --meter=time_ifs_icon 1
+    else
+      ecflow_client --meter=time_ifs_icon 2
+    fi
+  fi
+  iii=`expr ${iii} + 1`
+done
+
+
+# -------------------------------------------------
+
+# include the standard "tail" file
+%include <tail.h>

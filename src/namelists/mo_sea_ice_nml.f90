@@ -1,16 +1,15 @@
-! namelist setup for the sea-ice model
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! namelist setup for the sea-ice model
 
 MODULE mo_sea_ice_nml
 
@@ -23,6 +22,7 @@ MODULE mo_sea_ice_nml
   USE mo_exception,           ONLY: finish, message
   USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_nml_annotate,        ONLY: temp_defaults, temp_settings
+  USE mo_physical_constants,  ONLY: Tf_const
 !  USE mo_run_config,          ONLY: dtime
 
   IMPLICIT NONE
@@ -68,7 +68,8 @@ MODULE mo_sea_ice_nml
   REAL(wp),PUBLIC :: albim              !< Albedo of ice (melting)
 
 
-  REAL(wp),PUBLIC :: sice = 5.0_wp              !< bulk salinity of sea ice
+  REAL(wp),PUBLIC :: sice = 5.0_wp      !< bulk salinity of sea ice
+  REAL(wp),PUBLIC :: Tf = Tf_const      !< freezing temperature of sea ice (deg C)
   ! some analytic initialization parameters
   REAL(wp),PUBLIC :: init_analytic_temp_under_ice= -1.6_wp
   REAL(wp),PUBLIC :: init_analytic_conc_param    = 0.9_wp
@@ -98,8 +99,8 @@ MODULE mo_sea_ice_nml
 
   INTEGER, PUBLIC :: n_ice_iter
   REAL(wp),PUBLIC :: Pstar
-  REAL(wp),PUBLIC :: ellipse          
-  REAL(wp),PUBLIC :: c_pressure       
+  REAL(wp),PUBLIC :: ellipse
+  REAL(wp),PUBLIC :: c_pressure
 
   ! Motion
   INTEGER ,PUBLIC :: i_ice_advec     ! type of ice advection: 0 -- upwind on ICON grid; 1 -- FCT advection on FE grid
@@ -113,6 +114,7 @@ MODULE mo_sea_ice_nml
   REAL(wp),PUBLIC :: Ch_io             ! Ice-ocean heat transfer coefficient
 
   LOGICAL, PUBLIC :: luse_replacement_pressure = .FALSE. ! use replacement pressure in strain rate computation
+  LOGICAL, PUBLIC :: seaice_stress_diag
 
   NAMELIST /sea_ice_nml/ &
     &  kice, &
@@ -133,6 +135,7 @@ MODULE mo_sea_ice_nml
     &  albi, &
     &  albim, &
     &  sice, &
+    &  Tf, &
     &  pstar, &
     &  n_ice_iter, &
     &  ellipse, &
@@ -151,6 +154,7 @@ MODULE mo_sea_ice_nml
     &  Cd_ia, &
     &  Ch_io, &
     &  luse_replacement_pressure, &
+    &  seaice_stress_diag, &
     &  ice_VP_rheology, &
     &  ice_EVP1, &
     &  delta_min, &
@@ -207,7 +211,8 @@ CONTAINS
     ellipse     = 2.0_wp
     c_pressure  = 20.0_wp
     luse_replacement_pressure = .FALSE. ! if .true. use replacement pressure in strain rate computations
-
+    seaice_stress_diag = .FALSE. ! activate calculation/output of sea ice stress diagnostics
+                                 ! (sigma_i, sigma_ii, sigma_1, sigma_2, p0, p)
 
     ramp_wind    = 1.0_wp
 
@@ -311,7 +316,7 @@ CONTAINS
     IF (hci_layer < 0) THEN
       CALL message(TRIM(routine), 'hci_layer < 0, setting it equal to zero')
     ENDIF
-      
+
   ! IF (i_ice_dyn == 1 ) THEN
   !   i_ice_dyn = 0
   !   CALL warning(method_name,"Disable sea-ice dynamics. It does not work.")

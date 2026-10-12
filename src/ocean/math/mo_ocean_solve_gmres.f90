@@ -1,16 +1,15 @@
-! contains extension to solver backend type: GMRES
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! contains extension to solver backend type: GMRES
 
 #if (defined(_OPENMP) && defined(OCE_SOLVE_OMP))
 #include "omp_definitions.inc"
@@ -21,11 +20,11 @@ MODULE mo_ocean_solve_gmres
   USE mo_exception, ONLY: finish
   USE mo_ocean_solve_backend, ONLY: t_ocean_solve_backend
   USE mo_fortran_tools, ONLY: set_acc_host_or_device
- 
+
   IMPLICIT NONE
-  
+
   PRIVATE
- 
+
   PUBLIC :: t_ocean_solve_gmres
   CHARACTER(LEN=*), PARAMETER :: this_mod_name = 'mo_ocean_solve_gmres'
 
@@ -58,7 +57,7 @@ CONTAINS
     & h, s, c, res)
     IMPLICIT NONE
     CLASS(t_ocean_solve_gmres), TARGET, INTENT(INOUT) :: this
-    REAL(KIND=wp), INTENT(OUT), POINTER :: v(:,:,:), x(:,:), &
+    REAL(KIND=wp), INTENT(INOUT), POINTER :: v(:,:,:), x(:,:), &
       & b(:,:), w(:,:), z(:,:), h(:,:), s(:), c(:), res(:)
 
     IF (.NOT.ALLOCATED(this%z_wp)) THEN
@@ -86,8 +85,13 @@ CONTAINS
     LOGICAL, INTENT(in), OPTIONAL :: lacc
     REAL(wp) :: tol, ci, h_aux
     INTEGER :: jb, nblk, nidx_e, i, k, i_final
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(KIND=wp), POINTER :: v(:,:,:), x(:,:), b(:,:), &
+      & w(:,:), z(:,:), h(:,:), s(:), c(:), res(:), vi(:,:)
+#else
     REAL(KIND=wp), POINTER, CONTIGUOUS :: v(:,:,:), x(:,:), b(:,:), &
       & w(:,:), z(:,:), h(:,:), s(:), c(:), res(:), vi(:,:)
+#endif
     LOGICAL :: done, lzacc
 
     CALL set_acc_host_or_device(lzacc, lacc)
@@ -105,7 +109,7 @@ CONTAINS
     CALL this%trans%sync(x)
     CALL this%lhs%apply(x, w)
 ! compute initial residuum
-!ICON_OMP PARALLEL DO SCHEDULE(STATIC) 
+!ICON_OMP PARALLEL DO SCHEDULE(STATIC)
      DO jb = 1, nblk
        w(:,jb) = b(:,jb) - w(:,jb)
        z(:,jb) = w(:,jb) * w(:,jb)
@@ -188,7 +192,7 @@ CONTAINS
       done = ABS(res(i+1)) < tol
       IF (done) i_final = i + 1
     END DO
-! if solve did not converge to desired accuracy (yet) 
+! if solve did not converge to desired accuracy (yet)
     this%niter_cal(1) = MERGE(i_final, -1, done)
     IF (.NOT.done) i_final = this%par%m
 ! compute Krylov-expansion coeffs
@@ -216,7 +220,7 @@ CONTAINS
     & h, s, c, res)
     IMPLICIT NONE
     CLASS(t_ocean_solve_gmres), TARGET, INTENT(INOUT) :: this
-    REAL(KIND=sp), INTENT(OUT), POINTER :: v(:,:,:), x(:,:), &
+    REAL(KIND=sp), INTENT(INOUT), POINTER :: v(:,:,:), x(:,:), &
       & b(:,:), w(:,:), z(:,:), h(:,:), s(:), c(:), res(:)
 
     IF (.NOT.ALLOCATED(this%z_sp)) THEN
@@ -244,8 +248,13 @@ CONTAINS
     CLASS(t_ocean_solve_gmres), INTENT(INOUT) :: this
     REAL(sp) :: tol, ci, h_aux
     INTEGER :: jb, nblk, nidx_e, i, k, i_final
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(KIND=sp), POINTER :: v(:,:,:), x(:,:), b(:,:), &
+      & w(:,:), z(:,:), h(:,:), s(:), c(:), res(:), vi(:,:)
+#else
     REAL(KIND=sp), POINTER, CONTIGUOUS :: v(:,:,:), x(:,:), b(:,:), &
       & w(:,:), z(:,:), h(:,:), s(:), c(:), res(:), vi(:,:)
+#endif
     LOGICAL :: done
 
     CALL this%recover_arrays(v, x, b, w, z, h, s, c, res)

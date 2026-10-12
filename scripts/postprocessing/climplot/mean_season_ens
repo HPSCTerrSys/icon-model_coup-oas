@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -12,7 +12,7 @@
 
 #
 # script to make mean over season or year and multiple ensemble members
-# 
+#
 # Martin Koehler April 2004
 #--------------------------------------------------------------#
 
@@ -96,7 +96,7 @@ nens=${#inidates[*]}
 #    \rm mmean_${EXPVER}_${inidate}.grb.tar
 #    cd $currdir
 #  done
- 
+
 
 # --- loop over periods
 
@@ -117,7 +117,7 @@ while (( ${iperiod} < ${nperiods} )) ; do
       iniyearmonth=${yy_start[${iperiod}]}${mm_start[${iperiod}]}
     fi
     yearmonth=${iniyearmonth}
- 
+
 # --- loop over months
 
     rm -f ${DATA}/mmean_${EXPVER}_${vartype}_period.grb
@@ -243,4 +243,3 @@ done    # end of loop over periods
 
 
 exit
-

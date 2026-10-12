@@ -1,0 +1,28 @@
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+#
+# @configure_input@
+#
+
+VERSION_ = @PACKAGE_STRING@
+
+BUNDLED_PYTHONPATH = @BUNDLED_PYTHONPATH@
+MPI_LAUNCH = @MPI_LAUNCH@
+PACKAGE_NAME = @PACKAGE_NAME@
+PYTHON = @PYTHON@
+abs_top_srcdir = @abs_top_srcdir@
+abs_top_builddir = @abs_top_builddir@
+host_os = @host_os@
+host_fqdn = @host_fqdn@
+
+@OPENMP_ENABLED@openmp_enabled = true
+@GPU_ENABLED@gpu_enabled = true
+@MPI_ENABLED@mpi_enabled = true

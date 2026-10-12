@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -12,7 +12,7 @@
 # Diurnal Cycle Program Part I
 # Save diurnal cycle fields for climate run, to be executed after last ensemble
 
-# metview -b save_mean_diurnal_flux.met $EXPVER $CLASS ${PLOTDATA} 
+# metview -b save_mean_diurnal_flux.met $EXPVER $CLASS ${PLOTDATA}
 
 # Only preliminary yet in perfore, has to be put under sms
 
@@ -24,14 +24,14 @@ start_times = args[4]
 datefiln=args[5]
 nmon=args[6]
 
-datadir = getenv("PLOTDATA") 
+datadir = getenv("PLOTDATA")
 if (datadir="") then
   datadir="."
-end if 
+end if
 datadir=datadir&"/"
 
-datelist=(parse(string(start_dates),"/")) 
-timelist=(parse(string(start_times),"/")) 
+datelist=(parse(string(start_dates),"/"))
+timelist=(parse(string(start_times),"/"))
 print(datelist)
 print(timelist)
 NENS=count(datelist)
@@ -84,7 +84,7 @@ for ns=1 to count(seasons) do #  Loop over seasons
 		       levtype	:	"ml",
 		       class	:	class,
 		       type	:	type,
-		       repres	:	"gg", 
+		       repres	:	"gg",
 		       levelist:	[1,"to",74],
 		       param	:	params[np],
 		       date	:	datelist[I],
@@ -99,7 +99,7 @@ for ns=1 to count(seasons) do #  Loop over seasons
 		       levtype	:	"ml",
 		       class	:	class,
 		       type	:	type,
-		       repres	:	"gg", 
+		       repres	:	"gg",
 		       levelist:	[1,"to",74],
 		       param	:	params[np],
 		       date	:	datelist[I],
@@ -112,20 +112,20 @@ for ns=1 to count(seasons) do #  Loop over seasons
          if timelist[I] = 0 then
            exflds_beg=e_b[1,73]
            exflds_end=e_e[1,73]
-         else if timelist[I] = 6 then 
+         else if timelist[I] = 6 then
            exflds_beg=e_b[19,24]&e_b[ 1,18]   &e_b[43,48]&e_b[25,42]&e_b[49]   &e_b[68,73]&e_b[50,67]
            exflds_end=e_e[19,24]&e_e[ 1,18]   &e_e[43,48]&e_e[25,42]&e_b[49]   &e_e[68,73]&e_e[50,67]
-         else if timelist[I] = 12 then 
+         else if timelist[I] = 12 then
            exflds_beg=e_b[13,24]&e_b[ 1,12]   &e_b[37,48]&e_b[25,36]&e_b[49]   &e_b[62,73]&e_b[50,61]
            exflds_end=e_e[13,24]&e_e[ 1,12]   &e_e[37,48]&e_e[25,36]&e_b[49]   &e_e[62,73]&e_e[50,61]
-         else if timelist[I] = 18 then 
+         else if timelist[I] = 18 then
            exflds_beg=e_b[ 7,24]&e_b[ 1, 6]   &e_b[31,48]&e_b[25,30]&e_b[49]   &e_b[56,73]&e_b[50,55]
            exflds_end=e_e[ 7,24]&e_e[ 1, 6]   &e_e[31,48]&e_e[25,30]&e_b[49]   &e_e[56,73]&e_e[50,55]
          end if
 
          extflx=(exflds_end-exflds_beg)/(3600*   (day_endlist[I]-day_beglist[I]))
 
-         if I=1 then 
+         if I=1 then
            aver_extflx=extflx
          else
            aver_extflx=aver_extflx+extflx

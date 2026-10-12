@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,26 +13,26 @@
 ; --------------------------
 ; Skripts are based on NCL MJO Climate Variability Tools
 ; https://www.ncl.ucar.edu/Applications/mjoclivar.shtml
-; 
-; These were developed following the recommendations 
+;
+; These were developed following the recommendations
 ; of US-CLIVAR MJO Working Group
-; 
+;
 ; Adapted for use at DWD by Julia Keller, FE 13, August 2015
 ; Works with NCL 6.3.0
-; 
+;
 ; Program:
-;   mjo_analysis_clivar_rmm_index.ncl  
+;   mjo_analysis_clivar_rmm_index.ncl
 ; Purpose:
-;   Create RMM-Index 
+;   Create RMM-Index
 ; Origin:
 ;   This script is based on NCL script mjoclivar_15.ncl
 ;-----------------------------------------------------------
 ; Required Input:
-;   PC1 and PC2 Data computed and exported in 
+;   PC1 and PC2 Data computed and exported in
 ;   mjo_analysis_clivar_correlation.ncs
-;   
-;   
-; Program flow: 
+;
+;
+; Program flow:
 ;   - Read PC1 PC2 Data for period of interest
 ;   - Plot PC1/PC2 Data in RMM Diagram
 ;
@@ -43,7 +43,7 @@ load "diagnostics_cam.ncl"
 
 ;###########################################################
 ;
-; Preparation  
+; Preparation
 ;
 ;###########################################################
 ;------------------------------------------------
@@ -57,12 +57,12 @@ load "diagnostics_cam.ncl"
 ;------------------------------------------------
 
 begin
- 
-  
+
+
   pltMovie= False
   plottype = "png"
   plotname = datainfo+"_mjo_phase_space_"+ymdStrt+"_"+ymdLast
- 
+
   plottitle= "MJO Phase: 15S-15N: "+ymdStrt+"-"+ymdLast
 
 
@@ -70,7 +70,7 @@ begin
 ;***********************************************************
 ; Open PC components file created in 'mjo_anaylsis_clivar_correlations.ncl'
 ;***********************************************************
- 
+
   f       = addfile (infile, "r")
 
 ;***********************************************************
@@ -80,7 +80,7 @@ begin
   YMD     = cd_calendar(TIME, -2)            ; entire (time,6)
 
   iStrt   = ind(YMD.eq.ymdStrt .or. YMD.eq.(ymdStrt+1))              ; index start
-  iLast   = ind(YMD.eq.ymdLast .or. YMD.eq.(ymdLast-1))              ; index last 
+  iLast   = ind(YMD.eq.ymdLast .or. YMD.eq.(ymdLast-1))              ; index last
   print(iStrt)
   print(iLast)
   delete(TIME)
@@ -102,20 +102,20 @@ begin
 ; PLOT
 ;------------------------------------------------------------
 
-   opt                       = True           ; Background options 
+   opt                       = True           ; Background options
   ;opt@gsnMaximize           = True           ; make large
    opt@tiMainString          = plottitle
 
    plMark                    = True           ; poly marker
-   plMark@gsMarkerIndex      = 16             ; solid circle  
-   plMark@gsMarkerSizeF      = 0.005 
+   plMark@gsMarkerIndex      = 16             ; solid circle
+   plMark@gsMarkerSizeF      = 0.005
    plMark@gsMarkerThicknessF =  1
 
    plLine                    = True           ; line segments
-   plLine@gsLineThicknessF   = 1.0            ; 1.0 is default 
+   plLine@gsLineThicknessF   = 1.0            ; 1.0 is default
 
    txres                     = True
-   txres@txFontHeightF       = 0.010          ; size of font for printed day 
+   txres@txFontHeightF       = 0.010          ; size of font for printed day
 
    namMonth = (/ "Jan","Feb","Mar","Apr","May","June" \
                ,"July","Aug","Sep","Oct","Nov","Dec" /)
@@ -133,7 +133,7 @@ begin
    plot = mjo_phase_background(wks, opt)      ; generic phase space background
    xBegin= pc1(0)                             ; need for start of the line
    yBegin= pc2(0)
-      
+
    plMark@gsMarkerColor = "black"             ; indicate initial point
    plMark@gsMarkerSizeF = 2.5*plMark@gsMarkerSizeF  ; make larger
    plot@$unique_string("dum")$ = gsn_add_polymarker(wks, plot, xBegin, yBegin, plMark)
@@ -141,27 +141,27 @@ begin
 
    nMon            = 0
    monInfo         = new ((/12,2/),"string")
-   monInfo(nMon,0) = namMonth(imon(0)-1) 
-   monInfo(nMon,1) = colMonth(imon(0)-1) 
+   monInfo(nMon,0) = namMonth(imon(0)-1)
+   monInfo(nMon,1) = colMonth(imon(0)-1)
 
    label_opt       = 5                ; label every # day   0 = don't label days
    label_color     = True             ; draw month label with its proper color
    do nt=1,ntim-1
       if (pltMovie) then
           ext = "_"+sprinti("%4.0i", nt )
-          wks = gsn_open_wks(pltType,pltName+ext)  
+          wks = gsn_open_wks(pltType,pltName+ext)
 					gsn_define_colormap(wks,"radar_1")
       end if
-                                                    ; color changes w month 
+                                                    ; color changes w month
       plLine@gsLineColor = colMonth(imon(nt)-1)     ; -1 is cuz NCL is 0-based
       plot@$unique_string("dum")$ = gsn_add_polyline(wks, plot, (/xBegin,pc1(nt)/), (/yBegin,pc2(nt)/), plLine)
-      
+
       if (label_opt.eq.0) then
 	  plMark@gsMarkerColor = plLine@gsLineColor ; same as line color
           plot@$unique_string("dum")$ = gsn_add_polymarker(wks, plot, xBegin, yBegin, plMark)
       else
-         if (iday(nt)%label_opt.eq.0) then                   
-            txres@txFontColor           = "black"     
+         if (iday(nt)%label_opt.eq.0) then
+            txres@txFontColor           = "black"
             plot@$unique_string("dum")$ = gsn_add_text(wks, plot, iday(nt)+"", xBegin, yBegin, txres)
          else                                          ; marker only
             plMark@gsMarkerColor = plLine@gsLineColor  ; same as line color
@@ -171,16 +171,16 @@ begin
 
       if (iday(nt).eq.1 .or. iday(nt).eq.2 ) then
           nMon = nMon+1
-          monInfo(nMon,0) = namMonth(imon(nt)-1) 
-          monInfo(nMon,1) = colMonth(imon(nt)-1) 
+          monInfo(nMon,0) = namMonth(imon(nt)-1)
+          monInfo(nMon,1) = colMonth(imon(nt)-1)
       end if
 
       if (pltMovie) then
-          draw(plot)                                           
-          frame(wks)                                         
+          draw(plot)
+          frame(wks)
       end if
 
-      xBegin= pc1(nt)                            
+      xBegin= pc1(nt)
       yBegin= pc2(nt)
    end do
 
@@ -193,11 +193,11 @@ begin
            getvalues plot
 	       "trXMinF" : xmin
 	   end getvalues
-	   xinc = (xmin*-2) / (nMon+1+2.)   ; total number months = nMon+1. +2 
+	   xinc = (xmin*-2) / (nMon+1+2.)   ; total number months = nMon+1. +2
                                             ; for spacing on ends
            txres@txJust        = "CenterLeft"
            txres@txFontHeightF = 0.013      ; size of font for printed month
-           xstart = xmin+(1.25*xinc)   
+           xstart = xmin+(1.25*xinc)
            if (nMon.gt.0) then
                do n=0, nMon
                   txres@txFontColor = monInfo(n,1)
@@ -206,8 +206,8 @@ begin
                end do
            end if
        end if
-       draw(plot)                                           
-       frame(wks)                                         
+       draw(plot)
+       frame(wks)
 
        if (plottype.eq."png") then
            if (isatt(opt,"pltConvert")) then
@@ -220,4 +220,3 @@ begin
 
      end if
 end
-

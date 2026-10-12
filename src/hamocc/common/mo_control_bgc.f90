@@ -1,17 +1,17 @@
-! control variables for bgc modules
-!
-! Definition of variables
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! control variables for bgc modules
+!
+! Definition of variables
 
 MODULE mo_control_bgc
 
@@ -53,9 +53,9 @@ MODULE mo_control_bgc
   INTEGER  :: bgc_nproma          !<  actual time steps of run.
 
   REAL(wp) :: rmasks = 0.0_wp     !<  value at wet cells in sediment.
-  REAL(wp) :: rmasko = 0.0_wp     !<  value at wet cells in ocean.    
+  REAL(wp) :: rmasko = 0.0_wp     !<  value at wet cells in ocean.
 
 
   INTEGER:: bgc_gin, bgc_arctic, bgc_lab, bgc_natl, bgc_atl, bgc_tatl, bgc_tropac,  bgc_land, bgc_ind, bgc_soce, bgc_npac, bgc_carb
-  
+
 END MODULE mo_control_bgc

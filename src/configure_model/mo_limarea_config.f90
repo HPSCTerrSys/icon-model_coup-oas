@@ -1,10 +1,7 @@
-! Contains the setup of variables related to the lateral boundary
-! condition for limited area models
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,10 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the setup of variables related to the lateral boundary
+! condition for limited area models
+
 MODULE mo_limarea_config
 
   USE mo_kind,               ONLY: wp
-  USE mo_impl_constants,     ONLY: MAX_CHAR_LENGTH
+  USE mo_impl_constants,     ONLY: MAX_CHAR_LENGTH, nintv_latbc
   USE mo_io_units,           ONLY: filename_max
   USE mo_util_string,        ONLY: t_keyword_list,                   &
                                    associate_keyword, with_keywords, &
@@ -47,27 +47,30 @@ MODULE mo_limarea_config
   INTEGER, PARAMETER :: LATBC_TYPE_EXT         = 1
 
 
+  TYPE t_interval_array
+    TYPE(timedelta), POINTER :: dtime_latbc_mtime => NULL()
+    TYPE(timedelta), POINTER :: bcintv_endtime => NULL()
+  END TYPE t_interval_array
 
   !>
   !!----------------------------------------------------------------------------
-  !! Derived type containing control variables specific to the nonhydrostatic 
+  !! Derived type containing control variables specific to the nonhydrostatic
   !! atm model
   !------------------------------------------------------------------------
   TYPE t_latbc_config
 
     ! variables from namelist
     INTEGER                         :: itype_latbc         ! type of limited area boundary nudging
-    REAL(wp)                        :: dtime_latbc         ! dt between two consequtive external latbc files
+    REAL(wp)                        :: dtime_latbc(nintv_latbc) ! dt between two consecutive external latbc files
     CHARACTER(LEN=filename_max)     :: latbc_filename      ! prefix of latbc files
     CHARACTER(LEN=MAX_CHAR_LENGTH)  :: latbc_path          ! directory containing external latbc files
     LOGICAL                         :: latbc_contains_qcqi ! latbc data contain qc and qi (=T) or not (=F)
-    LOGICAL                         :: latbc_contains_hus  ! latbc data uses the hus/clw/cli denominations for qv/qc/qi
     CHARACTER(LEN=FILENAME_MAX)     :: latbc_boundary_grid ! grid file defining the lateral boundary
     LOGICAL                         :: init_latbc_from_fg  ! take initial lateral boundary conditions from first guess
     LOGICAL                         :: nudge_hydro_pres    ! use hydrostatic pressure for lateral boundary nudging
 
     ! factor for pressure bias correction of latbc data
-    REAL(wp)                        :: fac_latbc_presbiascor 
+    REAL(wp)                        :: fac_latbc_presbiascor
 
     ! if LatBC data is unavailable: number of retries
     INTEGER                         :: nretries
@@ -77,14 +80,13 @@ MODULE mo_limarea_config
 
     ! dictionary which maps internal variable names onto GRIB2
     ! shortnames or NetCDF var names used in lateral boundary nudging.
-    CHARACTER(LEN=filename_max)     :: latbc_varnames_map_file  
+    CHARACTER(LEN=filename_max)     :: latbc_varnames_map_file
 
     !
     ! settings derived from the namelist parameters above:
     !
     LOGICAL                         :: lsparse_latbc       ! Flag: TRUE if only boundary rows are read.
-    TYPE(timedelta), POINTER        :: dtime_latbc_mtime   ! dt between two consequtive external latbc files
-
+    TYPE(t_interval_array)          :: intv(nintv_latbc)
 
   END TYPE t_latbc_config
   !------------------------------------------------------------------------
@@ -98,7 +100,7 @@ CONTAINS
 
   SUBROUTINE configure_latbc()
   !--------------------------------------------------------------------------------------
-  !  Set up parameters 
+  !  Set up parameters
   !--------------------------------------------------------------------------------------
     CHARACTER(*), PARAMETER :: routine = &
       "mo_limarea_config::configure_latbc"
@@ -137,7 +139,7 @@ CONTAINS
        CALL message(TRIM(routine),message_text)
     ENDIF
 
-  
+
   END SUBROUTINE configure_latbc
   !--------------------------------------------------------------------------------------
 
@@ -154,7 +156,7 @@ CONTAINS
     CHARACTER(MAX_CHAR_LENGTH), PARAMETER       :: routine = modname//'::generate_filename'
     TYPE (t_keyword_list), POINTER              :: keywords => NULL()
     CHARACTER(MAX_CHAR_LENGTH)                  :: str
-    
+
     WRITE(str,'(i4)')   latbc_mtime%date%year
     CALL associate_keyword("<y>",         TRIM(str),                        keywords)
     WRITE(str,'(i2.2)') latbc_mtime%date%month
@@ -167,12 +169,12 @@ CONTAINS
     CALL associate_keyword("<min>",       TRIM(str),                        keywords)
     WRITE(str,'(i2.2)') latbc_mtime%time%second !FLOOR(latbc_mtime%time%second)
     CALL associate_keyword("<sec>",       TRIM(str),                        keywords)
-      
+
     CALL associate_keyword("<nroot>",     TRIM(int2string(nroot,'(i1)')),   keywords)
     CALL associate_keyword("<nroot0>",    TRIM(int2string(nroot,'(i2.2)')), keywords)
     CALL associate_keyword("<jlev>",      TRIM(int2string(jlev, '(i2.2)')), keywords)
     CALL associate_keyword("<dom>",       TRIM(int2string(1,'(i2.2)')),     keywords)
-    
+
     IF (PRESENT(opt_mtime_begin)) THEN
       CALL associate_keyword("<ddhhmmss>", &
         &                    TRIM(mtime_utils%ddhhmmss(opt_mtime_begin, latbc_mtime, FMT_DDHHMMSS)), &

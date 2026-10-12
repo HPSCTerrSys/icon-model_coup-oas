@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@
 ocean_namelist=NAMELIST_${EXPNAME}
 #-----------------------------------------------------------------------------
 #-----------------------------------------------------------------------------
-# ocean forcing (iforc=12) needs an additional flux file 
+# ocean forcing (iforc=12) needs an additional flux file
 # NO_FORCING                 = 10
 # ANALYT_FORC                = 11  - dependent on testcase
 # FORCING_FROM_FILE_FLUX     = 12  - OMIP or NCEP type forcing

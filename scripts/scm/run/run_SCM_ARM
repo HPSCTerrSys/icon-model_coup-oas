@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -81,8 +81,8 @@ end_date="1997-06-21T14:30:00Z"
 #-----------------------------------------------------------------------------
 DT_DATA=`expr 1 \* 3600`      # output each n hours
 DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000              # number of time steps per output file 
+#n_in_ofile=60                # number of time steps per output file
+n_in_ofile=10000              # number of time steps per output file
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -140,7 +140,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
@@ -183,7 +183,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12           ! detailed report during integration
  output         = 'nml','totint'
 /
@@ -222,13 +222,14 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing       = .FALSE.
  is_nudging           = .FALSE.
  is_nudging_uv        = .FALSE.
- is_nudging_tq        = .FALSE.
+ is_nudging_t         = .FALSE.
+ is_nudging_q         = .FALSE.
  is_sim_rad           = .FALSE.
 /
 
 &turbdiff_nml
  tkhmin        = 0.75   ! new default since rev. 16527
- tkmmin        = 0.75   !           " 
+ tkmmin        = 0.75   !           "
  pat_len       = 750.
  c_diff        = 0.2
  rat_sea       = 8.5    ! new value since rev. 25646 (reduced saturation vapor pressure over salt water)
@@ -236,7 +237,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 !frcsmot       = 0.2    ! these 2 switches together apply vertical smoothing of the TKE source terms
 !imode_frcsmot = 2      ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 0    
+ itype_sher    = 0
  ltkeshs       = .false.
  a_hshr        = 2.0
  !lconst_z0    = .TRUE.

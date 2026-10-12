@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -31,8 +31,8 @@ leading_zero=""
 if [[ $days_data -lt 10 ]] ; then leading_zero="0"; fi
 nout_interv="P$leading_zero${days_data}D"     # ocean model output interval in days
 (( dt_data        = days_data     * day  ))   # used for output_bounds and buildbot
-(( dt_checkpoint  = years_checkp  * year ))  
-(( dt_restart     = years_restart * year ))  
+(( dt_checkpoint  = years_checkp  * year ))
+(( dt_restart     = years_restart * year ))
 (( steps_per_file = dt_restart / dt_data ))   # output intervals per file
 #
 LOC='POOL'
@@ -107,9 +107,9 @@ cat > ${ocean_namelist} << EOF
   fast_performance_level        = 12
 ! use_continuity_correction     = .true.
   basin_center_lat  =30.0
-!  basin_center_lon =             
+!  basin_center_lon =
 !  basin_height_deg =
-!  basin_width_deg =             
+!  basin_width_deg =
 /
 &ocean_tracer_transport_nml
 ! no_tracer             = 2      ! tracer-transport: 0=no transport, 1=temperature, 2=temp. and salinity
@@ -168,7 +168,7 @@ cat > ${ocean_namelist} << EOF
 &io_nml
   dt_checkpoint = ${dt_checkpoint}
   lkeep_in_sync = .TRUE.          ! sync after each timestep
-  ! use_set_event_to_simstep = .false. 
+  ! use_set_event_to_simstep = .false.
 /
 EOF
 #-----------------------------------------------------------------------------

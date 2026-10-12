@@ -1,21 +1,20 @@
-!
-! Routines for computing hydrostatically balanced initial conditions
-!
-! A hydrostatically balanced state is achieved by integrating the discretized (!)
-! third equation of motion, assuming dw/dt=0.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Routines for computing hydrostatically balanced initial conditions
+!
+! A hydrostatically balanced state is achieved by integrating the discretized (!)
+! third equation of motion, assuming dw/dt=0.
+
+!----------------------------
 #include "omp_definitions.inc"
 !----------------------------
 
@@ -30,7 +29,7 @@ MODULE mo_hydro_adjust
   USE mo_run_config,            ONLY: msg_level
   USE mo_nonhydro_types,        ONLY: t_nh_metrics
   USE mo_loopindices,           ONLY: get_indices_c
-  USE mo_satad,                 ONLY: sat_pres_water
+  USE mo_thdyn_functions,       ONLY: sat_pres_water
   USE mo_util_string,           ONLY: int2string, real2string
   USE mo_util_table,            ONLY: t_table, initialize_table, add_table_column, &
     &                                 set_table_entry, print_table, finalize_table
@@ -148,7 +147,7 @@ CONTAINS
   !------------------------------------------------------------------------------------
   !>
   !! SUBROUTINE hydro_adjust_const_thetav
-  !! Computes hydrostatically balanced initial condition by either top-down or bottom-up 
+  !! Computes hydrostatically balanced initial condition by either top-down or bottom-up
   !! integration.
   !! In contrast to the routine hydro_adjust, virtual potential temperature is kept constant
   !! during the adjustment, leading to a simpler formula
@@ -256,12 +255,12 @@ CONTAINS
   !!   theta_v, exner, rho, qv
   !! by integrating the discretized (!) third equation of motion, assuming dw/dt = 0
   !!
-  !! Input:  
+  !! Input:
   !!   - prescribed profile of t and rel_hum
   !!   - reference state exner_ref, theta_v_ref
   !!   - boundary condition for exner
-  !! If the integration is prescribed bottom-up (top-down) a lower (upper) 
-  !! boundary condition for exner must be provided. 
+  !! If the integration is prescribed bottom-up (top-down) a lower (upper)
+  !! boundary condition for exner must be provided.
   !!
   !! Output: exner, theta_v, rho, qv
   !!
@@ -310,11 +309,11 @@ CONTAINS
     REAL(wp) :: es                                   ! saturation vapour pressure
 
     REAL(wp), POINTER :: ptr_exner_fg(:,:,:)         ! exner first guess
-                                                     ! will be either exner, or p_nh_metrics%exner_ref_mc 
+                                                     ! will be either exner, or p_nh_metrics%exner_ref_mc
                                                      ! depending on luse_exner_fg
 
     REAL(wp), ALLOCATABLE, TARGET :: &               ! wp precision for exner_ref_mc
-      &  exner_ref_mc_wp(:,:,:)                                     
+      &  exner_ref_mc_wp(:,:,:)
 
     LOGICAL  :: lintegrate_topdown                   ! TRUE : use opt_exner_ubc
                                                      ! FALSE: opt_exner_lbc
@@ -339,7 +338,7 @@ CONTAINS
       &                              maxDiffThetavCol = "max diff THETA_V [K]", &
       &                              maxDiffExnerCol  = "max diff EXNER"
 
-    ! table for depicting final vertical profiles 
+    ! table for depicting final vertical profiles
     TYPE(t_table)   :: table_profiles
     CHARACTER(LEN = *), PARAMETER :: levelCol  = "full level height [m]", &
       &                              thetavCol = "theta_v [K]",           &
@@ -363,7 +362,7 @@ CONTAINS
     IF (luse_exner_fg) THEN
       ptr_exner_fg => exner(:,:,:)
     ELSE
-      ! this detour is necessary, as exner_ref_mc can be either single precision, 
+      ! this detour is necessary, as exner_ref_mc can be either single precision,
       ! or double precision
       ALLOCATE(exner_ref_mc_wp(SIZE(p_nh_metrics%exner_ref_mc,1), &
         &                      SIZE(p_nh_metrics%exner_ref_mc,2), &
@@ -393,13 +392,13 @@ CONTAINS
 
 
     ! Strategy:
-    ! Given the vertical profile of temperture t and relative humidity rh, 
+    ! Given the vertical profile of temperture t and relative humidity rh,
     ! compute hydrostatically balanced profiles for exner, rho, theta_v and qv.
     !
     ! 0) Set first guess for exner and qv
     !    qv   : qv=0
     !    exner: either reference, or user-specific profile
-    ! 
+    !
     ! 1) Compute t_v from t and qv
     ! 2) Compute theta_v=t_v/exner.
     ! 3) Compute exner from the discretized third equation of motion
@@ -477,25 +476,25 @@ CONTAINS
             !
             ! perturbation value
             z_theta_v_pr(jc,jk) = theta_v_new(jc,jk) - p_nh_metrics%theta_ref_mc(jc,jk,jb)
-          ENDDO           
+          ENDDO
         ENDDO
 
 
 
         !***********************************************************
-        ! (3) solve the discretized third equation of motion for exner, 
-        !     under the assumption dw/dt=0 
+        ! (3) solve the discretized third equation of motion for exner,
+        !     under the assumption dw/dt=0
         !***********************************************************
         !
-        ! linear cell to face interpolation of theta_v_new and z_theta_v_pr 
-        !  
+        ! linear cell to face interpolation of theta_v_new and z_theta_v_pr
+        !
         DO jk=2,nlev
           DO jc = i_startidx, i_endidx
             theta_v_ic(jc,jk) = p_nh_metrics%wgtfac_c(jc,jk,jb) * theta_v_new(jc,jk) &
               &               + (1._wp-p_nh_metrics%wgtfac_c(jc,jk,jb))*theta_v_new(jc,jk-1)
 
             theta_v_pr_ic(jc,jk) = p_nh_metrics%wgtfac_c(jc,jk,jb) * z_theta_v_pr(jc,jk)  &
-              &               + (1._wp-p_nh_metrics%wgtfac_c(jc,jk,jb))* z_theta_v_pr(jc,jk-1)   
+              &               + (1._wp-p_nh_metrics%wgtfac_c(jc,jk,jb))* z_theta_v_pr(jc,jk-1)
           ENDDO
         ENDDO
 
@@ -540,7 +539,7 @@ CONTAINS
             pres = p0ref * EXP((cpd/rd)*LOG(exner_new(jc,jk)))
             ! specific humidity
             qv_new(jc,jk) =  rdv* rh_ini(jc,jk,jb) * es / (pres - o_m_rdv*rh_ini(jc,jk,jb)*es)
-          ENDDO           
+          ENDDO
         ENDDO
 
         !**********************************************************
@@ -591,7 +590,7 @@ CONTAINS
       diff_max_exner_tot(iter)   = global_max(diff_max_exner_tot(iter))
     ENDDO
 
-    ! convergence control output 
+    ! convergence control output
     !
     IF ((p_pe_work_only == 0) .AND. .NOT. my_process_is_stdio() .AND. msg_level >= 10) THEN
 

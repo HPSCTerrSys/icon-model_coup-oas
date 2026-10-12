@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -38,7 +38,7 @@ export I_MPI_PMI_LIBRARY=/usr/lib64/libpmi.so
 # with openmp=no
 # memory_model=huge
 # submit with sbatch
-# 
+#
 #=============================================================================
 set -x
 . ./add_run_routines
@@ -70,7 +70,7 @@ mpi_procs_pernode=24
 mpi_total_procs=24
 START="srun --cpu-freq=2500000 --kill-on-bad-exit=1 --nodes=${no_of_nodes} --cpu_bind=verbose,cores --distribution=block:block --ntasks=$((no_of_nodes * mpi_procs_pernode)) --ntasks-per-node=${mpi_procs_pernode} --cpus-per-task=$((2 * OMP_NUM_THREADS)) --propagate=STACK"
 #-----------------------------------------------------------------------------
-# load ../setting if exists  
+# load ../setting if exists
 if [ -a ../setting ]
 then
   echo "Load Setting"
@@ -133,7 +133,7 @@ esac
 # The specifications are passed by namelist to the program.
 # For a complete list see Namelist_overview.pdf
 #
-# EXPNAME and NPROMA must be defined as environment variables or they must 
+# EXPNAME and NPROMA must be defined as environment variables or they must
 # be substituted with appropriate values.
 #
 # Initial revision: 2015-04-14, F. Prill, DWD
@@ -198,15 +198,15 @@ INDIR="${icon_data_rootFolder}/buildbot_data/nwp/R02B04_R02B05_nest"
 add_link_file $INDIR/extpar_iconR2B04_DOM01.nc extpar_iconR2B04_DOM01.nc
 add_link_file $INDIR/extpar_iconR2B05_DOM02.nc extpar_iconR2B05_DOM02.nc
 
-add_link_file $INDIR/ifs2icon_R2B04_DOM01.nc ifs2icon_R2B04_DOM01.nc 
-add_link_file $INDIR/ifs2icon_R2B05_DOM02.nc ifs2icon_R2B05_DOM02.nc 
+add_link_file $INDIR/ifs2icon_R2B04_DOM01.nc ifs2icon_R2B04_DOM01.nc
+add_link_file $INDIR/ifs2icon_R2B05_DOM02.nc ifs2icon_R2B05_DOM02.nc
 
 
 
 # If the model runs with mpi_procs=1, then this script exits without error:
 if [[ ${mpi_total_procs} = 1 ]]; then
   echo "This test must not be started if mpi_procs=1 --> exit test without error"
-  check_error 0 "exp.nat_jww_nwp_mpiomp"
+  check_error 1 "exp.nat_jww_nwp_mpiomp"
   exit 0
 fi
 
@@ -249,7 +249,7 @@ cat > ${atmo_namelist} << EOF
  dynamics_parent_grid_id = 0,1
  lredgrid_phys           = .false.,.false.
  lfeedback               = .false.
-/ 
+/
 &run_nml
  num_lev                 = ${nlev},${nlev}      ! number of full levels of vertical grid
  modelTimeStep           = 'PT${dtime}S'
@@ -258,7 +258,7 @@ cat > ${atmo_namelist} << EOF
  ltransport              = .TRUE.               ! transport
  iforcing                = ${iforcing}          !
  ntracer                 =  5                   ! number of tracers - default 0
- ltimer                  = .true.               ! 
+ ltimer                  = .true.               !
  ltestcase               = .false.              ! initialize with real data
  timers_level            = 0
  msg_level               = 12                   ! detailed report during integration
@@ -341,7 +341,7 @@ cat > ${atmo_namelist} << EOF
  reg_lat_def             = -90.,1.,90.
  ml_varlist              = 'pres_sfc', 't_so', 'tmin_2m', 'tot_prec'
  hl_varlist              = 'temp'
- h_levels                = 200, 500, 2000 
+ h_levels                = 200, 500, 2000
  m_levels                = "5...(nlev+1)"
  output_start            = ">2014-06-01T00:00:00.000"
  output_end              = "<2014-06-01T00:24:00Z"
@@ -385,7 +385,7 @@ EOF
 #!/bin/ksh
 #=============================================================================
 #
-# This section of the run script prepares and starts the model integration. 
+# This section of the run script prepares and starts the model integration.
 #
 # bindir and START must be defined as environment variables or
 # they must be substituted with appropriate values.
@@ -451,7 +451,7 @@ if [ x$namelist_list = x ]; then
     modeltype_list[0]=99
   else
     check_error 1 "No namelist is defined"
-  fi 
+  fi
 fi
 
 #-----------------------------------------------------------------------------
@@ -554,11 +554,11 @@ cat > $master_namelist << EOF
 lrestart_write_last  = .FALSE.
 /
 &master_time_control_nml
- calendar             = "proleptic gregorian" 
- checkpointTimeIntval = "$checkpoint_interval" 
- restartTimeIntval    = "$restart_interval" 
- experimentStartDate  = "$start_date" 
- experimentStopDate   = "$end_date" 
+ calendar             = "proleptic gregorian"
+ checkpointTimeIntval = "$checkpoint_interval"
+ restartTimeIntval    = "$restart_interval"
+ experimentStartDate  = "$start_date"
+ experimentStopDate   = "$end_date"
 /
 &time_nml
  ini_datetime_string = "$start_date"
@@ -574,14 +574,14 @@ fi
 # add model component to master_namelist
 add_component_to_master_namelist()
 {
-    
+
   model_namelist_filename="$1"
   model_name=$2
   model_type=$3
   model_min_rank=$4
   model_max_rank=$5
   model_inc_rank=$6
-  
+
 cat >> $master_namelist << EOF
 &master_model_nml
   model_name="$model_name"
@@ -600,7 +600,7 @@ EOF
     check_error $? "mv -f ${RUNSCRIPTDIR}/$model_namelist_filename"
   else
     check_error 1 "${RUNSCRIPTDIR}/$model_namelist_filename does not exist"
-  fi  
+  fi
 
 }
 #-----------------------------------------------------------------------------
@@ -704,16 +704,16 @@ get_last_1_restart()
 {
   model_restart_param=$1
   restart_list=$(ls *restart_*${model_restart_param}*_*T*Z.nc)
-  
+
   last_restart=""
-  last_1_restart=""  
+  last_1_restart=""
   for restart_file in $restart_list
   do
     last_1_restart=$last_restart
     last_restart=$restart_file
 
     echo $restart_file $last_restart $last_1_restart
-  done  
+  done
 }
 
 
@@ -732,7 +732,7 @@ if [ x$test_restart = "xtrue" ] ; then
   if [ x$last_1_restart != x ] ; then
     restart_ocean_from=$last_1_restart
   fi
-  
+
   EXPNAME=${EXPNAME}_restart
   test_restart="false"
 fi
@@ -743,7 +743,7 @@ cd $RUNSCRIPTDIR
 
 #-----------------------------------------------------------------------------
 
-	
+
 # exit 0
 #
 # vim:ft=sh

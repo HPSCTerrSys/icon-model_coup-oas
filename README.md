@@ -9,7 +9,7 @@
 
 # Partnership
 
-The ICON partnership coordinates research activities developing, maintaining, and supporting the ICON modeling framework. 
+The ICON partnership coordinates research activities developing, maintaining, and supporting the ICON modeling framework.
 
 ICON partner institutions are:
 - [DWD](https://www.dwd.de/EN/Home/home_node.html)
@@ -22,18 +22,21 @@ ICON partner institutions are:
 More information about ICON is available in the [project's public web page](http://icon-model.org).
 
 
-# License
+# License and Data Protection
 
-ICON is available under a BSD 3-clause license. See [LICENSES/](./LICENSES) for license information and [AUTHORS.TXT](./AUTHORS.TXT) for a list of authors.
+ICON is available under a BSD 3-clause license. See [LICENSES/](./LICENSES) for license information and [AUTHORS.TXT](./AUTHORS.TXT) for a list of authors. Information about the policy regarding data protection and privacy is available in [this document](./doc/ICON-PrivacyPolicy.pdf).
 
 
 # Versioning
 
-The name of the release version is documented in the [VERSION](./VERSION) file in the root folder.
-
 ICON versions are named using the scheme `icon-yyyy.mm` where `yyyy` is the year and `mm` is the month of the release. The very first open source release of ICON is version icon-2024.01, release date January 2024. If patches are needed for a particular release, they will be icon-yyyy.mm-n with n starting at 1. Note: The patch-level 0 is the basic release. The 0 is not explicitly written to the version string.
 
 
-# Quick Start
+# Documentation
 
-The [Quick Start](./doc/Quick_Start.md) provides technical details on how to build the model, as well as the description of basic steps required to run it. 
+The [ICON Documentation Website](https://docs.icon-model.org) provides scientific and technical details on ICON, including how to configure, build and run it.
+
+
+# Contributing
+
+ICON contribution guidelines can be found [here](./CONTRIBUTING.md).

@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Subroutine to initialized the Weisman Klemp test case
 ! for the NH-Core in limited area mode
 !
@@ -6,18 +17,6 @@
 !  The Dependence of Numerically Simulated Convective Storms on
 !  Vertical Wind Shear and Buoyancy.
 !  Monthly Weather Review, 110,504-520
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_nh_wk_exp
 
@@ -30,7 +29,7 @@ MODULE mo_nh_wk_exp
 !
 !
 !
-  
+
    USE mo_kind,                 ONLY: wp
    USE mo_physical_constants,   ONLY: rd_o_cpd, p0ref, grav, &
      &                                cvd_o_rd, cpd ,     &
@@ -40,13 +39,13 @@ MODULE mo_nh_wk_exp
    USE mo_math_types,           ONLY: t_cartesian_coordinates, t_geographical_coordinates
    USE mo_math_constants,       ONLY: pi, deg2rad
    USE mo_math_utilities,       ONLY: gc2cc, arc_length, plane_torus_distance
-   USE mo_grid_geometry_info,   ONLY: planar_torus_geometry, sphere_geometry
+   USE mo_lib_grid_geometry_info,  ONLY: planar_torus_geometry, sphere_geometry
    USE mo_model_domain,         ONLY: t_patch
    USE mo_nonhydro_types,       ONLY: t_nh_prog, t_nh_diag, t_nh_metrics
    USE mo_run_config,           ONLY: iqv
    USE mo_impl_constants,       ONLY: min_rlcell_int
    USE mo_parallel_config,      ONLY: nproma
-   USE mo_satad,                ONLY: sat_pres_water, &  !! saturation vapor pressure w.r.t. water
+   USE mo_thdyn_functions,      ONLY: sat_pres_water, &  !! saturation vapor pressure w.r.t. water
      &                                sat_pres_ice,   &  !! saturation vapor pressure w.r.t. ice
      &                                spec_humi          !! Specific humidity
    USE mo_exception,            ONLY: message, finish, message_text
@@ -62,11 +61,11 @@ MODULE mo_nh_wk_exp
    IMPLICIT NONE
 
    PUBLIC  :: init_nh_topo_wk, init_nh_env_wk, init_nh_buble_wk
-  
+
    PRIVATE
 
    CHARACTER(len=*), PARAMETER :: modname = 'mo_nh_wk_exp'
-   
+
    REAL(wp), PARAMETER :: cpd_o_rd = 1._wp / rd_o_cpd
    REAL(wp), PARAMETER :: grav_o_cpd = grav / cpd
 
@@ -85,13 +84,13 @@ MODULE mo_nh_wk_exp
 
   ! Data for the initial profile of relative humidity:
    REAL(wp), PARAMETER :: rh_min_wk   = 0.10_wp        ! [%] ! rel. hum. above the tropopause level
-   REAL(wp), PARAMETER :: rh_max_wk   = 0.95_wp        ! [%]  
+   REAL(wp), PARAMETER :: rh_max_wk   = 0.95_wp        ! [%]
 
    INTEGER,  PARAMETER :: niter=20
    REAL(wp), PUBLIC :: qv_max_wk   != 0.012_wp  - 0.016_wp  !NAMELIST PARAMETER
   ! Data for the wind profile
    REAL(wp), PUBLIC :: u_infty_wk  != 0 - 45  ms-1          !NAMELIST PARAMETER
-   REAL(wp), PARAMETER :: href_wk  = 3000._wp ! Scaling height (height of 70 % windspeed) 
+   REAL(wp), PARAMETER :: href_wk  = 3000._wp ! Scaling height (height of 70 % windspeed)
                                     ! for the Weisman-Klemp wind profile [m]
   ! Data for the thermal perturbation
 
@@ -99,7 +98,7 @@ MODULE mo_nh_wk_exp
    REAL(wp), PUBLIC :: bubctr_z               ! buble position in meters    !NAMELIST PARAMETER
    REAL(wp), PUBLIC :: bub_hor_width, bub_ver_width !buble width in meters  !NAMELIST PARAMETER
    REAL(wp), PUBLIC :: bub_amp                !buble amplitude in Kelvin    !NAMELIST PARAMETER
-  
+
 !--------------------------------------------------------------------
 
    CONTAINS
@@ -107,7 +106,7 @@ MODULE mo_nh_wk_exp
 !
   !>
   !! Initialization of topography for the Weisman Klemp test case
-  !! The topography is set to 0, but the possibility  to have 
+  !! The topography is set to 0, but the possibility  to have
   !!  a different topography is open
   !!
   SUBROUTINE init_nh_topo_wk( topo_c, nblks_c, npromz_c )
@@ -138,8 +137,8 @@ MODULE mo_nh_wk_exp
 !------------------------------------------------------------------------
 !
   !>
-  !! Initialization of prognostic state vector for the Weisman Klemp  test case 
-  !! 
+  !! Initialization of prognostic state vector for the Weisman Klemp  test case
+  !!
   !!
   SUBROUTINE init_nh_env_wk( ptr_patch, ptr_nh_prog, ptr_nh_diag, &
     &                                p_metrics, p_int, l_hydro_adjust )
@@ -156,7 +155,7 @@ MODULE mo_nh_wk_exp
 
     TYPE(t_nh_metrics), INTENT(IN)      :: p_metrics !< NH metrics state
     TYPE(t_int_state), INTENT(IN)       :: p_int
-    LOGICAL, INTENT(IN)                 :: l_hydro_adjust !if .TRUE. hydrostatically balanced 
+    LOGICAL, INTENT(IN)                 :: l_hydro_adjust !if .TRUE. hydrostatically balanced
                                                          ! initial condition
 
     INTEGER        ::  jc, jb, jk, je,   &
@@ -181,7 +180,7 @@ MODULE mo_nh_wk_exp
     ! number of vertical levels
     nlev   = ptr_patch%nlev
 
-    ! height of main levels    
+    ! height of main levels
     DO jk = 1, nlev
       z_full(jk) = 0.5_wp*(vct_a(jk)+vct_a(jk+1))
     ENDDO
@@ -237,9 +236,9 @@ MODULE mo_nh_wk_exp
 ! UB    ENDIF
     pres_aux    = p0ref*(exner_aux**cpd_o_rd)
     qv_aux      = spec_humi(e_aux,pres_aux)
-    theta_v_aux = theta(jk)*(1._wp+vtmpc1*qv_aux) 
+    theta_v_aux = theta(jk)*(1._wp+vtmpc1*qv_aux)
 
-    ! 2nd step: final computation  
+    ! 2nd step: final computation
     exner(jk)   = exner_tropo-grav_o_cpd*(z_full(jk)-h_tropo_wk)/(theta_v_aux-theta_v_tropo)*&
                   LOG(theta_v_aux/theta_v_tropo)
     temp(jk)    = theta(jk)*exner(jk)
@@ -250,7 +249,7 @@ MODULE mo_nh_wk_exp
 ! UB    ENDIF
     pres(jk)    = p0ref*(exner(jk)**cpd_o_rd)
     qv(jk)      = spec_humi(e_aux,pres(jk))
-    theta_v(jk) = theta(jk)*(1._wp+vtmpc1*qv(jk)) 
+    theta_v(jk) = theta(jk)*(1._wp+vtmpc1*qv(jk))
 
     ! Remaining model layers
     DO jk = k_tropo+2, nlev
@@ -260,7 +259,7 @@ MODULE mo_nh_wk_exp
       qv_extrap   = MIN(qv_max_wk,qv(jk-1)+(qv(jk-2)-qv(jk-1))/          &
       (z_full(jk-2)-z_full(jk-1))*(z_full(jk)-z_full(jk-1)) )
 !      qv_extrap   = qv(jk-1)+(qv(jk-2)-qv(jk-1))/          &
-!        (z_full(jk-2)-z_full(jk-1))*(z_full(jk)-z_full(jk-1)) 
+!        (z_full(jk-2)-z_full(jk-1))*(z_full(jk)-z_full(jk-1))
 !<FR
       theta_v_aux = theta(jk)*(1._wp+vtmpc1*qv_extrap)
       exner_aux   = exner(jk-1)-grav_o_cpd*(z_full(jk)-z_full(jk-1))/ &
@@ -276,9 +275,9 @@ MODULE mo_nh_wk_exp
       qv_aux      = MIN(qv_max_wk,spec_humi(e_aux,pres_aux))
 !      qv_aux      = spec_humi(e_aux,pres_aux)
 !<FR
-      theta_v_aux = theta(jk)*(1._wp+vtmpc1*qv_aux) 
+      theta_v_aux = theta(jk)*(1._wp+vtmpc1*qv_aux)
 
-      ! 2nd step: final computation  
+      ! 2nd step: final computation
       exner(jk)   = exner(jk-1)-grav_o_cpd*(z_full(jk)-z_full(jk-1))/ &
                    (theta_v_aux-theta_v(jk-1))*LOG(theta_v_aux/theta_v(jk-1))
       temp(jk)    = theta(jk)*exner(jk)
@@ -292,7 +291,7 @@ MODULE mo_nh_wk_exp
       qv(jk)      = MIN(qv_max_wk,spec_humi(e_aux,pres(jk)))
 !      qv(jk)      = spec_humi(e_aux,pres(jk))
 !<FR
-      theta_v(jk) = theta(jk)*(1._wp+vtmpc1*qv(jk)) 
+      theta_v(jk) = theta(jk)*(1._wp+vtmpc1*qv(jk))
 
 
     ENDDO
@@ -322,14 +321,14 @@ MODULE mo_nh_wk_exp
       ENDIF
 
       DO jk = nlev, 1, -1
-        DO jc = 1, nlen  
+        DO jc = 1, nlen
           ptr_nh_prog%theta_v(jc,jk,jb)    = theta_v(jk)
           ptr_nh_prog%exner(jc,jk,jb)      = exner(jk)
           ptr_nh_prog%tracer(jc,jk,jb,iqv) = qv(jk)
           ptr_nh_prog%rho(jc,jk,jb)  = ptr_nh_prog%exner(jc,jk,jb)**cvd_o_rd*p0ref &
                                        /rd/ptr_nh_prog%theta_v(jc,jk,jb)
         ENDDO !jc
-      ENDDO !jk     
+      ENDDO !jk
     ENDDO !jb
 !$OMP END DO
 
@@ -345,7 +344,7 @@ MODULE mo_nh_wk_exp
 
         DO jk = 1, nlev
           DO je = i_startidx, i_endidx
-            z_u = u_infty_wk * ( TANH((z_full(jk)-hmin_wk)/(href_wk-hmin_wk)) - 0.45_wp) 
+            z_u = u_infty_wk * ( TANH((z_full(jk)-hmin_wk)/(href_wk-hmin_wk)) - 0.45_wp)
             ptr_nh_prog%vn(je,jk,jb) = &
              z_u * ptr_patch%edges%primal_normal(je,jb)%v1
           ENDDO !je
@@ -354,12 +353,12 @@ MODULE mo_nh_wk_exp
 !$OMP END DO
 !$OMP END PARALLEL
 
-    CALL diagnose_pres_temp (p_metrics, ptr_nh_prog,ptr_nh_prog, ptr_nh_diag,     &
-                             ptr_patch, opt_calc_pres=.TRUE., opt_calc_temp=.TRUE.)
+    CALL diagnose_pres_temp (p_metrics, ptr_nh_prog,ptr_nh_prog, ptr_nh_diag, ptr_patch, &
+      &                     lacc=.FALSE., opt_calc_pres=.TRUE., opt_calc_temp=.TRUE.)
 
 ! initialize vertical velocity
    CALL init_w(ptr_patch, p_int, ptr_nh_prog%vn, p_metrics%z_ifc, ptr_nh_prog%w)
-   CALL sync_patch_array(SYNC_C, ptr_patch, ptr_nh_prog%w)
+   CALL sync_patch_array(SYNC_C, ptr_patch, ptr_nh_prog%w,lacc=.FALSE.)
 
 
   IF (l_hydro_adjust) THEN
@@ -374,12 +373,12 @@ MODULE mo_nh_wk_exp
 !-------------------------------------------------------------------------
 !
   !>
-  !! Initialization of thermal buble  for the Weisman Klemp  test case 
-  !! 
+  !! Initialization of thermal buble  for the Weisman Klemp  test case
+  !!
   !!
   SUBROUTINE init_nh_buble_wk( ptr_patch, p_metrics, ptr_nh_prog, ptr_nh_diag )
 
-  
+
     TYPE(t_patch), TARGET, INTENT(INOUT):: &  !< patch on which computation is performed
          &  ptr_patch
 
@@ -389,7 +388,7 @@ MODULE mo_nh_wk_exp
 
     TYPE(t_nh_diag), INTENT(INOUT)      :: &  !< diagnostic state vector
          &  ptr_nh_diag
- ! local variables  
+ ! local variables
 
     INTEGER        :: jc, jk, jb, nlen, nlev
     INTEGER        :: nblks_c, npromz_c
@@ -405,7 +404,7 @@ MODULE mo_nh_wk_exp
     nlev   = ptr_patch%nlev
     nblks_c   = ptr_patch%nblks_c
     npromz_c  = ptr_patch%npromz_c
-    
+
     SELECT CASE(ptr_patch%geometry_info%geometry_type)
 
     CASE (planar_torus_geometry)
@@ -431,7 +430,7 @@ MODULE mo_nh_wk_exp
         ELSE
           nlen = npromz_c
         ENDIF
-        
+
         DO jk = 1 , nlev
           DO jc = 1 , nlen
             x_loc(1) = ptr_patch%cells%cartesian_center(jc,jb)%x(1)/bub_hor_width
@@ -469,7 +468,7 @@ MODULE mo_nh_wk_exp
         ELSE
           nlen = npromz_c
         ENDIF
-        
+
         DO jk = 1 , nlev
           DO jc = 1 , nlen
             cart_loc = gc2cc( ptr_patch%cells%center(jc,jb) )
@@ -487,23 +486,24 @@ MODULE mo_nh_wk_exp
       ENDDO !jb
 !$OMP END DO
 !$OMP END PARALLEL
-      
+
     CASE DEFAULT
       CALL finish(modname//': init_nh_buble_wk', "Undefined geometry type for wk82 bubbles")
     END SELECT
-      
+
     CALL diagnose_pres_temp ( p_metrics, ptr_nh_prog,     &
-                              ptr_nh_prog, ptr_nh_diag,   &
-                              ptr_patch,                  &
-                              opt_calc_temp=.TRUE.,       &
-                              opt_calc_pres=.FALSE.,       &
-                              opt_rlend=min_rlcell_int )
-     
+      &                       ptr_nh_prog, ptr_nh_diag,   &
+      &                       ptr_patch,                  &
+      &                       lacc=.FALSE.,               &
+      &                       opt_calc_temp=.TRUE.,       &
+      &                       opt_calc_pres=.FALSE.,      &
+      &                       opt_rlend=min_rlcell_int )
+
   END SUBROUTINE init_nh_buble_wk
 !--------------------------------------------------------------------
 !!$! Function taken from COSMO
 !!$
-!!$  ! Specific humidity as function of T, p, and relhum 
+!!$  ! Specific humidity as function of T, p, and relhum
 !!$  !   (and qcrs = sum of all hydrometeor contents):
 !!$  ! NOTE: on input, relhum has to be smaller than p / E(T)!
 !!$  REAL(wp) FUNCTION qv_Tprelhum(p, temp, relhum, qcrs)
@@ -541,4 +541,3 @@ MODULE mo_nh_wk_exp
   END FUNCTION cp_moist_cosmo
 !--------------------------------------------------------------------
   END MODULE mo_nh_wk_exp
-

@@ -1,11 +1,7 @@
-! This module checks the read-in namelist parameters and, in case of
-! inconsistencies, it tries to correct these.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,19 +9,24 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! This module checks the read-in namelist parameters and, in case of
+! inconsistencies, it tries to correct these.
+
 MODULE mo_wave_crosscheck
 
-  USE mo_exception,         ONLY: message, finish
+  USE mo_exception,         ONLY: message, message_text, finish
+  USE mo_wave_constants,    ONLY: MODE_ANA
+  USE mo_master_config,     ONLY: isInitFromRestart
   USE mo_parallel_config,   ONLY: check_parallel_configuration
   USE mo_coupling_config,   ONLY: is_coupled_to_atmo
   USE mo_run_config,        ONLY: nsteps, ldynamics, ntracer, num_lev, ltestcase
   USE mo_grid_config,       ONLY: n_dom
-  USE mo_time_config,       ONLY: time_config, dt_restart
+  USE mo_time_config,       ONLY: dt_restart
   USE mo_time_management,   ONLY: compute_timestep_settings,                        &
        &                          compute_restart_settings,                         &
        &                          compute_date_settings
-  USE mo_event_manager,     ONLY: initEventManager
   USE mo_wave_config,       ONLY: wave_config
+  USE mo_initwave_config,   ONLY: initwave_config
 
   IMPLICIT NONE
 
@@ -53,10 +54,6 @@ CONTAINS
     CALL compute_timestep_settings()
     CALL compute_restart_settings()
     CALL compute_date_settings("wave", dt_restart, nsteps)
-    !
-    ! Create an event manager, ie. a collection of different events
-    !
-    CALL initEventManager(time_config%tc_exp_refdate)
 
     !--------------------------------------------------------------------
     ! Parallelization
@@ -64,12 +61,12 @@ CONTAINS
     CALL check_parallel_configuration()
 
     IF (.not.ldynamics) THEN
-      CALL finish(TRIM(routine),'Error: ldynamics must be TRUE')
+      CALL finish(routine,'Error: ldynamics must be TRUE')
     END IF
 
     DO jg=1,n_dom
       IF (ntracer /= wave_config(jg)%nfreqs*wave_config(jg)%ndirs) THEN
-        CALL finish(TRIM(routine),'Error: ntracer must be equal to nfreqs*ndirs')
+        CALL finish(routine,'Error: ntracer must be equal to nfreqs*ndirs')
       END IF
     ENDDO
 
@@ -78,13 +75,25 @@ CONTAINS
     IF (.NOT. is_coupled_to_atmo()) THEN
       DO jg=1,n_dom
         IF (TRIM(wave_config(jg)%forc_file_prefix) == '' .AND. .NOT.ltestcase) THEN
-          CALL finish(TRIM(routine),'Error: For standalone runs reading of forcing data from file is mandatory')
+          CALL finish(routine,'Error: For standalone runs reading of forcing data from file is mandatory')
         ENDIF
       ENDDO
     ENDIF
 
+    IF (isInitFromRestart() .AND. ANY(initwave_config(1:n_dom)%init_mode /= MODE_ANA)) THEN
+      CALL finish(routine,'Model initialization from restart file requires init_mode=1 (MODE_ANA)')
+    ENDIF
+
+    IF (ANY(initwave_config(1:n_dom)%init_mode == MODE_ANA) .AND. .NOT. isInitFromRestart()) THEN
+      IF (ANY(initwave_config(1:n_dom)%initial_wave_spectrum_filename == "")) THEN
+        WRITE(message_text,'(a)') "Error: 'init_mode=1' (read analysis for initialization) requires " // &
+          &                       "a valid filename 'initial_wave_spectrum_filename'"
+        CALL finish(routine, message_text)
+      ENDIF
+    ENDIF
+
     IF (ANY(num_lev(1:n_dom).ne.1)) THEN
-      CALL finish(TRIM(routine),'Error: num_lev must be 1')
+      CALL finish(routine,'Error: num_lev must be 1')
     END IF
 
     CALL message(routine,'finished.')

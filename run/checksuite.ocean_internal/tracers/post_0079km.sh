@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 filepath=../../../experiments/oce_tracer_bubble_0079km;
 cd $filepath; \
@@ -19,7 +20,7 @@ for file in ../oce_*.nc; do \
  pwd
  fname=$(basename "$file"); \
  cdo -splitsel,1 $file $fname; \
- if [ ! -f tst.nc ] 
+ if [ ! -f tst.nc ]
   then
       f=$fname'000000.nc';
       cdo -f nc -sellonlatbox,-55,-20,-45,45 -remapbil,r450x225 -topo tst.nc; \

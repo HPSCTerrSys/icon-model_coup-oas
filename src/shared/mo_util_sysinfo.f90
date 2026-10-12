@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -30,12 +30,12 @@ MODULE mo_util_sysinfo
     ENUMERATOR ::                 &
     SUCCESS                 =  0, &
     ERROR_FILE_NOT_FOUND    = -2, &
-    ERROR_FILE_NOT_READABLE = -3 
+    ERROR_FILE_NOT_READABLE = -3
   END ENUM
 
 
   INTERFACE
-    SUBROUTINE private_util_user_name(name, name_len) BIND(C,NAME='util_user_name') 
+    SUBROUTINE private_util_user_name(name, name_len) BIND(C,NAME='util_user_name')
       IMPORT :: C_INT, C_CHAR
       CHARACTER(C_CHAR), DIMENSION(*), INTENT(out) :: name
       INTEGER(C_INT), INTENT(out) :: name_len
@@ -43,7 +43,7 @@ MODULE mo_util_sysinfo
   END INTERFACE
 
   INTERFACE
-    SUBROUTINE private_util_os_system(name, name_len) BIND(C,NAME='util_os_system') 
+    SUBROUTINE private_util_os_system(name, name_len) BIND(C,NAME='util_os_system')
       IMPORT :: C_INT, C_CHAR
       CHARACTER(C_CHAR), DIMENSION(*), INTENT(out) :: name
       INTEGER(C_INT), INTENT(out) :: name_len
@@ -51,7 +51,7 @@ MODULE mo_util_sysinfo
   END INTERFACE
 
   INTERFACE
-    SUBROUTINE private_util_node_name(name, name_len) BIND(C,NAME='util_node_name') 
+    SUBROUTINE private_util_node_name(name, name_len) BIND(C,NAME='util_node_name')
       IMPORT :: C_INT, C_CHAR
       CHARACTER(C_CHAR), DIMENSION(*), INTENT(out) :: name
       INTEGER(C_INT), INTENT(out) :: name_len
@@ -59,7 +59,7 @@ MODULE mo_util_sysinfo
   END INTERFACE
 
   INTERFACE
-    SUBROUTINE private_util_get_maxrss(maxrss) BIND(C,NAME='util_get_maxrss') 
+    SUBROUTINE private_util_get_maxrss(maxrss) BIND(C,NAME='util_get_maxrss')
       IMPORT :: C_INT
       INTEGER(C_INT), INTENT(out) :: maxrss
     END SUBROUTINE private_util_get_maxrss
@@ -67,7 +67,7 @@ MODULE mo_util_sysinfo
 
 
   INTERFACE
-    SUBROUTINE private_util_compiler_release(release_str, rstr_len) BIND(C,NAME='util_compiler_release') 
+    SUBROUTINE private_util_compiler_release(release_str, rstr_len) BIND(C,NAME='util_compiler_release')
       IMPORT :: C_INT, C_CHAR
       CHARACTER(C_CHAR), DIMENSION(*), INTENT(out) :: release_str
       INTEGER(C_INT), INTENT(out) :: rstr_len
@@ -75,7 +75,7 @@ MODULE mo_util_sysinfo
   END INTERFACE
 
   INTERFACE
-    SUBROUTINE private_util_c_getpid(pid) BIND(C,NAME='util_c_getpid') 
+    SUBROUTINE private_util_c_getpid(pid) BIND(C,NAME='util_c_getpid')
       IMPORT :: C_LONG
       INTEGER(C_LONG), INTENT(out) :: pid
     END SUBROUTINE private_util_c_getpid
@@ -133,7 +133,7 @@ CONTAINS
   ! This should do the same as D. Sternkopf's suggestion:
   !
   ! grep -B 11 'KernelPageSize:     2048 kB' /proc/$pid/smaps |  \
-  !       grep "^Size:" | awk 'BEGIN{sum=0}{sum+=$2}END{print sum/1024}'  
+  !       grep "^Size:" | awk 'BEGIN{sum=0}{sum+=$2}END{print sum/1024}'
   !
   INTEGER FUNCTION get_smaps_sum(filename, opt_ierr)
     CHARACTER(LEN=*),   INTENT(IN)    :: filename   !< source file name.
@@ -162,7 +162,7 @@ CONTAINS
 
     ! print input file's contents:
     iunit = find_next_free_unit(10,100)
-    OPEN(unit=iunit, file=filename, status='old',action='read', iostat=io_error) 
+    OPEN(unit=iunit, file=filename, status='old',action='read', iostat=io_error)
     IF ( io_error /= 0) THEN
       ierr = ERROR_FILE_NOT_READABLE
       IF (PRESENT(opt_ierr))  opt_ierr = ierr
@@ -188,7 +188,7 @@ CONTAINS
       END IF
     END DO
 
-    CLOSE(iunit) 
+    CLOSE(iunit)
     IF (PRESENT(opt_ierr))  opt_ierr = ierr
     get_smaps_sum = sum/1024
 #endif

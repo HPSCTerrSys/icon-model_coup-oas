@@ -1,0 +1,27 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/utils/apt.yml
+  - local: .gitlab/ci/common/any-image.yml
+
+# Implements the recommended default template for a job based on the ubuntu
+# Docker image. Installs the required Advanced Package Tool (APT) packages (see
+# .utils:apt).
+#
+.common:ubuntu:
+  extends:
+    - .common:any-image
+    - .utils:apt
+  before_script:
+    - !reference [.common:any-image, before_script]
+    - !reference [.utils:apt, before_script]
+  image: ubuntu:latest

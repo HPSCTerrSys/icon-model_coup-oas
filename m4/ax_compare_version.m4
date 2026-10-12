@@ -74,7 +74,7 @@
 #   SPDX-License-Identifier: FSFAP
 #
 #   Copyright (c) 2008 Tim Toolan <toolan@ele.uri.edu>
-#   Copyright (c) 2024 MPI-M, Sergey Kosukhin <sergey.kosukhin@mpimet.mpg.de>
+#   Copyright (c) 2025 MPI-M, Sergey Kosukhin <sergey.kosukhin@mpimet.mpg.de>
 #
 #   Copying and distribution of this file, with or without modification, are
 #   permitted in any medium without royalty provided the copyright notice

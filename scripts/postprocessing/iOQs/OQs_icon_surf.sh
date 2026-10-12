@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 set -e
 
@@ -23,7 +24,7 @@ cd $TMP_DIR
 
 $BINDIR/OQs_icon_input_mask.sh $GRID $LEV
 
-ref_SAL=$POOL/$GRID/initial_state.nc 
+ref_SAL=$POOL/$GRID/initial_state.nc
 ref_TEM=$POOL/$GRID/initial_state.nc
 
 CATFILE=surfdata.nc
@@ -32,7 +33,7 @@ CATFILE2=surfdata39.nc
 CODE='h_acc,t_acc,s_acc,h_sqr'
 CODE2='hi_acc,hs_acc,conc_acc,mld'
 
-for YEAR in $(seq $Y1 $CHUNK $Y2) 
+for YEAR in $(seq $Y1 $CHUNK $Y2)
 do
 
     INFILE=$(printf $DATADIR/${EXPID}/${EXPID}_oce_min_%04.0f0101T000000Z.nc $YEAR)

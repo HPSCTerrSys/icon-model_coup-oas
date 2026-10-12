@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Preliminary read and time interpolation of greenhouse gases data
 !
 ! This is  a clone of the respective ECHAM routine
@@ -7,31 +17,20 @@
 ! file bc_greenhouse_gases.nc (CO2, CH4, N2O, and CFC's).
 ! Provides interpolation in time and conversion from volume mixing ratio
 ! to mass mixing ratio of CO2, CH4, and N2O - not for CFC's!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_bc_greenhouse_gases
 
-  USE mo_kind,               ONLY: wp, dp, i8
-  USE mo_exception,          ONLY: finish, message, message_text, warning
+  USE mo_kind,               ONLY: wp
+  USE mo_exception,          ONLY: finish, message, message_text
   USE mo_physical_constants, ONLY: vmr_to_mmr_co2, vmr_to_mmr_ch4, vmr_to_mmr_n2o, vmr_to_mmr_c11, vmr_to_mmr_c12
-  USE mo_netcdf,             ONLY: nf90_noerr, nf90_nowrite, nf90_max_var_dims
+  USE mo_netcdf,             ONLY: nf90_nowrite, nf90_max_var_dims
   USE mo_netcdf_parallel,    ONLY: p_nf90_open, p_nf90_inq_dimid, p_nf90_inquire_dimension, &
        &                           p_nf90_inq_varid, p_nf90_get_var, p_nf90_close, &
        &                           p_nf90_inquire_variable
-  USE mtime,                 ONLY: datetime, no_of_sec_in_a_day, &
+  USE mtime,                 ONLY: datetime, NO_OF_SEC_IN_A_DAY, NO_OF_MS_IN_A_SECOND, &
        &                           getNoOfDaysInYearDateTime, &
-       &                           getdayofyearfromdatetime,  &
-       &                           getnoofsecondselapsedindaydatetime
+       &                           getDayOfYearFromDateTime,  &
+       &                           getNoOfSecondsElapsedInDayDateTime
 
   IMPLICIT NONE
   PRIVATE
@@ -61,9 +60,11 @@ MODULE mo_bc_greenhouse_gases
 
   REAL(wp), PROTECTED :: ghg_co2mmr, ghg_ch4mmr, ghg_n2ommr
   REAL(wp), PROTECTED :: ghg_cfcmmr(ghg_no_cfc)
+  !$ACC DECLARE CREATE(ghg_co2mmr, ghg_ch4mmr, ghg_n2ommr, ghg_cfcmmr)
 
   REAL(wp), PROTECTED :: ghg_co2vmr, ghg_ch4vmr, ghg_n2ovmr
   REAL(wp), PROTECTED :: ghg_cfcvmr(ghg_no_cfc)
+  !$ACC DECLARE CREATE(ghg_co2vmr, ghg_ch4vmr, ghg_n2ovmr, ghg_cfcvmr)
 
   LOGICAL, SAVE :: bc_greenhouse_gases_file_read = .FALSE.
 
@@ -91,11 +92,11 @@ CONTAINS
     ALLOCATE (ghg_ch4(ghg_no_years))
     ALLOCATE (ghg_n2o(ghg_no_years))
     ALLOCATE (ghg_cfc(ghg_no_years,ghg_no_cfc))
-    !$ACC ENTER DATA PCREATE(ghg_years, ghg_co2, ghg_ch4, ghg_n2o, ghg_cfc, ghg_cfcmmr, ghg_cfcvmr)
+    !$ACC ENTER DATA CREATE(ghg_years, ghg_co2, ghg_ch4, ghg_n2o, ghg_cfc)
 
     CALL nf_check(p_nf90_inq_varid (ncid, 'time', nvarid))
     CALL nf_check(p_nf90_get_var (ncid, nvarid, ghg_years))
-      
+
     CALL nf_check(p_nf90_inq_varid (ncid, 'CO2', nvarid))
     ! Find the time dimension in the variable and initialize 'var_count' as the
     ! 'count' argument of the 'p_nf90_get_var' function:
@@ -110,14 +111,14 @@ CONTAINS
       ENDIF
     ENDDO
     CALL nf_check(p_nf90_get_var (ncid, nvarid, ghg_co2, count = var_count))
-      
+
     ! Assume that the rest of the variables have the same dimensions:
     CALL nf_check(p_nf90_inq_varid (ncid, 'CH4', nvarid))
     CALL nf_check(p_nf90_get_var (ncid, nvarid, ghg_ch4, count = var_count))
-      
+
     CALL nf_check(p_nf90_inq_varid (ncid, 'N2O', nvarid))
     CALL nf_check(p_nf90_get_var (ncid, nvarid, ghg_n2o, count = var_count))
-      
+
     DO i = 1, ghg_no_cfc
       CALL nf_check(p_nf90_inq_varid (ncid, TRIM(ghg_cfc_names(i)), nvarid))
       CALL nf_check(p_nf90_get_var (ncid, nvarid, ghg_cfc(:,i), count = var_count))
@@ -135,23 +136,21 @@ CONTAINS
 
   SUBROUTINE bc_greenhouse_gases_time_interpolation(radiation_date, print_report)
 
-    TYPE(datetime), POINTER, INTENT(in) :: radiation_date
+    TYPE(datetime), INTENT(in) :: radiation_date
     LOGICAL, INTENT(IN), OPTIONAL :: print_report
 
-    REAL(dp) :: zsecref, zsecnow
-    REAL(dp) :: zw1, zw2
+    REAL(wp) :: zsecref, zsecnow
+    REAL(wp) :: zw1, zw2
     REAL(wp) :: zco2int, zch4int, zn2oint
     REAL(wp) :: zcfc(ghg_no_cfc)
-    INTEGER(i8) :: yearlen, yearday
     INTEGER :: iyear, iyearm, iyearp
 
     ! interpolation in time
 
-    yearlen = getNoOfDaysInYearDateTime(radiation_date)*no_of_sec_in_a_day
-    yearday = (getdayofyearfromdatetime(radiation_date)-1)*no_of_sec_in_a_day &
-         &   +getnoofsecondselapsedindaydatetime(radiation_date)    
-    zsecref = REAL(yearlen, dp)
-    zsecnow = REAL(yearday, dp)
+    zsecref =   REAL(getNoOfDaysInYearDateTime(radiation_date)*NO_OF_SEC_IN_A_DAY, wp)
+    zsecnow =   REAL(getDayOfYearFromDateTime(radiation_date)-1, wp) * REAL(NO_OF_SEC_IN_A_DAY, wp) &
+      &       + REAL(getNoOfSecondsElapsedInDayDateTime(radiation_date), wp)                        &
+      &       + REAL(radiation_date%time%ms, wp) / REAL(NO_OF_MS_IN_A_SECOND, wp)
 
     iyear  = radiation_date%date%year - INT(ghg_base_year) + 1   ! set right index to access in ghg fields
     iyearm = iyear - 1
@@ -170,11 +169,11 @@ CONTAINS
    &                                         ' or iyearm ', iyearm, &
    &                                         ' are out of range 1 - ', ghg_no_years
         CALL finish('mo_bc_greenhouse_gases', message_text)
- 
+
       ENDIF
 
-      zw1 = zsecnow/zsecref + 0.5_dp
-      zw2 = 1.0_dp - zw1
+      zw1 = zsecnow/zsecref + 0.5_wp
+      zw2 = 1.0_wp - zw1
 
       zco2int   = 1.0e-06_wp * ( zw1*ghg_co2(iyear)   + zw2*ghg_co2(iyearm)   )
       zch4int   = 1.0e-09_wp * ( zw1*ghg_ch4(iyear)   + zw2*ghg_ch4(iyearm)   )
@@ -193,8 +192,8 @@ CONTAINS
 
       ENDIF
 
-      zw2= zsecnow/zsecref - 0.5_dp
-      zw1= 1.0_dp - zw2
+      zw2= zsecnow/zsecref - 0.5_wp
+      zw1= 1.0_wp - zw2
 
       zco2int   = 1.0e-06_wp * ( zw1*ghg_co2(iyear)   + zw2*ghg_co2(iyearp)   )
       zch4int   = 1.0e-09_wp * ( zw1*ghg_ch4(iyear)   + zw2*ghg_ch4(iyearp)   )
@@ -229,7 +228,8 @@ CONTAINS
       END IF
     END IF
 
-    !$ACC UPDATE DEVICE(ghg_cfcvmr, ghg_cfcmmr) ASYNC(1)
+    !$ACC UPDATE DEVICE(ghg_co2mmr, ghg_ch4mmr, ghg_n2ommr, ghg_cfcmmr) &
+    !$ACC   DEVICE(ghg_co2vmr, ghg_ch4vmr, ghg_n2ovmr, ghg_cfcvmr)
 
   END SUBROUTINE bc_greenhouse_gases_time_interpolation
 
@@ -240,7 +240,6 @@ CONTAINS
     !$ACC EXIT DATA DELETE(ghg_ch4) IF(ALLOCATED(ghg_ch4))
     !$ACC EXIT DATA DELETE(ghg_n2o) IF(ALLOCATED(ghg_n2o))
     !$ACC EXIT DATA DELETE(ghg_cfc) IF(ALLOCATED(ghg_cfc))
-    !$ACC EXIT DATA DELETE(ghg_cfcmmr)
     IF (ALLOCATED(ghg_years)) DEALLOCATE(ghg_years)
     IF (ALLOCATED(ghg_co2))   DEALLOCATE(ghg_co2)
     IF (ALLOCATED(ghg_ch4))   DEALLOCATE(ghg_ch4)

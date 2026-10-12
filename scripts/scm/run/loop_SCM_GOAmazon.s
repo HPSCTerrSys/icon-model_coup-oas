@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -73,7 +73,7 @@ date=${YYYY}022000            #2014010100
 datelast=${YYYY}022000        #2014123100
 
 # SGP
-#date=${YYYY}042800       
+#date=${YYYY}042800
 #datelast=${YYYY}083000
 
 # test
@@ -108,7 +108,7 @@ while (( ${date} <= ${datelast} )) ; do
     ncks -O -v longitude,latitude,FR_LAND,PLCOV_MX,LAI_MX,ROOTDP,RSMIN,SOILTYP,Z0,EMIS_RAD,TOPO \
       ${SCMDATA}/init_data/init_${EXPNAME}_${YYYY}.nc init_SCM_2.nc
     ncks -A init_SCM_2.nc init_SCM.nc
-    ncks -O -d time,0,360 init_SCM.nc init_SCM.nc 
+    ncks -O -d time,0,360 init_SCM.nc init_SCM.nc
 #   ncks -O -d time,0,351 init_SCM.nc init_SCM.nc  # last forecast only to 21UTC (2014032200)
     ncks -O -3 init_SCM.nc out.nc
     ncrename -d time,nt out.nc
@@ -116,7 +116,7 @@ while (( ${date} <= ${datelast} )) ; do
     ncatted -O -a units,time,a,c,'seconds since '`echo $start_date | cut -c 1-10`' 0:00:00 0:00' init_SCM.nc
 
 #   \mv -f init_SCM.nc ${EXPDIR}
- 
+
   # clean
     rm -rf init_SCM_2.nc out.nc
 
@@ -147,12 +147,10 @@ while (( ${date} <= ${datelast} )) ; do
 
 
   # end loop
-  
+
   date=`date_calc.py --date=${date} -s -1`
 
 done
 
   YYYY=`expr $YYYY + 1`
 done
-
-

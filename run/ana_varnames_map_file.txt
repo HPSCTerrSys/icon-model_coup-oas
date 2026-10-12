@@ -1,14 +1,14 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ---------------------------------------------------------------
 
-# Dictionary for mapping between internal names and GRIB2/Netcdf 
+# Dictionary for mapping between internal names and GRIB2/Netcdf
 # variable names, which is needed by ICON's read procedures.
 #
 # internal name     variable name (here GRIB2)
@@ -64,6 +64,8 @@ smi                 SMI
 t_so                T_SO
 t_sk                SKT
 t_seasfc            T_SEA
+sst_warm_layer      DSST_WARM_LAYER
+sst_cold_skin       DSST_COLD_SKIN
 gz0                 Z0
 t_mnw_lk            T_MNW_LK
 t_wml_lk            T_WML_LK
@@ -82,6 +84,8 @@ t2m_bias            T_2M_FILTBIAS
 rh_avginc           RELHUM_LML_FILTINC
 t_avginc            T_LML_FILTINC
 t_wgt_avginc        T_LML_COSWGT_FILTINC
+t_daywgt_avginc     T_LML_DTWGT_FILTINC
+rh_daywgt_avginc    RELHUM_LML_DTWGT_FILTINC
 p_avginc            P_LML_FILTINC
 vabs_avginc         SP_LML_FILTINC
 albdif              ALB_RAD
@@ -103,3 +107,4 @@ pollalnu            ALNUsnc
 pollbetu            BETUsnc
 pollpoac            POACsnc
 pollambr            AMBRsnc
+t_2m_filt           T_2M_FILT_DCYCLE

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -46,7 +46,7 @@ BLAS_LAPACK_LIBS='-llapack -lblas_sequential'
 ECCODES_ROOT="/opt/dkrz/ve/eccodes/2.18.0_ncc-${cmp_ver}_serial_localdisk"
 ECCODES_LIBS='-leccodes_f90 -leccodes'
 
-FYAML_ROOT="/opt/dkrz/ve/libfyaml/0.7.12_ncc-${cmp_ver}"
+FYAML_ROOT="/opt/dkrz/ve/libfyaml/0.8-patch-23265a8_ncc-4.0.0"
 FYAML_LIBS='-lfyaml'
 
 XML2_ROOT="/opt/dkrz/ve/libxml2/2.9.14_ncc-${cmp_ver}"
@@ -54,24 +54,31 @@ XML2_LIBS='-lxml2'
 
 ################################################################################
 
-BUILD_ENV=". ${MODULESHOME}/init/sh; module purge; module load ${modules}; ulimit -s unlimited; export VE_LD_LIBRARY_PATH=\"${BLAS_LAPACK_ROOT}/lib:\${VE_LD_LIBRARY_PATH-}\";"
+BUILD_ENV="save_CC=\$CC; save_CXX=\$CXX; save_FC=\$FC; save_F77=\$F77; . ${MODULESHOME}/init/sh; module purge; module load ${modules}; CC=\$save_CC; CXX=\$save_CXX; FC=\$save_FC; F77=\$save_F77; ulimit -s unlimited; export VE_LD_LIBRARY_PATH=\"${BLAS_LAPACK_ROOT}/lib:\${VE_LD_LIBRARY_PATH-}\";"
 
 CC='mpincc'
 CFLAGS='-finline-functions -mno-vector-fma -fno-associative-math -msched-block -fcse-after-vectorization -traceback=verbose'
 ICON_CFLAGS='-O3'
 ICON_BUNDLED_CFLAGS='-O2'
 
+CXX='nc++'
+CXXFLAGS='-finline-functions -mno-vector-fma -fno-associative-math -msched-block -fcse-after-vectorization -traceback=verbose -O2'
+
 CPPFLAGS="-USX -D__SX__=__NEC__ -I${HDF5_ROOT}/include -I${NETCDF_ROOT}/include -I${ECCODES_ROOT}/include -I${FYAML_ROOT}/include -I${XML2_ROOT}/include/libxml2"
 
 FC='mpinfort'
-FCFLAGS="-USX -D__SX__=__NEC__ -I${HDF5_ROOT}/include -I${NETCDFF_ROOT}/include -I${ECCODES_ROOT}/include -fdiag-vector=0 -report-all -no-report-cg -traceback=verbose -O3 -mstack-arrays -msched-block -mvector-floating-divide-instruction -mvector-sqrt-instruction -floop-unroll-completely=8 -floop-unroll-completely-nest=8 -fcse-after-vectorization -mno-vector-fma -fno-associative-math"
+FCFLAGS="-USX -D__SX__=__NEC__ -I${HDF5_ROOT}/include -I${NETCDFF_ROOT}/include -I${ECCODES_ROOT}/include -fdiag-vector=0 -report-all -no-report-cg -traceback=verbose -O3 -mstack-arrays -msched-block -mvector-floating-divide-instruction -mvector-sqrt-instruction -floop-unroll-completely=8 -floop-unroll-completely-nest=8 -fcse-after-vectorization -mno-vector-fma -fno-associative-math -cxxlib"
 
 # Load list of inline files from DWD:
+ICON_DIR=${icon_dir}
 source "${icon_dir}/config/dwd/inlinelist.sh"
 
-ICON_FCFLAGS="-D__COMM_OPT__ -D__BLOCK_GET__ -D_RTTOV_ARCH_VECTOR -finline-functions -finline-file=$(join_arr : "${icon_dir}/" "${INLINE_LIST_EMVORADO[@]}" "${INLINE_LIST_ICON[@]}" "${INLINE_LIST_ART[@]}" "${INLINE_LIST_DACE[@]}")"
-ICON_ECRAD_FCFLAGS="-finline-functions -finline-file=$(join_arr : "${icon_dir}/" "${INLINE_LIST_ECRAD[@]}")"
+ICON_FCFLAGS="-D__COMM_OPT__ -D__BLOCK_GET__ -D_RTTOV_ARCH_VECTOR -finline-functions -finline-file=$(join_arr : "${INLINE_LIST_EMVORADO[@]}" "${INLINE_LIST_ICON[@]}" "${INLINE_LIST_ICONMATH[@]}" "${INLINE_LIST_ART[@]}" "${INLINE_LIST_DACE[@]}")"
+ICON_ECRAD_FCFLAGS="-finline-functions -finline-file=$(join_arr : "${INLINE_LIST_ECRAD[@]}")"
 ICON_FORTRAN_SUPPORT_FCFLAGS='-fpp'
+
+ICON_OCEAN_FCFLAGS="-D__LVECTOR__ -finline-functions -finline-file=$(join_arr : "${icon_dir}/" "${INLINE_LIST_OCEAN[@]}")"
+ICON_OCEAN_PATH='src/hamocc:src/ocean:src/sea_ice'
 
 # We have two instances of SZIP in the software tree: the original one, which is
 # used by HDF5, and a wrapper around AEC, which is not needed because ECCODES
@@ -84,7 +91,7 @@ LIBS="-Wl,--as-needed ${XML2_LIBS} ${FYAML_LIBS} ${ECCODES_LIBS} ${BLAS_LAPACK_L
 AR='nar'
 MPI_LAUNCH='mpirun'
 
-EXTRA_CONFIG_ARGS='--disable-rpaths --enable-active-target-sync --enable-mixed-precision --disable-loop-exchange --enable-grib2 --enable-mpi --disable-openmp --enable-ecrad --disable-art'
+EXTRA_CONFIG_ARGS='--disable-rpaths --enable-active-target-sync --enable-mixed-precision --disable-loop-exchange --enable-grib2 --enable-mpi --disable-openmp --enable-ecrad --disable-art --enable-fcgroup-OCEAN'
 
 ################################################################################
 
@@ -94,6 +101,8 @@ BUILD_ENV="${BUILD_ENV}" \
 CC="${CC}" \
 CFLAGS="${CFLAGS}" \
 CPPFLAGS="${CPPFLAGS}" \
+CXX="${CXX}" \
+CXXFLAGS="${CXXFLAGS}" \
 FC="${FC}" \
 FCFLAGS="${FCFLAGS}" \
 ICON_BUNDLED_CFLAGS="${ICON_BUNDLED_CFLAGS}" \
@@ -102,6 +111,8 @@ ICON_ECRAD_FCFLAGS="${ICON_ECRAD_FCFLAGS}" \
 ICON_FCFLAGS="${ICON_FCFLAGS}" \
 ICON_FORTRAN_SUPPORT_FCFLAGS="${ICON_FORTRAN_SUPPORT_FCFLAGS}" \
 ICON_LDFLAGS="${ICON_LDFLAGS}" \
+ICON_OCEAN_FCFLAGS="${ICON_OCEAN_FCFLAGS}" \
+ICON_OCEAN_PATH="${ICON_OCEAN_PATH}" \
 LDFLAGS="${LDFLAGS}" \
 LIBS="${LIBS}" \
 MPI_LAUNCH="${MPI_LAUNCH}" \
@@ -119,10 +130,16 @@ done
 # Copy runscript-related files when building out-of-source:
 if test $(pwd) != $(cd "${icon_dir}"; pwd); then
   echo "Copying runscript input files from the source directory..."
-  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*'
-  ln -sf -t run/ ${icon_dir}/run/standard_*
-  ln -sf set-up.info run/SETUP.config
-  rsync -uavz ${icon_dir}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${icon_dir}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${icon_dir}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${icon_dir}/make_runscripts .
   rsync -uavz ${icon_dir}/scripts .
   ln -sf ${icon_dir}/data

@@ -1,13 +1,7 @@
-! Contains the interpolation routines needed for grid refinement.
-!
-! These had originally been included in mo_grf_interpolation but then were
-! packed into a separate module to clean up the code
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -15,12 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the interpolation routines needed for grid refinement.
+!
+! These had originally been included in mo_grf_interpolation but then were
+! packed into a separate module to clean up the code
+
 ! #ifdef __xlC__
 ! @PROCESS HOT
 ! #endif
-#ifdef __PGI
-!pgi$g opt=1
-#endif
 
 MODULE mo_grf_intp_state
 !-------------------------------------------------------------------------
@@ -1106,7 +1102,7 @@ SUBROUTINE create_grf_index_lists( p_patch_all, p_grf_state, p_int_state )
             inv_ind_v(jv,jb) = icount_lbc
           ENDIF
         ENDIF
-        
+
       ENDDO
     ENDDO
 

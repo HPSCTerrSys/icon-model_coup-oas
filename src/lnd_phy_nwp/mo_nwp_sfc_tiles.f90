@@ -1,21 +1,20 @@
-! NWP surface tile utility functions
-!
-! Surface tile utility functions. Many of them are dealing with the
-! request of tile metainformation and its conversion between the
-! model-internal tile structure and the output tile structure according
-! to GRIB2 Product Definition Template (PDT) 4.55.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! NWP surface tile utility functions
+!
+! Surface tile utility functions. Many of them are dealing with the
+! request of tile metainformation and its conversion between the
+! model-internal tile structure and the output tile structure according
+! to GRIB2 Product Definition Template (PDT) 4.55.
 
 MODULE mo_nwp_sfc_tiles
 
@@ -50,13 +49,13 @@ MODULE mo_nwp_sfc_tiles
 
 
   !>
-  !! tile attributes 
+  !! tile attributes
   !!
   TYPE :: t_tile_att
     INTEGER :: tile_id_icon       !< ICON internal tile ID
     INTEGER :: tile_att           !< attribute according to GRIB2 code table 4.241
     !
-    CLASS(t_tile), POINTER :: tile_ptr !< concatenates attributes with its 
+    CLASS(t_tile), POINTER :: tile_ptr !< concatenates attributes with its
                                        !< corresponding tile
 
   CONTAINS
@@ -69,12 +68,12 @@ MODULE mo_nwp_sfc_tiles
 
 
   !>
-  !! individual tile meta-information 
+  !! individual tile meta-information
   !!
   TYPE :: t_tile
     CHARACTER(len=MAX_CHAR_LENGTH) :: name      !< tile name
     INTEGER                        :: tile_id
-    TYPE(t_tile_att), ALLOCATABLE  :: atts(:)   !< array of tile attributes  
+    TYPE(t_tile_att), ALLOCATABLE  :: atts(:)   !< array of tile attributes
 
   CONTAINS
     !
@@ -84,7 +83,7 @@ MODULE mo_nwp_sfc_tiles
     ! append tile attribute
     PROCEDURE  :: append_att                => tile_append_att
     !
-    ! get total number of tile attributes 
+    ! get total number of tile attributes
     PROCEDURE  :: getNumberOfTileAttributes => tile_getNumberOfTileAttributes
     !
     ! finalization
@@ -217,13 +216,13 @@ CONTAINS
     !****/***\***|****/***\***|****/***\***|****/***\***|*****|*******!  *******************
     ! umod | snw | umod | snw | umod | snw | umod | ice |   undef     !  <- Attribute
     !  1   |  4  |   2  |  5  |   3  |  6  |   7  |  9  |     8       !  <- Internal Tile ID
-    !-----------------------------------------------------------------!     
+    !-----------------------------------------------------------------!
 
 
     IF (ntiles_lnd>1) THEN
-      ! The total number of spatio-temporal changing tiles (see also GRIB2 PDT 4.55) 
-      ! of an individual grid cell is given as: 
-      ! the total number of land tiles + one ocean tile + one lake tile  
+      ! The total number of spatio-temporal changing tiles (see also GRIB2 PDT 4.55)
+      ! of an individual grid cell is given as:
+      ! the total number of land tiles + one ocean tile + one lake tile
       ntiles = ntiles_lnd + 2
     ELSE
       ntiles = ntiles_lnd
@@ -365,7 +364,7 @@ CONTAINS
     ENDIF
   END FUNCTION tile_att_getTileSuffix
 
-  
+
   !! Initializes tile of type t_tile
   !!
   SUBROUTINE tile_init (tile, tile_id, opt_name)
@@ -405,8 +404,8 @@ CONTAINS
   END SUBROUTINE tile_init
 
 
-  !! Appends set of attributes to tile. In addition 
-  !! the new attribute set is concatenated with the 'parent' 
+  !! Appends set of attributes to tile. In addition
+  !! the new attribute set is concatenated with the 'parent'
   !! tile by pointing to it.
   !!
   SUBROUTINE tile_append_att (tile, tile_id_icon, tile_att)
@@ -414,7 +413,7 @@ CONTAINS
     CLASS(t_tile), TARGET, INTENT(INOUT) :: tile    !< passed-object dummy argument
 
     INTEGER,       INTENT(IN)    :: tile_id_icon    !< ICON internal tile ID
-    INTEGER,       INTENT(IN)    :: tile_att        !< tile attribute 
+    INTEGER,       INTENT(IN)    :: tile_att        !< tile attribute
                                                     ! see GRIB2 code table 4.241
 
     ! local
@@ -511,14 +510,14 @@ CONTAINS
   !>
   !! Get total number of tiles
   !!
-  !! Get variable-specific number of tiles. All tiled fields 
-  !! belong to one of the following classes: 
+  !! Get variable-specific number of tiles. All tiled fields
+  !! belong to one of the following classes:
   !! CLASS_TILE: variable contains land and water tiles
   !! CLASS_TILE_LAND: variable contains only land tiles
   !! This information is part of each variables metadata (see 'info').
   !!
-  !! Note that the number of tiles returned by this routine adheres to the 
-  !! output (GRIB2) tile structure and not the model-internal structure. 
+  !! Note that the number of tiles returned by this routine adheres to the
+  !! output (GRIB2) tile structure and not the model-internal structure.
   !! I.e. snowtiles and the sea-ice tile are not considered as separate tiles.
   !!
   INTEGER FUNCTION tile_list_getNumberOfTiles(tile_list,varClass) RESULT(numberOfTiles)
@@ -527,7 +526,7 @@ CONTAINS
 
     INTEGER,            INTENT(IN) :: varClass   !< variable class
                                                  !< CLASS_TILE
-                                                 !<   variable contains land and water tiles 
+                                                 !<   variable contains land and water tiles
                                                  !< CLASS_TILE_LAND
                                                  !<   variable contains only land tiles
 
@@ -620,8 +619,8 @@ CONTAINS
   END FUNCTION tile_list_getTileAtt
 
 
-  !! Visualize basic surface tile setup. 
-  !! Graphical visualization of mapping between internal tile ids 
+  !! Visualize basic surface tile setup.
+  !! Graphical visualization of mapping between internal tile ids
   !! and grib2 tile information.
   !!
   SUBROUTINE tile_list_printSetup (tile_list)
@@ -652,7 +651,7 @@ CONTAINS
     ! will only be executed by stdio process
     IF(.NOT. my_process_is_stdio()) RETURN
 
-    ! poor man's table header 
+    ! poor man's table header
     WRITE(message_text,'(a,a,a,i2)') 'Surface tile setup'
     CALL message('', TRIM(message_text))
 
@@ -677,7 +676,7 @@ CONTAINS
       irow = irow + 1
       !
       ! print name
-      tileName = this_tile%name 
+      tileName = this_tile%name
       CALL set_table_entry(table,irow,tileNameCol, ADJUSTL(TRIM(tileName)))
       !
       ! print tile id
@@ -709,9 +708,9 @@ CONTAINS
 
 
   !! Destructor for variable of type t_tile_list
-  !! Note that we have voted against a type-bound procedure 
-  !! and binding name here. Likely, this makes it easier to 
-  !! identify the position in the code where this routine is 
+  !! Note that we have voted against a type-bound procedure
+  !! and binding name here. Likely, this makes it easier to
+  !! identify the position in the code where this routine is
   !! called.
   !!
   SUBROUTINE tile_list_destruct (tile_list)
@@ -736,4 +735,3 @@ CONTAINS
   END SUBROUTINE tile_list_destruct
 
 END MODULE mo_nwp_sfc_tiles
-

@@ -1,10 +1,7 @@
-!
-!**** *CUCALCLPI*  ROUTINE FOR LPI COMPUTATION
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,14 +9,16 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+!**** *CUCALCLPI*  ROUTINE FOR LPI COMPUTATION
+
 MODULE mo_cucalclpi
-  
+
   USE mo_kind   ,ONLY: JPRB=>wp     , &
     &                  jpim=>i4
-  
+
   USE mo_cuparameters , ONLY :                                   &
     & rg, rd, rcpd
-  
+
   USE mo_cufunctions, ONLY: foealfa, foeldcpm
 
   IMPLICIT NONE
@@ -68,14 +67,14 @@ IMPLICIT NONE
 INTEGER(KIND=jpim),INTENT(in)  :: klon
 INTEGER(KIND=jpim),INTENT(in)  :: klev
 INTEGER(KIND=jpim),INTENT(in)  :: ktype(klon)
-REAL(KIND=jprb)   ,INTENT(in)  :: ztu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)  :: zlu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)  :: zmflxs(klon,klev+1) 
-REAL(KIND=jprb)   ,INTENT(in)  :: zten(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)  :: pap(klon,klev) 
+REAL(KIND=jprb)   ,INTENT(in)  :: ztu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)  :: zlu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)  :: zmflxs(klon,klev+1)
+REAL(KIND=jprb)   ,INTENT(in)  :: zten(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)  :: pap(klon,klev)
 REAL(KIND=jprb)   ,INTENT(in)  :: zdgeoh(klon,klev)
 REAL(KIND=jprb)   ,INTENT(in)  :: zkineu(klon,klev)
-LOGICAL           ,INTENT(in)  :: ldland(klon) 
+LOGICAL           ,INTENT(in)  :: ldland(klon)
 LOGICAL           ,INTENT(in)  :: lacc
 REAL(KIND=jprb)   ,INTENT(out) :: lpi(klon)
 
@@ -86,7 +85,7 @@ INTEGER (KIND=jpim)   :: kland(klon)
 ! coefficient to split solid water mass flux in snow and graupel
 ! beta(1) for land, beta(2) for sea - Takahashi 2006 (mentioned
 ! in Lopez 2016)
-REAL(KIND=jprb), PARAMETER :: beta(2)= [0.7_jprb , 0.45_jprb ]  
+REAL(KIND=jprb), PARAMETER :: beta(2)= [0.7_jprb , 0.45_jprb ]
 ! Causes currently internal compiler error for Cray, ifdef should be removed when fixed
 #ifndef _CRAYFTN
   !$ACC DECLARE COPYIN(beta)
@@ -135,7 +134,7 @@ INTEGER(KIND=jpim) :: jk, jl
         IF (ztu(JL,JK) <=273.15_jprb .AND. ztu(JL,JK) >=273.15_jprb-20._jprb) THEN
         ! compute graupel and snow mixing ratio from the massflux
         ! of frozen precip - splitting it into snow and graupel with beta.
-        ! See Eq. 1 and 2 in Lopez (2016) 
+        ! See Eq. 1 and 2 in Lopez (2016)
         ! "A lightning parameterization for the ECMWF integrated forecasting system"
           zqGraup=beta(kland(JL))*zmflxs(JL, JK)/zrho(JL,JK)/Vgraup
           zqSnow=(1-beta(kland(JL)))*zmflxs(JL,JK)/zrho(JL,JK)/Vsnow
@@ -167,7 +166,7 @@ INTEGER(KIND=jpim) :: jk, jl
 !!  ! desirable.
 !!  ! In conclusion: The LPI here is representative for the updraft in the cloud
 !!  ! only.
-!!  lpi=lpi/15000._jprb 
+!!  lpi=lpi/15000._jprb
 
   !$ACC END PARALLEL
   !$ACC WAIT(1)
@@ -175,7 +174,7 @@ INTEGER(KIND=jpim) :: jk, jl
   !$ACC END DATA
 
 END SUBROUTINE cucalclpi
- 
+
 SUBROUTINE CUCALCMLPI(klon, klev, lpi, zten, zqen, pap, paph, koi, mlpi, lacc)
 ! Code Description:
 ! Computes a modified LPI using LPI as in Lynn and Yair and KOI.
@@ -206,11 +205,11 @@ SUBROUTINE CUCALCMLPI(klon, klev, lpi, zten, zqen, pap, paph, koi, mlpi, lacc)
 !    *MLPI*         MODIFIED LIGHTNING POTENTIAL INDEX (COMBINATIN WITH KOI) J/KG
 
 IMPLICIT NONE
-  
+
 INTEGER(KIND=jpim),INTENT(in) :: klon
 INTEGER(KIND=jpim),INTENT(in) :: klev
-REAL(KIND=jprb),INTENT(in)    :: zten(klon,klev) 
-REAL(KIND=jprb),INTENT(in)    :: zqen(klon,klev) 
+REAL(KIND=jprb),INTENT(in)    :: zten(klon,klev)
+REAL(KIND=jprb),INTENT(in)    :: zqen(klon,klev)
 REAL(KIND=jprb),INTENT(in)    :: pap(klon,klev)
 REAL(KIND=jprb),INTENT(in)    :: paph(klon,klev+1)
 REAL(KIND=jprb),INTENT(in)    :: lpi(klon)
@@ -231,7 +230,7 @@ REAL(KIND=jprb) :: deltap600(klon), deltap900(klon)
 REAL(KIND=jprb) :: fa(klon),fb(klon)
 REAL(KIND=jprb), PARAMETER :: fe=0.2960515_jprb
 REAL(KIND=jprb), PARAMETER :: fd=4.548663_jprb
-REAL(KIND=jprb), PARAMETER :: fg=15.52337_jprb 
+REAL(KIND=jprb), PARAMETER :: fg=15.52337_jprb
 REAL(KIND=jprb), PARAMETER :: fh=0.3845962_jprb
 REAL(KIND=jprb), PARAMETER :: fi=0.04240491_jprb
 REAL(KIND=jprb), PARAMETER :: fj=1.709239_jprb
@@ -285,7 +284,7 @@ INTEGER(KIND=jpim) :: jk, jl
   !$ACC LOOP GANG(STATIC: 1) VECTOR
   DO jl = 1, klon
     thetae900(jl) = thetae900(jl)/(deltap900(jl)+1E-20)
-  ! Over mountains where the lowest pressure level is below 800hPa, 
+  ! Over mountains where the lowest pressure level is below 800hPa,
   ! we use the surface value for thetae
     IF (pap(jl,klev) <= 80000.D0) THEN
       thetae900(jl)=thetae(jl,klev)
@@ -316,7 +315,7 @@ INTEGER(KIND=jpim) :: jk, jl
 
   !$ACC END PARALLEL
   !$ACC WAIT(1)
-                     
+
   !$ACC END DATA
 
 END SUBROUTINE CUCALCMLPI

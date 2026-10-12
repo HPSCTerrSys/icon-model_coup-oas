@@ -1,16 +1,17 @@
-! Utilities for multifile restart writing.
-! These are mostly convenience functions for accessing the restart configuration.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Utilities for multifile restart writing.
+! These are mostly convenience functions for accessing the restart configuration.
+
 #include "handle_mpi_error.inc"
 
 MODULE mo_multifile_restart_util

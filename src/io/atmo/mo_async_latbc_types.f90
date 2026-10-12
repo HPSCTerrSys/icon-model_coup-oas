@@ -1,17 +1,16 @@
-! This Module is a description for listings and indices
-! used for input prefetching routine.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This Module is a description for listings and indices
+! used for input prefetching routine.
 
 MODULE mo_async_latbc_types
 
@@ -20,11 +19,11 @@ MODULE mo_async_latbc_types
   USE mo_dictionary,               ONLY: DICT_MAX_STRLEN
   USE mtime,                       ONLY: MAX_DATETIME_STR_LEN, MAX_TIMEDELTA_STR_LEN, &
     &                                    event, datetime, timedelta, OPERATOR(-), &
-    &                                    getTotalSecondsTimedelta, deallocateTimedelta, &
+    &                                    getTotalSecondsTimedelta, deallocateTimedelta, deallocateDatetime,&
     &                                    deallocateEvent, datetimeToString, timedeltaToString
   USE mo_util_mtime,               ONLY: mtime_timedelta_to_seconds
   USE mo_initicon_types,           ONLY: t_init_state, t_init_state_const, t_pi_atm, t_init_state_finalize
-  USE mo_impl_constants,           ONLY: SUCCESS, max_ntracer, vname_len
+  USE mo_impl_constants,           ONLY: SUCCESS, max_ntracer, vname_len, nintv_latbc
   USE mo_exception,                ONLY: finish, message, message_text
   USE mo_run_config,               ONLY: msg_level
   USE mo_reorder_info,             ONLY: t_reorder_info, release_reorder_info
@@ -78,8 +77,8 @@ MODULE mo_async_latbc_types
 
 
   !> Data structure containing the lateral boundary forcing data.
-  !> Compared to t_init_state it allows to store forcing data 
-  !< for additional child domains, if required. 
+  !> Compared to t_init_state it allows to store forcing data
+  !< for additional child domains, if required.
   !< This is required in case of upper boundary nudging.
   !
   TYPE, EXTENDS (t_init_state) :: t_latbc_state
@@ -113,7 +112,7 @@ MODULE mo_async_latbc_types
      LOGICAL                                     :: lread_hhl
 
      ! are prognostic thermodynamic variables (= rho and theta_v) present in the input file?
-     LOGICAL                                     :: lread_theta_rho      
+     LOGICAL                                     :: lread_theta_rho
 
      ! .TRUE., if pressure is read from input
      LOGICAL                                     :: lread_pres
@@ -138,7 +137,7 @@ MODULE mo_async_latbc_types
      CHARACTER(LEN=10)                           :: hhl_var
 
      ! input data validity DateTime
-     TYPE(datetime)                              :: vDateTime          
+     TYPE(datetime)                              :: vDateTime
 
    CONTAINS
      PROCEDURE :: finalize => t_buffer_finalize   !< destructor
@@ -189,6 +188,11 @@ MODULE mo_async_latbc_types
     PROCEDURE :: finalize => t_glb_indices_finalize
   END TYPE t_glb_indices
 
+  TYPE t_interval_array
+    TYPE(event),     POINTER :: prefetchEvent   => NULL()
+    TYPE(timedelta), POINTER :: delta_dtime     => NULL()
+    TYPE(datetime),  POINTER :: bcintv_enddate      => NULL()
+  END TYPE t_interval_array
 
   !> Data type containing the time control, the variable buffer, and
   !> the necessary index arrays for reordering, to read in lateral
@@ -201,8 +205,7 @@ MODULE mo_async_latbc_types
     !> CDI handle of currently open stream, CDI_UNDEFID if not open
     INTEGER :: open_cdi_stream_handle = cdi_undefid
     TYPE(datetime) :: mtime_last_read
-    TYPE(event),     POINTER :: prefetchEvent   => NULL()
-    TYPE(timedelta), POINTER :: delta_dtime     => NULL()
+    TYPE(t_interval_array) :: intv(nintv_latbc)
 
     ! time level indices for  latbc_data. can be 1 or 2.
     INTEGER :: new_latbc_tlev
@@ -222,7 +225,7 @@ MODULE mo_async_latbc_types
     ! for sparse latbc mode: index data for boundary rows:
     TYPE(t_glb_indices) :: global_index
 
-    ! linear interpolation weights for time interpolation between 
+    ! linear interpolation weights for time interpolation between
     ! consecutive boundary data
     REAL(wp):: lc1, lc2
   CONTAINS
@@ -300,7 +303,7 @@ CONTAINS
     IF (ALLOCATED(buffer%nlev))           DEALLOCATE(buffer%nlev)
     IF (ALLOCATED(buffer%vars)) THEN
       DO i=1,SIZE(buffer%vars)
-        IF (ASSOCIATED(buffer%vars(i)%buffer))  DEALLOCATE(buffer%vars(i)%buffer)      
+        IF (ASSOCIATED(buffer%vars(i)%buffer))  DEALLOCATE(buffer%vars(i)%buffer)
       END DO
       DEALLOCATE(buffer%vars)
     END IF
@@ -311,7 +314,7 @@ CONTAINS
 
   SUBROUTINE t_latbc_state_finalize(init_data)
     CLASS(t_latbc_state), INTENT(INOUT) :: init_data
-    INTEGER :: jg 
+    INTEGER :: jg
 
     CALL t_init_state_finalize(init_data)
     !
@@ -331,7 +334,7 @@ CONTAINS
 
     ! local variables
     CHARACTER(LEN=*), PARAMETER :: routine = modname//"::t_latbc_data_finalize"
-    INTEGER :: tlev, ierror
+    INTEGER :: tlev, ierror, ji
 
     CALL message(routine, 'deallocating latbc data')
 
@@ -339,18 +342,20 @@ CONTAINS
     DO tlev = 1, 2
       CALL latbc%latbc_data(tlev)%finalize()
     END DO
-    
+
     CALL latbc%patch_data%finalize()          ! deallocate patch data
     CALL latbc%buffer%finalize()              ! deallocate intermediate storage latbc%buffer
     CALL latbc%global_index%finalize()        ! clean up global indices data structure.
 
-    IF (ASSOCIATED(latbc%prefetchEvent)) THEN
-      CALL deallocateEvent(latbc%prefetchEvent) ! deallocate prefetch input event
-    END IF
+    DO ji = 1, nintv_latbc
+      IF (ASSOCIATED(latbc%intv(ji)%prefetchEvent)) THEN
+        CALL deallocateEvent(latbc%intv(ji)%prefetchEvent) ! deallocate prefetch input event
+      END IF
+      ! deallocating date and time data structures
+      IF (ASSOCIATED(latbc%intv(ji)%delta_dtime))  CALL deallocateTimedelta(latbc%intv(ji)%delta_dtime)
+      IF (ASSOCIATED(latbc%intv(ji)%bcintv_enddate))   CALL deallocateDatetime(latbc%intv(ji)%bcintv_enddate)
+    END DO
 
-    ! deallocating date and time data structures
-    IF (ASSOCIATED(latbc%delta_dtime)) &
-      CALL deallocateTimedelta(latbc%delta_dtime)
     IF (ASSOCIATED(latbc%latbc_data_const)) THEN
       DEALLOCATE(latbc%latbc_data_const, stat=ierror)
       IF (ierror /= SUCCESS) CALL finish(routine, "deallocate failed!")
@@ -372,26 +377,26 @@ CONTAINS
 
 
     !-------------------------------------------------------------------------
-    !  Update linear interpolation weights (lc1, lc2) for the time interpolation 
+    !  Update linear interpolation weights (lc1, lc2) for the time interpolation
     !  between two consecutive boundary forcing time slices.
     !
     !
     !      <------------------------------------->  dtime_latbc
     !                               <------------>  delta_tstep
-    !                          datetime_current   
+    !                          datetime_current
     !   ---*------------------------X------------*----------------> time axis
     !    vDate_prev                            vDate_cur
     !
     SUBROUTINE t_latbc_data_update_intp_wgt( latbc, datetime_current )
       CLASS(t_latbc_data), INTENT(INOUT)  :: latbc
-      TYPE(datetime),      INTENT(IN)     :: datetime_current ! datetime for which interpolation 
+      TYPE(datetime),      INTENT(IN)     :: datetime_current ! datetime for which interpolation
                                                               ! weights shall be computed
 #ifndef NOMPI
-      TYPE(timedelta)         :: delta_tstep        ! time delta between current datetime and 
+      TYPE(timedelta)         :: delta_tstep        ! time delta between current datetime and
                                                     ! validity time of current boundary forcing time slice.
       INTEGER(i8)             :: delta_tstep_in_sec ! delta_tstep converted to seconds
 
-      REAL(wp)                :: dtime_latbc        ! time delta between two consecutive 
+      REAL(wp)                :: dtime_latbc        ! time delta between two consecutive
                                                     ! boundary forcing time slices [s]
       TYPE(timedelta)         :: td                 ! same in mtime format
       LOGICAL                 :: failure

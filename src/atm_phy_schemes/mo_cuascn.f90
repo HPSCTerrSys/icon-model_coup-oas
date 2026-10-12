@@ -32,8 +32,8 @@ MODULE mo_cuascn
     &                        lphylin  ,rlptrc,           &
     &                        entshalp ,rmfcmin,          &
     &                        rmflic   ,rmflia ,rvdifts  ,&
-    &                        rmfcmax, rlmin             ,&
-    &                        lhook,   dr_hook, lmfglac
+    &                        rmfcmax, rlmin, rdetrain,   &
+    &                        lhook,   dr_hook, lmfglac, rentrain
 
 
   USE mo_adjust ,ONLY: cuadjtq
@@ -52,7 +52,7 @@ CONTAINS
   !
   SUBROUTINE cuascn &
     & ( kidia,    kfdia,    klon,    ktdia,  klev, rmfcfl, &
-    & entrorg, fac_entrorg, detrpen, rprcon, lmfmid, lgrz_deepconv, ptsphy,&
+    & entrorg, fac_entrorg, detrpen, rprcon, lmfmid, lgrz_deepconv, lcdnc_interp, ptsphy,&
     & paer_ss,  ptenh,    pqenh,    ptenq,             &
     & pten,     pqen,     pqsen,    plitot,&
     & pgeo,     pgeoh,    pap,      paph,&
@@ -131,7 +131,7 @@ CONTAINS
 !!    *zdph*         pressure thickness on full levels             PA
 !!    *pcape*        CAPE                                          J/kg
 !!    *pcapethresh*  CAPE threshold beyond which entrainment parameter is reduced
-!!    *pcore*        Updraft core fraction profile                 0-1    
+!!    *pcore*        Updraft core fraction profile                 0-1
 
 !!    INPUT PARAMETERS (LOGICAL):
 
@@ -196,86 +196,86 @@ CONTAINS
 !USE PARKIND1  ,ONLY : JPIM     ,JPRB
 !USE YOMHOOK   ,ONLY : LHOOK,   DR_HOOK
 
-!USE YOMCST   , ONLY : RG       ,RCPD     ,RETV     ,RLVTT    ,RLSTT    ,RTT    
+!USE YOMCST   , ONLY : RG       ,RCPD     ,RETV     ,RLVTT    ,RLSTT    ,RTT
 !USE YOETHF   , ONLY : R2ES     ,R3LES    ,R3IES    ,R4LES    ,&
 ! & R4IES    ,R5LES    ,R5IES    ,R5ALVCP  ,R5ALSCP  ,&
 ! & RALVDCP  ,RALSDCP  ,RALFDCP  ,RTWAT    ,RTBER    ,&
 ! & RTBERCU  ,RTICE    ,RTICECU  ,&
-! & RTWAT_RTICECU_R    ,RTWAT_RTICE_R  
+! & RTWAT_RTICECU_R    ,RTWAT_RTICE_R
 !USE YOECUMF  , ONLY : ENTRORG  ,ENTSHALP  ,RMFCMIN  ,RPRCON   ,RMFCFL   ,RMFLIC   ,RMFLIA
 !USE YOEPHLI  , ONLY : LPHYLIN  ,RLPTRC
 !USE YOECLDP  , ONLY : RLMIN    ,LAERLIQAUTOCP, LAERLIQAUTOCPB
 !USE YOM_YGFL , ONLY : NACTAERO
 
-  
+
 USE mo_cufunctions       , ONLY: foealfcu
 ! GZ, 2013-09-13: tuning to reduce drizzle, and coupling of autoconversion to aerosols
 USE mo_atm_phy_nwp_config, ONLY: ltuning_kessler, icpl_aero_conv
 
 
-INTEGER(KIND=jpim),INTENT(in)    :: klon 
-INTEGER(KIND=jpim),INTENT(in)    :: klev 
-INTEGER(KIND=jpim),INTENT(in)    :: kidia 
-INTEGER(KIND=jpim),INTENT(in)    :: kfdia 
+INTEGER(KIND=jpim),INTENT(in)    :: klon
+INTEGER(KIND=jpim),INTENT(in)    :: klev
+INTEGER(KIND=jpim),INTENT(in)    :: kidia
+INTEGER(KIND=jpim),INTENT(in)    :: kfdia
 INTEGER(KIND=jpim),INTENT(in)    :: ktdia
-REAL(KIND=jprb)   ,INTENT(in)    :: rmfcfl 
+REAL(KIND=jprb)   ,INTENT(in)    :: rmfcfl
 REAL(KIND=jprb)   ,INTENT(in)    :: entrorg, rprcon, detrpen
-LOGICAL           ,INTENT(in)    :: lmfmid, lgrz_deepconv
-REAL(KIND=jprb)   ,INTENT(in)    :: ptsphy 
+LOGICAL           ,INTENT(in)    :: lmfmid, lgrz_deepconv, lcdnc_interp
+REAL(KIND=jprb)   ,INTENT(in)    :: ptsphy
 !KF
 REAL(KIND=jprb)   ,INTENT(in), OPTIONAL:: paer_ss(klon)
 !KF
-REAL(KIND=jprb)   ,INTENT(inout) :: ptenh(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: pqenh(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pten(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pqen(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pqsen(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: plitot(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pgeo(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pgeoh(klon,klev+1) 
-REAL(KIND=jprb)   ,INTENT(in)    :: zdgeoh(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pap(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: paph(klon,klev+1) 
-REAL(KIND=jprb)   ,INTENT(in)    :: zdph(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: ptenq(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pvervel(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pwubase(klon) 
+REAL(KIND=jprb)   ,INTENT(inout) :: ptenh(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: pqenh(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pten(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pqen(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pqsen(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: plitot(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pgeo(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pgeoh(klon,klev+1)
+REAL(KIND=jprb)   ,INTENT(in)    :: zdgeoh(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pap(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: paph(klon,klev+1)
+REAL(KIND=jprb)   ,INTENT(in)    :: zdph(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: ptenq(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pvervel(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pwubase(klon)
 REAL(KIND=jprb)   ,INTENT(in)    :: fac_entrorg(klon)
-REAL(KIND=jprb)   ,INTENT(in)    :: pcloudnum(klon) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pcore(klon,klev) 
-LOGICAL           ,INTENT(in)    :: ldland(klon) 
-LOGICAL           ,INTENT(in)    :: ldlake(klon) 
-LOGICAL           ,INTENT(inout) :: ldcum(klon) 
-INTEGER(KIND=jpim),INTENT(inout) :: ktype(klon) 
-INTEGER(KIND=jpim),INTENT(inout) :: klab(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: ptu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: pqu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: plu(klon,klev) 
+REAL(KIND=jprb)   ,INTENT(in)    :: pcloudnum(klon)
+REAL(KIND=jprb)   ,INTENT(in)    :: pcore(klon,klev)
+LOGICAL           ,INTENT(in)    :: ldland(klon)
+LOGICAL           ,INTENT(in)    :: ldlake(klon)
+LOGICAL           ,INTENT(inout) :: ldcum(klon)
+INTEGER(KIND=jpim),INTENT(inout) :: ktype(klon)
+INTEGER(KIND=jpim),INTENT(inout) :: klab(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: ptu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: pqu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: plu(klon,klev)
 REAL(KIND=JPRB)   ,INTENT(inout) :: plrain(klon,klev)
-REAL(KIND=jprb)   ,INTENT(inout) :: pmfu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: pmfub(klon) 
-REAL(KIND=jprb)   ,INTENT(out)   :: plglac(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(out)   :: pmfus(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(out)   :: pmfuq(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(out)   :: pmful(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(out)   :: plude(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(out)   :: pdmfup(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(out)   :: pdmfen(klon,klev) 
+REAL(KIND=jprb)   ,INTENT(inout) :: pmfu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: pmfub(klon)
+REAL(KIND=jprb)   ,INTENT(out)   :: plglac(klon,klev)
+REAL(KIND=jprb)   ,INTENT(out)   :: pmfus(klon,klev)
+REAL(KIND=jprb)   ,INTENT(out)   :: pmfuq(klon,klev)
+REAL(KIND=jprb)   ,INTENT(out)   :: pmful(klon,klev)
+REAL(KIND=jprb)   ,INTENT(out)   :: plude(klon,klev)
+REAL(KIND=jprb)   ,INTENT(out)   :: pdmfup(klon,klev)
+REAL(KIND=jprb)   ,INTENT(out)   :: pdmfen(klon,klev)
 REAL(KIND=jprb)   ,INTENT(in)    :: pcape(klon)
 REAL(KIND=jprb)   ,INTENT(in)    :: pcapethresh
-INTEGER(KIND=jpim),INTENT(inout) :: kcbot(klon) 
-INTEGER(KIND=jpim),INTENT(out)   :: kctop(klon) 
-INTEGER(KIND=jpim),INTENT(inout) :: kctop0(klon) 
-INTEGER(KIND=jpim),INTENT(in)    :: kdpl(klon) 
-REAL(KIND=jprb)   ,INTENT(inout) :: pmfude_rate(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(out)   :: pkineu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(out)   :: pwmean(klon) 
+INTEGER(KIND=jpim),INTENT(inout) :: kcbot(klon)
+INTEGER(KIND=jpim),INTENT(out)   :: kctop(klon)
+INTEGER(KIND=jpim),INTENT(inout) :: kctop0(klon)
+INTEGER(KIND=jpim),INTENT(in)    :: kdpl(klon)
+REAL(KIND=jprb)   ,INTENT(inout) :: pmfude_rate(klon,klev)
+REAL(KIND=jprb)   ,INTENT(out)   :: pkineu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(out)   :: pwmean(klon)
 LOGICAL           ,INTENT(in)    :: lacc
 
 REAL(KIND=jprb) ::     zdmfen(klon), zdmfde(klon),&
  & zqold(klon),  &
  & zbuo(klon,klev),    zluold(klon),&
- & zprecip(klon)  
+ & zprecip(klon)
 REAL(KIND=jprb) ::     zdpmean(klon)
 REAL(KIND=jprb) ::     zoentr(klon), zph(klon), zpbase(klon), zptop0(klon), zttop0(klon)
 REAL(KIND=jprb) ::     zcrit(klon), zdrain(klon), zdnoprc(klon), zentrorg(klon)
@@ -360,10 +360,10 @@ DO jk=1,klev
     pmfus      (jl,jk) = 0.0_JPRB
     pmfuq      (jl,jk) = 0.0_JPRB
     pmful      (jl,jk) = 0.0_JPRB
-    plude      (jl,jk) = 0.0_JPRB 
-    pdmfup     (jl,jk) = 0.0_JPRB 
-    pdmfen     (jl,jk) = 0.0_JPRB 
-    pmfude_rate(jl,jk) = 0.0_JPRB 
+    plude      (jl,jk) = 0.0_JPRB
+    pdmfup     (jl,jk) = 0.0_JPRB
+    pdmfen     (jl,jk) = 0.0_JPRB
+    pmfude_rate(jl,jk) = 0.0_JPRB
     pkineu     (jl,jk) = 0.0_JPRB
     pmfu       (jl,jk) = 0.0_JPRB
     plrain     (jl,jk) = 0.0_JPRB
@@ -397,7 +397,7 @@ DO jl=kidia,kfdia
 ENDDO
 
 ! initalize various quantities
-! note that liquid water and kinetic energy at cloud base is 
+! note that liquid water and kinetic energy at cloud base is
 ! preserved from cubase
 
 !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -410,7 +410,7 @@ ENDDO
 DO jk=ktdia,klev
   !$ACC LOOP GANG(STATIC: 1) VECTOR
   DO jl=kidia,kfdia
-    IF (jk /= kcbot(jl)) THEN 
+    IF (jk /= kcbot(jl)) THEN
       plu(jl,jk)=0.0_JPRB
     ENDIF
     IF( llklab(jl) ) klab(jl,jk)=0
@@ -436,7 +436,7 @@ ENDDO
 !----------------------------------------------------------------------
 
 !IF(PRESENT (paer_ss)) THEN
-!   
+!
 !      !!KF
 !      !> define the seasonal dependend seasalt threshold instead of land/seamask
 !      !!  derived from the annual mean
@@ -478,7 +478,8 @@ ENDDO
 
       !$ACC LOOP GANG(STATIC: 1) VECTOR
       DO jl=kidia,kfdia
-        IF(.NOT. ldland(jl) .AND. .NOT. ldlake(jl) .AND. .NOT. lgrz_deepconv) THEN
+        IF(.NOT. ldland(jl) .AND. .NOT. ldlake(jl) .AND. .NOT. lgrz_deepconv &
+             &                                     .AND. .NOT. lcdnc_interp ) THEN
           zdrain(jl)  = MIN(0.6E4_JPRB, zdrain(jl) ) ! ... but over ocean at most 60 hPa
           zdnoprc(jl) = MIN(3.e-4_JPRB, zdnoprc(jl)) ! ... but over ocean at most 0.3 g/kg
         ENDIF
@@ -550,7 +551,7 @@ DO jk=klev-1,ktdia+2,-1
 !   & pvervel,  pgeo,     pgeoh,    ldcum,    ktype,    klab,&
 !   & kcbot,    pmfu,     pmfub,    plrain,&
 !   & ptu,      pqu,      plu,&
-!   & pmfus,    pmfuq,    pmful,    pdmfup)  
+!   & pmfus,    pmfuq,    pmful,    pdmfup)
 
 ! cubasmcn is inlined for better efficiency
   kk=jk
@@ -593,7 +594,7 @@ DO jk=klev-1,ktdia+2,-1
 #endif
     IF(klab(jl,jk+1) == 0) klab(jl,jk)=0
     IF((ldcum(jl).AND.klab(jl,jk+1) == 2).OR.&
-       & (ktype(jl) == 3 .AND. klab(jl,jk+1) == 1)) THEN  
+       & (ktype(jl) == 3 .AND. klab(jl,jk+1) == 1)) THEN
       llflag(jl)=.TRUE.
     ENDIF
 !   IF(klab(jl,jk+1) > 0) THEN
@@ -619,7 +620,7 @@ DO jk=klev-1,ktdia+2,-1
 #endif
 
 ! To avoid the reduction of is on GPUs, the variable llo3 is not set on GPUs and the
-! following computations are performed on GPUs. But most of these computations are 
+! following computations are performed on GPUs. But most of these computations are
 ! enclosed by IF llfalg(jl) or IF (llo1(jl), which are .false.  if llo3 is .false.
 !  (because all klab must be 0 then.)
 ! Only resetting of ptu, pqu, plu to environmental values if below departure level
@@ -744,12 +745,12 @@ DO jk=klev-1,ktdia+2,-1
         plu(jl,jk)=zmfulk*(1.0_JPRB/MAX(rmfcmin,pmfu(jl,jk)))
         pqu(jl,jk)=zmfuqk*(1.0_JPRB/MAX(rmfcmin,pmfu(jl,jk)))
         ptu(jl,jk)=(zmfusk*(1.0_JPRB/MAX(rmfcmin,pmfu(jl,jk)))-&
-         & pgeoh(jl,jk))/rcpd  
+         & pgeoh(jl,jk))/rcpd
         ptu(jl,jk)=MAX(100._jprb,ptu(jl,jk))
         ptu(jl,jk)=MIN(400._jprb,ptu(jl,jk))
         zqold(jl)=pqu(jl,jk)
         plrain(jl,jk)=plrain(jl,jk+1)*(pmfu(jl,jk+1)-zdmfde(jl))*&
-         & (1.0_JPRB/MAX(rmfcmin,pmfu(jl,jk)))  
+         & (1.0_JPRB/MAX(rmfcmin,pmfu(jl,jk)))
         zluold(jl)=plu(jl,jk)
       ENDIF
     ENDDO
@@ -758,8 +759,8 @@ DO jk=klev-1,ktdia+2,-1
     !$ACC LOOP GANG(STATIC: 1) VECTOR
     DO jl=kidia,kfdia
       IF ( jk > kdpl(jl) ) THEN
-        ptu(jl,jk)=ptenh(jl,jk)      
-        pqu(jl,jk)=pqenh(jl,jk)      
+        ptu(jl,jk)=ptenh(jl,jk)
+        pqu(jl,jk)=pqenh(jl,jk)
         plu(jl,jk)=0.0_JPRB
         zluold(jl)=plu(jl,jk)
       ENDIF
@@ -803,7 +804,7 @@ DO jk=klev-1,ktdia+2,-1
         IF (llflag(jl)) THEN
           IF(pqu(jl,jk) /= zqold(jl)) THEN
             plglac(jl,jk)=plu(jl,jk)*((1.0_JPRB-foealfcu(ptu(jl,jk)))-&
-             & (1.0_JPRB-foealfcu(ptu(jl,jk+1))))  
+             & (1.0_JPRB-foealfcu(ptu(jl,jk+1))))
             ! add glaciation of rain, only fraction added to updraught heat
             ZFAC=FOEALFCU(PTEN(JL,JK))
             PLGLAC(JL,JK)=PLGLAC(JL,JK)+ZFAC*PDMFUP(JL,JK+1)/MAX(RMFCMIN,PMFU(JL,JK+1))*&
@@ -851,27 +852,27 @@ DO jk=klev-1,ktdia+2,-1
             ENDIF
             zbuoc=(zbuo(jl,jk)/(ptenh(jl,jk)*(1.0_JPRB+retv*pqenh(jl,jk)))&
              & +zbuo(jl,jk+1)/(ptenh(jl,jk+1)*(1.0_JPRB+retv*&
-             & pqenh(jl,jk+1))))*0.5_JPRB  
+             & pqenh(jl,jk+1))))*0.5_JPRB
             zdkbuo=(pgeoh(jl,jk)-pgeoh(jl,jk+1))*zfacbuo*zbuoc
 
 ! either use entrainment rate or if zero
-! use detrainmnet rate as a subsitute for 
+! use detrainmnet rate as a subsitute for
 ! mixing and "pressure" gradient term in upper
 ! troposphere
 
             IF(zdmfen(jl) > 0.0_JPRB)THEN
               zdken=MIN(1.0_JPRB,(1.0_JPRB + z_cwdrag)*&
-               & zdmfen(jl)/MAX(rmfcmin,pmfu(jl,jk+1)))  
+               & zdmfen(jl)/MAX(rmfcmin,pmfu(jl,jk+1)))
             ELSE
               zdken=MIN(1.0_JPRB,(1.0_JPRB + z_cwdrag)*&
-               & zdmfde(jl)/MAX(rmfcmin,pmfu(jl,jk+1)))  
+               & zdmfde(jl)/MAX(rmfcmin,pmfu(jl,jk+1)))
             ENDIF
 
-            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          
-            ! Alternative organised detrainment calcuation based on cloud area 
+            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            ! Alternative organised detrainment calcuation based on cloud area
             ! profile.
             ! By what fraction is core area reduced from layer below?
-            IF (lstochdetr) THEN              
+            IF (lstochdetr) THEN
               IF (pcore(jl,jk) .lt. pcore(jl,jk+1)) THEN
                  zmfun=(pcore(jl,jk+1)-pcore(jl,jk))/pcore(jl,jk+1)*.5_JPRB
                  ! Detrainment is corresponding fraction of MF in layer below,
@@ -880,8 +881,8 @@ DO jk=klev-1,ktdia+2,-1
                  plude(jl,jk)=plu(jl,jk+1)*zdmfde(jl)
                  pmfu(jl,jk)=pmfu(jl,jk+1)+zdmfen(jl)-zdmfde(jl)! Mass flux is same as layer below, minus detraiment
               ENDIF
-            ENDIF 
-            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
+            ENDIF
+            !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
             pkineu(jl,jk)=(pkineu(jl,jk+1)*(1.0_JPRB-zdken)+zdkbuo)/(1.0_JPRB+zdken)
             ! CALCULATE ORGANISED DETRAINMENT WHEN UPDRAFT NEGATIVELY BUOYANT
@@ -890,9 +891,8 @@ DO jk=klev-1,ktdia+2,-1
               ! which has been calculated above with organised entrainment
               zkedke=pkineu(jl,jk)/MAX(1.e-10_JPRB,pkineu(jl,jk+1))
               zkedke=MAX(1.e-30_JPRB,MIN(1.0_JPRB,zkedke))
-              zmfun=SQRT(zkedke)
-! ** suggestion by P. Bechtold (2013-11-21) - but degrades various scores in ICON **
-!             zmfun = (1.6_JPRB-MIN(1.0_JPRB,pqen(JL,JK)/pqsen(JL,JK)))*zmfun
+              ! suggestion by P. Bechtold (2013-11-21) with (optionally) RH-dependent detrainment
+              zmfun = (rdetrain(1)-rdetrain(2)*MIN(1.0_JPRB,pqen(JL,JK)/pqsen(JL,JK)))*SQRT(zkedke)
               zdmfde(jl)=MAX(zdmfde(jl),pmfu(jl,jk+1)*(1.0_JPRB-zmfun))
               plude(jl,jk)=plu(jl,jk+1)*zdmfde(jl)
               pmfu(jl,jk)=pmfu(jl,jk+1)+zdmfen(jl)-zdmfde(jl)! Mass flux is same as layer below, minus detraiment
@@ -913,9 +913,9 @@ DO jk=klev-1,ktdia+2,-1
               ! or the effect of the inreasing Rup (cloud radius) with height. It strongly decreases with height,
               ! so that detrainment will eventually become greater than entrainment.
               !*********************************************************************************
-              !Guenthers new entrainment profile shape 
+              !Guenthers new entrainment profile shape
               zentr_prof = MERGE((pqsen(jl,jk)/pqsen(jl,ikb))**2, (pqsen(jl,jk)/pqsen(jl,ikb))**3, lgrz_deepconv)
-              zoentr(jl)=zentrorg(jl)*(1.3_JPRB-MIN(1.0_JPRB,pqen(jl,jk-1)/pqsen(jl,jk-1)))*&
+              zoentr(jl)=zentrorg(jl)*(rentrain(1)-rentrain(2)*MIN(1.0_JPRB,pqen(jl,jk-1)/pqsen(jl,jk-1)))*&
                 &(pgeoh(jl,jk-1)-pgeoh(jl,jk))*zrg*MIN(1.0_JPRB,zentr_prof)
               zoentr(jl)=MIN(0.4_JPRB,zoentr(jl))*pmfu(jl,jk)
             ELSE
@@ -940,13 +940,13 @@ DO jk=klev-1,ktdia+2,-1
               zdmfde(jl)=pmfu(jl,jk+1)
               plude(jl,jk)=plu(jl,jk+1)*zdmfde(jl)
             ENDIF
-          
+
 ! store detrainment rates for updraught
 
             IF ( pmfu(jl,jk+1) > 0.0_JPRB ) THEN
               pmfude_rate(jl,jk)=zdmfde(jl)
             ENDIF
-          
+
           ENDIF ! klab=2
         ENDIF ! zqold
       ENDIF
@@ -1065,7 +1065,7 @@ ENDDO    ! jk=klev-1,ktdia+2,-1
 
 !----------------------------------------------------------------------
 
-!     5.           FINAL CALCULATIONS 
+!     5.           FINAL CALCULATIONS
 !                  ------------------
 !$NEC sparse
 !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -1143,7 +1143,7 @@ END SUBROUTINE cuascn
     !!    *LDCUM*        FLAG: .TRUE. FOR CONVECTIVE POINTS
 
     !!    UPDATED PARAMETERS (INTEGER):
-    
+
     !!    *KTYPE*        TYPE OF CONVECTION
     !!                       1 = PENETRATIVE CONVECTION
     !!                       2 = SHALLOW CONVECTION
@@ -1151,9 +1151,9 @@ END SUBROUTINE cuascn
     !!    *KLAB*         FLAG KLAB=1 FOR SUBCLOUD LEVELS
     !!                        KLAB=2 FOR CLOUD LEVELS
     !!    *KCBOT*        CLOUD BASE LEVEL
-    
+
     !!    OUTPUT PARAMETERS (REAL):
-    
+
     !!    *PMFU*         MASSFLUX IN UPDRAFTS                          KG/(M2*S)
     !!    *PMFUB*        MASSFLUX IN UPDRAFTS AT CLOUD BASE            KG/(M2*S)
     !!    *PTU*          TEMPERATURE IN UPDRAFTS                         K
@@ -1163,13 +1163,13 @@ END SUBROUTINE cuascn
     !!    *PMFUQ*        FLUX OF SPEC. HUMIDITY IN UPDRAFTS            KG/(M2*S)
     !!    *PMFUL*        FLUX OF LIQUID WATER IN UPDRAFTS              KG/(M2*S)
     !!    *PDMFUP*       FLUX DIFFERENCE OF PRECIP. IN UPDRAFTS        KG/(M2*S)
-    
+
     !!          EXTERNALS
     !!          ---------
     !!          NONE
-    
+
     !!----------------------------------------------------------------------
-    
+
     !USE PARKIND1  ,ONLY : JPIM     ,JPRB
     !USE YOMHOOK   ,ONLY : LHOOK,   DR_HOOK
 
@@ -1748,4 +1748,3 @@ END SUBROUTINE cuascn
 
 
 END MODULE mo_cuascn
-

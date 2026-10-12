@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -24,7 +24,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
 ;*************************************************
 ; Main code
-;************************************************* 
+;*************************************************
 begin
 ;  scale   = 1e6
   rad2deg = 45./atan(1.)   ; radians to degrees
@@ -233,4 +233,3 @@ begin
 
   frame(wks)
 end
-

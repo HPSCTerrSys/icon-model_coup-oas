@@ -1,12 +1,7 @@
-!
-! Time management for parameterized physical processes
-!
-! Setup mtime events and event groups for physical processes
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,9 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Time management for parameterized physical processes
+!
+! Setup mtime events and event groups for physical processes
+
 MODULE mo_phy_events
 
-  USE mo_kind,                     ONLY: wp
+  USE mo_kind,                     ONLY: wp, dp
   USE mo_impl_constants,           ONLY: max_char_length, SUCCESS
   USE mo_exception,                ONLY: finish, message, message_text
   USE mtime,                       ONLY: datetime, newDatetime, timedelta, &
@@ -66,10 +65,10 @@ MODULE mo_phy_events
     TYPE(timedelta)                 :: dt            !< calling interval
     LOGICAL                         :: reqInit       !< requires initialization call (TRUE/FALSE)
     LOGICAL                         :: inclStart     !< include startDate
-                                                     !< events are triggered between 
+                                                     !< events are triggered between
                                                      !< [startDate,endDate], if .TRUE.
                                                      !< ]startDate,endDate], if .FALSE.
-    TYPE(timedelta)                 :: plusSlack     !< Events are triggered between 
+    TYPE(timedelta)                 :: plusSlack     !< Events are triggered between
                                                      ! [actual_trigger_time, actual_trigger_time + plus_slack]
     !
     ! mtime events
@@ -96,7 +95,7 @@ MODULE mo_phy_events
     PROCEDURE  :: getLastActivePTString => phyProcBase_getLastActivePTString
     !
     ! get time elapsed since last trigger event
-    PROCEDURE  :: getElapsedTime => phyProcBase_getElapsedTime 
+    PROCEDURE  :: getElapsedTime => phyProcBase_getElapsedTime
     !
     ! get time elapsed since last trigger event in PTString-Format
     PROCEDURE  :: getElapsedTimePTString => phyProcBase_getElapsedTimePTString
@@ -133,7 +132,7 @@ MODULE mo_phy_events
 
   ! physical process group
   TYPE t_phyProcGroup
-    CHARACTER(len=MAX_CHAR_LENGTH)    :: grpName              !< group name 
+    CHARACTER(len=MAX_CHAR_LENGTH)    :: grpName              !< group name
     INTEGER                           :: pid                  !< patch ID
     INTEGER                           :: ncontained           !< number of group members
     TYPE(t_phyProcArr), ALLOCATABLE   :: proc(:)              !< group of physical processes
@@ -221,7 +220,7 @@ CONTAINS
     ELSE
       phyProc%inclStart = .TRUE.
     ENDIF
-    ! cross check: if the process at hand is disabled, 
+    ! cross check: if the process at hand is disabled,
     ! - the endDate is set equal to the startDate
     ! - the startDate is excluded, in order to have an empty set.
     IF (.NOT. phyProc%is_enabled) THEN
@@ -303,7 +302,7 @@ CONTAINS
   !>
   !! Checks, whether an initialization should be triggered
   !!
-  !! Checks, whether an initialization should be triggered for 
+  !! Checks, whether an initialization should be triggered for
   !! the physical process at hand.
   !!
   !!
@@ -360,7 +359,7 @@ CONTAINS
     phyProcBase_isActive = is_active
 
     ! Mtime currently does not support choosing between open or closed intervals.
-    ! Therefore, the result of isCurrentEventActive is overwritten 
+    ! Therefore, the result of isCurrentEventActive is overwritten
     ! by phyProc%inclStart, if this is the startDate.
     IF (mtime_current == phyProc%startDate) THEN
       phyProcBase_isActive = phyProc%inclStart
@@ -398,11 +397,11 @@ CONTAINS
   !! Get last trigger date
   !!
   !! Get last trigger date
-  !! Trivial function so far. Last trigger date is part of  
-  !! t_phyProcBase. Actually it would be cleaner to use the 
+  !! Trivial function so far. Last trigger date is part of
+  !! t_phyProcBase. Actually it would be cleaner to use the
   !! mtime query function getTriggeredPreviousEventAtDateTime.
-  !! However, this function is not restart-safe. The information 
-  !! about the last trigger date is lost after restart. 
+  !! However, this function is not restart-safe. The information
+  !! about the last trigger date is lost after restart.
   !!
   TYPE(datetime) FUNCTION phyProcBase_getLastActive (phyProc)
 
@@ -539,8 +538,8 @@ CONTAINS
   !! Is the next trigger date within selected time range.
   !! The time range is given by [mtime_current, mtime_current+slack].
   !!
-  !! This version broadcasts mtime_current and nextActive from 
-  !! p_source. It is particularly suited for the case of nonzero 
+  !! This version broadcasts mtime_current and nextActive from
+  !! p_source. It is particularly suited for the case of nonzero
   !! patch weights.
   !!
   LOGICAL FUNCTION phyProcBase_isNextTriggerTimeInRange_bcast (phyProc, mtime_current, slack, p_source, comm)
@@ -605,7 +604,7 @@ CONTAINS
     INTEGER :: i                                       ! loop index
     CHARACTER(LEN=*), PARAMETER :: routine = modname//":phyProcGroup_construct"
   !-----------------------------------------------------------------
- 
+
 
     ! store user input
     phyProcGrp%pid        = pid
@@ -641,7 +640,7 @@ CONTAINS
     TYPE(t_phyProcArr), ALLOCATABLE :: tmp_proc(:)     ! temporary array
     CHARACTER(LEN=*), PARAMETER :: routine = modname//":phyProcGroup_addToGroup"
   !-----------------------------------------------------------------
- 
+
     id = phyProc%id
 
     phyProcGrp%ncontained = phyProcGrp%ncontained + 1
@@ -650,7 +649,7 @@ CONTAINS
     IF (phyProcGrp%ncontained > UBOUND(phyProcGrp%proc,1)) THEN
       ALLOCATE(tmp_proc(phyProcGrp%ncontained), STAT = error)
       IF(error /= SUCCESS) CALL finish(routine, "memory allocation failure")
-      
+
       tmp_proc(1:UBOUND(phyProcGrp%proc,1)) = phyProcGrp%proc
       CALL move_alloc(from=tmp_proc, to=phyProcGrp%proc)
       WRITE(message_text,'(a,a,a,i3)') 'Increased size of process group ',TRIM(phyProcGrp%grpName), &
@@ -675,7 +674,7 @@ CONTAINS
   !>
   !! All group's mtime events are re-initialized
   !!
-  !! The mtime-events of all group members are re-initialized 
+  !! The mtime-events of all group members are re-initialized
   !! by calling the member-specific routine reinitEvent.
   !!
   SUBROUTINE phyProcGroup_reinitEvents (phyProcGrp)
@@ -707,11 +706,11 @@ CONTAINS
   !! Translate object into a format that can be stored in a file
   !!
   !! Translate object into a format that can be stored in a file.
-  !! Currently this is only done for those components that must be 
+  !! Currently this is only done for those components that must be
   !! stored for restart.
   !! The following components are serialized:
   !! phyProcGrp%proc(:)%p%lastActive
-  !! It is transformed into 'seconds since last trigger date'. 
+  !! It is transformed into 'seconds since last trigger date'.
   !! From this, phyProcGrp%proc(:)%p%lastActive can be restored after restart.
   !!
   SUBROUTINE phyProcGroup_serialize (phyProcGrp, mtime_current, elapsedTime)
@@ -726,7 +725,7 @@ CONTAINS
     CHARACTER(LEN=*), PARAMETER :: routine = modname//":phyProcGroup_serialize"
 
   !-----------------------------------------------------------------
- 
+
     IF (.NOT.ALLOCATED(elapsedTime)) THEN
       ALLOCATE(elapsedTime(UBOUND(phyProcGrp%proc,1)), STAT=ierr)
       IF(ierr /= SUCCESS) CALL finish(routine, "memory allocation failure")
@@ -767,13 +766,13 @@ CONTAINS
 
     ! local
     INTEGER                               :: iproc               ! loop conter
-    REAL(wp)                              :: elapsedTime
+    REAL(wp)                              :: elapsedTime         ! data type must match put in phyPhrocGroup_serialize
     TYPE(timedelta)                       :: mtime_elapsedTime   ! elapsed time in mtime format
     TYPE(t_key_value_store), POINTER :: restartAttributes
     CHARACTER(len=MAX_CHAR_LENGTH)        :: attname             ! attribute name
     CHARACTER(LEN=*), PARAMETER           :: routine = modname//":phyProcGroup_deserialize"
   !-----------------------------------------------------------------
- 
+
     CALL getAttributesForRestarting(restartAttributes)
 
     IF (restartAttributes%is_init) THEN
@@ -788,9 +787,9 @@ CONTAINS
         ENDIF
         CALL restartAttributes%get(attname, elapsedTime)
 
-        ! Note that elapsedTime is multiplied by -1, since we only have a 
+        ! Note that elapsedTime is multiplied by -1, since we only have a
         ! '+' operator available.
-        CALL mtime_timedelta_from_fseconds(-elapsedTime, mtime_current, &
+        CALL mtime_timedelta_from_fseconds(REAL(-elapsedTime,KIND=dp), mtime_current, &
           &                                mtime_elapsedTime)
         phyProcGrp%proc(iproc)%p%lastActive = mtime_current + mtime_elapsedTime
         !
@@ -839,7 +838,7 @@ CONTAINS
     ! will only be executed by stdio process
     IF(.NOT. my_process_is_stdio()) RETURN
 
-    ! could this be transformed into a table header? 
+    ! could this be transformed into a table header?
     WRITE(message_text,'(a,a,a,i2)') 'Event-setup for ',TRIM(phyProcGrp%grpName), &
       &                              ' on patch ', phyProcGrp%pid
     CALL message('', TRIM(message_text))
@@ -850,7 +849,7 @@ CONTAINS
     ! the latter is no longer mandatory
 #ifdef __INTEL_COMPILER
     nrows = 0
-    DO iev=1,UBOUND(phyProcGrp%proc,1)   
+    DO iev=1,UBOUND(phyProcGrp%proc,1)
       IF (ASSOCIATED(phyProcGrp%proc(iev)%p)) &
         & nrows = nrows + 1
     END DO
@@ -878,7 +877,7 @@ CONTAINS
 
       irow = irow + 1
       !
-      CALL getEventName(phyProcGrp%proc(iev)%p%ev_ptr, eventName, ierr) 
+      CALL getEventName(phyProcGrp%proc(iev)%p%ev_ptr, eventName, ierr)
       CALL set_table_entry(table,irow,eventNameCol, ADJUSTL(TRIM(eventName)))
       !
       ! print whether the process is enabled
@@ -927,7 +926,7 @@ CONTAINS
     TYPE(t_table)   :: table
     INTEGER         :: irow            ! row to fill
     !
-    CHARACTER(LEN = *), PARAMETER :: eventNameCol   = "eventName",   & 
+    CHARACTER(LEN = *), PARAMETER :: eventNameCol   = "eventName",   &
       &                              triggerNowCol  = "trigger now", &
       &                              lastActiveCol  = "lastActive",  &
       &                              elapsedTimeCol = "elapsedTime"
@@ -945,7 +944,7 @@ CONTAINS
     ! will only be executed by stdio process
     IF(.NOT. my_process_is_stdio()) RETURN
 
-    ! could this be transformed into a table header? 
+    ! could this be transformed into a table header?
     WRITE(message_text,'(a,a,i2)') TRIM(phyProcGrp%grpName),' events debug output for patch ', &
       &                          phyProcGrp%pid
     CALL message('', TRIM(message_text))
@@ -970,7 +969,7 @@ CONTAINS
 
       irow = irow + 1
       !
-      CALL getEventName(phyProcGrp%proc(iev)%p%ev_ptr, eventName, ierr) 
+      CALL getEventName(phyProcGrp%proc(iev)%p%ev_ptr, eventName, ierr)
       CALL set_table_entry(table,irow,eventNameCol, ADJUSTL(TRIM(eventName)))
       !
       ! is the process triggered at the current time step
@@ -1007,7 +1006,7 @@ CONTAINS
     INTEGER :: ierrstat                              ! error flag
     CHARACTER(LEN=*), PARAMETER :: routine = modname//":phyProcGroup_finalize"
   !-----------------------------------------------------------------
- 
+
     DO iproc=1,UBOUND(phyProcGrp%proc,1)
       IF (.NOT. ASSOCIATED(phyProcGrp%proc(iproc)%p)) CYCLE
       CALL phyProcGrp%proc(iproc)%p%final()
@@ -1024,19 +1023,19 @@ CONTAINS
   !! Physics time control
   !!
   !! Physics time control. This function returns a 1D array
-  !! of size SIZE(phyProcs%proc,1) and type LOGICAL with one entry per  
-  !! physical process. 
-  !! If lcall_phy(iphys)=.TRUE., the physical process at hand must be 
+  !! of size SIZE(phyProcs%proc,1) and type LOGICAL with one entry per
+  !! physical process.
+  !! If lcall_phy(iphys)=.TRUE., the physical process at hand must be
   !! called this time step. If lcall_phy(iphys)=.FALSE., it must not be called.
-  !! The decision making is based upon mtime events, which are initialized in 
+  !! The decision making is based upon mtime events, which are initialized in
   !! mo_atm_phy_nwp_config:configure_atm_phy_nwp.
   !!
   SUBROUTINE mtime_ctrl_physics ( phyProcs, mtime_current, isInit, lcall_phy )
 
     TYPE(t_phyProcGroup)    , INTENT(INOUT):: phyProcs       !< physics group
     TYPE(datetime)          , INTENT(IN)   :: mtime_current  !< current_datetime
-    LOGICAL                 , INTENT(IN)   :: isInit         !< if TRUE, special settings 
-                                                             !  for lcall_phy which are adjusted 
+    LOGICAL                 , INTENT(IN)   :: isInit         !< if TRUE, special settings
+                                                             !  for lcall_phy which are adjusted
                                                              !  for the physics initialization phase
     LOGICAL                , INTENT(INOUT) :: lcall_phy(:)   !< trigger information
 
@@ -1073,4 +1072,3 @@ CONTAINS
 
 
 END MODULE mo_phy_events
-

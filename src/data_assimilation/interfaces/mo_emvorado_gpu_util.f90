@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -22,10 +22,10 @@ MODULE mo_emvorado_gpu_util
 
   PUBLIC :: radar_d2h_hydrometeors, radar_d2h_model_variables
 
-  CONTAINS 
+  CONTAINS
 
   !============================================================================
-  ! Subroutine for copying all model hydrometeors required for EMVORADO. Amount of 
+  ! Subroutine for copying all model hydrometeors required for EMVORADO. Amount of
   ! data copies depends on the flags set for EMVORADO. Copies all data referenced in
   ! get_model_hydrometeors in module radar_interface
   !============================================================================
@@ -48,7 +48,7 @@ MODULE mo_emvorado_gpu_util
     IF (iqg > 0 .AND. iqg <= ntracer) THEN
       !$ACC UPDATE HOST(p_nh_state(idom)%prog(ntlev)%tracer(:,:,:,iqg:iqg)) ASYNC(1)
     END IF
-    
+
     IF (iqh > 0 .AND. iqh <= ntracer) THEN
       !$ACC UPDATE HOST(p_nh_state(idom)%prog(ntlev)%tracer(:,:,:,iqh:iqh)) ASYNC(1)
     END IF
@@ -84,7 +84,7 @@ MODULE mo_emvorado_gpu_util
   END SUBROUTINE radar_d2h_hydrometeors
 
   !============================================================================
-  ! Subroutine for copying all model variables required for EMVORADO. Amount of 
+  ! Subroutine for copying all model variables required for EMVORADO. Amount of
   ! data copies depends on the flags set for EMVORADO. Copies all data referenced
   ! in get_model_variables in the module radar_interface
   !============================================================================

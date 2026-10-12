@@ -1,0 +1,36 @@
+#! %{JOB.python3} #%# -*- mode: python -*- vi: set ft=python :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# %{EXP_ID}.%{JOB.id}
+#
+# %{mkexp_input}
+#
+# $Id: run/mkexp/defaults/DEFAULT.remove.tmpl 1 2025-07-18 08:50:31Z m221078 $
+#
+#%include ['mkexp/environments/'+ENVIRONMENT+'.tmpl', 'mkexp/environments/DEFAULT.tmpl'] ignore missing
+
+import os
+
+#% include 'mkexp/defaults/logging.tmpl'
+#%#
+logging.info('%{JOB.id} job started')
+
+#%  for arg in JOB.args|list:
+try:
+    file_name = %{arg.__repr__()}
+    os.remove(file_name)
+    logging.info("removed '%s'", file_name)
+except FileNotFoundError:
+    pass
+#%  endfor
+#%#
+logging.info('%{JOB.id} job finished')

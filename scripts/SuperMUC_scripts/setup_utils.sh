@@ -3,8 +3,9 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
@@ -26,7 +27,7 @@ warning()
 
 finish()
 {
-  if [ $1 != 0 ] ; then 
+  if [ $1 != 0 ] ; then
     echo "-------------------------------------------------------"
     echo $1
     echo "    ERROR : $2. STOP"
@@ -136,11 +137,10 @@ eval_arg ()
   ;;
   *) let "no_of_free_variables=$no_of_free_variables+1"
      free_variable[$no_of_free_variables]=$1
-     free_variable_value[$no_of_free_variables]=$2 
+     free_variable_value[$no_of_free_variables]=$2
 #      echo "free_variable=${free_variable[$no_of_free_variables]} with value=${free_variable_value[$no_of_free_variables]}"
 #      exit -1
   ;;
   esac
 }
 #-------------------------------------------------------------------------------------
-

@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -45,7 +45,7 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/grids/public/mpim
 # horizontal grid(s)
 #
 # domain globe
-grid_id=0043
+grid_id=0049
 grids_folder=${icon_data_poolFolder}/${grid_id}
 grid_refinement=R02B04
 grid_label=G
@@ -75,11 +75,12 @@ jsbach_namelist=NAMELIST_${EXPNAME}_lnd
 
 # JSBACH settings
 jsbach_usecase=jsbach_pfts    # jsbach_lite or jsbach_pfts
+npft=11                       # number of PFTs; 0 with jsbach_lite
 jsbach_with_lakes=yes
 jsbach_with_hd=no
 jsbach_with_carbon=yes        # yes needs jsbach_pfts usecase
 jsbach_with_alcc=no           # yes needs jsbach_pfts usecase
-alcc_scheme='maps'            # only used if jsbach_with_alcc=yes 
+alcc_scheme='maps'            # only used if jsbach_with_alcc=yes
 jsbach_check_wbal=no          # check water balance
 output_lnd=basic              # amount of output: none/basic/medium/full/all
 #
@@ -104,7 +105,7 @@ llake=$([ "${jsbach_with_lakes:=yes}" == yes ] && echo .TRUE. || echo .FALSE. )
 lcarbon=$([ "${jsbach_with_carbon:=yes}" == yes ] && echo .TRUE. || echo .FALSE. )
 lalcc=$([ "${jsbach_with_alcc:=yes}" == yes ] && echo .TRUE. || echo .FALSE. )
 #
-[[ $jsbach_usecase == *pfts* ]] && pft_file_tag="11pfts_" || pft_file_tag=""
+[[ $jsbach_usecase == *pfts* ]] && pft_file_tag="${npft}pfts_" || pft_file_tag=""
 
 # atmospheric dynamics and physics
 # --------------------------------
@@ -125,7 +126,7 @@ cat > ${atmo_namelist} << EOF
  ltransport       = .TRUE.      ! transport
  iforcing         = 2           ! 0: none, 1: HS, 2: ECHAM, 3: NWP
  output           = 'nml'
- msg_level        = 15          ! level of details report during integration 
+ msg_level        = 15          ! level of details report during integration
  restart_filename = "${EXPNAME}_restart_atm_<rsttime>.mfr"
  activate_sync_timers = .TRUE.
 /
@@ -217,10 +218,11 @@ EOF
 cat > ${jsbach_namelist} << EOF
 &jsb_model_nml
   usecase         = "${jsbach_usecase}"
+  npft            = ${npft}
   use_lakes       = ${llake}
   fract_filename  = "bc_land_frac.nc"
   output_tiles    = ${output_tiles}     ! List of tiles to output
-  enforce_water_budget = .TRUE.         ! True: stop in case of water conservation problem
+  enforce_water_budget = 'error'        ! Error: stop in case of water conservation problem
 /
 &jsb_seb_nml
   bc_filename     = 'bc_land_phys.nc'
@@ -236,11 +238,8 @@ cat > ${jsbach_namelist} << EOF
   ic_filename     = 'ic_land_soil.nc'
 /
 &jsb_sse_nml
-  l_heat_cap_map  = .FALSE.
-  l_heat_cond_map = .FALSE.
-  l_heat_cap_dyn  = .FALSE.
-  l_heat_cond_dyn = .FALSE.
-  l_snow          = .TRUE.
+  l_heat_cap_dyn  = .TRUE.
+  l_heat_cond_dyn = .TRUE.
   l_dynsnow       = .TRUE.
   l_freeze        = .TRUE.
   l_supercool     = .TRUE.
@@ -248,7 +247,6 @@ cat > ${jsbach_namelist} << EOF
   ic_filename     = 'ic_land_soil.nc'
 /
 &jsb_hydro_nml
-  l_organic       = .FALSE.
   bc_filename     = 'bc_land_soil.nc'
   ic_filename     = 'ic_land_soil.nc'
   bc_sso_filename = 'bc_land_sso.nc'
@@ -336,10 +334,8 @@ datadir=${grids_folder}/initial_condition/r0001
 add_link_file $datadir/ifs2icon_1979010100_${grid_refinement}_${grid_label}.nc ./ifs2icon.nc
 #
 # - land: source?, date+time?
-datadir=${grids_folder}/land/r0004
-add_link_file ${datadir}/ic_land_soil_1979.nc                           ./ic_land_soil.nc
-# added in namelist, but not active and not yet available (2017-Dec-07)
-#add_link_file ${datadir}/ic_land_carbon_1979.nc                         ./ic_land_carbon.nc
+datadir=${grids_folder}/land/r0101
+add_link_file ${datadir}/ic_land_soil.nc                                ./ic_land_soil.nc
 
 # boundary conditions
 #
@@ -349,7 +345,7 @@ start_year=$(( ${start_date%%-*} - 1 ))
 end_year=$(( ${end_date%%-*} + 1 ))
 #
 # - well mixed greenhouse gases
-datadir=${icon_data_poolFolder}/independent/greenhouse_gases
+datadir=${icon_data_poolFolder}/common/greenhouse_gases
 add_link_file $datadir/greenhouse_historical_plus.nc                    ./bc_greenhouse_gases.nc
 #
 # - ozone
@@ -382,7 +378,7 @@ add_link_file $datadir/bc_aeropt_kinne_lw_b16_coa.nc                    ./
 add_link_file $datadir/bc_aeropt_kinne_sw_b14_coa.nc                    ./
 add_link_file $datadir/bc_aeropt_kinne_sw_b14_fin_1850.nc               ./bc_aeropt_kinne_sw_b14_fin.nc
 #
-# - stratospheric aerosol (CMIP6)
+# - stratospheric aerosol
 datadir=${icon_data_poolFolder}/independent/
 #
 if [ ! -d $datadir ]; then
@@ -409,37 +405,34 @@ add_link_file $datadir/bc_sic_1979_2016.nc          ./bc_sic.nc
 add_link_file $datadir/bc_sst_1979_2016.nc          ./bc_sst.nc
 #
 # - ssi and tsi
-datadir=${icon_data_poolFolder}/independent/solar_radiation/3.2
+datadir=${icon_data_poolFolder}/common/solar_radiation
 add_link_file $datadir/swflux_14band_cmip6_1850-2299-v3.2.nc            ./bc_solar_irradiance_sw_b14.nc
 #
 # - topography and sso parameters
-datadir=${grids_folder}/land/r0004
-add_link_file $datadir/bc_land_sso_1979.nc                              ./bc_land_sso.nc
+datadir=${grids_folder}/land/r0101
+add_link_file $datadir/bc_land_sso.nc                                   ./bc_land_sso.nc
 #
 # - land parameters
-datadir=${grids_folder}/land/r0004
+datadir=${grids_folder}/land/r0101
 add_link_file $datadir/bc_land_frac_${pft_file_tag}1979.nc              ./bc_land_frac.nc
-add_link_file $datadir/bc_land_phys_1979.nc                             ./bc_land_phys.nc
-add_link_file $datadir/bc_land_soil_1979.nc                             ./bc_land_soil.nc
-# added in namelist, but not active and not yet available (2017-Dec-07)
-#datadir=${icon_data_poolFolder}/preliminary_land/r0002/${grid_refinement}_${grid_label}/land
-#add_link_file $datadir/bc_land_carbon_1979.nc                           ./bc_land_carbon.nc
+add_link_file $datadir/bc_land_phys.nc                                  ./bc_land_phys.nc
+add_link_file $datadir/bc_land_soil.nc                                  ./bc_land_soil.nc
 
 # - land: cover fractions
 if [[ ${jsbach_with_alcc} == "yes" ]]
 then
   if [[ ${alcc_scheme} == "maps" ]]
   then
-    if [[ ${pft_file_tag} != "11pfts_" ]]
+    if [[ ${npft} != "11" && ${npft} != "12" ]]
     then
-      echo "ERROR JSBACH: alcc_scheme=maps only implemented for usecase jsbach_pfts with 11 PFTs"
+      echo "ERROR JSBACH: alcc_scheme=maps only implemented for usecase jsbach_pfts with 11 or 12 PFTs"
       exit
     fi
     #
     start_year=${start_date%%-*}
-    end_year=${end_date%%-*}
+    end_year=$(( ${end_date%%-*} + 1 ))
     #
-    file=bc_land_frac_11pfts_${start_year}.nc
+    file=bc_land_frac_${npft}pfts_${start_year}.nc
     if [ -f $datadir/$file ]
     then
       add_link_file $datadir/$file   ./bc_land_frac.nc
@@ -451,12 +444,12 @@ then
     year=$start_year
     while [[ $year -le $end_year ]]
     do
-      ofile=bc_land_frac_11pfts_${year}.nc
+      ofile=bc_land_frac_${npft}pfts_${year}.nc
       if [[ $year -le 2014 ]]
       then
-        ifile=bc_land_frac_11pfts_${year}.nc
+        ifile=bc_land_frac_${npft}pfts_${year}.nc
       else
-        ifile=bc_land_frac_11pfts_2014.nc
+        ifile=bc_land_frac_${npft}pfts_2014.nc
       fi
       if [ -f $datadir/$ifile ]
       then
@@ -478,7 +471,7 @@ fi
 # - HD model input by Tom Riddick
 #
 if [[ ${jsbach_with_hd} = yes ]]; then
-  datadir=${grids_folder}/land/r0004
+  datadir=${grids_folder}/land/r0101
   add_link_file $datadir/bc_land_hd.nc                                  ./bc_land_hd.nc
 fi
 #
@@ -665,15 +658,15 @@ if [[ "$output_aer_3d" == "yes" ]]; then
  file_interval    = "${file_interval}"
  include_last     = .FALSE.
  ml_varlist       = 'ps'          , 'pfull'       , 'zg'          ,
-                    'aer_aod_533' , 'aer_ssa_533',  'aer_asy_533' , 
-                    'aer_aod_2325', 'aer_ssa_2325', 'aer_asy_2325', 
+                    'aer_aod_533' , 'aer_ssa_533',  'aer_asy_533' ,
+                    'aer_aod_2325', 'aer_ssa_2325', 'aer_asy_2325',
                     'aer_aod_9731',
 /
 EOF
 fi
 
-# Currently, the JSBACH output_nml's need to be added to atmo_namelist, but this should 
-# eventually be handled by the jsbach_namelist file. 
+# Currently, the JSBACH output_nml's need to be added to atmo_namelist, but this should
+# eventually be handled by the jsbach_namelist file.
 # Available variable groups:
 #   jsb_all, jsb_<process>_all, jsb_all_<level>, jsb_<process>_<level>
 # where <process> is the process name and <level> is the output level (basic/medium/full)

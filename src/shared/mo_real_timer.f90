@@ -1,19 +1,18 @@
-! utility for real time measurements
-! on AIX a wrapper for the fast read_real_time function is used
-! on SX a CPU counter is used
-! on Linux/Intel a CPU register is read
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! utility for real time measurements
+! on AIX a wrapper for the fast read_real_time function is used
+! on SX a CPU counter is used
+! on Linux/Intel a CPU register is read
 
 MODULE mo_real_timer
 
@@ -55,7 +54,7 @@ MODULE mo_real_timer
     &                           my_process_is_stdio, p_io, &
     &                           p_comm_work, p_comm_work_test, p_gather, p_mpi_comm_null
   USE mo_master_control,  ONLY: get_my_process_name
-  USE mo_run_config,      ONLY: profiling_output
+  USE mo_run_config,      ONLY: profiling_output, timers_level
 
   ! imporant necessary variables for intra-communicator usage
   USE mo_mpi,             ONLY: p_comm_work_only, p_pe_work_only
@@ -347,7 +346,9 @@ CONTAINS
          CALL real_timer_abort(it,'timer_start: timer_stop call missing')
     rt(it)%stat = rt_on_stat
 
-    !$ACC WAIT
+    IF (timers_level > 10) THEN
+      !$ACC WAIT
+    END IF
 #ifdef _USE_NVTX
     call nvtxStartRange(srt(it)%text)
 #endif
@@ -479,7 +480,9 @@ CONTAINS
     REAL(dp) :: dt
 
   !------------------------------------------------------------------------------------------------
-    !$ACC WAIT
+    IF (timers_level > 10) THEN
+      !$ACC WAIT
+    END IF
 #ifdef _USE_NVTX
     call nvtxEndRange()
 #endif

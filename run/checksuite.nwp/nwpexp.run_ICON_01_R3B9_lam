@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -188,7 +188,7 @@ cat > ${atmo_namelist} << EOF
  mode                         =  1                        ! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)
  include_last                 = .FALSE.
  output_filename              = '${EXP}'                   ! file name base
- ml_varlist='u', 'v', 'w', 'temp', 'pres','topography_c', 'pres_msl', 'qv', 'cloud_num', 'tai', 'h_snow', 
+ ml_varlist='u', 'v', 'w', 'temp', 'pres','topography_c', 'pres_msl', 'qv', 'cloud_num', 'tai', 'h_snow',
 'group:precip_vars', 'group:additional_precip_vars', 'group:land_vars', 'group:land_tile_vars', 'freshsnow', 'albdif'
  output_grid                  =  .TRUE.
  stream_partitions_ml = 2
@@ -213,7 +213,7 @@ cat > ${atmo_namelist} << EOF
 &nwp_phy_nml
 inwp_gscp       = 2,2,
 inwp_convection = 1,0
-inwp_radiation  = 1
+inwp_radiation  = 4
 inwp_cldcover   = 1
 inwp_turb       = 1
 inwp_satad      = 1
@@ -244,9 +244,9 @@ itune_albedo = 1
   frcsmot       = 0.2   ! these 2 switches together apply vertical smoothing of the TKE source terms
   imode_frcsmot = 2     ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
-  itype_sher    = 3    
-  ltkeshs       = .true.
-  a_hshr        = 2.0
+  itype_sher    = 0
+  ltkeshs       = .false.
+  a_hshr        = 0.0
   icldm_turb    = 1
 /
 &lnd_nml
@@ -258,7 +258,7 @@ itune_albedo = 1
   lsnowtile      = .true.
   lseaice        = .true.
   llake          = .true.
-  itype_lndtbl   = 3 
+  itype_lndtbl   = 3
   itype_root     = 2
 /
 &radiation_nml
@@ -270,7 +270,8 @@ itune_albedo = 1
   vmr_n2o     = 322.0e-09
   vmr_o2      = 0.20946
   vmr_cfc11   = 240.e-12
-  vmr_cfc12   = 532.e-12 
+  vmr_cfc12   = 532.e-12
+  ecrad_data_path = '${basedir}/externals/ecrad/data'
 /
 &nonhydrostatic_nml
   iadv_rhotheta   = 2

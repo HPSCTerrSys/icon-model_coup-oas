@@ -1,0 +1,580 @@
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+# ------------------------------------------
+# Aqua Planet Experiment (APE) - Sapphire Configuration
+author_list="Angel Peinado, MPIM"
+# ------------------------------------------
+# This file describes an aqua planet experiment based with Sapphire configuration
+# It is based in the APE protocol:
+# - constant zonal SST, no land, no sea icem, no aerosol
+# - parameterization used Radiation, Turbulence and Micro-physics scheme
+# - well mixed greenhouse gases CO2
+# - constant O3 concentration
+#=============================================================================
+# (0) Variables provided by the scripting mechanism
+
+# EXPNAME                = name of exp. in 'exp.<name>'
+# basedir                = base directory, where src/, run/ etc exist
+# icon_data_poolFolder   = root directory for ICON data
+# nproma                 = blocking length for array dimensioning and inner loop lengths
+#                           which is set in run/create_target_header for the used machine
+#
+# nblocks_c              = number of looping chunks used for cells
+#                          which is set in run/create_target_header for the used machine
+#
+# - nproma_sub           = radiation blocking length, <= nproma
+#                          --> nproma_sub
+#
+icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/grids/public/mpim"
+#=============================================================================
+# (1) Basic model configuration
+# -----------------------------
+grid_id="0013"
+grids_folder="${icon_data_poolFolder}/${grid_id}"
+grid_refinement="R02B04"
+grid_label=G
+grid_name="icon_grid_${grid_id}_${grid_refinement}_${grid_label}"
+
+atmo_dyn_grids="'${grid_name}.nc'"
+#=============================================================================
+# (2) Define the model time stepping
+# ----------------------------------
+radTimeStep="PT20M"              # radiation time step
+atmTimeStep="PT10M"              # atmosphere time step
+#=============================================================================
+# (3) Define the model start and end time
+# ---------------------------------------
+start_date=${start_date:="1979-01-01T00:00:00Z"}
+end_date=${end_date:="1980-01-01T00:00:00Z"}
+
+checkpoint_interval="P6M"
+restart_interval="P1Y"
+#=============================================================================
+# (4) Output control
+# ------------------
+atm_file_interval="P1M"
+atm_file_interval_2d="P1D"
+atm_file_interval_2d_mean="P1M"
+atm_file_interval_2d_daymean="P1Y"
+atm_file_interval_2d_monmean="P1Y"
+atm_file_interval_3d="P1D"
+atm_file_interval_3d_mean="P1D"
+atm_file_interval_3d_daymean="P1M"
+atm_file_interval_3d_monmean="P1Y"
+atm_file_interval_pl="P1M"
+
+atm_output_interval_2d_mean="PT3H"
+atm_output_interval_2d_daymean="P1D"
+atm_output_interval_2d_monmean="P1M"
+atm_output_interval_3d_mean="PT6H"
+atm_output_interval_3d_daymean="P1D"
+atm_output_interval_3d_monmean="P1M"
+
+atm_output_interval_2d="PT30M"
+atm_output_interval_3d="PT3H"
+atm_output_interval_plvl="PT30M"
+
+output_interval="P1Y"
+file_interval="P1Y"
+# asynchronous diagnostic output processes
+# ----------------------------------------
+filename_format="<output_filename>_<datetime2>.${SLURM_JOB_ID}"
+
+#m_levels='14,21,25,29,31,35,38,41,46,51,55,58,63,67,71,74,76,78,80,81,83,84,85,87,89,90'
+m_levels="30...(nlev)"
+
+# output file selection
+# ---------------------
+# Note that "mpi_atm_io_procs" must match the number of output files
+# output_<xyz>=yes : yes --> output files for <xyz>, any other value --> no files for <xyz>
+output_atm_vgrid=no                # produces 1 atm file
+output_atm_debug=no                # produces 1 atm file
+output_atm_3d=no                   # produces 1 atm file
+output_atm_3d_mean=no              # produces 1 atm file
+output_atm_3d_daymean=no           # produces 1 atm file
+output_atm_3d_monmean=yes          # produces 1 atm file
+output_atm_pressure_level=no       # produces 2 atm file
+output_atm_2d=no                   # produces 1 atm file
+output_atm_2d_mean=no              # produces 1 atm file
+output_atm_2d_daymean=no           # produces 1 atm file
+output_atm_2d_monmean=yes          # produces 1 atm file
+output_phy_3d=no                   # produces 1 atm file
+
+# Note that "mpi_atm_io_procs" should match the number of output files
+mpi_atm_io_procs=2                # for atmosphere (2d and 3d) - total number of output files
+
+#=============================================================================
+# (5) Namelist Files
+# ------------------
+atmo_namelist=NAMELIST_${EXPNAME}_atm
+#=============================================================================
+# (6) Model Configuration - Dynamics and Pysics
+#---------------------- -----------------------
+
+cat > ${atmo_namelist} << EOF
+!
+&parallel_nml
+ nproma               = ${nproma}
+ nblocks_c            = ${nblocks_c}
+ nproma_sub           = ${nproma_sub}
+ num_io_procs         = ${mpi_atm_io_procs}
+ io_proc_chunk_size   = 46
+ io_process_stride    = 8  !Levante 300
+ iorder_sendrecv      = 3  !Levante 4
+ ! num_restart_procs    = 64 !prelim Levante $((atm_procs/8))
+/
+&grid_nml
+ dynamics_grid_filename = ${atmo_dyn_grids}
+/
+&run_nml
+ num_lev              = 90          ! number of full levels
+ modelTimeStep        = "${atmTimeStep}"
+ ltestcase            = .TRUE.      ! run testcase
+ ldynamics            = .TRUE.      ! dynamics
+ ltransport           = .TRUE.      ! transport
+ iforcing             = 2           ! 0: none, 1: HS, 2: ECHAM, 3: NWP
+ output               = 'nml'
+ msg_level            = 15          ! level of details report during integration
+ msg_timestamp        = .TRUE.
+ restart_filename     = "${EXPNAME}_restart_atm_<rsttime>.mfr"
+ activate_sync_timers = .TRUE.
+ profiling_output     = 1
+ timers_level         = 10
+/
+&nh_testcase_nml
+ nh_test_name         = 'APE_aes'
+ ape_sst_case         = 'sst_qobs'
+ zp_ape               = 101325
+ ztmc_ape             = 25.006
+/
+&nonhydrostatic_nml
+ ndyn_substeps        = 5           ! dtime/dt_dyn
+ damp_height          = 44000.      ! [m]
+ rayleigh_coeff       = 1.0
+ vwind_offctr         = 0.2
+ divdamp_fac          = 0.004
+ divdamp_order        = 24
+ divdamp_trans_end    = 17500
+ divdamp_trans_start  = 12500
+ divdamp_type         = 32
+ exner_expol          = 0.333
+ hbot_qvsubstep       = 16000.
+ htop_moist_proc      = 22500.
+ iadv_rhotheta        = 2
+ igradp_method        = 3
+ itime_scheme         = 4
+ ivctype              = 2
+ l_zdiffu_t           = .true.
+ thhgtd_zdiffu        = 125.
+ thslp_zdiffu         = 0.02
+/
+&interpol_nml
+ rbf_scale_mode_ll = 1
+/
+&sleve_nml
+ min_lay_thckn        = 25.    ! [m]
+ max_lay_thckn        = 400.   ! [m]
+ top_height           = 75000. ! [m]
+ stretch_fac          = 0.9
+ decay_scale_1        = 4000.  ! [m]
+ decay_scale_2        = 2500.  ! [m]
+ decay_exp            = 1.2
+ flat_height          = 22500. ! [m]
+ htop_thcknlimit      = 14000.
+/
+&initicon_nml
+ pinit_seed           = -1          ! seed for perturbation of initial model state. no perturbation by default
+ pinit_amplitude      = 0.          ! amplitude of perturbation
+/
+&diffusion_nml
+/
+!&dynamics_nml
+! lmoist_thdyn   = .TRUE.
+!/
+&transport_nml
+ tracer_names         = 'hus','clw','cli','qr','qs','qg'
+ ivadv_tracer         =    3 ,   3 ,   3 ,  3 ,  3 ,  3
+ itype_hlimit         =    3 ,   4 ,   4 ,  4 ,  4 ,  4
+ ihadv_tracer         =   20 ,  20 ,  20 , 20 , 20 , 20
+/
+&aes_phy_nml
+!
+! domain 1
+! --------
+!
+! atmospheric phyiscs (""=never)
+ aes_phy_config(1)%dt_rad = "${radTimeStep}"
+ aes_phy_config(1)%dt_vdf = "${atmTimeStep}"
+ aes_phy_config(1)%dt_mig = "${atmTimeStep}"
+!
+! surface (.TRUE. or .FALSE.)
+ aes_phy_config(1)%ljsb   = .FALSE.
+ aes_phy_config(1)%lamip  = .FALSE.
+ aes_phy_config(1)%lice   = .FALSE.
+ aes_phy_config(1)%lmlo   = .FALSE.
+ aes_phy_config(1)%llake  = .FALSE.
+!aes_phy_config(1)%use_shflx_adjustment = .FALSE.
+!aes_phy_config(1)%iqneg_d2p = 2
+!aes_phy_config(1)%iqneg_p2d = 2
+/
+&aes_rad_nml
+!
+! domain 1
+! --------
+!
+ aes_rad_config(1)%isolrad       =  2
+ aes_rad_config(1)%l_orbvsop87   = .FALSE.
+ aes_rad_config(1)%cecc          = 0.0
+ aes_rad_config(1)%cobld         = 0.0
+ aes_rad_config(1)%irad_h2o      =  1
+ aes_rad_config(1)%irad_co2      =  2
+ aes_rad_config(1)%irad_ch4      =  0
+ aes_rad_config(1)%irad_n2o      =  0
+ aes_rad_config(1)%irad_o3       =  4
+ aes_rad_config(1)%irad_o2       =  0
+ aes_rad_config(1)%irad_cfc11    =  0
+ aes_rad_config(1)%irad_cfc12    =  0
+ aes_rad_config(1)%irad_aero     =  0
+!aes_rad_config(1)%lclearsky     = .FALSE.  ! true is default
+!aes_rad_config(1)%inhom_lts     = .TRUE.
+!aes_rad_config(1)%inhom_lts_max = 0.725
+/
+&aes_gwd_nml
+/
+&aes_vdf_nml
+ aes_vdf_config(1)%pr0        =  0.7
+ aes_vdf_config(1)%turb       =  2     ! Smagorinsky
+! aes_vdf_config(1)%use_tmx    = .TRUE.
+! aes_vdf_config(1)%energy_type        = 2   ! Only used for tmx
+! aes_vdf_config(1)%dissipation_factor = 1.3 ! Only used for tmx
+! aes_vdf_config(1)%louis_constant_b   = 4.2 ! default for R2B8
+! aes_vdf_config(1)%lmix_max   = 150.
+/
+&aes_cnv_nml
+! aes_cov_config(1)%cqx        = 1.e-6
+/
+&aes_cld_nml
+/
+&aes_cop_nml
+/
+&cloud_mig_nml
+! aes_mig_config(1)%mu_rain          = 0.5
+! aes_mig_config(1)%rain_n0_factor   = 0.1
+! aes_mig_config(1)%v0snow           = 25.
+! aese_mig_config(1)%zvz0i           = 3.29  ! Terminal fall velocity of ice  (original value of Heymsfield+Donner 1990: 3.29)
+/
+&aes_cov_nml
+! aes_cov_config(1)%icov       = 3     ! 0/1 cloud cover based on cloud water and ice
+ aes_cov_config(1)%cqx         = 1.e-6
+/
+EOF
+
+#=============================================================================
+# (7) Define the input
+#---------------------
+# model files
+#
+add_link_file ${basedir}/data/rrtmgp-gas-lw-g128.nc         ./coefficients_lw.nc
+add_link_file ${basedir}/data/rrtmgp-gas-sw-g112.nc         ./coefficients_sw.nc
+add_link_file ${basedir}/data/ECHAM6_CldOptProps_rrtmgp_lw.nc             ./rrtmgp-cloud-optics-coeffs-lw.nc
+add_link_file ${basedir}/data/ECHAM6_CldOptProps_rrtmgp_sw.nc             ./rrtmgp-cloud-optics-coeffs-sw.nc
+
+#
+# namelist files
+#
+add_required_file ${basedir}/run/${atmo_namelist}                         ./
+
+# dictionary file for output variable names
+#
+dict_file="dict.${EXPNAME}"
+cat dict.iconam.mpim  > ${dict_file}
+add_required_file ${basedir}/run/${dict_file}                             ./
+
+# range of years for yearly files
+# assume start_date and end_date have the format yyyy-...
+start_year=$(( ${start_date%%-*} - 1 ))
+end_year=$(( ${end_date%%-*} + 1 ))
+
+# ozone
+#
+datadir=${icon_data_poolFolder}/${grid_id}/ozone/r0002
+add_link_file ${datadir}/bc_ozone_ape.nc                           ./bc_ozone.nc
+
+# green Houses
+#
+datadir=${icon_data_poolFolder}/common/greenhouse_gases
+add_link_file $datadir/greenhouse_historical.nc         ./bc_greenhouse_gases.nc
+
+# - the atmosphere grid itself (the grid copy section below from $HGRIDDIR is ignored
+#
+add_link_file ${grids_folder}/${atmo_dyn_grids}                      ./
+
+#=============================================================================
+# (6) Define the output
+# ---------------------
+
+# Parameters for all output files
+# -------------------------------
+cat >> ${atmo_namelist} << EOF
+&io_nml
+ output_nml_dict      = "${dict_file}"
+ netcdf_dict          = "${dict_file}"
+ write_last_restart   = .TRUE.
+ itype_pres_msl       = 4
+ restart_file_type    = 5
+ restart_write_mode   = 'joint procs multifile'
+ lnetcdf_flt64_output = .FALSE.
+/
+EOF
+
+# Define output files
+# -------------------
+#
+# 3-dimensional files include 'ps' and 'pfull' to allow the vertical
+# interpolation to pressure levels by cdo ap2pl.
+
+# fixed model data only written at initial date
+if [[ "$output_atm_vgrid" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_vgrid"
+ filename_format  = "<output_filename>_<levtype_l>"
+ filetype         = 5
+ remap            = 0
+ output_grid      = .TRUE.
+ output_start     = "${start_date}"             ! output_start = output_end
+ output_end       = "${start_date}"             ! --> write once only irrespective of
+ output_interval  = "${atm_output_interval_3d}" !     the output interval and
+ file_interval    = "${atm_file_interval}"      !     the file interval
+ ml_varlist       = 'zghalf'  , 'zg'      , 'dzghalf'
+ m_levels         = "${m_levels}"
+/
+EOF
+fi
+#
+if [[ "$output_atm_3d" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_3d"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ m_levels         =  "${m_levels}"
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_3d}"
+ file_interval    = "${atm_file_interval_3d}"
+ include_last     = .FALSE.
+ ml_varlist       = 'pfull','phalf','ta','ua','va','wa','hus','cli','clw',
+                            'rho','rsd','rsu','rld','rlu','qr','qg','qs'
+/
+EOF
+fi
+
+if [[ "$output_atm_3d_mean" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_3d_mean"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ operation        = 'mean'
+ m_levels         =  "${m_levels}"
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_3d_mean}"
+ file_interval    = "${atm_file_interval_3d_mean}"
+ include_last     = .FALSE.
+ ml_varlist       = 'pfull','phalf','ta','ua','va','wa','hus','cli','clw',
+                            'rho','rsd','rsu','rld','rlu','qr','qg','qs'
+/
+EOF
+fi
+
+if [[ "$output_atm_3d_daymean" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_3d_daymean"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ remap            = 0
+ operation        = 'mean'
+ m_levels         =  "${m_levels}"
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_3d_daymean}"
+ file_interval    = "${atm_file_interval_3d_daymean}"
+ include_last     = .FALSE.
+ ml_varlist       = 'pfull','ta','rho','ua','va','wa','hus','cli','clw','qr','qg','qs',
+                    'phalf','rsd','rsu','rld','rlu',
+/
+EOF
+fi
+
+if [[ "$output_atm_3d_monmean" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_3d_monmean"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ remap            = 0
+ operation        = 'mean'
+ m_levels         =  "${m_levels}"
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_3d_monmean}"
+ file_interval    = "${atm_file_interval_3d_monmean}"
+ include_last     = .FALSE.
+ ml_varlist       = 'pfull','ta','rho','ua','va','wa','hus','cli','clw','qr','qg','qs',
+                    'phalf','rsd','rsu','rld','rlu'
+/
+EOF
+fi
+
+if [[ "$output_atm_2d" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_2d"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_2d}"
+ file_interval    = "${atm_file_interval_2d}"
+ include_last     = .FALSE.
+ ml_varlist       = 'ps','tas','cptgzvi',
+                    'rsdt','rsut','rsutcs','rlut','rlutcs','rsds','rsdscs',
+                    'rlds','rldscs','rsus','rsuscs','rlus','hfls','hfss',
+                    'clt','pr','prw','cllvi','clivi','evspsbl',
+                    'qgvi','qrvi','qsvi','qv2m',
+                    'tauu','tauv','sfcwind','uas','vas'
+/
+EOF
+fi
+
+if [[ "$output_atm_2d_mean" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_2d_mean"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ operation        = 'mean'
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_2d_mean}"
+ file_interval    = "${atm_file_interval_2d_mean}"
+ include_last     = .FALSE.
+ ml_varlist       = 'ps','tas','cptgzvi',
+                    'rsdt','rsut','rsutcs','rlut','rlutcs','rsds','rsdscs',
+                    'rlds','rldscs','rsus','rsuscs','rlus','hfls','hfss',
+                    'clt','pr','prw','cllvi','clivi','evspsbl',
+                    'qgvi','qrvi','qsvi','qv2m',
+                    'tauu','tauv','sfcwind','uas','vas'
+/
+EOF
+fi
+
+if [[ "$output_atm_2d_monmean" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_2d_monmean"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ remap            = 0
+ operation        = 'mean'
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_2d_monmean}"
+ file_interval    = "${atm_file_interval_2d_monmean}"
+ include_last     = .FALSE.
+ ml_varlist       = 'ps','tas','cptgzvi',
+                    'rsdt','rsut','rsutcs','rlut','rlutcs','rsds','rsdscs',
+                    'rlds','rldscs','rsus','rsuscs','rlus','hfls','hfss',
+                    'clt','pr','prw','cllvi','clivi','evspsbl',
+                    'qgvi','qrvi','qsvi','qv2m',
+                    'tauu','tauv','sfcwind','uas','vas'
+/
+EOF
+fi
+
+if [[ "$output_atm_2d_daymean" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_2d_daymean"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ remap            = 0
+ operation        = 'mean'
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_2d_daymean}"
+ file_interval    = "${atm_file_interval_2d_daymean}"
+ include_last     = .FALSE.
+ ml_varlist       = 'ps','cptgzvi',
+                    'rsdt','rsut','rsutcs','rlut','rlutcs','rsds','rsdscs',
+                    'rlds','rldscs','rsus','rsuscs','rlus','hfls','hfss',
+                    'clt','pr','prw','cllvi','clivi','evspsbl',
+                    'qgvi','qrvi','qsvi','qv2m',
+                    'tauu','tauv','sfcwind','uas','vas'
+/
+EOF
+fi
+
+if [[ "$output_atm_pressure_level" == "yes" ]]; then
+  #
+  cat >> ${atmo_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_atm_plvl"
+ filename_format  = "${filename_format}"
+ filetype         = 5
+ mode             = 1
+ remap            = 0
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${atm_output_interval_pressure_level_mean}"
+ file_interval    = "${atm_file_interval_pl}"
+ include_last     = .FALSE.
+ p_levels         = "${p_levels}"
+ pl_varlist       = 'ta','ua','va','wa','vor','hus','clw','cli','gpsm','zg'
+/
+EOF
+fi
+#
+#  get model
+#
+ls -l ${MODEL}
+check_error $? "${MODEL} does not exist?"
+#
+ldd ${MODEL}

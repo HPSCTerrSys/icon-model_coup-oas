@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -124,15 +123,15 @@ CONTAINS
   SUBROUTINE setup_idemix(patch_3d)
     TYPE(t_patch_3d ),TARGET, INTENT(in) :: patch_3d
     TYPE(t_patch), POINTER :: patch_2D
-    TYPE(t_stream_id) :: stream_id 
-    
+    TYPE(t_stream_id) :: stream_id
+
     !! namelist variables
     !REAL(wp) :: &
-    !  tau_v                     = 86400.0             ,& 
-    !  tau_h                     = 1296000.0           ,&
-    !  gamma                     = 1.570               ,&
-    !  jstar                     = 10.0                ,&
-    !  mu0                       = 1.33333333
+    !  tau_v                     = 86400.0_wp             ,&
+    !  tau_h                     = 1296000.0_wp           ,&
+    !  gamma                     = 1.570_wp               ,&
+    !  jstar                     = 10.0_wp                ,&
+    !  mu0                       = 1.33333333_wp
     !! FIXME: these need to go to calc_idemix
     !LOGICAL :: &
     !  l_idemix_avo_dvo_direct   = .false.
@@ -147,7 +146,7 @@ CONTAINS
     !REAL(wp) :: iwe_surf_forc(nproma, patch_3d%p_patch_2d(1)%alloc_cell_blocks)
     !REAL(wp) :: iwe_bott_forc(nproma, patch_3d%p_patch_2d(1)%alloc_cell_blocks)
     LOGICAL  :: has_missValue = .false.
-    REAL(wp) :: missValue = -123456789999999999.0
+    REAL(wp) :: missValue = -123456789999999999.0_wp
 
     patch_2d   => patch_3d%p_patch_2d(1)
 
@@ -158,15 +157,15 @@ CONTAINS
 
     fpath_iwe_surforc = 'idemix_surface_forcing.nc'
     !fpath_iwe_surforc = '/mnt/lustre01/work/mh0033/m300602/proj_vmix/icon/idemix_forcing/fourier_smooth_2005_cfsr_inert_OceanOnly_Icos_0158km_etopo40.nc'
-    name_iwe_surforc = 'niw_forc' 
+    name_iwe_surforc = 'niw_forc'
 
     fpath_iwe_botforc = 'idemix_bottom_forcing.nc'
-    name_iwe_botforc = 'wave_dissipation' 
+    name_iwe_botforc = 'wave_dissipation'
 
     ! initialise IDEMIX parameters
     CALL init_idemix(tau_v, tau_h, gamma, jstar, mu0)
 
-    if ( l_use_idemix_forcing ) then 
+    if ( l_use_idemix_forcing ) then
       ! read internal wave surface forcing
       CALL openInputFile(stream_id, fpath_iwe_surforc, patch_2d, &
         &                read_netcdf_broadcast_method)
@@ -189,7 +188,7 @@ CONTAINS
 
     ! convert from W/m^2 to m^3/s^3
     ! (only 20% of the niw-input are available to penetrate into the deeper ocean)
-    iwe_surf_forc(:,:) = iwe_surf_forc(:,:) / OceanReferenceDensity * 0.2
+    iwe_surf_forc(:,:) = iwe_surf_forc(:,:) / OceanReferenceDensity * 0.2_wp
     iwe_bott_forc(:,:) = iwe_bott_forc(:,:) / OceanReferenceDensity
 
   END SUBROUTINE setup_idemix
@@ -205,7 +204,7 @@ CONTAINS
     TYPE(t_operator_coeff),INTENT(in)     :: op_coeffs
     !REAL(wp), TARGET                     :: fu10   (:,:) ! t_atmos_for_ocean%fu10
 
-    ! pointer for convenience 
+    ! pointer for convenience
     REAL(wp), POINTER :: dz(:,:,:)
     REAL(wp), POINTER :: dzi(:,:,:)
     REAL(wp), POINTER :: dzw(:,:,:)
@@ -221,7 +220,7 @@ CONTAINS
     INTEGER, POINTER :: kbot(:,:)
 
     ! loop variables
-    INTEGER :: jc, je, jk, blockNo, tracer_index
+    INTEGER :: jc, je, jk, blockNo, tracer_index, jtrc
     INTEGER :: start_index, end_index
     INTEGER :: levels
 
@@ -254,12 +253,12 @@ CONTAINS
     REAL(wp) :: dummy_zeros(n_zlev+1)
     LOGICAL  :: debug
 
-    dummy_zeros = 0.0
+    dummy_zeros = 0.0_wp
     debug = .false.
 
     iwe => params_oce%vmix_params%iwe(:,:,:)
-    iwe_kv = 0.0
-    iwe_Av = 0.0
+    iwe_kv = 0.0_wp
+    iwe_Av = 0.0_wp
 
     dz  => patch_3d%p_patch_1d(1)%prism_center_dist_c
     dzi => patch_3d%p_patch_1d(1)%inv_prism_center_dist_c
@@ -278,7 +277,7 @@ CONTAINS
     levels = n_zlev
 
     !salinity(1:levels) = sal_ref
-    rho_up(:)=0.0_wp    
+    rho_up(:)=0.0_wp
     rho_down(:)=0.0_wp
 
     !write(*,*) "TKE before:"
@@ -301,8 +300,8 @@ CONTAINS
             & temp(jc,2:levels,blockNo), &
             & salt(jc,2:levels,blockNo), &
             & pressure(2:levels), levels-1)
-        Nsqr = 0.
-        DO jk = 2, n_zlev 
+        Nsqr = 0.0_wp
+        DO jk = 2, n_zlev
           Nsqr(jk) = grav/OceanReferenceDensity * (rho_down(jk) - rho_up(jk-1)) *  dzi(jc,jk,blockNo)
         ENDDO
 
@@ -320,18 +319,18 @@ CONTAINS
                    dzw             = dzw(jc,:,blockNo),                              &
                    dzt             = dz(jc,:,blockNo),                               &
                    nlev            = kbot(jc,blockNo),                               &
-                   max_nlev        = n_zlev,                                         & 
+                   max_nlev        = n_zlev,                                         &
                    dtime           = dtime,                                          &
                    ! FIXME: get name of Coriolis param
                    coriolis        = patch_2D%cells%f_c(jc,blockNo),                 &
-                   ! essentials 
+                   ! essentials
                    iwe_old         = iwe(jc,:,blockNo),                              & ! in
                    iwe_new         = iwe(jc,:,blockNo),                              & ! out
                    forc_iw_surface = iwe_surf_forc(jc,blockNo),                      & ! in
                    forc_iw_bottom  = iwe_bott_forc(jc,blockNo),                      & ! in
                    ! FIXME: nils: better output IDEMIX Ri directly
                    alpha_c         = params_oce%vmix_params%iwe_alpha_c(jc,:,blockNo), & ! out (for Ri IMIX)
-                   ! only for Osborn shortcut 
+                   ! only for Osborn shortcut
                    ! FIXME: nils: put this to tke
                    KappaM_out      = iwe_Av(jc,:,blockNo),                           & ! out
                    KappaH_out      = iwe_kv(jc,:,blockNo),                           & ! out
@@ -365,16 +364,16 @@ CONTAINS
       ENDDO
     ENDDO
 
-! start: iwe hor prop 
+! start: iwe hor prop
 ! continue here
     ! add contribution from horizontal wave propagation
     if (n_hor_iwe_prop_iter>0) then
 
-      CALL sync_patch_array(sync_c, patch_2D, iwe)
-      CALL sync_patch_array(sync_c, patch_2D, params_oce%vmix_params%iwe_v0)
+      CALL sync_patch_array(sync_c, patch_2D, iwe, lacc=.FALSE.)
+      CALL sync_patch_array(sync_c, patch_2D, params_oce%vmix_params%iwe_v0, lacc=.FALSE.)
 
       ! temporarily store old iwe values for diag
-      params_oce%vmix_params%iwe_Thdi(:,:,:) = iwe(:,:,:) 
+      params_oce%vmix_params%iwe_Thdi(:,:,:) = iwe(:,:,:)
 
       ! restrict iwe_v0 to fullfill stability criterium
       !DO j=1,je
@@ -448,7 +447,7 @@ CONTAINS
         ENDDO
 
         ! sync (better save than sorry)
-        CALL sync_patch_array(sync_e, patch_2D, flx_e)
+        CALL sync_patch_array(sync_e, patch_2D, flx_e, lacc=.FALSE.)
 
         !! derive flux
         !flx_e(:,:,:) = 0.0_wp
@@ -486,7 +485,7 @@ CONTAINS
         ! apply tendency
         ! FIXME: Do we need to divide by cell volume?
         iwe(:,:,:) = iwe(:,:,:) + dtime/n_hor_iwe_prop_iter * div_flx_c(:,:,:)
-        CALL sync_patch_array(sync_c, patch_2D, iwe)
+        CALL sync_patch_array(sync_c, patch_2D, iwe, lacc=.FALSE.)
 
       ENDDO ! n=1,n_hor_iwe_prop_iter
 
@@ -494,7 +493,7 @@ CONTAINS
       params_oce%vmix_params%iwe_Thdi(:,:,:) = (iwe(:,:,:) - params_oce%vmix_params%iwe_Thdi(:,:,:))/dtime
       params_oce%vmix_params%iwe_Ttot(:,:,:) = params_oce%vmix_params%iwe_Ttot(:,:,:) + params_oce%vmix_params%iwe_Thdi(:,:,:)
     end if
-! end: iwe hor prop 
+! end: iwe hor prop
 
     if ( l_idemix_osborn_cox_kv ) then
       ! write tke vert. diffusivity to vert tracer diffusivities
@@ -502,8 +501,9 @@ CONTAINS
         CALL get_index_range(all_cells, blockNo, start_index, end_index)
         DO jc = start_index, end_index
           ! FIXME: nils: make loop over all tracer
-          params_oce%a_tracer_v(jc,:,blockNo,1) = iwe_kv(jc,:,blockNo)
-          params_oce%a_tracer_v(jc,:,blockNo,2) = iwe_kv(jc,:,blockNo)
+          DO jtrc = 1, no_tracer
+            params_oce%a_tracer_v(jc,:,blockNo,jtrc) = iwe_kv(jc,:,blockNo)
+          ENDDO
         ENDDO
       ENDDO
     end if
@@ -512,13 +512,13 @@ CONTAINS
     !stop
     !write(*,*) "TKE after:"
     !write(*,*) tke(8,:,10)
-    
-    !params_oce%a_tracer_v = 1e-5
-    !write(*,*) 'a_tracer_v = ', params_oce%a_tracer_v(8,:,10,1) 
-    !write(*,*) 'kbot = ', kbot(8,10) 
-    !write(*,*) 'tke_kv = ', tke_kv(8,:,10) 
-    !write(*,*) 'tke = ', tke(8,:,10) 
-    !write(*,*) 'fu10 = ', fu10(8,10) 
+
+    !params_oce%a_tracer_v = 1e-5_wp
+    !write(*,*) 'a_tracer_v = ', params_oce%a_tracer_v(8,:,10,1)
+    !write(*,*) 'kbot = ', kbot(8,10)
+    !write(*,*) 'tke_kv = ', tke_kv(8,:,10)
+    !write(*,*) 'tke = ', tke(8,:,10)
+    !write(*,*) 'fu10 = ', fu10(8,10)
   END SUBROUTINE calc_idemix
-  
+
 END MODULE mo_ocean_idemix

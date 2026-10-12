@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -27,7 +27,7 @@ _EOF
 sw_root=${ICON_SW_PREFIX-'/appl/local/climatedt/sw'}
 echo "Using software stack from ${sw_root}"
 
-modules='PrgEnv-cray cce/16.0.1 craype-x86-milan cray-mpich libfabric cray-hdf5 cray-netcdf cray-libsci'
+modules='PrgEnv-cray cce/16.0.1 craype-x86-milan cray-mpich/8.1.27 cray-hdf5 cray-netcdf cray-libsci cray-python'
 
 ZLIB_LIBS='-lz'
 
@@ -70,16 +70,18 @@ LDFLAGS="-L${ECCODES_ROOT}/lib64 -L${FYAML_ROOT}/lib -L${XML2_ROOT}/lib"
 # libfabric.so), therefore we generate the required flags based on the
 # LD_LIBRARY_PATH variable set by the modules that are loaded in BUILD_ENV:
 extra_rpath_dirs=$(unset LD_LIBRARY_PATH; { set +eu; eval "${BUILD_ENV}"; set -eu; } >/dev/null; echo "${LD_LIBRARY_PATH}")
-ICON_LDFLAGS="-Wl,--disable-new-dtags -Wl,--as-needed -Wl,-rpath,${extra_rpath_dirs}"
+ICON_LDFLAGS="-Wl,--disable-new-dtags -Wl,-rpath,${extra_rpath_dirs}"
 
-LIBS="${XML2_LIBS} ${FYAML_LIBS} ${ECCODES_LIBS} ${ZLIB_LIBS}"
+LIBS="-Wl,--as-needed ${XML2_LIBS} ${FYAML_LIBS} ${ECCODES_LIBS} ${ZLIB_LIBS}"
+
+MPI_LAUNCH='srun'
 
 # Note that the generated list of flags will contain RPATHs to the custom
 # libraries because BUILD_ENV not only loads the modules but also extends the
 # LD_LIBRARY_PATH variable for the configure scripts and test suites of the
 # bundled libraries to work. Therefore, we configure ICON with --disable-rpaths
 # to avoid duplicate RPATH entries in the ICON executable:
-EXTRA_CONFIG_ARGS='--disable-rpaths --disable-mpi-checks --enable-openmp --enable-grib2 --enable-loop-exchange --enable-fcgroup-O0 --enable-fcgroup-DIAG'
+EXTRA_CONFIG_ARGS='--disable-rpaths --disable-mpi-checks --enable-openmp --enable-grib2 --enable-loop-exchange --enable-fcgroup-O0 --enable-fcgroup-DIAG --enable-bundled-python=mtime'
 
 ################################################################################
 
@@ -98,6 +100,7 @@ ICON_O0_FCFLAGS="${ICON_O0_FCFLAGS}" \
 ICON_O0_PATH="${ICON_O0_PATH}" \
 LDFLAGS="${LDFLAGS}" \
 LIBS="${LIBS}" \
+MPI_LAUNCH="${MPI_LAUNCH}" \
 ${EXTRA_CONFIG_ARGS} \
 "$@"
 
@@ -112,11 +115,17 @@ done
 # Copy runscript-related files when building out-of-source:
 if test $(pwd) != $(cd "${icon_dir}"; pwd); then
   echo "Copying runscript input files from the source directory..."
-  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*'
-  ln -sf -t run/ ${icon_dir}/run/standard_*
-  rsync -uavz ${icon_dir}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${icon_dir}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${icon_dir}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${icon_dir}/make_runscripts .
   ln -sf ${icon_dir}/data
   ln -sf ${icon_dir}/vertical_coord_tables
 fi
-

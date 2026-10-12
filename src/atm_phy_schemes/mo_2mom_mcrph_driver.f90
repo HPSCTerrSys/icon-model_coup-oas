@@ -1,17 +1,17 @@
-!NEC$ options "-finline-max-depth=3 -finline-max-function-size=1000"
-!
-! Two-moment mixed-phase bulk microphysics
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Two-moment mixed-phase bulk microphysics
+
+!NEC$ options "-finline-max-depth=3 -finline-max-function-size=1000"
 
 MODULE mo_2mom_mcrph_driver
 
@@ -47,51 +47,56 @@ USE mo_physical_constants,   ONLY: &
     cvdr  => rcvd,    & ! (spec. heat of dry air at const vol)^-1
     rho_ice => rhoice   ! density of pure ice
 
-USE mo_satad,                ONLY: latent_heat_sublimation, latent_heat_melting
+USE mo_thdyn_functions,      ONLY: latent_heat_sublimation, latent_heat_melting
 
 USE mo_exception,            ONLY: finish, message, message_text
 USE mo_run_config,           ONLY: ldass_lhn
 
-USE mo_timer,                ONLY:                                                              & 
+USE mo_timer,                ONLY:                                                              &
                               timers_level, timer_start, timer_stop, timer_phys_2mom_dmin_init, &
                               timer_phys_2mom_prepost, timer_phys_2mom_proc, timer_phys_2mom_sedi
 
 
 USE mo_reff_types,           ONLY: t_reff_calc
 
-USE mo_2mom_mcrph_config,    ONLY: t_cfg_2mom
+USE mo_2mom_mcrph_config,    ONLY: t_cfg_2mom, t_cfg_2mom_pert, copy_cfg_2mom_pert2all
 
 USE mo_2mom_mcrph_main,      ONLY:                                &
      &                        clouds_twomoment,                   &
-     &                        atmosphere, particle, particle_frozen, particle_lwf, &
      &                        rain_coeffs, ice_coeffs, snow_coeffs, graupel_coeffs, hail_coeffs, &
      &                        ccn_coeffs, in_coeffs,                     &
      &                        init_2mom_scheme, init_2mom_scheme_once,   &
      &                        qnc_const
 
-USE mo_2mom_mcrph_processes,  ONLY:                                &
-     &                         sedi_vel_rain, sedi_vel_sphere,     &
+USE mo_2mom_mcrph_setup,     ONLY: particle_meanmass, set_ccn_cloud_type, &
+     &                        cloud_type_default_gscp4, ccn_type_gscp4,   &
+     &                        cloud_type_default_gscp5, ccn_type_gscp5,   &
+     &                        cfg_params
+
+USE mo_2mom_mcrph_processes,  ONLY:                                                    &
+     &                         sedi_vel_rain, sedi_vel_sphere, sedi_vel_lwf,           &
      &                         sedi_icon_rain, sedi_icon_sphere, sedi_icon_sphere_lwf, &
-     &                         particle_meanmass, sedi_vel_lwf,&
-     &                         q_crit, cfg_params
+     &                         q_crit
 
 USE mo_2mom_mcrph_config_default, ONLY: cfg_2mom_default
+USE mo_ensemble_pert_config, ONLY: use_ensemble_pert
 
 USE mo_2mom_mcrph_util, ONLY:                            &
      &                       init_dmin_wg_gr_ltab_equi,  &
      &                       dmin_wetgrowth_fit_check, luse_dmin_wetgrowth_table, lprintout_comp_table_fit
 
-USE mo_2mom_mcrph_types, ONLY: ltabdminwgg, ltabdminwgh
+USE mo_2mom_mcrph_types, ONLY: ltabdminwgg, ltabdminwgh, &
+     &                         atmosphere, particle
 
 USE mo_2mom_prepare, ONLY: prepare_twomoment, post_twomoment
-USE mo_nwp_tuning_config,  ONLY: tune_sbmccn
+
 USE mo_fortran_tools, ONLY: init
 !==============================================================================
 
   IMPLICIT NONE
   PUBLIC
 
-  CHARACTER(len=*), PARAMETER :: routine = 'mo_2mom_mcrph_driver'
+  CHARACTER(len=*), PARAMETER :: modname = 'mo_2mom_mcrph_driver'
   INTEGER,          PARAMETER :: dbg_level = 25                   ! level for debug prints
 
   ! .. exponents for simple density of terminal fall velocity
@@ -107,18 +112,9 @@ USE mo_fortran_tools, ONLY: init
 
 !! Now in namelist phy_ctl!  INTEGER, PARAMETER :: i2mom_solver = 1  ! (0) explicit (1) semi-implicit solve
 !!$  ! now this comes from cfg_params !  INTEGER, PARAMETER :: i2mom_solver = 1  ! (0) explicit (1) semi-implicit solve
-  
-  INTEGER, PARAMETER :: cloud_type_default_gscp4 = 2603, ccn_type_gscp4 = 7
-  INTEGER, PARAMETER :: cloud_type_default_gscp5 = 2603, ccn_type_gscp5 = 8
 
-  ! AS: For gscp=4 use 2103 with ccn_type = 1 (HDCP2 IN and CCN schemes)
-  !     For gscp=5 use 2603 with ccn_type = 8 (PDA ice nucleation and Segal&Khain CCN activation)
-  
-  ! AS: Runs without hail, e.g, 1503 are buggy and give a segmentation fault.
-  !     So far I was not able to identify the problem, needs more detailed debugging.
-  
 CONTAINS
-  
+
   !==============================================================================
   !
   ! Two-moment mixed-phase bulk microphysics
@@ -160,10 +156,11 @@ CONTAINS
                        dtemp,             & ! inout: opt. temp increment
                        msg_level,         & ! in: msg_level
                        l_cv,              & ! in: switch for cv/cp
-                       ithermo_water      ) ! in: thermodynamic option
+                       ithermo_water,     & ! in: thermodynamic option
+                       cfg_2mom_pert      ) ! in: optional: container of perturbed config parameters
 
     ! Declare variables in argument list
-    
+
     INTEGER,            INTENT (IN)  :: isize, ke    ! grid sizes
     INTEGER,  OPTIONAL, INTENT (IN)  :: is, ie, ks   ! start/end indices
 
@@ -193,7 +190,7 @@ CONTAINS
     REAL(wp), DIMENSION(:), INTENT (INOUT) :: &
          &               prec_r, prec_i, prec_s, prec_g, prec_h
     REAL(wp), DIMENSION(:,:), INTENT (INOUT) :: qrsflux
-    
+
     REAL(wp), OPTIONAL, INTENT (INOUT)  :: dtemp(:,:)
 
     INTEGER,  INTENT (IN)             :: msg_level
@@ -201,6 +198,9 @@ CONTAINS
     LOGICAL,  OPTIONAL,  INTENT (IN)  :: l_cv
 
     INTEGER,  OPTIONAL,  INTENT (IN)  :: ithermo_water
+
+    TYPE(t_cfg_2mom_pert), OPTIONAL, INTENT(in) :: cfg_2mom_pert
+
 
     ! ... Variables which are global in module_2mom_mcrph_main
 
@@ -228,7 +228,7 @@ CONTAINS
     LOGICAL, PARAMETER :: debug     = .false.       !
     LOGICAL, PARAMETER :: clipping  = .true.        ! not really necessary, just for cleanup
 
-    CHARACTER(len=*), PARAMETER :: routine = 'mo_2mom_mcrph_driver'
+    CHARACTER(len=*), PARAMETER :: routine = TRIM(modname)//'::mo_2mom_mcrph_driver'
 
     ! These structures include the pointers to the model arrays (which are automatic arrays
     ! of this driver subroutine). These structures live only for one time step and are
@@ -240,13 +240,11 @@ CONTAINS
 
     ! These are the fundamental hydrometeor particle variables for the two-moment scheme
     ! as they are used in the various options of the scheme
-    TYPE(particle), target          :: cloud_hyd, rain_hyd
-    TYPE(particle_frozen), target   :: ice_frz, snow_frz, graupel_frz, hail_frz
-    TYPE(particle_lwf), target      :: graupel_lwf, hail_lwf
+    TYPE(particle), target   :: cloud_hyd, rain_hyd
+    TYPE(particle), target   :: ice_frz, snow_frz, graupel_frz, hail_frz
 
     ! Pointers to the derived types that are actually needed
-    CLASS(particle), pointer        :: cloud, rain
-    CLASS(particle_frozen), pointer :: ice, snow, graupel, hail
+    TYPE(particle), pointer  :: cloud, rain, ice, snow, graupel, hail
 
     INTEGER :: ik_slice(4)
 
@@ -256,14 +254,14 @@ CONTAINS
     lprogccn  = PRESENT(nccn)
     lprogin   = PRESENT(ninpot)
     lprogmelt = PRESENT(qgl)
-    
+
 #ifdef _OPENACC
     IF (lprogmelt) THEN
       CALL finish(routine, 'lprogmelt not available on GPU for two-moment microphysics')
     ENDIF
 #endif
 
-    IF (msg_level>5) CALL message (TRIM(routine), "called two_moment_mcrph")
+    IF (msg_level>10) CALL message (TRIM(routine), "called two_moment_mcrph")
 
     IF (PRESENT(ithermo_water)) THEN
        lconstant_lh = (ithermo_water == 0)
@@ -271,24 +269,18 @@ CONTAINS
        lconstant_lh = .true.
     END IF
 
-    IF (lprogccn) THEN
-       cloud_type = cloud_type_default_gscp5 + 10 * ccn_type
-    ELSE
-       cloud_type = cloud_type_default_gscp4 + 10 * ccn_type
+    ! Copy perturbed parameters from the perturbation container to the actual cfg_params type:
+    IF (PRESENT(cfg_2mom_pert) .AND. use_ensemble_pert) THEN
+      CALL copy_cfg_2mom_pert2all (cfg_2mom_pert, cfg_params)
+      !$ACC UPDATE DEVICE(cfg_params)
     END IF
 
     cloud => cloud_hyd
     rain  => rain_hyd
     ice   => ice_frz
     snow  => snow_frz
-
-    IF (lprogmelt) THEN
-       graupel => graupel_lwf   ! with prognostic melting 
-       hail => hail_lwf         ! of graupel and hail
-    ELSE
-       graupel => graupel_frz   ! simple melting
-       hail => hail_frz
-    END IF
+    graupel => graupel_frz
+    hail => hail_frz
 
     ! start/end indices
     IF (PRESENT(is)) THEN
@@ -308,7 +300,7 @@ CONTAINS
     END IF
     kte = ke
 
-    IF (timers_level > 10) CALL timer_start(timer_phys_2mom_prepost) 
+    IF (timers_level > 10) CALL timer_start(timer_phys_2mom_prepost)
 
     ! inverse of vertical layer thickness
     !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
@@ -346,7 +338,7 @@ CONTAINS
           WHERE(qhl(its:ite,kts:kte) < 0.0_wp) qhl(its:ite,kts:kte) = 0.0_wp
        END IF
     END IF
-    
+
     ! indices as used in two-moment scheme
     ik_slice(1) = its
     ik_slice(2) = ite
@@ -433,12 +425,12 @@ CONTAINS
               &                     + qgl(its:ite,kts:kte) + qhl(its:ite,kts:kte)
       END IF
 
-       IF (timers_level > 10) CALL timer_start(timer_phys_2mom_proc) 
+       IF (timers_level > 10) CALL timer_start(timer_phys_2mom_proc)
        ! .. this subroutine calculates all the microphysical sources and sinks
        CALL clouds_twomoment(ik_slice, dt, lprogin, &
-            atmo, cloud, rain, ice, snow, graupel, hail, ninact, nccn, ninpot)
+            atmo, cloud, rain, ice, snow, graupel, hail, ninact, nccn, ninpot, msg_level)
 
-       IF (timers_level > 10) CALL timer_stop(timer_phys_2mom_proc) 
+       IF (timers_level > 10) CALL timer_stop(timer_phys_2mom_proc)
 
        IF (lprogccn) THEN
 #ifdef _OPENACC
@@ -463,15 +455,15 @@ CONTAINS
             ! .. latent heat term for temperature equation
             convice = z_heat_cap_r * led
             convliq = z_heat_cap_r * lwe
-            
+
             ! .. new variables
             q_vap_new = qv(ii,kk)
             if (lprogmelt) then
-              q_liq_new = qr(ii,kk) + qc(ii,kk) + qgl(ii,kk) + qhl(ii,kk) 
+              q_liq_new = qr(ii,kk) + qc(ii,kk) + qgl(ii,kk) + qhl(ii,kk)
             else
               q_liq_new = qr(ii,kk) + qc(ii,kk)
             end if
-             
+
             ! .. update temperature
             dtemp_loc  = - convice * rho_r(ii,kk) * (q_vap_new - q_vap_old(ii,kk))  &
                  &       + convliq * rho_r(ii,kk) * (q_liq_new - q_liq_old(ii,kk))
@@ -485,20 +477,20 @@ CONTAINS
        ENDDO
        !$ACC END PARALLEL
 
-       IF (timers_level > 10) CALL timer_start(timer_phys_2mom_sedi) 
+       IF (timers_level > 10) CALL timer_start(timer_phys_2mom_sedi)
 
        IF (msg_level>dbg_level) CALL message(TRIM(routine)," calling sedimentation")
 
        ! .. if we solve explicitly, then sedimentation is done here after microphysics
        CALL sedimentation_explicit()
-       IF (timers_level > 10) CALL timer_stop(timer_phys_2mom_sedi) 
+       IF (timers_level > 10) CALL timer_stop(timer_phys_2mom_sedi)
 
     ELSE
       CALL clouds_twomoment_implicit ()
     END IF
 
-    IF (timers_level > 10) CALL timer_start(timer_phys_2mom_prepost)    
-    
+    IF (timers_level > 10) CALL timer_start(timer_phys_2mom_prepost)
+
     ! .. check for negative values
     IF (debug) CALL check_clouds()
 
@@ -579,7 +571,7 @@ CONTAINS
           IF ( nccn(ii,kk) < 35e6_wp ) nccn(ii,kk) = 35e6_wp
         ENDDO
       END IF
-  
+
       !$ACC LOOP GANG(STATIC: 1) VECTOR
       DO ii = its,ite
         IF(qc(ii,kk) < 1.0e-12_wp) qnc(ii,kk) = 0.0_wp
@@ -594,7 +586,7 @@ CONTAINS
 
     IF (msg_level>dbg_level) CALL message(TRIM(routine), "two moment mcrph ends!")
 
-    IF (timers_level > 10) CALL timer_stop(timer_phys_2mom_prepost) 
+    IF (timers_level > 10) CALL timer_stop(timer_phys_2mom_prepost)
 
     RETURN
     !
@@ -608,9 +600,9 @@ CONTAINS
       ! approach is used in the COSMO microphysics, e.g, hydci_pp
       ! (see COSMO documentation for details)
       !
-      
+
       ! a few 1d arrays, maybe we can reduce this later or we keep them ...
-      real(wp), dimension(isize) :: &
+      REAL(wp), DIMENSION(isize) :: &
            & qr_flux_now,qr_flux_new,qr_sum,vr_sedq_new,vr_sedq_now,qr_impl,xr_now, &
            & nr_flux_now,nr_flux_new,nr_sum,vr_sedn_new,vr_sedn_now,nr_impl,        &
            & qs_flux_now,qs_flux_new,qs_sum,vs_sedq_new,vs_sedq_now,qs_impl,xs_now, &
@@ -620,17 +612,19 @@ CONTAINS
            & qh_flux_now,qh_flux_new,qh_sum,vh_sedq_new,vh_sedq_now,qh_impl,xh_now, &
            & nh_flux_now,nh_flux_new,nh_sum,vh_sedn_new,vh_sedn_now,nh_impl,        &
            & qi_flux_now,qi_flux_new,qi_sum,vi_sedq_new,vi_sedq_now,qi_impl,xi_now, &
-           & ni_flux_now,ni_flux_new,ni_sum,vi_sedn_new,vi_sedn_now,ni_impl         
+           & ni_flux_now,ni_flux_new,ni_sum,vi_sedn_new,vi_sedn_now,ni_impl
 
       ! for lwf variables
-      real(wp), dimension(isize) :: &
+      REAL(wp), DIMENSION(isize) :: &
            & lh_flux_now,lh_flux_new,lh_sum,vh_sedl_new,vh_sedl_now,lh_impl, &
            & lg_flux_now,lg_flux_new,lg_sum,vg_sedl_new,vg_sedl_now,lg_impl
 
       REAL(wp), DIMENSION(isize,ke) :: rdzdt
       INTEGER :: i, ii, k, kk
 
-      logical, parameter :: lmicro_impl = .true.  ! microphysics within semi-implicit sedimentation loop?
+      LOGICAL, PARAMETER :: lmicro_impl = .TRUE.  ! microphysics within semi-implicit sedimentation loop?
+
+      CHARACTER(len=*), PARAMETER :: routine = TRIM(modname)//'::clouds_twomoment_implicit'
 
 #ifdef _OPENACC
     IF (lprogmelt) THEN
@@ -652,24 +646,24 @@ CONTAINS
       !$ACC   CREATE(lh_flux_now, lh_flux_new, lh_sum, vh_sedl_new, vh_sedl_now, lh_impl) &
       !$ACC   CREATE(lg_flux_now, lg_flux_new, lg_sum, vg_sedl_new, vg_sedl_now, lg_impl, rdzdt)
 
-      if (.not.lmicro_impl) then
+      IF (.NOT.lmicro_impl) THEN
 #ifdef _OPENACC
         CALL finish('clouds_twomoment_implicit', 'routine without lmicro_impl not available on GPU')
-#endif        
+#endif
 
         ! ... save old variables for latent heat calculation
-        if (lprogmelt) then
+        IF (lprogmelt) THEN
           q_vap_old(its:ite,kts:kte) = qv(its:ite,kts:kte)
           q_liq_old(its:ite,kts:kte) = qc(its:ite,kts:kte) + qgl(its:ite,kts:kte) &
                &                     + qr(its:ite,kts:kte) + qhl(its:ite,kts:kte)
-        else
+        ELSE
           q_vap_old(its:ite,kts:kte) = qv(its:ite,kts:kte)
           q_liq_old(its:ite,kts:kte) = qc(its:ite,kts:kte) + qr(its:ite,kts:kte)
-        end if
+        END IF
 
         ! .. this subroutine calculates all the microphysical sources and sinks
         CALL clouds_twomoment(ik_slice, dt, lprogin, atmo, cloud, rain, &
-             ice, snow, graupel, hail, ninact, nccn, ninpot) 
+             ice, snow, graupel, hail, ninact, nccn, ninpot, msg_level)
 
         DO kk=kts,kte
           DO ii = its, ite
@@ -684,19 +678,19 @@ CONTAINS
 
             convice = z_heat_cap_r * led
             convliq = z_heat_cap_r * lwe
-            
+
             q_vap_new = qv(ii,kk)
-            if (lprogmelt) then
+            IF (lprogmelt) THEN
               q_liq_new = qr(ii,kk) + qc(ii,kk) + qgl(ii,kk) + qhl(ii,kk)
-            else
+            ELSE
               q_liq_new = qr(ii,kk) + qc(ii,kk)
-            end if
+            END IF
             tk(ii,kk) = tk(ii,kk) - convice * rho_r(ii,kk) * (q_vap_new - q_vap_old(ii,kk))  &
                  &                + convliq * rho_r(ii,kk) * (q_liq_new - q_liq_old(ii,kk))
           ENDDO
         ENDDO
 
-      end if
+      END IF
 
       ! clipping maybe not necessary
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -717,16 +711,16 @@ CONTAINS
       ENDDO
       !$ACC END PARALLEL
 
-      if (lprogmelt) then
+      IF (lprogmelt) THEN
         WHERE(qgl(its:ite,kts:kte) < 0.0_wp) qgl(its:ite,kts:kte) = 0.0_wp
         WHERE(qhl(its:ite,kts:kte) < 0.0_wp) qhl(its:ite,kts:kte) = 0.0_wp
-      end if
+      END IF
 
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR COLLAPSE(2)
       DO k = kts,kte
         DO i = its,ite
-            rdzdt(i,k) = 0.5_wp * rdz(i,k) * dt
+          rdzdt(i,k) = 0.5_wp * rdz(i,k) * dt
         ENDDO
       ENDDO
       !$ACC END PARALLEL
@@ -761,16 +755,16 @@ CONTAINS
       ENDDO
       !$ACC END PARALLEL
 
-      if (lprogmelt) then
+      IF (lprogmelt) THEN
         lg_flux_now(:) = 0.0_wp
-        lg_flux_new(:) = 0.0_wp        
+        lg_flux_new(:) = 0.0_wp
         lh_flux_now(:) = 0.0_wp
-        lh_flux_new(:) = 0.0_wp        
-      end if
+        lh_flux_new(:) = 0.0_wp
+      END IF
 
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR
-      do i=its,ite
+      DO i=its,ite
         vr_sedn_new(i) = rain%vsedi_min
         vi_sedn_new(i) = ice%vsedi_min
         vs_sedn_new(i) = snow%vsedi_min
@@ -781,15 +775,15 @@ CONTAINS
         vs_sedq_new(i) = snow%vsedi_min
         vg_sedq_new(i) = graupel%vsedi_min
         vh_sedq_new(i) = hail%vsedi_min
-      end do
+      END DO
       !$ACC END PARALLEL
 
-      if (lprogmelt) then 
-        do i=its,ite
+      IF (lprogmelt) THEN
+        DO i=its,ite
           vg_sedl_new(i) = graupel%vsedi_min
           vh_sedl_new(i) = hail%vsedi_min
-        end do
-      end if
+        END DO
+      END IF
 
       ! here we simply assume that there is no cloud or precip in the uppermost level
       ! i.e. we start from kts+1 going down in physical space
@@ -800,44 +794,42 @@ CONTAINS
         !$ACC DATA PRESENT(rain, ice, snow, graupel, hail)
         !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
         !$ACC LOOP GANG(STATIC: 1) VECTOR
-        do i=its,ite
+        DO i=its,ite
           xr_now(i) = particle_meanmass(rain, qr(i,k),qnr(i,k))
           xi_now(i) = particle_meanmass(ice, qi(i,k),qni(i,k))
           xs_now(i) = particle_meanmass(snow, qs(i,k),qns(i,k))
           xg_now(i) = particle_meanmass(graupel, qg(i,k),qng(i,k))
           xh_now(i) = particle_meanmass(hail, qh(i,k),qnh(i,k))
-        end do
+        END DO
         !$ACC END PARALLEL
         !$ACC END DATA
 
-        call sedi_vel_rain(rain,rain_coeffs,qr(:,k),xr_now,rhocorr(:,k),vr_sedn_now,vr_sedq_now,its,ite,qc(:,k),lacc=.TRUE.)
-        call sedi_vel_sphere(ice,ice_coeffs,qi(:,k),xi_now,rhocorr(:,k),vi_sedn_now,vi_sedq_now,its,ite)
-        call sedi_vel_sphere(snow,snow_coeffs,qs(:,k),xs_now,rhocorr(:,k),vs_sedn_now,vs_sedq_now,its,ite)
-        if (lprogmelt) then
-          call sedi_vel_lwf(graupel_lwf,graupel_coeffs,  &
-               & qg(:,k),qgl(:,k),xg_now,rhocorr(:,k),vg_sedn_now,vg_sedq_now,vg_sedl_now,its,ite)
-          call sedi_vel_lwf(hail_lwf,hail_coeffs,        &
-               & qh(:,k),qhl(:,k),xh_now,rhocorr(:,k),vh_sedn_now,vh_sedq_now,vh_sedl_now,its,ite)
-        else
-          call sedi_vel_sphere(graupel,graupel_coeffs,qg(:,k),xg_now,rhocorr(:,k),vg_sedn_now,vg_sedq_now,its,ite)
-          call sedi_vel_sphere(hail,hail_coeffs,qh(:,k),xh_now,rhocorr(:,k),vh_sedn_now,vh_sedq_now,its,ite)
-        end if
+        CALL sedi_vel_rain(rain,rain_coeffs,qr(:,k),xr_now,rhocorr(:,k),vr_sedn_now,vr_sedq_now,its,ite,qc(:,k),lacc=.TRUE.)
+        CALL sedi_vel_sphere(ice,ice_coeffs,qi(:,k),xi_now,rhocorr(:,k),vi_sedn_now,vi_sedq_now,its,ite)
+        CALL sedi_vel_sphere(snow,snow_coeffs,qs(:,k),xs_now,rhocorr(:,k),vs_sedn_now,vs_sedq_now,its,ite)
+        IF (lprogmelt) THEN
+          CALL sedi_vel_lwf(graupel,qg(:,k),qgl(:,k),xg_now,rhocorr(:,k),vg_sedn_now,vg_sedq_now,vg_sedl_now,its,ite)
+          CALL sedi_vel_lwf(hail,qh(:,k),qhl(:,k),xh_now,rhocorr(:,k),vh_sedn_now,vh_sedq_now,vh_sedl_now,its,ite)
+        ELSE
+          CALL sedi_vel_sphere(graupel,graupel_coeffs,qg(:,k),xg_now,rhocorr(:,k),vg_sedn_now,vg_sedq_now,its,ite)
+          CALL sedi_vel_sphere(hail,hail_coeffs,qh(:,k),xh_now,rhocorr(:,k),vh_sedn_now,vh_sedq_now,its,ite)
+        END IF
 
-        call implicit_core(qr(:,k), qr_sum,qr_impl,vr_sedq_new,vr_sedq_now,qr_flux_new,qr_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qnr(:,k),nr_sum,nr_impl,vr_sedn_new,vr_sedn_now,nr_flux_new,nr_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qi(:,k), qi_sum,qi_impl,vi_sedq_new,vi_sedq_now,qi_flux_new,qi_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qni(:,k),ni_sum,ni_impl,vi_sedn_new,vi_sedn_now,ni_flux_new,ni_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qs(:,k), qs_sum,qs_impl,vs_sedq_new,vs_sedq_now,qs_flux_new,qs_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qns(:,k),ns_sum,ns_impl,vs_sedn_new,vs_sedn_now,ns_flux_new,ns_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qg(:,k), qg_sum,qg_impl,vg_sedq_new,vg_sedq_now,qg_flux_new,qg_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qng(:,k),ng_sum,ng_impl,vg_sedn_new,vg_sedn_now,ng_flux_new,ng_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qh(:,k), qh_sum,qh_impl,vh_sedq_new,vh_sedq_now,qh_flux_new,qh_flux_now,rdzdt(:,k),its,ite)
-        call implicit_core(qnh(:,k),nh_sum,nh_impl,vh_sedn_new,vh_sedn_now,nh_flux_new,nh_flux_now,rdzdt(:,k),its,ite)
-        
-        if (lprogmelt) then
-          call implicit_core(qgl(:,k),lg_sum,lg_impl,vg_sedl_new,vg_sedl_now,lg_flux_new,lg_flux_now,rdzdt(:,k),its,ite)
-          call implicit_core(qhl(:,k),lh_sum,lh_impl,vh_sedl_new,vh_sedl_now,lh_flux_new,lh_flux_now,rdzdt(:,k),its,ite)
-        end if
+        CALL implicit_core(qr(:,k), qr_sum,qr_impl,vr_sedq_new,vr_sedq_now,qr_flux_new,qr_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qnr(:,k),nr_sum,nr_impl,vr_sedn_new,vr_sedn_now,nr_flux_new,nr_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qi(:,k), qi_sum,qi_impl,vi_sedq_new,vi_sedq_now,qi_flux_new,qi_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qni(:,k),ni_sum,ni_impl,vi_sedn_new,vi_sedn_now,ni_flux_new,ni_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qs(:,k), qs_sum,qs_impl,vs_sedq_new,vs_sedq_now,qs_flux_new,qs_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qns(:,k),ns_sum,ns_impl,vs_sedn_new,vs_sedn_now,ns_flux_new,ns_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qg(:,k), qg_sum,qg_impl,vg_sedq_new,vg_sedq_now,qg_flux_new,qg_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qng(:,k),ng_sum,ng_impl,vg_sedn_new,vg_sedn_now,ng_flux_new,ng_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qh(:,k), qh_sum,qh_impl,vh_sedq_new,vh_sedq_now,qh_flux_new,qh_flux_now,rdzdt(:,k),its,ite)
+        CALL implicit_core(qnh(:,k),nh_sum,nh_impl,vh_sedn_new,vh_sedn_now,nh_flux_new,nh_flux_now,rdzdt(:,k),its,ite)
+
+        IF (lprogmelt) THEN
+          CALL implicit_core(qgl(:,k),lg_sum,lg_impl,vg_sedl_new,vg_sedl_now,lg_flux_new,lg_flux_now,rdzdt(:,k),its,ite)
+          CALL implicit_core(qhl(:,k),lh_sum,lh_impl,vh_sedl_new,vh_sedl_now,lh_flux_new,lh_flux_now,rdzdt(:,k),its,ite)
+        END IF
 
         ! do microphysics on this k-level only (using the star-values)
         IF (lmicro_impl) THEN
@@ -848,13 +840,13 @@ CONTAINS
           !$ACC LOOP GANG(STATIC: 1) VECTOR
           DO ii = its, ite
             q_vap_old(ii,k) = qv(ii,k)
-            if (lprogmelt) then
+            IF (lprogmelt) THEN
 #ifndef _OPENACC
               q_liq_old(ii,k) = qr(ii,k) + qc(ii,k) + qgl(ii,k) + qhl(ii,k)
 #endif
-            else
+            ELSE
               q_liq_old(ii,k) = qc(ii,k) + qr(ii,k)
-            end if
+            END IF
           END DO
           !$ACC END PARALLEL
 
@@ -862,7 +854,7 @@ CONTAINS
           ik_slice(4) = k
           CALL clouds_twomoment(ik_slice, dt, lprogin, &
                atmo, cloud, rain, ice, snow, graupel, hail, &
-               ninact, nccn, ninpot)
+               ninact, nccn, ninpot, msg_level)
 
           ! .. latent heat term for temperature equation
           !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
@@ -881,13 +873,13 @@ CONTAINS
             convliq = z_heat_cap_r * lwe
 
             q_vap_new  = qv(ii,k)
-            if (lprogmelt) then
+            IF (lprogmelt) THEN
 #ifndef _OPENACC
               q_liq_new = qr(ii,k) + qc(ii,k) + qgl(ii,k) + qhl(ii,k)
 #endif
-            else
+            ELSE
               q_liq_new = qr(ii,k) + qc(ii,k)
-            end if
+            END IF
             tk(ii,k)   = tk(ii,k) - convice * rho_r(ii,k) * (q_vap_new - q_vap_old(ii,k))  &
                  &                + convliq * rho_r(ii,k) * (q_liq_new - q_liq_old(ii,k))
           END DO
@@ -895,26 +887,26 @@ CONTAINS
 
         END IF
 
-        call implicit_time(qr(:,k), qr_sum,qr_impl,vr_sedq_new,vr_sedq_now,qr_flux_new,its,ite)
-        call implicit_time(qnr(:,k),nr_sum,nr_impl,vr_sedn_new,vr_sedn_now,nr_flux_new,its,ite)
-        call implicit_time(qi(:,k), qi_sum,qi_impl,vi_sedq_new,vi_sedq_now,qi_flux_new,its,ite)
-        call implicit_time(qni(:,k),ni_sum,ni_impl,vi_sedn_new,vi_sedn_now,ni_flux_new,its,ite)
-        call implicit_time(qs(:,k), qs_sum,qs_impl,vs_sedq_new,vs_sedq_now,qs_flux_new,its,ite)
-        call implicit_time(qns(:,k),ns_sum,ns_impl,vs_sedn_new,vs_sedn_now,ns_flux_new,its,ite)
-        call implicit_time(qg(:,k), qg_sum,qg_impl,vg_sedq_new,vg_sedq_now,qg_flux_new,its,ite)
-        call implicit_time(qng(:,k),ng_sum,ng_impl,vg_sedn_new,vg_sedn_now,ng_flux_new,its,ite)
-        call implicit_time(qh(:,k), qh_sum,qh_impl,vh_sedq_new,vh_sedq_now,qh_flux_new,its,ite)
-        call implicit_time(qnh(:,k),nh_sum,nh_impl,vh_sedn_new,vh_sedn_now,nh_flux_new,its,ite)
-        
-        if (lprogmelt) then
-          call implicit_time(qgl(:,k),lg_sum,lg_impl,vg_sedl_new,vg_sedl_now,lg_flux_new,its,ite)
-          call implicit_time(qhl(:,k),lh_sum,lh_impl,vh_sedl_new,vh_sedl_now,lh_flux_new,its,ite)
-        end if
+        CALL implicit_time(qr(:,k), qr_sum,qr_impl,vr_sedq_new,vr_sedq_now,qr_flux_new,its,ite)
+        CALL implicit_time(qnr(:,k),nr_sum,nr_impl,vr_sedn_new,vr_sedn_now,nr_flux_new,its,ite)
+        CALL implicit_time(qi(:,k), qi_sum,qi_impl,vi_sedq_new,vi_sedq_now,qi_flux_new,its,ite)
+        CALL implicit_time(qni(:,k),ni_sum,ni_impl,vi_sedn_new,vi_sedn_now,ni_flux_new,its,ite)
+        CALL implicit_time(qs(:,k), qs_sum,qs_impl,vs_sedq_new,vs_sedq_now,qs_flux_new,its,ite)
+        CALL implicit_time(qns(:,k),ns_sum,ns_impl,vs_sedn_new,vs_sedn_now,ns_flux_new,its,ite)
+        CALL implicit_time(qg(:,k), qg_sum,qg_impl,vg_sedq_new,vg_sedq_now,qg_flux_new,its,ite)
+        CALL implicit_time(qng(:,k),ng_sum,ng_impl,vg_sedn_new,vg_sedn_now,ng_flux_new,its,ite)
+        CALL implicit_time(qh(:,k), qh_sum,qh_impl,vh_sedq_new,vh_sedq_now,qh_flux_new,its,ite)
+        CALL implicit_time(qnh(:,k),nh_sum,nh_impl,vh_sedn_new,vh_sedn_now,nh_flux_new,its,ite)
+
+        IF (lprogmelt) THEN
+          CALL implicit_time(qgl(:,k),lg_sum,lg_impl,vg_sedl_new,vg_sedl_now,lg_flux_new,its,ite)
+          CALL implicit_time(qhl(:,k),lh_sum,lh_impl,vh_sedl_new,vh_sedl_now,lh_flux_new,its,ite)
+        END IF
 
         IF (ldass_lhn) THEN
           IF (lprogmelt) THEN
             qrsflux(:,k) = qr_flux_new + qi_flux_new + qs_flux_new + qg_flux_new + qh_flux_new + &
-                           lg_flux_new + lh_flux_new
+                 lg_flux_new + lh_flux_new
           ELSE
             !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
             !$ACC LOOP GANG VECTOR
@@ -961,7 +953,7 @@ CONTAINS
       !$ACC END DATA ! DATA CREATE PRESENT
 
     END SUBROUTINE clouds_twomoment_implicit
-   
+
    !
    ! sedimentation for explicit solver, i.e., sedimentation is done with an explicit
    ! flux-form semi-lagrangian scheme after the microphysics.
@@ -979,7 +971,7 @@ CONTAINS
     ENDIF
 #endif
 
-    !$ACC DATA CREATE(prec3D_tmp)
+      !$ACC DATA CREATE(prec3D_tmp)
 
     cmax = 0.0_wp
     ! Use for sub-stepping of hydrometeors, lfullyexplicit needs to be set to TRUE
@@ -994,15 +986,15 @@ CONTAINS
       ntsedi_hail = 1
     ENDIF
 
-     CALL init(prec_r, lacc=.TRUE., opt_acc_async=.TRUE.)
-     CALL init(prec_i, lacc=.TRUE., opt_acc_async=.TRUE.)
-     CALL init(prec_s, lacc=.TRUE., opt_acc_async=.TRUE.)
-     CALL init(prec_g, lacc=.TRUE., opt_acc_async=.TRUE.)
-     CALL init(prec_h, lacc=.TRUE., opt_acc_async=.TRUE.)
+     CALL init(prec_r, lacc=.TRUE.)
+     CALL init(prec_i, lacc=.TRUE.)
+     CALL init(prec_s, lacc=.TRUE.)
+     CALL init(prec_g, lacc=.TRUE.)
+     CALL init(prec_h, lacc=.TRUE.)
 
      ! The following IF ANY conditions are important only for performance on CPU and don't work with OpenACC
 #ifndef _OPENACC
-     IF (ANY(qr(its:ite,kts:kte)>0._wp)) THEN
+      IF (ANY(qr(its:ite,kts:kte)>0._wp)) THEN
 #endif
       IF (ldass_lhn) THEN
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -1029,9 +1021,9 @@ CONTAINS
         !$ACC END PARALLEL
       ENDIF
 #ifndef _OPENACC
-     END IF
+      END IF
 
-     IF (ANY(qi(its:ite,kts:kte)>0._wp)) THEN
+      IF (ANY(qi(its:ite,kts:kte)>0._wp)) THEN
 #endif
       IF (ldass_lhn) THEN
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -1055,9 +1047,9 @@ CONTAINS
         !$ACC END PARALLEL
       ENDIF
 #ifndef _OPENACC
-     END IF
+      END IF
 
-     IF (ANY(qs(its:ite,kts:kte)>0._wp)) THEN
+      IF (ANY(qs(its:ite,kts:kte)>0._wp)) THEN
 #endif
       IF (ldass_lhn) THEN
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -1081,9 +1073,9 @@ CONTAINS
         !$ACC END PARALLEL
       ENDIF
 #ifndef _OPENACC
-     END IF
+      END IF
 
-     IF (ANY(qg(its:ite,kts:kte)>0._wp)) THEN
+      IF (ANY(qg(its:ite,kts:kte)>0._wp)) THEN
 #endif
       IF (ldass_lhn) THEN
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -1097,7 +1089,7 @@ CONTAINS
       ENDIF
        IF (lprogmelt) THEN
          DO ii=1,ntsedi_graupel
-           call sedi_icon_sphere_lwf(graupel_lwf,graupel_coeffs,qg,qng,qgl,&
+           call sedi_icon_sphere_lwf(graupel,graupel_coeffs,qg,qng,qgl,&
                 &                    prec_g,prec3D_tmp,rhocorr,rdz,dt/ntsedi_graupel,its,ite,kts,kte,cmax)
          END DO
        ELSE
@@ -1117,9 +1109,9 @@ CONTAINS
         !$ACC END PARALLEL
       ENDIF
 #ifndef _OPENACC
-     END IF
+      END IF
 
-     IF (ANY(qh(its:ite,kts:kte)>0._wp)) THEN
+      IF (ANY(qh(its:ite,kts:kte)>0._wp)) THEN
 #endif
       IF (ldass_lhn) THEN
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -1131,17 +1123,17 @@ CONTAINS
         ENDDO
         !$ACC END PARALLEL
       ENDIF
-       IF (lprogmelt) THEN
-         DO ii=1,ntsedi_hail
-           call sedi_icon_sphere_lwf(hail_lwf,hail_coeffs,qh,qnh,qhl,&
-                &                    prec_h,prec3D_tmp,rhocorr,rdz,dt/ntsedi_hail,its,ite,kts,kte,cmax)
-         END DO
-       ELSE
-         DO ii=1,ntsedi_hail
-           call sedi_icon_sphere(hail,hail_coeffs,qh,qnh,prec_h,prec3D_tmp,rhocorr,rdz,dt/ntsedi_hail, &
-             & its,ite,kts,kte,cmax,lacc=.TRUE.)
-         END DO
-       END IF
+      IF (lprogmelt) THEN
+        DO ii=1,ntsedi_hail
+          call sedi_icon_sphere_lwf(hail,hail_coeffs,qh,qnh,qhl,&
+               &                    prec_h,prec3D_tmp,rhocorr,rdz,dt/ntsedi_hail,its,ite,kts,kte,cmax)
+        END DO
+      ELSE
+        DO ii=1,ntsedi_hail
+          call sedi_icon_sphere(hail,hail_coeffs,qh,qnh,prec_h,prec3D_tmp,rhocorr,rdz,dt/ntsedi_hail, &
+            & its,ite,kts,kte,cmax,lacc=.TRUE.)
+        END DO
+      END IF
       IF (ldass_lhn) THEN
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR COLLAPSE(2)
@@ -1153,18 +1145,18 @@ CONTAINS
         !$ACC END PARALLEL
       ENDIF
 #ifndef _OPENACC
-     END IF
+      END IF
 #endif
-     
-     IF (msg_level > 100)THEN
-       WRITE (message_text,'(1X,A,f8.2)') ' sedimentation_explicit  cmax = ',cmax
-       CALL message(routine, message_text)
-     END IF
 
-    !$ACC WAIT
-    !$ACC END DATA
+      IF (msg_level > 100)THEN
+        WRITE (message_text,'(1X,A,f8.2)') ' sedimentation_explicit  cmax = ',cmax
+        CALL message(routine, message_text)
+      END IF
 
-   END SUBROUTINE sedimentation_explicit
+      !$ACC WAIT
+      !$ACC END DATA
+
+    END SUBROUTINE sedimentation_explicit
 
     !
     ! check for negative values after microphysics
@@ -1173,58 +1165,60 @@ CONTAINS
 
       REAL(wp), PARAMETER :: meps = -1e-12
 
-      IF (cloud_type.lt.2000) THEN
-         IF (ANY(qh(its:ite,kts:kte)>0._wp)) THEN
-            qh(its:ite,kts:kte)  = 0.0_wp
-            WRITE (message_text,'(1X,A)') '  qh > 0, after cloud_twomoment for cloud_type < 2000'
-            CALL message(routine,TRIM(message_text))
-            CALL finish(TRIM(routine),'Error in two_moment_mcrph')
-         END IF
-         IF (ANY(qnh(its:ite,kts:kte)>0._wp)) THEN
-            qnh(its:ite,kts:kte)  = 0.0_wp
-            WRITE (message_text,'(1X,A)') '  qnh > 0, after cloud_twomoment for cloud_type < 2000'
-            CALL message(routine,TRIM(message_text))
-            CALL finish(TRIM(routine),'Error in two_moment_mcrph')
-         END IF
+      CHARACTER(len=*), PARAMETER :: routine = TRIM(modname)//'::check_clouds'
+
+      IF (cloud_type < 2000) THEN
+        IF (ANY(qh(its:ite,kts:kte)>0._wp)) THEN
+          qh(its:ite,kts:kte)  = 0.0_wp
+          WRITE (message_text,'(1X,A)') '  qh > 0, after cloud_twomoment for cloud_type < 2000'
+          CALL message(routine,TRIM(message_text))
+          CALL finish(TRIM(routine),'Error in two_moment_mcrph')
+        END IF
+        IF (ANY(qnh(its:ite,kts:kte)>0._wp)) THEN
+          qnh(its:ite,kts:kte)  = 0.0_wp
+          WRITE (message_text,'(1X,A)') '  qnh > 0, after cloud_twomoment for cloud_type < 2000'
+          CALL message(routine,TRIM(message_text))
+          CALL finish(TRIM(routine),'Error in two_moment_mcrph')
+        END IF
       END IF
-      IF (msg_level>dbg_level) CALL message(TRIM(routine), " test for negative values")
+      IF (msg_level > dbg_level) CALL message(TRIM(routine), " test for negative values")
       IF (MINVAL(cloud%q(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, cloud%q < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, cloud%q < 0')
       ENDIF
       IF (MINVAL(rain%q(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, rain%q < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, rain%q < 0')
       ENDIF
       IF (MINVAL(ice%q(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, ice%q < 0,')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, ice%q < 0,')
       ENDIF
       IF (MINVAL(snow%q(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, snow%q < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, snow%q < 0')
       ENDIF
       IF (MINVAL(graupel%q(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, graupel%q < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, graupel%q < 0')
       ENDIF
       IF (MINVAL(hail%q(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, hail%q < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, hail%q < 0')
       ENDIF
       IF (MINVAL(cloud%n) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, cloud%n < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, cloud%n < 0')
       ENDIF
       IF (MINVAL(rain%n(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, rain%n < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, rain%n < 0')
       ENDIF
       IF (MINVAL(ice%n(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, ice%n < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, ice%n < 0')
       ENDIF
       IF (MINVAL(snow%n(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, snow%n < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, snow%n < 0')
       ENDIF
       IF (MINVAL(graupel%n(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, graupel%n < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, graupel%n < 0')
       ENDIF
       IF (MINVAL(hail%n(its:ite,kts:kte)) < meps) THEN
-         CALL finish(TRIM(routine),'Error in two_moment_mcrph, hail%n < 0')
+        CALL finish(TRIM(routine),'Error in two_moment_mcrph, hail%n < 0')
       ENDIF
-    END subroutine check_clouds
+    END SUBROUTINE check_clouds
 
   END SUBROUTINE two_moment_mcrph
 
@@ -1254,20 +1248,20 @@ CONTAINS
       flux_now(i) = max(flux_now(i),0.0_wp)                   ! maybe not necessary
 
       ! time integrated value without implicit weight
-      q_sum(i)  = q_val(i)  + rdzdt(i) * (flux_sum - flux_now(i))      
+      q_sum(i)  = q_val(i)  + rdzdt(i) * (flux_sum - flux_now(i))
 
       ! implicit weight
       q_impl(i) = 1.0_wp/(1.0_wp + vsed_new(i) * rdzdt(i))
 
       ! prepare for source term calculation
-      q_star    = q_impl(i) * q_sum(i)       
+      q_star    = q_impl(i) * q_sum(i)
       q_val(i)  = q_star                     ! source/sinks work on star-values
-      q_sum(i)  = q_sum(i) - q_star           
+      q_sum(i)  = q_sum(i) - q_star
     END DO
     !$ACC END PARALLEL
-    
+
   END SUBROUTINE implicit_core
-  
+
   SUBROUTINE implicit_time(q_val,q_sum,q_impl,vsed_new,vsed_now,flux_new,its,ite)
 
     INTEGER  :: its,ite
@@ -1275,13 +1269,13 @@ CONTAINS
          &    q_val,q_sum,q_impl,vsed_new,vsed_now,flux_new
 
     INTEGER  :: i
-    
+
     !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
     !$ACC LOOP GANG VECTOR
     DO i=its,ite
-      
+
       ! time integration
-      q_val(i) =   MAX( 0.0_wp, q_impl(i)*(q_sum(i) + q_val(i)))    
+      q_val(i) =   MAX( 0.0_wp, q_impl(i)*(q_sum(i) + q_val(i)))
 
       ! prepare for next level
       flux_new(i) = q_val(i) * vsed_new(i)     ! flux_(k),new
@@ -1289,7 +1283,7 @@ CONTAINS
 
     END DO
     !$ACC END PARALLEL
-    
+
   END SUBROUTINE implicit_time
 
   !===========================================================================================
@@ -1302,13 +1296,13 @@ CONTAINS
          & N_cn0,z0_nccn,z1e_nccn,    &
          & N_in0,z0_nin,z1e_nin
 
-    TYPE(particle)        :: cloud, rain
-    TYPE(particle_frozen) :: ice, snow, graupel, hail
-    TYPE(particle_lwf)    :: graupel_lwf, hail_lwf
+    TYPE(particle) :: cloud, rain, ice, snow, graupel, hail
 
     TYPE(t_cfg_2mom), OPTIONAL, INTENT(in) :: cfg_2mom
 
     INTEGER        :: unitnr
+
+    CHARACTER(len=*), PARAMETER :: routine = TRIM(modname)//'::two_moment_mcrph_init'
 
     ! Transfer the configuration parameters to the 2mom internal type instance:
     IF (PRESENT(cfg_2mom)) THEN
@@ -1318,41 +1312,25 @@ CONTAINS
     END IF
 
     IF (msg_level>5) THEN
-      CALL message (TRIM(routine), " Initialization of two-moment microphysics scheme") 
+      CALL message (TRIM(routine), " Initialization of two-moment microphysics scheme")
       WRITE(message_text,'(A,I5)')   "   inwp_gscp    = ",igscp ; CALL message(TRIM(routine),TRIM(message_text))
       WRITE(message_text,'(A,I5)')   "   i2mom_solver = ",cfg_params%i2mom_solver ; CALL message(TRIM(routine),TRIM(message_text))
       WRITE(message_text,'(A,L5)'  ) "   lconstant_lh = ",lconstant_lh ; CALL message(TRIM(routine),TRIM(message_text))
     END IF
 
-    IF (PRESENT(N_cn0)) THEN
-      IF (PRESENT(cfg_2mom)) THEN
-        IF (cfg_2mom%ccn_type > 0) THEN
-          ccn_type   = cfg_2mom%ccn_type
-        ELSE 
-          ccn_type   = ccn_type_gscp5
-        END IF
-      ELSE
-        ccn_type   = ccn_type_gscp5
-      END IF
-      cloud_type = cloud_type_default_gscp5 + 10 * ccn_type
-    ELSE
-      IF (PRESENT(cfg_2mom)) THEN
-        IF (cfg_2mom%ccn_type > 0) THEN
-          ccn_type   = cfg_2mom%ccn_type
-        ELSE 
-          ccn_type   = ccn_type_gscp4
-        END IF
-      ELSE
-        ccn_type   = ccn_type_gscp4
-      END IF
-      cloud_type = cloud_type_default_gscp4 + 10 * ccn_type
+    ! init of ccn_type, cloud_type and the ccn_coeffs type:
+    CALL set_ccn_cloud_type(ccn_type, cloud_type, ccn_coeffs, N_cn0, cfg_2mom)
+
+    ! After all inits of Ncn0, overwrite with an explicitly given value from the namelist:
+    IF (cfg_params%ccn_Ncn0 > -900.0_wp) THEN
+      ccn_coeffs%Ncn0 = cfg_params%ccn_Ncn0
     END IF
 
     ! .. set the particle types, and calculate some coefficients
     IF (igscp == 7) THEN
-       CALL init_2mom_scheme_once(cloud,rain,ice,snow,graupel_lwf,hail_lwf,cloud_type)
+       CALL init_2mom_scheme_once(cloud,rain,ice,snow,graupel,hail,cloud_type,msg_level)
     ELSE
-       CALL init_2mom_scheme_once(cloud,rain,ice,snow,graupel,hail,cloud_type)
+       CALL init_2mom_scheme_once(cloud,rain,ice,snow,graupel,hail,cloud_type,msg_level)
     END IF
 
     IF (timers_level > 10) CALL timer_start(timer_phys_2mom_dmin_init)
@@ -1367,7 +1345,7 @@ CONTAINS
     END IF
     IF (.NOT. luse_dmin_wetgrowth_table) THEN
       ! check whether 4d-fit is consistent with graupel parameters
-      IF (dmin_wetgrowth_fit_check(graupel)) THEN 
+      IF (dmin_wetgrowth_fit_check(graupel)) THEN
         CALL message (TRIM(routine), " Using 4d-fit for dmin_wetgrowth for "//TRIM(graupel%name))
       ELSE
         CALL finish(TRIM(routine),&
@@ -1375,89 +1353,26 @@ CONTAINS
              & 'but graupel parameters inconsistent with 4d-fit')
       END IF
     END IF
-    
+
     IF (msg_level>dbg_level) CALL message (TRIM(routine), ' finished init_dmin_wetgrowth for '// &
          TRIM(graupel%name)//' and '//TRIM(hail%name))
     !..parameters for CCN and IN are set here. The 3D fields for prognostic CCN are then
     !  initialized in mo_nwp_phy_init.
     IF (timers_level > 10) CALL timer_stop(timer_phys_2mom_dmin_init)
 
-    !..parameters for exponential decrease of N_ccn with height
-    !  z0:  up to this height (m) constant unchanged value
-    !  z1e: height interval at which N_ccn decreases by factor 1/e above z0_nccn
-    
-    ccn_coeffs%z0  = 4000.0_wp
-    ccn_coeffs%z1e = 2000.0_wp
-
-    ! min updraft speed for Segal&Khain activation
-    ccn_coeffs%wcb_min = cfg_params%ccn_wcb_min
-
-    ! characteristics of different kinds of CN
-    ! (copied from COSMO 5.0 Segal & Khain nucleation subroutine)
-
-    SELECT CASE(ccn_type)
-    CASE(6)
-      !... maritime case
-      ccn_coeffs%Ncn0 = 100.0e6_wp   ! CN concentration at ground
-      ccn_coeffs%Nmin =  35.0e6_wp   ! NOT relevant at the moment
-      ccn_coeffs%lsigs = 0.4_wp      ! log(sigma_s)
-      ccn_coeffs%R2    = 0.03_wp     ! in mum
-      ccn_coeffs%etas  = 0.9_wp      ! soluble fraction
-    CASE(7)
-      !... intermediate case
-      ccn_coeffs%Ncn0 = 250.0e6_wp
-      ccn_coeffs%Nmin =  35.0e6_wp
-      ccn_coeffs%lsigs = 0.4_wp
-      ccn_coeffs%R2    = 0.03_wp       ! in mum
-      ccn_coeffs%etas  = 0.8_wp        ! soluble fraction
-    CASE(8)
-      IF (tune_sbmccn < 1.0_wp) THEN
-        !... maritime case
-        ccn_coeffs%Ncn0 = 100.0e6_wp   ! CN concentration at ground
-        ccn_coeffs%Nmin =  35.0e6_wp   ! NOT relevant at the moment
-        ccn_coeffs%lsigs = 0.4_wp      ! log(sigma_s)
-        ccn_coeffs%R2    = 0.03_wp     ! in mum
-        ccn_coeffs%etas  = 0.9_wp      ! soluble fraction
-      ELSE
-        !... continental case
-        ccn_coeffs%Ncn0 = 1700.0e6_wp
-        ccn_coeffs%Nmin =   35.0e6_wp  ! NOT relevant at the moment
-        ccn_coeffs%lsigs = 0.2_wp
-        ccn_coeffs%R2    = 0.03_wp     ! in mum
-        ccn_coeffs%etas  = 0.7_wp      ! soluble fraction
-      END IF
-    CASE(9)
-      !... "polluted" continental
-      ccn_coeffs%Ncn0 = 3200.0e6_wp
-      ccn_coeffs%Nmin =   35.0e6_wp    ! NOT relevant at the moment
-      ccn_coeffs%lsigs = 0.2_wp
-      ccn_coeffs%R2    = 0.03_wp       ! in mum
-      ccn_coeffs%etas  = 0.7_wp        ! soluble fraction
-     CASE(1)
-       !... dummy values
-       ccn_coeffs%Ncn0  =  200.0e6_wp
-       ccn_coeffs%Nmin  =   10.0e6_wp  ! NOT relevant at the moment
-       ccn_coeffs%lsigs = 0.0_wp
-       ccn_coeffs%R2    = 0.0_wp
-       ccn_coeffs%etas  = 0.0_wp
-    CASE DEFAULT
-       CALL finish(TRIM(routine),'Error in two_moment_mcrph_init: Invalid value for ccn_type')
-    END SELECT
-
-    IF (cfg_params%ccn_Ncn0 > -900.0_wp) THEN
-      ccn_coeffs%Ncn0 = cfg_params%ccn_Ncn0
-    END IF
-
     IF (PRESENT(N_cn0)) THEN
+      ! ccn_coeffs have been set above by call to set_ccn_cloud_type():
       z0_nccn  = ccn_coeffs%z0
       z1e_nccn = ccn_coeffs%z1e
       N_cn0    = ccn_coeffs%Ncn0
     END IF
-    
-    WRITE(message_text,'(A)') "  CN properties:" ; CALL message(TRIM(routine),TRIM(message_text))
-    WRITE(message_text,'(A,D10.3)') "    Ncn0 = ",ccn_coeffs%Ncn0 ; CALL message(TRIM(routine),TRIM(message_text))
-    WRITE(message_text,'(A,D10.3)') "    z0   = ",ccn_coeffs%z0  ; CALL message(TRIM(routine),TRIM(message_text))
-    WRITE(message_text,'(A,D10.3)') "    z1e  = ",ccn_coeffs%z1e ; CALL message(TRIM(routine),TRIM(message_text))
+
+    IF (msg_level > 7) THEN
+      WRITE(message_text,'(A)') "  CN properties:" ; CALL message(TRIM(routine),TRIM(message_text))
+      WRITE(message_text,'(A,D10.3)') "    Ncn0 = ",ccn_coeffs%Ncn0 ; CALL message(TRIM(routine),TRIM(message_text))
+      WRITE(message_text,'(A,D10.3)') "    z0   = ",ccn_coeffs%z0  ; CALL message(TRIM(routine),TRIM(message_text))
+      WRITE(message_text,'(A,D10.3)') "    z1e  = ",ccn_coeffs%z1e ; CALL message(TRIM(routine),TRIM(message_text))
+    END IF
 
     IF (PRESENT(N_in0)) THEN
 
@@ -1474,7 +1389,7 @@ CONTAINS
        WRITE(message_text,'(A,D10.3)') "    z0   = ",in_coeffs%z0  ; CALL message(TRIM(routine),TRIM(message_text))
        WRITE(message_text,'(A,D10.3)') "    z1e  = ",in_coeffs%z1e ; CALL message(TRIM(routine),TRIM(message_text))
      END IF
-     
+
     IF (msg_level>5) CALL message (TRIM(routine), " finished two_moment_mcrph_init successfully")
     !$ACC ENTER DATA COPYIN(ccn_coeffs, in_coeffs, cfg_params)
     !$ACC ENTER DATA COPYIN(ltabdminwgg, ltabdminwgh)
@@ -1483,32 +1398,31 @@ CONTAINS
 
   END SUBROUTINE two_moment_mcrph_init
 
-
   ! Subroutine that provides coefficients for the effective radius calculations
   ! consistent with two-moment microphysics
-  SUBROUTINE two_mom_reff_coefficients( reff_calc ,return_fct)
+  SUBROUTINE two_mom_reff_coefficients( reff_calc, return_fct)
     TYPE(t_reff_calc), INTENT(INOUT) ::  reff_calc                   ! Structure with options and coefficiencts
     LOGICAL          , INTENT(INOUT) ::  return_fct                  ! Return code of the subroutine
 
     ! These are the fundamental hydrometeor particle variables for the two-moment scheme
-    TYPE(particle)        , TARGET   :: cloud_hyd, rain_hyd
-    TYPE(particle_frozen) , TARGET   :: ice_frz, snow_frz, graupel_frz, hail_frz
-    TYPE(particle_lwf)    , TARGET   :: graupel_lwf, hail_lwf
+    TYPE(particle) , TARGET   :: cloud_hyd, rain_hyd
+    TYPE(particle) , TARGET   :: ice_frz, snow_frz, graupel_frz, hail_frz
 
     ! Pointers to the derived types that are actually needed
-    CLASS(particle)       , POINTER  :: cloud, rain
-    CLASS(particle_frozen), POINTER  :: ice, snow, graupel, hail
+    TYPE(particle), POINTER  :: cloud, rain, ice, snow, graupel, hail
 
     ! Parameters used in the paramaterization of reff (the same for all)
-    CLASS(particle)       , POINTER  :: current_hyd
+    TYPE(particle), POINTER          :: current_hyd
     REAL(wp)                         :: a_geo, b_geo, mu, nu
-    REAL(wp)                         :: bf, bf2 
+    REAL(wp)                         :: bf, bf2
     LOGICAL                          :: monodisperse
-        
+
+    CHARACTER(len=*), PARAMETER :: routine = TRIM(modname)//'::two_mom_reff_coefficients'
+
     ! Check input return_fct
     IF (.NOT. return_fct) THEN
       WRITE (message_text,*) 'Reff: Function two_mom_provide_reff_coefficients entered with previous error'
-      CALL message('',message_text)
+      CALL message(TRIM(routine),message_text)
       RETURN
     END IF
 
@@ -1517,28 +1431,24 @@ CONTAINS
     rain  => rain_hyd
     ice   => ice_frz
     snow  => snow_frz
-    IF (reff_calc%microph_param == 7 ) THEN  ! Vivek Param. Frozen+Liquid
-       graupel => graupel_lwf                ! gscp=7
-       hail    => hail_lwf
-    ELSE
-       graupel => graupel_frz                ! gscp=4,5,6
-       hail    => hail_frz
-    END IF
+    graupel => graupel_frz
+    hail  => hail_frz
+
     ! .. set the particle types, but no calculations
     CALL init_2mom_scheme(cloud,rain,ice,snow,graupel,hail)
-   
+
     SELECT CASE ( reff_calc%hydrometeor )    ! Select Hydrometeor
     CASE (0)                                 ! Cloud water
       current_hyd => cloud
-    CASE (1)  
+    CASE (1)
       current_hyd => ice
-    CASE (2)  
+    CASE (2)
       current_hyd => rain
-    CASE (3)  
+    CASE (3)
       current_hyd => snow
-    CASE (4)  
+    CASE (4)
       current_hyd => graupel
-    CASE (5)  
+    CASE (5)
       current_hyd => hail
     END SELECT
 
@@ -1573,23 +1483,23 @@ CONTAINS
       reff_calc%reff_coeff(2)   = b_geo
 
       ! Broadening for not monodisperse
-      IF ( .NOT. monodisperse ) THEN 
+      IF ( .NOT. monodisperse ) THEN
         bf =  GAMMA( (3.0_wp * b_geo + nu + 1.0_wp)/ mu) / GAMMA( (2.0_wp * b_geo + nu + 1.0_wp)/ mu) * &
           & ( GAMMA( (nu + 1.0_wp)/ mu) / GAMMA( (nu + 2.0_wp)/ mu) )**b_geo
 
-        reff_calc%reff_coeff(1) = reff_calc%reff_coeff(1)*bf        
-      END IF      
+        reff_calc%reff_coeff(1) = reff_calc%reff_coeff(1)*bf
+      END IF
 
     CASE (1)                                 ! Fu Random Hexagonal needles:  Dge = 1/(c1 * x**[c2] + c3 * x**[c4])
                                              ! Parameterization based on Fu, 1996; Fu et al., 1998; Fu ,2007
       ! First calculate monodisperse
       reff_calc%reff_coeff(1)   = SQRT( 3.0_wp *SQRT(3.0_wp) * rho_ice * a_geo / 8.0_wp )
-      reff_calc%reff_coeff(2)   = (b_geo - 1.0_wp)/2.0_wp 
+      reff_calc%reff_coeff(2)   = (b_geo - 1.0_wp)/2.0_wp
       reff_calc%reff_coeff(3)   = SQRT(3.0_wp)/4.0_wp/a_geo
       reff_calc%reff_coeff(4)   = -b_geo
 
       ! Broadening for not monodisperse. Generalized gamma distribution
-      IF ( .NOT. monodisperse ) THEN 
+      IF ( .NOT. monodisperse ) THEN
         bf  =  GAMMA( ( b_geo + 2.0_wp * nu + 3.0_wp)/ mu/2.0_wp ) / GAMMA( (nu + 2.0_wp)/ mu) * &
            & ( GAMMA( (nu + 1.0_wp)/ mu) / GAMMA( (nu + 2.0_wp)/ mu) )**( (b_geo-1.0_wp)/2.0_wp)
 

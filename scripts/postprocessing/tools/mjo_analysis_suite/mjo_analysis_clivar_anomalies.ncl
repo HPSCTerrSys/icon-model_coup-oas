@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,37 +13,37 @@
 ; --------------------------
 ; Skripts are based on NCL MJO Climate Variability Tools
 ; https://www.ncl.ucar.edu/Applications/mjoclivar.shtml
-; 
-; These were developed following the recommendations 
+;
+; These were developed following the recommendations
 ; of US-CLIVAR MJO Working Group
-; 
+;
 ; Adapted for use at DWD by Julia Keller, FE 13, August 2015
 ; Works with NCL 6.3.0
-; 
+;
 ; Program:
 ;   mjo_analysis_clivar_anomalies.ncl
 ; Purpose:
 ;   Creates daily anomalies from daily means (wind) or daily sums (precip, olr)
 ;   using both raw and smoothed climatology
 ; Origin:
-;   This script is based on mjoclivar_2.ncl from the 
+;   This script is based on mjoclivar_2.ncl from the
 ;   NCL MJO Climate Variability Tools
 ;-----------------------------------------------------------
 ; Required Input:
-;   Time series of daily means, e.g. constructed from 
+;   Time series of daily means, e.g. constructed from
 ;   6 hourly output via cdo daymean
-;   
-; Program flow: 
-;   - Read daily means of variable 
+;
+; Program flow:
+;   - Read daily means of variable
 ;     (preprocessed from 6 hourly to daily means via cdo)
 ;   - Compute daily climatology for specified period (2001-2005)
 ;     either raw or smoothed (retaining first two harmonics)
 ;   - Compute daily anomalies from raw or smoothed climatology
 ;   - Write daily anomalies to NetCDF output file
 ;   - Plot raw and smoothed daily climatology at various places
-;   - Plot series of daily anomalies from raw or smoothed 
-;     climatology at one particular place  
-;    
+;   - Plot series of daily anomalies from raw or smoothed
+;     climatology at one particular place
+;
 ;***********************************************************
 
 
@@ -52,7 +52,7 @@ print("started")
 begin
 
 ;***********************************************************
-; Preparation  
+; Preparation
 ;***********************************************************
 
 ;------------------------------------------------
@@ -69,28 +69,28 @@ begin
 ;      ymdLast    - end date of time series
 ;      lats       - latitudes to be
 ;                   considered
-;      lons       - longitudes to be 
+;      lons       - longitudes to be
 ;                   considered
 ;      times      - number of time steps
-;--------------------------------------------------    
+;--------------------------------------------------
 
- 
 
-; Define plot settings  
+
+; Define plot settings
    wksType = "png"
    wksNameBase = plotfile+datainfo+var
 
-; Specify number of fourier comp 
+; Specify number of fourier comp
    nhar    = 4
    yrStrt  = ymdStrt/10000
    yrLast  = ymdLast/10000
 
 ;***********************************************************
-; Read data and assign variables accordingly 
+; Read data and assign variables accordingly
 ;-----------------------------------------------------------
 ; To allow flexibility in variable and coordinate names
 ; in input data, the script does not retrieve them via their
-; names, but in dependence on their dimensions (assuming 
+; names, but in dependence on their dimensions (assuming
 ; that lat/lon/time differ in their dimension)
 ; Further, the name of the dimensions is unified to allow
 ; data from different origins to be used.
@@ -98,26 +98,26 @@ begin
 
    fin = addfile(infile,"r")
    vars  = getfilevarnames(fin)                  ; write all variable names in array
-   
+
    nvars = dimsizes(vars)
    timecount=0
    do i = 0,nvars-1
-     dummy      = fin->$vars(i)$                 ; read variable based on array entry 
+     dummy      = fin->$vars(i)$                 ; read variable based on array entry
      dummydims  = getvardims(dummy)              ; get dimensions of variable
      ndims   = dimsizes(dummydims)               ; get number of dimensions
-    
+
                                                  ; separate between data and coordinates
-     if ( ndims .eq. 1) then                     ; data = several dimensions  
-                                                 ; coordinates =  one dimension       
-       print("--------Get info on dimensions--------")       
-                                                 
+     if ( ndims .eq. 1) then                     ; data = several dimensions
+                                                 ; coordinates =  one dimension
+       print("--------Get info on dimensions--------")
+
        if (dimsizes(dummy) .eq. lats) then       ; identify lat, lon and time coords
           print("---get lats---")
-          lat     = fin->$vars(i)$               ; set dimension names to standard 
+          lat     = fin->$vars(i)$               ; set dimension names to standard
           lat!0   = "lat"
           lat@lat = "latitude"
        end if
-        
+
        if (dimsizes(dummy) .eq. lons) then
           print("---get lons---")
           lon     = fin->$vars(i)$
@@ -133,7 +133,7 @@ begin
           time@time = "time"
           time@units= "days since 2001-01-01 00:00:0.0"
        end if
-     end if    
+     end if
                                                  ; end of process for coordinates
      delete(dummy)
      if (ndims .gt. 1) then                      ; identify data and its characteristics
@@ -142,10 +142,10 @@ begin
           datain = short2flt(fin->$vars(i)$ )
        else if (getfilevartypes(fin,vars(i)) .eq. "integer") then
           datain = int2flt(fin->$vars(i)$ )
-       else 
+       else
           datain = fin->$vars(i)$
        end if
-       end if                                     ; determine size of dimensions and 
+       end if                                     ; determine size of dimensions and
        subdims = dimsizes(datain)                 ; rename dimensions accordingly
        do j = 0, ndims-1
            if (subdims(j) .eq. times) then
@@ -161,7 +161,7 @@ begin
               datain@lon  = "longitude"
            end if
        end do
-     end if  
+     end if
      delete(dummydims)
      delete(ndims)
    end do
@@ -169,30 +169,30 @@ begin
 ; further specify timing
    ymd     = cd_calendar(time, -2)            ; YYYYMMDD integer output
    iStrt   = ind(ymd.eq.ymdStrt)              ; index start
-   iLast   = ind(ymd.eq.ymdLast)              ; index last 
+   iLast   = ind(ymd.eq.ymdLast)              ; index last
    delete(ymd)
    print(iStrt)
    print(iLast)
 ; get variable
 
    timeselection = time(iStrt:iLast)
-   TIME          = cd_calendar(timeselection, 0)          ; type float 
+   TIME          = cd_calendar(timeselection, 0)          ; type float
    year          = floattointeger( TIME(:,0) )
    month         = floattointeger( TIME(:,1) )
-   day           = floattointeger( TIME(:,2) ) 
+   day           = floattointeger( TIME(:,2) )
    hour          = floattointeger( TIME(:,3) )
-   ddd           = day_of_year(year, month, day) 
+   ddd           = day_of_year(year, month, day)
    yyyyddd       = year*1000 + ddd                        ; needed for input
-   
-   x       =  datain(iStrt:iLast,:,:)                     ; read data to x 
-   printVarSummary( x ) 
+
+   x       =  datain(iStrt:iLast,:,:)                     ; read data to x
+   printVarSummary( x )
 
 ;***********************************************************
-; Compute raw daily climatology  
+; Compute raw daily climatology
 ;***********************************************************
-   xClmDay = clmDayTLL(x, yyyyddd)                        ; daily climatology 
+   xClmDay = clmDayTLL(x, yyyyddd)                        ; daily climatology
                                                           ; at each grid point
-   printVarSummary(xClmDay)            
+   printVarSummary(xClmDay)
 
 ;***********************************************************
 ; Compute smoothed daily climatology using 'nhar' harmonics
@@ -204,11 +204,11 @@ begin
 ;***********************************************************
 ; Compute daily anomalies using raw and smoothed climatologies
 ;***********************************************************
-    xAnom      = calcDayAnomTLL (x, yyyyddd, xClmDay)     
+    xAnom      = calcDayAnomTLL (x, yyyyddd, xClmDay)
     printVarSummary(xAnom)
     printMinMax(xAnom, True)
 
-    xAnom_sm   = calcDayAnomTLL (x, yyyyddd, xClmDay_sm)     
+    xAnom_sm   = calcDayAnomTLL (x, yyyyddd, xClmDay_sm)
     xAnom_sm@long_name = "Anomalies from Smooth Daily Climatology"
     printVarSummary(xAnom_sm)
     printMinMax(xAnom_sm, True)
@@ -227,38 +227,38 @@ begin
     system("/bin/rm -f "+outfile)                        ; rm any pre-exist file, if any
     fnc    = addfile (outfile,"c")
     filAtt = 0
-    filAtt@title         = var +": Daily Anomalies: "+yrStrt+"-"+yrLast+" "+datainfo  
+    filAtt@title         = var +": Daily Anomalies: "+yrStrt+"-"+yrLast+" "+datainfo
     filAtt@source_file   = fin
     filAtt@creation_date = systemfunc("date")
     setfileoption(fnc,"DefineMode",True)
-        
+
     varout      = var+"_anom"
     varout_sm   = var+"_anom_sm"
 
-    dimNames = (/"time", "lat", "lon"/)  
-	dimSizes = (/ -1 ,  nlat,  nlon/) 
-	dimUnlim = (/ True , False, False/)   
+    dimNames = (/"time", "lat", "lon"/)
+	dimSizes = (/ -1 ,  nlat,  nlon/)
+	dimUnlim = (/ True , False, False/)
     filedimdef(fnc,dimNames,dimSizes,dimUnlim)
 
-    filevardef(fnc, "time"     ,typeof(time)  , getvardims(time)) 
-    filevardef(fnc, "lat"      ,typeof(lat)   , getvardims(lat)) 
+    filevardef(fnc, "time"     ,typeof(time)  , getvardims(time))
+    filevardef(fnc, "lat"      ,typeof(lat)   , getvardims(lat))
     filevardef(fnc, "lon"      ,typeof(lon)   , getvardims(lon))
-    filevardef(fnc, varout     ,typeof(xAnom) , getvardims(xAnom))    
-    filevardef(fnc, varout_sm  ,typeof(xAnom) , getvardims(xAnom))    
-      
-            
+    filevardef(fnc, varout     ,typeof(xAnom) , getvardims(xAnom))
+    filevardef(fnc, varout_sm  ,typeof(xAnom) , getvardims(xAnom))
+
+
     filevarattdef(fnc, "time"    ,time)                      ; copy time attributes
     filevarattdef(fnc, "lat"     ,lat)                       ; copy lat attributes
     filevarattdef(fnc, "lon"     ,lon)                       ; copy lon attributes
-    filevarattdef(fnc, varout    ,xAnom)                
-    filevarattdef(fnc, varout_sm ,xAnom_sm)                
+    filevarattdef(fnc, varout    ,xAnom)
+    filevarattdef(fnc, varout_sm ,xAnom_sm)
 
-    fnc->time          = (/timeselection/)     
+    fnc->time          = (/timeselection/)
     fnc->lat           = (/lat/)
     fnc->lon           = (/lon/)
     fnc->$varout$      = (/xAnom   /)
     fnc->$varout_sm$   = (/xAnom_sm/)
-   
+
 ;************************************************
 ; Plot results
 ;************************************************
@@ -269,25 +269,25 @@ begin
     plot  = new ( nPts, graphic)
     data  = new ( (/2,366/), typeof(xClmDay), getFillValue(xClmDay))
 
-    wks   = gsn_open_wks (wksType,wksNameBase+"_daily_climatology")    
+    wks   = gsn_open_wks (wksType,wksNameBase+"_daily_climatology")
 
     res                   = True                      ; plot mods desired
     res@gsnDraw           = False
     res@gsnFrame          = False
     res@trXMinF           =   1
     res@trXMaxF           = 365
-       
+
     res@xyLineThicknesses = (/1.0, 2.0/)              ; make 2nd lines thicker
     res@xyLineColors      = (/"blue","red"/)          ; change line color
     res@xyMonoDashPattern = True                      ; all solid
 
-    do np=0,nPts-1 
+    do np=0,nPts-1
        data(0,:) = xClmDay(:,{LAT(np)},{LON(np)})
        data(1,:) = xClmDay_sm(:,{LAT(np)},{LON(np)})
        res@gsnCenterString = "lat="+LAT(np)+"  lon="+LON(np)
        plot(np)  = gsn_csm_y (wks,data,res) ; create plot
     end do
-       
+
     resP                     = True                ; modify the panel plot
     resP@txString            = var+": Raw/Smooth Daily Climatology: "+yrStrt+"-"+yrLast
     resP@gsnMaximize         = True
@@ -296,7 +296,7 @@ begin
 
     ;==========
     ; Plot anomalies for an arbitrarily selected near equatorial location
-    ; Time as specified  
+    ; Time as specified
     ;==========
     LATX    = 0
     LONX    = 0
@@ -309,7 +309,7 @@ begin
     wks   = gsn_open_wks (wksType,wksNameBase+"_daily_anomalies")
     ntBegin   = ind(yyyymmdd.eq.ymdStrt)
     ntEnd     = ind(yyyymmdd.eq.ymdLast)
-       
+
     monthLabels    = (/1,4,7,10/)
     monNam = (/"Jan","Feb","Mar","Apr","May","Jun" \
                   ,"Jul","Aug","Sep","Oct","Nov","Dec" /)
@@ -330,27 +330,26 @@ begin
       end if
     end do
     print(ntm)
-    rxy  = True      
+    rxy  = True
     rxy@gsnDraw     = False
     rxy@gsnFrame    = False
-    rxy@gsnYRefLine = 0.0                    ; create a reference line   
+    rxy@gsnYRefLine = 0.0                    ; create a reference line
     rxy@gsnAboveYRefLineColor = "red"        ; above ref line fill red
     rxy@gsnBelowYRefLineColor = "blue"       ; below ref line fill blue
-    rxy@xyLineThicknessF  = 2.0                                               
-    rxy@vpHeightF  = 0.4                     ; resize            
-    rxy@vpWidthF   = 0.8                  
+    rxy@xyLineThicknessF  = 2.0
+    rxy@vpHeightF  = 0.4                     ; resize
+    rxy@vpWidthF   = 0.8
     rxy@tmXBMode   = "Explicit"
     rxy@tmXBValues = xVal(0:ntm:6)
     rxy@tmXBLabels = xLab(0:ntm:6)
     rxy@tmXBMinorValues = xVal(0:ntm)
 
     plot(0)  = gsn_csm_xy (wks,timeselection(ntBegin:ntEnd) \
-                           ,xAnom(ntBegin:ntEnd,{LATX},{LONX}),rxy) 
+                           ,xAnom(ntBegin:ntEnd,{LATX},{LONX}),rxy)
     plot(1)  = gsn_csm_xy (wks,timeselection(ntBegin:ntEnd) \
-                           ,xAnom_sm(ntBegin:ntEnd,{LATX},{LONX}),rxy) 
+                           ,xAnom_sm(ntBegin:ntEnd,{LATX},{LONX}),rxy)
     resP@txString  = var+": Anomalies: (0N,0E)"
-    gsn_panel(wks,plot(0:1),(/2,1/),resP)   
+    gsn_panel(wks,plot(0:1),(/2,1/),resP)
 
 end
 quit
-

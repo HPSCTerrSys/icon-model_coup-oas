@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -46,7 +46,7 @@ $make_runscript                  \
   grids_folder="${grids_folder}"   \
   ocean_grids="${ocean_grids}" \
   dtime=$dtime
-  # queue=develop      
+  # queue=develop
 
   cd run
     $use_submit ./$out_script

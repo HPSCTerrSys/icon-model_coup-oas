@@ -1,0 +1,78 @@
+#!/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+# ------------------------------------------
+# Experiment list for builders configured with `--enable-single-precision` flag.
+#
+# ------------------------------------------
+
+# abort on error
+set -euo pipefail
+
+cd $(dirname "${BASH_SOURCE[0]}")
+
+addexp="./addexp"
+
+#############################################################################
+listname=single
+
+./rmlist $listname
+
+./create_all_builders $listname
+
+#  de-activate builders - must be commented if lists for debugging are switched on
+./set_builder_flags Inactive --builders "$(./lslist $listname --builders-only)" --list $listname
+
+#############################################################################
+
+# Activate all single-precision builders
+LEVANTE_SP_BUILDERS='levante_gcc_sp levante_gpu_nvhpc_sp levante_intel_hybrid_sp levante_nag_sp'
+SP_BUILDERS="dwd_nec_sp lumi_cpu_sp mpimac_gcc_sp ${LEVANTE_SP_BUILDERS}"
+./set_builder_flags Active --builders "${SP_BUILDERS}" --list $listname
+
+# unit tests
+$addexp "checksuite.infrastructure/checkICON/exp.check_icon" --builders "${SP_BUILDERS}" --list $listname
+
+# Communication tests
+$addexp "checksuite.infrastructure/testbed/exp.icon-testbed_communication_yaxt" --builders "${SP_BUILDERS}" --list $listname
+$addexp "checksuite.infrastructure/testbed/exp.icon-testbed_communication_orig" --builders "${SP_BUILDERS}" --list $listname
+$addexp "checksuite.infrastructure/testbed/exp.icon-testbed_sync"               --builders "${SP_BUILDERS}" --list $listname
+# Remove yaxt testbed on builders without --enable-yaxt
+./rmexp "checksuite.infrastructure/testbed/exp.icon-testbed_communication_yaxt" --builders "lumi_cpu_sp mpimac_gcc_sp" --list $listname
+# Remove testbeds on builders without --enable-testbed
+./rmexp "checksuite.infrastructure/testbed/exp.icon-testbed_communication_yaxt" --builders "dwd_nec_sp" --list $listname
+./rmexp "checksuite.infrastructure/testbed/exp.icon-testbed_communication_orig" --builders "dwd_nec_sp" --list $listname
+./rmexp "checksuite.infrastructure/testbed/exp.icon-testbed_sync"               --builders "dwd_nec_sp" --list $listname
+
+# tracer hadley advection with validation on periodic solution
+$addexp "exp.atm_tracer_Hadley_validate" --builders "${SP_BUILDERS}" --list $listname
+
+# Jablonowski-Williamson experiment - no validation
+$addexp "exp.testcase_jabw" --builders "${SP_BUILDERS}" --list $listname
+# Experiment is too slow on NAG with -O0
+./rmexp "exp.testcase_jabw" --builders "levante_nag_sp" --list $listname
+
+# Single-precision checksuites
+$addexp "checksuite.icon-dev/check.aes_amip_test" --builders "${LEVANTE_SP_BUILDERS}" --list $listname --runflags "ntasks=16 queue=compute memory=32G"
+
+###############################################################################
+## Removals below this line require bug fixes
+
+# Remove communication_yaxt from levante_nag_sp due to failure
+#   Runtime Error: mo_communication_yaxt.f90, line 1304: Argument SEND to C_LOC is a zero-sized array
+#   https://buildbot.dkrz.de/#/builders/21/builds/431/steps/4/logs/exp_icon-testbed_communication_yaxt
+./rmexp "checksuite.infrastructure/testbed/exp.icon-testbed_communication_yaxt" --builders "levante_nag_sp" --list $listname
+
+#############################################################################
+
+#lets see the list
+./lslist $listname

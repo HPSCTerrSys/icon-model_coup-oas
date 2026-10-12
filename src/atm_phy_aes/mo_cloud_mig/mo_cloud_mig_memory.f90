@@ -1,16 +1,15 @@
-!
-! Global variables for the cloud microphsics "graupel" parameterization
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Global variables for the cloud microphsics "graupel" parameterization
 
 MODULE mo_cloud_mig_memory
 
@@ -63,7 +62,7 @@ MODULE mo_cloud_mig_memory
 CONTAINS
 
   !!--------------------------------------------------------------------------
-  !!                SUBROUTINES FOR BUILDING AND DELETING VARIABLE LISTS 
+  !!                SUBROUTINES FOR BUILDING AND DELETING VARIABLE LISTS
   !!--------------------------------------------------------------------------
   !>
   !! Top-level procedure for building the state
@@ -142,7 +141,7 @@ CONTAINS
           !
        END IF
     END DO
-    
+
     !$ACC WAIT(1)
     !$ACC EXIT DATA DELETE(cloud_mig_input, cloud_mig_output)
 

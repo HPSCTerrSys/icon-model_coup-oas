@@ -1,27 +1,24 @@
-! Contains the implementation of the mathematical operators for the ocean.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the implementation of the mathematical operators for the ocean.
+
 #include "omp_definitions.inc"
 #include "iconfor_dsl_definitions.inc"
 
 MODULE mo_ocean_testbed_PtP
   !-------------------------------------------------------------------------
-  USE mo_kind,               ONLY: wp
   USE mo_parallel_config,    ONLY: nproma
   USE mo_exception,          ONLY: message, message_text, finish
   USE mo_run_config,         ONLY: test_mode
-  USE mo_math_constants
   USE mo_physical_constants
   USE mo_impl_constants,     ONLY: boundary, sea, sea_boundary !,sea,land, land_boundary, sea, max_char_length, &
   USE mo_model_domain,       ONLY: t_patch, t_patch_3D
@@ -86,18 +83,18 @@ CONTAINS
     ocean_state  => in_ocean_state
     vn           => ocean_state%p_diag%mass_flx_e
     PtPvn        => ocean_state%p_diag%ptp_vn
-    Pvn          => ocean_state%p_diag%p_vn 
+    Pvn          => ocean_state%p_diag%p_vn
     u            => ocean_state%p_diag%u
     v            => ocean_state%p_diag%v
-     
+
     SELECT CASE (test_mode) ! 100 - 999
 
       CASE (114)
         CALL test_PtP_onTorus_divTest()
-       
+
       CASE (115)
         CALL test_PtP_onIcos_divTest()
-       
+
       CASE DEFAULT
         CALL finish("test_PtP", "Unknown test_mode")
 
@@ -112,11 +109,11 @@ CONTAINS
   SUBROUTINE test_PtP_onTorus_divTest()
 
     write(0,*) "-------------- test PtP torus div test 1 -----------------------"
-    CALL fill_vn_onTorus_divTest_1() 
+    CALL fill_vn_onTorus_divTest_1()
     CALL diagnose_PtP_results()
 
     write(0,*) "-------------- test PtP torus div test 2 -----------------------"
-    CALL fill_vn_onTorus_divTest_2() 
+    CALL fill_vn_onTorus_divTest_2()
     CALL diagnose_PtP_results()
 
 
@@ -136,10 +133,10 @@ CONTAINS
   SUBROUTINE test_PtP_onIcos_divTest()
 
     write(0,*) "-------------- test PtP Icos div test 1 -----------------------"
-    CALL fill_vn_onIcos_divTest_1() 
+    CALL fill_vn_onIcos_divTest_1()
     CALL diagnose_PtP_results()
 
- 
+
   END SUBROUTINE test_PtP_onIcos_divTest
   !-------------------------------------------------------------------------
 
@@ -155,7 +152,7 @@ CONTAINS
 
     write(0,*) "====================================================================="
 !     CALL print_PtP_coefficients
-    
+
     write(0,*) "====================================================================="
 !     CALL dbg_print('thick_c',patch_3d%p_patch_1d(1)%prism_thick_c,str_module, 1, in_subset=patch_2d%cells%owned)
     CALL dbg_print('thick_e',patch_3d%p_patch_1d(1)%prism_thick_e,str_module, 1, in_subset=patch_2d%edges%owned)
@@ -169,12 +166,12 @@ CONTAINS
 !     CALL dbg_print('Pvn 2', Pvn(:,:,:)%x(2),str_module,1, in_subset=patch_2d%cells%owned)
 
     write(0,*) "====================================================================="
-    write(0,*) 
+    write(0,*)
 !     write(0,*) "============== vn ===================================="
 !     CALL print_vn(vn)
 !     write(0,*) "============== PtPvn ===================================="
 !     CALL print_vn(PtPvn)
-  
+
   END SUBROUTINE diagnose_PtP_results
   !-------------------------------------------------------------------------
 
@@ -189,10 +186,10 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   SUBROUTINE print_vn(vn)
-  
+
     REAL(wp), INTENT(in) :: vn(:,:,:)
     !-----------------------------------------------------------------------
- 
+
     write(0,*) vn(:,1,:)
 
   END SUBROUTINE print_vn
@@ -200,7 +197,7 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   SUBROUTINE fill_vn_onIcos_divTest_1()
-  
+
     TYPE(t_subset_range), POINTER :: all_edges
     TYPE(t_subset_range), POINTER :: all_cells
     REAL(wp) :: v1, v2
@@ -217,7 +214,7 @@ CONTAINS
         v1 = patch_2d%edges%primal_normal(j,block)%v1
         v2 = patch_2d%edges%primal_normal(j,block)%v2
 
-        IF (abs(v1) < 1.0e-16_wp) THEN 
+        IF (abs(v1) < 1.0e-16_wp) THEN
           ! horizontal edge, or right_diagonal edge
           vn(j,1,block) = SIGN(1.0_wp, v2)
         ELSE
@@ -225,7 +222,7 @@ CONTAINS
         ENDIF
 
       END DO
-    END DO 
+    END DO
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE fill_vn_onIcos_divTest_1
@@ -233,7 +230,7 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   SUBROUTINE fill_vn_onTorus_flowTest_1()
-  
+
     TYPE(t_subset_range), POINTER :: all_edges
     TYPE(t_subset_range), POINTER :: all_cells
     REAL(wp) :: v1, v2
@@ -250,7 +247,7 @@ CONTAINS
         v1 = patch_2d%edges%primal_normal(j,block)%v1
         v2 = patch_2d%edges%primal_normal(j,block)%v2
 
-!         IF (v1 == 0.0_wp .or. v2 < 0.0_wp) THEN 
+!         IF (v1 == 0.0_wp .or. v2 < 0.0_wp) THEN
           ! horizontal edge, or right_diagonal edge
           vn(j,1,block) = 1.0_wp
 !         ELSE
@@ -258,7 +255,7 @@ CONTAINS
 !         ENDIF
 
       END DO
-    END DO 
+    END DO
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE fill_vn_onTorus_flowTest_1
@@ -266,7 +263,7 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   SUBROUTINE fill_vn_onTorus_flowTest_2()
-  
+
     TYPE(t_subset_range), POINTER :: all_edges
     TYPE(t_subset_range), POINTER :: all_cells
     REAL(wp) :: v1, v2
@@ -283,7 +280,7 @@ CONTAINS
         v1 = patch_2d%edges%primal_normal(j,block)%v1
         v2 = patch_2d%edges%primal_normal(j,block)%v2
 
-        IF (v1 == 0.0_wp) THEN 
+        IF (v1 == 0.0_wp) THEN
           ! horizontal edge
           vn(j,1,block) = 0.0_wp
         ELSE
@@ -291,7 +288,7 @@ CONTAINS
         ENDIF
 
       END DO
-    END DO 
+    END DO
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE fill_vn_onTorus_flowTest_2
@@ -300,7 +297,7 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   SUBROUTINE fill_vn_onTorus_divTest_1()
-  
+
     TYPE(t_subset_range), POINTER :: all_edges
     TYPE(t_subset_range), POINTER :: all_cells
     REAL(wp) :: v1, v2
@@ -317,7 +314,7 @@ CONTAINS
         v1 = patch_2d%edges%primal_normal(j,block)%v1
         v2 = patch_2d%edges%primal_normal(j,block)%v2
 
-        IF (v1 == 0.0_wp .or. v2 < 0.0_wp) THEN 
+        IF (v1 == 0.0_wp .or. v2 < 0.0_wp) THEN
           ! horizontal edge, or right_diagonal edge
           vn(j,1,block) = 1.0_wp
         ELSE
@@ -325,7 +322,7 @@ CONTAINS
         ENDIF
 
       END DO
-    END DO 
+    END DO
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE fill_vn_onTorus_divTest_1
@@ -333,7 +330,7 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   SUBROUTINE fill_vn_onTorus_divTest_2()
-  
+
     TYPE(t_subset_range), POINTER :: all_edges
     TYPE(t_subset_range), POINTER :: all_cells
     REAL(wp) :: v1, v2
@@ -350,10 +347,10 @@ CONTAINS
         v1 = patch_2d%edges%primal_normal(j,block)%v1
         v2 = patch_2d%edges%primal_normal(j,block)%v2
 
-        IF (v1 == 0.0_wp) THEN 
+        IF (v1 == 0.0_wp) THEN
           ! horizontal edge, or right_diagonal edge
           vn(j,1,block) = 1.1_wp
-        ELSEIF (v2 < 0.0_wp) THEN 
+        ELSEIF (v2 < 0.0_wp) THEN
           ! horizontal edge, or right_diagonal edge
           vn(j,1,block) = 1.0_wp
         ELSE
@@ -361,7 +358,7 @@ CONTAINS
         ENDIF
 
       END DO
-    END DO 
+    END DO
 !ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE fill_vn_onTorus_divTest_2
@@ -391,8 +388,8 @@ CONTAINS
     DO block = all_edges%start_block, all_edges%end_block
       CALL get_index_range(all_edges, block, start_index, end_index)
       DO j =  start_index, end_index
-        
-        IF (patch_3d%p_patch_1d(1)%dolic_e(j,block) <= 0) CYCLE 
+
+        IF (patch_3d%p_patch_1d(1)%dolic_e(j,block) <= 0) CYCLE
 
         cell_1_index = patch_2d%edges%cell_idx(j,block,1)
         cell_1_block = patch_2d%edges%cell_blk(j,block,1)
@@ -415,21 +412,21 @@ CONTAINS
         edge_21_block = patch_2d%cells%edge_blk(cell_2_index, cell_2_block, 1)
         edge_22_block = patch_2d%cells%edge_blk(cell_2_index, cell_2_block, 2)
         edge_23_block = patch_2d%cells%edge_blk(cell_2_index, cell_2_block, 3)
-  
+
         abs_sum = &
-            &   ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,1)) & 
-            & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,2)) & 
-            & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,3)) & 
-            & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,4)) & 
-            & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,5)) & 
+            &   ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,1)) &
+            & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,2)) &
+            & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,3)) &
+            & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,4)) &
+            & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,5)) &
             & + ABS(operators_coefficients%edge2edge_viacell_coeff(j,1,block,6))
 
           WRITE(0,*) "> ", &
-            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,1), & 
-            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,2), & 
-            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,3), & 
-            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,4), & 
-            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,5), & 
+            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,1), &
+            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,2), &
+            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,3), &
+            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,4), &
+            & operators_coefficients%edge2edge_viacell_coeff(j,1,block,5), &
             & operators_coefficients%edge2edge_viacell_coeff(j,1,block,6), &
             & " = ", abs_sum
 
@@ -442,4 +439,3 @@ CONTAINS
   !-------------------------------------------------------------------------
 
 END MODULE mo_ocean_testbed_PtP
-

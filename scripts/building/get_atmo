@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -19,7 +19,7 @@ icon_dev_to=$2
 if [ ! -d ${icon_dev_to} ] ; then
   mkdir -p ${icon_dev_to}
 fi
-  
+
 # cd ${icon_dev_to}
 
 
@@ -34,16 +34,16 @@ link_source_list()
       mkdir -p ${icon_dev_to}/${source_folder}
     fi
   fi
-  
+
   if [ "${source_files_list}" == "all" ] ; then
     ln -s ${icon_dev_from}/${source_folder}*  ${icon_dev_to}/${source_folder}
-  else 
+  else
     for source_file in ${source_files_list}
     do
       ln -s ${icon_dev_from}/${source_folder}${source_file}  ${icon_dev_to}/${source_folder}
     done
   fi
-  
+
 }
 
 
@@ -64,8 +64,8 @@ cd-
 
 link_source_list "src/" "$atm_list"
 
-link_source_list "src/" "advection 
-art_interface 
+link_source_list "src/" "advection
+art_interface
 CMakeLists.txt
 configure_model
 diagnostics
@@ -80,7 +80,7 @@ parallel_infrastructure
 shared
 shr_horizontal
 templates
-testbed                                                                                                                                                                                                        
+testbed
 testcases"
 
 
@@ -99,9 +99,3 @@ EOF
 ln -s ${icon_dev_to}/scripts/building/create_builds ${icon_dev_to}
 
 exit
-
-
-
-
-
-      

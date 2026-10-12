@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -17,8 +17,8 @@ ocean_namelist=NAMELIST_${EXPNAME}
 #-----------------------------------------------------------------------------
 start_date="2001-01-01T00:00:00Z"
   end_date="2001-01-02T00:00:00Z"
-  
-modelTimeStep="PT30M"  
+
+modelTimeStep="PT30M"
 checkpoint_interval="PT12H"
 restart_interval="P25Y"
 output_interval="PT12H"
@@ -63,7 +63,7 @@ cat > ${ocean_namelist} << EOF0
  nproma         = $nproma
  p_test_run     = .false.
  l_fast_sum     = .false.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -195,14 +195,14 @@ cat >> ${ocean_namelist} << EOF2
   l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
   l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-10 ! this may further be reduced
   select_lhs                      = 2       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
-  solver_max_iter_per_restart     =  14   
+  l_lhs_direct                    = .true. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
+  solver_max_iter_per_restart     =  14
   solver_max_restart_iterations   = 100       ! outer (restart solver)
 
   fast_performance_level          = 200       ! performance level 12: for cell-based; 5: default
@@ -221,6 +221,7 @@ cat >> ${ocean_namelist} << EOF2
   fct_high_order_flux   = 5      ! horizontal high order method: 1=upwind, 2=central, 3=lax_friedrichs, 4=miura_order1
   fct_limiter_horz      = 100    ! zalesak
   threshold_min_T       = -4.0   ! to avoid abort
+  no_tracer             = 4      ! 2 normal setup; 3 with age tracer; 4 with age tracer squared
 /
 &ocean_horizontal_diffusion_nml
   laplacian_form = 1                   ! 1=curlcurl-graddiv
@@ -228,7 +229,7 @@ cat >> ${ocean_namelist} << EOF2
 
   HarmonicViscosity_scaling     =  1
   HarmonicViscosity_reference   =  3.0E+4  !  [m2/s] constant horizontal viscosity coefficient for velocity
-  HarmonicViscosity_background  =  0.0  
+  HarmonicViscosity_background  =  0.0
 
   TracerHorizontalDiffusion_scaling          = 1
   Temperature_HorizontalDiffusion_Background = 0.0
@@ -244,12 +245,12 @@ cat >> ${ocean_namelist} << EOF2
   GMRedi_configuration           =   1       ! 0=cartesian diffusion 1=GM-Redi: bolus advection + isopycnal diffusion
   GMREDI_COMBINED_DIAGNOSTIC             =.FALSE.
   SWITCH_ON_REDI_BALANCE_DIAGONSTIC      =.FALSE.
-
+/
 &ocean_physics_nml
   i_sea_ice                       =   1       ! 0 = no sea ice; 1 = sea ice model on; default=1
   lhamocc                         = ${lhamocc}
   lbgcadv                         = ${lbgcadv}
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                     =   1       ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
   i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics
@@ -261,7 +262,7 @@ cat >> ${ocean_namelist} << EOF3
 l_cyadyn                          = .TRUE.    ! dynamic cyanobacteria
 l_cpl_co2                         = .FALSE.   ! CO2 coupled to land carbon cycle
 l_bgc_check                       = .FALSE.   ! mass check at every time step
-deltacalc                         = 0.        ! CaCO3 weathering rate [kmol/yr] 
+deltacalc                         = 0.        ! CaCO3 weathering rate [kmol/yr]
 deltaorg                          = 0.        ! OC weathering rate [kmol/yr]
 deltasil                          = 0.        ! Si(OH)4 weathering rate [kmol/yr]
 atm_co2                           = 278.      ! atmospheric CO2 (default 278)
@@ -296,7 +297,7 @@ cat >> ${ocean_namelist} << EOF4
   forcing_fluxes_type             =   1       ! read from file
 ! forcing_enable_freshwater       = .TRUE.    ! apply freshwater forcing boundary condition (OMIP only)
 ! forcing_set_runoff_to_zero      = .FALSE.   ! set runoff to zero for comparison to MPIOM; default: false
-! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false 
+! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false
                                               ! salt-change due to internal fluxes only
   limit_seaice                    = .TRUE.    ! default: true
   seaice_limit                    =   0.8     ! hard limit set to 80% of upper layer for sea ice
@@ -311,7 +312,7 @@ cat >> ${ocean_namelist} << EOF4
 &ocean_initialConditions_nml
   initial_salinity_type           = 1         ! read from file
   initial_temperature_type        = 1         ! read from file
-/                                    
+/
 &ocean_diagnostics_nml
    diagnostics_level            = 1
    gibraltar(1:10)              = 1367,1369
@@ -326,6 +327,10 @@ cat >> ${ocean_namelist} << EOF4
    agulhas(1:10)                = 8024,8022
    agulhas_long(1:10)           = 8024,8022,6036
    agulhas_longer(1:10)         = 8024,8022,6036,6025
+   diagnose_age = .true.
+   diagnose_green = .true.
+   greenStartDate = '2001-01-01'
+   greenStopDate = '2001-01-10'
 /
 EOF4
 #-----------------------------------------------------------------------------

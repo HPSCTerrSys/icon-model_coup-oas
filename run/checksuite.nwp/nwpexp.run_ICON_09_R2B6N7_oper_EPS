@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -196,6 +196,8 @@ cat > ${atmo_namelist} << EOF
  use_lakeiceana               = .true.
  lp2cintp_incr                = .TRUE.
  lp2cintp_sfcana              = .TRUE.
+ parallel_grib_decoding       = .TRUE.  ! .FALSE.: Workroot PE reads and decodes GRIB file records
+                                        ! .TRUE.:  Workroot PE reads GRIB file records, Work PEs decode them
 /
 &io_nml
  itype_pres_msl               = 5        ! (1) 3: IFS-type extrapolation
@@ -378,6 +380,7 @@ use_ensemble_pert=.TRUE.,
  localNumberOfExperiment         = 52
  productionStatusOfProcessedData = 2
  generatingProcessIdentifier     = 1, 2                              ! 2 .. nest
+ grib_lib_compat                 = 'eccodes:2.31.0'
 /
 &synsat_nml
 lsynsat=.false. ! .false.,.true., ! requires RTTOV library - left out for this test
@@ -864,8 +867,28 @@ ICON_COMPONENT1_VH_procs=$((num_restart_procs + num_io_procs + num_prefetch_proc
 # run the model!
 # ----------------------------------------------------------------------
 
-$START_MODEL
-EXIT_STATUS=$?
+if [[ "$builder" = "rcl_nec" ]] && [[ "$with_openmp" = "no" ]]; then
+  LOWER_MEM_LIMIT=36600
+  UPPER_MEM_LIMIT=37050
+  set -o pipefail
+  # Check the memory consumption on NEC
+  $START_MODEL 3>&1 1>&2 2>&3 | $ICONDIR/run/checksuite.nwp/NEC.mem_check.py --lower_mem_limit "$LOWER_MEM_LIMIT" --upper_mem_limit "$UPPER_MEM_LIMIT" 3>&1 1>&2 2>&3
+  # `3>&1 1>&2 2>&3` swaps stderr and stdin so that python processes the original stderr.
+  EXIT_STATUS=$?
+
+  if [[ "$EXIT_STATUS" = "21" ]]; then
+    # Return code 21 is returned by mem_check.py if a threshold is exceeded
+    echo "---------------------------------------------------"
+    echo "                   try again                       "
+    echo "---------------------------------------------------"
+    $START_MODEL 3>&1 1>&2 2>&3 | $ICONDIR/run/checksuite.nwp/NEC.mem_check.py --lower_mem_limit "$LOWER_MEM_LIMIT" --upper_mem_limit "$UPPER_MEM_LIMIT" 3>&1 1>&2 2>&3
+    EXIT_STATUS=$?
+  fi
+
+else
+  $START_MODEL
+  EXIT_STATUS=$?
+fi
 
 if [ "$EXIT_STATUS" -ne "0" ]; then
   echo "ICON EXIT_STATUS: $EXIT_STATUS"
@@ -878,13 +901,13 @@ fi
 #          But when you worry you make it double ..."
 # ----------------------------------------------------------------------
 
-refdir="${DATAROOT}/ref_data_exp09/6a59ea02"
+refdir="${DATAROOT}/ref_data_exp09/f0fcdcc79c"
 
 module unload eccodes sx ; module load x86 eccodes/2.28.0-x86-python
 
 EXIT_STATUS=0
 
-for this_file in igfrf02000000ML.grb 
+for this_file in igfrf02000000ML.grb
 do
 
   # run Python script for comparison of GRIB2 meta-data and values:

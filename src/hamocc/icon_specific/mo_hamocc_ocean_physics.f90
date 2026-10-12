@@ -1,15 +1,16 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
 #include "icon_definitions.inc"
+#include "omp_definitions.inc"
    MODULE mo_hamocc_ocean_physics
 
     USE mo_kind,                         ONLY: wp
@@ -34,21 +35,21 @@
     &                                          lsediment_only, vert_cor_type, lfb_bgc_oce
     USE mo_hamocc_types,                 ONLY: t_hamocc_prog, t_hamocc_state
     USE mo_bgc_icon_comm,                ONLY: hamocc_state
-    USE mo_dynamics_config,              ONLY: nold, nnew 
+    USE mo_dynamics_config,              ONLY: nold, nnew
     USE mo_ocean_hamocc_couple_state, ONLY: t_ocean_to_hamocc_state, t_hamocc_to_ocean_state, &
       & t_hamocc_ocean_state
-    USE mo_hamocc_diagnostics,     ONLY: get_monitoring 
+    USE mo_hamocc_diagnostics,     ONLY: get_monitoring, get_vertint
     USE mo_bgc_bcond,              ONLY: ext_data_bgc, update_bgc_bcond
     USE mtime,                     ONLY: datetime
     USE mo_util_dbg_prnt,          ONLY: dbg_print
     USE mo_master_control,         ONLY: my_process_is_hamocc
     USE mo_control_bgc,            ONLY: bgc_zlevs, bgc_nproma
 
-    USE mo_hamocc_nml,             ONLY: l_bgc_check,io_stdo_bgc
+    USE mo_hamocc_nml,             ONLY: l_bgc_check,io_stdo_bgc,l_hamocc_vertint
     USE mo_exception, ONLY: message_to_own_unit
     USE mo_hamocc_diagnostics,  ONLY: get_inventories
     USE mo_bgc_icon, ONLY: bgc_icon
-    
+
     ! only temporary solution
     USE mo_ocean_tracer_dev,       ONLY: advect_ocean_tracers_dev, advect_ocean_tracers_GMRedi_zstar
     USE mo_ocean_physics_types,    ONLY: v_params
@@ -73,8 +74,8 @@
     TYPE(t_hamocc_ocean_state), TARGET               :: hamocc_ocean_state
     TYPE(t_operator_coeff),   INTENT(inout)          :: operators_coefficients
     TYPE(datetime), POINTER, INTENT(in)              :: current_time
- 
-    
+
+
     TYPE(t_tracer_collection) , POINTER              :: old_tracer_collection, new_tracer_collection
     TYPE(t_ocean_to_hamocc_state), POINTER           :: ocean_to_hamocc_state
     TYPE(t_hamocc_to_ocean_state), POINTER           :: hamocc_to_ocean_state
@@ -88,7 +89,7 @@
     REAL(wp) :: ptiestu(bgc_nproma, bgc_zlevs, hamocc_ocean_state%ocean_transport_state%patch_3d%p_patch_2d(1)%alloc_cell_blocks)
     REAL(wp) :: ssh(bgc_nproma, hamocc_ocean_state%ocean_transport_state%patch_3d%p_patch_2d(1)%alloc_cell_blocks)
     REAL(wp) :: ssh_new(bgc_nproma, hamocc_ocean_state%ocean_transport_state%patch_3d%p_patch_2d(1)%alloc_cell_blocks)
- 
+
     REAL(wp) :: stretch_e(nproma, hamocc_ocean_state%ocean_transport_state%patch_3d%p_patch_2d(1)%nblks_e)
 
     ! OpenACC data movement - to be deleted later on
@@ -102,8 +103,8 @@
 
     INTEGER, DIMENSION(:,:,:), POINTER :: cell_idx, cell_blk
     REAL(wp), DIMENSION(:,:), POINTER :: stretch_c
-    TYPE(t_subset_range), POINTER :: edges_in_domain, all_edges 
-    
+    TYPE(t_subset_range), POINTER :: edges_in_domain, all_edges
+
     transport_state => hamocc_ocean_state%ocean_transport_state
     patch_3d => transport_state%patch_3d
     ocean_to_hamocc_state => hamocc_ocean_state%ocean_to_hamocc_state
@@ -118,43 +119,50 @@
     !----------------------------------------------------------------------
 
     IF (vert_cor_type == 1) THEN ! z* coordinate
-    
+
       stretch_c => ocean_to_hamocc_state%stretch_c(:,:)
       ! Adapt levels to changed stretching factors
-      do jk = 1,bgc_zlevs
-        pddpo(:,jk,:) = patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,jk,:) * &
-              &           stretch_c(:,:) * patch_3d%wet_c(:,1,:)
-        pddpo_new(:,jk,:) = patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,jk,:) * &
-              &           ocean_to_hamocc_state%stretch_c_new(:,:) * patch_3d%wet_c(:,1,:)
+!ICON_OMP_PARALLEL_DO ICON_OMP_DEFAULT_SCHEDULE
+      DO jb = 1, hamocc_ocean_state%ocean_transport_state%patch_3d%p_patch_2d(1)%alloc_cell_blocks
+        do jk = 1,bgc_zlevs
+          pddpo(:,jk,jb) = patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,jk,jb) * &
+                &           stretch_c(:,jb) * patch_3d%wet_c(:,1,jb)
+          pddpo_new(:,jk,jb) = patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,jk,jb) * &
+                &           ocean_to_hamocc_state%stretch_c_new(:,jb) * patch_3d%wet_c(:,1,jb)
 
-        ptiestu(:,jk,:) = patch_3d%p_patch_1d(1)%depth_cellMiddle(:,jk,:) * &
-              &           stretch_c(:,:) + ocean_to_hamocc_state%draftave(:,:)
-      enddo
+          ptiestu(:,jk,jb) = patch_3d%p_patch_1d(1)%depth_cellMiddle(:,jk,jb) * &
+                &           stretch_c(:,jb) + ocean_to_hamocc_state%draftave(:,jb)
+        enddo
+
+        ! ssh is included in the adapted level thickness and depth
+        ssh(:,jb) = 0.0_wp
+        ssh_new(:,jb) = 0.0_wp
+      END DO
+!ICON_OMP_END_PARALLEL_DO
 
       ! compute stretch_e as the avrege of the two cells
       cell_idx  => patch_3D%p_patch_2D(1)%edges%cell_idx
       cell_blk  => patch_3D%p_patch_2D(1)%edges%cell_blk
-      
+
 !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index, jb, i) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_edges%start_block, all_edges%end_block
         CALL get_index_range(all_edges, jb, start_index, end_index)
         DO i = start_index, end_index
-          stretch_e(i, jb) = 0.5 * stretch_c(cell_idx(i, jb, 1), cell_blk(i, jb, 1)) + 0.5 * stretch_c(cell_idx(i, jb, 2), cell_blk(i, jb, 2))        
+          stretch_e(i, jb) = 0.5 * stretch_c(cell_idx(i, jb, 1), cell_blk(i, jb, 1)) + 0.5 * stretch_c(cell_idx(i, jb, 2), cell_blk(i, jb, 2))
         END DO
-      END DO 
-!ICON_OMP_END_PARALLEL_DO    
-      
-      ! ssh is included in the adapted level thickness and depth
-      ssh(:,:) = 0.0_wp
-      ssh_new(:,:) = 0.0_wp
+      END DO
+!ICON_OMP_END_PARALLEL_DO
 
     ELSE
-      pddpo(:,:,:) = patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,:,:)
-      pddpo_new(:,:,:) = patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,:,:)
+!ICON_OMP_PARALLEL_DO ICON_OMP_DEFAULT_SCHEDULE
+      DO jb = 1, hamocc_ocean_state%ocean_transport_state%patch_3d%p_patch_2d(1)%alloc_cell_blocks
+        pddpo(:,:,jb) = patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,:,jb)
+        pddpo_new(:,:,jb) = patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,:,jb)
 
-      ptiestu(:,:,:) = patch_3d%p_patch_1d(1)%depth_cellMiddle(:,:,:)
-      ssh(:,:) = ocean_to_hamocc_state%h_old(:,:)
-      ssh_new(:,:) = ocean_to_hamocc_state%h_new(:,:)
+        ptiestu(:,:,jb) = patch_3d%p_patch_1d(1)%depth_cellMiddle(:,:,jb)
+        ssh(:,jb) = ocean_to_hamocc_state%h_old(:,jb)
+        ssh_new(:,jb) = ocean_to_hamocc_state%h_new(:,jb)
+      END DO
     ENDIF
 
 
@@ -179,8 +187,8 @@
       CALL dilute_hamocc_tracers(patch_3d, ocean_to_hamocc_state%top_dilution_coeff, hamocc_state%p_prog(nold(1)), lacc=lzacc)
     ENDIF
     !------------------------------------------------------------------------
-    
-    CALL update_bgc_bcond(patch_3d, ext_data_bgc, current_time, lacc=lzacc)   
+
+    CALL update_bgc_bcond(patch_3d, ext_data_bgc, current_time, lacc=lzacc)
 
     !------------------------------------------------------------------------
     ! call HAMOCC
@@ -190,7 +198,8 @@
 
     IF (l_bgc_check) THEN
       CALL message_to_own_unit('3. after bgc + fluxes and weathering', 'inventories', io_stdo_bgc)
-      CALL get_inventories(hamocc_state, ssh, pddpo, hamocc_state%p_prog(nold(1))%tracer, patch_3d, 0._wp, 0._wp)
+      CALL get_inventories(hamocc_state, ssh, pddpo, hamocc_state%p_prog(nold(1))%tracer, &
+   &                       patch_3d, 0._wp, 0._wp, lacc=lzacc)
     ENDIF
 
     !------------------------------------------------------------------------
@@ -245,7 +254,8 @@
 
     IF (l_bgc_check) THEN
       CALL message_to_own_unit('4. after transport', 'inventories', io_stdo_bgc)
-      CALL get_inventories(hamocc_state, ssh_new, pddpo_new, hamocc_state%p_prog(nnew(1))%tracer, patch_3d, 0._wp, 0._wp)
+      CALL get_inventories(hamocc_state, ssh_new, pddpo_new, hamocc_state%p_prog(nnew(1))%tracer, &
+   &                       patch_3d, 0._wp, 0._wp, lacc=lzacc)
     ENDIF
     !------------------------------------------------------------------------
 
@@ -253,6 +263,9 @@
     !$ACC UPDATE HOST(hamocc_to_ocean_state%swr_fraction, hamocc_to_ocean_state%co2_flux) ASYNC(1)
 
      CALL get_monitoring( hamocc_state, hamocc_state%p_prog(nnew(1))%tracer, ssh_new, pddpo_new, patch_3d)
+     IF (l_hamocc_vertint) THEN
+        CALL get_vertint( hamocc_state, hamocc_state%p_prog(nnew(1))%tracer, pddpo_new, patch_3d, lacc=lzacc)
+     END IF
     !------------------------------------------------------------------------
     !$ACC WAIT(1)
     !$ACC END DATA
@@ -271,7 +284,7 @@
     REAL(wp), INTENT(IN) :: ssh(bgc_nproma, patch_3d%p_patch_2d(1)%nblks_c)
 
     CALL update_bgc_bcond( patch_3d, ext_data_bgc,  current_time)
- 
+
     !------------------------------------------------------------------------
     ! call HAMOCC
     if(ltimer) call timer_start(timer_bgc_tot)
@@ -338,12 +351,14 @@
     p_patch => p_patch_3D%p_patch_2D(1)
     all_cells => p_patch%cells%all
 
+!ICON_OMP_PARALLEL_DO PRIVATE(i_startidx_c, i_endidx_c, jc, jk, i_bgc_tra, &
+!ICON_OMP nlevs, h_old, h_new, h_change) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
         DO jc = i_startidx_c, i_endidx_c
             IF (p_patch_3D%p_patch_1D(1)%dolic_c(jc,jb) > 0) THEN
 
-                nlevs = p_patch_3D%p_patch_1D(1)%dolic_c(jc,jb)              
+                nlevs = p_patch_3D%p_patch_1D(1)%dolic_c(jc,jb)
 
                 ! old thickness of cells = prism_thick * old_stretch
                 ! tdc = old_stretch / stretch_c
@@ -364,7 +379,7 @@
                 DO jk = nlevs-1,1,-1
                   h_change(jk) = h_change(jk+1) + h_new(jk) - h_old(jk)
                 ENDDO
-                
+
                 DO i_bgc_tra = 1, n_bgctra
 
                   IF (top_dilution_coeff(jc,jb) > 1.0_wp) THEN
@@ -387,7 +402,7 @@
                         &   * hamocc_state_prog%tracer(jc,jk,jb,i_bgc_tra) - h_change(jk+1) &
                         &   * hamocc_state_prog%tracer(jc,jk+1,jb,i_bgc_tra)) &
                         &   / h_new(jk)
-                    ENDDO          
+                    ENDDO
 
                   ELSEIF (top_dilution_coeff(jc,jb) < 1.0_wp) THEN
 
@@ -397,7 +412,7 @@
                     ! concentrations, but old value is needed for the
                     ! interpolation of the second level.
                     ! Cells have become thicker, hence only the level above jk
-                    ! influences the new concentration in 
+                    ! influences the new concentration in
 
                     DO jk = nlevs,2,-1
                       hamocc_state_prog%tracer(jc,jk,jb,i_bgc_tra) = &
@@ -405,7 +420,7 @@
                         &   + (h_new(jk) - h_change(jk))&
                         &   * hamocc_state_prog%tracer(jc,jk,jb,i_bgc_tra) ) &
                         &   / h_new(jk)
-                    ENDDO   
+                    ENDDO
 
 
                     ! Now adapt the first level. Basically with the same formula
@@ -420,6 +435,7 @@
             endif
         ENDDO
     ENDDO
+!ICON_OMP_END_PARALLEL_DO
 
    END SUBROUTINE dilute_hamocc_tracers_zstar
 

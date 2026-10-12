@@ -3,27 +3,33 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ------------------------------------------
 
+import pickle
+from pathlib import Path
+
+import click
+
 # -*- coding: utf-8 -*-
-#==============================================================================
+# ==============================================================================
 # create an experiment list
-#==============================================================================
+# ==============================================================================
 from buildbot_config import BuildbotConfig
 from icon_paths import buildbot_list_path
 
-from pathlib import Path
-import pickle
-import click
 
 @click.command()
 @click.argument("machine_name", type=str)
-@click.option("--queue", type=str, help="the batch system queue where jobs are submitted to")
+@click.option(
+    "--queue",
+    type=str,
+    help="the batch system queue where jobs are submitted to",
+)
 @click.option("--list", "list_name", type=str, help="the list")
 def addmachine(machine_name, queue, list_name):
 
@@ -41,6 +47,7 @@ def addmachine(machine_name, queue, list_name):
     thisList.add_machine(machine_name, queue=queue)
 
     thisList.to_pickle(full_list_name)
+
 
 if __name__ == "__main__":
     addmachine()

@@ -1,16 +1,15 @@
-! Contains namelists for parallel run control.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains namelists for parallel run control.
 
 MODULE mo_parallel_nml
 
@@ -72,7 +71,8 @@ MODULE mo_parallel_nml
     & config_restart_load_scale_max => restart_load_scale_max, &
     & config_io_proc_chunk_size => io_proc_chunk_size,        &
     & config_num_dist_array_replicas => num_dist_array_replicas, &
-    & config_io_process_stride => io_process_stride,          &
+    & config_io_process_stride    => io_process_stride,       &
+    & config_process_stride_pgrib => process_stride_pgrib,    &
     & config_io_process_rotate => io_process_rotate,          &
     & comm_pattern_type_orig,                                 &
     & config_default_comm_pattern_type => default_comm_pattern_type
@@ -154,7 +154,7 @@ MODULE mo_parallel_nml
     ! Shift of processor 0 in domain decomposition, e.g. to use proc 0 for input only
     INTEGER :: proc0_shift
 
-    ! Use OpenMP-parallelized input for atmospheric input data (in initicon), 
+    ! Use OpenMP-parallelized input for atmospheric input data (in initicon),
     ! i.e. overlapping of reading data, communicating data and computing statistics
     LOGICAL :: use_omp_input
 
@@ -184,7 +184,7 @@ MODULE mo_parallel_nml
     ! more than one 2D slice at once
     INTEGER :: io_proc_chunk_size
 
-    INTEGER :: io_process_stride, io_process_rotate
+    INTEGER :: io_process_stride, io_process_rotate, process_stride_pgrib
 
     ! number of replications being stored in the distributed arrays of the
     ! t_patch_pre
@@ -204,7 +204,7 @@ MODULE mo_parallel_nml
       & iorder_sendrecv,                        &
       & nproma, nblocks_c, nblocks_e,           &
       & nproma_sub, nblocks_sub,                &
-      & use_icon_comm, &
+      & use_icon_comm,                          &
       & icon_comm_debug, max_send_recv_buffer_size, &
       & division_file_name, use_dycore_barrier, &
       & write_div_to_file, use_div_from_file, &
@@ -213,7 +213,7 @@ MODULE mo_parallel_nml
       & max_no_of_comm_processes, max_no_of_comm_patterns, &
       & sync_barrier_mode, max_mpi_message_size, use_physics_barrier, &
       & restart_chunk_size, io_proc_chunk_size, num_prefetch_proc, &
-      & num_dist_array_replicas, io_process_stride, io_process_rotate, &
+      & num_dist_array_replicas, io_process_stride, process_stride_pgrib, io_process_rotate, &
       & default_comm_pattern_type, use_omp_input, restart_load_scale_max
 
     CHARACTER(LEN=*), INTENT(IN) :: filename
@@ -282,7 +282,7 @@ MODULE mo_parallel_nml
     ! Shift of processor 0 in domain decomposition, set to 1 in order to use proc 0 for input only
     proc0_shift = 0
 
-    ! Use OpenMP-parallelized input for atmospheric input data (in initicon), 
+    ! Use OpenMP-parallelized input for atmospheric input data (in initicon),
     ! i.e. overlapping of reading data, communicating data and computing statistics
     use_omp_input = .FALSE.
 
@@ -312,6 +312,7 @@ MODULE mo_parallel_nml
     num_dist_array_replicas = 1
 
     io_process_stride = -1
+    process_stride_pgrib = 1 ! process stride for parallel GRIB decoding
     io_process_rotate = 0
     default_comm_pattern_type = comm_pattern_type_orig
 
@@ -399,6 +400,7 @@ MODULE mo_parallel_nml
     config_restart_load_scale_max = restart_load_scale_max
     config_num_dist_array_replicas = num_dist_array_replicas
     config_io_process_stride    = io_process_stride
+    config_process_stride_pgrib = process_stride_pgrib
     config_io_process_rotate    = io_process_rotate
     config_default_comm_pattern_type = default_comm_pattern_type
     !-----------------------------------------------------
@@ -407,4 +409,4 @@ MODULE mo_parallel_nml
   END SUBROUTINE read_parallel_namelist
   !-------------------------------------------------------------------------
 
-END MODULE mo_parallel_nml      
+END MODULE mo_parallel_nml

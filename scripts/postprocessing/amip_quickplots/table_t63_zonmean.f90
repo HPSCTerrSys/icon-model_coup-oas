@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -24,7 +24,7 @@ MODULE mo_tables
 
 CONTAINS
 
-  SUBROUTINE init_tables 
+  SUBROUTINE init_tables
 
 write(6,*) "kmax",kmax
 
@@ -46,7 +46,7 @@ write(6,*) "kmax",kmax
     string( 76) = 'SICEPRES      W/m2   residual heat flux                   I ';  factor( 76) =       1.00; offset( 76) =    0.00;
     string( 77) = 'AMELTDEPTH    cm     total melt pond depth                I ';  factor( 77) =     100.00; offset( 77) =    0.00;
     string( 78) = 'AMELTFRAC     %      frac. area of melt ponds on sea-ice  I ';  factor( 78) =     100.00; offset( 78) =    0.00;
-    
+
     string( 79) = 'ALBEDO_VIS_DIR %     surface albedo visible range direct    ';  factor( 79) =     100.00; offset( 79) =    0.00;
     string( 80) = 'ALBEDO_NIR_DIR %     surface albedo NIR range direct        ';  factor( 80) =     100.00; offset( 80) =    0.00;
     string( 81) = 'ALBEDO_VIS_DIF %     surface albedo visible range diffuse   ';  factor( 81) =     100.00; offset( 81) =    0.00;
@@ -259,10 +259,10 @@ CONTAINS
     !-----------------------------------
     CHARACTER(len=*)              ,INTENT(in) :: upper
     CHARACTER(len=LEN_TRIM(upper))            :: tolower
-    
+
     INTEGER            :: i
     INTEGER ,PARAMETER :: idel = ICHAR('a')-ICHAR('A')
-    
+
     DO i=1,LEN_TRIM(upper)
       IF (ICHAR(upper(i:i)) >= ICHAR('A') .AND. &
            ICHAR(upper(i:i)) <= ICHAR('Z')) THEN
@@ -271,7 +271,7 @@ CONTAINS
         tolower(i:i) = upper(i:i)
       END IF
     END DO
-    
+
   END FUNCTION tolower
 
 END MODULE mo_util_string
@@ -317,7 +317,7 @@ PROGRAM momitt
 
   REAL :: nh(kmax), sh(kmax), gm(kmax), faktor(kmax), addi(kmax)
 
-  REAL :: xnh, xsh, xgm, sumpnh, sumpsh, sumpgm 
+  REAL :: xnh, xsh, xgm, sumpnh, sumpsh, sumpgm
 
   INTEGER :: year1, year2, iLONG, landcode
   INTEGER :: ihead(8), icode(kmax), imean
@@ -328,14 +328,14 @@ PROGRAM momitt
 
   LOGICAL :: lland, lice, laccu, lglac, lprec
   LOGICAL :: lcode61,lcode62,lcode63,lcode64
-  LOGICAL :: lcode91,lcode92,lcode93,lcode94,lcode95,lcode96 
-  LOGICAL :: lcode110,lcode111,lcode112,lcode113,lcode114,lcode115,lcode119 
+  LOGICAL :: lcode91,lcode92,lcode93,lcode94,lcode95,lcode96
+  LOGICAL :: lcode110,lcode111,lcode112,lcode113,lcode114,lcode115,lcode119
   LOGICAL :: lcode120,lcode121,lcode140,lcode142,lcode143
   LOGICAL :: lcode144,lcode146,lcode147,lcode160
   LOGICAL :: lcode176,lcode177,lcode178,lcode179,lcode182,lcode187,lcode188
   LOGICAL :: lcode191,lcode192,lcode206,lcode210
   LOGICAL :: lcode218,lcode221,lcode222,lcode228,lcode229
-  
+
   LOGICAL :: linit = .TRUE.
 
   CHARACTER(len=82) :: titel
@@ -348,7 +348,7 @@ PROGRAM momitt
   CHARACTER(len=40) :: half
   CHARACTER(len=20) :: expnam
 
-  CHARACTER(len= 3) :: cmean 
+  CHARACTER(len= 3) :: cmean
 
   CHARACTER(len=14) :: month(17) = (/ &
        '  January     ','  February    ','  March       ', &
@@ -402,7 +402,7 @@ average_periode: SELECT CASE (cmean)
     imean = 15
   CASE ('son') ! sep/oct/nov
     imean = 16
-  CASE ('ann') ! a whole year 
+  CASE ('ann') ! a whole year
     imean = 17
   CASE DEFAULT
     WRITE (0,*) 'Unsupported average peride selected ...'
@@ -413,7 +413,7 @@ average_periode: SELECT CASE (cmean)
 
   ! Initilaize tables
 
-  CALL init_tables 
+  CALL init_tables
 
   !      Get ready for zonal mean calculation
 
@@ -470,9 +470,9 @@ average_periode: SELECT CASE (cmean)
   OPEN(9,file='tablecode',form='FORMATTED')
 
   OPEN (unit=10,file='busy_atm_phy_t63B.srv',form='UNFORMATTED')
-  
+
   CALL NametoCode (kmax,string)
-   
+
   DO ic = 1, kmax
 
     READ(10,END=100) ihead
@@ -483,7 +483,7 @@ average_periode: SELECT CASE (cmean)
 
 !    WRITE (0,'(a,i4,a,i4,a,i4)') 'header - code = ',ihead(1), &
 !      ' longitudes = ', ihead(5), ' latitudes = ', ihead(6)
-    
+
     IF (linit) THEN
 
       ALLOCATE (phi(nlat), pw(nlat))
@@ -515,11 +515,11 @@ average_periode: SELECT CASE (cmean)
       ALLOCATE (fcode218(nlon,nlat), fcode228(nlon,nlat))
       ALLOCATE (fcode206(nlon,nlat), fcode229(nlon,nlat))
       ALLOCATE (fcode221(nlon,nlat), fcode222(nlon,nlat))
-      
+
       ALLOCATE (field(nlon,nlat), dat(nlon,nlat,kmax), zm(nlat,kmax), xzm(nlat))
 
       ! fglac is currently not processed, but used later uninitialized ...
-      fglac(:,:) = 0.0   
+      fglac(:,:) = 0.0
 
       linit = .FALSE.
 
@@ -553,7 +553,7 @@ average_periode: SELECT CASE (cmean)
         fice(:,:) = field(:,:)
       END WHERE
       IF (iLONG.EQ.0) THEN
-        write (6,*) "if-iLONG,lice,k:  ",iLONG,lice,k 
+        write (6,*) "if-iLONG,lice,k:  ",iLONG,lice,k
         k = k-1
       ELSE
         write (6,*) "else-iLONG,lice,k:  ",iLONG,lice,k
@@ -804,7 +804,7 @@ average_periode: SELECT CASE (cmean)
       ELSE
          zm(j,k) = zm(j,k) + SUM(dat(:,j,k)*xfac(:,j))
       END IF
-    
+
       xzm(j) = xzm(j) + SUM(xfac(:,j))
 
       IF (phi(j) > 0.0) THEN
@@ -857,7 +857,7 @@ average_periode: SELECT CASE (cmean)
   titel(:) = ' '
   WRITE(titel( 1:20),'(a20)') expnam
   WRITE(titel(34:  ),'(a49)') trange
-  
+
   IF (iLONG.NE.0) THEN
     nlath = nlat/2
     half = 'northern hemisphere                     '
@@ -880,7 +880,7 @@ average_periode: SELECT CASE (cmean)
     jh = jo
     DO WHILE (jh <= nlat .and. ja <= nlat)
 
-     write(0,*) 'jo nlat ' ,jo, nlat, ' ja, jh ' ,ja, jh  
+     write(0,*) 'jo nlat ' ,jo, nlat, ' ja, jh ' ,ja, jh
      CALL output(titel, zm, faktor, addi, nh, sh, gm, phi, icode, stringo, &
          kend, kmax, ja, jh, nlat, npp, half)
 
@@ -1120,7 +1120,7 @@ SUBROUTINE check_file (kmax)
 
     IF (iihead(1) == 4 ) THEN
         WRITE (0,*) 'code: ', iihead(1),'  Updated to code: ', iihead(1)+256
-        iihead(1) = iihead(1)+256 
+        iihead(1) = iihead(1)+256
     END IF
     IF (iihead(1) <  60) WRITE (0,*) 'WARNING: Code',iihead(1),' <  79 not supported!!'
     IF (iihead(1) > 260) WRITE (0,*) 'WARNING: Code',iihead(1),' > 260 not supported!!'
@@ -1142,7 +1142,7 @@ END SUBROUTINE check_file
 
 SUBROUTINE NametoCode(kmax,string)
 
-  ! 
+  !
 
   IMPLICIT NONE
 
@@ -1154,7 +1154,7 @@ SUBROUTINE NametoCode(kmax,string)
 
   OPEN (unit=20,file='global.txt',form='FORMATTED')
   OPEN (unit=21,file='codetext.txt',form='FORMATTED')
-    
+
   WRITE(21,*)' code   name      global    unit   description'
   DO i = 1, kmax
     READ(20,'(f9.4,1x,i4,1x,a10)',END=100)globalVar(i),echamCode(i),iconVar(i)
@@ -1162,8 +1162,8 @@ SUBROUTINE NametoCode(kmax,string)
     WRITE(21,'(1x,1i5,2x,a10,1x,f9.4,1x,1a44)')echamCode(i),iconVar(i),globalVar(i),string(echamCode(i))(15:58)
   ENDDO
 !    WRITE(9,'(1x,1i5,3x,1a46)') icode(kk), string(kk)(15:60)
-  
-100 Continue  
 
-    
+100 Continue
+
+
 END SUBROUTINE

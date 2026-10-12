@@ -1,21 +1,18 @@
-!
-! This module is the interface between nwp_nh_interface to the
-! gravity wave drag related parameterisations:
-! inwp_sso == 1 == COSMO subgrid scale orographic gravity wave drag
-! inwp_gwd == 1 == IFS non-orographic gravity wave drag
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module is the interface between nwp_nh_interface to the
+! gravity wave drag related parameterisations:
+! inwp_sso == 1 == COSMO subgrid scale orographic gravity wave drag
+! inwp_gwd == 1 == IFS non-orographic gravity wave drag
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -36,13 +33,16 @@ MODULE mo_nwp_gw_interface
   USE mo_nwp_phy_types,        ONLY: t_nwp_phy_diag, t_nwp_phy_tend
   USE mo_nwp_phy_state,        ONLY: phy_params
   USE mo_parallel_config,      ONLY: nproma
-  USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config
+  USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config, itype_stoch_phys
   USE mo_sso_cosmo,            ONLY: sso
-  USE mo_sso_ifs,              ONLY: gwdrag
   USE mo_gwd_wms,              ONLY: gwdrag_wms
   USE mo_vertical_coord_table, ONLY: vct_a
-  USE mo_exception,            ONLY : finish, message
+  USE mo_exception,            ONLY : finish, message, message_text
   USE mo_fortran_tools,        ONLY: set_acc_host_or_device
+  USE mo_run_config,           ONLY: lmsgwam, msg_level
+#ifdef __MSGWAM
+  USE mo_msgwam_config,        ONLY: lmsgwam_offline
+#endif
 
   IMPLICIT NONE
 
@@ -64,7 +64,7 @@ CONTAINS
                          &   ext_data,                  & !>input
                          &   p_diag ,                   & !>inout
                          &   prm_diag,prm_nwp_tend,     & !>inout
-                         &   lacc                    ) !>in 
+                         &   lacc                    ) !>in
 
     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
 
@@ -97,9 +97,9 @@ CONTAINS
       &  ztot_prec_rate(nproma)
     REAL(wp) ::            &           !< latitude (rad)
       &  pgelat(nproma)
-    REAL(vp) :: ssolim(p_patch%nlev), zf
+    REAL(vp) :: ssolim(p_patch%nlev), zf, pertb
 
-    INTEGER :: jk,jc,jb,jg,jks             !<block indeces
+    INTEGER :: jk,jc,jb,jg,jj,jks             !<block indeces
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
@@ -136,7 +136,7 @@ CONTAINS
     !$ACC END PARALLEL
 
 !$OMP PARALLEL
-!$OMP DO PRIVATE(jb,jc,i_startidx,i_endidx,ztot_prec_rate,z_fluxu,z_fluxv,pgelat) ICON_OMP_GUIDED_SCHEDULE
+!$OMP DO PRIVATE(jb,jc,i_startidx,i_endidx,ztot_prec_rate,z_fluxu,z_fluxv,pgelat,pertb,jj) ICON_OMP_GUIDED_SCHEDULE
     DO jb = i_startblk, i_endblk
 
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
@@ -147,14 +147,14 @@ CONTAINS
 
       IF (lcall_sso_jg .AND. atm_phy_nwp_config(jg)%inwp_sso == 1) THEN
 
-        ! ATTENTION: - geopot_agl is the full level geopotential height above ground 
+        ! ATTENTION: - geopot_agl is the full level geopotential height above ground
         !              and not full level geopotential height above MSL.
-        !            - geopot_agl_ifc is the half level geopotential height above ground 
+        !            - geopot_agl_ifc is the half level geopotential height above ground
         !              and not the half level geopotential height above MSL.
-        !              I.e. geopot_agl_ifc(:,nlevp1,jb) is not the surface geopotential height,  
+        !              I.e. geopot_agl_ifc(:,nlevp1,jb) is not the surface geopotential height,
         !              but geopot_agl_ifc(:,nlevp1,jb) = 0
-        !            Since both geopot_agl AND geopot_agl_ifc are defined above ground, the 
-        !            resulting geopotential height which is computed inside of "SSO" is correct. 
+        !            Since both geopot_agl AND geopot_agl_ifc are defined above ground, the
+        !            resulting geopotential height which is computed inside of "SSO" is correct.
         CALL sso(                                          &
           & ie        =nproma                           ,  & !> in:  actual array size
           & ke        =nlev                             ,  & !< in:  actual array size
@@ -184,11 +184,6 @@ CONTAINS
           & pvstr_sso =prm_diag%str_v_sso       (:,jb),    & !< out: v surface stress due to SSO
           & lacc      =lzacc                               ) ! in, optional
 
- ! GZ: The computation of the frictional heating rate is now done in interface_nwp for
- ! SSO, GWD and Rayleigh friction together
- !         & pdt_sso   =prm_nwp_tend%ddt_temp_sso(:,:,jb)   ) !< out: temperature tendency
-                                                             ! due to SSO
-
         ! Reduce tendencies in uppermost layer by a factor of 8 because they tend to larger than the tendencies
         ! in the second layer by about this factor. This is also true at vertical nest interfaces
 !DIR$ IVDEP
@@ -203,7 +198,7 @@ CONTAINS
         ! Limit SSO wind tendencies. They can become numerically unstable in the upper stratosphere and mesosphere.
         ! Moreover, they tend to be much too strong in northern hemispheric winter, leading to a huge warm
         ! bias in the north polar middle stratosphere
-        
+
         !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jk = 1, nlev
 !DIR$ IVDEP
@@ -216,63 +211,17 @@ CONTAINS
         ENDDO
         !$ACC END PARALLEL LOOP
 
-      ELSE IF (lcall_sso_jg .AND. atm_phy_nwp_config(jg)%inwp_sso == 2) THEN
-        ! SSO from IFS code 41r2
-#ifdef _OPENACC
-        CALL finish('nwp_gwdrag', 'inwp_sso=2 is not supported with ACC')
-#endif
-        CALL gwdrag(                                       &
-          & klon      =nproma                           ,  & !> in:  actual array size
-          & klev      =nlev                             ,  & !< in:  actual array size
-          & kidia     =i_startidx                       ,  & !< in:  start index of calculation
-          & kfdia     =i_endidx                         ,  & !< in:  end index of calculation
-          & params    =phy_params(jg)                   ,  & !< in:  level indices and tuning parameters
-          & papm1     =p_diag%pres              (:,:,jb),  & !< in:  full level pressure
-          & paphm1    =p_diag%pres_ifc          (:,:,jb),  & !< in:  half level pressure
-          & pgeom1    =p_metrics%geopot_agl     (:,:,jb),  & !< in:  full level geopotential height
-          & ptm1      =p_diag%temp              (:,:,jb),  & !< in:  temperature
-          & pum1      =p_diag%u                 (:,:,jb),  & !< in:  zonal wind component
-          & pvm1      =p_diag%v                 (:,:,jb),  & !< in:  meridional wind component
-          & phstd     =ext_data%atm%sso_stdh    (:,jb)  ,  & !< in:  standard deviation
-          & pgamma    =ext_data%atm%sso_gamma   (:,jb)  ,  & !< in:  anisotropy
-          & ptheta    =ext_data%atm%sso_theta   (:,jb)  ,  & !< in:  angle
-          & psig      =ext_data%atm%sso_sigma   (:,jb)  ,  & !< in:  slope
-          & pdt       =tcall_sso_jg                     ,  & !< in:  time step
-          & ikenvh    =prm_diag%ktop_envel      (:,jb)  ,  & !< out: top of envelope layer
-          & psoteu    =prm_nwp_tend%ddt_u_sso   (:,:,jb),  & !< out: u-tendency due to SSO
-          & psotev    =prm_nwp_tend%ddt_v_sso   (:,:,jb),  & !< out: v-tendency due to SSO
-          & pustr_sso =prm_diag%str_u_sso       (:,jb),    & !< out: u surface stress due to SSO
-          & pvstr_sso =prm_diag%str_v_sso       (:,jb)     ) !< out: v surface stress due to SSO
-
- ! GZ: The computation of the frictional heating rate is done in interface_nwp for
- ! SSO, GWD and Rayleigh friction together
-
-        ! Reduce tendencies in uppermost layer by a factor of 8 because they tend to larger than the tendencies
-        ! in the second layer by about this factor. This is also true at vertical nest interfaces
-!DIR$ IVDEP
-        DO jc = i_startidx, i_endidx
-          prm_nwp_tend%ddt_u_sso(jc,1,jb) = 0.125_vp*prm_nwp_tend%ddt_u_sso(jc,1,jb)
-          prm_nwp_tend%ddt_v_sso(jc,1,jb) = 0.125_vp*prm_nwp_tend%ddt_v_sso(jc,1,jb)
-        ENDDO
-
-        ! Limit SSO wind tendencies. They can become numerically unstable in the upper stratosphere and mesosphere.
-        ! Moreover, they tend to be much too strong in northern hemispheric winter, leading to a huge warm
-        ! bias in the north polar middle stratosphere
-        DO jk = 1, nlev
-!DIR$ IVDEP
-          DO jc = i_startidx, i_endidx
-            prm_nwp_tend%ddt_u_sso(jc,jk,jb) = &
-              SIGN(MIN(ssolim(jk),ABS(prm_nwp_tend%ddt_u_sso(jc,jk,jb))),prm_nwp_tend%ddt_u_sso(jc,jk,jb))
-            prm_nwp_tend%ddt_v_sso(jc,jk,jb) = &
-              SIGN(MIN(ssolim(jk),ABS(prm_nwp_tend%ddt_v_sso(jc,jk,jb))),prm_nwp_tend%ddt_v_sso(jc,jk,jb))
-          ENDDO
-        ENDDO
-
       ENDIF
 
 ! Non-orgographic gravity wave drag
 
-      IF (lcall_gwd_jg .AND. atm_phy_nwp_config(jg)%inwp_gwd == 1) THEN
+      IF (lcall_gwd_jg .AND. atm_phy_nwp_config(jg)%inwp_gwd == 1  &
+#ifdef __MSGWAM
+    ! When MSGWAM is switched on, standard GW drag is skipped,
+    ! but inwp_gwd=1 is still needed for shared infrastructure
+        & .AND. ((.NOT. lmsgwam(jg)) .OR. lmsgwam_offline) &
+#endif
+        ) THEN
 
         ! get total precipitation rate [kg/m2/s] ==> input for gwdrag_wms
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -282,7 +231,7 @@ CONTAINS
             &                + prm_diag%snow_gsp_rate (jc,jb) &  ! snow_gsp
             &                + prm_diag%rain_con_rate_corr (jc,jb) &  ! rain_con
             &                + prm_diag%snow_con_rate_corr (jc,jb)    ! snow_con
-          
+
           !IF (lozpr .AND. ((ngauss==2) .OR. (ngauss==4)) & ! these two variables would have to be imported from data_gwd
           pgelat(jc) = p_patch%cells%center(jc,jb)%lat
         ENDDO
@@ -290,7 +239,7 @@ CONTAINS
 
 
         CALL gwdrag_wms(                                   &
-           & kidia    = i_startidx                      ,  & 
+           & kidia    = i_startidx                      ,  &
            & kfdia    = i_endidx                        ,  &
            & klon     = nproma                          ,  &
            & klev     = nlev                            ,  & !< in:  actual array size
@@ -335,6 +284,31 @@ CONTAINS
         !$ACC END PARALLEL
 
       ENDIF
+
+      ! SPPT perturbation for SSO and non-orographic GWD
+      IF ( ANY(itype_stoch_phys == (/2,3,4/)) .AND. (lcall_sso_jg .OR. lcall_gwd_jg) ) THEN
+        jj = MERGE(2, 1, itype_stoch_phys == 4)   ! for iSPPT use 2nd SPG field else 1st
+        IF (lcall_sso_jg .AND. atm_phy_nwp_config(jg)%inwp_sso > 0) THEN
+          DO jk = 1, nlev
+            DO jc = i_startidx, i_endidx
+              pertb = prm_diag%spg(jc,jj,jb)
+              pertb = SIGN(1.0_vp, pertb) * MIN(0.5_vp, ABS(pertb))
+              prm_nwp_tend%ddt_u_sso(jc,jk,jb) = (1.0_vp+pertb)*prm_nwp_tend%ddt_u_sso(jc,jk,jb)
+              prm_nwp_tend%ddt_v_sso(jc,jk,jb) = (1.0_vp+pertb)*prm_nwp_tend%ddt_v_sso(jc,jk,jb)
+            END DO
+          END DO
+        END IF
+        IF (lcall_gwd_jg .AND. atm_phy_nwp_config(jg)%inwp_gwd == 1) THEN
+          DO jk = 1, nlev
+            DO jc = i_startidx, i_endidx
+              pertb = prm_diag%spg(jc,jj,jb)
+              pertb = SIGN(1.0_vp, pertb) * MIN(0.5_vp, ABS(pertb))
+              prm_nwp_tend%ddt_u_gwd(jc,jk,jb) = (1.0_vp+pertb)*prm_nwp_tend%ddt_u_gwd(jc,jk,jb)
+              prm_nwp_tend%ddt_v_gwd(jc,jk,jb) = (1.0_vp+pertb)*prm_nwp_tend%ddt_v_gwd(jc,jk,jb)
+            END DO
+          END DO
+        END IF
+      END IF
 
     ENDDO ! jb
 !$OMP END DO NOWAIT

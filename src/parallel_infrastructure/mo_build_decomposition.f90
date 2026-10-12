@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -22,25 +22,26 @@ MODULE mo_build_decomposition
   USE mo_mpi,                  ONLY: my_process_is_mpi_parallel, p_pe_work,   &
     &                                p_comm_work, p_comm_work_test
   USE mo_loopindices,          ONLY: get_indices_e
-  USE mo_model_domain,         ONLY: p_patch, t_pre_patch, t_patch_3d,        &
+  USE mo_pre_model_domain,     ONLY: t_pre_patch
+  USE mo_model_domain,         ONLY: p_patch, t_patch_3d,                     &
     &                                t_patch, p_patch_local_parent
   USE mo_reshuffle,            ONLY: reshuffle
   USE mo_run_config,           ONLY: msg_level
   USE mo_model_domimp_patches, ONLY: reorder_patch_refin_ctrl,                &
     &                                import_pre_patches, complete_patches, set_parent_loc_idx
-  USE mo_parallel_config,      ONLY: p_test_run, l_test_openmp, num_io_procs, division_method
+  USE mo_parallel_config,      ONLY: p_test_run
   USE mo_impl_constants,       ONLY: success, max_dom, min_rlcell_int
   USE mo_exception,            ONLY: finish, message, message_text
   USE mo_communication,        ONLY: blk_no, idx_no, idx_1d
   USE mo_util_string,          ONLY: int2string
 
   IMPLICIT NONE
-  
+
   PUBLIC :: build_decomposition
 
   !> module name string
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_build_decomposition'
-  
+
 CONTAINS
 
   !> Main routine for creating the domain decomposition (together with
@@ -51,7 +52,7 @@ CONTAINS
   !
   SUBROUTINE build_decomposition(num_lev,nshift,&
     &                            is_ocean_decomposition, patch_3d)
-    
+
     INTEGER, INTENT(in)                 :: num_lev(max_dom),                &
       &                                    nshift(max_dom)
     LOGICAL, INTENT(in)                 :: is_ocean_decomposition
@@ -62,13 +63,13 @@ CONTAINS
     INTEGER                        :: error_status, jg, jgp
     !> If .true., read fields related to grid refinement from separate  grid files:
     LOGICAL                        :: lsep_grfinfo
-    
+
     ! Check p_patch allocation status
-    
+
     IF ( ALLOCATED(p_patch)) THEN
       CALL finish(TRIM(routine), 'p_patch already allocated')
     END IF
-    
+
     ! Allocate p_patch array to start p_patch construction.
     !
     ! At the same time, we allocate the "p_patch_local_parent" which
@@ -77,12 +78,12 @@ CONTAINS
       & p_patch_local_parent(n_dom_start+1:n_dom), &
       & stat=error_status)
     IF (error_status/=success) CALL finish(routine, 'allocation of p_patch failed')
-    
+
     ! --------------------------
     ! Work PEs subdivide patches
     ! --------------------------
-                  
-    ! compute domain decomposition on-the-fly        
+
+    ! compute domain decomposition on-the-fly
     ALLOCATE(p_patch_pre(n_dom_start:n_dom))
     CALL import_pre_patches(p_patch_pre,num_lev,nshift,lsep_grfinfo)
     ! use internal domain decomposition algorithm
@@ -98,7 +99,7 @@ CONTAINS
       IF (jgp >= n_dom_start) THEN
         CALL set_child_indices("patch "//TRIM(int2string(jgp))//" -> "//int2string(jg), &
           &                    p_patch(jg), p_patch(jgp), is_local_parent=.FALSE.)
-        
+
         ! set child indices of local parent patch, but don't modify the
         ! "pc_idx" fields of the child patch:
         CALL set_child_indices("loc par patch "//TRIM(int2string(jgp))//" -> "//int2string(jg), &
@@ -152,13 +153,13 @@ CONTAINS
   ! child cells and their parent cells may "live" on different PEs.
   !
   ! We also compute the pc_idx here, i.e. the relative ordering of the
-  ! child cells/edges in the parent cell/edge. 
+  ! child cells/edges in the parent cell/edge.
   !
   !          *--------------o--------------*
   !           \__   4     _/ \_    2    __/
   !              \__    _/  3  \_    __/
   !                 \_ /_________\ _/
-  !                   o           o  
+  !                   o           o
   !                    \__  1  __/
   !                       \_ _/
   !                         *
@@ -244,7 +245,7 @@ CONTAINS
     ! communicate child index between processors:
     CALL reshuffle("send cell child indices to parent", dst_idx(1:iidx), in_data(1:iidx), &
       &            p_p%cells%decomp_info%glb_index, p_p%n_patch_cells_g, communicator, out_data, out_count)
-    DEALLOCATE(in_data, dst_idx, out_count)      
+    DEALLOCATE(in_data, dst_idx, out_count)
 
     ! consistency check
     IF (MAXVAL(out_data) > p_c%n_patch_cells_g) THEN
@@ -295,7 +296,7 @@ CONTAINS
       END IF
     END DO
 
-    DEALLOCATE(in_data, dst_idx)      
+    DEALLOCATE(in_data, dst_idx)
 
     ! --- PARENT PATCH -> CHILD PATCH
     ! --- now, send back the "counting" of the edges to the child patch
@@ -333,7 +334,7 @@ CONTAINS
       &            p_c%cells%decomp_info%glb_index, p_c%n_patch_cells_g, communicator, &
       &            out_data_e3, out_count_e3)
 
-    DEALLOCATE(in_data, dst_idx,out_data_e, out_count_e, out_count_e3)      
+    DEALLOCATE(in_data, dst_idx,out_data_e, out_count_e, out_count_e3)
 
     ! --- CHILD PATCH -> PARENT PATCH
     ! --- determine the global index of the "inner child cell" no. 3
@@ -376,9 +377,9 @@ CONTAINS
       &            p_p%cells%decomp_info%glb_index, p_p%n_patch_cells_g, communicator, &
       &            out_data_c3, out_count)
 
-    DEALLOCATE(in_data, dst_idx,out_data_e3, out_count)      
+    DEALLOCATE(in_data, dst_idx,out_data_e3, out_count)
 
-    ! Now, we order the (global) child indices, s.t. 
+    ! Now, we order the (global) child indices, s.t.
     ! - the child 3 is in correct position, and
     ! - the remaining children are ordered according to their index.
     DO j = 1, p_p%n_patch_cells
@@ -446,7 +447,7 @@ CONTAINS
       p_p%cells%child_blk(jc_c,jb_c,:) = blk_no( out_data(:,j) )
     END DO
 
-    DEALLOCATE(out_pc_data,out_data, in_data, dst_idx, out_count)      
+    DEALLOCATE(out_pc_data,out_data, in_data, dst_idx, out_count)
 
     ! -----------------------------------------------------------------
     ! --- create EDGE indices -----------------------------------------
@@ -485,7 +486,7 @@ CONTAINS
     ! communicate data between processors:
     CALL reshuffle("send child edges 3,4", dst_idx(1:iidx), in_data(1:iidx), p_p%edges%decomp_info%glb_index, &
       &            p_p%n_patch_edges_g, communicator, out_data34, out_count)
-    DEALLOCATE(in_data, dst_idx, out_count)      
+    DEALLOCATE(in_data, dst_idx, out_count)
 
 
     ! --- CHILD PATCH -> PARENT PATCH
@@ -530,9 +531,9 @@ CONTAINS
         jc_c = idx_no(j)
         jb_c = blk_no(j)
         DO i=1,3
-          ! each edge is traversed twice: 
+          ! each edge is traversed twice:
           jc_e = p_p%cells%edge_idx(jc_c,jb_c,i)
-          jb_e = p_p%cells%edge_blk(jc_c,jb_c,i)        
+          jb_e = p_p%cells%edge_blk(jc_c,jb_c,i)
           IF (p_p%edges%decomp_info%decomp_domain(jc_e,jb_e) > 1)  CYCLE
           je = p_p%edges%decomp_info%glb_index(idx_1d(jc_e,jb_e))
 
@@ -560,7 +561,7 @@ CONTAINS
       ! we need to reorder the edge children 3,4 to the end
       ordered(:) = 0
       iidx = 0
-      DO i=1,4 
+      DO i=1,4
         IF (.NOT. ANY(out_data34(:,j) == out_data(i,j))) THEN
           iidx = iidx + 1
           ordered(iidx) = out_data(i,j)
@@ -572,7 +573,7 @@ CONTAINS
       ! Do some reordering which would not be strictly necessary but
       ! which maintains backward compatibility with the "old" grid
       ! generator.
-      ! 
+      !
       ! Note that we cannot resemble the numbering in the nest
       ! boundary region here, where the reordering leads to cell and
       ! edge indices which break, e.g., the rule that four consecutive
@@ -608,7 +609,7 @@ CONTAINS
         !
         ! 3. The edges%child_idx(3) is always set by the *smaller* cell,
         !    and the edges%child_idx(4) by the larger index cell.
-        
+
         ! (do not distinguish between 1/2:)
         !      IF (je_loc(1,j) == 2)  je_loc(1,j) = 1
         IF (je_loc(2,j) == 2)  je_loc(2,j) = 1
@@ -675,7 +676,7 @@ CONTAINS
 
     ! --- as a result, we now have
     !     out_pc_data(1,j) = p_c%edges%pc_idx(j)
-    !       and 
+    !       and
     !     out_data(:,j) = p_p%edges%child_idx(j,:)
     IF (set_pc_idx) THEN
       DO j = 1, p_c%n_patch_edges
@@ -692,7 +693,7 @@ CONTAINS
       p_p%edges%child_blk(jc_e,jb_e,:) = blk_no( out_data(:,j) )
     END DO
 
-    DEALLOCATE(out_data, in_data, dst_idx, out_pc_count)      
+    DEALLOCATE(out_data, in_data, dst_idx, out_pc_count)
 
     ! -----------------------------------------------------------------
     ! --- create CHILD ID's -------------------------------------------
@@ -704,7 +705,7 @@ CONTAINS
     ! To calculate the child_id for each child cell, we loop over
     ! the cells of the child patch and collect the global indices of
     ! their parent cells. Then we send the ID of the child domain to
-    ! these parent cells. 
+    ! these parent cells.
 
     ALLOCATE(dst_idx(p_c%n_patch_cells), in_data(p_c%n_patch_cells))
 
@@ -749,7 +750,7 @@ CONTAINS
     ! To calculate the child_id for each child edge, we loop over the
     ! edges of the child domain and collect the global indices of
     ! their parent edges. Then we send the ID of the child domain to
-    ! these parent edges. 
+    ! these parent edges.
 
     ALLOCATE(dst_idx(p_c%n_patch_edges), in_data(p_c%n_patch_edges))
 
@@ -794,7 +795,7 @@ CONTAINS
     ! -----------------------------------------------------------------
 
     ALLOCATE(dst_idx(p_c%n_patch_cells), in_data(p_c%n_patch_cells))
-  
+
     ! send the children's refin_ctrl to the parent cell:
     iidx = 0
     DO j = 1, p_c%n_patch_cells
@@ -803,22 +804,22 @@ CONTAINS
       IF (p_c%cells%decomp_info%decomp_domain(jc_c,jb_c) /= 0)  CYCLE
       IF (p_c%cells%refin_ctrl(jc_c,jb_c) <= 0)  CYCLE
 
-      refin_c = (p_c%cells%refin_ctrl(jc_c,jb_c)+1)/2 
+      refin_c = (p_c%cells%refin_ctrl(jc_c,jb_c)+1)/2
 
       iidx = iidx + 1
       dst_idx(iidx) = idx_1d(parent_idx_c(jc_c,jb_c), parent_blk_c(jc_c,jb_c))
       in_data(iidx) = refin_c
     END DO
-    
+
     ALLOCATE(out_data(4,p_p%n_patch_cells), out_count(4,p_p%n_patch_cells))
     out_data(:,:)  = 0
     out_count(:,:) = 0
- 
+
     ! communicate between processors:
     CALL reshuffle("send refin_c_ctrl to parent", dst_idx(1:iidx), in_data(1:iidx),    &
       &            p_p%cells%decomp_info%glb_index, p_p%n_patch_cells_g, communicator, &
       &            out_data, out_count)
-  
+
     ! communication finished. now copy the result to the local arrays:
     DO j = 1, p_p%n_patch_cells
       jc_c = idx_no(j)
@@ -856,5 +857,5 @@ CONTAINS
 
   END SUBROUTINE set_child_indices
 
- 
+
 END MODULE mo_build_decomposition

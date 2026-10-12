@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -14,30 +14,30 @@
 ; Leonidas Linardakis (MPI-M 2009-11-05)
 ;
 ;************************************************
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"  
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"  
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 ;************************************************
-  
-;--------------------------------------- 
+
+;---------------------------------------
 ;  change to the graphicsFormat you prefer
  graphicsFormat="ps"
  myColorMap=(/"white","black","tan","LightGoldenrod1", "LightBlue","Blue","Red", "coral3", "cyan", "darkolivegreen1",\
     "darkgreen"/)
-;--------------------------------------- 
+;---------------------------------------
 
-;--------------------------------------- 
+;---------------------------------------
 ; some parameters
  rad2Dgr = 57.295779513082323110286093015487255497
 ;---------------------------------------
 
-;--------------------------------------- 
-; parameters for interpolating along a geodesic 
+;---------------------------------------
+; parameters for interpolating along a geodesic
  maxInterpPoints = 150
  noInterpPoints=2
  minLineDist = 5.0d0 ; line length ~5km near the poles
  interSize = 2.0d0
-;--------------------------------------- 
+;---------------------------------------
 
 ;************************************************
 ; checks if point is inside min-max drawing area
@@ -45,7 +45,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 ;************************************************
 function pointIn(inlon:double,inlat:double,res:logical)
 begin
-  
+
   tlon=inlon
   tlat=inlat
   if (tlon .gt. 180.) then
@@ -53,21 +53,21 @@ begin
   end if
 ;  inPointShift = 2 * abs(res@mpCenterLatF) + 1.0
   inPointShift = 1.0
- 
+
   if (tlon .lt. (res@mpMinLonF - inPointShift)  ) then
      return(False)
   end if
   if (tlon .gt. (res@mpMaxLonF + inPointShift)) then
      return(False)
   end if
-  
+
   if (tlat .lt. (res@mpMinLatF - inPointShift) ) then
      return(False)
   end if
   if (tlat .gt. (res@mpMaxLatF + inPointShift) ) then
      return(False)
   end if
-  
+
   return(True)
 
 end
@@ -77,7 +77,7 @@ end
 ; set min-max for the whole globe
 ;************************************************
 procedure getWholeGlobe(res:logical)
-begin 
+begin
   res@mpMinLatF      = -90.0
   res@mpMaxLatF      = 90.0
   res@mpMinLonF      = -180
@@ -89,12 +89,12 @@ end
 ; set min-max cenetered at Lat=0, res@mpCenterLonF
 ;************************************************
 procedure getCenteredGlobe(res:logical)
-begin 
+begin
   res@mpCenterLatF   = 0.0              ; choose center lat
   res@mpMinLatF      = -90.0
   res@mpMaxLatF      = 90.0
-  res@mpMinLonF      = res@mpCenterLonF - 90.0 
-  res@mpMaxLonF      = res@mpCenterLonF + 90.0 
+  res@mpMinLonF      = res@mpCenterLonF - 90.0
+  res@mpMaxLonF      = res@mpCenterLonF + 90.0
 end
 ;************************************************
 
@@ -102,7 +102,7 @@ end
 ; set min-max cenetered at Lat=0, res@mpCenterLonF
 ;************************************************
 procedure getNorthPole(res:logical)
-begin 
+begin
   res@mpCenterLonF   = 0.0              ; choose center lat
   res@mpCenterLatF   = 90.0              ; choose center lat
   res@mpMinLatF      = 0.0
@@ -113,12 +113,12 @@ end
 ;************************************************
 
 ;************************************************
-; the main drawing routine 
+; the main drawing routine
 ;************************************************
 function iconDrawGrid(fileName:string, wks:graphic, plot:graphic, edgecolor:string,edgethick:float,res:logical)
 ;************************************************
 
-begin 
+begin
 
 ; read in grid netCDF file
   a = addfile(fileName,"r")
@@ -129,12 +129,12 @@ begin
   edgeVert2 = a->edge_vertices(1,:)-1
   vertLon = a->vlon * rad2Dgr
   vertLat = a->vlat * rad2Dgr
-    
+
   edgeDim = dimsizes(edgeVert1)
   noOfEdges = edgeDim(0)
   vertDim = dimsizes(vertLon)
   noOfVertices = vertDim(0)
- 
+
 ;************************************************
 ; create plot
   resp                  = True                      ; polyline mods desired
@@ -144,15 +144,15 @@ begin
 
   drawVertLon = new((/2/),"double")
   drawVertLat = new((/2/),"double")
-  
-  print("Writing "+noOfEdges(0)+" edges...") 
+
+  print("Writing "+noOfEdges(0)+" edges...")
   do i = 0 , noOfEdges-1
-        
+
     drawVertLon(0) = vertLon(edgeVert1(i))
     drawVertLon(1) = vertLon(edgeVert2(i))
     drawVertLat(0) = vertLat(edgeVert1(i))
-    drawVertLat(1) = vertLat(edgeVert2(i))      
-    
+    drawVertLat(1) = vertLat(edgeVert2(i))
+
 ;    vert1in = pointIn(drawVertLon(0),drawVertLat(0),res)
 ;    vert2in = pointIn(drawVertLon(1),drawVertLat(1),res)
 ;    if (vert1in .or. vert2in) then
@@ -160,23 +160,23 @@ begin
       plot@$pdum$ = gsn_add_polyline(wks,plot,drawVertLon,drawVertLat,resp)
 ;    end if
   end do
-        
- 
+
+
 ;************************************************
-;  clean-up  
+;  clean-up
    delete(drawVertLon)
    delete(drawVertLat)
    delete(resp)
 ;************************************************
-  
-  
+
+
     return(noOfEdges)
 end
 ; iconDrawGrid ends here
 ;************************************************
- 
 
- 
+
+
 ;************************************************
 ; main program
 ; sets the projection and plot parameters,
@@ -192,7 +192,7 @@ begin
 ;  res@mpProjection = "LambertEqualArea"
 ;  res@mpProjection = "Stereographic"
 ;  res@gsnCenterString = res@mpProjection+" Projection"
- 
+
   res@mpLimitMode    = "LatLon"          ; use lat/lon coordinates to limit area
   res@mpGreatCircleLinesOn = True
 
@@ -201,12 +201,12 @@ begin
   res@gsnDraw        = False             ; don't draw the plots
   res@gsnFrame       = False             ; don't advance the frame
   res@mpPerimOn      = False             ; no box around map
-   
+
    res@mpDataBaseVersion    = "MediumRes"   ; Medium resolution database
- 
+
    res@mpFillOn              =  True           ; turn on map fill
 ;  res@mpOutlineDrawOrder    = "PostDraw"       ; draw continental outline last
-;  res@mpAreaMaskingOn        = True                 ; draw only parts of map 
+;  res@mpAreaMaskingOn        = True                 ; draw only parts of map
 ;   res@mpOutlineDrawOrder          = "PostDraw"
 ;   res@mpFillDrawOrder             = "PreDraw"
 ;   res@mpFillAreaSpecifiers   = (/"Water","Land"/)   ; what parts to fill
@@ -218,7 +218,7 @@ begin
   res@mpLandFillColor        = "LightGoldenrod1"
   res@mpOceanFillColor       = "LightBlue"
   res@mpInlandWaterFillColor = "LightBlue"
-      
+
 ;************************************************
   cntLon = 0.0
   cntLat = 0.0
@@ -251,14 +251,14 @@ begin
   end if
   end if
 
-; plot earth  
-  plot = gsn_csm_map(wks,res) 
- 
+; plot earth
+  plot = gsn_csm_map(wks,res)
+
 ; plot grid
   if( .not. isvar("gridFolder")) then
      gridFolder=""
   end if
-  
+
   if( isvar("grid1")) then
     edges=iconDrawGrid(gridFolder+grid1,wks,plot,"blue",1.0,res)
   end if
@@ -271,15 +271,15 @@ begin
   if( isvar("grid4")) then
     edges=iconDrawGrid(gridFolder+grid4,wks,plot,"coral3",0.8,res)
   end if
-  
+
   draw(plot)
   frame(wks)
   delete(plot)
   delete(wks)
- 
+
   wallClockElapseTime(wcStrt, "create ocean plot", 0)
   print(plotName(0)+"."+graphicsFormat(0)+" is created.")
-  
+
   if (graphicsFormat .eq. "png" ) then
     system("eog "+plotName+"."+graphicsFormat +" &")
   end if
@@ -289,7 +289,7 @@ begin
   if (graphicsFormat .eq. "ps" ) then
     system("kghostview "+plotName+"."+graphicsFormat +" &")
   end if
-        
- 
+
+
 end
 ;************************************************

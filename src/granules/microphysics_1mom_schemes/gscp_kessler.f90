@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Description of *gscp_kessler*:
 !   This module procedure calculates the rates of change of temperature, cloud
 !   water, water vapor and rain due to cloud microphysical processes related
@@ -16,17 +26,6 @@
 !    (September 2005): "A Description of the Nonhydrostatic Regional Model LM",
 !
 !------------------------------------------------------------------------------
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE gscp_kessler
 
@@ -40,8 +39,7 @@ MODULE gscp_kessler
 ! Microphysical constants and variables
 !------------------------------------------------------------------------------
 
-USE, INTRINSIC :: iso_fortran_env, ONLY: wp => real64, &
-                                         i4 => int32
+USE mo_kind, ONLY: wp, i4
 USE mo_physical_constants, ONLY: r_v   => rv    , & !> gas constant for water vapour
                                  o_m_rdv        , & !! 1 - r_d/r_v
                                  rdv            , & !! r_d / r_v
@@ -55,14 +53,14 @@ USE mo_lookup_tables_constants, ONLY: &
                                  b1    => c1es  , & !! constants for computing the sat. vapour
                                  b2w   => c3les , & !! pressure over water (l) and ice (i)
                                  b4w   => c4les     !!               -- " --
-USE mo_satad,              ONLY: sat_pres_water     !! saturation vapor pressure w.r.t. water
+USE mo_thdyn_functions,    ONLY: sat_pres_water     !! saturation vapor pressure w.r.t. water
 USE mo_exception,          ONLY: message, message_text
 
 !------------------------------------------------------------------------------
 
 USE gscp_data, ONLY: &          ! all variables are used here
 
-    zconst,   zbev,    zvz0r,                 &
+    zconst,   zvz0r=>zvz0r0,                  & ! Alberto, I have removed zbev because it is also a PARAMETER
     x7o8,                                     &
     zkcac,   zkphi1,    zkphi2,    zkphi3,    &
     x1o8,      x3o16,   iautocon
@@ -83,7 +81,7 @@ PUBLIC :: kessler
 CONTAINS
 
 !==============================================================================
-!> Module procedure "kessler" in "gscp_kessler" for computing effects of 
+!> Module procedure "kessler" in "gscp_kessler" for computing effects of
 !!  grid scale precipitation including cloud water, cloud ice, rain and snow
 !------------------------------------------------------------------------------
 
@@ -173,7 +171,7 @@ SUBROUTINE kessler  (             &
 
   !! Local parameters: None, parameters are in module header, gscp_data or data_constants
   !! ----------------
-  
+
   REAL    (KIND=wp), PARAMETER ::  &
     ! basic constants of the parameterization scheme
     zaau   = 1.0_wp/1000.0_wp,            & ! coef. for autoconversion
@@ -184,7 +182,7 @@ SUBROUTINE kessler  (             &
 
   !> Local scalars:
   !! -------------
-  
+
   INTEGER (KIND=i4) :: &
     iv, k             !> loop indices
 
@@ -199,7 +197,7 @@ SUBROUTINE kessler  (             &
     izdebug             !! debug level
 
   REAL (KIND=wp)   ::  &
-    ztx   ,            & ! 
+    ztx   ,            & !
     zpx   ,            & !
     fsa3  ,            & !
     zspw  ,            & ! equilibrium vapour pressure over water
@@ -230,7 +228,7 @@ SUBROUTINE kessler  (             &
     zpv          ,     & !
     zdtdh, zphi  ,     & !
     zqrk, lnzqrk ,     & !
-    zdtr, ztau   ,     & ! 
+    zdtr, ztau   ,     & !
     zimr, zzar   ,     & !
     qvg          ,     & !  specific water vapor content: local grid cell value
     qcg          ,     & !  specfic cloud water content:  - "" -
@@ -443,7 +441,7 @@ loop_over_levels: DO k = 1, ke
           zphi  = (ztau/(ztau+zkphi3))**4
           zswrk = zkcac * qcg * qrg * zphi !* zrho1o2(i)          ! S_ac
         ELSE
-          zswra = 0.0_wp  ! S_au                    
+          zswra = 0.0_wp  ! S_au
           zswrk = 0.0_wp  ! S_ac
         ENDIF
       ENDIF
@@ -550,7 +548,7 @@ ENDDO loop_over_levels
      END DO
     END DO
   ENDIF
- 
+
   IF ( lldiag_qtend ) THEN
     DO k=k_start,ke
       DO iv=iv_start,iv_end

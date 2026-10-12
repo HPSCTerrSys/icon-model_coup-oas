@@ -7,7 +7,7 @@ DWD Setup for BuildBot
 
 This directory contains DWD NWP test experiments.
 These experiment work fully on the DWD rcl machine.
-However, their input data has also been transferred to PizDaint and Levante but the experiments have not been tested there in detail.
+However, their input data has also been transferred to Levante but the experiments have not been tested there in detail.
 
 
 How to use

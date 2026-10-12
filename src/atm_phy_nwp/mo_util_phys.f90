@@ -1,18 +1,15 @@
-!
-! Implementation of physics utility routines.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Implementation of physics utility routines.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -26,20 +23,20 @@ MODULE mo_util_phys
     &                                 rdv,             & !! r_d / r_v
     &                                 cpd, p0ref, rd,  &
     &                                 vtmpc1, t3, grav,&
-    &                                 alv,alvdcp, rd_o_cpd
+    &                                 alvdcp, rd_o_cpd
   USE mo_exception,             ONLY: finish
-  USE mo_satad,                 ONLY: sat_pres_water, sat_pres_ice
+  USE mo_thdyn_functions,       ONLY: sat_pres_water, sat_pres_ice
   USE mo_fortran_tools,         ONLY: assign_if_present, set_acc_host_or_device, assert_acc_host_only
   USE mo_impl_constants,        ONLY: min_rlcell_int
   USE mo_model_domain,          ONLY: t_patch
   USE mo_nonhydro_types,        ONLY: t_nh_prog, t_nh_diag, t_nh_metrics
   USE mo_nwp_phy_types,         ONLY: t_nwp_phy_diag, t_nwp_phy_tend
   USE mo_run_config,            ONLY: iqv, iqc, iqi, iqr, iqs, iqni, ininact, &
-       &                              iqm_max, nqtendphy, lart, iqnc, iqnr, iqns, &
-       &                              iqb_i, iqb_e
+       &                              iqm_max, nqtendphy, lart, iqnc, iqnr, iqns, iqb_last, iqbin
+
 #ifndef __NO_ICON_LES__
-  USE mo_ls_forcing_nml,        ONLY: is_ls_forcing, is_nudging_tq, &
-       &                              nudge_start_height, nudge_full_height, dt_relax
+  USE mo_ls_forcing_nml,        ONLY: is_ls_forcing
+  USE mo_ls_forcing,            ONLY: apply_ls_forc_nudge_qv
 #endif
   USE mo_loopindices,           ONLY: get_indices_c
   USE mo_atm_phy_nwp_config,    ONLY: atm_phy_nwp_config
@@ -65,7 +62,7 @@ MODULE mo_util_phys
   PUBLIC :: tracer_add_phytend
   PUBLIC :: calc_ustar
   PUBLIC :: inversion_height_index
-  
+
   !> module name
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_util_phys'
 
@@ -120,7 +117,7 @@ CONTAINS
   !-------------------------------------------------------------------------
   !!
   !! Calculate friction velocity ustar = SQRT(tcm)*ff1.
-  !! Taken from the original implementation by H. Frank from function 
+  !! Taken from the original implementation by H. Frank from function
   !! nwp_dyn_gust to be also usable for other purposes.
   !!
   ELEMENTAL FUNCTION calc_ustar(tcm, u1, v1) RESULT (ustar)
@@ -144,7 +141,7 @@ CONTAINS
   !! the 850 hPa and 950 hPa wind speeds, which represents the low-level wind shear.
   !!
   !! Literature
-  !! Bechthold, P. and J. Bidlot (2009): Parameterization of convective gusts. 
+  !! Bechthold, P. and J. Bidlot (2009): Parameterization of convective gusts.
   !! ECMWF Newsletter No. 119
   !!
   ELEMENTAL FUNCTION nwp_con_gust( u_850, u_950, v_850, v_950) RESULT(vgust_con)
@@ -238,7 +235,7 @@ CONTAINS
       ELSE
         nlen = p_patch%npromz_c
       ENDIF
-      
+
       z_qsum(:,:) = 0._wp
       IF (num_qcpvars > 0) THEN
         DO jt = 1, num_qcpvars
@@ -279,7 +276,7 @@ CONTAINS
 
     swdir_s = (1._wp + albedo/(1._wp - albedo)) * sobs - swdifd_s
 
-  END FUNCTION swdir_s 
+  END FUNCTION swdir_s
 
 
   !> POINTWISE computation of relative humidity as r=100. * e/e_sat,
@@ -309,10 +306,10 @@ CONTAINS
   END FUNCTION rel_hum
 
 
-  !> POINTWISE computation of relative humidity as r=100. * e/e_sat, 
+  !> POINTWISE computation of relative humidity as r=100. * e/e_sat,
   !! according to IFS documentation
-  !! I.e. For the temperature range 250.16<=T<=273.16, the saturation 
-  !! vapour pressure is computed as a combination of the values over 
+  !! I.e. For the temperature range 250.16<=T<=273.16, the saturation
+  !! vapour pressure is computed as a combination of the values over
   !! water e_s_water and over ice e_s_ice.
   !!
   !! (domain independent and elemental)
@@ -449,13 +446,13 @@ CONTAINS
     INTEGER, INTENT(in), OPTIONAL     :: opt_slev, opt_elev
     ! start and end values of refin_ctrl flag:
     INTEGER, INTENT(in), OPTIONAL     :: opt_rlstart, opt_rlend
-   
+
     ! local variables
     REAL(wp) :: temp, qv, p_ex
     INTEGER  :: slev, elev, rl_start, rl_end, i_nchdom,     &
       &         i_startblk, i_endblk, i_startidx, i_endidx, &
       &         jc, jk, jb
-    LOGICAL  :: lclip       ! clip rel. hum. to values <=100% 
+    LOGICAL  :: lclip       ! clip rel. hum. to values <=100%
 
 #ifdef _OPENACC
     CALL finish ('mo_util_phys:compute_field_rel_hum_ifs', 'OpenACC version currently not implemented')
@@ -483,12 +480,12 @@ CONTAINS
     i_startblk = ptr_patch%cells%start_blk(rl_start,1)
     i_endblk   = ptr_patch%cells%end_blk(rl_end,i_nchdom)
 
-!$OMP PARALLEL    
+!$OMP PARALLEL
 !$OMP DO PRIVATE(jb,i_startidx,i_endidx,jk,jc,temp,qv,p_ex), ICON_OMP_RUNTIME_SCHEDULE
     DO jb = i_startblk, i_endblk
       CALL get_indices_c(ptr_patch, jb, i_startblk, i_endblk, &
         i_startidx, i_endidx, rl_start, rl_end)
-      
+
 #ifdef __LOOP_EXCHANGE
       DO jc = i_startidx, i_endidx
         DO jk = slev, elev
@@ -521,7 +518,7 @@ CONTAINS
 
   !> computation of water vapour pressure
   !!
-  !! water vapour pressure is computed as a function of specific humidity 
+  !! water vapour pressure is computed as a function of specific humidity
   !! qv and atmospheric pressure pres.
   !!
   ELEMENTAL FUNCTION vap_pres(qv,pres)
@@ -541,18 +538,18 @@ CONTAINS
   !
   ! Add slow-physics tendencies to tracer fields
   !
-  ! Add slow-physics tendencies to tracer fields. Currently, 
-  ! convection is the only slow-physics routine which provides tracer 
+  ! Add slow-physics tendencies to tracer fields. Currently,
+  ! convection is the only slow-physics routine which provides tracer
   ! tendencies.
   ! In addition, this routine
-  ! - makes sure that tendencies from advection and/or convection 
-  !   do not result in negative mass fractions. If negative values in qx  
-  !   occur, these are clipped. The moisture which is spuriously created by this 
+  ! - makes sure that tendencies from advection and/or convection
+  !   do not result in negative mass fractions. If negative values in qx
+  !   occur, these are clipped. The moisture which is spuriously created by this
   !   clipping is substracted from qv.
-  ! - Diagnoses amount of convective rain and snow (rain_con, snow_con), 
+  ! - Diagnoses amount of convective rain and snow (rain_con, snow_con),
   !   as well as the total convective precipitation (prec_con).
   ! - applies large-scale-forcing tendencies, if ICON is run in single-column-mode.
-  ! 
+  !
   SUBROUTINE tracer_add_phytend( p_rho_now, prm_nwp_tend, pdtime, prm_diag, &
     &                            pt_prog_rcf, p_metrics, dt_loc, jg, jb, i_startidx, i_endidx, kend, lacc)
 
@@ -567,7 +564,7 @@ CONTAINS
     INTEGER             ,INTENT(IN)   :: jg              !< domain ID
     INTEGER             ,INTENT(IN)   :: jb              !< block index
     INTEGER             ,INTENT(IN)   :: i_startidx, i_endidx
-    INTEGER             ,INTENT(IN)   :: kend            !< vertical end index                             
+    INTEGER             ,INTENT(IN)   :: kend            !< vertical end index
     LOGICAL, OPTIONAL   ,INTENT(IN)   :: lacc            ! If true, use openacc
 
     ! Local variables
@@ -603,6 +600,12 @@ CONTAINS
     ELSE
       conv_list = (/iqv,iqc,iqi,-1,-1/)
     ENDIF
+
+    ! pos_qv holds the index of iqv in conv_list (defined above).
+    ! ATTENTION: Remember to change the value of pos_qv if the ordering of
+    !            conv_list's elements is changed.
+    pos_qv = 1
+
     !$ACC DATA COPYIN(conv_list) IF(lzacc)
 
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -611,15 +614,14 @@ CONTAINS
     !$ACC END KERNELS
 
     ! add tendency due to convection
-    !$ACC PARALLEL PRIVATE(pos_qv) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     !$ACC LOOP SEQ
     DO jt=1,SIZE(conv_list)
       idx = conv_list(jt)
       IF (idx <= 0) CYCLE
 
-      !$ACC LOOP SEQ
+      !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
       DO jk = kstart_moist(jg), kend
-        !$ACC LOOP GANG(STATIC: 1) VECTOR
         DO jc = i_startidx, i_endidx
           zrhox(jc,jk,jt) = p_rho_now(jc,jk)*pt_prog_rcf%tracer(jc,jk,jb,idx)  &
             &             + pdtime*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,idx)
@@ -633,22 +635,20 @@ CONTAINS
       ENDDO
       !
       ! Re-diagnose tracer mass fraction from partial mass
-      IF (idx == iqv) THEN
-        pos_qv = jt   ! store local qv-position for later use
-        CYCLE         ! special treatment see below
-      ENDIF
+      IF (idx == iqv) CYCLE         ! special treatment see below
       !
-      !$ACC LOOP SEQ
+      !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
       DO jk = kstart_moist(jg), kend
-        !$ACC LOOP GANG(STATIC: 1) VECTOR
         DO jc = i_startidx, i_endidx
           pt_prog_rcf%tracer(jc,jk,jb,idx) = zrhox(jc,jk,jt)/p_rho_now(jc,jk)
         ENDDO
       ENDDO
     ENDDO ! jt
+    !$ACC END PARALLEL
     !
     ! Special treatment for qv.
     ! Rediagnose tracer mass fraction and substract mass created by artificial clipping.
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     !$ACC LOOP SEQ
     DO jk = kstart_moist(jg), kend
       !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(zrhoqv)
@@ -660,10 +660,8 @@ CONTAINS
         pt_prog_rcf%tracer(jc,jk,jb,iqv) = MAX(0._wp, zrhoqv/p_rho_now(jc,jk))
       ENDDO
     ENDDO
-    !$ACC END PARALLEL
 
-    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    !$ACC LOOP GANG VECTOR
+    !$ACC LOOP GANG(STATIC: 1) VECTOR
     DO jc = i_startidx, i_endidx
       ! First remove clipped mass from rain, then from snow.
       prm_diag%rain_con_rate_corr(jc,jb) = MAX(0._wp, prm_diag%rain_con_rate(jc,jb) + zwtr_clip_rate(jc))
@@ -686,37 +684,37 @@ CONTAINS
       DO jt=1,SIZE(conv_list)
         idx = conv_list(jt)
         IF (idx <= 0 .OR. idx == iqv) CYCLE
-     
+
         IF ( idx == iqc ) THEN
           !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
           DO jk = kstart_moist(jg), kend
-            DO jc = i_startidx, i_endidx              
+            DO jc = i_startidx, i_endidx
               pt_prog_rcf%tracer(jc,jk,jb,iqnc) =  pt_prog_rcf%tracer(jc,jk,jb,iqnc)    &
-                 + set_qnc( pdtime *  prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqc) )/p_rho_now(jc,jk)   
+                 + set_qnc( pdtime *  prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqc) )/p_rho_now(jc,jk)
             END DO
           END DO
         ELSEIF ( idx == iqi ) THEN
           !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
           DO jk = kstart_moist(jg), kend
-            DO jc = i_startidx, i_endidx              
+            DO jc = i_startidx, i_endidx
               pt_prog_rcf%tracer(jc,jk,jb,iqni) =  pt_prog_rcf%tracer(jc,jk,jb,iqni)    &
-                 + set_qni( pdtime *  prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi) )/p_rho_now(jc,jk)   
+                 + set_qni( pdtime *  prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi) )/p_rho_now(jc,jk)
             END DO
           END DO
         ELSEIF ( idx == iqr ) THEN
           !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
           DO jk = kstart_moist(jg), kend
-            DO jc = i_startidx, i_endidx              
+            DO jc = i_startidx, i_endidx
               pt_prog_rcf%tracer(jc,jk,jb,iqnr) =  pt_prog_rcf%tracer(jc,jk,jb,iqnr)    &
-                 + set_qnr( pdtime *  prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqr) )/p_rho_now(jc,jk)   
+                 + set_qnr( pdtime *  prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqr) )/p_rho_now(jc,jk)
             END DO
           END DO
         ELSEIF ( idx == iqs ) THEN
           !$ACC LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2)
           DO jk = kstart_moist(jg), kend
-            DO jc = i_startidx, i_endidx              
+            DO jc = i_startidx, i_endidx
               pt_prog_rcf%tracer(jc,jk,jb,iqns) =  pt_prog_rcf%tracer(jc,jk,jb,iqns)    &
-                 + set_qns( pdtime *  prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqs) )/p_rho_now(jc,jk)   
+                 + set_qns( pdtime *  prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqs) )/p_rho_now(jc,jk)
             END DO
           END DO
         END IF
@@ -760,7 +758,7 @@ CONTAINS
     !
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     !$ACC LOOP GANG VECTOR COLLAPSE(3)
-    DO jt=iq_start, iqm_max  ! qr,qs,etc. 
+    DO jt=iq_start, iqm_max  ! qr,qs,etc.
       DO jk = kstart_moist(jg), kend
         DO jc = i_startidx, i_endidx
           pt_prog_rcf%tracer(jc,jk,jb,jt) = MAX(0._wp, pt_prog_rcf%tracer(jc,jk,jb,jt))
@@ -768,28 +766,28 @@ CONTAINS
       ENDDO
     ENDDO
     !$ACC END PARALLEL
-    
+
     ! clipping for number concentrations
-    IF(atm_phy_nwp_config(jg)%l2moment)THEN
+    IF(atm_phy_nwp_config(jg)%l2moment .OR. atm_phy_nwp_config(jg)%inwp_gscp == 3)THEN
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP GANG VECTOR COLLAPSE(3)
       DO jt=iqni, ininact  ! qni,qnr,qns,qng,qnh,qnc and ninact (but not yet ninpot)
         DO jk = kstart_moist(jg), kend
           DO jc = i_startidx, i_endidx
             pt_prog_rcf%tracer(jc,jk,jb,jt) = MAX(0._wp, pt_prog_rcf%tracer(jc,jk,jb,jt))
-          ENDDO          
+          ENDDO
         ENDDO
       ENDDO
       !$ACC END PARALLEL
     END IF
 
-    ! clipping for mass-bins
-    IF(atm_phy_nwp_config(jg)%lsbm)THEN
-      CALL assert_acc_host_only("tracer_add_phytend lsbm", lacc)
-      DO jt = iqb_i, iqb_e
+    ! clipping for mass-bins of SBM microphysics
+    IF(atm_phy_nwp_config(jg)%inwp_gscp == 8)THEN
+      CALL assert_acc_host_only("tracer_add_phytend SBM", lacc)
+      DO jt = 1, iqb_last
         DO jk = kstart_moist(jg), kend
           DO jc = i_startidx, i_endidx
-            pt_prog_rcf%tracer(jc,jk,jb,jt) = MAX(0._wp, pt_prog_rcf%tracer(jc,jk,jb,jt))
+            pt_prog_rcf%tracer(jc,jk,jb,iqbin(jt)) = MAX(0._wp, pt_prog_rcf%tracer(jc,jk,jb,iqbin(jt)))
           ENDDO
         ENDDO
       ENDDO
@@ -821,38 +819,20 @@ CONTAINS
 #ifndef __NO_ICON_LES__
     ! Add LS forcing to moisture variable including nudging
     IF(is_ls_forcing)THEN
-      CALL assert_acc_host_only("tracer_add_phytend is_ls_forcing", lacc)
-      DO jt=1, nqtendphy  ! qv,qc,qi
-        DO jk = kstart_moist(jg), kend
-!DIR$ IVDEP
-          DO jc = i_startidx, i_endidx
+      CALL apply_ls_forc_nudge_qv(                                & !IN
+        & i_startidx           = i_startidx                     , & !IN
+        & i_endidx             = i_endidx                       , & !IN
+        & dt_loc               = dt_loc                         , & !IN
+        & nqtendphy            = nqtendphy                      , & !IN
+        & pdtime               = pdtime                         , & !IN
+        & kstart_moist         = kstart_moist(jg)               , & !IN
+        & kend                 = kend                           , & !IN
+        & geopot_agl           = p_metrics%geopot_agl(:,:,jb)   , & !IN
+        & ddt_tracer_ls        = prm_nwp_tend%ddt_tracer_ls(:,:), & !IN
+        & q_nudge              = prm_nwp_tend%q_nudge(:,:)      , & !IN
+        & tracer               = pt_prog_rcf%tracer(:,:,jb,:)   , & !INOUT
+        & lacc                 = lacc )                             !IN, optional
 
-            ! add q nudging (T, U, V nudging is in mo_nh_interface_nwp)
-            IF ( is_nudging_tq ) THEN
-
-              ! linear nudging profile between "start" and "full" heights - prevent sfc layer instability
-              IF ( nudge_full_height == nudge_start_height ) THEN
-                nudgecoeff = 1.0_wp
-              ELSE
-                nudgecoeff = ( p_metrics%geopot_agl(jc,jk,jb)/grav - nudge_start_height ) / &
-                           & ( nudge_full_height                   - nudge_start_height )
-                nudgecoeff = MAX( MIN( nudgecoeff, 1.0_wp ), 0.0_wp )
-              END IF
-              ! analytic implicit: (q,n+1 - q,n) / dt = (q,nudge - q,n) / dt_relax * exp(-dt/dt_relax)
-              z_ddt_q_nudge =                                                          &
-                &  - ( pt_prog_rcf%tracer(jc,jk,jb,jt) - prm_nwp_tend%q_nudge(jk,jt) ) &
-                &  / dt_relax * exp(-dt_loc/dt_relax) * nudgecoeff
-            ELSE
-              z_ddt_q_nudge = 0.0_wp
-            END IF
-
-            pt_prog_rcf%tracer(jc,jk,jb,jt) = MAX(0._wp, pt_prog_rcf%tracer(jc,jk,jb,jt)   &
-              &                                 + pdtime*prm_nwp_tend%ddt_tracer_ls(jk,jt) &
-              &                                 + pdtime*z_ddt_q_nudge)
-
-          ENDDO
-        ENDDO
-      END DO
     ENDIF  ! is_ls_forcing
 #endif
 
@@ -863,77 +843,92 @@ CONTAINS
   END SUBROUTINE tracer_add_phytend
 
   !>
-  !! Find the lowest inversion and provide its inversion height and lowest point of the entrainment zone 
+  !! Find the lowest inversion and provide its inversion height and lowest point of the entrainment zone
   !! It follows Van Wevweberg et al. Month Weath. Rev. 2021
   !!
   !! The inversion height is identified as the maximum gradient of liquid potential temperature
-  
-  SUBROUTINE inversion_height_index(z,zsurf,qc,te,prs,i_startidx,i_endidx,jktop,jkbot,nlev, &
-                      &             i_inversion,i_ent_zone,lfound_inversion)
+
+  SUBROUTINE inversion_height_index(z,zsurf,qc,te,exner,i_startidx,i_endidx,jktop,jkbot,nlev, &
+                      &             k_inversion,k_ent_zone,lacc)
     REAL(wp),      INTENT(IN)  ::  z(:,:)     ! Height above sea level
     REAL(wp),      INTENT(IN)  ::  zsurf(:)   ! Surface height above sea level
     REAL(wp),      INTENT(IN)  ::  qc(:,:)  ! Liquid water
     REAL(wp),      INTENT(IN)  ::  te(:,:)  ! Temperature
-    REAL(wp),      INTENT(IN)  ::  prs(:,:) ! Pressure
+    REAL(wp),      INTENT(IN)  ::  exner(:,:) ! Exner pressure
     INTEGER,       INTENT(IN)  ::  i_startidx,i_endidx,jktop,jkbot,nlev ! loop indices
 
-    INTEGER,       INTENT(OUT) ::  i_inversion(nproma) ! Inversion index
-    INTEGER,       INTENT(OUT) ::  i_ent_zone(nproma)  ! Lowest inversion index
-    LOGICAL,       INTENT(OUT) ::  lfound_inversion(nproma) ! Inversion found (true/false) 
+    INTEGER,       INTENT(OUT) ::  k_inversion(nproma) ! Inversion index (main level below the inversion,
+                                                       ! or interface level index of the inversion)
+    INTEGER,       INTENT(OUT) ::  k_ent_zone(nproma)  ! Lowest inversion index
+    LOGICAL, OPTIONAL ,INTENT(IN) :: lacc           ! If true, use openacc
 
     REAL (wp),      PARAMETER  ::   p0 = 1.e5_wp    ! reference pressure for calculation of potential temperature
-    REAL (wp),     PARAMETER   ::  zmin_inv =  400.0_wp  ! Lowest possible inversion (in m Above Surface)
+    REAL (wp),     PARAMETER   ::  zmin_inv =  100.0_wp  ! Lowest possible inversion (in m Above Surface)
     REAL (wp),     PARAMETER   ::  zmax_inv = 3000.0_wp  ! Highest possible inversion(in m Above Surface)
 
     ! Local variables
     REAL(wp) ::   theta_l(nproma,nlev)    ! Liquid potential temperature
     REAL(WP) ::   dthetadz(nproma,3)      ! Gradiente of liquid potential temperature
-    LOGICAL  ::   lbelow_zmax(nproma)     ! Height below zmax_inv       
+    LOGICAL  ::   lbelow_zmax(nproma)     ! Height below zmax_inv
 
-    REAL    ::     lapse_lim              ! Stratification limit to be considered as a inversion    
+    LOGICAL  ::   lfound_inversion(nproma) ! Inversion found (true/false)
+
+    REAL    ::     lapse_lim              ! Stratification limit to be considered as a inversion
     INTEGER ::     jc,jk
+    LOGICAL :: lzacc ! non-optional version of lacc
 
 
-    ! Limit to be in the entrainment zone (Van Wevweberg et al. Month Weath. Rev. 2021)
-    lapse_lim = grav/cpd*0.1_wp            
+    CALL set_acc_host_or_device(lzacc, lacc)
 
-    ! Start arrays  
-    theta_l(:,:)   = 0.0_wp
-    i_ent_zone(:)  = jkbot-3
-    i_inversion(:) = jkbot-3
-    lfound_inversion(:) = .false.
-    lbelow_zmax(:)      = .true.
-        
+    ! Limit to be in the entrainment zone (Van Weverberg et al. Month Weath. Rev. 2021)
+    lapse_lim = grav/cpd*2._wp ! minimum lapse rate in inversion layer
+
+    ! Start arrays
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc) &
+    !$ACC   CREATE(theta_l, dthetadz, lbelow_zmax, lfound_inversion)
+
+    !$ACC LOOP GANG(STATIC: 1) VECTOR
+    DO jc = i_startidx, i_endidx
+      k_ent_zone(jc)  = jkbot
+      k_inversion(jc) = jkbot ! this indicates that no inversion was found
+      lfound_inversion(jc) = .false.
+      lbelow_zmax(jc) = .true.
+    ENDDO
+
     ! Calculate the liquid potential temperature (constant latent heat approximation)
+    !$ACC LOOP SEQ
     DO jk = jktop,jkbot
-      DO jc = i_startidx, i_endidx            
-        theta_l(jc,jk) = (te(jc,jk) - alvdcp *qc(jc,jk))*(prs(jc,jk)/p0)**rd_o_cpd
+      !$ACC LOOP GANG(STATIC: 1) VECTOR
+      DO jc = i_startidx, i_endidx
+        theta_l(jc,jk) = (te(jc,jk) - alvdcp*qc(jc,jk))/exner(jc,jk)
       END DO
     END DO
 
-
-! Lowest two levels
+    ! Lowest two levels
+    !$ACC LOOP GANG(STATIC: 1) VECTOR
     DO jc = i_startidx, i_endidx
-      dthetadz(jc,1) = (theta_l(jc,jkbot-2) - theta_l(jc,jkbot  ) ) / (z(jc,jkbot-2) - z(jc,jkbot  )) 
-      dthetadz(jc,2) = (theta_l(jc,jkbot-3) - theta_l(jc,jkbot-1) ) / (z(jc,jkbot-3) - z(jc,jkbot-1)) 
+      dthetadz(jc,1) = (theta_l(jc,jkbot-2) - theta_l(jc,jkbot-1) ) / (z(jc,jkbot-2) - z(jc,jkbot-1))
+      dthetadz(jc,2) = (theta_l(jc,jkbot-3) - theta_l(jc,jkbot-2) ) / (z(jc,jkbot-3) - z(jc,jkbot-2))
     END DO
 
-! Loop from bottom to top
+    ! Loop from bottom to top
+    !$ACC LOOP SEQ
     DO jk = jkbot-3, jktop+1 ,-1
+      !$ACC LOOP GANG(STATIC: 1) VECTOR
       DO jc = i_startidx, i_endidx
         ! Calculate when the inversion has not been found and below max z level
-        IF ( lbelow_zmax(jc) .AND. .NOT. lfound_inversion(jc) ) THEN 
-          dthetadz(jc,3) = (theta_l(jc,jk-1) - theta_l(jc,jk+1) ) / (z(jc,jk-1) - z(jc,jk+1))
+        IF ( lbelow_zmax(jc) .AND. .NOT. lfound_inversion(jc) ) THEN
+          dthetadz(jc,3) = (theta_l(jc,jk-1) - theta_l(jc,jk) ) / (z(jc,jk-1) - z(jc,jk))
           ! Criteria for entrainment zone
           IF ( dthetadz(jc,2) > lapse_lim .AND. z(jc,jk+1) > (zmin_inv + zsurf(jc)) ) THEN
             ! Maximum: criteria for inversion height
             IF ( dthetadz(jc,2) > dthetadz(jc,3) .AND. dthetadz(jc,2) > dthetadz(jc,1) ) THEN
               lfound_inversion(jc) = .true.
-              i_inversion(jc) = MAX(MIN(jk + 1,jkbot),1)
+              k_inversion(jc) = MAX(MIN(jk + 1,jkbot),1)
             END IF
           ELSE
             ! We are not in the entrainment zone, we shift the limit upwards
-            i_ent_zone(jc) = MAX(MIN(jk,jkbot),1)
+            k_ent_zone(jc) = MAX(MIN(jk,jkbot),1)
           END IF
           ! Shift the array
           dthetadz(jc,1) = dthetadz(jc,2)
@@ -944,8 +939,9 @@ CONTAINS
         END IF
       END DO
     END DO
+    !$ACC END PARALLEL
 
 
   END SUBROUTINE inversion_height_index
-  
+
 END MODULE mo_util_phys

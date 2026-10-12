@@ -1,37 +1,37 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
 MODULE mo_bgc_constants
 
 !- Description:
 !
 !  This module contains constants and parameters
-!  
+!
 
   USE mo_kind, ONLY: wp
 
- 
+
   IMPLICIT NONE
 
   PUBLIC
-   
 
-   REAL(wp), PARAMETER :: PI = 3.141592654_wp 
+
+   REAL(wp), PARAMETER :: PI = 3.141592654_wp
    REAL(wp), PARAMETER :: tmelt = 273.15_wp        ! melting temperature of ice/snow
    !$ACC DECLARE COPYIN(tmelt)
-   
+
    ! Conversion factors
    REAL(wp), PARAMETER:: kilo = 1.e3_wp
    REAL(wp), PARAMETER:: s2year = 3.1536e7_wp ! seconds to years
-   REAL(wp), PARAMETER:: c2gtc = 12._wp*1.e-12_wp ! kmolC to GtC 
+   REAL(wp), PARAMETER:: c2gtc = 12._wp*1.e-12_wp ! kmolC to GtC
    REAL(wp), PARAMETER:: n2tgn = 14._wp*1e-9_wp ! kmolN to TgN
   !>  GRAVITATIONAL ACCELERATION (CONSTANT 9.81 M/S**2)
    REAL(wp), PARAMETER :: g = 9.81_wp
@@ -108,7 +108,7 @@ MODULE mo_bgc_constants
      c22 = 3.16967_wp,c23 = 0.0178_wp,c24 =-0.0001122_wp
 
  !       coefficients for pressure correction of
- !      aks, akf, ak1p, ak2p, ak3p, ksi, k1, k2, kb, kw, aksp 
+ !      aks, akf, ak1p, ak2p, ak3p, ksi, k1, k2, kb, kw, aksp
   REAL(wp), PARAMETER,DIMENSION(11):: pa0= (/ -18.03_wp, -9.78_wp,  -14.51_wp, -23.12_wp, -26.57_wp, &
 &          -29.48_wp, -25.5_wp, -15.82_wp, -29.48_wp, -20.02_wp, -45.96_wp/)
   REAL(wp), PARAMETER,DIMENSION(11):: pa1= (/ 0.0466_wp, -0.0090_wp, 0.1211_wp, 0.1758_wp, 0.2020_wp, &
@@ -124,27 +124,27 @@ MODULE mo_bgc_constants
  !        Millero p.671 (1995) using data from Yao and Millero (1995)
   REAL(wp), PARAMETER:: cksi1 =-8904.2_wp,  cksi2 = 117.385_wp, &
      cksi3  = -19.334_wp , cksi4  =   -458.79_wp,  cksi5  =    3.5913_wp,&
-     cksi6  =    188.74_wp, cksi7  =  - 1.5998_wp, cksi8  =  -12.1652_wp,& 
+     cksi6  =    188.74_wp, cksi7  =  - 1.5998_wp, cksi8  =  -12.1652_wp,&
      cksi9  =   0.07871_wp,cksi10 =  0.001005_wp
  !     coeff. for hydrogen sulfate dissociation
  !     Dickson (1990, J. chem. Thermodynamics 22, 113)
- REAL(wp),PARAMETER:: cks1  =   -4276.1_wp, cks2  =   141.328_wp,& 
+ REAL(wp),PARAMETER:: cks1  =   -4276.1_wp, cks2  =   141.328_wp,&
    cks3  =  - 23.093_wp, cks4  =   -13856._wp,  cks5  =    324.57_wp, &
    cks6  =  - 47.986_wp, cks7  =    35474._wp,  cks8  =  - 771.54_wp,&
    cks9  =   114.723_wp, cks10 =   - 2698._wp,  cks11 =     1776._wp,&
-   cks12 = -0.001005_wp  
+   cks12 = -0.001005_wp
   !      coeff. for hydrogen fluoride dissociation
-  !      Dickson and Riley (1979) 
+  !      Dickson and Riley (1979)
   REAL(wp), PARAMETER:: ckf1 = 874._wp, ckf2 = -9.68_wp,  ckf3 = 0.111_wp
   !      coeff. for phosphoric acid dissociation
   !      ak1p
   REAL(wp), PARAMETER:: ck1p1 = -4576.752_wp, ck1p2 =   115.525_wp, &
-      ck1p3 =  - 18.453_wp, ck1p4 =  -106.736_wp, ck1p5 =   0.69171_wp ,& 
-      ck1p6 =  -0.65643_wp,   ck1p7 =  -0.01844_wp 
+      ck1p3 =  - 18.453_wp, ck1p4 =  -106.736_wp, ck1p5 =   0.69171_wp ,&
+      ck1p6 =  -0.65643_wp,   ck1p7 =  -0.01844_wp
   !      ak2p
   REAL(wp), PARAMETER:: ck2p1 = -8814.715_wp , ck2p2 =  172.0883_wp, &
-   ck2p3 =  - 27.927_wp, ck2p4 =  -160.340_wp,  ck2p5 =    1.3566_wp, & 
-   ck2p6 =   0.37335_wp,  ck2p7 = - 0.05778_wp 
+   ck2p3 =  - 27.927_wp, ck2p4 =  -160.340_wp,  ck2p5 =    1.3566_wp, &
+   ck2p6 =   0.37335_wp,  ck2p7 = - 0.05778_wp
   !      ak3p
   REAL(wp), PARAMETER:: ck3p1 =  -3070.75_wp, ck3p2 =  - 18.141_wp, &
    ck3p3 =  17.27039_wp, ck3p4 =   2.81197_wp, ck3p5 = -44.99486_wp, &
@@ -178,7 +178,7 @@ MODULE mo_bgc_constants
        an3 = -21.7120_wp, an4 = -0.049781_wp, an5 = 0.025018_wp, an6 = -0.0034861_wp
   !      Constants for laughing gas solubility
   !      (WEISS, 1974, MARINE CHEMISTRY)
-  REAL, PARAMETER:: a1 = -165.8806_wp, a2 =  222.8743_wp, a3 = 92.0792_wp,&
+  REAL(wp), PARAMETER:: a1 = -165.8806_wp, a2 =  222.8743_wp, a3 = 92.0792_wp,&
       a4 = -1.48425_wp,  b1 = -0.056235_wp,  b2 = 0.031619_wp, b3 = -0.0048472_wp
 
   REAL(wp), PARAMETER :: atn2o = 3.e-7_wp
@@ -199,4 +199,4 @@ MODULE mo_bgc_constants
   &     oxyc0=-4.88682E-7_wp
 
 
-END MODULE 
+END MODULE

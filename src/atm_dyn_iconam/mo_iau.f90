@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Routines and functions for the Incremental Analysis Update (IAU)
 !
 ! This module contains routines and functions for the Incremental Analysis
@@ -46,17 +56,6 @@
 ! Polavarapu, S., Ren, S., Clayton, A. M., Sankey, D., & Rochon, Y. (2004).
 ! On the Relationship between Incremental Analysis Updating and
 ! Incremental Digital Filtering, Monthly Weather Review, 132(10), 2495-2502
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_iau
 
@@ -75,7 +74,7 @@ MODULE mo_iau
   USE mo_initicon_config,         ONLY: type_iau_wgt, is_iau_active, iau_wgt_dyn, iau_wgt_adv, &
     &                                   qcana_mode, qiana_mode, qrsgana_mode
   USE mo_run_config,              ONLY: iqv, iqc, iqi, iqr, iqs, iqg, iqh, &
-    &                                   iqm_max, iqni, iqnc, iqnr, iqns, iqng, iqnh, iqbin, iqb_i, iqb_e, &
+    &                                   iqm_max, iqni, iqnc, iqnr, iqns, iqng, iqnh, iqbin, iqb_last, &
     &                                   ldass_lhn
   USE mo_dynamics_config,         ONLY: nnow, nnew, nnow_rcf, nnew_rcf
   USE mo_advection_config,        ONLY: advection_config
@@ -83,7 +82,7 @@ MODULE mo_iau
   USE mo_fortran_tools,           ONLY: assert_acc_device_only, assert_acc_host_only
   USE mo_hash_table,              ONLY: t_HashTable, hashTable_make
   USE mo_util_texthash,           ONLY: text_hash, text_isEqual
-  USE mo_satad,                   ONLY: qsat_rho
+  USE mo_thdyn_functions,         ONLY: qsat_rho
   USE mo_nh_diagnose_pres_temp,   ONLY: diag_pres, diag_temp
   USE mo_timer,                   ONLY: ltimer, timer_iau_save_restore, timer_start, timer_stop
 
@@ -463,7 +462,7 @@ CONTAINS
   !
   ! Initial revision by Daniel Reinert, DWD (2018-05-18)
   ! Previously, this code snippet was part of nh_update_tracer_phy
-  ! 
+  !
   SUBROUTINE iau_update_tracer( pt_prog, p_metrics, pt_diag, pt_prog_rcf, &
     &                     jg, jb, i_startidx, i_endidx, kend, lacc )
 
@@ -492,13 +491,11 @@ CONTAINS
     !
     ! Diagnose pressure and temperature for subsequent calculations
     CALL diag_temp (pt_prog, pt_prog_rcf, advection_config(jg)%trHydroMass%list, pt_diag, &
-                    jb, i_startidx, i_endidx, 1, kstart_moist(jg), kend)
-    CALL diag_pres (pt_prog, pt_diag, p_metrics, jb, i_startidx, i_endidx, 1, kend)
-
-    !$ACC DATA CREATE(zrhw) PRESENT(pt_prog, p_metrics, pt_diag, pt_prog_rcf, atm_phy_nwp_config)
+                    jb, i_startidx, i_endidx, 1, kstart_moist(jg), kend, lacc=lacc)
+    CALL diag_pres (pt_prog, pt_diag, p_metrics, jb, i_startidx, i_endidx, 1, kend, lacc=lacc)
 
     ! Compute relative humidity w.r.t. water
-    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) CREATE(zrhw)
     !$ACC LOOP SEQ
     DO jk = 1, kend
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -520,7 +517,7 @@ CONTAINS
               iau_wgt_adv*pt_diag%rhov_incr(jc,jk,jb)/pt_prog%rho(jc,jk,jb)
             pt_prog_rcf%tracer(jc,jk,jb,iqc) = MAX(0._wp,pt_prog_rcf%tracer(jc,jk,jb,iqc) + &
               iau_wgt_adv*pt_diag%rhoc_incr(jc,jk,jb)/pt_prog%rho(jc,jk,jb))
-          ELSE 
+          ELSE
             zqin = (pt_diag%rhov_incr(jc,jk,jb)+pt_diag%rhoc_incr(jc,jk,jb))/pt_prog%rho(jc,jk,jb)
             ! DA increments of humidity are limited to positive values if p > 150 hPa and RH < 2% or QV < 5.e-7
             IF (pt_diag%pres(jc,jk,jb) > 15000._wp .AND. zrhw(jc,jk) < 0.02_wp .OR. &
@@ -591,10 +588,10 @@ CONTAINS
         ENDDO
       ENDIF
 
-      IF (atm_phy_nwp_config(jg)%lsbm) THEN
+      IF (atm_phy_nwp_config(jg)%inwp_gscp == 8) THEN
         IF (qrsgana_mode > 0) THEN
           !$ACC LOOP SEQ
-          DO iqb = iqb_i, iqb_e
+          DO iqb = 1, iqb_last
             !$ACC LOOP GANG(STATIC: 1) VECTOR
             DO jc = i_startidx, i_endidx
               pt_prog_rcf%tracer(jc,jk,jb,iqbin(iqb)) = MAX(0._wp,pt_prog_rcf%tracer(jc,jk,jb,iqbin(iqb)) + &
@@ -607,8 +604,6 @@ CONTAINS
     ENDDO
     !$ACC END PARALLEL
 
-    !$ACC WAIT
-    !$ACC END DATA
 
   END SUBROUTINE iau_update_tracer
 

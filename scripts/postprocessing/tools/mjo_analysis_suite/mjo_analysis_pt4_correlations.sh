@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #########################################################
 # Part 4 in MJO-Analysis Suite
@@ -16,14 +17,14 @@
 #     "mjo_analysis_clivar_correlations.ncl"
 #     and provides required information on
 #     dimensions etc.
-#   * Logical Switches allow to compute/plot 
+#   * Logical Switches allow to compute/plot
 #     just parts of the procedure
 #   * NCL Script
 #     - Computes and plots Lag-Correlation
 #     - Computes and plots Cross-Spectra
 #     - Computes and plots Multivariate EOFs
-#     - Computes and plots MJO Life Cycle 
-#  
+#     - Computes and plots MJO Life Cycle
+#
 #-------------------------------------------------------
 # DWD, FE 13, Julia Keller, 02/2016
 ########################################################
@@ -64,5 +65,3 @@ ncl 'precname="TOT_PREC"' \
     'unieofs="'${univareofplot}'"'     \
     'multieofs="'${multivareofplot}'"'     \
     mjo_analysis_clivar_correlations.ncl
-
-

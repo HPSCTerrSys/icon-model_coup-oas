@@ -1,10 +1,7 @@
-!
-!**** *CUCALCLFD*  ROUTINE FOR LFD COMPUTATION
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,11 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+!**** *CUCALCLFD*  ROUTINE FOR LFD COMPUTATION
+
 MODULE mo_cucalclfd
-  
+
   USE mo_kind   ,ONLY: JPRB=>wp     , &
     &                  jpim=>i4
-  
+
   USE mo_cuparameters , ONLY :                                   &
     & rg, rd, rcpd
   USE mo_cufunctions, ONLY: foealfa, foeldcpm
@@ -69,16 +68,16 @@ IMPLICIT NONE
 INTEGER(KIND=jpim),INTENT(in)  :: klon
 INTEGER(KIND=jpim),INTENT(in)  :: klev
 INTEGER(KIND=jpim),INTENT(in)  :: ktype(klon)
-REAL(KIND=jprb)   ,INTENT(in)  :: ztu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)  :: zlu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)  :: zmflxs(klon,klev+1) 
-REAL(KIND=jprb)   ,INTENT(in)  :: zten(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)  :: pap(klon,klev) 
+REAL(KIND=jprb)   ,INTENT(in)  :: ztu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)  :: zlu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)  :: zmflxs(klon,klev+1)
+REAL(KIND=jprb)   ,INTENT(in)  :: zten(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)  :: pap(klon,klev)
 REAL(KIND=jprb)   ,INTENT(in)  :: zdgeoh(klon,klev)
-REAL(KIND=jprb)   ,INTENT(in)  :: zgeoh(klon,klev+1) 
-REAL(KIND=jprb)   ,INTENT(in)  :: zcape(klon) 
+REAL(KIND=jprb)   ,INTENT(in)  :: zgeoh(klon,klev+1)
+REAL(KIND=jprb)   ,INTENT(in)  :: zcape(klon)
 INTEGER(KIND=jpim),INTENT(in)  :: kcbot(klon)
-LOGICAL           ,INTENT(in)  :: ldland(klon) 
+LOGICAL           ,INTENT(in)  :: ldland(klon)
 LOGICAL           ,INTENT(in)  :: lacc
 REAL(KIND=jprb)   ,INTENT(out) :: lfd(klon)
 
@@ -93,7 +92,7 @@ REAL(KIND=jprb)   :: zqr(klon)
 ! in Lopez 2016)
 REAL(KIND=jprb), PARAMETER :: beta(2)= [0.7_jprb , 0.45_jprb ]
 ! Causes currently internal compiler error for Cray, ifdef should be removed when fixed
-#ifndef _CRAYFTN 
+#ifndef _CRAYFTN
   !$ACC DECLARE COPYIN(beta)
 #endif
 ! some constants from Lopez 2016
@@ -143,7 +142,7 @@ INTEGER(KIND=jpim) :: jk, jl
         IF (ztu(JL,JK) <=273.15_jprb .AND. ztu(JL,JK) >=273.15_jprb-25._jprb) THEN
         ! compute graupel and snow mixing ratio from the massflux
         ! of frozen precip - splitting it into snow and graupel with beta.
-        ! See Eq. 1 and 2 in Lopez (2016) 
+        ! See Eq. 1 and 2 in Lopez (2016)
         ! "A lightning parameterization for the ECMWF integrated forecasting system"
           zqGraup=beta(kland(JL))*zmflxs(JL, JK)/zrho(JL,JK)/Vgraup
           zqSnow=(1_jprb-beta(kland(JL)))*zmflxs(JL,JK)/zrho(JL,JK)/Vsnow
@@ -161,7 +160,7 @@ INTEGER(KIND=jpim) :: jk, jl
       ! Cloud base height is zgeoh(JL, kcbot(JL))/rg
     IF (ktype(JL) == 1_jpim .AND. kcbot(JL) > 0_jpim) THEN
         lfd(JL)=alpha*zQR(JL)*SQRT(MAX(zCAPE(JL),0._jprb))*             &
- &       MIN(zgeoh(JL, kcbot(JL))/rg/1000._jprb, 1.8_jprb)**2  
+ &       MIN(zgeoh(JL, kcbot(JL))/rg/1000._jprb, 1.8_jprb)**2
     ENDIF
   ENDDO
 
@@ -171,6 +170,5 @@ INTEGER(KIND=jpim) :: jk, jl
   !$ACC END DATA
 
 END SUBROUTINE cucalclfd
- 
-END MODULE mo_cucalclfd
 
+END MODULE mo_cucalclfd

@@ -1,19 +1,19 @@
-! This module contains routines for the vertical interpolation of
-! surface/soil fields provided by external analyses to the ICON grid
-!
-! Soil moisture is read from IFS2ICON as soil moisture index and then
-! converted back to soil moisture mass [m] using TERRA soil types.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains routines for the vertical interpolation of
+! surface/soil fields provided by external analyses to the ICON grid
+!
+! Soil moisture is read from IFS2ICON as soil moisture index and then
+! converted back to soil moisture mass [m] using TERRA soil types.
 
 #include "consistent_fma.inc"
 MODULE mo_nwp_sfc_interp
@@ -26,7 +26,8 @@ MODULE mo_nwp_sfc_interp
   USE mo_lnd_nwp_config,      ONLY: nlev_soil, ibot_w_so, zml_soil, dzsoil_icon => dzsoil
   USE mo_run_config,          ONLY: msg_level
   USE mo_physical_constants,  ONLY: grav, dtdz_standardatm
-  USE sfc_terra_data,         ONLY: cporv, cadp, cfcap, cpwp
+  USE sfc_terra_data,         ONLY: cporv, cadp, cfcap, cpwp, IST_CLAY, IST_CLOAM, IST_ICE, &
+    & IST_LOAM, IST_NUM, IST_PEAT, IST_ROCK, IST_SAND, IST_SLOAM
   USE mo_exception,           ONLY: finish, message_text, message
   USE mo_idx_list,            ONLY: t_idx_list_blocked
 
@@ -47,9 +48,9 @@ CONTAINS
   !>
   !! SUBROUTINE process_sfcfields
   !! Routine to convert surface fields interpolated horizontally by IFS2ICON
-  !! to the ICON prognostic variables. Important ingredients are 
+  !! to the ICON prognostic variables. Important ingredients are
   !! - height adjustment of temperatures (partly done)
-  !! - vertical interpolation of soil temperature and moisture 
+  !! - vertical interpolation of soil temperature and moisture
   !! - conversion of soil moisture information
   !! - height adjustment of snow cover information (not yet done)
   !!
@@ -82,7 +83,7 @@ CONTAINS
     nlev = p_patch%nlev
 
     nlev_in     = initicon%atm_in%nlev
-    nlevsoil_in = initicon%sfc_in%nlevsoil 
+    nlevsoil_in = initicon%sfc_in%nlevsoil
 
     IF (nlev_in == 0) THEN
       CALL finish(routine, "Number of input levels <nlev_in> not yet initialized.")
@@ -145,10 +146,10 @@ CONTAINS
           (initicon%atm%temp(jc,nlev,jb) - initicon%atm_in%temp(jc,nlev_in,jb))
 
         ! Height adjustment for snow variables is not yet implemented
-        initicon%sfc%tsnow(jc,jb)    = initicon%sfc_in%tsnow(jc,jb) 
-        initicon%sfc%snowweq(jc,jb)  = initicon%sfc_in%snowweq(jc,jb) 
-        initicon%sfc%snowdens(jc,jb) = initicon%sfc_in%snowdens(jc,jb) 
-        initicon%sfc%snowalb(jc,jb)  = initicon%sfc_in%snowalb(jc,jb) 
+        initicon%sfc%tsnow(jc,jb)    = initicon%sfc_in%tsnow(jc,jb)
+        initicon%sfc%snowweq(jc,jb)  = initicon%sfc_in%snowweq(jc,jb)
+        initicon%sfc%snowdens(jc,jb) = initicon%sfc_in%snowdens(jc,jb)
+        initicon%sfc%snowalb(jc,jb)  = initicon%sfc_in%snowalb(jc,jb)
       ENDDO
 
       ! Height adjustment of soil temperatures
@@ -274,7 +275,7 @@ CONTAINS
       ! Conversion of soil moisture index SMI into TERRA soil moisture [m]
       !   soil moisture index = (soil moisture - wilting point) / (field capacity - wilting point)
       !   safety: min=air dryness point, max=pore volume
-      ! conversion is only done for hydrological active layers. Remaining layers are filled 
+      ! conversion is only done for hydrological active layers. Remaining layers are filled
       ! based on a zero gradient assumption.
       DO jk = 1, ibot_w_so
 
@@ -287,7 +288,7 @@ CONTAINS
           ist = soiltyp(jc,jb)
 
           ! Catch problematic coast cases: ICON-land but Ocean for source dataset
-          ! 
+          !
           ! can we do better than this??
           IF ( wsoil(jc,jk,jb) <= -999._wp )  THEN   ! check for missing value
             ! set dummy value: 0.5*(fcap+pwp)
@@ -416,26 +417,29 @@ CONTAINS
   END SUBROUTINE wsoil_to_smi
 
 
-  SUBROUTINE wsoil2smi(wsoil, dzsoil, soiltyp, smi, ierr)
+  SUBROUTINE wsoil2smi(wsoil, dzsoil, cpwp, cfcap, soiltyp, smi, ierr)
     !$ACC ROUTINE SEQ
     !
     REAL(wp), INTENT(IN) :: wsoil    !< soil moisture mass [m H2O]
     REAL(wp), INTENT(IN) :: dzsoil   !< soil layer thickness [m]
     INTEGER , INTENT(IN) :: soiltyp  !< soiltype
+    REAL(wp), INTENT(IN) :: cpwp(IST_NUM) !< Plant wilting point
+    REAL(wp), INTENT(IN) :: cfcap(IST_NUM) !< Field capacity
     REAL(wp), INTENT(OUT):: smi      !< soil moisture index
     INTEGER , INTENT(OUT):: ierr     !< error code
 
     ierr = 0
+    smi = 0._wp
 
     SELECT CASE(soiltyp)
-      CASE (1,2)  !ice,rock
+      CASE (IST_ICE,IST_ROCK)
       ! set wsoil to 0 for ice and rock
       smi = 0._wp
 
-      CASE(3,4,5,6,7,8)  !sand,sandyloam,loam,clayloam,clay,peat
+      CASE(IST_SAND,IST_SLOAM,IST_LOAM,IST_CLOAM,IST_CLAY,IST_PEAT)
       smi = (wsoil/dzsoil - cpwp(soiltyp))/(cfcap(soiltyp) - cpwp(soiltyp))
 
-      CASE(9,10)!sea water, sea ice
+      CASE DEFAULT
       ! ERROR landpoint has soiltype sea water or sea ice
       ierr = -1
 

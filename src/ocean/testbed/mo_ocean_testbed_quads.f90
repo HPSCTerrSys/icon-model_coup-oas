@@ -1,15 +1,15 @@
-! @brief tests the mo_read_interface methods
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief tests the mo_read_interface methods
 
 MODULE mo_ocean_testbed_quads
 
@@ -30,7 +30,6 @@ MODULE mo_ocean_testbed_quads
   USE mo_grid_config,         ONLY: dynamics_grid_filename
 !   USE mo_test_netcdf_read,    ONLY: netcdf_write_oncells_3D_time
   USE mo_read_interface
-  USE mo_read_netcdf_distributed, ONLY: setup_distrib_read, delete_distrib_read
   USE mo_communication,       ONLY: idx_no, blk_no, makeScatterPattern
   USE mo_util_file,           ONLY: util_unlink
 
@@ -55,8 +54,8 @@ CONTAINS
     REAL(wp), POINTER :: T(:,:,:,:), T_check(:,:,:,:)   ! is (nproma, levels, blocks, time )
     INTEGER :: levels, lnwl_size, return_status
     INTEGER(c_int) :: return_status_c
-    REAL(wp), POINTER :: cell_data_broadcast(:,:), cell_data_distribute(:,:) ! is (nproma, blocks )
-    REAL(wp), POINTER :: vertex_data_broadcast(:,:), vertex_data_distribute(:,:) ! is (nproma, blocks )
+    REAL(wp), ALLOCATABLE :: cell_data_broadcast(:,:), cell_data_distribute(:,:) ! is (nproma, blocks )
+    REAL(wp), ALLOCATABLE :: vertex_data_broadcast(:,:), vertex_data_distribute(:,:) ! is (nproma, blocks )
     REAL(wp), POINTER :: edge_data_broadcast(:,:), edge_data_distribute(:,:) ! is (nproma, blocks )
     TYPE(t_patch),POINTER            :: patch_2d
     CHARACTER(filename_max) :: OutputFileName   !< file name for reading in
@@ -73,9 +72,9 @@ CONTAINS
       &                read_netcdf_broadcast_method)
 
     CALL read_2D(stream_id=stream_id, location=on_cells, &
-      &          variable_name="cell_area", return_pointer=cell_data_broadcast)
+      &          variable_name="cell_area", alloc_array=cell_data_broadcast)
     CALL read_2D(stream_id=stream_id, location=on_vertices, &
-      &          variable_name="dual_area", return_pointer=vertex_data_broadcast)
+      &          variable_name="dual_area", alloc_array=vertex_data_broadcast)
 
     CALL closeFile(stream_id)
 
@@ -83,9 +82,9 @@ CONTAINS
       &                read_netcdf_distribute_method)
 
     CALL read_2D(stream_id=stream_id, location=on_cells, &
-      &          variable_name="cell_area", return_pointer=cell_data_distribute)
+      &          variable_name="cell_area", alloc_array=cell_data_distribute)
     CALL read_2D(stream_id=stream_id, location=on_vertices, &
-      &          variable_name="dual_area", return_pointer=vertex_data_distribute)
+      &          variable_name="dual_area", alloc_array=vertex_data_distribute)
 
     CALL closeFile(stream_id)
 
@@ -96,11 +95,10 @@ CONTAINS
 
     !---------------------------------------------------------------------
 
-    RETURN 
+    RETURN
     !---------------------------------------------------------------------
 
   END SUBROUTINE ocean_test_quads
   !-------------------------------------------------------------------------
 
 END MODULE mo_ocean_testbed_quads
-

@@ -1,17 +1,16 @@
-! This module provides all routines for dividing patches
-! (including interpolation state) and setting up communication.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides all routines for dividing patches
+! (including interpolation state) and setting up communication.
 
 MODULE mo_complete_subdivision
   !-------------------------------------------------------------------------
@@ -54,14 +53,14 @@ MODULE mo_complete_subdivision
   USE mo_grid_config,         ONLY: n_dom, n_dom_start, n_phys_dom
   USE mo_dist_dir,            ONLY: dist_dir_get_owners
   USE ppm_distributed_array, ONLY: global_array_desc, dist_mult_array, &
-#ifdef HAVE_SLOW_PASSIVE_TARGET_ONESIDED
-       sync_mode_active_target, &
-#else
-       sync_mode_passive_target, &
-#endif
        dist_mult_array_new, dist_mult_array_delete, &
        dist_mult_array_get, dist_mult_array_local_ptr, &
        dist_mult_array_expose
+#ifdef HAVE_SLOW_PASSIVE_TARGET_ONESIDED
+  USE ppm_distributed_array, ONLY: sync_mode_active_target
+#else
+  USE ppm_distributed_array, ONLY: sync_mode_passive_target
+#endif
   USE mo_kind, ONLY: wp
   USE mo_sync, ONLY: sync_c, sync_patch_array
   IMPLICIT NONE
@@ -749,7 +748,7 @@ CONTAINS
          patch%comm_pat_work2test(grid_cell)%p)
     ALLOCATE(test_data(nproma, 1, patch%nblks_c))
     test_data = 1.0_wp
-    CALL sync_patch_array(sync_c, patch, test_data)
+    CALL sync_patch_array(sync_c, patch, test_data, lacc=.FALSE.)
     CALL create_work2test_pattern(patch%n_patch_verts_g, &
          patch%verts%decomp_info, is_mpi_test, p_comm_work_2_test, &
          patch%comm_pat_work2test(grid_vertex)%p)
@@ -830,7 +829,7 @@ CONTAINS
       ! stored on this rank
       n_l = SIZE(decomp_info%owner_local)
       DEALLOCATE(rowned) ; ALLOCATE(rowner(n_l), rowned(n_l))
-      
+
       DO jl = 1, n_l
         IF (decomp_info%owner_local(jl) == p_pe_work) THEN
           coord(1) = decomp_info%glb_index(jl)
@@ -1124,4 +1123,3 @@ CONTAINS
 
   !-----------------------------------------------------------------------------
 END MODULE mo_complete_subdivision
-

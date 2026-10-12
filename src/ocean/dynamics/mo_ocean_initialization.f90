@@ -1,15 +1,7 @@
-!  Contains the data structures for the hydrostatic ocean model.
-!
-!  Contains the data structures to store the hydrostatic & boussinesq ocean model state.
-!  Implementation is based on ICON-Shallow-Water model
-!  to store the shallow water model state and other auxiliary variables.
-!  Constructors and destructors for these data structures are also defined here.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -17,15 +9,22 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the data structures for the hydrostatic ocean model.
+!
+! Contains the data structures to store the hydrostatic & boussinesq ocean model state.
+! Implementation is based on ICON-Shallow-Water model
+! to store the shallow water model state and other auxiliary variables.
+! Constructors and destructors for these data structures are also defined here.
+
 !----------------------------
 #include "omp_definitions.inc"
 !----------------------------
 MODULE mo_ocean_initialization
   !-------------------------------------------------------------------------
   USE mo_kind,                ONLY: wp
-  USE mo_mpi,                 ONLY: my_process_is_mpi_test, p_pe
+  USE mo_mpi,                 ONLY: p_pe
   USE mo_parallel_config,     ONLY: nproma
-  USE mo_master_config,       ONLY: isRestart
+  USE mo_master_config,       ONLY: isRestart, isInitFromRestart
   USE mo_impl_constants,      ONLY: land, land_boundary, boundary, sea_boundary, sea,  &
     & success, max_char_length, min_dolic,               &
     & full_coriolis, beta_plane_coriolis,                &
@@ -44,7 +43,7 @@ MODULE mo_ocean_initialization
   USE mo_math_types,          ONLY: t_cartesian_coordinates, t_geographical_coordinates
   USE mo_math_utilities,      ONLY: gc2cc, arc_length, set_zlev
   USE mo_math_constants,      ONLY: deg2rad,rad2deg
-  USE mo_sync,                ONLY: sync_e, sync_c, sync_v,sync_patch_array, global_sum_array, sync_idx, &
+  USE mo_sync,                ONLY: sync_e, sync_c, sync_v,sync_patch_array, global_sum_array, &
     & enable_sync_checks, disable_sync_checks
   USE mo_cf_convention
 !  USE mo_grib2
@@ -62,8 +61,6 @@ MODULE mo_ocean_initialization
   USE mo_util_dbg_prnt,       ONLY: dbg_print, debug_print_MaxMinMean
 
   USE mo_ocean_check_tools, ONLY: ocean_check_level_sea_land_mask, check_ocean_subsets
-
-  USE mo_mpi,                ONLY: my_process_is_stdio, get_my_mpi_work_id
 
   IMPLICIT NONE
   PRIVATE
@@ -445,7 +442,7 @@ CONTAINS
 
           ! we need to sync the halos here
           z_sync_c(:,:) =  REAL(lsm_c(:,:),wp)
-          CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+          CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
           lsm_c(:,:) = INT(z_sync_c(:,:))
 
         END DO   ! jiter
@@ -453,7 +450,7 @@ CONTAINS
         CALL enable_sync_checks()
 
         z_sync_c(:,:) = REAL(lsm_c(:,:),wp)
-        CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+        CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
         lsm_c(:,:) = INT(z_sync_c(:,:))
 
         ! get back into 3D the slm
@@ -522,7 +519,7 @@ CONTAINS
 
       ! now synchronize lsm_c
       z_sync_c(:,:) =  REAL(v_base%lsm_c(:,jk,:),wp)
-      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
       v_base%lsm_c(:,jk,:) = INT(z_sync_c(:,:))
 
       !  percentage of land area per level and global value
@@ -621,7 +618,7 @@ CONTAINS
 
       ! synchronize lsm on edges
       z_sync_e(:,:) =  REAL(v_base%lsm_e(:,jk,:),wp)
-      CALL sync_patch_array(sync_e, patch_2d, z_sync_e(:,:))
+      CALL sync_patch_array(sync_e, patch_2d, z_sync_e(:,:), lacc=.FALSE.)
       v_base%lsm_e(:,jk,:) = INT(z_sync_e(:,:))
 
       !  percentage of land area per level and global value
@@ -705,7 +702,7 @@ CONTAINS
 
       ! synchronize lsm on cells
       z_sync_c(:,:) =  REAL(v_base%lsm_c(:,jk,:),wp)
-      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
       v_base%lsm_c(:,jk,:) = INT(z_sync_c(:,:))
 
     END DO zlevel_loop
@@ -718,11 +715,11 @@ CONTAINS
     !---------------------------------------------------------------------------------------------
     ! synchronize dolic_c
     z_sync_c(:,:) =  REAL(v_base%dolic_c(:,:),wp)
-    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
     v_base%dolic_c(:,:) = INT(z_sync_c(:,:))
     ! synchronize dolic_e
     z_sync_e(:,:) =  REAL(v_base%dolic_e(:,:),wp)
-    CALL sync_patch_array(sync_e, patch_2d, z_sync_e(:,:))
+    CALL sync_patch_array(sync_e, patch_2d, z_sync_e(:,:), lacc=.FALSE.)
     v_base%dolic_e(:,:) = INT(z_sync_e(:,:))
 
     !---------------------------------------------------------------------------------------------
@@ -1005,7 +1002,7 @@ CONTAINS
     END DO
     !chekc if iarea is the same
     z_sync_c(:,:) =  REAL(iarea(:,:),wp)
-    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
     iarea(:,:) = INT(z_sync_c(:,:))
 
     !-----------------------------
@@ -1068,7 +1065,7 @@ CONTAINS
       ! do sync
 
       z_sync_c(:,:) =  REAL(iarea(:,:),wp)
-      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
       iarea(:,:) = INT(z_sync_c(:,:))
 
     END DO
@@ -1079,7 +1076,7 @@ CONTAINS
 
 !    !chekc if iarea is the same
 !    z_sync_c(:,:) =  REAL(iarea(:,:),wp)
-!    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+!    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
 !    iarea(:,:) = INT(z_sync_c(:,:))
     !-----------------------------
 
@@ -1131,7 +1128,7 @@ CONTAINS
       ! do sync
 
       z_sync_c(:,:) =  REAL(iarea(:,:),wp)
-      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
       iarea(:,:) = INT(z_sync_c(:,:))
 
     END DO
@@ -1143,7 +1140,7 @@ CONTAINS
     !chekc if iarea is the same
     CALL enable_sync_checks()
     z_sync_c(:,:) =  REAL(iarea(:,:),wp)
-    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
     iarea(:,:) = INT(z_sync_c(:,:))
     !-----------------------------
 
@@ -1191,20 +1188,20 @@ CONTAINS
 
     ! synchronize all elements of v_base - not necessary
     z_sync_c(:,:) =  REAL(v_base%basin_c(:,:),wp)
-    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
     v_base%basin_c(:,:) = INT(z_sync_c(:,:))
     z_sync_c(:,:) =  REAL(v_base%regio_c(:,:),wp)
-    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+    CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
     v_base%regio_c(:,:) = INT(z_sync_c(:,:))
 
     DO jk = 1, n_zlev
 
       z_sync_c(:,:) =  v_base%wet_c(:,jk,:)
-      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:))
+      CALL sync_patch_array(sync_c, patch_2d, z_sync_c(:,:), lacc=.FALSE.)
       v_base%wet_c(:,jk,:) = z_sync_c(:,:)
 
       z_sync_e(:,:) =  v_base%wet_e(:,jk,:)
-      CALL sync_patch_array(sync_e, patch_2d, z_sync_e(:,:))
+      CALL sync_patch_array(sync_e, patch_2d, z_sync_e(:,:), lacc=.FALSE.)
       v_base%wet_e(:,jk,:) = z_sync_e(:,:)
 
     END DO
@@ -1738,10 +1735,10 @@ CONTAINS
       CALL finish (routine,'allocating surface_vertex_sea_land_mask failed')
     ENDIF
     z_sync_v(:,:) =  REAL(patch_3d%surface_vertex_sea_land_mask(:,:),wp)
-    CALL sync_patch_array(sync_v, patch_2d, z_sync_v(:,:))
+    CALL sync_patch_array(sync_v, patch_2d, z_sync_v(:,:), lacc=.FALSE.)
     patch_3d%surface_vertex_sea_land_mask(:,:) = INT(z_sync_v(:,:))
     z_sync_v(:,:) =  REAL(patch_3d%p_patch_1d(1)%vertex_bottomLevel(:,:),wp)
-    CALL sync_patch_array(sync_v, patch_2d, z_sync_v(:,:))
+    CALL sync_patch_array(sync_v, patch_2d, z_sync_v(:,:), lacc=.FALSE.)
     patch_3d%p_patch_1d(1)%vertex_bottomLevel(:,:) = INT(z_sync_v(:,:))
     DEALLOCATE(z_sync_v)
     !---------------------------------------
@@ -1929,7 +1926,7 @@ CONTAINS
     INTEGER :: timestep
     LOGICAL is_initial_timestep
 
-    IF (timestep == 1 .AND. .NOT. isRestart()) THEN
+    IF (timestep == 1 .AND. .NOT. (isRestart() .OR. isInitFromRestart()) ) THEN
       is_initial_timestep = .TRUE.
     ELSE
       is_initial_timestep = .FALSE.

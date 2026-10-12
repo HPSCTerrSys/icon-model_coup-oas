@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+set -eu
+MY_DIR=$(cd "$(dirname "$0")"; pwd)
+
+source "${MY_DIR}/dwd_fcns.sh"
+
+# In order to avoid out-of memory errors during compilation in single-precision
+# in the routines
+# - src/atm_phy_schemes/mo_lrtm_taumol.f90 (for RRTM)
+# - externals/ecrad/ifsrrtm/rrtm_taumol5.F90 (for ecrad)
+# we must increase the stacksize and virtual memory.
+ulimit -s unlimited
+ulimit -v 16777216
+ulimit -a
+
+build_dwd "$(basename ${BASH_SOURCE[0]})"

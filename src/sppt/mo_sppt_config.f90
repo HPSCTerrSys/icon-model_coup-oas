@@ -1,10 +1,7 @@
-!
-! Configuration setup for SPPT (Stochastic Pertubation of Physics Tendencies)
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,9 +9,11 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Configuration setup for SPPT (Stochastic Pertubation of Physics Tendencies)
+
 MODULE mo_sppt_config
 
-  USE mo_kind,                    ONLY: wp,i8
+  USE mo_kind,                    ONLY: wp, dp, i8
   USE mo_exception,               ONLY: finish, message, message_text
   USE mo_impl_constants,          ONLY: max_dom, SUCCESS, min_rlcell_int
   USE mo_time_config,             ONLY: time_config
@@ -84,7 +83,7 @@ MODULE mo_sppt_config
     INTEGER :: coarse_nlat
     INTEGER :: coarse_nlon
 
-    TYPE(timedelta):: mtime_hinc_rn    !  hinc_rn converted into type timedelta 
+    TYPE(timedelta):: mtime_hinc_rn    !  hinc_rn converted into type timedelta
 
     TYPE(datetime) :: validity_date_rn_2d_new ! date at which the event read_rapa_event was active the last time
 
@@ -149,7 +148,7 @@ MODULE mo_sppt_config
       ! Convert hinc_rn into mtime timedelta
       !--------------------------------
 
-      CALL mtime_timedelta_from_fseconds(sppt_config(jg)%hinc_rn, mtime_current, sppt_config(jg)%mtime_hinc_rn)
+      CALL mtime_timedelta_from_fseconds(REAL(sppt_config(jg)%hinc_rn,KIND=dp), mtime_current, sppt_config(jg)%mtime_hinc_rn)
 
       !---------------------------------
       ! Create factors for tapering
@@ -284,7 +283,7 @@ MODULE mo_sppt_config
   !
   ! Setup mtime events for SPPT utilizing newEvent() subroutine
   !
-  !   - read_rapa (read pattern/field of random numbers) 
+  !   - read_rapa (read pattern/field of random numbers)
   !
   !------------------------------------------------------------------------------------
   !
@@ -293,7 +292,7 @@ MODULE mo_sppt_config
     ! Input arguments
     TYPE(event), POINTER, INTENT(INOUT) :: read_rapa_Event ! and all consecutive events
 
-    REAL(wp),             INTENT(IN)    :: hinc_rn         ! increment in seconds to read/create 
+    REAL(wp),             INTENT(IN)    :: hinc_rn         ! increment in seconds to read/create
                                                            ! new random numbers (namelist parameter)
 
     ! Local
@@ -350,9 +349,10 @@ MODULE mo_sppt_config
 
     DO jg=1,n_dom
 
-      ! Exit if higher order microphysic schemes are used
-      IF(atm_phy_nwp_config(jg)%inwp_gscp > 2) THEN
-        CALL finish(routine, "SPPT in combination with higher order microphysic schemes not supported/tested.")
+      ! Exit if higher order or external microphysic schemes are used
+      IF(atm_phy_nwp_config(jg)%inwp_gscp > 2 .OR. atm_phy_nwp_config(jg)%inwp_gscp == -1) THEN
+        CALL finish(routine, &
+          &  "SPPT in combination with higher order or external microphysic schemes not supported/tested.")
       ENDIF
 
     END DO

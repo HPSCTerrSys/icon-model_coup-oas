@@ -1,17 +1,15 @@
-!
-! Type definition for the GPU implementation of the dynamical core of ICONAM.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Type definition for the GPU implementation of the dynamical core of ICONAM.
 
 MODULE mo_nonhydro_gpu_types
 
@@ -20,12 +18,11 @@ MODULE mo_nonhydro_gpu_types
   USE mo_kind,                 ONLY: wp, vp
   USE mo_impl_constants,       ONLY: iaes
   USE mo_fortran_tools,        ONLY: t_ptr_2d3d, assert_acc_device_only
-  USE mo_math_types,           ONLY: t_geographical_coordinates
-  USE mo_model_domain,         ONLY: t_patch, t_tangent_vectors
+  USE mo_math_types,           ONLY: t_geographical_coordinates, t_tangent_vectors
+  USE mo_model_domain,         ONLY: t_patch
   USE mo_nonhydro_types,       ONLY: t_nh_state, t_nh_diag, t_nh_prog
   USE mo_prepadv_types,        ONLY: t_prepare_adv
   USE mo_advection_config,     ONLY: t_advection_config
-  USE mo_les_config,           ONLY: t_les_config
   USE mo_intp_data_strc,       ONLY: t_int_state
   USE mo_grf_intp_data_strc,   ONLY: t_gridref_single_state, t_gridref_state
   USE mo_var_list_gpu,         ONLY: gpu_update_var_list
@@ -34,15 +31,19 @@ MODULE mo_nonhydro_gpu_types
   USE mo_intp_lonlat_types,   ONLY: lonlat_grids
   USE mo_interpol_config,     ONLY: support_baryctr_intp
   USE mo_grid_config,         ONLY: n_dom
+  USE mo_cuda_graphs,         ONLY: reset_all_graphs
+  USE mo_timer,               ONLY: ltimer, timers_level, timer_start, &
+                                    timer_stop, timer_acc_data_copies, &
+                                    timer_dace_acc_data_copies
   IMPLICIT NONE
-  PRIVATE 
+  PRIVATE
 
   PUBLIC :: h2d_icon, d2h_icon, devcpy_grf_state
 
 CONTAINS
 
   SUBROUTINE h2d_icon( p_int_state, p_int_state_local_parent, p_patch, p_patch_local_parent, &
-                       p_nh_state, prep_adv, advection_config, les_config, iforcing, lacc )
+                       p_nh_state, prep_adv, advection_config, iforcing, lacc )
 
     TYPE ( t_int_state ),       INTENT(INOUT) :: p_int_state(:)
     TYPE ( t_int_state ),       INTENT(INOUT) :: p_int_state_local_parent(:)
@@ -51,18 +52,18 @@ CONTAINS
     TYPE ( t_nh_state ),        INTENT(INOUT) :: p_nh_state(:)
     TYPE ( t_prepare_adv),      INTENT(INOUT) :: prep_adv(:)
     TYPE ( t_advection_config), INTENT(INOUT) :: advection_config(:)
-    TYPE ( t_les_config),       INTENT(INOUT) :: les_config(:)
-    INTEGER, INTENT(IN)                       :: iforcing 
+    INTEGER, INTENT(IN)                       :: iforcing
     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
     INTEGER :: jg
 !
 ! Copy all data need on GPU from host to device
 !
+    IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
 
     CALL assert_acc_device_only("h2d_icon", lacc)
 
     !$ACC ENTER DATA COPYIN(p_int_state, p_int_state_local_parent, p_patch, p_patch_local_parent) &
-    !$ACC   COPYIN(p_nh_state, prep_adv, advection_config, les_config, num_lev)
+    !$ACC   COPYIN(p_nh_state, prep_adv, advection_config, num_lev)
 
     CALL transfer_int_state( p_int_state, .TRUE. )
     CALL transfer_int_state( p_int_state_local_parent, .TRUE. )
@@ -78,16 +79,16 @@ CONTAINS
 
     CALL transfer_advection_config( advection_config, .TRUE. )
 
-    CALL transfer_les_config( les_config, .TRUE. )
-
     IF( iforcing == iaes ) THEN
       CALL transfer_aes( p_patch, .TRUE. )
     END IF
 
+    IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
+
   END SUBROUTINE h2d_icon
 
   SUBROUTINE d2h_icon( p_int_state, p_int_state_local_parent, p_patch, p_patch_local_parent, &
-                       p_nh_state, prep_adv, advection_config, les_config, iforcing, lacc )
+                       p_nh_state, prep_adv, advection_config, iforcing, lacc )
 
     TYPE ( t_int_state ),  INTENT(INOUT)      :: p_int_state(:)
     TYPE ( t_int_state ),  INTENT(INOUT)      :: p_int_state_local_parent(:)
@@ -96,40 +97,44 @@ CONTAINS
     TYPE ( t_nh_state ),   INTENT(INOUT)      :: p_nh_state(:)
     TYPE ( t_prepare_adv), INTENT(INOUT)      :: prep_adv(:)
     TYPE ( t_advection_config), INTENT(INOUT) :: advection_config(:)
-    TYPE ( t_les_config),       INTENT(INOUT) :: les_config(:)
-    INTEGER, INTENT(IN)                       :: iforcing 
+    INTEGER, INTENT(IN)                       :: iforcing
     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
 
+    IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
     !
     ! Delete all data on GPU
     !
     CALL assert_acc_device_only("d2h_icon", lacc)
     !$ACC WAIT
 
+    ! Delete CUDA graphs
+    CALL reset_all_graphs
+
     CALL transfer_nh_state( p_nh_state, .FALSE. )
     CALL transfer_prep_adv( prep_adv, .FALSE. )
     CALL transfer_patch( p_patch, .FALSE. )
     CALL transfer_patch( p_patch_local_parent, .FALSE. )
-    CALL transfer_lonlat_grids(.FALSE.)    
+    CALL transfer_lonlat_grids(.FALSE.)
     CALL transfer_int_state( p_int_state, .FALSE. )
     CALL transfer_int_state( p_int_state_local_parent, .FALSE. )
     CALL transfer_advection_config( advection_config, .FALSE. )
-    CALL transfer_les_config( les_config, .FALSE. )
 
     IF( iforcing == iaes ) THEN
       CALL transfer_aes( p_patch, .FALSE. )
     END IF
 
     !$ACC WAIT(1)
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 20
     ! ACCWA (Cray Fortran 16.0.1) : p_int_state and p_int_state_local_parent are interpreted
     !  as already deleted; I think this is bug so treat as a workaround for time being
     !$ACC EXIT DATA DELETE(p_patch, p_patch_local_parent) &
-    !$ACC   DELETE(p_nh_state, prep_adv, advection_config, les_config, num_lev)
+    !$ACC   DELETE(p_nh_state, prep_adv, advection_config, num_lev)
 #else
     !$ACC EXIT DATA DELETE(p_int_state, p_int_state_local_parent, p_patch, p_patch_local_parent) &
-    !$ACC   DELETE(p_nh_state, prep_adv, advection_config, les_config, num_lev)
+    !$ACC   DELETE(p_nh_state, prep_adv, advection_config, num_lev)
 #endif
+
+    IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
 
   END SUBROUTINE d2h_icon
 
@@ -225,13 +230,13 @@ CONTAINS
       DO j=1,SIZE(p_patch)
 
         IF ( host_to_device ) THEN
-        
+
         !$ACC ENTER DATA &
         !$ACC   COPYIN(p_patch(j)%cells, p_patch(j)%edges, p_patch(j)%verts)
 
         !$ACC ENTER DATA &
         !$ACC   COPYIN(p_patch(j)%cells%decomp_info)
-                
+
         !$ACC ENTER DATA &
         !$ACC   COPYIN(p_patch(j)%cells%decomp_info%owner_mask) &
         !$ACC   COPYIN(p_patch(j)%cells%ddqz_z_full, p_patch(j)%cells%area) &
@@ -311,7 +316,7 @@ CONTAINS
 
     DO jg=1, SIZE(prep_adv)
       CALL gpu_update_var_list('prepadv_of_domain_', host_to_device, domain=jg, lacc=.TRUE. )
-    ENDDO    
+    ENDDO
 
   END SUBROUTINE transfer_prep_adv
 
@@ -326,7 +331,7 @@ CONTAINS
     !$ACC ENTER DATA COPYIN(advection_config) IF(host_to_device)
     DO j=1, SIZE(advection_config)
 
-      IF ( host_to_device ) THEN      
+      IF ( host_to_device ) THEN
         !$ACC ENTER DATA COPYIN(advection_config(j)%trHydroMass%list, advection_config(j)%trAdvect%list)
       ELSE
         !$ACC WAIT(1)
@@ -339,22 +344,6 @@ CONTAINS
 
   END SUBROUTINE transfer_advection_config
 
-  SUBROUTINE transfer_les_config( les_config, host_to_device )
-
-    LOGICAL, INTENT(IN)                        :: host_to_device     !   .TRUE. : h2d   .FALSE. : d2h
-    TYPE ( t_les_config ), TARGET, INTENT(INOUT) :: les_config(:)
-
-    INTEGER :: j
-
-    IF ( host_to_device ) THEN
-        !$ACC ENTER DATA COPYIN(les_config)
-    ELSE
-        !$ACC WAIT(1)
-        !$ACC EXIT DATA DELETE(les_config)
-    ENDIF
-
-  END SUBROUTINE transfer_les_config
-
   SUBROUTINE transfer_nh_state( p_nh, host_to_device )
     LOGICAL, INTENT(IN)                        :: host_to_device     !   .TRUE. : h2d   .FALSE. : d2h
     TYPE ( t_nh_state ), TARGET, INTENT(INOUT) :: p_nh(:)
@@ -365,7 +354,7 @@ CONTAINS
 
 ! At this point, p_nh and all its underlying subtypes have been created on the device
 ! HB: merged interfaces of gpu_XXX_var_list... therefore the IF condition
-! WS:  currently it appears to be unnecessary to update any of these values back to the host 
+! WS:  currently it appears to be unnecessary to update any of these values back to the host
 !      after the end of the time loop.  Dycore variables are updated in ACC_VALIDATE mode individually
 !      BUT: there should be a way to delete all the variables with DEL_VAR
     IF (.NOT.host_to_device) RETURN
@@ -398,6 +387,8 @@ CONTAINS
 
 
       INTEGER  :: j,k
+
+      IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
 
       CALL assert_acc_device_only("devcpy_grf_state", lacc)
 
@@ -432,6 +423,7 @@ CONTAINS
         !$ACC EXIT DATA DELETE(p_grf)
       ENDIF
 
+      IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
 
     END SUBROUTINE devcpy_grf_state
 

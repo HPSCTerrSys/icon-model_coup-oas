@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -18,7 +18,7 @@ set -euo pipefail
 # 3. adds the current data and icon-git-hash to used_in file
 
 
-# Variables passed via list_part_tolerance -> addexp/runexp -> create_target_header
+# Variables passed via list_probtest -> addexp/runexp -> create_target_header
 #
 # tolerance_experiments : comma separated list of experiments
 # generate_hash_file : if "yes", then write a new yaml file. Otherwise print lines
@@ -49,25 +49,77 @@ umask 0022
 # generating iterable array of builders
 IFS=',' read -ra experiments <<< "${tolerance_experiments}"
 
+# Sort experiments in alphabetic order
+sorted_experiments=($(for exp in "${experiments[@]}"; do echo $exp; done | sort))
+
 declare -A experiment_hashes
 
-for exp in "${experiments[@]}"; do
-    model_output_dir="${basedir}/experiments/${exp}"
-    reference_file_name="${model_output_dir}/${exp}_reference.csv"
-    tolerance_file_name="${model_output_dir}/${exp}_tolerance.csv"
+all_failed=true
 
-    experiment_hash=$(cat "$reference_file_name" "$tolerance_file_name" | sha256sum | cut -b -40 )
+for exp in "${sorted_experiments[@]}"; do
+    export TEST_FILE_TYPES=$("${basedir}/scripts/experiments/get_param_for_exp_by_machine" --experiment "$exp" --param test_file_types)
+    TEST_FILE_TYPES="${TEST_FILE_TYPES:-STATS}"
+    export TEST_FILE_TYPES
+    export FOF_TYPES=$("${basedir}/scripts/experiments/get_param_for_exp_by_machine" --experiment "$exp" --param fof_types)
+    IFS=',' read -r -a FOF_TYPES_ARRAY <<< "$FOF_TYPES"
+    if [[ "${TEST_FILE_TYPES[*]}" =~ stats ]]; then
+        reference_file_name="${basedir}/${exp}_reference.csv"
+        tolerance_file_name="${basedir}/${exp}_tolerance.csv"
+    fi
+    experiment_hash=$(
+    {
+        if [[ "${TEST_FILE_TYPES[*]}" =~ stats ]]; then
+            if [[ -f "$tolerance_file_name" ]]; then
+                cat "$reference_file_name"
+                cat "$tolerance_file_name"
+            fi
+        fi
+
+        if [[ " ${TEST_FILE_TYPES[*]} " =~ fof ]]; then
+            for fof_type in "${FOF_TYPES_ARRAY[@]}"; do
+                reference_file_name_fof="${basedir}/${exp}_fof${fof_type}_reference.nc"
+                tolerance_file_name_fof="${basedir}/${exp}_tolerance_fof${fof_type}.csv"
+                if [[ -f "$tolerance_file_name_fof" ]]; then
+                    cat "$tolerance_file_name_fof"
+                    cat "$reference_file_name_fof"
+                else
+                    echo "WARNING: missing file $tolerance_file_name_fof" >&2
+                fi
+            done
+        fi
+
+    } | sha256sum | cut -b -40
+    )
     reference_dir=${reference_root}/${experiment_hash}
     experiment_hashes[$exp]=$experiment_hash
-
     mkdir -p "$reference_dir"
-    mv -v "$reference_file_name" "${reference_dir}/${exp}_reference.csv"
-    mv -v "$tolerance_file_name" "${reference_dir}/${exp}_tolerance.csv"
+    if [[ " ${TEST_FILE_TYPES[*]} " =~ stats ]]; then
+        if [[ -v tolerance_file_name && -f "$tolerance_file_name" ]]; then
+            mv -v "$reference_file_name" "${reference_dir}/${exp}_reference.csv"
+            mv -v "$tolerance_file_name" "${reference_dir}/${exp}_tolerance.csv"
+        fi
+    fi
+    if [[ " ${TEST_FILE_TYPES[*]} " =~ "fof" ]]; then
+
+        for fof_type in "${FOF_TYPES_ARRAY[@]}"; do
+            reference_file_name_fof="${basedir}/${exp}_fof${fof_type}_reference.nc"
+            tolerance_file_name_fof="${basedir}/${exp}_tolerance_fof${fof_type}.csv"
+
+            if [[ -f "$tolerance_file_name_fof" && -f "$reference_file_name_fof" ]]; then
+                mv -v "$reference_file_name_fof" "${reference_dir}/${exp}_fof${fof_type}_reference.nc"
+                mv -v "$tolerance_file_name_fof" "${reference_dir}/${exp}_tolerance_fof${fof_type}.csv"
+
+            fi
+        done
+    fi
 
     # leave a log message
     echo "${builder} ${date_str} ${origin} ${git_commit}" >> "${reference_dir}/sources.log"
+    all_failed=false
 
 done
+
+$all_failed && { echo "ERROR: The member selection failed for all experiments."; exit 1; }
 
 # sort keys
 declare -a sorted_keys
@@ -112,6 +164,7 @@ else # update requested
     echo ""
     echo "Please update the following ${#sorted_keys[@]} line(s) in '${hash_path}/${builder}'."
     echo "If any of the experiments is not yet in the list, please add it in alphabetical order"
+    echo ""
     for exp in "${sorted_keys[@]}"; do
         experiment_hash=${experiment_hashes[$exp]}
         echo "\"$exp\": $experiment_hash"

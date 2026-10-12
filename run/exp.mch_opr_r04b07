@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -11,7 +11,7 @@
 # ------------------------------------------
 
 # ===========================================================================
-# 
+#
 # Name: exp.mch_opr_r04b07.run
 #
 # Purpose: Run script for ICON at on a domain similar to the current COSMO-1E domain
@@ -19,7 +19,7 @@
 #
 # Created by: Remo Dietlicher (MeteoSwiss)
 #
-# =========================================================================== 
+# ===========================================================================
 
 set -x
 
@@ -32,7 +32,7 @@ set -x
 # icon_data_poolFolder          = base directory, where grids/, input/ and setup/ exist
 # nproma                        = blocking length for array dimensioning and inner loop lengths
 
-icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/mch"
+input_folder="${testingFolder_prefix}/testing-input-data/c2sm/opr_r04b07"
 
 # =======================================================================
 # Setup - experiment
@@ -40,7 +40,7 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/mch"
 
 # ===========================================================================
 # This experiment describes a ICON-LAM experiment using the physics packages that are
-# used at MeteoSwiss for production. This simulation computes a few time steps on 
+# used at MeteoSwiss for production. This simulation computes a few time steps on
 # a low-resolution grid over Switzerland. The setup is for development purposes.
 # ==========================================================================
 
@@ -49,10 +49,7 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/mch"
 # =======================
 
 # Folder containing required grid information
-grids_folder=${icon_data_poolFolder}/grids/opr_r04b07
-
-# Folder containing lateral boundary conditions
-latbc_path=${icon_data_poolFolder}/input/opr_r04b07
+grids_folder=${input_folder}
 
 dynamics_grid_filename=mch_opr_r4b7_DOM01.nc
 atmo_dyn_grids="'${dynamics_grid_filename}',"
@@ -80,26 +77,24 @@ add_required_file "${grids_folder}/${extpar_filename}" ./
 
 # files needed for radiation
 add_link_file ${basedir}/externals/ecrad/data ecrad_data
-add_required_file ${basedir}/data/ECHAM6_CldOptProps.nc rrtm_cldopt.nc
-add_required_file ${basedir}/data/rrtmg_lw.nc .
 
 # Dictionary for the mapping: DWD GRIB2 names <-> ICON internal names
 add_required_file ${basedir}/run/ana_varnames_map_file.txt map_file.ana
 
 # Dictionary for the mapping: GRIB2/Netcdf input names <-> ICON internal names
-add_required_file ${latbc_path}/map_file.latbc map_file.latbc
+add_required_file ${input_folder}/map_file.latbc map_file.latbc
 
 # initial data
-initial_condition=${latbc_path}/laf2020121006.nc
+initial_condition=${input_folder}/laf2020121006.nc
 add_link_file ${initial_condition} .
 
 # lateral boundary grid
-add_required_file ${latbc_path}/lateral_boundary.grid.nc lateral_boundary.grid.nc
+add_required_file ${input_folder}/lateral_boundary.grid.nc lateral_boundary.grid.nc
 
 # lateral boundary data
-add_link_file ${latbc_path}/efsf00000000_lbc.nc .
-add_link_file ${latbc_path}/efsf00010000_lbc.nc .
-add_link_file ${latbc_path}/efsf00020000_lbc.nc .
+add_link_file ${input_folder}/efsf00000000_lbc.nc .
+add_link_file ${input_folder}/efsf00010000_lbc.nc .
+add_link_file ${input_folder}/efsf00020000_lbc.nc .
 
 
 # dictionary file for output variable names
@@ -153,7 +148,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  hdiff_order                 =                          5         ! order of nabla operator for diffusion
  itype_vn_diffu              =                          1         ! reconstruction method used for Smagorinsky diffusion
  itype_t_diffu               =                          2         ! discretization of temperature diffusion
- hdiff_efdt_ratio            =                         24.0       ! ratio of e-folding time to time step 
+ hdiff_efdt_ratio            =                         24.0       ! ratio of e-folding time to time step
  hdiff_smag_fac              =                          0.025     ! scaling factor for Smagorinsky diffusion
 /
 
@@ -183,14 +178,14 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  check_ana(1)%list            = 'P','QV','T','U','V'
  check_ana(2)%list            = 'FRESHSNW','H_SNOW','T_SO' ! NOOOOOOOOOOOOO in ens
  use_lakeiceana               = .TRUE.
- qcana_mode                   = 0           ! (0) no QC-increments, 
-                                            ! (1) QC+QV-increments added to QV, 
+ qcana_mode                   = 0           ! (0) no QC-increments,
+                                            ! (1) QC+QV-increments added to QV,
                                             ! (2) QC-increments added to QC if already present at gridpoint
                                             !     and added to QV if not
- qiana_mode                   = 0           ! 0/1: ignore/use QI increments 
- qrsgana_mode                 = 0           ! 0/1: ignore/use QR,QS,QG 
+ qiana_mode                   = 0           ! 0/1: ignore/use QI increments
+ qrsgana_mode                 = 0           ! 0/1: ignore/use QR,QS,QG
  dwdfg_filename               = "laf2020121006.nc"    ! initial data filename init_mode 7
- filetype                     = -1        
+ filetype                     = -1
  ana_varnames_map_file        = "map_file.ana"        ! Dictionary for initial data file
  ltile_coldstart              = .TRUE.  ! coldstart for surface tiles
  ltile_init                   = .FALSE.  ! gdm origin .F. set it to .TRUE. if FG data originate from run without tiles
@@ -237,7 +232,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  itype_latbc                 =                          1         ! 1: time-dependent lateral boundary conditions
  dtime_latbc                 =                      10800.        ! time difference between 2 consecutive boundary data
  latbc_boundary_grid         =   "lateral_boundary.grid.nc"       ! Grid file defining the lateral boundary
- latbc_path                  =              "${latbc_path}"       ! Absolute path to boundary data
+ latbc_path                  =              "${input_folder}"     ! Absolute path to boundary data
  latbc_varnames_map_file     =            'map_file.latbc'
  latbc_filename              =     'efsf<ddhhmmss>_lbc.nc'        ! boundary data input filename
  init_latbc_from_fg          =                     .FALSE.        ! .TRUE.: take lbc for initial time from first guess
@@ -276,7 +271,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  vwind_offctr                =                          0.2       ! off-centering in vertical wind solver
  damp_height                 =                      12500.0       ! height at which Rayleigh damping of vertical wind starts
  rayleigh_coeff              =                          5.0       ! Rayleigh damping coefficient
- divdamp_order               =                         24         ! order of divergence damping 
+ divdamp_order               =                         24         ! order of divergence damping
  divdamp_type                =                         32         ! gdm default: 3 type of divergence damping
  divdamp_fac                 =                          0.004     ! scaling factor for divergence damping
  igradp_method               =                          3         ! discretization of horizontal pressure gradient
@@ -306,8 +301,6 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  icapdcycl                   =                          3         ! apply CAPE modification to improve diurnalcycle over tropical land
  icpl_aero_conv              =                          1         ! coupling between autoconversion and Tegen aerosol climatology
  icpl_aero_gscp              =                          0         ! coupling between autoconversion and Tegen aerosol climatology
- lrtm_filename               =                'rrtmg_lw.nc'       ! longwave absorption coefficients for RRTM_LW
- cldopt_filename             =             'rrtm_cldopt.nc'       ! RRTM cloud optical properties
  mu_rain                     =                         0.5        ! shap parameter in gamma distribution for rain
  rain_n0_factor              =                         0.1        ! tuning factor for intercept parameter of raindrop size distr.
  dt_rad                      =                         720.       ! time step for radiation in s
@@ -424,8 +417,8 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  ser_output_diag             =                            0,12,12
  ser_latbc_data              =                            0,12,12
  ser_dynamics                =                            0,12,12
- ser_diffusion               =                            0,12,12 
- ser_step_advection          =                            0,12,12 
+ ser_diffusion               =                            0,12,12
+ ser_step_advection          =                            0,12,12
  ser_physics                 =                            1,12,12
  ser_surface                 =                            0,12,12
  ser_microphysics            =                            0,12,12
@@ -437,10 +430,10 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  ser_radheat                 =                            0,12,12
  ser_gwdrag                  =                            0,12,12
  ser_convection              =                            0,12,12
- ser_nudging                 =                            0,12,12 
+ ser_nudging                 =                            0,12,12
  ser_nfail                   =                            1
  ser_nreport                 =                            10
- ser_all_debug               =                            0 
+ ser_all_debug               =                            0
  ser_debug                   =                        .FALSE.      ! serialize the debug statements from mo_ser_debug
 /
 

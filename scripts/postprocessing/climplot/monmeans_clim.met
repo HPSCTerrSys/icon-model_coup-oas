@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -48,11 +48,11 @@ dayl    = args[18]   # length of day
 
 # setup
 
-if number = -99 then 
+if number = -99 then
   stream='oper'
-else 
+else
   stream='seas'
-end if 
+end if
 
 # interval [h] between two data points:
 #   requires balance between speed and statistics:
@@ -132,10 +132,10 @@ for imon=1 to nmon do
     if levtype = "sfc" then
         if 1 = 1 then # operations now has all variable...
           variables = ["TCC", "LCC", "MCC", "HCC", "CP",  "LSP", "SSHF","SLHF","BLH", "SSR", "SSRD",
-                       "STR", "TSR", "TTR", "2T",  "2D",  "SD" , "10U", "10V", "SSTK","SKT", 
+                       "STR", "TSR", "TTR", "2T",  "2D",  "SD" , "10U", "10V", "SSTK","SKT",
                        "TCW", "TCWV","TCLW","TCIW","TCRW","TCSW","TSRC","TTRC","CAPE","SUND"]
           vartype   = ["ins", "ins", "ins", "ins", "acc", "acc", "acc", "acc", "ins", "acc", "acc",
-                       "acc", "acc", "acc", "ins", "ins", "ins", "ins", "ins", "ins", "ins", 
+                       "acc", "acc", "acc", "ins", "ins", "ins", "ins", "ins", "ins", "ins",
                        "ins", "ins", "ins", "ins", "ins", "ins", "acc", "acc", "ins","ins"]
           #variables list defined twice for small planet gravity scaling of TotCol variables
           vartc     = ["TCW","TCWV","TCLW","TCIW","TCRW","TCSW"]
@@ -161,14 +161,14 @@ for imon=1 to nmon do
 
 	else if levtype = "pl" then
         vartype   = "ins"
-        if fcrange = -99 then 
+        if fcrange = -99 then
    	      variable  = ["q", "R", "Z", "T", "w", "clwc", "ciwc", "cc"]
    	      varuv     = ["u", "v"]
         # varuv=nil
           variables = variable&varuv
 	      levelist  = [1,2,3,5,7,10,20,30,50,70,100,150,200,250,300,400,500,
                        600,700,775,850,925,1000]          #23 levels (climate&ERA40)
-        else 
+        else
   	      variable  = ["q", "R", "Z", "T", "w"]
   	      varuv     = ["u", "v"]
           variables = variable&varuv
@@ -187,12 +187,12 @@ for imon=1 to nmon do
 
 	if levtype = "ml" or levtype = "pl" then   # assume type instantaneous
 		for i=2 to nfld do
-			vartype=vartype & " ins" 
+			vartype=vartype & " ins"
 		end for
 		vartype = parse(vartype, " ")
 	end if
 
-	print ("Date ", inidate, " TIME ", tim, " Month ", yy[imon]*100+mm[imon], 
+	print ("Date ", inidate, " TIME ", tim, " Month ", yy[imon]*100+mm[imon],
                " Step ", steplist)
         print (" stream ",stream)
         print (" class ",class)
@@ -204,13 +204,13 @@ for imon=1 to nmon do
         print (" date ",datelist)
         print (" time ",tim)
         print (" steps ",steplist)
-        print (" leveltype ",levtype)        
+        print (" leveltype ",levtype)
         print (" levelist ",levelist)
 
 # retrieve
 
    if levtype = "ml" and lev1 = 1 then
-      print ("retrieving lnsp for exp ", expv)		
+      print ("retrieving lnsp for exp ", expv)
       lnsp = retrieve(
       class	:	class,
       stream  :       stream,
@@ -249,7 +249,7 @@ for imon=1 to nmon do
 
 	diffvardata = nil
 
-    if fcrange > 1 and levtype = "sfc" then 
+    if fcrange > 1 and levtype = "sfc" then
       vardatam1 = retrieve(
       class	:	class,
       stream  :       stream,
@@ -276,7 +276,7 @@ for imon=1 to nmon do
        if count(vartc)>0 and rgtcsp<>1 then
          meanv=nil
          for n=1 to count(variables) do
-           if variables[n]='SUND' then 
+           if variables[n]='SUND' then
              param="10SI"
            else
              param=variables[n]
@@ -311,7 +311,7 @@ for imon=1 to nmon do
 	  meanfields = meanvar
 	end if
 
-        
+
     if number=-99 then
        if fcrange=-99 then
           fname = datadir&"/mmean_"&expv&"_"&levtype&"_ini"&inidate&"_mon"&
@@ -323,7 +323,7 @@ for imon=1 to nmon do
     else
         fname = datadir&"/mmean_"&expv&"_"&levtype&"_ini"&inidate&"_mem"&string(number)&"_mon"&
                 string(yy[imon]*100+mm[imon])&"_n"&mmln[imon]&".grb"
-    end if   
+    end if
     print ("Writing Output: ", fname)
     write(fname,meanfields)
 
@@ -348,7 +348,7 @@ function average(fields,nfld,numsteps,int,vartype,variables,fcrange,diffvardata)
        if variables[i] = "10U" then
          i10u=i # last occurrence
        end if
-    end for 
+    end for
 
     for i=1 to nfld do
        if vartype[i] = "ins" or fcrange > -99 then
@@ -364,7 +364,7 @@ function average(fields,nfld,numsteps,int,vartype,variables,fcrange,diffvardata)
           end if
           meanfld=mean(onefld)
 
-# special case - forecast ops fields plus accum 
+# special case - forecast ops fields plus accum
           if vartype[i] = "acc" then
             if fcrange > 1 then
                onefld=diffvardata[i,i+((numsteps-1)*nfld),nfld]
@@ -380,7 +380,7 @@ function average(fields,nfld,numsteps,int,vartype,variables,fcrange,diffvardata)
          meanall=meanfld
        else
          meanall=meanall & meanfld
-       end if		
+       end if
 	end for
 	return meanall
 end average

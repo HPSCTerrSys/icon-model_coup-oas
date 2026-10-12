@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -14,7 +14,7 @@
 #
 #  Author: Stephan Lorenz, MPIfMet, 06/2012
 #
-#  Input : averaged icon-ocean standard output file including variables u_vint and wet_c 
+#  Input : averaged icon-ocean standard output file including variables u_vint and wet_c
 #  Output: interpolated input/output/plot-files named u_vint/psi/nclpsi
 #
 #  Method:
@@ -27,7 +27,7 @@
 #  2014/10:
 #   - u_vint_acc on input; new code numbers: wet_c=100, u_vint=200; level of wet_c is surface
 #     chlevel,6,0 - for level1=6m (40 levels) only - not essential
-#          
+#
 
 set -e
 
@@ -106,7 +106,7 @@ cdo -f srv copy $inpfile.nc $inpfile.srv
 #rm $inpfile.nc
 
 cat > scr-psiread.f90 <<EOF
-!-------------------------------------------------------------------------  
+!-------------------------------------------------------------------------
 !
 !
 !!  Calculation of horizontal stream function
@@ -119,7 +119,7 @@ cat > scr-psiread.f90 <<EOF
 !   ignore vertical dimension
 !
 ! TODO: diffuse from ocean to land, cut land points
-!! 
+!!
 PROGRAM psiread
 
 IMPLICIT NONE
@@ -130,7 +130,7 @@ INTEGER, PARAMETER ::  nlat = $nlat                  ! meridional dimension of r
 INTEGER, PARAMETER ::  nlon = $nlon                  ! zonal dimension of regular grid
 
 ! smoothing area is 2*jsmth-1 lat/lon areas of 1 deg
-INTEGER, PARAMETER ::  jsmth = 3                  
+INTEGER, PARAMETER ::  jsmth = 3
 INTEGER            :: jb, jc, i_startidx, i_endidx
 INTEGER            :: jlat, jlon, jx, jy
 INTEGER            :: isrv(8), isrvu(8)
@@ -217,7 +217,7 @@ jx = 1 + 270*nlat/360
 
 
 END PROGRAM psiread
-!-------------------------------------------------------------------------  
+!-------------------------------------------------------------------------
 EOF
 
 echo "PSI -> compile and run program scr-psiread.x"
@@ -264,4 +264,3 @@ nclsh /pool/data/ICON/tools/icon_plot.ncl -altLibDir=/pool/data/ICON/tools \
 # -maskName=wet_c -selMode=manual -minVar=-100 -maxVar=100 -numLevs=20 \
 
 exit
-

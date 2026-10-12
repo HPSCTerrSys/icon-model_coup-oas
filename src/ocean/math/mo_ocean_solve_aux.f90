@@ -1,21 +1,22 @@
-! contains implementation parameters of solver infrastructure
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! contains implementation parameters of solver infrastructure
+
 MODULE mo_ocean_solve_aux
 
   USE mo_kind, ONLY: wp
 
   IMPLICIT NONE
-  
+
   PRIVATE
 
   CHARACTER(LEN=*), PARAMETER :: this_mod_name = 'mo_ocean_solve_aux'
@@ -29,6 +30,7 @@ MODULE mo_ocean_solve_aux
                                 solve_mres = 25 ! internal ID of MINRES-alike solvers
   INTEGER, PARAMETER, PUBLIC :: solve_precon_none = 60 ! internal ID of not using any preconditioner
   INTEGER, PARAMETER, PUBLIC :: solve_precon_jac = 61 ! internal ID of Jacobi preconditioner
+  INTEGER, PARAMETER, PUBLIC :: solve_cg_opt = 62 ! internal ID of optimised CG (LAWN56)
   INTEGER, PARAMETER, PUBLIC :: solve_trans_scatter = 70, & ! transfer subset mode scatter (every n-th proc is a solve-proc)
                                 solve_trans_compact = 71 ! transfer subset mode compact (first p_n_work / n procs are solve procs)
   INTEGER, PARAMETER, PUBLIC :: solve_invalid = -999

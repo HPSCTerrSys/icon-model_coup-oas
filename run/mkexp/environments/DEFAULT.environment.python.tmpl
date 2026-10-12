@@ -1,0 +1,22 @@
+#%# -*- mode: python3 -*-
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#%- extends 'mkexp/environments/DEFAULT.environment.sh.tmpl'
+#%  block prologue:
+# $Id: run/mkexp/environments/DEFAULT.environment.python.tmpl 1 2026-04-01 13:32:36Z m221078 $
+import os
+#%  endblock
+#%  block set:
+os.environ.update(%{var}="%{val}")
+#%- endblock
+#%  block unset:
+os.environ.pop("%{var}", None)
+#%- endblock

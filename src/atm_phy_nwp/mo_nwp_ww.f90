@@ -1,15 +1,15 @@
-!  Module to calculate weather interpretation, WW.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module to calculate weather interpretation, WW.
 
 MODULE mo_nwp_ww
 
@@ -38,7 +38,7 @@ MODULE mo_nwp_ww
   USE mo_exception,             ONLY: message, message_text
   USE mtime,                    ONLY: datetime, newDatetime, timeDelta
 
-  USE mo_satad,                 ONLY: sat_pres_water
+  USE mo_thdyn_functions,       ONLY: sat_pres_water
   USE mo_fortran_tools,         ONLY: set_acc_host_or_device
 
 #endif
@@ -102,9 +102,9 @@ CONTAINS
     TYPE(datetime),   INTENT(IN)              :: ini_datetime  ! init datetime (mtime)
 #endif
 
-    INTEGER,  INTENT(IN) :: jg           !< patch 
-    INTEGER,  INTENT(IN) :: nlev         !< number of full vertical levels 
-    INTEGER,  INTENT(IN) :: nshift_total 
+    INTEGER,  INTENT(IN) :: jg           !< patch
+    INTEGER,  INTENT(IN) :: nlev         !< number of full vertical levels
+    INTEGER,  INTENT(IN) :: nshift_total
     CHARACTER(LEN=4), INTENT(IN) :: ymodel   ! Use scalings factors for this NWP model
 
 !   The following values are calculated as height difference between the height of the pressure level
@@ -291,14 +291,14 @@ CONTAINS
 ! Description:
 ! The subroutime evaluates for each grid point of the model a "ww-number";
 ! that means, a number corresponding to those numbers that
-! would be used for weather observation (e.g. thunderstorm=95, 
+! would be used for weather observation (e.g. thunderstorm=95,
 ! heavy rain=65 etc.)
 ! This subroutine is based on auswert_lm.f of the ww-library of DWD.
 
 
   INTEGER, INTENT(IN)  :: ie, ke, ke1, &        ! horizontal and vertical dimensions
                           i_startidx, i_endidx  ! start and end indices of loops in horizontal
-  INTEGER, INTENT(IN)  :: jg                    !  patch 
+  INTEGER, INTENT(IN)  :: jg                    !  patch
 
   REAL(wp), INTENT(IN) :: t  (ie,ke),  &  ! temperature (K)
                           qv (ie,ke),  &  ! specific humidity (on model levels) (kg/kg)
@@ -476,9 +476,9 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
 !.... Snow shower (threshold value 0.05 due to convective drizzle problem in ICON/ICON-EU)
               IF ( rgdiff >= MAX(0.05_wp,rgdiff_th2)) THEN
                 IF (rgdiff >  snsh_l_ms) THEN
-                  iww(i) = 86 
+                  iww(i) = 86
                 ELSE
-                  iww(i) = 85 
+                  iww(i) = 85
                 ENDIF
               ELSE
                 test_fog = .true.
@@ -517,7 +517,7 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
 
 !.... Large-scale precipitaion
             IF (iwolk == 0) THEN
-!.... Snow/Rain/Freezing rain (no drizzle/snow griesel)         
+!.... Snow/Rain/Freezing rain (no drizzle/snow griesel)
               IF ((lsnb) .OR. (irrb == 0)) THEN
 !.... Snow
                 IF (rgdiff >= rgdiff_th2) THEN
@@ -557,7 +557,7 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
               ENDIF
 
             ELSE ! IF (iwolk == 1) THEN
-!.... Drizzle/Freezing drizzle/Snow griesel 
+!.... Drizzle/Freezing drizzle/Snow griesel
               IF (( .NOT. lsnb .AND. igfb < 1)) THEN
 !.... Drizzle (must be evaluated before Freezing drizzle/Snow griesel)
                 IF (rgdiff <= driz_l_m) THEN
@@ -658,7 +658,7 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
 #endif
       ENDIF
 #endif
-   
+
     ENDDO
     !$ACC END PARALLEL
     !$ACC WAIT(1)
@@ -676,7 +676,7 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
 ! Calculation of thunderstorm indices KO as for COSMO-EU as in subroutine index.f in ww-library.
 !
 ! Method:
-! Calculation of the equivalent potential temperature: then,  
+! Calculation of the equivalent potential temperature: then,
 ! using the appropriate formulas, calculation of KO index.
 !
 
@@ -694,7 +694,7 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
 
       !$ACC ROUTINE SEQ
 !
-  
+
 !     950 hPa
       ta950 = ( t950 + alvdcp*MAX( qvmin, qv950) )*(1.e5/p950)**rd_o_cpd
 
@@ -727,7 +727,7 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
 !    igfb.
 !
 ! Additional conditions for drizzle:
-!   Determine the index of the bottom layer of low clouds (kwug); 
+!   Determine the index of the bottom layer of low clouds (kwug);
 !   dependent on the value of t at this level continue (or return to the
 !   calling program):
 !   If kwug equals ke set isprb to 1 and return to the calling program);
@@ -800,7 +800,7 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
 
       DO kk = ihb950hPa(jg)+1, ke
          IF ( qc_gefr(kk) > 1.e-8) kwug = kk
-      ENDDO   
+      ENDDO
 
 !.... First additional condition
 
@@ -843,6 +843,6 @@ WW_PRECIP: IF (rgdiff < rgdiff_th1) THEN
         clct2ww = 0
       END IF
     END  FUNCTION clct2ww
-    
+
 
 END MODULE mo_nwp_ww

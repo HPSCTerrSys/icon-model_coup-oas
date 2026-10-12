@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -70,7 +70,7 @@ init_relax=1   # 1: use relaxation initialization file
 #   ts_surf_annual-iconR${R}B0{B}-50m.nc          # 50m thickness
 #
 #-----------------------------------------------------------------------------
-# ocean forcing (iforc=12) needs an additional flux file 
+# ocean forcing (iforc=12) needs an additional flux file
 # NO_FORCING                 = 10
 # ANALYT_FORC                = 11  - dependent on testcase
 # FORCING_FROM_FILE_FLUX     = 12  - OMIP or NCEP type forcing
@@ -108,7 +108,7 @@ ndays_restart=370    # stop model for restart [days]
 #-----------------------------------------------------------------------------
 # calculate model timesteps using $ndays
 nsteps=`expr ${ndays} \* 86400 / ${dtime}`
-nsteps=5 
+nsteps=5
 dt_data=`expr ${nhours_data} \* 3600`
 dt_file=`expr ${ndays_file} \* 86400`
 dt_checkpoint=`expr ${ndays_checkp} \* 86400`
@@ -123,7 +123,7 @@ dt_restart=`expr ${ndays_restart} \* 86400`
 # grid_ext="chann45N"        # circumpolar channel at 45N with flat bottom
 #
 ocean_grids="iconR${R}B0${B}-ocean_${grid_ext}.nc"
-# 
+#
 #-----------------------------------------------------------------------------
 #
 # write ICON namelist parameters
@@ -201,7 +201,7 @@ cat > ${ocean_namelist} << EOF
   l_inverse_flip_flop= .FALSE.   ! within mimetic discretization:
                                  ! TRUE : full scalar product (slow)
                                  ! FALSE: reduced scalarproduct variant (fast and default)
-  l_rigid_lid        = .FALSE.   ! TRUE : use rigid lid as upper boundary condition 
+  l_rigid_lid        = .FALSE.   ! TRUE : use rigid lid as upper boundary condition
                                  ! FALSE: use the free surface dynamics
   ab_beta            =    0.7    ! parameter for Adam-Bashforth time-stepping
   ab_gam             =    0.7    ! parameter for Adam-Bashforth time-stepping
@@ -211,7 +211,7 @@ cat > ${ocean_namelist} << EOF
   i_bc_veloc_lateral =    0      ! Boundary condition for normal velocity for lateral walls
   i_bc_veloc_top     =    1      ! Boundary condition for normal velocity for ocean top
   i_bc_veloc_bot     =    0      ! Boundary condition for normal velocity for ocean bottom
-  basin_center_lat   =   30.0    ! lat-lon coordinate of basin center, used 
+  basin_center_lat   =   30.0    ! lat-lon coordinate of basin center, used
   basin_center_lon   =    0.0    ! in (non-global) basin configuration such as the Stommel-type tests
   basin_width_deg    =   60.0    ! basin extension in x-direction, units are degrees
   basin_height_deg   =   60.0    ! basin extension in y-direction, units are degrees
@@ -219,10 +219,10 @@ cat > ${ocean_namelist} << EOF
                                  ! 1=full varying Coriolis
                                  ! 2=beta-plane (linear) approximation to Coriolis
                                  ! 3=f-plane (constant) approximation to Coriolis
-                                 ! IMPORTANT: SOME TESTCASES REQUIRE SPECIFIC SETTINGS: 
+                                 ! IMPORTANT: SOME TESTCASES REQUIRE SPECIFIC SETTINGS:
                                  !  for Stommel-type basin (2D- and 3D, testcase 27 and/or 30) select
                                  !  f- or beta-plane.
-  expl_vertical_velocity_diff = 1  ! 0=explicit, 1 = implicit  
+  expl_vertical_velocity_diff = 1  ! 0=explicit, 1 = implicit
   expl_vertical_tracer_diff   = 1  ! 0=explicit, 1 = implicit
   l_edge_based = .TRUE.          !  edge- or cell-based mimetic discretization
   FLUX_CALCULATION_HORZ = 4      ! 1=upwind, 2=central, 3=mimetic, 4=mimetic_miura
@@ -233,7 +233,7 @@ cat > ${ocean_namelist} << EOF
   i_sea_ice          =    1      ! 0 = no sea ice; 1 = Winton; 2 = Semtner
   no_tracer          =    2      ! tracer-transport: 0=no transport, 1=temperature, 2=temp. and salinity
   EOS_TYPE           =    2      ! 1=linear EOS
-                                 ! 2= (nonlinear) EOS from MPI-OM 
+                                 ! 2= (nonlinear) EOS from MPI-OM
                                  ! 3= not recommended: (nonlinear) Jacket-McDoudgall density-formulation
   k_veloc_h          = 7.5E+4    ! [m2/s] horizontal viscosity coefficient for velocity
   k_veloc_v          = 1.0E-3    ! [m/s]  vertical viscosity coefficient for velocity
@@ -321,4 +321,3 @@ EOF
 #                     76.,79.,83.,87.,91.,95.,99.,104.,108.,113.,
 #                     119.,124.,130.,136.,142.,149.,155.,163.,170.,178.,
 #                     186.,195.,204.,213.,223.,233.,244.,255.,267.,279.,
-

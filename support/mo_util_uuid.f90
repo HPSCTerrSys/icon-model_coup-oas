@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! This module contains the routines for the calculation of 128bit
 ! data checksums/fingerprints (which are called "UUID's" in ICON).
 !
@@ -6,17 +17,6 @@
 ! merely as a wrapper. For *parallel* fingerprint calculation,
 ! however, the MPI-parallel communication is invoked on the Fortran
 ! level only.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_util_uuid
 
@@ -31,7 +31,7 @@ MODULE mo_util_uuid
   USE MPI
 #endif
 
-  IMPLICIT NONE 
+  IMPLICIT NONE
 
   PRIVATE
 
@@ -132,14 +132,14 @@ MODULE mo_util_uuid
   END INTERFACE
 
   INTERFACE
-    SUBROUTINE deallocate_c(ptr) BIND(C,NAME='deallocate_fingerprint') 
+    SUBROUTINE deallocate_c(ptr) BIND(C,NAME='deallocate_fingerprint')
       IMPORT :: C_PTR
       TYPE(C_PTR), VALUE :: ptr
     END SUBROUTINE deallocate_c
   END INTERFACE
 
 CONTAINS
- 
+
   SUBROUTINE uuid_parse(uuid_string, uuid)
     CHARACTER(len=*), INTENT(in)  :: uuid_string
     TYPE(t_uuid),     INTENT(out) :: uuid
@@ -162,7 +162,7 @@ CONTAINS
       uuid_compare = .FALSE.
     ENDIF
   END FUNCTION uuid_compare
-  
+
   SUBROUTINE uuid2char(uuid, string)
     TYPE(t_uuid), INTENT(in) :: uuid
     CHARACTER(len=1), INTENT(out) :: string(16)
@@ -181,10 +181,10 @@ CONTAINS
     CALL my_uuid_generate(val, SIZE(val), uuid)
   END SUBROUTINE uuid_generate_sequential
 
-  INTEGER(C_INT) FUNCTION compare_uuid(uuid_A, uuid_B) 
-    TYPE(t_uuid),   INTENT(IN)  :: uuid_A, uuid_B    
+  INTEGER(C_INT) FUNCTION compare_uuid(uuid_A, uuid_B)
+    TYPE(t_uuid),   INTENT(IN)  :: uuid_A, uuid_B
     REAL(C_DOUBLE) :: min_difference
-    compare_uuid = my_compare_uuid(uuid_A, uuid_B, min_difference) 
+    compare_uuid = my_compare_uuid(uuid_A, uuid_B, min_difference)
   END FUNCTION compare_uuid
 
 
@@ -368,7 +368,7 @@ CONTAINS
     ! check if the last PE has got the index "glb_nval":
     IF (ipe == (npes-1)) THEN
       IF (glbidx_local(nval_local) /= glb_nval) THEN
-        WRITE (0,*) routine, ': Internal error, last index not "glb_nval"!' 
+        WRITE (0,*) routine, ': Internal error, last index not "glb_nval"!'
         WRITE (0,*) "glb_nval = ", glb_nval, "; npes = ", npes
         WRITE (0,*) "Indices are: ", glbidx_local(:)
         RETURN
@@ -401,7 +401,7 @@ CONTAINS
         &             ptr%max_zero /)
       CALL MPI_GATHER(sendbuf, SIZE(sendbuf), MPI_INTEGER, &
         &             recvbuf, SIZE(sendbuf), MPI_INTEGER, ROOTPE, comm, p_error)
-      
+
       IF (ipe == ROOTPE) THEN
         ALLOCATE(fingerprint_i(npes))
         DO i=1,npes
@@ -416,7 +416,7 @@ CONTAINS
           fingerprint_i(i)%max_zero = recvbuf(9,i)
         END DO
         DEALLOCATE(sendbuf, recvbuf)
-        
+
         ! concatenate them:
         IF ((ipe == 0) .AND. (dbg_level > 0)) THEN
           WRITE (0,*) 'concatenate fingerprints'
@@ -427,7 +427,7 @@ CONTAINS
           IF (i>2)  CALL deallocate_c(fingerprint_merge)
           fingerprint_merge = new_fingerprint
         END DO
-        
+
         CALL my_encode_uuid(fingerprint_merge, uuid)
         CALL deallocate_c(fingerprint_merge)
         DEALLOCATE(fingerprint_i)

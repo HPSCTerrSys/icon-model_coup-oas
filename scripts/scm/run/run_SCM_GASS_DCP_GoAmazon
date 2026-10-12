@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -16,9 +16,9 @@
 #PBS -q xc_norm_b
 #PBS -o /lustre2/uwork/mkoehler/wq
 #PBS -e /lustre2/uwork/mkoehler/wq
-#PBS -j oe                       
+#PBS -j oe
 #PBS -l select=1:ompthreads=1
-#PBS -l place=scatter            
+#PBS -l place=scatter
 #PBS -l walltime=06:00:00
 #PBS -N SCM_GoAmazon
 #PBS -m ae
@@ -115,8 +115,8 @@ end_date="2014-02-25T00:00:00Z"      # ...
 #-----------------------------------------------------------------------------
 DT_DATA=`expr 1 \* 3600`      # output each n hours
 DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000              # number of time steps per output file 
+#n_in_ofile=60                # number of time steps per output file
+n_in_ofile=10000              # number of time steps per output file
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -148,7 +148,7 @@ ln -sf ${GRIDDIR}/${atmo_dyn_grids} .
 # ncks -v longitude,latitude,FR_LAND,PLCOV_MX,LAI_MX,ROOTDP,RSMIN,SOILTYP,Z0,EMIS_RAD,TOPO \
 #   ${INITDIR}/init_SCM_GASS_DCP_GoAmazon_IOP1.nc init_SCM_2.nc
 # ncks -A init_SCM_2.nc init_SCM.nc
-# ncks -d time,0,360 init_SCM.nc init_SCM.nc 
+# ncks -d time,0,360 init_SCM.nc init_SCM.nc
 # ncks -3 init_SCM.nc out.nc
 # ncrename -d time,nt out.nc
 # ncks -4 out.nc init_SCM.nc
@@ -187,7 +187,7 @@ EOF
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
@@ -212,7 +212,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  lscm_read_tke = .FALSE.    ! read initial tke from netcdf
  lscm_read_z0  = .TRUE.     ! read initial z0 from netcdf
  scm_sfc_mom   = 2          ! 2: prescribed u*
- scm_sfc_temp  = 2          ! 2: prescribed sensible heat flux at surface 
+ scm_sfc_temp  = 2          ! 2: prescribed sensible heat flux at surface
  scm_sfc_qv    = 2          ! 2: prescribed latent heat flux at surface
 !scm_sfc_mom   = 0          ! 0: TURBTRANS: no prescribed u*
 !scm_sfc_temp  = 0          ! 0: TERRA:     no prescribed sensible heat flux at surface
@@ -234,7 +234,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12           ! detailed report during integration
  output         = 'nml','totint'
 /
@@ -287,10 +287,8 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing       = .FALSE.
  is_nudging           = .TRUE.
  is_nudging_uv        = .TRUE.
- is_nudging_tq        = .FALSE.
- nudge_start_height   = 0.0            ! 1000.0
- nudge_full_height    = 0.0            ! 2000.0
- dt_relax             = 3600.0         ! 10800.0
+ is_nudging_t         = .FALSE.
+ is_nudging_q         = .FALSE.
 /
 
 ! &les_nml
@@ -304,7 +302,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 
 &turbdiff_nml
  tkhmin        = 0.75   ! new default since rev. 16527
- tkmmin        = 0.75   !           " 
+ tkmmin        = 0.75   !           "
  pat_len       = 750.
  c_diff        = 0.2
  rat_sea       = 8.5    ! new value since rev. 25646 (reduced saturation vapor pressure over salt water)
@@ -312,7 +310,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  frcsmot       = 0.2    ! these 2 switches together apply vertical smoothing of the TKE source terms
  imode_frcsmot = 2      ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 3    
+ itype_sher    = 3
  ltkeshs       = .true.
  a_hshr        = 2.0
  !lconst_z0    = .TRUE.
@@ -330,7 +328,6 @@ cat > NAMELIST_${EXPNAME} << EOF
  ivctype        = 2         ! sleve vertical coordinate
  damp_height    = 20000.    ! top_height-damp_height should be about 15km
  ndyn_substeps  = ${ndyn_substeps}
- l_open_ubc     = .false.   ! top open upper boundary condition. might help to go higher
  rayleigh_coeff = 0.0
  htop_moist_proc= 22500.
  hbot_qvsubstep	= 22500.    ! Default: 22500  ! M. Koehler: 19000; at least as large as htop_moist_proc
@@ -339,7 +336,7 @@ cat > NAMELIST_${EXPNAME} << EOF
 &sleve_nml
  min_lay_thckn	= 20.       ! Default: 50     ! M. Koehler: 20
  max_lay_thckn	= 400.      ! maximum layer thickness below htop_thcknlimit
- htop_thcknlimit= 14000.    ! 
+ htop_thcknlimit= 14000.    !
 !top_height     = 75000.
  top_height     = 30000.
  stretch_fac	= 0.9       ! Default: 1      ! M. Koehler: 0.9
@@ -354,8 +351,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &dynamics_nml
- iequations     = 3       ! equation system
- idiv_method    = 1
  divavg_cntrwgt = 0.50
 !lcoriolis      = .TRUE.
  lcoriolis      = .FALSE.
@@ -386,13 +381,13 @@ cat > NAMELIST_${EXPNAME} << EOF
  output_filename  = 'scm_GASS_out'
  filename_format  = "<output_filename>_<levtype>_<datetime2>"
 !ml_varlist       = 'group:all'
- ml_varlist       = 'pres_sfc','accshfl_s','acclhfl_s','accthb_s','accthb_t','accsob_s','accsob_t', 
+ ml_varlist       = 'pres_sfc','accshfl_s','acclhfl_s','accthb_s','accthb_t','accsob_s','accsob_t',
                     'accthd_s', 'accthu_s', , 'accsod_t', 'accsou_t', 'accsou_t',
-                    'accumfl_s','accvmfl_s','cape','rain_gsp','rain_con','snow_gsp','snow_con', 
+                    'accumfl_s','accvmfl_s','cape','rain_gsp','rain_con','snow_gsp','snow_con',
                     'u_10m','v_10m','t_2m','td_2m','t_g','qv_s',
                     'clct','clch','clcm','clcl','tqv_dia','tqc_dia','tqi_dia'  !,'tqr','tqs'
  pl_varlist       = 'u','v','w','temp','rho','geopot','rh','clc','tot_qv_dia','tot_qc_dia','tot_qi_dia',
-!                   'ddt_temp_dyn', 'ddt_temp_radsw', 'ddt_temp_radlw',  'ddt_temp_turb', 'ddt_temp_drag', 
+!                   'ddt_temp_dyn', 'ddt_temp_radsw', 'ddt_temp_radlw',  'ddt_temp_turb', 'ddt_temp_drag',
 !                   'ddt_temp_pconv','ddt_qv_turb', 'ddt_qc_turb', 'ddt_qi_turb', 'ddt_qv_conv',
 !                   'ddt_temp_gscp','ddt_qv_gscp','ddt_qc_gscp','ddt_qi_gscp'
  p_levels         =  2500, 5000, 7500,10000,12500,15000,17500,20000,22500,25000,27500,30000,
@@ -406,7 +401,7 @@ EOF
 
 #                   !'z_ifc','z_mc','u','v','w','temp','pres','rho','theta_v','pres_sfc','div',
 #                   !'qv','qc','qi','qs','qr','rh',
-#                   !'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t', 
+#                   !'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t',
 #                   !'ddt_temp_radsw', 'ddt_temp_radlw', 'ddt_temp_turb', 'ddt_temp_drag', 'ddt_temp_pconv',
 #                   !'ddt_qv_turb','ddt_qc_turb','ddt_qv_conv','ddt_qc_conv','u_10m', 'v_10m', 't_2m', 't_g',
 #                   !'qv_s','z_mc','lhfl_s','shfl_s','umfl_s','vmfl_s','tcm','tch','clc','tke','rcld','qhfl_s',

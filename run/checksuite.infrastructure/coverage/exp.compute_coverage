@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -27,16 +27,16 @@ tar czf ${tarBall} coverage_tests/*
 module load py-python-swiftclient
 swift upload buildbot ${tarBall} || exit 1
 
-#PUBLIC 
+#PUBLIC
 #PUBLIC  # optionally create a public html page on the switfserver for charing the
 #PUBLIC  # coverage with others
 #PUBLIC  swift upload --object-name ${uploadDate}-${commit}/ public ./coverage_tests/
-#PUBLIC 
+#PUBLIC
 #PUBLIC  publicLink="https://swift.dkrz.de/v1/dkrz_4d992e1b-f237-4258-a2bc-138ca6a1cf59/public/${uploadDate}-${commit}/index.html"
 #PUBLIC  echo "Please find the coverage data under:"
 #PUBLIC  echo ${publicLink}
 #PUBLIC  echo "Please consider removing the data"
-#PUBLIC 
+#PUBLIC
 
 # placeholder to stop the execution (exec.icon)
 exit 0

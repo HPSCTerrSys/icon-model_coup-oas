@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+set -eu
+
+unset CDPATH
+script_dir=$(cd "$(dirname "$0")"; pwd)
+icon_dir=$(cd "${script_dir}/../.."; pwd)
+
+if mpirun --version 2>/dev/null | grep 'Open MPI' >/dev/null; then
+  # Set the MPI launcher command with an additional argument (although the new
+  # build server has enough cores) and set a short temporary directory name if
+  # OpenMPI is used
+  # (see https://gitlab.dkrz.de/icon/icon/-/tree/icon-2.6.5-rc/config/generic#software-libraries):
+  set MPI_LAUNCH='mpirun --oversubscribe' BUILD_ENV="export TMPDIR='/tmp';"
+else
+  # Do not override arguments set in the wrapper:
+  set dummy; shift
+fi
+
+unset MAKEFLAGS
+makeflags="--jobs=10 V=1"
+
+set -x
+
+${icon_dir}/config/generic/gcc \
+  --disable-coupling \
+  --disable-mixed-precision \
+  --disable-ocean \
+  --enable-single-precision \
+  --enable-testbed \
+  "$@"
+
+time make ${makeflags}
+
+if test -n "${BB_NAME-}"; then
+  # Build the tests in parallel:
+  time make ${makeflags} --keep-going TESTS= check
+  # Run the tests serially:
+  time make --keep-going ICON_VERBOSE_TESTS=1 ICON_COLOR_TESTS=always \
+    TESTS_ENVIRONMENT='echo "$${mgn}RUNNING$${std}: $$f"; st=$$(perl -MTime::HiRes=time -e "print time");' \
+    AM_TESTS_FD_REDIRECT='; printf "$${brg}duration$${std}: %s: %0.2fs\n" "$$f" "$$(echo "$$(perl -MTime::HiRes=time -e "print time") - $${st}" | bc -l)"' \
+    check
+fi

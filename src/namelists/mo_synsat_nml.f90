@@ -1,19 +1,18 @@
-! @brief Namelist for synthetic satellite images
-!
-! These subroutines are called by read_atmo_namelists and set the switches
-! for synthetic satellite images
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief Namelist for synthetic satellite images
+!
+! These subroutines are called by read_atmo_namelists and set the switches
+! for synthetic satellite images
 
 MODULE mo_synsat_nml
 
@@ -28,7 +27,7 @@ MODULE mo_synsat_nml
   USE mo_nml_annotate,        ONLY: temp_defaults, temp_settings
   USE mo_synsat_config,       ONLY: config_lsynsat    => lsynsat, &
                                     config_nlev_rttov => nlev_rttov
-  
+
   IMPLICIT NONE
   PRIVATE
 
@@ -52,16 +51,16 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   !
-  !! Read Namelist for NWP ensemble perturbations. 
+  !! Read Namelist for NWP ensemble perturbations.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for NWP ensemble perturbations
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)   
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_synsat_namelist( filename )
 
@@ -73,7 +72,7 @@ CONTAINS
       &  routine = 'mo_synsat_nml: read_synsat_namelist'
 
     !-----------------------
-    ! 1. default settings   
+    ! 1. default settings
     !-----------------------
 
     ! Main switch
@@ -83,7 +82,7 @@ CONTAINS
     nlev_rttov = 54
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -131,8 +130,8 @@ CONTAINS
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=synsat_nml)                    
-      CALL store_and_close_namelist(funit, 'synsat_nml')             
+      WRITE(funit,NML=synsat_nml)
+      CALL store_and_close_namelist(funit, 'synsat_nml')
     ENDIF
 
     !--------------------------------------------------------

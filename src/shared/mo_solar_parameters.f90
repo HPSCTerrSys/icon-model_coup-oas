@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! This module contains parameters for the solar constant and the
 ! routine for computing the cosine of the solar zenith angle, both
 ! together needed to define the incident solar flux.
@@ -14,17 +25,6 @@
 ! doi:10.5194/gmd-10-2247-2017.
 !
 ! and provided by HEPPA/SOLARIS Geomar.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_solar_parameters
 
@@ -39,28 +39,29 @@ IMPLICIT NONE
   PRIVATE
 
   PUBLIC :: solar_parameters
-  
+
 CONTAINS
-  
+
 
   !---------------------------------------------------------------------------
   !>
   !! @brief Scans a block and fills with solar parameters
-  !! 
+  !!
   !! @remarks: This routine calculates the solar zenith angle for each
-  !! point in a block of data.  For simulations with no diurnal cycle 
-  !! the cosine of the zenith angle is set to its average value (assuming 
-  !! negatives to be zero and for a day divided into nds intervals).  
-  !! Additionally a field is set indicating the fraction of the day over 
-  !! which the solar zenith angle is greater than zero.  Otherwise the field 
-  !! is set to 1 or 0 depending on whether the zenith angle is greater or 
-  !! less than 1. 
+  !! point in a block of data.  For simulations with no diurnal cycle
+  !! the cosine of the zenith angle is set to its average value (assuming
+  !! negatives to be zero and for a day divided into nds intervals).
+  !! Additionally a field is set indicating the fraction of the day over
+  !! which the solar zenith angle is greater than zero.  Otherwise the field
+  !! is set to 1 or 0 depending on whether the zenith angle is greater or
+  !! less than 1.
   !
   SUBROUTINE solar_parameters(decl_sun,    time_of_day,     &
        &                      icosmu0,     dt_ext,          &
        &                      ldiur,       l_sph_symm_irr,  &
        &                      p_patch,                      &
-       &                      cos_mu0,     daylight_frc     )
+       &                      cos_mu0,     daylight_frc,    &
+       &                      lacc                          )
 
     REAL(wp), INTENT(in)  :: &
          decl_sun,           & !< delination of the sun
@@ -76,6 +77,8 @@ CONTAINS
     REAL(wp), INTENT(out) :: &
          cos_mu0(:,:),       & !< cos_mu_0, cosine of the solar zenith angle
          daylight_frc(:,:)     !< daylight fraction (0 or 1) with diurnal cycle
+    LOGICAL, INTENT(in)   :: lacc
+
 
     INTEGER     :: i, j
     REAL(wp)    :: zen1, zen2, zen3, xx
@@ -96,6 +99,8 @@ CONTAINS
 
     INTEGER :: nprom, npromz, nblks
 
+    !$ACC DECLARE CREATE(cosrad, sinrad)
+
     nprom=nproma
     npromz=p_patch%npromz_c
     nblks=p_patch%nblks_c
@@ -103,11 +108,13 @@ CONTAINS
     IF (.NOT.ldiur.AND..NOT.initialized_sincos) THEN
        !
        ! sin and cos arrays for zonal mean radiation
+       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(xx) ASYNC(1) IF(lacc)
        DO i = 1, nds
           xx = pi2*(i-1.0_wp)/nds
           sinrad(i) = SIN(xx)
           cosrad(i) = COS(xx)
        END DO
+       !$ACC END PARALLEL LOOP
        !
        initialized_sincos = .TRUE.
     END IF
@@ -151,28 +158,56 @@ CONTAINS
        ALLOCATE(coslon(nprom,nblks))
        ALLOCATE(coslat(nprom,nblks))
        ALLOCATE(mu0(nprom,nblks))
-       sinlon(:,:)=0._wp
-       sinlat(:,:)=0._wp
-       coslon(:,:)=0._wp
-       coslat(:,:)=0._wp
-       sinlon(1:nprom,1:nblks-1)=SIN(p_patch%cells%center(1:nprom,1:nblks-1)%lon)
-       sinlat(1:nprom,1:nblks-1)=SIN(p_patch%cells%center(1:nprom,1:nblks-1)%lat)
-       coslon(1:nprom,1:nblks-1)=COS(p_patch%cells%center(1:nprom,1:nblks-1)%lon)
-       coslat(1:nprom,1:nblks-1)=COS(p_patch%cells%center(1:nprom,1:nblks-1)%lat)
-       sinlon(1:npromz,nblks)=SIN(p_patch%cells%center(1:npromz,nblks)%lon)
-       sinlat(1:npromz,nblks)=SIN(p_patch%cells%center(1:npromz,nblks)%lat)
-       coslon(1:npromz,nblks)=COS(p_patch%cells%center(1:npromz,nblks)%lon)
-       coslat(1:npromz,nblks)=COS(p_patch%cells%center(1:npromz,nblks)%lat)
+
+       !$ACC DATA CREATE(sinlon, sinlat, coslon, coslat, mu0) IF(lacc)
+
+       !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+       do j=1,nblks-1
+         do i=1,nprom
+           sinlon(i,j)=SIN(p_patch%cells%center(i,j)%lon)
+           sinlat(i,j)=SIN(p_patch%cells%center(i,j)%lat)
+           coslon(i,j)=COS(p_patch%cells%center(i,j)%lon)
+           coslat(i,j)=COS(p_patch%cells%center(i,j)%lat)
+         end do
+       end do
+       !$ACC END PARALLEL LOOP
+
+       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+       !$ACC LOOP GANG(STATIC: 1) VECTOR
+       do i=1,npromz
+         sinlon(i,nblks)=SIN(p_patch%cells%center(i,nblks)%lon)
+         sinlat(i,nblks)=SIN(p_patch%cells%center(i,nblks)%lat)
+         coslon(i,nblks)=COS(p_patch%cells%center(i,nblks)%lon)
+         coslat(i,nblks)=COS(p_patch%cells%center(i,nblks)%lat)
+       end do
+       !$ACC END PARALLEL
+
+       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+       !$ACC LOOP GANG(STATIC: 1) VECTOR
+       do i=npromz+1,nprom
+         sinlon(i,nblks)=0.0_wp
+         sinlat(i,nblks)=0.0_wp
+         coslon(i,nblks)=0.0_wp
+         coslat(i,nblks)=0.0_wp
+       end do
+       !$ACC END PARALLEL
+
        !
        IF (ldiur) THEN                  ! - with local diurnal cycle
           !
+          !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lacc)
           ! cos(zenith angle), positive for sunlit hemisphere
-          cos_mu0(:,:)     =  zen1*sinlat(:,:)                &
-               &             -zen2*coslat(:,:)*coslon(:,:)    &
-               &             +zen3*coslat(:,:)*sinlon(:,:)
-          !
-          ! zenith angle
-          mu0(:,:) = ACOS(cos_mu0(:,:))
+          do j=1,nblks
+            do i=1,nprom
+              cos_mu0(i,j)     =  zen1*sinlat(i,j)                &
+                 &             -zen2*coslat(i,j)*coslon(i,j)    &
+                 &             +zen3*coslat(i,j)*sinlon(i,j)
+              !
+              ! zenith angle
+              mu0(i,j) = ACOS(cos_mu0(i,j))
+            end do
+          end do
+          !$ACC END PARALLEL LOOP
           !
           ! increment of mu0 to include a rim of width dmu0= (dt_ext/2)*2pi/1day around
           ! the sunlit hemisphere at the radiation time so that the extended area includes
@@ -183,14 +218,20 @@ CONTAINS
           !
           ! add increment dcos_mu0 for the definition of the extended daylight area
           ! set day/night indicator to 1/0
-          daylight_frc(:,:) = 1.0_wp
-          WHERE (cos_mu0(:,:)+dcos_mu0 < 0.0_wp)
-             daylight_frc(:,:) = 0.0_wp
-          END WHERE
+          !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+          do j=1,nblks
+            do i=1,nprom
+              daylight_frc(i,j) = 1.0_wp
+              if (cos_mu0(i,j)+dcos_mu0 < 0.0_wp) then
+                daylight_frc(i,j) = 0.0_wp
+              end if
+            end do
+          end do
+          !$ACC END PARALLEL LOOP
           !
           IF (dt_ext/=0.0_wp) THEN
              !
-             
+
              SELECT CASE (icosmu0)
              CASE (0)
                 !
@@ -199,18 +240,31 @@ CONTAINS
              CASE (1)
                 !
                 ! minimum value
-                !
-                WHERE (daylight_frc(:,:) == 1.0_wp)
-                   cos_mu0(:,:) = MAX(0.1_wp,cos_mu0(:,:))
-                END WHERE
+               !
+                !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+                do j=1,nblks
+                  do i=1,nprom
+                    if (daylight_frc(i,j) == 1.0_wp) then
+                      cos_mu0(i,j) = MAX(0.1_wp,cos_mu0(i,j))
+                    end if
+                  end do
+                end do
+                !$ACC END PARALLEL LOOP
                 !
              CASE (2)
                 !
                 ! shift and rescale
                 !
-                WHERE (daylight_frc(:,:) == 1.0_wp)
-                   cos_mu0(:,:) = (cos_mu0(:,:)+dcos_mu0)/(1._wp+dcos_mu0)
-                END WHERE
+
+                !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+                do j=1,nblks
+                  do i=1,nprom
+                    if (daylight_frc(i,j) == 1.0_wp) then
+                      cos_mu0(i,j) = (cos_mu0(i,j)+dcos_mu0)/(1._wp+dcos_mu0)
+                    end if
+                  end do
+                end do
+                !$ACC END PARALLEL LOOP
                 !
              CASE (3)
                 !
@@ -221,9 +275,15 @@ CONTAINS
                 !   center     = original terminator : mu0=pi/2      --> cos_mu0 = cos(pi/2-dmu0)/2
                 !   outer edge = extended terminator : mu0=pi/2+dmu0 --> cos_mu0 = 0
                 !
-                WHERE (ABS(mu0(:,:)-pi_2)<dmu0)
-                   cos_mu0(:,:) = 0.5_wp*SIN(dmu0)*(1._wp-(mu0(:,:)-pi_2)/dmu0)
-                END WHERE
+                !$ACC PARALLEL LOOP DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lacc)
+                do j=1,nblks
+                  do i=1,nproma
+                    if (abs(mu0(i,j)-pi_2)<dmu0) then
+                      cos_mu0(i,j) = 0.5_wp*sin(dmu0)*(1._wp-(mu0(i,j)-pi_2)/dmu0)
+                    end if
+                  end do
+                end do
+                !$ACC END PARALLEL LOOP
                 !
              CASE (4)
                 !
@@ -237,9 +297,16 @@ CONTAINS
                 ! mu0s is the solution of : cos(mu0s) = sin(mu0s)*(pi/2+dmu0-mu0s)
                 ! so that cos_mu0 is a C1 function in [0,pi/2+dmu0]
                 !
-                WHERE ((mu0s<mu0(:,:)).AND.(mu0(:,:)<(pi_2+dmu0)))
-                   cos_mu0(:,:) = sin_mu0s*(pi_2+dmu0-mu0(:,:))
-                END WHERE
+                !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+
+                do j=1,nblks
+                  do i=1,nproma
+                    if ((mu0s<mu0(i,j)).AND.(mu0(i,j)<(pi_2+dmu0))) then
+                      cos_mu0(i,j) = sin_mu0s*(pi_2+dmu0-mu0(i,j))
+                    end if
+                  end do
+                end do
+                !$ACC END PARALLEL LOOP
                 !
              END SELECT
           END IF
@@ -250,8 +317,9 @@ CONTAINS
           ! latitude circle of the cell. Then compute the zonal mean of cos(mu0) for the latitude
           ! of this cell as the average over all longitudes, where cos(mu0)>=epsilon.
           !
+          !$ACC PARALLEL LOOP DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lacc)
           DO j = 1, SIZE(cos_mu0,2)
-             DO i = 1, SIZE(cos_mu0,1)
+            DO i = 1, SIZE(cos_mu0,1)
                 !
                 ! cos(zenith angle) for nds longitudes on the latitude circle of cell (i,j)
                 xsmpl(:) =  zen1*sinlat(i,j)              &
@@ -281,9 +349,12 @@ CONTAINS
                 !
              END DO
           END DO
+          !$ACC END PARALLEL LOOP
           !
        END IF
        !
+       !$ACC WAIT(1)
+       !$ACC END DATA
        DEALLOCATE(sinlon)
        DEALLOCATE(sinlat)
        DEALLOCATE(coslon)
@@ -297,26 +368,39 @@ CONTAINS
        IF (ldiur) THEN                  ! - with diurnal cycle of (0degE,0degN), i.e.
           !                                 local noon is at 12:00 UTC in all points
           !
-          cos_mu0(:,:) = -zen2          !   = cos_mu0 at (0degE,0degN)
-          IF (-zen2 < 0.0_wp) THEN
-             daylight_frc(:,:) = 0.0_wp
-          ELSE
-             daylight_frc(:,:) = 1.0_wp
-          END IF
+          !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+          do j=1,nblks
+            do i=1,nproma
+              cos_mu0(i,j) = -zen2          !   = cos_mu0 at (0degE,0degN)
+              IF (-zen2 < 0.0_wp) THEN
+                daylight_frc(i,j) = 0.0_wp
+              ELSE
+                daylight_frc(i,j) = 1.0_wp
+              END IF
+            end do
+          end do
+          !$ACC END PARALLEL LOOP
           !
        ELSE                             ! - without diurnal cycle
           !                                 all grid points have the same constant cos_mu0
           !
           ! cos_mu0(:,:) = pi_4           !  = pi/4 (why this choice?)
           ! quickhack for RCEMIP_analytical
-          cos_mu0(:,:) = COS(42.05_wp*pi/180._wp)           !  = pi/4 (why this choice?)
-          daylight_frc(:,:) = 1.0_wp
+          !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+          do j=1,nblks
+            do i=1,nproma
+              cos_mu0(i,j) = COS(42.05_wp*pi/180._wp)           !  = pi/4 (why this choice?)
+              daylight_frc(i,j) = 1.0_wp
+            end do
+          end do
+          !$ACC END PARALLEL LOOP
           !
        END IF
        !
        !
     END IF
 
+    !$ACC WAIT(1)
   END SUBROUTINE solar_parameters
 
 END MODULE mo_solar_parameters

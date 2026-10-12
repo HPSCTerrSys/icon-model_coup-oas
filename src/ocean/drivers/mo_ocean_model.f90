@@ -1,10 +1,7 @@
-! Main program for the ICON ocean model
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,13 +9,15 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Main program for the ICON ocean model
+
 MODULE mo_ocean_model
 
   USE mo_exception,           ONLY: message, finish
   USE mo_master_control,      ONLY: get_my_process_name, get_my_process_type
-  USE mo_master_config,       ONLY: isRestart
+  USE mo_master_config,       ONLY: isRestart, isInitFromRestart, my_model_do_restart
   USE mo_parallel_config,     ONLY: p_test_run, l_test_openmp, num_io_procs, &
-       &                            pio_type, num_test_pe, num_prefetch_proc
+       &                            pio_type, num_test_pe, num_prefetch_proc, proc0_shift
   USE mo_mpi,                 ONLY: set_mpi_work_communicators
 #ifdef HAVE_CDI_PIO
   USE mo_impl_constants,      ONLY: pio_type_cdipio
@@ -50,7 +49,8 @@ MODULE mo_ocean_model
 
   USE mo_ocean_nml_crosscheck,   ONLY: ocean_crosscheck
   USE mo_ocean_nml,              ONLY: i_sea_ice, no_tracer, &
-    & initialize_fromRestart
+    & use_layers, & ! by_nils
+    & initialize_fromRestart, use_initicono, is_ocean_limited_area
 
   USE mo_model_domain,        ONLY: t_patch_3d, p_patch_local_parent
 
@@ -72,13 +72,15 @@ MODULE mo_ocean_model
   USE mo_ocean_initialization, ONLY: init_ho_base, &
     & init_ho_basins, init_coriolis_oce, init_patch_3d,   &
     & init_patch_3d
-  USE mo_ocean_initial_conditions,  ONLY:  apply_initial_conditions, init_ocean_bathymetry
+
+  USE mo_ocean_initial_conditions,  ONLY:  apply_initial_conditions, init_ocean_bathymetry, init_from_analysis
   USE mo_ocean_check_tools,     ONLY: init_oce_index
   USE mo_util_dbg_prnt,       ONLY: init_dbg_index
   USE mo_ext_data_types,      ONLY: t_external_data
   USE mo_ocean_physics_types,  ONLY: t_ho_params, construct_ho_params, v_params, &
                                    & destruct_ho_params
   USE mo_ocean_physics,          ONLY: init_ho_params
+  USE mo_ocean_layers,           ONLY: init_layers ! by_nils
   USE mo_operator_ocean_coeff_3d,ONLY: construct_operators_coefficients, &
     & destruct_operators_coefficients
 
@@ -93,13 +95,12 @@ MODULE mo_ocean_model
   USE mo_ocean_forcing,       ONLY: construct_ocean_surface, destruct_ocean_forcing, &
                                     & construct_atmos_for_ocean, destruct_atmos_for_ocean
   USE mo_ocean_forcing,       ONLY: init_ocean_forcing
-  USE mo_impl_constants,      ONLY: success
+  USE mo_impl_constants,      ONLY: success, INIT_FROM_RESTART, NO_RESTART
 
-  USE mo_ocean_nudging,       ONLY: ocean_nudge
+  USE mo_ocean_nudging,        ONLY: ocean_nudge
   USE mo_alloc_patches,        ONLY: destruct_patches, destruct_comm_patterns
   USE mo_ocean_read_namelists, ONLY: read_ocean_namelists
   USE mo_load_restart,         ONLY: read_restart_header, read_restart_files
-  USE mo_restart_nml_and_att,  ONLY: ocean_initFromRestart_OVERRIDE
   USE mo_ocean_patch_setup,    ONLY: complete_ocean_patch
   USE mo_icon_comm_interface,  ONLY: construct_icon_communication, destruct_icon_communication
   USE mo_grid_tools,           ONLY: create_dummy_cell_closure
@@ -110,6 +111,8 @@ MODULE mo_ocean_model
   USE mo_restart, ONLY: detachRestartProcs
   USE mo_ocean_time_events,    ONLY: init_ocean_time_events
   USE mo_icon_output_tools,    ONLY: init_io_processes, prepare_output
+  USE mo_ocean_initicono,      ONLY: read_initicono, t_initicono_read
+  USE mo_ocean_limarea,        ONLY: init_ocean_latbc, destruct_ocean_latbc
   !-------------------------------------------------------------
   ! For the coupling
   USE mo_coupling_config,      ONLY: is_coupled_run
@@ -119,11 +122,6 @@ MODULE mo_ocean_model
   !-------------------------------------------------------------
 
   USE mo_ocean_hamocc_interface, ONLY: ocean_to_hamocc_construct, ocean_to_hamocc_init, ocean_to_hamocc_end
-
-#ifndef __NO_ICON_COMIN__
-  USE mo_mpi,               ONLY: p_comm_comin
-  USE comin_host_interface, ONLY: mpi_handshake_dummy
-#endif
 
   IMPLICIT NONE
 
@@ -172,9 +170,9 @@ MODULE mo_ocean_model
     CALL ocean_to_hamocc_init(ocean_patch_3d, ocean_state(1), &
       & p_as, v_sea_ice, v_oce_sfc, v_params)
 
+
     !-------------------------------------------------------------------
-    IF (isRestart() .OR. initialize_fromRestart) THEN
-      ocean_initFromRestart_OVERRIDE = initialize_fromRestart
+    IF (isRestart() .OR. isInitFromRestart()) THEN
       ! This is an resumed integration. Read model state from restart file(s).
       CALL read_restart_files( ocean_patch_3d%p_patch_2d(1) )
       CALL message(TRIM(method_name),'normal exit from read_restart_files')
@@ -182,6 +180,17 @@ MODULE mo_ocean_model
       !  Prepare the initial conditions:
       !  forcing is part of the restart file
     END IF ! isRestart()
+
+    !-------------------------------------------------------------------
+    IF ( is_coupled_run() ) THEN
+       ! Calls the coupling definition and syncronisation with other
+       ! coupling processes after the sometimes very time-consuming
+       ! reading of restart.
+      IF (ltimer) CALL timer_start(timer_coupling)
+      CALL construct_ocean_coupling(ocean_patch_3d)
+      IF (ltimer) CALL timer_stop(timer_coupling)
+    END IF
+
     !------------------------------------------------------------------
     ! Now start the time stepping:
     ! The special initial time step for the three time level schemes
@@ -267,6 +276,9 @@ MODULE mo_ocean_model
     !  cleaning up process
     !------------------------------------------------------------------
     CALL message(TRIM(method_name),'start to clean up')
+
+    ! Ocean LAM cleanup
+    IF (is_ocean_limited_area) CALL destruct_ocean_latbc()
 
     CALL destruct_oce_diagnostics()
     !------------------------------------------------------------------
@@ -359,8 +371,16 @@ MODULE mo_ocean_model
     !---------------------------------------------------------------------
 
     CALL read_ocean_namelists(oce_namelist_filename,shr_namelist_filename)
-    IF (initialize_fromRestart .AND. .NOT. isRestart()) THEN
-      ocean_initFromRestart_OVERRIDE = initialize_fromRestart
+
+    ! HACK for backward compatibility: PLEASE REMOVE SOON !!!
+    ! Overwrite my_model_do_restart by initialize_fromRestart
+    ! In case of a normal restart (my_model_do_restart==NORMAL_RESTART)
+    ! initialize_fromRestart will have no effect and is ignored.
+    IF (ANY((/INIT_FROM_RESTART,NO_RESTART/) == my_model_do_restart)) THEN
+      my_model_do_restart = MERGE(INIT_FROM_RESTART, NO_RESTART, initialize_fromRestart)
+    ENDIF
+
+    IF (isInitFromRestart() .AND. .NOT. isRestart()) THEN
       CALL read_restart_header(TRIM(get_my_process_name()) )
     END IF
 
@@ -391,7 +411,7 @@ MODULE mo_ocean_model
 !orig
 !pa
     num_io_procs_radar = 0
-    num_dio_procs      = 0
+    num_dio_procs      = proc0_shift
     radar_flag_doms_model(1) = .FALSE.
 
     CALL set_mpi_work_communicators(p_test_run, l_test_openmp, &
@@ -399,11 +419,6 @@ MODULE mo_ocean_model
          &                          get_my_process_type(),num_prefetch_proc, num_test_pe,      &
          &                pio_type, num_io_procs_radar,radar_flag_doms_model, num_dio_procs)
 !pa
-
-#ifndef __NO_ICON_COMIN__
-    ! we dont participate at comin (yet) but we need to be friendly and shake hands
-    CALL mpi_handshake_dummy(p_comm_comin)
-#endif
 
     !-------------------------------------------------------------------
     ! 3.2 Initialize various timers
@@ -494,6 +509,11 @@ MODULE mo_ocean_model
     CALL init_oce_index(ocean_patch_3d%p_patch_2d,ocean_patch_3d, ocean_state, ext_data )
 
     CALL init_ho_params(ocean_patch_3d, v_params, p_as%fu10)
+    IF (use_initicono) CALL init_from_analysis(ocean_patch_3d, v_sea_ice, ocean_state, v_params, read_initicono )
+
+    IF (use_layers) THEN
+      CALL init_layers(ocean_patch_3d, ocean_state(1)%p_diag) ! by_nils
+    ENDIF
 
 !    IF (.not. isRestart()) &
     CALL apply_initial_conditions(ocean_patch_3d, ocean_state(1), ext_data(1), operators_coefficients)
@@ -508,6 +528,9 @@ MODULE mo_ocean_model
 
     IF (i_sea_ice >= 1) &
       &   CALL ice_init(ocean_patch_3D, ocean_state(1), v_sea_ice, v_oce_sfc%cellThicknessUnderIce)
+
+    ! Call LAM initialization (precalculate nudging coefficients, prepare for data loading)
+    IF (is_ocean_limited_area) CALL init_ocean_latbc(ocean_patch_3d, operators_coefficients)
 
     IF (ltimer) CALL timer_stop(timer_model_init)
 
@@ -586,11 +609,6 @@ MODULE mo_ocean_model
     CALL construct_atmos_fluxes(patch_3d%p_patch_2d(1), atmos_fluxes, kice)
 
     CALL construct_ocean_surface(patch_3d, p_oce_sfc)
-    IF ( is_coupled_run() ) THEN
-      IF (ltimer) CALL timer_start(timer_coupling)
-      CALL construct_ocean_coupling(ocean_patch_3d)
-      IF (ltimer) CALL timer_stop(timer_coupling)
-    END IF
 
     !------------------------------------------------------------------
     CALL construct_oce_diagnostics( ocean_patch_3d, ocean_state(1))

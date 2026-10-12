@@ -1,22 +1,22 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
 ; SPDX-License-Identifier: BSD-3-Clause
 ; ------------------------------------------
 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl" 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl" 
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 
 
 undef("define_draw_strings")
  procedure define_draw_strings (Code,cArea,comment,wks,plot)
- 
+
 ;************************************************
 ;  Define min max mean
 ;  Draw text on plot using NDC coordinates.
@@ -40,7 +40,7 @@ begin
   txres                  =  True                 ; text mods desired
   txres@txFontHeightF    =  0.014                 ;-- smaller font
   txid = gsn_create_text(wks, statV, txres)
-  
+
   amres                  =  True
   amres@amParallelPosF   =  0.0                  ;-- center position
   amres@amOrthogonalPosF =  0.7                  ;-- move downward
@@ -48,7 +48,7 @@ begin
   annoid = gsn_add_annotation(plot, txid, amres)
 
 end
-;***end procedure 
+;***end procedure
 
 ;---------------------------------------
 ;-- function attach_labelbar
@@ -78,7 +78,7 @@ begin
 
   return(map)
 end
-;***end procedure 
+;***end procedure
 undef("fast_cell")
  function  fast_cell  (wks,var,x,y,cArea,vlon,vlat,cnres_in,missColor,\
                         mainTitle,subTitle,comment )
@@ -117,7 +117,7 @@ begin
   res@sfYArray             =  y            ;-- transform y to mesh scalar field
   res@sfXCellBounds        =  vlon         ;-- needed if cnFillMode= "CellFill"
   res@sfYCellBounds        =  vlat         ;-- needed if cnFillMod = "CellFill"
-  
+
   res@lbLabelBarOn         =  False        ;-- don't draw a labelbar yet
 
   res@mpFillOn             =  False                    ;?-- fill map grey
@@ -127,15 +127,15 @@ begin
   res@mpMinLatF            =  latMin         ;-- sub-region minimum latitude
   res@mpMaxLatF            =  latMax         ;-- sub-region maximum latitude
   res@mpGreatCircleLinesOn =  False          ;-- important: v6.2.0 False !!
-  res@gsnSpreadColors      =  False  
-    
+  res@gsnSpreadColors      =  False
+
   res@tiMainString         =  mainTitle
   res@gsnCenterString      =  subTitle
-  res@gsnLeftString        = " " 
-  res@gsnRightString       = " " 
+  res@gsnLeftString        = " "
+  res@gsnRightString       = " "
 
 
-;***create the contour plot, but don't draw it. 
+;***create the contour plot, but don't draw it.
 ;***We need it to get the colors of the data values
   contour_object = gsn_csm_contour_map(wks,var,res)
 
@@ -151,7 +151,7 @@ begin
   nlevels = dimsizes(levels)        ;-- number of levels
 
 ;***clear plot, but keep all the information
-  contour_object = setColorContourClear(contour_object,min(var),max(var)) 
+  contour_object = setColorContourClear(contour_object,min(var),max(var))
 print("min: "+min(var)+" max: "+max(var))
 
 ;***attach a labelbar to the plot
@@ -178,7 +178,7 @@ print("min: "+min(var)+" max: "+max(var))
 ;***set colors for all cells in between var_min and var_max
   do i = 1, dimsizes(levels) - 1
 ;    get the indices of 'middle' values
-     vind := ind(var .ge. levels(i-1) .and. var .lt. levels(i))  
+     vind := ind(var .ge. levels(i-1) .and. var .lt. levels(i))
      if (.not. all(ismissing(vind))) then
         gscolors(vind) = colors(i)                  ;-- choose the colors
         ntri_calc = ntri_calc + dimsizes(vind)      ;-- number of triangles
@@ -200,7 +200,7 @@ print("min: "+min(var)+" max: "+max(var))
   pres@gsColors        = gscolors       ; set colors for polygons
   pres@gsSegments      = ispan(0,dimsizes(var) * 3,3)  ; assign segments array
 ;***draw all triangles
-  polygon = gsn_add_polygon(wks,contour_object,ndtooned(vlon),ndtooned(vlat),pres)  
+  polygon = gsn_add_polygon(wks,contour_object,ndtooned(vlon),ndtooned(vlat),pres)
 
 ;-- define attribute polygon to hold the polygon ids
   contour_object@polygon = polygon
@@ -231,8 +231,8 @@ begin
 
     res@tiMainString         = mainTitle
     res@gsnCenterString      = subTitle
-    res@gsnLeftString        = " " 
-    res@gsnRightString       = " " 
+    res@gsnLeftString        = " "
+    res@gsnRightString       = " "
 
     res@mpCenterLonF         = 0         ; center of map
     res@gsnSpreadColors      = False     ; use full range of colors
@@ -250,7 +250,7 @@ begin
   return(contour_object)
 
 end
-;***end function 
+;***end function
 
 
 ;************************************************
@@ -273,12 +273,12 @@ begin
 ;***define plot and open
    pltType = "pdf"                        ; x11, eps, ps, pdf, png
    pltName = workdir+"/"+run+"_atm_3d_"+typ+"_map"
-   wks     = gsn_open_wks(pltType, pltName) 
+   wks     = gsn_open_wks(pltType, pltName)
 ;***plot array for panel
    listplots = new(11,graphic)
    noPlot=-1  ;number of listplots
 ;***define colors
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
     missColor = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
 
 ;************************************************
@@ -293,7 +293,7 @@ begin
   cArea = GridInfoFile->cell_area   ; area of grid cell
 
 ; note: clon and clat are longitude and latitude of triangle centers.
-;       Locations of the cell corners are given by 
+;       Locations of the cell corners are given by
 ;       clon_vertices and clat_vertices in the nc file.
 
 
@@ -313,20 +313,20 @@ begin
 ;***setings
     Cvar="ta"
     fili    = workdir+"/Ubusy_"+Cvar+"_lola.nc"
-    
+
     mainTitle = "Temperature [C] 850 hPa "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code ta
-    File       = addfile (fili , "r") 
+    File       = addfile (fili , "r")
     var     = File->$Cvar$(time|0,ncells|:,lev|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
@@ -362,17 +362,17 @@ end if
     mainTitle = "Temperature [C] 850 hPa "+typ
     subTitle  = run+meantime+" - Erain"+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
-                
+
 if (isfilepresent(fili)) then
 
 ;***read code 130
     File       = addfile (fili , "r")
-    var     = File->$Cvar$(time|0,lev|0,ncells|:)  
+    var     = File->$Cvar$(time|0,lev|0,ncells|:)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
@@ -410,8 +410,8 @@ end if
 if (isfilepresent(fili)) then
 
 ;***read code 156
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(0,0,:)             ; (time|0,lev|0,ncells|:)   
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(0,0,:)             ; (time|0,lev|0,ncells|:)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
@@ -421,18 +421,18 @@ if (isfilepresent(fili)) then
 ;***create plot
     BWres                      = True              ; plot mods desired
     BWres@gsnFrame             = False             ; don't advance frame yet
-    BWres@gsnDraw              = False 
+    BWres@gsnDraw              = False
     BWres@tiMainString         = "Geopotential height [dam] 500 hPa "+typ
     BWres@gsnCenterString      = run+meantime
-    BWres@gsnLeftString        = " " 
-    BWres@gsnRightString       = " " 
+    BWres@gsnLeftString        = " "
+    BWres@gsnRightString       = " "
     BWres@cnLevelSelectionMode = "ManualLevels"    ; set manual contour levels
     BWres@cnMinLevelValF       =  480.             ; set min contour level
     BWres@cnMaxLevelValF       =  600.             ; set max contour level
     BWres@cnLevelSpacingF      =  16.              ; set contour spacing
     BWres@cnInfoLabelOn        = False             ; turn off contour label box
 
-    BWres@mpCenterLonF         = 0                 ; Centers the plot at lon 0 
+    BWres@mpCenterLonF         = 0                 ; Centers the plot at lon 0
 
     BWres@sfXArray = x      ; These are 1D arrays, so a triangular mesh
     BWres@sfYArray = y      ; will be used to create the contours.
@@ -451,12 +451,12 @@ if (isfilepresent(fili)) then
     Cvar="zg"
     fili    = workdir+"/xUbusy_"+Cvar+"_erain_lola.nc"
     mainTitle = "Geopotential height [dam] 500 hPa "+typ
-    
+
 if (isfilepresent(fili)) then
 
 ;***read code 156
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(0,0,:)             ; (time|0,lev|0,ncells|:)   
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(0,0,:)             ; (time|0,lev|0,ncells|:)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
@@ -467,24 +467,24 @@ if (isfilepresent(fili)) then
 ;***create plot
     BWres                      = True              ; plot mods desired
     BWres@gsnFrame             = False             ; don't advance frame yet
-    BWres@gsnDraw              = False 
+    BWres@gsnDraw              = False
     BWres@tiMainString         = mainTitle
     BWres@gsnCenterString      = "Erain"+eratime
-    BWres@gsnLeftString        = " " 
-    BWres@gsnRightString       = " " 
+    BWres@gsnLeftString        = " "
+    BWres@gsnRightString       = " "
     BWres@cnLevelSelectionMode = "ManualLevels"    ; set manual contour levels
     BWres@cnMinLevelValF       =  480.             ; set min contour level
     BWres@cnMaxLevelValF       =  600.             ; set max contour level
     BWres@cnLevelSpacingF      =  16.              ; set contour spacing
     BWres@cnInfoLabelOn        = False             ; turn off contour label box
 
-    BWres@mpCenterLonF         = 0                 ; Centers the plot at lon 0 
+    BWres@mpCenterLonF         = 0                 ; Centers the plot at lon 0
 
     BWres@sfXArray = x      ; These are 1D arrays, so a triangular mesh
     BWres@sfYArray = y      ; will be used to create the contours.
 
     plot5 = gsn_csm_contour_map_ce(wks,var, BWres) ; create plot
-  
+
 ;***define statistical Values and draw Values, comment, pltdate
     define_draw_strings (var,cArea,comment,wks,plot5)
     listplots(noPlot)=plot5
@@ -500,17 +500,17 @@ if (isfilepresent(fili)) then
     mainTitle = "Geopotential height [dam] 500 hPa "+typ
     subTitle  = run+meantime+" - Erain"+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
-             
+
 if (isfilepresent(fili)) then
-       
-;***read 
+
+;***read
     File       = addfile (fili , "r")
-    var     = File->$Cvar$(time|0,lev|0,ncells|:)  
+    var     = File->$Cvar$(time|0,lev|0,ncells|:)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
@@ -538,13 +538,13 @@ end if
 
 
 print("number of plots:  "+noPlot)
-;--KMF prepare plots for panel   
+;--KMF prepare plots for panel
    pltres          =  True
-   
+
 
    gsn_panel(wks, (/listplots(0),listplots(1),\
                     listplots(2),listplots(3)\
-                    /), (/3,2/), pltres)   
+                    /), (/3,2/), pltres)
 
- 
+
 end

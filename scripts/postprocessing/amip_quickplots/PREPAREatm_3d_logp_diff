@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -33,13 +33,13 @@ LEVELS="100900,99500,97100,93900,90200,86100,81700,77200,72500,67900,63300,58800
 #
 
 ###########################################################################
-# 
+#
 set  -ex
 #
 
 #--interpolate to pressure level and t63
 cdo -setpartabn,partab -ap2pl,${LEVELS}   $AinDat Uatm_dyn_plA
-REMAP_AREA_MIN=0.5 
+REMAP_AREA_MIN=0.5
 cdo -r remapycon,t63grid   Uatm_dyn_plA Uatm_dyn_t63A
 cdo sinfon   $AinDat
 cdo sinfon  Uatm_dyn_plA
@@ -63,7 +63,7 @@ more var.txt
 #----code130--TA- Temperature---ZONAL--CMOR: ta ---
 #
 Cvar=ta
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -zonmean -subc,273.15 -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -76,7 +76,7 @@ fi
 #-----code131--------zonal----CMOR: ua ----
 #
 Cvar=ua
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -89,7 +89,7 @@ fi
 #-----code132---VA-----zonal----CMOR: va ----
 #
 Cvar=va
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -97,11 +97,4 @@ then
 #
 fi
 fi
-exit 
-
-
-
-
-
-
-
+exit

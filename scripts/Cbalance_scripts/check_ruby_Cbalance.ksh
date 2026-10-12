@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -18,14 +18,14 @@
 # input files needed (in experiment's outdata directory):
 #
 # ${EXP_ID}_atm_3d_ml_${date}.nc :      mco2vi_phy                  (time avg)
-# $(EXP_ID}_lnd_basic_ml_${date}.nc :   carbon_c_sum_natural_ta_box (time avg) 
+# $(EXP_ID}_lnd_basic_ml_${date}.nc :   carbon_c_sum_natural_ta_box (time avg)
 #                                       carbon_co2_l2a_herb_ta_box  (time avg)
 #                                       carbon_co2_l2a_npp_ta_box   (time avg)
 #                                       carbon_co2_l2a_resp_ta_box  (time avg)
 # $(EXP_ID}_atm_2d_ml_${date}.nc :      co2_flux_lnd                (time avg)
 #                                       co2_flux_wtr                (time avg)
 # $(EXP_ID}_hamocc_2d_tendencies_${date}.nc  co2flux                (time avg)
-# ../bgcout__${date}*Z                 'Global total carbon'        (stepwise) 
+# ../bgcout__${date}*Z                 'Global total carbon'        (stepwise)
 #                                      'calcinp'                    (stepwise)
 #                                      'orginp'                     (stepwise)
 # $(EXP_ID}_cbal_inst_${date}.nc :      carbon_c_sum_natural_ta_box  (inst.)
@@ -120,9 +120,9 @@ cdo -r -setattribute,Clnd@units=GtC -setvar,"Clnd" -mulc,6.126245 -fldmean -mul 
 #   1 mol C = 12.0107 g C  =>  1 kMol C = 1.20107e-11 Gt C
 
 # The bgcout file is only written if l_bgc_check=true in hamocc_nml.
-# Hamocc prints the inventory checks 4 times per timestep. We are interessted 
+# Hamocc prints the inventory checks 4 times per timestep. We are interessted
 # in the last value of the day/month.
-#   24 steps per day  x  4 prints per step  => 96 prints per day 
+#   24 steps per day  x  4 prints per step  => 96 prints per day
 YR=$YR1
 rm -f ${EXP_ID}_Coce_${DATE}.tmp ${EXP_ID}_calcinp_${DATE}.tmp ${EXP_ID}_orginp_${DATE}.tmp
 while [[ $YR -le $YR2 ]]; do
@@ -216,7 +216,7 @@ cdo -O -setattribute,Ctot@units=GtC -setvar,"Ctot" -enssum  \
 cdo -O mergetime -apply,selname,co2_flux_lnd "${EXP_ID}_atm_2d_ml_????0101.nc" \
     ${EXP_ID}_atm_2d_ml_co2_flux_lnd_${DATE}.nc
 cdo -r -setattribute,Cl2a@units="GtC/${unit}" -setvar,"Cl2a" -mulc,139.20 ${muldpm} -mulc,86400 -fldmean \
-    -mul land.nc ${EXP_ID}_atm_2d_ml_co2_flux_lnd_${DATE}.nc  ${EXP_ID}_Cl2a_${DATE}.atm.GtC.nc 
+    -mul land.nc ${EXP_ID}_atm_2d_ml_co2_flux_lnd_${DATE}.nc  ${EXP_ID}_Cl2a_${DATE}.atm.GtC.nc
 
 # l2a-flux in ICON-lnd output
 cdo -O mergetime -apply,selname,carbon_co2_l2a_herb_ta_box "${EXP_ID}_lnd_basic_ml_????0101.nc" \
@@ -230,7 +230,7 @@ cdo -r -setattribute,Cl2a@units="GtC/${unit}" -setvar,"Cl2a" \
     -enssum ${EXP_ID}_lnd_basic_ml_carbon_co2_l2a_herb_ta_box_${DATE}.nc \
             ${EXP_ID}_lnd_basic_ml_carbon_co2_l2a_npp_ta_box_${DATE}.nc  \
             ${EXP_ID}_lnd_basic_ml_carbon_co2_l2a_resp_ta_box_${DATE}.nc \
-    ${EXP_ID}_Cl2a_${DATE}.lnd.GtC.nc 
+    ${EXP_ID}_Cl2a_${DATE}.lnd.GtC.nc
 
 # compare the two - should be zero
 cdo -r sub ${EXP_ID}_Cl2a_${DATE}.atm.GtC.nc \
@@ -242,7 +242,7 @@ cdo -r sub ${EXP_ID}_Cl2a_${DATE}.atm.GtC.nc \
 # 2d-Tests for the land
 #-----------------------------------------------------------------------------
 
-# Test 1: C fluxes to the atmosphere: seen by atmosphere vs. seen by land 
+# Test 1: C fluxes to the atmosphere: seen by atmosphere vs. seen by land
 #    [kg(CO2) m-2 s-1] -> [kg(CO2) m-2 d-1]
 
 # l2a-flux in ICON-atm output
@@ -255,7 +255,7 @@ cdo -setattribute,Cl2a@units="kg(CO2)/m2/${unit}" -setvar,"Cl2a" ${muldpm} -mulc
     -mul notsea.nc -enssum ${EXP_ID}_lnd_basic_ml_carbon_co2_l2a_herb_ta_box_${DATE}.nc \
                            ${EXP_ID}_lnd_basic_ml_carbon_co2_l2a_npp_ta_box_${DATE}.nc  \
                            ${EXP_ID}_lnd_basic_ml_carbon_co2_l2a_resp_ta_box_${DATE}.nc \
-    ${EXP_ID}_Cl2a_${DATE}.lnd.nc 
+    ${EXP_ID}_Cl2a_${DATE}.lnd.nc
 
 # compare the two - should be zero
 cdo remapcon,t127grid ${EXP_ID}_Cl2a_${DATE}.lnd.nc  ${EXP_ID}_Cl2a_${DATE}.lnd.t127.nc
@@ -265,7 +265,7 @@ cdo -r remapcon,t127grid test_${EXP_ID}_Cl2a_atm-lnd.nc             test_${EXP_I
 rm -f test_${EXP_ID}_Cl2a_atm-lnd.nc
 
 
-# Test 2: Land C balance: Check cumulative C fluxes to the atmosphere and total land budget 
+# Test 2: Land C balance: Check cumulative C fluxes to the atmosphere and total land budget
 #
 # Total land carbon - instantanous [mol(C) m-2] -> [kg(CO2) m-2]
 # 1 mol CO2 = 44.0095 g(CO2) = 0.0440095 kg(CO2)
@@ -288,7 +288,7 @@ rm -f test_${EXP_ID}_Clnd_${DATE}.lnd.nc
 # Tests for the ocean
 #-----------------------------------------------------------------------------
 
-# Test 1: 2D C fluxes to the atmosphere: seen by atmosphere vs. seen by ocean 
+# Test 1: 2D C fluxes to the atmosphere: seen by atmosphere vs. seen by ocean
 #   [kg(CO2) m-2 s-1] -> [kg(CO2) m-2 d-1]
 
 # o2a-flux in ICON-atm output
@@ -304,7 +304,7 @@ cdo -r remapcon,t127grid ${EXP_ID}_Co2a_${DATE}.atm.nc ${EXP_ID}_Co2a_${DATE}.at
 cdo -O mergetime -apply,selname,co2flux "${EXP_ID}_hamocc_2d_tendencies_????0101.nc" \
     ${EXP_ID}_hamocc_2d_tendencies_co2flux_${DATE}.nc
 cdo -mulc,86400 -mulc,44.011 ${EXP_ID}_hamocc_2d_tendencies_co2flux_${DATE}.nc \
-    ${EXP_ID}_Co2a_${DATE}.oce.nc 
+    ${EXP_ID}_Co2a_${DATE}.oce.nc
 cdo remapcon,t127grid ${EXP_ID}_Co2a_${DATE}.oce.nc ${EXP_ID}_Co2a_${DATE}.oce.t127.nc
 
 cdo sub ${EXP_ID}_Co2a_${DATE}.atm.t127.nc ${EXP_ID}_Co2a_${DATE}.oce.t127.nc \
@@ -351,4 +351,3 @@ rm -f ${EXP_ID}_cbal_inst_ml_carbon_c_sum_natural_ta_box_${DATE}.nc
 rm -f ${EXP_ID}_hamocc_2d_tendencies_co2flux_${DATE}.nc
 rm -f ${EXP_ID}_calcinp_${DATE}.GtC_daily.nc ${EXP_ID}_calcinp_${DATE}.GtC.nc
 rm -f ${EXP_ID}_orginp_${DATE}.GtC_daily.nc  ${EXP_ID}_orginp_${DATE}.GtC.nc
-

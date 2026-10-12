@@ -1,0 +1,22 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: CC0-1.0
+# ---------------------------------------------------------------
+
+# This applies fully automatic code formatting to the Python (isort, black),
+# CMake (cmake-format) and C/C++/CUDA/HIP (clang-format) source files.
+# Additionally, all text files do not contain trailing empty lines and
+# whitespaces anymore.
+1aa7f74dd348a21f2dfe1caa8a0c0513e1cb1a4e
+
+# Switch to the updated Google C++ Style Guide:
+# https://google.github.io/styleguide/cppguide.html#Pointer_and_Reference_Expressions
+e4331fed29082d46c02b442f5b971ad986ddbe20
+
+# Switch from fprettify to Codee for Fortran formatting:
+5cd72de876f4efe49759ab268a66433c7a8ad763

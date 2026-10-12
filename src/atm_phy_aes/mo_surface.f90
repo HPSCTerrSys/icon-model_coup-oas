@@ -1,9 +1,7 @@
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -15,7 +13,7 @@ MODULE mo_surface
 
   USE mo_kind,              ONLY: wp, i1
 #ifdef _OPENACC
-  USE mo_exception,         ONLY: warning
+  USE mo_exception,         ONLY: warning, message
 #endif
 #ifdef __NO_JSBACH__
   USE mo_exception,         ONLY: finish
@@ -24,7 +22,8 @@ MODULE mo_surface
   USE mo_exception,         ONLY: finish
 !#endif
 
-  USE mo_physical_constants,ONLY: grav, Tf, alf, albedoW, stbo, tmelt, rhos!!$, rhoi
+  USE mo_physical_constants,ONLY: grav, alf, albedoW, stbo, tmelt, rhos!!$, rhoi
+  USE mo_sea_ice_nml,       ONLY: Tf
   USE mo_physical_constants,ONLY: cvd, cpd
   USE mo_coupling_config,   ONLY: is_coupled_to_ocean
   USE mo_aes_phy_config,    ONLY: aes_phy_config
@@ -41,8 +40,8 @@ MODULE mo_surface
   USE mo_jsb_interface,     ONLY: jsbach_interface
 #endif
   USE mo_aes_sfc_indices,   ONLY: nsfc_type
+  USE mo_ice_fast,          ONLY: ice_fast
 #ifndef __NO_ICON_OCEAN__
-  USE mo_ice_interface,     ONLY: ice_fast
   USE mo_ml_ocean,          ONLY: ml_ocean
 #endif
 
@@ -76,6 +75,7 @@ CONTAINS
                            & pfrc,                              &! in
                            & pcfh_tile, pcfm_tile,              &! in
                            & pfac_sfc, pocu, pocv,              &! in
+                           & piceu, picev,                      &! in
                            & aa, aa_btm, bb, bb_btm,            &! inout
                            & pcpt_tile, pqsat_tile,             &! inout
                            & ptsfc_tile,                        &! inout
@@ -156,6 +156,8 @@ CONTAINS
     REAL(wp),INTENT(IN) :: pfac_sfc  (:)   ! (kbdim)
     REAL(wp),INTENT(IN) :: pocu      (:)   ! (kbdim)
     REAL(wp),INTENT(IN) :: pocv      (:)   ! (kbdim)
+    REAL(wp),INTENT(IN) :: piceu     (:)   ! (kbdim)
+    REAL(wp),INTENT(IN) :: picev     (:)   ! (kbdim)
     REAL(wp),INTENT(INOUT) :: aa     (:,:,:,:)    ! (kbdim,klev,3,nmatrix)
     REAL(wp),INTENT(INOUT) :: aa_btm (:,:,:,imh:) ! (kbdim,3,ksfc_type,imh:imqv)
     REAL(wp),INTENT(INOUT) :: bb     (:,:,:)   ! (kbdim,klev,nvar_vdiff)
@@ -189,7 +191,7 @@ CONTAINS
     REAL(wp),OPTIONAL,INTENT(IN) :: pssfl     (:)   ! (kbdim) snow large scale
     REAL(wp),OPTIONAL,INTENT(IN) :: rlds      (:)   ! (kbdim) downward surface  longwave flux [W/m2]
     REAL(wp),OPTIONAL,INTENT(IN) :: rsds      (:)   ! (kbdim) downward surface shortwave flux [W/m2]
-    
+
     REAL(wp),INTENT(IN) :: rvds_dir(:)        ! (kbdim) all-sky   vis. dir. downward flux at current   time [W/m2]
     REAL(wp),INTENT(IN) :: rpds_dir(:)        ! (kbdim) all-sky   par  dir. downward flux at current   time [W/m2]
     REAL(wp),INTENT(IN) :: rnds_dir(:)        ! (kbdim) all-sky   nir  dir. downward flux at current   time [W/m2]
@@ -249,8 +251,7 @@ CONTAINS
     INTEGER     :: is       (      ksfc_type) !< counter for masks
 
     INTEGER  :: jsfc, jk, jkm1, im, k, jl, jls, js
-
-    REAL(wp) :: se_sum(kbdim), qv_sum(kbdim), wgt_sum(kbdim), wgt(kbdim)
+    REAL(wp) :: se_sum(kbdim), qv_sum(kbdim), wgt_sum(kbdim), wgt
     REAL(wp) :: zca(kbdim,ksfc_type), zcs(kbdim,ksfc_type)
     REAL(wp) :: zfrc_oce(kbdim)
 
@@ -278,18 +279,22 @@ CONTAINS
 
     REAL(wp) :: zgrnd_hflx(kbdim,ksfc_type), zgrnd_hcap(kbdim,ksfc_type)
 
+    REAL(wp) :: surf_u, surf_v  ! surface velocites (ocean or sea ice)
+
     !REAL(wp) :: zt2s_conv(kbdim,ksfc_type)
+
+    REAL(wp) :: bb_tile(kbdim,nvar_vdiff,ksfc_type)
 
     ! Sea ice
     REAL(wp) :: Tfw(kbdim)
-    REAL(wp) :: swflx_ice(kbdim,kice), nonsolar_ice(kbdim,kice), dnonsolardT(kbdim,kice), conc_sum(kbdim)
+    REAL(wp) :: swflx_ice(kbdim,kice), nonsolar_ice(kbdim,kice), dnonsolardT(kbdim,kice), conc_sum
 
     LOGICAL :: mask(kbdim)
 
     REAL(wp) :: delz(kbdim)
 
     !$ACC DATA &
-    !$ACC   CREATE(loidx, is, se_sum, qv_sum, wgt_sum, wgt, zca, zcs) &
+    !$ACC   CREATE(loidx, is, se_sum, qv_sum, wgt_sum, zca, zcs) &
     !$ACC   CREATE(zfrc_oce, zen_h, zfn_h, zen_qv, zfn_qv, zlhflx_lnd) &
     !$ACC   CREATE(zlhflx_lwtr, zlhflx_lice, zshflx_lnd, zshflx_lwtr) &
     !$ACC   CREATE(zshflx_lice, pfrc_test) &
@@ -300,16 +305,16 @@ CONTAINS
     !$ACC   CREATE(ztsfc_lice, rvds, rnds, rpds, rsns, rlns) &
     !$ACC   CREATE(fract_par_diffuse, zalbedo_lwtr, zalbedo_lice) &
     !$ACC   CREATE(zgrnd_hflx, zgrnd_hcap, Tfw, swflx_ice, nonsolar_ice) &
-    !$ACC   CREATE(dnonsolardT, conc_sum, mask, delz, zwindspeed_lnd) &
-    !$ACC   CREATE(zwindspeed10m_lnd) &
+    !$ACC   CREATE(dnonsolardT, mask, delz, zwindspeed_lnd) &
+    !$ACC   CREATE(bb_tile, zwindspeed10m_lnd) &
     !$ACC   CREATE(rain_tmp, snow_tmp, drag_srf_tmp, pch_tmp, drag_wtr_tmp) &
-    !$ACC   CREATE(drag_ice_tmp)
+    !$ACC   CREATE(drag_ice_tmp) ASYNC(1)
 
     ! Shortcuts to components of aes_vdf_config
     !
     lsfc_mom_flux  = aes_vdf_config(jg)% lsfc_mom_flux
     lsfc_heat_flux = aes_vdf_config(jg)% lsfc_heat_flux
-  
+
     ! check for masks
     !
     ! DA: compute the index lists on the GPU
@@ -321,8 +326,8 @@ CONTAINS
     END DO
     !$ACC END PARALLEL LOOP
 
-    CALL generate_index_list_batched(pfrc_test(:,:), loidx, jcs, jce, is, 1)
-    !$ACC UPDATE HOST(is) ASYNC(1)
+    CALL generate_index_list_batched(pfrc_test(:,:), loidx, jcs, jce, is, &
+      &   lacc=.TRUE., opt_acc_async_queue=1)
 
     ! Compute factor for conversion temperature to dry static energy
     !DO jsfc=1,ksfc_type
@@ -343,7 +348,6 @@ CONTAINS
       delz(jl) = (pmair(jl,klev) / pfac_sfc(jl) / tpfac2 * pdtime)
     END DO
     !$ACC END PARALLEL
-    !$ACC WAIT
 
     ! Turbulent transport of moisture:
     ! - finish matrix set up;
@@ -355,6 +359,7 @@ CONTAINS
         & pdtime, delz,                            &! in
         & aa_btm, bb_btm,                          &! inout
         & zen_h, zfn_h, zen_qv, zfn_qv,            &! out
+        & lacc=.TRUE.,                             &! in
         & pcair = pcair(:),                        &! in
         & pcsat = pcsat(:))                         ! in
     ELSE
@@ -362,7 +367,8 @@ CONTAINS
         & aa(:,:,:,imh:imqv), bb(:,:,ih:iqv),      &! in
         & pdtime, delz,                            &! in
         & aa_btm, bb_btm,                          &! inout
-        & zen_h, zfn_h, zen_qv, zfn_qv             )! out
+        & zen_h, zfn_h, zen_qv, zfn_qv,            &! out
+        & lacc=.TRUE.                              )! in
     END IF
 
     ! Set defaults
@@ -393,7 +399,7 @@ CONTAINS
     !===========================================================================
     ! Land surface
     !===========================================================================
-    
+
     !$ACC LOOP GANG VECTOR
     DO jk = 1, kbdim
       zlhflx_lnd(jk)    = 0._wp
@@ -491,12 +497,14 @@ CONTAINS
       END DO
       !$ACC END PARALLEL
 
-      !$ACC WAIT
-
+      IF (.NOT. aes_vdf_config(jg)%lcuda_graph_vdf) THEN
+        ! In case something in JSBACH is not asynchronous
+        !$ACC WAIT
+      END IF
       IF (aes_phy_config(jg)%ljsb ) THEN
       IF (aes_phy_config(jg)%llake) THEN
         CALL jsbach_interface ( jg, nblock, jcs, jce,                                     & ! in
-          & datetime, pdtime, pdtime,                                                        & ! in
+          & datetime, pdtime,                                                             & ! in
           & t_air             = ptemp(jcs:jce),                                           & ! in
           & q_air             = pq(jcs:jce),                                              & ! in
           & rain              = rain_tmp(jcs:jce),                                        & ! in
@@ -618,7 +626,7 @@ CONTAINS
 
       ELSE
         CALL jsbach_interface ( jg, nblock, jcs, jce,                                     & ! in
-          & datetime, pdtime, pdtime,                                                        & ! in
+          & datetime, pdtime,                                                             & ! in
           & t_air             = ptemp(jcs:jce),                                           & ! in
           & q_air             = pq(jcs:jce),                                              & ! in
           & rain              = rain_tmp(jcs:jce),                                        & ! in
@@ -639,9 +647,9 @@ CONTAINS
           & pch               = pch_tmp(jcs:jce),                                         & ! in
           & cos_zenith_angle  = pcosmu0(jcs:jce),                                         & ! in
           & CO2_air           = pco2(jcs:jce),                                            & ! in
-          & t_srf             = ztsfc_lnd(jcs:jce),                                       & ! out (T_s^(n+1)) surface temp 
+          & t_srf             = ztsfc_lnd(jcs:jce),                                       & ! out (T_s^(n+1)) surface temp
                                                                                                ! (filtered, if Asselin)
-          & t_eff_srf         = ztsfc_lnd_eff(jcs:jce),                                   & ! out (T_s^eff) surface temp 
+          & t_eff_srf         = ztsfc_lnd_eff(jcs:jce),                                   & ! out (T_s^eff) surface temp
                                                                                                ! (effective, for longwave rad)
           & qsat_srf          = qsat_lnd(jcs:jce),                                        & ! out
           & s_srf             = zcpt_lnd(jcs:jce),                                        & ! out (s_s^star, for vdiff scheme)
@@ -696,6 +704,11 @@ CONTAINS
 
       END IF ! llake
       END IF ! ljsb
+
+      IF (.NOT. aes_vdf_config(jg)%lcuda_graph_vdf) THEN
+        ! In case something in JSBACH is not asynchronous
+        !$ACC WAIT
+      END IF
 
 #ifdef _OPENACC
       !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR ASYNC(1)
@@ -851,12 +864,12 @@ CONTAINS
 
     !$ACC LOOP SEQ
     DO jsfc = 1,ksfc_type
-      !$ACC LOOP GANG(STATIC: 1) VECTOR
+      !$ACC LOOP GANG(STATIC: 1) PRIVATE(wgt) VECTOR
       DO jl = jcs,jce
-             wgt(jl) = pfrc(jl,jsfc)
-         wgt_sum(jl) = wgt_sum(jl) + wgt(jl)
-          se_sum(jl) = se_sum(jl) + bb_btm(jl,jsfc,ih ) * wgt(jl)
-          qv_sum(jl) = qv_sum(jl) + bb_btm(jl,jsfc,iqv) * wgt(jl)
+             wgt     = pfrc(jl,jsfc)
+         wgt_sum(jl) = wgt_sum(jl) + wgt
+          se_sum(jl) = se_sum(jl) + bb_btm(jl,jsfc,ih ) * wgt
+          qv_sum(jl) = qv_sum(jl) + bb_btm(jl,jsfc,iqv) * wgt
       ENDDO
     ENDDO
 
@@ -880,14 +893,15 @@ CONTAINS
     ! then perform the bottom level elimination to get the solution
     !-------------------------------------------------------------------
     ! Add additional terms to the r.h.s. of the velocity equations
-    ! to take into account ocean currents.
+    ! to take into account ocean currents and sea ice velocity.
     ! Note that in subroutine rhs_setup the constant tpfac2 has been
     ! multiplied to the r.h.s. array bb. Thus the additional terms here
     ! need to be scaled by the same factor.
 
+    ! Initialize and compute effective surface fraction for ocean
     !$ACC LOOP GANG(STATIC: 1) VECTOR
     DO jl = jcs,jce
-      zfrc_oce(jl) = 0._wp 
+      zfrc_oce(jl) = 0._wp
     END DO
     IF (idx_wtr.LE.ksfc_type) THEN   ! Open water is considered
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -905,32 +919,79 @@ CONTAINS
       END DO
     ENDIF
 
-    ! Bottom level elimination
+    !-------------------------------------------------------------------
+    ! Step 1: compute bottom elimination and bb_tile per surface type
+    !-------------------------------------------------------------------
 
+    ! bottom-level elimination for the vertical tridiagonal system
     im   = imuv
     jk   = klev    ! Bottom level index
     jkm1 = jk - 1
 
+    ! update 'aa' for bottom-level elimination of the tridiagonal system
     !$ACC LOOP GANG(STATIC: 1) VECTOR
-    DO jl = jcs,jce
-      aa(jl,jk,2,im) =  aa(jl,jk,2,im) - aa(jl,jk,1,im)*aa(jl,jkm1,3,im)
-      aa(jl,jk,3,im) =  aa(jl,jk,3,im)/aa(jl,jk,2,im)
-
-      bb(jl,jk,iu) = - aa(jl,jk,3,im) * pocu(jl)*zfrc_oce(jl)*tpfac2 + (bb(jl,jk,iu) - aa(jl,jk,1,im)*bb(jl,jkm1,iu))/aa(jl,jk,2,im)
-      bb(jl,jk,iv) = - aa(jl,jk,3,im) * pocv(jl)*zfrc_oce(jl)*tpfac2 + (bb(jl,jk,iv) - aa(jl,jk,1,im)*bb(jl,jkm1,iv))/aa(jl,jk,2,im)
+    DO jl = jcs, jce
+      aa(jl,jk,2,im) = aa(jl,jk,2,im) - aa(jl,jk,1,im) * aa(jl,jkm1,3,im)
+      aa(jl,jk,3,im) = aa(jl,jk,3,im) / aa(jl,jk,2,im)
     END DO
+
+    ! compute tile-specific contribution to bottom-level RHS (bb_tile)
+    !$ACC LOOP SEQ
+    DO jsfc = 1, ksfc_type
+      !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(surf_u, surf_v)
+      DO jl = jcs,jce
+
+      ! --- assign surface velocity for this tile type ---
+        IF (jsfc == idx_wtr) THEN ! open water
+          surf_u = pocu(jl)
+          surf_v = pocv(jl)
+        ELSEIF (jsfc == idx_ice) THEN ! sea ice
+          surf_u = piceu(jl)
+          surf_v = picev(jl)
+        ELSE ! land
+          surf_u = 0._wp
+          surf_v = 0._wp
+        END IF
+
+        ! compute bb_tile contribution at bottom level:
+        !   - forcing term proportional to surface velocity
+        !   - plus contribution from vertical tridiagonal elimination
+        bb_tile(jl,iu,jsfc) = - aa(jl,jk,3,im) * surf_u * tpfac2 + &
+                               (bb(jl,jk,iu) - aa(jl,jk,1,im)*bb(jl,jkm1,iu)) / aa(jl,jk,2,im)
+        bb_tile(jl,iv,jsfc) = - aa(jl,jk,3,im) * surf_v * tpfac2 + &
+                               (bb(jl,jk,iv) - aa(jl,jk,1,im)*bb(jl,jkm1,iv)) / aa(jl,jk,2,im)
+      END DO
+    END DO
+
+    !-------------------------------------------------------------------
+    ! Step 2: average over surface types using surface fractions pfrc
+    !-------------------------------------------------------------------
+    !$ACC LOOP GANG(STATIC: 1) VECTOR
+    DO jl = jcs, jce
+      bb(jl,jk,iu) = 0._wp
+      bb(jl,jk,iv) = 0._wp
+      DO jsfc = 1, ksfc_type
+        bb(jl,jk,iu) = bb(jl,jk,iu) + pfrc(jl,jsfc) * bb_tile(jl,iu,jsfc)
+        bb(jl,jk,iv) = bb(jl,jk,iv) + pfrc(jl,jsfc) * bb_tile(jl,iv,jsfc)
+      END DO
+    END DO
+
     !$ACC END PARALLEL
+
 
     ! Compute wind stress
     IF (lsfc_mom_flux) THEN
        CALL wind_stress( kbdim, ksfc_type,                    &! in
+            &            idx_lnd, idx_wtr, idx_ice,           &! in
             &            pdtime,                              &! in
             &            loidx, is, jcs,                      &! in
             &            pfrc, pcfm_tile, pfac_sfc,           &! in
-            &            bb(:,klev,iu), bb(:,klev,iv),        &! in
+            &            bb_tile(:,iu,:), bb_tile(:,iv,:),    &! in: pass tile-specific RHS
             &            pocu(:), pocv(:),                    &! in
+            &            piceu(:), picev(:),                  &! in
             &            pu_stress_gbm,  pv_stress_gbm,       &! out
             &            pu_stress_tile, pv_stress_tile       )! out
+
     ELSE
        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
        !$ACC LOOP SEQ
@@ -958,8 +1019,7 @@ CONTAINS
 
 
     IF (lsfc_heat_flux) THEN
-       !$ACC WAIT
-       CALL surface_fluxes( jcs, jce, kbdim, ksfc_type,        &! in
+       CALL surface_fluxes( jcs, jce, kbdim, ksfc_type,           &! in
             &               idx_wtr, idx_ice, idx_lnd, ih, iqv,   &! in
             &               pdtime,                               &! in
             &               pfrc, lsm, alake,                     &! in
@@ -1021,7 +1081,6 @@ CONTAINS
           ztsfc_wtr(jl)=ptsfc_tile(jl, idx_wtr)
         ENDDO
         !$ACC END PARALLEL LOOP
-        !$ACC WAIT
         CALL ml_ocean ( kbdim, jcs, jce, pdtime, &
           & pahflw=plhflx_tile(:,idx_wtr),        & ! dependency on jce has to be checked
           & pahfsw=pshflx_tile(:,idx_wtr),        & ! dependency on jce has to be checked
@@ -1060,13 +1119,6 @@ CONTAINS
 
     IF (idx_ice <= ksfc_type .AND. aes_phy_config(jg)%lice) THEN
 
-      ! DA: wait while the other kernels are not async
-      !$ACC WAIT
-
-#ifndef __NO_ICON_OCEAN__
-      ! LL This is a temporary solution,
-      ! we should restrcure ice thermodynamics in a more stand-alone way
-
       ! For explicit coupling to ice:
 
       ! Freezing point of sea-water
@@ -1083,7 +1135,7 @@ CONTAINS
 
       IF (aes_phy_config(jg)%use_shflx_adjustment .AND. &
           .NOT. aes_phy_config(jg)%suppress_shflx_adjustment_over_ice) THEN
-  
+
 
         !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR COLLAPSE(2) ASYNC(1)
         DO k=1,kice
@@ -1125,7 +1177,6 @@ CONTAINS
       ENDIF ! aes_phy_config(jg)%use_shflx_adjustment .AND.
             ! .NOT. aes_phy_config(jg)%suppress_shflx_adjustment_over_ice
 
-      !$ACC WAIT
       CALL ice_fast(jcs, jce, kbdim, kice, pdtime, &
         &   Tsurf,              & ! inout
         &   T1,                 & ! inout
@@ -1168,19 +1219,19 @@ CONTAINS
       ENDIF
 
       ! Average the albedo.
-      !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR ASYNC(1)
+      !$ACC PARALLEL LOOP DEFAULT(PRESENT) PRIVATE(conc_sum) GANG VECTOR ASYNC(1)
       DO jl = jcs,jce
-        conc_sum(jl) = SUM(conc(jl,:))
+        conc_sum = SUM(conc(jl,:))
         IF (alake(jl) < EPSILON(1._wp)) THEN
           albvisdir_tile(jl,idx_ice) = 0._wp
           albvisdif_tile(jl,idx_ice) = 0._wp
           albnirdir_tile(jl,idx_ice) = 0._wp
           albnirdif_tile(jl,idx_ice) = 0._wp
-          IF (conc_sum(jl) > 1.e-6_wp) THEN
-            albvisdir_tile(jl,idx_ice) = SUM( conc(jl,:) * albvisdir_ice(jl,:)) / conc_sum(jl)
-            albvisdif_tile(jl,idx_ice) = SUM( conc(jl,:) * albvisdif_ice(jl,:)) / conc_sum(jl)
-            albnirdir_tile(jl,idx_ice) = SUM( conc(jl,:) * albnirdir_ice(jl,:)) / conc_sum(jl)
-            albnirdif_tile(jl,idx_ice) = SUM( conc(jl,:) * albnirdif_ice(jl,:)) / conc_sum(jl)
+          IF (conc_sum > 1.e-6_wp) THEN
+            albvisdir_tile(jl,idx_ice) = SUM( conc(jl,:) * albvisdir_ice(jl,:)) / conc_sum
+            albvisdif_tile(jl,idx_ice) = SUM( conc(jl,:) * albvisdif_ice(jl,:)) / conc_sum
+            albnirdir_tile(jl,idx_ice) = SUM( conc(jl,:) * albnirdir_ice(jl,:)) / conc_sum
+            albnirdif_tile(jl,idx_ice) = SUM( conc(jl,:) * albnirdif_ice(jl,:)) / conc_sum
 
             ! Set the tile temperature, convert back to K
             ptsfc_tile(jl,idx_ice) = Tsurf(jl,1) + tmelt
@@ -1193,10 +1244,6 @@ CONTAINS
       ! (Switched off for now, should be used for implicit coupling)
       !pcpt_tile(jcs:jce,idx_ice) = ptsfc_tile(jcs:jce,idx_ice) * zt2s_conv(jcs:jce,idx_ice)
 
-#else
-    ! __NO_ICON_OCEAN__
-      CALL finish("mo_surface:update_surface", "The ice process requires the ICON_OCEAN component")
-#endif
     ENDIF ! lice
 
    !-------------------------------------------------------------------
@@ -1307,7 +1354,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
-    
+
     !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR ASYNC(1)
     DO jl = jcs, jce
       rlus(jl) = rlds(jl) -rlns(jl)
@@ -1395,7 +1442,6 @@ CONTAINS
     !
     !---------------------------------------------------------------------------
 
-    !$ACC WAIT
     !$ACC END DATA
 
   END SUBROUTINE update_surface

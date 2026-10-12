@@ -1,0 +1,316 @@
+#!/bin/ksh
+
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+
+%manual
+  -------------------------------------------------
+  EOM_GETMARS
+  -------------------------------------------------
+
+  This script is part of the ICON SMS suite
+  Initial implementation: F. Prill, DWD (2012-05-07)
+  Conversion to ecFlow:   M. Koehler, DWD (2022-11)
+
+  Corresponding author:
+    Martin Koehler, DWD, mailto:martin.koehler@dwd.de
+
+  Task objectives:
+  - get IFS analyis data from MARS necessary for metview plotting
+  - read and process observation files (WHOI and CERES)
+%end
+
+# include the standard header file
+%include <head_hpc.h>
+
+# -------------------------------------------------
+
+echo "EOM_GETMARS"
+
+lgetecfs=0    # optionally get monthly means if previously calculated by eom_prepare
+lgetmars=1    # read IFS data
+lmean=1       # monthly mean IFS data
+
+module load cdo
+module load ecmwf-toolbox/new
+
+#-----------------------------------------------------------------------------
+# Retrieve IFS analysis data for comparison to ICON
+#   - read 31 days for each month to have always enough days available for the analysis
+
+# --- setup
+
+YYYYMM=`echo %YMD% | cut -c 1-6`
+DD=`echo %YMD% | cut -c 7-8`   #e.g. 30 (last day)
+cd %SCTEMP%
+mkdir -p ../ifs_data
+cd       ../ifs_data
+pwd
+
+if [[ -f ifs_oper_1x1_${YYYYMM}.pl.mn2-${DD}.grb && -f ifs_oper_1x1_${YYYYMM}.pl.mn2-${DD}.grb ]] ; then
+  lmean=0
+  lgetmars=0
+  echo 'IFS data files already processed, no processing'
+else
+  if [[ -f ifs_oper_1x1_${YYYYMM}.sfc.grb && -f ifs_oper_1x1_${YYYYMM}.pl.grb ]] ; then
+    echo 'IFS data files for verification already exist, no retrieval'
+    lgetmars=0
+  fi
+fi
+
+if [[ $lgetecfs = 1 ]] ; then
+  gatedir=%SCTEMP%/%SUITE%/%EXPNUM%/post/${YYYYMM}
+  mkdir -p ${gatedir}/grb_data
+  cd       ${gatedir}/grb_data
+  ecp ec:icon/experiments/%SUITE%/%EXPNUM%/${YYYYMM}/%USER%_%EXPNUM%_${YYYYMM}_DOM01_0001_*.grb .
+fi
+
+
+if [[ $lgetmars = 1 ]] ; then
+
+# --- surface level data
+
+cat > mars.sfc << EOF_SFC
+retrieve,
+  time    = 00,
+# date    = ${YYYYMM}01/to/%YMD%,
+  date    = ${YYYYMM}01/to/${YYYYMM}31,
+  stream  = oper,
+  step    = 24,
+  levtype = sfc,
+  expver  = 1,
+  class   = od,
+  type    = fc,
+  param   = TCWV/TCLW/TCIW/TCC/HCC/MCC/LCC/10U/10V/2T/CP/LSP/TP/SSTK/SD/RSN/SKT/SSR/STR/TSR/TTR/SLHF/SSHF/EWSS/NSSS/SP/CAPE,
+  grid    = 1/1,
+  target  = "ifs_oper_1x1_${YYYYMM}.sfc.grb"
+EOF_SFC
+
+mars mars.sfc
+
+
+# --- pressure level data
+
+cat > mars.pl << EOF_PL
+retrieve,
+  time	  = 00,
+# date	  = ${YYYYMM}01/to/%YMD%,
+  date	  = ${YYYYMM}01/to/${YYYYMM}31,
+  stream  = oper,
+  levtype = pl,
+  expver  = 1,
+  class	  = od,
+  type    = an,
+  param	  = T/Q/R/U/V/Z,
+  levelist= 1/2/3/5/7/10/20/30/50/70/100/150/200/250/300/400/500/600/700/800/850/900/925/950/1000,
+  grid    = 1/1,
+  target  = "ifs_oper_1x1_${YYYYMM}.pl.grb"
+EOF_PL
+
+mars mars.pl
+
+\rm -rf  mars.sfc mars.pl
+
+fi
+
+
+# --- time mean
+
+if [[ $lmean = 1 ]] ; then
+
+  DD=`echo %YMD% | cut -c 7-8`   #e.g. 30 (last day)
+  DDm1=`expr ${DD} - 1`          #e.g. 29 (days of 24h  verification available)
+  DDm10=`expr ${DD} - 10`        #e.g. 20 (days of 240h verification available)
+
+  cdo timselavg,${DDm1},0,100   ifs_oper_1x1_${YYYYMM}.sfc.grb           \
+                                ifs_oper_1x1_${YYYYMM}.sfc.mn2-${DD}.grb
+  cdo timselavg,${DDm1},1,100   ifs_oper_1x1_${YYYYMM}.pl.grb            \
+                                ifs_oper_1x1_${YYYYMM}.pl.mn2-${DD}.grb
+  grib_set -s date=${YYYYMM}02  ifs_oper_1x1_${YYYYMM}.sfc.mn2-${DD}.grb  out.grb
+                     mv out.grb ifs_oper_1x1_${YYYYMM}.sfc.mn2-${DD}.grb
+  grib_set -s date=${YYYYMM}02  ifs_oper_1x1_${YYYYMM}.pl.mn2-${DD}.grb   out.grb
+                     mv out.grb ifs_oper_1x1_${YYYYMM}.pl.mn2-${DD}.grb
+
+ if [[ ${DD} -ge "12" ]] ; then
+  cdo timselavg,${DDm10},9,100  ifs_oper_1x1_${YYYYMM}.sfc.grb           \
+                                ifs_oper_1x1_${YYYYMM}.sfc.mn11-${DD}.grb
+  cdo timselavg,${DDm10},10,100 ifs_oper_1x1_${YYYYMM}.pl.grb            \
+                                ifs_oper_1x1_${YYYYMM}.pl.mn11-${DD}.grb
+  grib_set -s date=${YYYYMM}11  ifs_oper_1x1_${YYYYMM}.sfc.mn11-${DD}.grb out.grb
+                     mv out.grb ifs_oper_1x1_${YYYYMM}.sfc.mn11-${DD}.grb
+  grib_set -s date=${YYYYMM}11  ifs_oper_1x1_${YYYYMM}.pl.mn11-${DD}.grb  out.grb
+                     mv out.grb ifs_oper_1x1_${YYYYMM}.pl.mn11-${DD}.grb
+ fi
+fi
+
+
+# --- cloud variables on model levels for later interpolation on pressure levels
+# --- (using cdo ml2pl)
+
+# retrieve,
+#   time     = 00,
+#   date     = 20120601/to/20120701,
+#   stream   = oper,
+#   levtype  = ml,
+#   expver   = 1,
+#   class    = od,
+#   type     = an,
+#   param    = CC,
+#   levelist = 1/TO/91,
+#   grid     = 1/1,
+#   target   = "/e/uwork/mkoehler/icon/ifs.data/ifs_oper_2x2_20110101-20.CC.ml.grb"
+# retrieve,
+#   param    = lnsp/z,
+#   levelist = 1
+# retrieve,
+#   param    = QL,
+#   target   = "/e/uwork/mkoehler/icon/ifs.data/ifs_oper_2x2_20110101-20.QL.ml.grb"
+# retrieve,
+#   param    = lnsp/z,
+#   levelist = 1
+# retrieve,
+#   param    = QI,
+#   target   = "/e/uwork/mkoehler/icon/ifs.data/ifs_oper_2x2_20110101-20.QI.ml.grb"
+# retrieve,
+#   param    = lnsp/z,
+#   levelist = 1
+
+
+#scp /e/uwork/mkoehler/icon/ifs.data/ifs_oper_2x2_20110101-20.sfc.grb \
+#  oflxs04:/uwork1/mkoehler/ifs.data/oper
+
+
+#-----------------------------------------------------------------------------
+# --- retrieve WHOI oaflux observational data from ECFS
+# --- origin: http://oaflux.whoi.edu/
+# --- (data includes error maps, which could be read as well, "err")
+
+YYYYMM=`echo %YMD% | cut -c 1-6`
+YYYY=`echo %YMD% | cut -c 1-4`
+MM=`echo %YMD% | cut -c 5-6`
+
+cd %SCTEMP%
+mkdir -p ../obs_data
+cd       ../obs_data
+
+cdo griddes ../ifs_data/ifs_oper_1x1_${YYYYMM}.sfc.grb > icon.grid
+
+if [[ ${YYYYMM} -le "202212" ]] ; then
+
+  for VAR in lh sh ta ts qa ws ; do
+    ecp ec:/dei2/climplot.obs/whoi/${VAR}_oaflux/${VAR}_oaflux_${YYYY}.nc .
+   #gunzip -f                                    ${VAR}_oaflux_${YYYY}.nc.gz
+    cdo -seltimestep,${MM}                       ${VAR}_oaflux_${YYYY}.nc tmp.nc
+    if [[ ${YYYYMM} -ge "201901" ]] ; then
+      case ${VAR} in
+        lh) cdo -selvar,lhflx -mulc,-1     tmp.nc tmp_var.nc ; cdo -selvar,lhflx_err tmp.nc tmp_err.nc ;;
+        sh) cdo -selvar,shflx -mulc,-1     tmp.nc tmp_var.nc ; cdo -selvar,shflx_err tmp.nc tmp_err.nc ;;
+        ta) cdo -selvar,tmp2m -addc,273.16 tmp.nc tmp_var.nc ; cdo -selvar,tmp2m_err tmp.nc tmp_err.nc ;;
+        ts) cdo -selvar,tmpsf -addc,273.16 tmp.nc tmp_var.nc ; cdo -selvar,tmpsf_err tmp.nc tmp_err.nc ;;
+        qa) cdo -selvar,hum2m              tmp.nc tmp_var.nc ; cdo -selvar,hum2m_err tmp.nc tmp_err.nc ;;
+        ws) cdo -selvar,wnd10              tmp.nc tmp_var.nc ; cdo -selvar,wnd10_err tmp.nc tmp_err.nc ;;
+      esac
+    else
+      case ${VAR} in
+        lh) cdo -selvar,lhtfl -mulc,-1     tmp.nc tmp_var.nc ; cdo -selvar,err tmp.nc tmp_err.nc ;;
+        sh) cdo -selvar,shtfl -mulc,-1     tmp.nc tmp_var.nc ; cdo -selvar,err tmp.nc tmp_err.nc ;;
+        ta) cdo -selvar,tmp2m -addc,273.16 tmp.nc tmp_var.nc ; cdo -selvar,err tmp.nc tmp_err.nc ;;
+        ts) cdo -selvar,tmpsf -addc,273.16 tmp.nc tmp_var.nc ; cdo -selvar,err tmp.nc tmp_err.nc ;;
+        qa) cdo -selvar,hum2m              tmp.nc tmp_var.nc ; cdo -selvar,err tmp.nc tmp_err.nc ;;
+        ws) cdo -selvar,wnd10              tmp.nc tmp_var.nc ; cdo -selvar,err tmp.nc tmp_err.nc ;;
+      esac
+    fi
+    cdo -f grb2 remapcon,icon.grid tmp_var.nc ${VAR}_oaflux_${YYYYMM}.grb
+    cdo -f grb2 remapcon,icon.grid tmp_err.nc ${VAR}_err_oaflux_${YYYYMM}.grb
+    case ${VAR} in
+      qa) grib_set -s scaleValuesBy=0.001 ${VAR}_oaflux_${YYYYMM}.grb tmp.grb
+          mv tmp.grb                      ${VAR}_oaflux_${YYYYMM}.grb ;;
+    esac
+ done
+
+fi
+
+rm -rf tmp.nc tmp_var.nc tmp_err.nc
+
+
+#-----------------------------------------------------------------------------
+# --- retrieve CERES observational data from ECFS
+# --- origin:  http://ceres.larc.nasa.gov (monthly and daily)
+#              https://ceres.larc.nasa.gov/order_data.php
+
+# TOA fluxes:
+
+if [[ ${YYYYMM} -le "202207" ]] ; then
+
+# ceres_toa_file=CERES_EBAF-TOA_Ed2.8_Subset_201001-201501.nc
+# ceres_toa_file=CERES_EBAF-TOA_Ed4.1_Subset_200003-202107.nc
+  ceres_toa_file=CERES_EBAF-TOA_Edition4.2_200003-202208.nc
+  ecp ec:/dei2/climplot.obs/ceres/${ceres_toa_file} .
+
+  cdo -selyear,${YYYY} -selmon,${MM} ${ceres_toa_file}  tmp.nc
+
+  cdo -selvar,cldarea_total_daynight_mon -mulc,0.01 tmp.nc tcc_ceres_${YYYYMM}.nc
+  cdo -selvar,toa_lw_all_mon             -mulc,-1   tmp.nc toa_lw_ceres_${YYYYMM}.nc
+  cdo -selvar,toa_sw_all_mon             -mulc,-1   tmp.nc toa_sw_ceres_${YYYYMM}.nc
+  cdo -selvar,solar_mon                             tmp.nc solar_ceres_${YYYYMM}.nc
+
+  cdo -add solar_ceres_${YYYYMM}.nc toa_sw_ceres_${YYYYMM}.nc      toa_sw_net_ceres_${YYYYMM}.nc
+
+  cdo -f grb2 remapcon,icon.grid    toa_sw_net_ceres_${YYYYMM}.nc  toa_sw_net_ceres_${YYYYMM}.grb
+  cdo -f grb2 remapcon,icon.grid    solar_ceres_${YYYYMM}.nc       solar_ceres_${YYYYMM}.grb
+  cdo -f grb2 remapcon,icon.grid    toa_lw_ceres_${YYYYMM}.nc      toa_lw_ceres_${YYYYMM}.grb
+  cdo -f grb2 remapcon,icon.grid    tcc_ceres_${YYYYMM}.nc         tcc_ceres_${YYYYMM}.grb
+
+  rm -rf tmp.nc
+
+fi
+
+# Surface fluxes:
+
+if [[ ${YYYYMM} -le "202106" ]] ; then
+
+  ceres_sfc_file=CERES_EBAF_Ed4.1_Subset_200003-202106.nc
+  ecp ec:/deia/climplot.obs/ceres/${ceres_sfc_file} .
+
+  cdo -selyear,${YYYY} -selmon,${MM} ${ceres_sfc_file}  tmp.nc
+
+  cdo -selvar,sfc_net_sw_all_mon    tmp.nc   sfc_sw_net_ceres_${YYYYMM}.nc
+  cdo -selvar,sfc_net_lw_all_mon    tmp.nc   sfc_lw_net_ceres_${YYYYMM}.nc
+
+  cdo -f grb2 remapcon,icon.grid    sfc_sw_net_ceres_${YYYYMM}.nc  sfc_sw_net_ceres_${YYYYMM}.grb
+  cdo -f grb2 remapcon,icon.grid    sfc_lw_net_ceres_${YYYYMM}.nc  sfc_lw_net_ceres_${YYYYMM}.grb
+
+  rm -rf tmp.nc
+
+fi
+
+
+#-----------------------------------------------------------------------------
+# --- retrieve IMERGE GPM precipitation observational data from ECFS
+# --- origin:  https://gpm.nasa.gov/data/imerg (monthly and daily)
+
+if [[ ${YYYYMM} -le "202406" ]] ; then
+
+  imerg_file=3B-MO.MS.MRG.3IMERG.${YYYYMM}01-S000000-E235959.${MM}.V07B.HDF5
+  ecp ec:/dei2/climplot.obs/imerg/${imerg_file} .
+
+  module load nco
+
+  # convert to netcdf classic, to allow cdo processing
+  ncks -3 -O ${imerg_file} classic.nc
+  # unit conversion from mm/h to mm/d
+  cdo -f grb2 -selname,precipitation -invertlat -mulc,24.0 -remapcon,r360x181 classic.nc prec_imerg_${YYYYMM}.grb
+
+  rm -rf classic.nc
+
+fi
+
+
+# -------------------------------------------------
+
+# include the standard "tail" file
+%include <tail.h>

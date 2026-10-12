@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2024, MPI-M
+# Copyright (c) 2018-2026, MPI-M
 #
 # Author: Sergey Kosukhin <sergey.kosukhin@mpimet.mpg.de>
 #
@@ -255,25 +255,25 @@ sed "s,.*$acx_fc_module_sname\.,,"`])])
                  [acx_cv_fc_module_snaming_infix=],
                  ["$acx_fc_module_name"*"$acx_fc_module_sname"*],
                  [acx_cv_fc_module_snaming_infix=`echo $acx_tmp | dnl
-sed "s,$acx_fc_module_sname\..*,," | sed "s,^$acx_fc_module_name,,"`])])])])])
+sed "s,$acx_fc_module_sname\..*,," | sed "s,^$acx_fc_module_name,,"`])])])])
       cd ..
-      rm -rf conftest.dir
-      AS_IF([test "x$acx_cv_fc_module_snaming_infix" = xunknown || dnl
+      rm -rf conftest.dir])
+   AS_IF([test "x$acx_cv_fc_module_snaming_infix" = xunknown || dnl
 test "x$acx_cv_fc_module_snaming_ext" = xunknown],
-        [AC_MSG_RESULT([unknown])
-         m4_default([$2], [AC_MSG_FAILURE([unable to detect Fortran compiler dnl
+     [AC_MSG_RESULT([unknown])
+      m4_default([$2], [AC_MSG_FAILURE([unable to detect Fortran compiler dnl
 submodule file naming template])])],
-        [AS_VAR_IF([acx_cv_fc_module_naming_upper], [yes],
-           [acx_fc_module_name='{NAME}'
-            acx_fc_module_sname='{SNAME}'],
-           [acx_fc_module_name='{name}'
-            acx_fc_module_sname='{sname}'])
-         AS_VAR_IF([acx_cv_fc_module_snaming_infix], [],
-           [acx_tmp=],
-           [acx_tmp="$acx_fc_module_name$acx_cv_fc_module_snaming_infix"])
-         AC_MSG_RESULT(
-           [$acx_tmp$acx_fc_module_sname.$acx_cv_fc_module_snaming_ext])
-         $1])])
+     [AS_VAR_IF([acx_cv_fc_module_naming_upper], [yes],
+        [acx_fc_module_name='{NAME}'
+         acx_fc_module_sname='{SNAME}'],
+        [acx_fc_module_name='{name}'
+         acx_fc_module_sname='{sname}'])
+      AS_VAR_IF([acx_cv_fc_module_snaming_infix], [],
+        [acx_tmp=],
+        [acx_tmp="$acx_fc_module_name$acx_cv_fc_module_snaming_infix"])
+      AC_MSG_RESULT(
+        [$acx_tmp$acx_fc_module_sname.$acx_cv_fc_module_snaming_ext])
+      $1])])
 
 # ACX_FC_MODULE_ROOT_SMOD([ACTION-IF-SUCCESS],
 #                         [ACTION-IF-FAILURE = FAILURE])

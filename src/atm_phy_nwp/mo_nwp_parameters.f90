@@ -1,17 +1,16 @@
-!
-!  Declares parameters computed during the initialization of the physics
-!  parameterizations that have to be domain-dependent
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+!  Declares parameters computed during the initialization of the physics
+!  parameterizations that have to be domain-dependent
 
 MODULE mo_nwp_parameters
 
@@ -50,20 +49,26 @@ MODULE mo_nwp_parameters
     ! maximum allowed depth of shallow convection (hPa)
     REAL(wp) :: rdepths
     ! critical stability threshold for stratocumulus (K)
-    REAL(wp) :: eiscrit    
+    REAL(wp) :: eiscrit
     ! switches for activation of shallow, midlevel and deep convection
     LOGICAL :: lmfscv, lmfmid, lmfpen
     ! switch for detrainment of rain and snow to gridscale scheme
     LOGICAL :: lmfdsnow
     ! switch for grayzone tuning for deep convection
     LOGICAL :: lgrayzone_deepconv
+    ! switch for cloud droplet number to replace land/sea mask in convection scheme
+    LOGICAL :: lconv_cdnc_interp
+    ! options for parcel ascent in parameterized convection
+    INTEGER :: itype_parcel_ascent
+    ! Tuning factor for offset in CAPE closure for grayzone deep convection
+    REAL(wp) :: tune_grzdc_offset
     ! switches on explicit stochastic shallow convection
     LOGICAL :: lstoch_expl
-    ! switches on SDE stochastic shallow convection    
+    ! switches on SDE stochastic shallow convection
     LOGICAL :: lstoch_sde
-    ! switches on SDE stochastic deep convection    
+    ! switches on SDE stochastic deep convection
     LOGICAL :: lstoch_deep
-    ! use 650hPa vertical velocity to switch off conv param at points with rising motion     
+    ! use 650hPa vertical velocity to switch off conv param at points with rising motion
     LOGICAL :: lvvcouple
     ! use 650hPa vertical velocity to distinguish shallow vs deep convection
     LOGICAL :: lvv_shallow_deep
@@ -80,7 +85,7 @@ MODULE mo_nwp_parameters
     !
     ! Parameters which are always computed
     !
-    ! characteristic horizontal length scale (grid-scale) for 
+    ! characteristic horizontal length scale (grid-scale) for
     ! turbulence scheme and convection scheme
     REAL(wp) :: mean_charlen
     ! level index corresponding to the HAG of the 60hPa level (identical to kcon2, if computed)

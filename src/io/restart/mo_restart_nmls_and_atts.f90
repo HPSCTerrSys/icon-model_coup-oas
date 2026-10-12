@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,7 +13,7 @@ MODULE mo_restart_nml_and_att
 
   USE mo_exception,             ONLY: finish, message
   USE mo_impl_constants,        ONLY: SUCCESS
-  USE mo_master_config,         ONLY: isRestart
+  USE mo_master_config,         ONLY: isRestart, isInitFromRestart
   USE mo_mpi, ONLY: p_comm_rank
   USE mo_util_file, ONLY: util_tmpnam, util_filesize, util_unlink
   USE mo_util_string, ONLY: tocompact
@@ -40,7 +40,6 @@ MODULE mo_restart_nml_and_att
   TYPE(t_key_value_store) :: gNamelistStore
 
   CHARACTER(LEN = *), PARAMETER :: modname = "mo_restart_nml_and_att"
-  LOGICAL, SAVE, PUBLIC :: ocean_initFromRestart_OVERRIDE = .FALSE. 
 
 CONTAINS
 
@@ -111,7 +110,7 @@ CONTAINS
     CHARACTER(*), PARAMETER :: routine = modname//":getAttributesForRestarting"
 
     IF (.NOT. gAttributeStore%is_init .AND. &
-      & (isRestart() .OR. ocean_initFromRestart_OVERRIDE)) &
+      & (isRestart() .OR. isInitFromRestart())) &
       & CALL finish(routine, "restart attributes not yet set up")
     ptr => gAttributeStore
   END SUBROUTINE getAttributesForRestarting
@@ -124,7 +123,7 @@ CONTAINS
     REAL(wp) :: dTmp(1)
     CHARACTER(:), ALLOCATABLE :: aTxt
 
-    IF (.NOT.isRestart() .AND. .NOT.ocean_initFromRestart_OVERRIDE) &
+    IF (.NOT.isRestart() .AND. .NOT. isInitFromRestart()) &
       & CALL finish(routine, "not a restart run")
     IF (gAttributeStore%is_init) &
       & CALL finish(routine, "no second assignment of gAttributeStore allowed")
@@ -156,14 +155,11 @@ CONTAINS
       ENDDO
     END IF
     CALL gAttributeStore%bcast(root_pe, comm)
-    IF (.NOT.ocean_initFromRestart_OVERRIDE) &
+    IF (.NOT. isInitFromRestart()) &
       CALL gAttributeStore%output(archive=gNamelistStore)
   END SUBROUTINE restartAttributeList_read
 
   SUBROUTINE restartAttributeList_write_to_ncdf(kvs, ncid)
-#ifdef __PGI
-    USE mo_util_texthash, ONLY: t_char_workaround
-#endif
     TYPE(t_key_value_store), INTENT(IN) :: kvs
     INTEGER, INTENT(IN) :: ncid
     CHARACTER(*), PARAMETER :: routine = modname//"write_to_ncdf"
@@ -175,23 +171,14 @@ CONTAINS
     iterator => kvs%getIterator()
     DO WHILE (iterator%nextEntry(curKey, curVal))
       SELECT TYPE(curKey)
-#ifdef __PGI
-      TYPE IS(t_char_workaround)
-        ccKey => curKey%c
-#endif
       TYPE IS(CHARACTER(*))
         ccKey => curKey
       CLASS DEFAULT
         CALL finish(routine, "key: invalid type")
       END SELECT
       SELECT TYPE(curVal)
-#ifdef __PGI
-      TYPE IS(t_char_workaround)
-        CALL nf(nf90_put_att(ncid, NF90_GLOBAL, ccKey, curVal%c), routine)
-#else
       TYPE IS(CHARACTER(*))
         CALL nf(nf90_put_att(ncid, NF90_GLOBAL, ccKey, curVal), routine)
-#endif
       TYPE IS(REAL(wp))
         CALL nf(nf90_put_att(ncid, NF90_GLOBAL, ccKey, curVal), routine)
       TYPE IS(INTEGER)
@@ -215,7 +202,7 @@ CONTAINS
 
   SUBROUTINE bcastNamelistStore(root, comm)
     INTEGER, INTENT(IN) :: root, comm
-    
+
     CALL gNamelistStore%bcast(root, comm)
   END SUBROUTINE bcastNamelistStore
 

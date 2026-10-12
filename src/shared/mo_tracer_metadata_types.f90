@@ -1,18 +1,17 @@
-! This module contains types for polymorphic tracer metadata. Additionally,
-! a type bound procedure (TBP) is given as a constructor for the base type
-! t_tracer_meta. This procedure is private and may only be adressed as TBP.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains types for polymorphic tracer metadata. Additionally,
+! a type bound procedure (TBP) is given as a constructor for the base type
+! t_tracer_meta. This procedure is private and may only be adressed as TBP.
 
 MODULE mo_tracer_metadata_types
 
@@ -27,9 +26,9 @@ MODULE mo_tracer_metadata_types
   INTEGER, PARAMETER :: VARNAME_LEN = 32
 
   ! Tracer metadata
-  ! 
-  ! Polymorphic type that contains tracer metadata according to the type 
-  ! of tracer (aerosol, chemical, hydrometeor). 
+  !
+  ! Polymorphic type that contains tracer metadata according to the type
+  ! of tracer (aerosol, chemical, hydrometeor).
   TYPE t_tracer_meta
     !
     LOGICAL :: lis_tracer         ! this is a tracer field (TRUE/FALSE)
@@ -44,7 +43,7 @@ MODULE mo_tracer_metadata_types
     LOGICAL :: lconv_tracer       ! Convection  (TRUE/FALSE)
     ! Processes not covered by ICON (requires ART extension)
     TYPE(t_key_value_store) :: opt_meta   ! Storage container for optional metadata
-    
+
     CONTAINS
       procedure :: construct_base => construct_t_tracer_meta
   END TYPE t_tracer_meta
@@ -85,6 +84,13 @@ MODULE mo_tracer_metadata_types
                                   !   0 = No washout
                                   !   1 = Monodisperse aerosol
                                   !   2 = As part of an according aerosol mode
+    ! Dry deposition
+    REAL(wp) :: vdmol1,  &        ! ratio of mol. diffusion coeff. D_H2O/D_x
+             &  vdmol2,  &        ! ratio of mol. diffusion coeff. D_i/D_x with D_i the molecular diffusivity
+                                  ! of the species for which rsmin was determined (usually H2O or CO2, with current
+                                  ! parametrization D_i = D_H2O (-> vdmol1 = vdmol2 in this case)) (see Baer, Eq. 12)
+             &  reac,    &        ! Reactivity
+             &  heff              ! Henry's law constant
 
     CONTAINS
         PROCEDURE, PASS(this) :: set_tracer_meta => create_tracer_metadata_chem
@@ -92,7 +98,7 @@ MODULE mo_tracer_metadata_types
 
   ! Hydrometeor metadata
   TYPE, extends(t_tracer_meta) :: t_hydro_meta
-    ! 
+    !
   END TYPE
 
   PUBLIC :: t_tracer_meta
@@ -207,6 +213,12 @@ CONTAINS
     ELSE
       this%iwash_tracer = 0
     ENDIF
+
+    ! dry deposition
+    this%heff = 0.0_wp
+    this%reac = 0.0_wp
+    this%vdmol1 = 0.0_wp
+    this%vdmol2 = 0.0_wp
 
 
 END SUBROUTINE create_tracer_metadata_chem

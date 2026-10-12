@@ -1,19 +1,18 @@
-! Geometric computations which are specific to the transport algorithm.
-!
-! Module contains procedures for geometric computations which are
-! specific to the horizontal transport schemes.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Geometric computations which are specific to the transport algorithm.
+!
+! Module contains procedures for geometric computations which are
+! specific to the horizontal transport schemes.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -1027,7 +1026,7 @@ CONTAINS
 
   !-------------------------------------------------------------------------
 
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
 !ACCWA (Cray Fortran <= 16.0.1.1) zero sized arrays are not properly supported CAST-33010
     IF ( falist%npoints == 0 ) RETURN
 #endif
@@ -1199,7 +1198,8 @@ CONTAINS
       ENDDO ! loop over index list
       !$ACC END PARALLEL
 
-      CALL generate_index_list_batched(conditions, indices, 1, falist%len(jb), nvalid, 1, opt_use_acc=.TRUE.)
+      CALL generate_index_list_batched(conditions, indices, 1, falist%len(jb), &
+        &   nvalid, lacc=.TRUE., opt_acc_async_queue=1)
 
       !$ACC UPDATE HOST(nvalid) ASYNC(1)
       !$ACC WAIT(1)
@@ -1298,7 +1298,8 @@ CONTAINS
       ENDDO  !jl
       !$ACC END PARALLEL
 
-      CALL generate_index_list_batched(conditions, indices, 1, icnt_rem, nvalid, 1, opt_use_acc=.TRUE.)
+      CALL generate_index_list_batched(conditions, indices, 1, icnt_rem, nvalid, &
+        &   lacc=.TRUE., opt_acc_async_queue=1)
 
       !$ACC UPDATE HOST(nvalid) ASYNC(1)
       !$ACC WAIT(1)

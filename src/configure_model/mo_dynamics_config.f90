@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -28,7 +27,7 @@ MODULE mo_dynamics_config
   PUBLIC :: configure_dynamics
 
   !--------------------------------------------------------------------------
-  ! Basic settings for the dynamical core 
+  ! Basic settings for the dynamical core
   !--------------------------------------------------------------------------
   !TYPE :: t_dynamics_config
 
@@ -36,7 +35,7 @@ MODULE mo_dynamics_config
 
     INTEGER  :: iequations
     REAL(wp) :: divavg_cntrwgt  !< Weight of central cell for divergence averaging
-    LOGICAL  :: lcoriolis       !< if .TRUE., Coriolis force is switched on   
+    LOGICAL  :: lcoriolis       !< if .TRUE., Coriolis force is switched on
     LOGICAL  :: lmoist_thdyn    !< if .TRUE., include moisture terms in first law
     LOGICAL  :: ldeepatmo       !< if .TRUE., dynamical core assumes a deep atmosphere
                                 !< instead of a shallow atmosphere

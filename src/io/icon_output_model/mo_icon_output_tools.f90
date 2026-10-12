@@ -1,15 +1,15 @@
-! @page pagecontrolmodelf901 Main program for the ICON icon_output model
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @page pagecontrolmodelf901 Main program for the ICON icon_output model
 
 MODULE mo_icon_output_tools
 
@@ -34,6 +34,7 @@ MODULE mo_icon_output_tools
     &                                 create_vertical_axes, output_file
   USE mo_name_list_output_config,  ONLY: use_async_name_list_io
   USE mo_level_selection, ONLY: create_mipz_level_selections
+  USE mo_master_config,       ONLY: isRestart
   USE mo_run_config,          ONLY: output_mode, dtime
   USE mo_restart_nml_and_att,  ONLY: getAttributesForRestarting
   USE mo_output_event_types,   ONLY: t_sim_step_info
@@ -41,7 +42,7 @@ MODULE mo_icon_output_tools
   USE mo_time_config,         ONLY: time_config
 
   !-------------------------------------------------------------
- 
+
   IMPLICIT NONE
 
   PRIVATE
@@ -82,11 +83,11 @@ MODULE mo_icon_output_tools
           sim_step_info%restart_time = time_config%tc_stopdate
           sim_step_info%dtime = dtime
 
-          CALL getAttributesForRestarting(restartAttributes)
-          IF (restartAttributes%is_init) THEN
-
+          IF (isRestart()) THEN
+            CALL getAttributesForRestarting(restartAttributes)
             ! get start counter for time loop from restart file:
-            CALL restartAttributes%get("jstep", sim_step_info%jstep0)
+            IF (restartAttributes%is_init) &
+              &  CALL restartAttributes%get("jstep", sim_step_info%jstep0)
           ELSE
             sim_step_info%jstep0 = 0
           END IF
@@ -182,17 +183,20 @@ MODULE mo_icon_output_tools
       sim_step_info%dtime      = dtime
       sim_step_info%jstep0 = 0
 
-      CALL getAttributesForRestarting(restartAttributes)
-      ! get start counter for time loop from restart file:
-      IF (restartAttributes%is_init) &
-        & CALL restartAttributes%get("jstep", sim_step_info%jstep0)
+      ! note that for isInitFromRestart()=.TRUE. we want to start from
+      ! jstep0 = 0.
+      IF (isRestart()) THEN
+        CALL getAttributesForRestarting(restartAttributes)
+        ! get start counter for time loop from restart file:
+        IF (restartAttributes%is_init) &
+          & CALL restartAttributes%get("jstep", sim_step_info%jstep0)
+      ENDIF
       CALL init_name_list_output(sim_step_info, opt_lprintlist=.TRUE.,opt_l_is_ocean=.TRUE.)
       CALL create_mipz_level_selections(output_file)
       CALL create_vertical_axes(output_file)
     ENDIF
-  
+
   END SUBROUTINE prepare_output
   !--------------------------------------------------------------------------
 
 END MODULE mo_icon_output_tools
-

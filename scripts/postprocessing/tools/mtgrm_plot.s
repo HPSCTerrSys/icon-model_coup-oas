@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -45,14 +45,14 @@ set -A varNameSfc \
   TCM      TCH      SHFL     LHFL     RUNOFF_S RUNOFF_G VIO3     HMO3     \
   t_snow   t_s      t_g      FRESHSNW RHO_SNOW H_SNOW   T2M      TD2M     \
   U10M     V10M     SOBT     SOBS     THBS     ALB      RAIN_GSP SNOW_GSP \
-  RAIN_CON SNOW_CON 
+  RAIN_CON SNOW_CON
 
 set -A varName3D \
   P        T        PEXNER   QV       QC       QI       QR       QS       \
   REL_HUM  RHO      THETAV   U        V        CLC      TKVM     TKVH     \
   W        Phalf    t_so     w_so     w_so_ice
 
-set -A iStation   2 
+set -A iStation   2
 set -A varNameSfc P_SFC    PL_Cov   LA_Ind   RO_Dept  Z0       qv_s     w_i      w_snow   \
   TCM      TCH      SHFL     LHFL     RUNOFF_S RUNOFF_G VIO3     HMO3     \
   t_snow   t_s      t_g      FRESHSNW RHO_SNOW H_SNOW   T2M      TD2M     \
@@ -228,7 +228,7 @@ TQR                \
 TQS                \
 TQV_DIA            \
 TQC_DIA            \
-TQI_DIA            
+TQI_DIA
 
 # -------------------------------------------------------
 
@@ -241,7 +241,7 @@ do
       varName=\"${var}\" iStation=${station} expnum=\"${expnum}\"
    #convert -trim -geometry 1000x1000 ${oFile}.pdf ${oFile}.png || true
    #convert -density 100 ${oFile}.eps ${oFile}.png || true
-  done	
+  done
 
   for var in ${varName3D[*]}
   do
@@ -250,8 +250,8 @@ do
       varName=\"${var}\" iStation=${station} expnum=\"${expnum}\"
    #convert -trim -geometry 1000x1000 ${oFile}.pdf ${oFile}.png  || true
    #convert -density 100 ${oFile}.eps ${oFile}.png || true
-  done	
-done	
+  done
+done
 
 
 exit

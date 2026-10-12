@@ -1,15 +1,15 @@
-! Main program for the ICON ocean waves model
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Main program for the ICON ocean waves model
 
 MODULE mo_wave_model
 
@@ -18,16 +18,18 @@ MODULE mo_wave_model
        &                                my_process_is_io, my_process_is_pref, my_process_is_mpi_test, &
        &                                stop_mpi, my_process_is_work, process_mpi_io_size, &
        &                                my_process_is_stdio
+  USE mo_sync,                    ONLY: global_max
   USE mo_timer,                   ONLY: init_timer, timer_start, timer_stop, &
-       &                                timers_level,timer_model_init, &
+       &                                timers_level, timer_model_init, &
        &                                timer_domain_decomp, print_timer, &
        &                                timer_coupling
-  USE mo_master_config,           ONLY: isRestart
-  USE mo_master_control,          ONLY: wave_process
+  USE mo_master_config,           ONLY: isRestart, isInitFromRestart
+  USE mo_wave_timer,              ONLY: init_wave_timer
+  USE mo_master_control,          ONLY: wave_process, get_my_process_name
   USE mo_impl_constants,          ONLY: success, pio_type_async, pio_type_cdipio
   USE mo_dynamics_config,         ONLY: configure_dynamics
   USE mo_run_config,              ONLY: configure_run, ldynamics, ltransport,    &
-       &                                ntracer, ltimer, dtime,                  &
+       &                                ltimer, dtime, ltestcase,                &
        &                                nshift, num_lev, output_mode, msg_level, &
        &                                grid_generatingcenter, grid_generatingsubcenter
   USE mo_gribout_config,          ONLY: configure_gribout
@@ -49,22 +51,16 @@ MODULE mo_wave_model
   USE mo_wave_state,              ONLY: p_wave_state, p_wave_state_lists, construct_wave_state
   USE mo_model_domain,            ONLY: p_patch
   USE mo_name_list_output_config, ONLY: use_async_name_list_io
-
-  USE mo_name_list_output_init,   ONLY: init_name_list_output, parse_variable_groups, &
-       &                                output_file, create_vertical_axes
   USE mo_wave,                    ONLY: wave
   USE mo_wave_config,             ONLY: configure_wave, wave_config
-
-  USE mo_wave_ext_data_state,     ONLY: wave_ext_data, wave_ext_data_list, destruct_wave_ext_data_state
-  USE mo_wave_ext_data_init,      ONLY: init_wave_ext_data
+  USE mo_wave_forcing,            ONLY: construct_reader_wave_forcing, destruct_reader_wave_forcing
+  USE mo_wave_ext_data_state,     ONLY: wave_ext_data, wave_ext_data_list, construct_wave_ext_data_state, &
+    &                                   destruct_wave_ext_data_state
+  USE mo_wave_ext_data_init,      ONLY: init_wave_ext_data, init_coastedge_list
 
   USE mo_alloc_patches,           ONLY: destruct_patches
   USE mo_icon_comm_interface,     ONLY: construct_icon_communication, destruct_icon_communication
   USE mo_complete_subdivision,    ONLY: setup_phys_patches
-#ifndef __NO_ICON_COMIN__
-  USE mo_mpi,               ONLY: p_comm_comin
-  USE comin_host_interface, ONLY: mpi_handshake_dummy
-#endif
 
   ! horizontal interpolation
   USE mo_interpol_config,         ONLY: configure_interpolation
@@ -74,7 +70,7 @@ MODULE mo_wave_model
   USE mo_intp_lonlat,             ONLY: compute_lonlat_intp_coeffs
 
   ! coupling
-  USE mo_coupling_config,         ONLY: is_coupled_run
+  USE mo_coupling_config,         ONLY: is_coupled_run, is_coupled_to_atmo
   USE mo_coupling_utils,          ONLY: cpl_construct, cpl_destruct
   USE mo_wave_coupling_frame,     ONLY: construct_wave_coupling, &
     &                                   destruct_wave_coupling
@@ -101,6 +97,17 @@ CONTAINS
       IF (ltimer) CALL timer_start(timer_coupling)
       CALL construct_wave_coupling(p_patch(1:))
       IF (ltimer) CALL timer_stop(timer_coupling)
+    ENDIF
+
+    IF (.NOT.is_coupled_to_atmo()) THEN
+      ! No atmo-wave coupling
+      ! construct forcing data reader for standalone runs
+      IF (.NOT.ltestcase) THEN
+        CALL message(routine,'standalone run: forcing data are read from file ...')
+        CALL construct_reader_wave_forcing (p_patch(1:), wave_config(:), time_config%tc_startdate)
+      ELSE
+        CALL message(routine,'standalone run: using analytic forcing data ...')
+      ENDIF
     END IF
 
     CALL wave()
@@ -109,6 +116,11 @@ CONTAINS
       IF (ltimer) CALL timer_start(timer_coupling)
       CALL destruct_wave_coupling()
       IF (ltimer) CALL timer_stop(timer_coupling)
+    ENDIF
+
+    IF (.NOT.is_coupled_to_atmo()) THEN
+      ! destruct forcing data reader for standalone runs
+      CALL destruct_reader_wave_forcing ()
     END IF
 
     CALL destruct_wave_model()
@@ -117,7 +129,6 @@ CONTAINS
 
     ! print performance timers:
     IF (ltimer) CALL print_timer
-
 
   END SUBROUTINE wave_model
   !-------------------------------------------------------------------
@@ -130,17 +141,19 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(in) :: shr_namelist_filename
 
     CHARACTER(*), PARAMETER :: routine = "mo_wave_model:construct_wave_model"
-    INTEGER                 :: dedicatedRestartProcs
+    INTEGER :: dedicatedRestartProcs
     INTEGER :: error_status
+    INTEGER :: nproma_max
+
     ! initialize global registry of lon-lat grids
     CALL lonlat_grids%init()
 
     !---------------------------------------------------------------------
     ! 0. If this is a resumed or warm-start run...
     !---------------------------------------------------------------------
-    IF (isRestart()) THEN
+    IF (isRestart() .OR. isInitFromRestart()) THEN
       CALL message('','Read restart file meta data ...')
-      CALL read_restart_header("wave")
+      CALL read_restart_header(get_my_process_name())
     ENDIF
 
     !---------------------------------------------------------------------
@@ -178,15 +191,12 @@ CONTAINS
          &                          pio_type, &
          &                          num_dio_procs=proc0_shift)
 
-#ifndef __NO_ICON_COMIN__
-    ! we dont participate at comin (yet) but we need to be friendly and shake hands
-    CALL mpi_handshake_dummy(p_comm_comin)
-#endif
-
     !-------------------------------------------------------------------
     ! 3.2 Initialize various timers
     !-------------------------------------------------------------------
-    IF (ltimer) CALL init_timer
+    CALL init_timer              ! init generic timers
+    CALL init_wave_timer(ltimer) ! init wave-specific timers
+
     IF (timers_level > 1) CALL timer_start(timer_model_init)
 
     !-------------------------------------------------------------------
@@ -206,10 +216,24 @@ CONTAINS
     zaxisTypeList = t_zaxisTypeList()
 
     IF (timers_level > 4) CALL timer_start(timer_domain_decomp)
+    ! Only do the decomposition for relevant processes
+    IF (my_process_is_work() .OR. my_process_is_mpi_test()) THEN
+      CALL build_decomposition(num_lev, nshift, is_ocean_decomposition = .FALSE.)
+    ENDIF
 
-    CALL build_decomposition(num_lev, nshift, is_ocean_decomposition = .FALSE.)
+    IF (ignore_nproma_use_nblocks_c .OR. ignore_nproma_use_nblocks_e) THEN
+      nproma_max = global_max(nproma)
+      CALL update_nproma_for_io_procs(nproma_max)
+    ENDIF
 
     IF (timers_level > 4) CALL timer_stop(timer_domain_decomp)
+
+    !-------------------------------------------------------------------
+    ! 5. I/O initialization
+    !-------------------------------------------------------------------
+
+    ! This won't RETURN on dedicated restart PEs, starting their main loop instead.
+    CALL detachRestartProcs(timers_level > 1)
 
     CALL init_io_processes()
 
@@ -250,12 +274,16 @@ CONTAINS
     ! setup wave model
     ! - configuration of the wave spectrum
     !
-    CALL configure_wave(n_dom, ntracer)
+    CALL configure_wave(n_dom)
 
     !------------------------------------------------------------------
     ! Create and optionally read external data fields
     !------------------------------------------------------------------
-    CALL init_wave_ext_data (p_patch(1:), p_int_state, wave_ext_data, wave_ext_data_list)
+    CALL construct_wave_ext_data_state(p_patch(1:))
+    !
+    CALL init_wave_ext_data (p_patch(1:), p_int_state, wave_ext_data)
+
+    CALL init_coastedge_list (p_patch(1:))
 
     CALL message(routine, 'finished.')
 

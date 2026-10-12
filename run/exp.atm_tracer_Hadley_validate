@@ -1,0 +1,292 @@
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+#--------------------------------------------------------------------------------------------------
+#
+# Pure tracer advection experiment
+#
+# Modified version of exp.atm_tracer_Hadley:
+# - disables output to lonlat (calculating rbf coefficents for lonlat interpolation not supported for single-precision)
+# - reads grid rbf_coefficients from file instead of computing
+# - rbf file pulled from swift server
+# - validation script for Tracer Hadley (based on Dynamical core model intercomparison project: Tracer transport
+#                                        test cases by Kent et al.)
+# - configurable for num_lev={30,120} via `num_lev` script variable
+#
+author_list="Daniel Reinert, DWD"
+#
+#--------------------------------------------------------------------------------------------------
+#
+# In this experiment 3D tracer transport is performed in a prescribed
+# Hadley-like circulation. As the flow reverses its course at half time, an
+# analytical solution is available at the end of the simulation (after 1day).
+# This test case is part of the DCMIP-2012 test suite. For more information,
+# see Kent,J. et al (2014): Dynamical core model intercomparison project:
+# Tracer transport test cases. QJRMS 140, 1279-1293
+#
+# The specific aim of this test case in the ICON-boildbit context is to check
+# the equivalence of the vertical tracer transport routines
+# * upwind_vflux_ppm
+# * upwind_vflux_ppm4gpu
+# While the former is used on x86 and SX architectures, the latter has been
+# optimized for GPUs. In theory, both variants should produce equivalent
+# results.
+#
+#--------------------------------------------------------------------------------------------------
+
+# (1) Variables provided by the scripting mechanism
+
+# EXPNAME                       = name of exp. in 'exp.<name>'
+# basedir                       = base directory, where src/, run/ etc exist
+# icon_data_poolFolder          = base directory, where grids/, input/ and setup/ exist
+# nproma                        = blocking length for array dimensioning and inner loop lengths
+
+icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/buildbot_data"
+
+#--------------------------------------------------------------------------------------------------
+
+# (2) Set variables needed by the scripting mechanism
+
+# horizontal grid(s)
+#
+grids_folder=${icon_data_poolFolder}/grids
+#
+# global domain
+#
+atmo_dyn_grids=iconR5B04-grid.nc
+atmo_dyn_rbf_coeffs="${atmo_dyn_grids%.nc}-rbf_coeffs.nc"
+
+# Using public swift server as backup if grid and rbf files not on file system, browse via url:
+#   https://swiftbrowser.dkrz.de/public/dkrz_ab6243f85fe24767bb1508712d1eb504/buildbot-grid_files
+GRID_BASE_URL='https://swift.dkrz.de/v1/dkrz_ab6243f85fe24767bb1508712d1eb504/buildbot-grid_files'
+RBF_BASE_URL='https://swift.dkrz.de/v1/dkrz_ab6243f85fe24767bb1508712d1eb504/buildbot-grid_files'
+lrbf_read=.TRUE.
+
+num_lev=30
+if test "x$num_lev" = "x30" ; then
+   layer_thickness=400.
+elif test "x$num_lev" = "x120"; then
+   layer_thickness=100.
+else
+   echo "ERROR: Unrecognized value for num_lev, must be one of {30,120}" >&2
+   exit 1
+fi
+
+# start and end date+time
+start_date=${start_date:="2008-09-01T00:00:00Z"}
+  end_date=${end_date:="2008-09-02T00:00:00Z"}
+
+# output intervals
+output_bounds="0.,86400.,7200."
+steps_per_file=25
+
+# namelist files
+atmo_namelist=NAMELIST_${EXPNAME}_atm
+
+#--------------------------------------------------------------------------------------------------
+
+# (3) Define the model configuration
+
+cat > ${basedir}/run/${atmo_namelist} << EOF
+!
+&parallel_nml
+ nproma                 = ${nproma}
+ nblocks_c              = ${nblocks_c}
+ nproma_sub             = ${nproma_sub}
+ p_test_run             = .false.
+ l_test_openmp          = .false.
+ l_log_checks           = .false.
+ iorder_sendrecv        = 1
+ num_io_procs           = ${num_io_procs}
+ proc0_shift            = ${proc0_shift}
+/
+&grid_nml
+ dynamics_grid_filename = "${atmo_dyn_grids}",
+ grid_rescale_factor    = 1.0
+/
+&run_nml
+ num_lev                = ${num_lev},      ! number of full levels of vertical grid
+ dtime                  = 150              ! [s] timestep in seconds
+ ltestcase              = .TRUE.           ! run testcase
+ ldynamics              = .FALSE.          ! dynamics
+ ltransport             = .TRUE.           ! transport
+ ntracer                = 1                ! number of tracers - default 0
+ iforcing               = 0                !
+ msg_level              = 12               ! detailed report during integration
+ ltimer                 = .TRUE.
+ timers_level           = 10
+ output                 = "nml"
+/
+&dynamics_nml
+ divavg_cntrwgt         = 0.50
+ lcoriolis              = .FALSE.
+/
+&nh_testcase_nml
+ nh_test_name           = 'dcmip_pa_12'    ! test case identifier
+ lcoupled_rho           = .FALSE.
+ layer_thickness        = ${layer_thickness}
+ n_flat_level           = 5
+/
+!&sleve_nml
+! min_lay_thckn         = 200.
+! top_height            = 12000.
+! stretch_fac           = 1.1
+!/
+&nonhydrostatic_nml
+ itime_scheme           = 1
+ ndyn_substeps          = 1                ! reset to 1 for matching output times
+ ivctype                = 1                ! Gal-Chen hybrid
+ vwind_offctr           = 0.0              ! default=0.15
+/
+&transport_nml
+ ihadv_tracer           = 22               ! default: miura
+ ivadv_tracer           = 3                ! 3: ppm
+ itype_vlimit           = 1                ! 1: semi-monotone reconstruction limiter
+ itype_hlimit           = 3                ! 3: monotone flux limiter
+ beta_fct               = 1.0
+/
+&diffusion_nml
+ hdiff_order            = 5
+ hdiff_efdt_ratio       = 1.0
+ hdiff_min_efdt_ratio   = 1.0
+ lhdiff_vn              = .TRUE.
+ lhdiff_temp            = .FALSE.
+ hdiff_tv_ratio         = 1.0
+/
+&initicon_nml
+ pinit_seed             = 0               ! seed for perturbation of initial model state. no perturbation by default
+ pinit_amplitude        = 0.              ! amplitude of perturbation
+/
+&output_nml
+ filetype               = 4
+ dom                    = -1
+ output_time_unit       = 1
+ output_bounds          = $output_bounds  ! start, end, increment
+ steps_per_file         = $steps_per_file
+ include_last           = .TRUE.
+ remap                  = 0                ! output on triangular grid
+ output_filename        = "native"     ! file name base
+ filename_format        = "<output_filename>_<levtype_l>_<datetime2>"
+ output_grid            = .TRUE.
+ ml_varlist             = 'u','v','w','Q1','temp','pres','rho','z_ifc','z_mc'
+/
+&interpol_nml
+ l_intp_c2l             = .true.
+ l_mono_c2l             = .true.
+ lrbf_write             = .FALSE.
+ lrbf_read              = ${lrbf_read}
+ rbf_coeffs_filename    = "${atmo_dyn_rbf_coeffs}",
+/
+EOF
+
+# Post-process with validation script
+autoPostProcessing="true"
+submitPostProcessing="."
+targetPostProcessingScript="${basedir}/run/post.${EXPNAME}.run"
+
+cat > ${targetPostProcessingScript} << 'EOF'
+#!/bin/bash
+
+make_and_change_to_experiment_dir
+
+set -exu
+set -o pipefail
+
+#This validation is based on the paper that originally proposed this test:
+#Dynamical core model intercomparison project: Tracer transport test cases by Kent et al.
+
+#This experiment is set up on a grid with a resolution of approx. 0.5 degrees and 120 vertical levels.
+#We calculate the l1 and the l2 norm, weighted by the volume of each cell, and also a maximum norm.
+
+#For this idealized test case, the surface is actually flat, leading to constant heights
+#for each cell. Therefore, it is sufficient to use the cell areas as weights for this particular test.
+
+#Each norm is checked against an upper bound.
+
+time_step_file=day
+subtracted=sub.nc
+squares_num=squaresNumerator.nc
+squares_denom=squaresDenominator.nc
+weights=vol.nc
+infile=native_ml_20080901T000000Z.nc
+
+# Replace 0,3 -> 0.3 in awk output
+export LC_NUMERIC=en_US.UTF-8
+
+# `cdo` set as shell variable in dwd runscripts
+cdo=${cdo:-$(which cdo)}
+
+#get weights from area
+grid="iconR5B04-grid.nc"
+$cdo -s -selname,cell_area $grid $weights
+
+#subtract tracer field after one day from initial state
+$cdo -s -splitday -seltimestep,1,-1 -selname,q1 $infile $time_step_file
+$cdo -s -sub "$time_step_file"* $subtracted
+
+#weighted l1 norm
+numer=$($cdo -s -outputtab,nohead,value -fldsum -mul $weights -vertsum -expr,"q1=abs(q1)" $subtracted | xargs)
+denom=$($cdo -s -outputtab,nohead,value -fldsum -mul $weights -vertsum -expr,"q1=abs(q1)" "$time_step_file"01.nc | xargs)
+weighted_normed_l1=$(awk "BEGIN { print $numer/$denom }")
+
+#weighted l2 norm
+$cdo -s -sqr $subtracted $squares_num
+$cdo -s -sqr "$time_step_file"01.nc $squares_denom
+numer=$($cdo -s -outputtab,nohead,value -fldsum -mul $weights -vertsum $squares_num | xargs)
+denom=$($cdo -s -outputtab,nohead,value -fldsum -mul $weights -vertsum $squares_denom | xargs)
+weighted_normed_l2=$(awk "BEGIN { print sqrt($numer/$denom) }")
+
+#maximum norm
+numer=$($cdo -s -outputtab,nohead,value -fldmax -vertmax -expr,"q1=abs(q1)" $subtracted | xargs)
+denom=$($cdo -s -outputtab,nohead,value -fldmax -vertmax -expr,"q1=abs(q1)" "$time_step_file"01.nc | xargs)
+max_norm=$(awk "BEGIN { print $numer/$denom }")
+
+rm "$time_step_file"* $weights $squares_denom $squares_num $subtracted
+
+echo "l1: $weighted_normed_l1, l2: $weighted_normed_l2, max: $max_norm"
+
+#Boundary values derived from experiments with different compilers/hardware on levante.
+#Different grids and level combinations were also tested. Across these experiments, measurements varied
+#only slightly (i.e. sixth decimal digit was off by one). Based on that, the (very lenient) upper
+#bounds are the following:
+num_lev=${num_lev:-120}
+if [[ $num_lev == 30 ]]; then
+  upper_l1=0.11016 #measured on levante: 0.110153
+  upper_l2=0.15693 #measured on levante: 0.156929
+  upper_max=0.42312 #measured on levante: 0.423119
+elif [[ $num_lev == 120 ]]; then
+  upper_l1=0.02265 #measured on levante: 0.0226392
+  upper_l2=0.02297 #measured on levante: 0.0229598
+  upper_max=0.04418 #measured on levante: 0.0441635
+else
+  echo "Validation failed: unrecognized value of num_lev=$num_lev"
+  exit 1
+fi
+
+if (( $(echo "$weighted_normed_l1 > $upper_l1" |bc -l) )); then
+  echo "Validation failed: l1 norm is too large"
+  exit 1
+fi
+
+if (( $(echo "$weighted_normed_l2 > $upper_l2" |bc -l) )); then
+  echo "Validation failed: l2 norm is too large"
+  exit 1
+fi
+
+if (( $(echo "$max_norm > $upper_max" |bc -l) )); then
+  echo "Validation failed: max norm is too large"
+  exit 1
+fi
+
+echo "Validation successful"
+exit 0
+
+EOF
+chmod +x ${targetPostProcessingScript}

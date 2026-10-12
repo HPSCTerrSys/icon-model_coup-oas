@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Module for efficient promixity queries / nearest neighbor search
 ! with "geometric near-neighbor access trees" (GNATs), i.e.
 ! a tree structure based on generalized hyperplanes.
@@ -47,18 +58,6 @@
 !       grid the meridian convergence affects this second phase only: The
 !       MPI process which covers the pole region must handle a larger
 !       number of search operations.
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_gnat_gridsearch
 
@@ -1519,7 +1518,7 @@ CONTAINS
     min_dist(:,:)  = MAX_RANGE
 
     IF (p_patch%n_patch_cells == 0) THEN
-      ! ensure that processes without cells are involved in global communication 
+      ! ensure that processes without cells are involved in global communication
       radius = 0._gk
       radius = p_max(radius, comm=p_comm_work)
       RETURN

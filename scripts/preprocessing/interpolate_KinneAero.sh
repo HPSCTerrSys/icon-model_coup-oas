@@ -2,75 +2,80 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
-#_____________________________________________________________________________
-# Interpolate ozone data for ICON runs with transient ozone
-# applicable for irad_o3 = 5
-# the interpolated aerosol data needs to be linked to the run directory
-#_____________________________________________________________________________
-set -ex
+# Interpolate tropospheric aerosol data (Kinne, CMIP6) for ICON runs
+# Applicable for irad_aero = 12,13,15,18,19 (for 18 + 19, only the year 1850 is necessary)
+##########################################################################################
 
-# ICON atmosphere grid ID:
-RES=R2B6_0024
+## User settings
+
 # Begin and end year for interpolation:
-BYEAR=2000
-EYEAR=2000
-# dwd, levante
-site='dwd'
-#site='levante'
+BYEAR=1850
+EYEAR=1850
 
-#_____________________________________________________________________________
-case $site in
-  'dwd')
-     DATADIR='/hpc/uwork/icon-sml/Ozone/pool/data/ECHAM6/input/r0006/T127/ozone'   # raw input data
-     # Please save the interpolated data under icon-sml account and follow the data structure
-     # If you don't have permission, please contact kristina.froehlich@dwd.de:
-     OUTDIR='/hpc/uwork/icon-sml/Ozone/${RES}'                                     # output directory
-     TARGETGRID='/hpc/rwork0/routfor/routfox/icon/grids/public/edzw/icon_grid_0012_R02B04_G.nc'
-   ;;
-   'levante')
-     DATADIR='/pool/data/ECHAM6/input/r0006/T127/ozone'   # raw input data
-     # Please save the interpolated data in ICON pool and follow the data structure
-     # If you don't have permission, please contact daniel.reinert@dwd.de:
-     RESDIR='/pool/data/ICON/grids/public/edzw/...'       # output directory
-     TARGETGRID='/pool/data/ICON/grids/public/edzw/icon_grid_0012_R02B04_G.nc'
-     source /sw/etc/profile.levante
-     module load cdo/2.0.6-gcc-11.2.0
-     module load nco/5.0.6-gcc-11.2.0
-   ;;
-esac
+RES=<YOUR_RESOLUTION>
+OUTDIR=<YOUR_OUTPUT_PATH>/${RES}/aeropt_kinne_${RES}
+TARGETGRID=<PATH_TO_YOUR_TARGETGRID>
 
-OUTPUTBASE='bc_ozone_historical'        #base name of the output file
-INPUTBASE='T127_ozone_historical'
-REMAP_WEIGHTS=wgtdis_T127_to_target.nc
-SOURCEGRID=${DATADIR}/T127_ozone_historical_1850.nc
+##########################################################################################
 
-YEAR=$BYEAR
-mkdir -p $OUTDIR
-cd ${DATADIR}
-cdo gencon,$TARGETGRID $SOURCEGRID $REMAP_WEIGHTS
-cdo gendis,$TARGETGRID -random,t127grid $REMAP_WEIGHTS
-while [ $YEAR -le $EYEAR ]; do
-  IFILE=${INPUTBASE}_${YEAR}.nc
-  OFILE=${OUTDIR}/${OUTPUTBASE}_${YEAR}.nc
-  #cdo -f nc4 -P 8 remap,$TARGETGRID,$REMAP_WEIGHTS ${IFILE} ${OFILE}
-  #cdo -f nc4c -P 8 remap,$TARGETGRID,$REMAP_WEIGHTS ${IFILE} ${OFILE}
-  cdo -f nc5 -P 8 remap,$TARGETGRID,$REMAP_WEIGHTS ${IFILE} ${OFILE}
-  YEAR=$(( YEAR + 1 ))
+DATADIR='/pool/data/ICON/grids/public/mpim/independent/aerosol_kinne/'
+SOURCEGRID=$DATADIR/aeropt_kinne_lw_b16_coa_rast.nc
+
+source /sw/etc/profile.levante
+module unload cdo
+module load cdo/2.0.6-gcc-11.2.0
+module load nco/5.0.6-gcc-11.2.0
+
+mkdir -p $OUTDIR && cd ${OUTDIR}
+echo ${OUTDIR}
+
+## gencon or genlaf ???
+REMAP_WEIGHTS=weights.nc
+cdo selvar,cell_area $TARGETGRID cell_area.nc
+cdo genlaf,cell_area.nc $SOURCEGRID $REMAP_WEIGHTS
+
+params="sw_b14_coa sw_b14_fin lw_b16_coa"
+
+for param in $params ; do
+
+   if [ $param = sw_b14_fin ]; then
+      lastyear=$EYEAR
+   else
+      lastyear=1850
+   fi
+
+   ## only for sw_b14_fin, loop over all years
+   for ((y=$BYEAR; y<=$lastyear; y++)) ; do
+
+     if [ $param = sw_b14_fin ]; then
+       IFILE=aeropt_kinne_sw_b14_fin_${y}_rast.nc
+     else
+       IFILE=aeropt_kinne_${param}_rast.nc
+     fi
+
+     OFILE=${OUTDIR}/${RES}_${IFILE}
+     cdo -f nc5 -P 8 remap,cell_area.nc,$REMAP_WEIGHTS ${DATADIR}/${IFILE} ${OFILE}
+
+     if [ $param = lw_b16_coa ]; then
+     	ncks -A -v lnwl,wl_lo,wl_up,zbot_abs,ztop_abs,delta_z ${DATADIR}/${IFILE} ${OFILE}
+     elif [ $param = sw_b14_fin ]; then
+           ncks -A -v lnwl,wl_lo,wl_up,wn_lo,wn_up,zbot_abs,ztop_abs,delta_z ${DATADIR}/aeropt_kinne_sw_b14_fin_1850_rast.nc ${OFILE}
+     else
+     	ncks -A -v lnwl,wl_lo,wl_up,wn_lo,wn_up,zbot_abs,ztop_abs,delta_z ${DATADIR}/${IFILE} ${OFILE}
+     fi
+
+     ls ${OFILE}
+   done
 done
-rm $REMAP_WEIGHTS
 
-#case $site in
-#  'dwd')
-#     chmod -R o+rx /hpc/uwork/icon-sml/Ozone
-#     chmod -R g+rx /hpc/uwork/icon-sml/Ozone
-#  ;;
-#esac
-
+## cleanup
+rm cell_area.nc $REMAP_WEIGHTS

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -11,7 +11,7 @@
 # ------------------------------------------
 
 # ===========================================================================
-# 
+#
 # Name: exp.dwd_run_ICON_09_R2B4N5_EPS.run
 #
 # Purpose: Run script for ICON at 160 km grid spacing on a global domain.
@@ -30,7 +30,7 @@
 #
 # Author: Marek Jacob (DWD) et al.
 #
-# =========================================================================== 
+# ===========================================================================
 
 set -x
 make_and_change_to_experiment_dir # function in ../add_run_routines
@@ -57,10 +57,10 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/buildbot_data/nwp
 
 # ===========================================================================
 # This experiment describes a ICON global experiment using the physics packages that are
-# used at DWD for global ensembles in production. This simulation computes a few time steps on 
+# used at DWD for global ensembles in production. This simulation computes a few time steps on
 # a low-resolution grid. The setup is for development purposes.
 #
-# Options that are not working on GPU at the moment are replaced or disabled. 
+# Options that are not working on GPU at the moment are replaced or disabled.
 # The original settings are marked by "TODO". These should be reactivated as soon
 # as the corresponding option is ported.
 
@@ -105,7 +105,7 @@ ndays_restart=60
 dt_restart=`expr ${ndays_restart} \* 86400`
 
 # possible dtime values (large values might be unstable)
-# 1 | 2 | 3 | 4 | 5 | 6 | 8 | 9 | 10 | 12 | 15 | 18 | 20 | 24 | 25 | 27 | 30 | 36 | 40 | 45 | 50 | 54 | 60 | 72 | 75 
+# 1 | 2 | 3 | 4 | 5 | 6 | 8 | 9 | 10 | 12 | 15 | 18 | 20 | 24 | 25 | 27 | 30 | 36 | 40 | 45 | 50 | 54 | 60 | 72 | 75
 # 90 | 100 | 108 | 120 | 135 | 150 | 180 | 200 | 216 | 225 | 270 | 300 | 360 | 450 | 540 | 600 | 675 | 900
 # 1080 | 1350 | 1800 | 2700 | 5400
 dtime=540
@@ -221,7 +221,7 @@ cat > ${atmo_namelist} << EOF
 ! ICON initicon_nml
 !------------------
 &initicon_nml
- init_mode                    = 5 ! 1: operation mode, 5: IAU, 6: 5+sma_inc
+ init_mode                    = 5 ! 1: operation mode, 5: IAU
  dt_iau                       = 10800    ! Window for incr.analysis update
  dt_shift                     = -5400  ! Offset for incr.analysis update
  type_iau_wgt                 = 1           ! IAU weighting function (const.)
@@ -257,7 +257,7 @@ cat > ${atmo_namelist} << EOF
  adjust_tso_tsnow             = .true.
  dt_ana                       = 10800             ! ... to control evaporation relevant parameters
  pinit_seed                   = 0          ! seed for perturbation of initial model state. no perturbation by default
- pinit_amplitude              = 1e-14      ! amplitude of perturbation 
+ pinit_amplitude              = 1e-14      ! amplitude of perturbation
 /
 !-------------
 ! ICON run_nml
@@ -427,6 +427,9 @@ dt_gwd                        = 1440.,
  ecrad_llw_cloud_scat         = .false.
 ! llw_cloud_scat         = .false.   ! for backward compatibility for CLIMA mode
  ecrad_data_path     = './ecrad_data'
+ lcalculate_fsd      = .true.
+ fsd_background      = 1.
+ fsd_gridlen         = 80.
 /
 !------------------------
 ! ICON nonhydrostatic_nml
@@ -1440,7 +1443,7 @@ cat >> ${atmo_namelist} << EOF
 ! ser_time_loop_end           =                            0,12,12 !
 ! ser_nfail                   =                            0
 ! ser_nreport                 =                            10
-! ser_all_debug               =                            1, 12, 12 
+! ser_all_debug               =                            1, 12, 12
 ! ser_debug                   =                        .FALSE.      ! serialize the debug statements from mo_ser_debug
 !/
 EOF

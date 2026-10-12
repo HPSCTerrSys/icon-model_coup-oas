@@ -1,12 +1,7 @@
-! @brief configuration setup for Grib output
-!
-! configuration setup for tracer transport
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,10 +9,16 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! @brief configuration setup for Grib output
+!
+! configuration setup for tracer transport
+
 MODULE mo_gribout_config
 
   USE mo_impl_constants,     ONLY: max_phys_dom
+  USE mo_exception,          ONLY: finish, message
   USE mo_grib2_tile,         ONLY: t_grib2_template_tile
+  USE mo_cdi,                ONLY: gribapiLibraryVersion
 
   IMPLICIT NONE
   PRIVATE
@@ -25,7 +26,26 @@ MODULE mo_gribout_config
 
   PUBLIC :: t_gribout_config
   PUBLIC :: gribout_config
+  PUBLIC :: have_gribout_nml
   PUBLIC :: configure_gribout
+  PUBLIC :: gribout_crosscheck
+
+  PUBLIC :: GRIB_UNDEFVAL
+  PUBLIC :: GRIB_NOTINUSEVAL
+  PUBLIC :: GRIB_LIB_COMPAT_ECC_2_31_0
+  PUBLIC :: GRIB_MAX_NUM_MOD_COMP
+  PUBLIC :: GRIB_MAX_STR_LEN_MOD_COMP
+
+  !> module name
+  CHARACTER(LEN=*), PARAMETER :: modname = 'mo_gribout_config'
+
+  INTEGER, PARAMETER :: GRIB_UNDEFVAL    = -1
+  INTEGER, PARAMETER :: GRIB_NOTINUSEVAL = 0
+
+  INTEGER, PARAMETER :: GRIB_LIB_COMPAT_ECC_2_31_0 = 1
+
+  INTEGER, PARAMETER :: GRIB_MAX_NUM_MOD_COMP     = 4
+  INTEGER, PARAMETER :: GRIB_MAX_STR_LEN_MOD_COMP = 9
 
   !!--------------------------------------------------------------------------
   !! Basic configuration setup for grib output
@@ -78,6 +98,7 @@ MODULE mo_gribout_config
       & localDefinitionNumber             ! 252: Ensemble system incl. postprocessing
                                           ! 253: Ensemble system
                                           ! 254: Deterministic system
+                                          ! 230: Model composition
 
     INTEGER :: &                          ! Table: local.78.254.def
       & localNumberOfExperiment           !
@@ -115,6 +136,28 @@ MODULE mo_gribout_config
       &  typeOfGrib2TileTemplate          !  'wmo': official WMO templates 55, 59, ...
                                           !  'dwd': local 'DWD' templates 40455, 40456, ...
 
+    INTEGER :: grib_lib_compat            !< Type of GRIB library backward compatibility adjustment:
+                                          !< 0: none
+                                          !< 1: for ecCodes versions >= 2.32.0
+
+    INTEGER :: localProductionSystem      !< local production system for localDefinitionNumber = 230
+                                          !< ("Model composition"):
+                                          !< 253: "ensemble system"
+                                          !< 254: "deterministic system"
+
+    INTEGER :: model_components(GRIB_MAX_NUM_MOD_COMP) !< model components for localDefinitionNumber = 230
+                                                       !< ("Model composition"):
+                                                       !< 1000: "icon-nwp"
+                                                       !< 2000: "art-nwp"
+                                                       !< 3000: "ocean-nwp"
+                                                       !< 4000: "waves-nwp"
+
+    INTEGER :: localProductionContext !< This GRIB key is part of Local-Use-Section-2 template:
+                                      !< 230 "Model composition"
+                                      !< It encodes supplementary information to the generatingProcessIdentifier.
+                                      !< Its range of values can be found in table 2.233
+                                      !< of the local DWD ecCodes definitions.
+
     ! derived variables
     !
     TYPE(t_grib2_template_tile)::  &      !< defines set of employed GRIB2 tile templates for writing
@@ -133,6 +176,8 @@ MODULE mo_gribout_config
   !!
   TYPE(t_gribout_config), TARGET :: gribout_config(1:max_phys_dom)
 
+  !> TRUE if user has specified a gribout namelist.
+  LOGICAL :: have_gribout_nml = .FALSE.
 
 CONTAINS
 
@@ -158,14 +203,14 @@ CONTAINS
       !
       ! check, whether generatingCenter was set in gribout_nml
       !
-      IF ( gribout_config(jg)%generatingCenter == -1 ) THEN
+      IF ( gribout_config(jg)%generatingCenter == GRIB_UNDEFVAL ) THEN
         ! If not, then fill with grid generating center
         gribout_config(jg)%generatingCenter = grid_generatingCenter(jg)
       ENDIF
 
       ! check, whether generatingSubcenter was set in gribout_nml
       !
-      IF ( gribout_config(jg)%generatingSubcenter == -1 ) THEN
+      IF ( gribout_config(jg)%generatingSubcenter == GRIB_UNDEFVAL ) THEN
         ! If not, then fill with grid generating subcenter
         gribout_config(jg)%generatingSubcenter = grid_generatingSubcenter(jg)
       ENDIF
@@ -173,5 +218,68 @@ CONTAINS
     ENDDO  ! jg
 
   END SUBROUTINE configure_gribout
+
+  !> Crosscheck with settings beyond gribout_nml
+  !!
+  SUBROUTINE gribout_crosscheck(n_dom, verbose)
+
+    ! Arguments
+    INTEGER, INTENT(IN) :: n_dom
+    LOGICAL, INTENT(IN) :: verbose
+
+    ! Local variables
+    INTEGER :: eccodes_version(3)
+    INTEGER :: jg
+    LOGICAL :: is_ecc_vers_ge_2_31_0, is_ecc_vers_ge_2_32_0
+
+    CHARACTER(LEN=*), PARAMETER :: routine = modname//'::gribout_crosscheck'
+
+    !-----------------------------------------------------------------------
+
+    ! Inquire ecCodes (API) version
+    CALL gribapiLibraryVersion(eccodes_version(1), eccodes_version(2), eccodes_version(3))
+
+    is_ecc_vers_ge_2_31_0 = ( version_compare(eccodes_version, [2, 31, 0]) >= 0 )
+    is_ecc_vers_ge_2_32_0 = ( version_compare(eccodes_version, [2, 32, 0]) >= 0 )
+
+    DO jg = 1, n_dom
+
+      ! For GRIB library backward compatibility: gribout_nml / grib_lib_compat:
+      ! The compatibility adjustment is only necessary for ecCodes (API) version >= 2.32.0
+      IF ((gribout_config(jg)%grib_lib_compat == GRIB_LIB_COMPAT_ECC_2_31_0) .AND. (.NOT. is_ecc_vers_ge_2_32_0)) THEN
+        gribout_config(jg)%grib_lib_compat = GRIB_NOTINUSEVAL
+        IF (verbose) CALL message(routine, "ecCodes version < 2.32.0: Compatiblity adjustment switched off.")
+      ENDIF
+
+      ! For local GRIB section template 230 ("Model composition"): gribout_nml / model_components:
+      ! This is only available for ecCodes (definitions) version >= 2.31.0
+      IF ((gribout_config(jg)%localDefinitionNumber == 230) .AND. (.NOT. is_ecc_vers_ge_2_31_0)) &
+        & CALL finish(routine, "localDefinitionNumber = 230 is not available for ecCodes versions < 2.31.0")
+
+    END DO ! jg
+
+  END SUBROUTINE gribout_crosscheck
+
+  !> Auxiliary function for (three-part) version number comparison
+  !!
+  INTEGER FUNCTION version_compare(a, b)
+
+    INTEGER, INTENT(IN) :: a(3)
+    INTEGER, INTENT(IN) :: b(3)
+
+    INTEGER :: i
+
+    !---------------------------------
+
+    DO i = 1, 3
+      IF (a(i) /= b(i)) THEN
+        version_compare = a(i) - b(i)
+        RETURN
+      ENDIF
+    END DO
+
+    version_compare = 0
+
+  END FUNCTION version_compare
 
 END MODULE mo_gribout_config

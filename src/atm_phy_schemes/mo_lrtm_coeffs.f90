@@ -297,7 +297,7 @@ contains
         !  fraction of the difference (in ln(pressure)) between these
         !  two values that the layer pressure lies.
         !         plog = alog(pavel(lay))
-        plog = dlog(pavel(jl,lay))
+        plog = log(pavel(jl,lay))
         jpl = int(36._wp - 5._wp*(plog+0.04_wp))
         if (jpl .lt. 1) then
            jpl = 1
@@ -2034,4 +2034,3 @@ contains
   end subroutine lwavplankderiv
 
 end module mo_lrtm_coeffs
-

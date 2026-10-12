@@ -1,16 +1,15 @@
-!
-! Subroutine interface_aes_car calls Cariolle's linearized ozone scheme.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutine interface_aes_car calls Cariolle's linearized ozone scheme.
 
 MODULE mo_interface_aes_car
 
@@ -28,7 +27,7 @@ MODULE mo_interface_aes_car
   USE mo_physical_constants  ,ONLY: amd, amo3
   USE mo_bcs_time_interpolation ,ONLY: t_time_interpolation_weights, &
        &                               calculate_time_interpolation_weights
-  USE mo_lcariolle     ,ONLY: t_avi, t_time_interpolation, lcariolle_do3dt 
+  USE mo_lcariolle     ,ONLY: t_avi, t_time_interpolation, lcariolle_do3dt
   IMPLICIT NONE
   PRIVATE
   PUBLIC  :: interface_aes_car
@@ -198,11 +197,11 @@ CONTAINS
        END IF
        !
     END IF
-       
+
     ! disassociate pointers
     NULLIFY(field)
     NULLIFY(tend )
-    
+
     IF (ltimer) call timer_stop(timer_car)
 
   END SUBROUTINE interface_aes_car

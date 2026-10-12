@@ -1,17 +1,15 @@
-!
-! VDIFF turbulent mixing scheme
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! VDIFF turbulent mixing scheme
 
 #if defined __xlC__ && !defined NOXLFPROCESS
 @PROCESS HOT
@@ -26,13 +24,14 @@ MODULE mo_turb_vdiff
   USE mo_loopindices,        ONLY: get_indices_c
   USE mo_model_domain,       ONLY: t_patch
   USE mo_nh_testcases_nml,   ONLY: isrfc_type, shflx, lhflx
-  USE mo_physical_constants, ONLY: rgrav, cpd
+  USE mo_physical_constants, ONLY: rgrav, cpd, nu
   USE mo_turb_vdiff_sma,     ONLY: atm_exchange_coeff3d, diffuse_hori_velocity, &
                                  & diffuse_vert_velocity,diffuse_scalar
   USE mo_turb_vdiff_config,  ONLY: t_vdiff_config
   USE mo_turb_vdiff_params,  ONLY: VDIFF_TURB_3DSMAGORINSKY, VDIFF_TURB_TTE, cchar, totte_min, &
-                                 & tpfac1, tpfac2, tpfac3
+                                 & tpfac1, tpfac2, tpfac3, viscous_coeff
   USE mo_turb_vdiff_diag,    ONLY: atm_exchange_coeff, sfc_exchange_coeff
+  USE mo_fortran_tools,      ONLY: assert_acc_device_only
 
   IMPLICIT NONE
   PRIVATE
@@ -164,9 +163,10 @@ CONTAINS
                        & pdtime,  pcoriol,                              &! in
                        & patch,                                         &! in
                        & l2moment,                                      &! in
-                       & pzf, pzh,                                      &! in
+                       & pzf, pzh, pgeom1,                              &! in
                        & pfrc,                                          &! in
-                       & ptsfc_tile, pocu,      pocv,       ppsfc,      &! in
+                       & ptsfc_tile, pocu,      pocv, piceu, picev,     &! in
+                       & ppsfc,                                         &! in
                        & pum1,       pvm1,      pwm1,                   &! in
                        & ptm1,       pqm1,                              &! in
                        & pxlm1,      pxim1,     pxm1,       pxtm1,      &! in
@@ -197,7 +197,8 @@ CONTAINS
                        & pbm_tile,   pbh_tile,                          &! out, for "nsurf_diag"
                        & pcsat,                                         &! in
                        & pcair,                                         &! in
-                       & paz0lh)                                         ! in
+                       & paz0lh,                                        &! in
+                       & lacc)                                           ! in
 
     INTEGER, INTENT(IN) :: kbdim, klev, klevm1, klevp1, ktrac, nblks_c, nblks_v, nblks_e
     INTEGER, INTENT(IN) :: ksfc_type, idx_wtr, idx_ice, idx_lnd
@@ -210,10 +211,13 @@ CONTAINS
       & pcoriol   (:,:)   ,&!< (kbdim) Coriolis parameter: 2*omega*sin(lat)
       & pzf       (:,:,:) ,&!< (kbdim,klev) geopotential height above sea level, full level
       & pzh       (:,:,:) ,&!< (kbdim,klevp1) geopotential height above sea level, half level
+      & pgeom1    (:,:,:) ,&!< (kbdim,klev) Geopotential above ground, full level [m2/s2]
       & pfrc      (:,:,:) ,&!< (kbdim,ksfc_type) area fraction of each surface type
       & ptsfc_tile(:,:,:) ,&!< (kbdim,ksfc_type) surface temperature
       & pocu      (:,:)   ,&!< (kbdim) eastward  velocity of ocean sfc current
       & pocv      (:,:)   ,&!< (kbdim) northward velocity of ocean sfc current
+      & piceu     (:,:)   ,&!< (kbdim) eastward  velocity of sea ice
+      & picev     (:,:)   ,&!< (kbdim) northward velocity of sea ice
       & ppsfc     (:,:)     !< (kbdim) surface pressure
 
     REAL(wp),INTENT(IN) ::        &
@@ -252,31 +256,31 @@ CONTAINS
     ! used in the computation of PBL height (then mixing length);
     ! Out: computed in sfc_exchange_coeff at step t-dt.
 
-    REAL(wp),INTENT(INOUT) :: pustar (:,:)         !< (kbdim)
-    REAL(wp),INTENT(OUT)   :: pwstar (:,:)         !< (kbdim)
-    REAL(wp),INTENT(INOUT) :: pwstar_tile(:,:,:)   !< (kbdim,ksfc_type)
+    REAL(wp),INTENT(INOUT) :: pustar (:,:)         !< (kbdim) INOUT
+    REAL(wp),INTENT(INOUT) :: pwstar (:,:)         !< (kbdim) OUT
+    REAL(wp),INTENT(INOUT) :: pwstar_tile(:,:,:)   !< (kbdim,ksfc_type) INOUT
     REAL(wp),INTENT(IN)    :: pwm1    (:,:,:)      !< (kbdim,klevp1) vertical wind in m/s
-    REAL(wp),INTENT(OUT)   :: ddt_u (:,:,:),      &
+    REAL(wp),INTENT(INOUT) :: ddt_u (:,:,:),      &!< OUT
                             & ddt_v (:,:,:),      &
                             & ddt_w (:,:,:)
-    REAL(wp),INTENT(OUT)   :: ta_hori_tend (:,:,:)
-    REAL(wp),INTENT(OUT)   :: qv_hori_tend (:,:,:)
-    REAL(wp),INTENT(OUT)   :: ql_hori_tend (:,:,:)
-    REAL(wp),INTENT(OUT)   :: qi_hori_tend (:,:,:)
+    REAL(wp),INTENT(INOUT) :: ta_hori_tend (:,:,:) !< OUT
+    REAL(wp),INTENT(INOUT) :: qv_hori_tend (:,:,:) !< OUT
+    REAL(wp),INTENT(INOUT) :: ql_hori_tend (:,:,:) !< OUT
+    REAL(wp),INTENT(INOUT) :: qi_hori_tend (:,:,:) !< OUT
     ! Only needed for 2 moment scheme
-    REAL(wp),INTENT(OUT),OPTIONAL :: qnc_hori_tend (:,:,:)
-    REAL(wp),INTENT(OUT),OPTIONAL :: qni_hori_tend (:,:,:)
+    REAL(wp),INTENT(INOUT),OPTIONAL :: qnc_hori_tend (:,:,:) !< OUT
+    REAL(wp),INTENT(INOUT),OPTIONAL :: qni_hori_tend (:,:,:) !< OUT
 
     ! Variables with intent(out)
 
-    REAL(wp),INTENT(OUT) :: pqsat_tile(:,:,:)   !< (kbdim,ksfc_type) saturation specific
-                                              !< humidity at sfc.
-                                              !< (step t-dt)
+    REAL(wp),INTENT(INOUT) :: pqsat_tile(:,:,:) !< (kbdim,ksfc_type) OUT saturation specific
+                                                !! humidity at sfc.
+                                                !! (step t-dt)
 
-    REAL(wp),INTENT(OUT) :: phdtcbl(:,:)    !< (kbdim) height of the top of the atmospheric dry
-                                          !< convective boundary layer
+    REAL(wp),INTENT(INOUT) :: phdtcbl(:,:) !< (kbdim) OUT height of the top of the atmospheric dry
+                                           !! convective boundary layer
 
-    REAL(wp),INTENT(OUT) ::      &   ! out
+    REAL(wp),INTENT(INOUT) ::      &   ! OUT
       & pri      (:,:,:)  ,&!< (kbdim,klev) Richardson number
       & pri_tile (:,:,:)  ,&!< (kbdim,ksfc_type) Richardson number
       & pmixlen  (:,:,:)  ,&!< (kbdim,klev) mixing length
@@ -291,7 +295,7 @@ CONTAINS
     ! Coefficient matrices and right-hand-side vectors.
     ! _btm refers to the lowest model level (i.e., full level "klev", not the surface)
 
-    REAL(wp),INTENT(OUT) ::           &  ! out
+    REAL(wp),INTENT(INOUT) ::  &  ! OUT
       & aa     (:,:,:,:,:)    ,&!< (kbdim,klev,3,nmatrix) coeff. matrices, all variables
       & aa_btm (:,:,:,imh:,:) ,&!< (kbdim,3,ksfc_type,imh:imqv) last row of coeff. matrix of heat and moisture
       & bb     (:,:,:,:)      ,&!< (kbdim,klev,nvar_vdiff) r.h.s., all variables
@@ -299,7 +303,7 @@ CONTAINS
 
     ! Other variables to be passed on to the second part of turbulence solver
 
-    REAL(wp),INTENT(OUT) ::       &  ! out
+    REAL(wp),INTENT(INOUT) :: &  ! OUT
       & pfactor_sfc(:,:)  ,&!< (kbdim) prefactor for the exchange coeff.
       & pcpt_tile (:,:,:) ,&!< (kbdim,ksfc_type) dry static energy at surface
       & pcptgz    (:,:,:) ,&!< (kbdim,klev) dry static energy
@@ -307,16 +311,18 @@ CONTAINS
       & pztottevn (:,:,:)   !< (kbdim,klev) intermediate value of TTE
     REAL(wp) :: jztottevn(kbdim,nblks_c)
 
-    REAL(wp), INTENT(OUT) :: pch_tile(:,:,:)    !< (kbdim,ksfc_type) out, for "nsurf_diag"
-    REAL(wp), INTENT(OUT) :: pbn_tile(:,:,:)    !< (kbdim,ksfc_type) out, for "nsurf_diag"
-    REAL(wp), INTENT(OUT) :: pbhn_tile(:,:,:)   !< (kbdim,ksfc_type) out, for "nsurf_diag"
-    REAL(wp), INTENT(OUT) :: pbm_tile(:,:,:)    !< (kbdim,ksfc_type) out, for "nsurf_diag"
-    REAL(wp), INTENT(OUT) :: pbh_tile(:,:,:)    !< (kbdim,ksfc_type) out, for "nsurf_diag"
+    REAL(wp), INTENT(INOUT) :: pch_tile(:,:,:)    !< (kbdim,ksfc_type) OUT, for "nsurf_diag"
+    REAL(wp), INTENT(INOUT) :: pbn_tile(:,:,:)    !< (kbdim,ksfc_type) OUT, for "nsurf_diag"
+    REAL(wp), INTENT(INOUT) :: pbhn_tile(:,:,:)   !< (kbdim,ksfc_type) OUT, for "nsurf_diag"
+    REAL(wp), INTENT(INOUT) :: pbm_tile(:,:,:)    !< (kbdim,ksfc_type) OUT, for "nsurf_diag"
+    REAL(wp), INTENT(INOUT) :: pbh_tile(:,:,:)    !< (kbdim,ksfc_type) OUT, for "nsurf_diag"
 
     REAL(wp), OPTIONAL, INTENT(IN) ::          &
       & pcsat     (:,:)          ,&!< (kbdim) area fraction with wet land surface
       & pcair     (:,:)          ,&!< (kbdim) area fraction with wet land surface
       & paz0lh    (:,:)            !< (kbdim) surface roughness length over land for heat
+
+    LOGICAL, INTENT(IN) :: lacc
 
     ! Local variables
 
@@ -356,10 +362,12 @@ CONTAINS
     ! OMP variables
     INTEGER                             :: jb,jbs,jbe,jcs,jce,ncd,rls,rle
 
+    CALL assert_acc_device_only ('vdiff_down', lacc)
+
     !---- Local variables
     !$ACC DATA &
     !$ACC   CREATE(zghf, zghh, zfactor, zrmairm, zrmairh, jztottevn) &
-    !$ACC   CREATE(ztheta_b, zthetav_b, zthetal_b, zqsat_b, zlh_b)
+    !$ACC   CREATE(ztheta_b, zthetav_b, zthetal_b, zqsat_b, zlh_b) ASYNC(1)
 
 
     rls = grf_bdywidth_c+1
@@ -460,16 +468,15 @@ CONTAINS
         IF (jcs>jce) CYCLE
       !##############################################################################
 
-        ! DA: this routine is async aware, so it's safe not not wait here
-        CALL atm_exchange_coeff( jb,                                                         &! in, for debugging only
+        CALL atm_exchange_coeff( jb,                                                        &! in, for debugging only
                               & jcs, jce, kbdim, klev, klevm1,                              &! in
                               & pdtime, pcoriol(:,jb),                                      &! in
-                              & zghf(:,:,jb), zghh(:,:,jb),                                 &! in
+                              & zghf(:,:,jb), zghh(:,:,jb), pgeom1(:,:,jb),                 &! in
                               & pum1(:,:,jb), pvm1(:,:,jb), ptm1(:,:,jb), ptvm1(:,:,jb),    &! in
                               & pqm1(:,:,jb), pxm1(:,:,jb),                                 &! in
                               & papm1(:,:,jb), paphm1(:,:,jb), paclc(:,:,jb), pustar(:,jb), &! in
                               & pthvvar(:,:,jb), ptottem1(:,:,jb),                          &! in
-                              & vdiff_config,                                           &! in
+                              & vdiff_config,                                               &! in
                               & pcptgz(:,:,jb), phdtcbl(:,jb),                              &! out
                               & pzthvvar(:,1:klevm1,jb),                                    &! out
                               & pztottevn(:,1:klevm1,jb),                                   &! out
@@ -479,7 +486,8 @@ CONTAINS
                               & pcfthv  (:,1:klevm1,jb),zfactor(:,1:klevm1,jb),             &! out
                               & ztheta_b(:,jb), zthetav_b(:,jb), zthetal_b(:,jb),           &! out, for "sfc_exchange_coeff"
                               & zqsat_b(:,jb),  zlh_b(:,jb),                                &! out, for "sfc_exchange_coeff"
-                              & pri(:,1:klevm1,jb), pmixlen(:,1:klevm1,jb)                  )! out, for output
+                              & pri(:,1:klevm1,jb), pmixlen(:,1:klevm1,jb),                 &! out, for output
+                              & lacc=.TRUE.                                                 )! in
 
         !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR ASYNC(1)
         DO jl = jcs,jce
@@ -492,12 +500,13 @@ CONTAINS
         !    Get boundary condition for TTE and variance of theta_v.
         !-----------------------------------------------------------------------
 
-        ! DA: this routine is async, no need to wait
         CALL sfc_exchange_coeff( jb, jcs, jce, kbdim, ksfc_type, patch,        &! in
                               & idx_wtr, idx_ice, idx_lnd,                     &! in
                               & pz0m_tile(:,jb,:),  ptsfc_tile(:,jb,:),        &! in
                               & pfrc(:,jb,:),       phdtcbl(:,jb),             &! in
-                              & pocu(:,jb),         pocv(:,jb),   ppsfc(:,jb), &! in
+                              & pocu(:,jb),         pocv(:,jb),                &! in
+                              & piceu(:,jb),        picev(:,jb),               &! in
+                              & ppsfc(:,jb),                                   &! in
                               & zghf(:,klev,jb),                               &! in
                               & pum1(:,klev,jb),    pvm1  (:,klev,jb),         &! in
                               & ptm1(:,klev,jb),                               &! in
@@ -522,9 +531,10 @@ CONTAINS
                               & pch_tile(:,jb,:),                              &! out, for "nsurf_diag"
                               & pbn_tile(:,jb,:),   pbhn_tile(:,jb,:),         &! out, for "nsurf_diag"
                               & pbm_tile(:,jb,:),   pbh_tile(:,jb,:),          &! out, for "nsurf_diag"
-                              & paz0lh(:,jb),                                  &! in, optional
-                              & pcsat(:,jb),                                   &! in, optional
-                              & pcair(:,jb))                                    ! in, optional
+                              & lacc=.TRUE.,                                   &! in
+                              & paz0lh=paz0lh(:,jb),                           &! in, optional
+                              & pcsat=pcsat(:,jb),                             &! in, optional
+                              & pcair=pcair(:,jb))                              ! in, optional
 
         IF ( isrfc_type == 1 ) THEN
           !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR ASYNC(1)
@@ -542,6 +552,9 @@ CONTAINS
 
     CASE ( VDIFF_TURB_3DSMAGORINSKY )
 
+      ! Smagorinsky is not fully async due to horizontal dependencies
+      !$ACC WAIT
+
       !$ACC DATA &
       !$ACC   CREATE(kh_ic, km_ic, km_c, km_iv, km_ie, vn, u_vert, v_vert, w_vert, inv_rho_ic, div_c, w_ie)
       CALL atm_exchange_coeff3d ( kbdim, nblks_c,                                     &! in
@@ -550,7 +563,7 @@ CONTAINS
                             & patch,                                                  &! in
                             & pz0m_tile(:,:,:), ptsfc_tile(:,:,:), pfrc(:,:,:),       &! in
                             & ppsfc(:,:),                                             &! in
-                            & zghf(:,:,:),                                            &! in
+                            & zghf(:,:,:), pgeom1(:,:,:),                             &! in
                             & pum1(:,:,:), pvm1(:,:,:), pwm1(:,:,:),                  &! in
                             & ptm1(:,:,:), ptvm1(:,:,:),                              &! in
                             & pqm1(:,:,:), pxm1(:,:,:),                               &! in
@@ -577,6 +590,7 @@ CONTAINS
                             & pch_tile(:,:,:),                                        &! out, for "nsurf_diag"
                             & pbn_tile(:,:,:), pbhn_tile(:,:,:),                      &! out
                             & pbm_tile(:,:,:), pbh_tile(:,:,:),                       &! out
+                            & lacc=.TRUE.,                                            &! in
                             & pcsat=pcsat(:,:), pcair=pcair(:,:)                      )! in, optional
 
 
@@ -648,7 +662,6 @@ CONTAINS
                              & vdiff_config%rturb_prandtl)
         END IF
       END IF
-      !$ACC WAIT
       !$ACC END DATA
 
     END SELECT    !select turbulent scheme
@@ -738,7 +751,6 @@ CONTAINS
     !$OMP END PARALLEL DO
     !##############################################################################
 
-    !$ACC WAIT
     !$ACC END DATA
 
   END SUBROUTINE vdiff_down
@@ -829,7 +841,7 @@ CONTAINS
   !!
   SUBROUTINE vdiff_get_richtmyer_coeff_momentum( &
         & jcs, kproma, klev, ksfc_type, aa, bb, pfactor_sfc, pcfm_tile, pmair, pen_uv, pfn_u, &
-        & pfn_v &
+        & pfn_v, lacc &
       )
 
     INTEGER, INTENT(IN) :: jcs !< Start cell index.
@@ -856,8 +868,12 @@ CONTAINS
     !> Richtmyer F for v [m/s] (jcs:kproma,ksfc_type).
     REAL(wp), INTENT(INOUT) :: pfn_v(:,:)
 
+    LOGICAL,INTENT(IN) :: lacc
+
     INTEGER :: jc, jsfc
     REAL(wp) :: a2, a3, a2sub, bu, bv
+
+    CALL assert_acc_device_only ('vdiff_get_richtmyer_coeff_momentum', lacc)
 
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP GANG VECTOR PRIVATE(a2, a3, a2sub, bu, bv) COLLAPSE(2)
@@ -900,7 +916,7 @@ CONTAINS
   !!
   SUBROUTINE vdiff_update_boundary( &
         & jcs, kproma, klev, dtime, pmair, shflx, qflx, aa, aa_btm, s_btm, q_btm, bb, &
-        & uflx, vflx &
+        & lacc, uflx, vflx &
       )
 
     INTEGER, INTENT(IN) :: jcs !< Start cell index.
@@ -928,6 +944,8 @@ CONTAINS
     !> Right-hand sides (jcs:kproma, klev, nvar_vdiff).
     REAL(wp), INTENT(INOUT) :: bb(:,:,:)
 
+    LOGICAL, INTENT(IN) :: lacc
+
     !> Zonal momentum flux into surface [kg*m/s/m**2/s] (jcs:kproma).
     REAL(wp), INTENT(IN), OPTIONAL :: uflx(:)
     !> Meridional momentum flux into surface [kg*m/s/m**2/s] (jcs:kproma).
@@ -935,6 +953,8 @@ CONTAINS
 
     INTEGER :: jc
     REAL(wp) :: bs, bqv, bu, bv
+
+    CALL assert_acc_device_only ('vdiff_update_boundary', lacc)
 
     ! The way things are currently set up, the bottom layer of `aa` and `bb` for heat and humidity
     ! is unset. We have to construct the bottom row of the matrix and perform Gaussian elimination
@@ -1007,7 +1027,7 @@ CONTAINS
   END SUBROUTINE vdiff_update_boundary
 
 
-  SUBROUTINE vdiff_get_tke (jcs, kproma, klev, vdiff_config, ptotte, pri, tke)
+  SUBROUTINE vdiff_get_tke (jcs, kproma, klev, vdiff_config, ptotte, pri, tke, lacc)
 
     INTEGER, INTENT(IN) :: jcs !< Start cell index.
     INTEGER, INTENT(IN) :: kproma !< End cell index.
@@ -1024,9 +1044,13 @@ CONTAINS
     !> Turbulence kinetic energy as diagnosed by the TTE scheme (jcs:kproma,nlev+1) [m**2/s**2].
     REAL(wp), INTENT(INOUT) :: tke(:,:)
 
+    LOGICAL,INTENT(IN) :: lacc
+
     INTEGER :: jc, jl
     REAL(wp) :: tte, ri
     REAL(wp) :: pr0, ek_ep_ratio_stable, ek_ep_ratio_unstable
+
+    CALL assert_acc_device_only ('vdiff_get_tke', lacc)
 
     pr0 = vdiff_config%pr0
     ek_ep_ratio_stable = vdiff_config%ek_ep_ratio_stable
@@ -1057,7 +1081,7 @@ CONTAINS
 
 
   SUBROUTINE vdiff_up( jcs, kproma, kbdim, klev, klevm1, &! in
-    ktrac,      ksfc_type,   idx_wtr,                    &! in
+    ktrac,      ksfc_type,   idx_wtr, idx_ice,           &! in
     pdtime, pfrc,                                        &! in
     pcfm_tile,                                           &! in
     aa,         pcptgz,                                  &! in
@@ -1067,16 +1091,20 @@ CONTAINS
     pgeom1,      pztottevn,                              &! in
     vdiff_config,                                        &! in
     bb,                                                  &! inout
+    ocean_u, ocean_v,                                    &! in
+    ice_u, ice_v,                                        &! in
+    pwstar_tile,                                         &! in
     pzthvvar,   pxvar,       pz0m_tile,                  &! in, inout, inout
     pkedisp,                                             &! out
     pute_vdf,   pvte_vdf,    pq_vdf,                     &! out
     pqte_vdf,   pxlte_vdf,   pxite_vdf,   pxtte_vdf,     &! out
     pz0m,                                                &! out
     pthvvar,                                             &! out
-    ptotte                                               )! out
+    ptotte,                                              &! out
+    lacc                                                 )! in
 
     INTEGER, INTENT(IN) :: jcs, kproma, kbdim, klev, klevm1, ktrac
-    INTEGER, INTENT(IN) :: ksfc_type, idx_wtr
+    INTEGER, INTENT(IN) :: ksfc_type, idx_wtr, idx_ice
     REAL(wp),INTENT(IN) :: pdtime
 
     REAL(wp),INTENT(IN) ::    &
@@ -1106,6 +1134,12 @@ CONTAINS
 
     REAL(wp),INTENT(INOUT) :: bb    (:,:,:)  !< (kbdim,klev,nvar_vdiff)
 
+    REAL(wp),INTENT(IN) :: ocean_u (:)  !< (kbdim,nvar_vdiff)
+    REAL(wp),INTENT(IN) :: ocean_v (:)  !< (kbdim,nvar_vdiff)
+    REAL(wp),INTENT(IN) :: ice_u (:)  !< (kbdim,nvar_vdiff)
+    REAL(wp),INTENT(IN) :: ice_v (:)  !< (kbdim,nvar_vdiff)
+    REAL(wp),INTENT(IN) :: pwstar_tile(:,:) !< (kbdim,nvar_vdiff)
+
     REAL(wp),INTENT(IN)    :: pzthvvar (:,:) !< (kbdim,klev) intermediate value of thvvar
     REAL(wp),INTENT(INOUT) :: pxvar    (:,:) !< (kbdim,klev) distribution width (b-a)
                               !< in: step t-dt, out: modified
@@ -1120,29 +1154,33 @@ CONTAINS
 
     ! Vertically integrated dissipation of kinetic energy [W/m2]
 
-    REAL(wp),INTENT(OUT) :: pkedisp(:) !< (kbdim)
+    REAL(wp),INTENT(INOUT) :: pkedisp(:) !< (kbdim) OUT
 
     ! Tendencies
 
-    REAL(wp),INTENT(OUT) :: pute_vdf (:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pvte_vdf (:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pq_vdf   (:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pqte_vdf (:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pxlte_vdf(:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pxite_vdf(:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pxtte_vdf(:,:,:) !< (kbdim,klev,ktrac)
+    REAL(wp),INTENT(INOUT) :: pute_vdf (:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pvte_vdf (:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pq_vdf   (:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pqte_vdf (:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pxlte_vdf(:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pxite_vdf(:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pxtte_vdf(:,:,:) !< (kbdim,klev,ktrac) OUT
 
     ! Some other diagnostics
 
-    REAL(wp),INTENT(OUT) :: pz0m      (:)     !< (kbdim) grid-box mean roughness height
-    REAL(wp),INTENT(OUT) :: pthvvar   (:,:)   !< (kbdim,klev) variance of virtual potential temperature
+    REAL(wp),INTENT(INOUT) :: pz0m      (:)     !< (kbdim) OUT grid-box mean roughness height
+    REAL(wp),INTENT(INOUT) :: pthvvar   (:,:)   !< (kbdim,klev) OUT variance of virtual potential temperature
                               !< at the new time step t
-    REAL(wp),INTENT(OUT) :: ptotte    (:,:)   !< (kbdim,klev)
+    REAL(wp),INTENT(INOUT) :: ptotte    (:,:)   !< (kbdim,klev) OUT
+
+    LOGICAL,INTENT(IN) :: lacc
 
     !-----------------------------------------------------------------------
     ! 6. Obtain solution of the tri-diagonal system by back-substitution.
     !    Then compute tendencies and diagnose moisture flux etc.
     !-----------------------------------------------------------------------
+    CALL assert_acc_device_only ('vdiff_up', lacc)
+
     CALL rhs_bksub( jcs, kproma, klev, aa, bb ) ! in,...,in, inout
 
     CALL vdiff_tendencies( jcs, kproma, kbdim, klev, klevm1, &! in
@@ -1154,6 +1192,8 @@ CONTAINS
       & pgeom1, pcptgz,                              &! in
       & pztottevn, pzthvvar,                         &! in
       & pcfm_tile, pfrc, bb,                         &! in
+      & ocean_u, ocean_v,                            &! in
+      & pwstar_tile,                                 &! in
       & vdiff_config,                                &! in
       & pkedisp,                                     &! out
       & pxvar,                                       &! inout
@@ -1274,7 +1314,6 @@ CONTAINS
 
     INTEGER :: ist
 
-    !$ACC WAIT(1)
     !$ACC EXIT DATA DELETE(matrix_idx, ibtmoffset_mtrx, ibtmoffset_var)
     DEALLOCATE( matrix_idx,ibtmoffset_mtrx,ibtmoffset_var, STAT=ist)
     IF (ist/=SUCCESS) CALL finish('cleanup_vdiff_solver','Deallocation failed')
@@ -1310,8 +1349,8 @@ CONTAINS
     REAL(wp),INTENT(IN) :: prmairm  (:,:)   !< (kbdim,klev) reciprocal of layer air mass, full levels
     REAL(wp),INTENT(IN) :: prmairh  (:,:)   !< (kbdim,klevm1) reciprocal of layer air mass, half levels
 
-    REAL(wp),INTENT(OUT) :: aa    (:,:,:,:)     !< (kbdim,klev,3,nmatrix) exchange coeff. matrices    out
-    REAL(wp),INTENT(OUT) :: aa_btm(:,:,:,imh:)  !< (kbdim,3,ksfc_type,imh:imqv) out
+    REAL(wp),INTENT(INOUT) :: aa    (:,:,:,:)   !< (kbdim,klev,3,nmatrix) exchange coeff. matrices    out
+    REAL(wp),INTENT(INOUT) :: aa_btm(:,:,:,imh:)!< (kbdim,3,ksfc_type,imh:imqv) out
                                                 !< last (the klev-th) row of the coeff. matrices
                                                 !< of dry static energy and moisture
 
@@ -1325,7 +1364,7 @@ CONTAINS
     INTEGER  :: jkm1, jmax
 
     !---- Local Variables
-    !$ACC DATA CREATE(zkstar, zkh)
+    !$ACC DATA CREATE(zkstar, zkh) ASYNC(1)
 
     !-----------------------------------------------------------------------
     ! For all prognostic variables: no turbulent flux at the upper boundary
@@ -1659,7 +1698,6 @@ CONTAINS
     !  aa(:,1:klev+ibtmoffset_mtrx(im)-1,3,:) becomes -A (Eqn. 19).
     ! See subroutine matrix_to_richtmyer_coeff.
 
-  !$ACC WAIT
   !$ACC END DATA
 
   END SUBROUTINE matrix_setup_elim
@@ -1696,8 +1734,8 @@ CONTAINS
     REAL(wp),INTENT(IN) :: prmairm  (:,:)   !< (kbdim,klev)
     REAL(wp),INTENT(IN) :: aa       (:,:,:,:) !< (kbdim,klev,3,nmatrix)
 
-    REAL(wp),INTENT(OUT) :: bb    (:,:,:)   !< (kbdim,klev,nvar_vdiff) OUT
-    REAL(wp),INTENT(OUT) :: bb_btm(:,:,ih:) !< (kbdim,ksfc_type,ih:iqv) OUT
+    REAL(wp),INTENT(INOUT) :: bb    (:,:,:)   !< (kbdim,klev,nvar_vdiff) OUT
+    REAL(wp),INTENT(INOUT) :: bb_btm(:,:,ih:) !< (kbdim,ksfc_type,ih:iqv) OUT
 
     ! Local variables
 
@@ -1705,8 +1743,7 @@ CONTAINS
     INTEGER  :: jsfc, jt, irhs, im, jk, jc
 
     !---- Local Variables
-    !$ACC DATA &
-    !$ACC   CREATE(ztmp)
+    !$ACC DATA CREATE(ztmp) ASYNC(1)
 
     !-------------------------------------------------------------------
     ! First handle variables that are defined on full levels
@@ -1908,9 +1945,7 @@ CONTAINS
     !                               & + pxt_emis(jcs:kproma,1:klev,jt)   &
     !                               &      *ztmp(jcs:kproma,1:klev)
     !ENDDO
-  !$ACC WAIT
   !$ACC END DATA
-
 
   END SUBROUTINE rhs_setup
 
@@ -2024,8 +2059,6 @@ CONTAINS
     ENDDO
     !$ACC END PARALLEL
 
-    !$ACC WAIT
-
   END SUBROUTINE rhs_elim
 
   !--------------------------------------------------------------------------------
@@ -2041,6 +2074,7 @@ CONTAINS
                                       & pdtime, delz,                                &! in
                                       & aa_btm, bb_btm,                              &! inout
                                       & pen_h, pfn_h, pen_qv, pfn_qv,                &! out
+                                      & lacc,                                        &! in
                                       & pcair,                                       &! in
                                       & pcsat)                                        ! in
 
@@ -2052,15 +2086,19 @@ CONTAINS
     REAL(wp),INTENT(INOUT) :: aa_btm(:,:,:,imh:) !< (jcs:kproma,3,ksfc_type,imh:imqv)
     REAL(wp),INTENT(INOUT) :: bb_btm(:,:,ih:)    !< (jcs:kproma,ksfc_type,ih:iqv)
 
-    REAL(wp),INTENT(OUT) :: pen_h (:,:)  !< (jcs:kproma,ksfc_type) OUT
-    REAL(wp),INTENT(OUT) :: pfn_h (:,:)  !< (jcs:kproma,ksfc_type) OUT
-    REAL(wp),INTENT(OUT) :: pen_qv(:,:)  !< (jcs:kproma,ksfc_type) OUT
-    REAL(wp),INTENT(OUT) :: pfn_qv(:,:)  !< (jcs:kproma,ksfc_type) OUT
+    REAL(wp),INTENT(INOUT) :: pen_h (:,:)  !< (jcs:kproma,ksfc_type) OUT
+    REAL(wp),INTENT(INOUT) :: pfn_h (:,:)  !< (jcs:kproma,ksfc_type) OUT
+    REAL(wp),INTENT(INOUT) :: pen_qv(:,:)  !< (jcs:kproma,ksfc_type) OUT
+    REAL(wp),INTENT(INOUT) :: pfn_qv(:,:)  !< (jcs:kproma,ksfc_type) OUT
+
+    LOGICAL,INTENT(IN) :: lacc
 
     REAL(wp),OPTIONAL,INTENT(IN)    :: pcair(:) !< (jcs:kproma)
     REAL(wp),OPTIONAL,INTENT(IN)    :: pcsat(:) !< (jcs:kproma)
 
     INTEGER  :: jk, jsfc
+
+    CALL assert_acc_device_only ('matrix_to_richtmyer_coeff', lacc)
 
     !---------------------------------------------------------
     ! Matrix setup and bottom level elimination for moisture
@@ -2186,8 +2224,6 @@ CONTAINS
     END DO
     !$ACC END PARALLEL
 
-    !$ACC WAIT
-
   END SUBROUTINE matrix_to_richtmyer_coeff
   !--------------------------------------------------------------------------------
 
@@ -2233,8 +2269,6 @@ CONTAINS
     END DO
     !$ACC END PARALLEL
 
-    !$ACC WAIT
-
   END SUBROUTINE rhs_bksub
   !-------------
   !>
@@ -2248,6 +2282,8 @@ CONTAINS
                               & pgeom1, pcptgz,                             &! in
                               & pztottevn, pzthvvar,                        &! in
                               & pcfm_tile, pfrc, bb,                        &! in
+                              & ocean_u, ocean_v,                           &! in
+                              & pwstar_tile,                                &! in
                               & vdiff_config,                               &! in
                               & pkedisp,                                    &! out
                               & pxvar, pz0m_tile,                           &! inout
@@ -2274,45 +2310,53 @@ CONTAINS
     REAL(wp),INTENT(IN)  :: pcfm_tile     (:,:) !< (kbdim,ksfc_type)
     REAL(wp),INTENT(IN)  :: pfrc          (:,:) !< (kbdim,ksfc_type)
     REAL(wp),INTENT(IN)  :: bb            (:,:,:) !<(kbdim,klev,nvar_vdiff)
+    REAL(wp),INTENT(IN)  :: ocean_u       (:) !<(kbdim)
+    REAL(wp),INTENT(IN)  :: ocean_v       (:) !<(kbdim)
+    REAL(wp),INTENT(IN)  :: pwstar_tile   (:,:) !<(kbdim,nvar_vdiff)
 
     TYPE(t_vdiff_config), INTENT(IN) :: vdiff_config
 
-    REAL(wp),INTENT(OUT) :: pkedisp(:) !< (kbdim) vertically integrated dissipation
-                                        !  of kinetic energy [W/m2]
+    REAL(wp),INTENT(INOUT) :: pkedisp(:) !< (kbdim) OUT vertically integrated dissipation
+                                         !! of kinetic energy [W/m2]
 
-    REAL(wp),INTENT(INOUT) :: pxvar    (:,:) !< (kbdim,klev)
-    REAL(wp),INTENT(INOUT) :: pz0m_tile(:,:) !< (kbdim,ksfc_type)
+    REAL(wp),INTENT(INOUT) :: pxvar    (:,:) !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pz0m_tile(:,:) !< (kbdim,ksfc_type) OUT
 
-    REAL(wp),INTENT(OUT) :: pute_vdf (:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pvte_vdf (:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pq_vdf   (:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pqte_vdf (:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pxlte_vdf(:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pxite_vdf(:,:)   !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pxtte_vdf(:,:,:) !< (kbdim,klev,ktrac)
+    REAL(wp),INTENT(INOUT) :: pute_vdf (:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pvte_vdf (:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pq_vdf   (:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pqte_vdf (:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pxlte_vdf(:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pxite_vdf(:,:)   !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pxtte_vdf(:,:,:) !< (kbdim,klev,ktrac) OUT
 
-    REAL(wp),INTENT(OUT) :: pz0m     (:)   !< (kbdim)
-    REAL(wp),INTENT(OUT) :: ptotte   (:,:) !< (kbdim,klev)
-    REAL(wp),INTENT(OUT) :: pthvvar  (:,:) !< (kbdim,klev)
-!!$    REAL(wp),INTENT(OUT) :: psh_vdiff(:)   !< (kbdim)
-!!$    REAL(wp),INTENT(OUT) :: pqv_vdiff(:)   !< (kbdim)
+    REAL(wp),INTENT(INOUT) :: pz0m     (:)   !< (kbdim) OUT
+    REAL(wp),INTENT(INOUT) :: ptotte   (:,:) !< (kbdim,klev) OUT
+    REAL(wp),INTENT(INOUT) :: pthvvar  (:,:) !< (kbdim,klev) OUT
+!!$    REAL(wp),INTENT(INOUT) :: psh_vdiff(:)   !< (kbdim) OUT
+!!$    REAL(wp),INTENT(INOUT) :: pqv_vdiff(:)   !< (kbdim) OUT
 
     REAL(wp) :: ztest, zrdt
     REAL(wp) :: zunew, zvnew, zqnew, zsnew, zhnew
     REAL(wp) :: zcp
     REAL(wp) :: zdis  (kbdim,klev)
     REAL(wp) :: z0m_min
+    REAL(wp) :: uz      ! relative wind over ocean
+    REAL(wp) :: wmc
+    REAL(wp) :: zepdu2
 
     INTEGER  :: jk, jl, jt, irhs, jsfc
 
     !-------------------------------------------------------------------
     ! Start GPU data region
     !-------------------------------------------------------------------
-    !$ACC DATA CREATE(zdis)
+    !$ACC DATA CREATE(zdis) ASYNC(1)
 
     zrdt   = 1._wp/pdtime
 
     z0m_min = vdiff_config%z0m_min
+    wmc     = vdiff_config%wmc
+    zepdu2  = 1.0_wp
 
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP GANG VECTOR COLLAPSE(2)
@@ -2351,14 +2395,18 @@ CONTAINS
     ! Compute TTE at the new time step.
     !-------------------------------------------------------------------
     ztest = 0._wp
-    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) REDUCTION(+: ztest) ASYNC(1)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC LOOP GANG VECTOR COLLAPSE(2)
     DO jk = 1,klevm1
       DO jl = jcs,kproma
         ptotte(jl,jk) = bb(jl,jk,itotte) + tpfac3*pztottevn(jl,jk)
+#ifndef _OPENACC
+        ! Turned off for OpenACC
         ztest = ztest+MERGE(1._wp,0._wp,ptotte(jl,jk)<0._wp)
+#endif
       END DO
     END DO
-    !$ACC END PARALLEL LOOP
+    !$ACC END PARALLEL
 
     IF( vdiff_config%turb == VDIFF_TURB_3DSMAGORINSKY ) THEN
       ztest = 1._wp
@@ -2500,13 +2548,24 @@ CONTAINS
       !$ACC END PARALLEL
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR
-      DO jl = jcs,kproma
-        IF(pfrc(jl,idx_wtr).GT.0._wp) THEN
-          pz0m_tile(jl,idx_wtr) = tpfac1*SQRT( bb(jl,klev,iu)**2+bb(jl,klev,iv)**2 ) &
-                                & *pcfm_tile(jl,idx_wtr)*cchar*rgrav
-          pz0m_tile(jl,idx_wtr) = MAX(z0m_min,pz0m_tile(jl,idx_wtr))
-        ENDIF
-      ENDDO
+      DO jl = jcs, kproma
+        IF (pfrc(jl, idx_wtr) > 0._wp) THEN
+
+          ! Relative wind over ocean [m/s]
+          uz = MAX(zepdu2, &
+                   SQRT( (tpfac1*bb(jl,klev,iu)-ocean_u(jl))**2 &
+                   + (tpfac1*bb(jl,klev,iv)-ocean_v(jl))**2 &
+                   + (wmc * pwstar_tile(jl,idx_wtr))**2 ) )
+
+          ! Surface roughness length: z0m = Charnock + viscous term
+          pz0m_tile(jl,idx_wtr) = pcfm_tile(jl,idx_wtr) * uz * cchar * rgrav &
+                                + viscous_coeff * MIN(0.01_wp, nu / SQRT(pcfm_tile(jl,idx_wtr) * uz))
+
+          ! Apply minimum
+          pz0m_tile(jl,idx_wtr) = MAX(z0m_min, pz0m_tile(jl,idx_wtr))
+        END IF
+      END DO
+
       !$ACC END PARALLEL
     ENDIF
 
@@ -2532,7 +2591,6 @@ CONTAINS
     !-------------------------------------------------------------------
     ! End GPU data region
     !-------------------------------------------------------------------
-    !$ACC WAIT
     !$ACC END DATA
 
 

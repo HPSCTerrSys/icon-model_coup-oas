@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! This module is the interface between ICON and ECMWFs radiation code
 ! ecRad which is provided as a library.
 ! - Modules, variables and data types from ecRad are used and provided
@@ -12,21 +22,10 @@
 ! Coddington et al. (2016) - Coddington, O., Lean, J. L., Pilewskie, P., Snow, M., & Lindholm, D. (2016).
 !                            A solar irradiance climate data record.
 !                            Bulletin of the American Meteorological Society, 97(7), 1265-1282.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_ecrad
 
-  USE mo_kind,                    ONLY: wp
+  USE mo_kind,                    ONLY: wp, rp
 #ifdef __ECRAD
   USE radiation_config,           ONLY: t_ecrad_conf=>config_type,                        &
                                     &   ISolverHomogeneous, ISolverMcICA,                 &
@@ -102,7 +101,7 @@ MODULE mo_ecrad
   PUBLIC :: nweight_vis_ecrad, iband_vis_ecrad, weight_vis_ecrad
   PUBLIC :: nweight_par_ecrad, iband_par_ecrad, weight_par_ecrad
   ! Spectral Solar Insolation
-  PUBLIC :: ecrad_ssi_default, ecrad_ssi_coddington
+  PUBLIC :: ecrad_ssi_default, ecrad_ssi_coddington, ecrad_ssi_amip
   ! Generalizes hydrometor indices
   PUBLIC :: ecrad_hyd_list
   PUBLIC :: ecrad_iqc, ecrad_iqi, ecrad_iqr, ecrad_iqs, ecrad_iqg
@@ -116,15 +115,15 @@ MODULE mo_ecrad
 ! Near-IR, visible, and photosynthetically active radiation weightings
   INTEGER            :: nweight_nir_ecrad
   INTEGER            :: iband_nir_ecrad(100)
-  REAL(KIND=wp)      :: weight_nir_ecrad(100)
+  REAL(KIND=rp)      :: weight_nir_ecrad(100)
 
   INTEGER            :: nweight_vis_ecrad
   INTEGER            :: iband_vis_ecrad(100)
-  REAL(KIND=wp)      :: weight_vis_ecrad(100)
+  REAL(KIND=rp)      :: weight_vis_ecrad(100)
 
   INTEGER            :: nweight_par_ecrad
   INTEGER            :: iband_par_ecrad(100)
-  REAL(KIND=wp)      :: weight_par_ecrad(100)
+  REAL(KIND=rp)      :: weight_par_ecrad(100)
 
   !$ACC DECLARE COPYIN(iband_nir_ecrad, weight_nir_ecrad)
   !$ACC DECLARE COPYIN(iband_vis_ecrad, weight_vis_ecrad)
@@ -145,15 +144,19 @@ MODULE mo_ecrad
   REAL(wp) :: ecrad_ssi_default(14) = (/ 12.045647_wp, 20.257584_wp, 23.604472_wp , 22.309308_wp , 55.332985_wp , &
     &                                   102.388219_wp, 24.165380_wp, 343.917494_wp, 217.035256_wp, 345.359642_wp, &
     &                                   128.811472_wp, 49.887519_wp, 3.063681_wp  , 12.821340_wp /)
+  ! AMIP-type CMIP5 simulation (average from 1979-1988), sum of 14 bands is: 1361.371
+  REAL(wp) :: ecrad_ssi_amip(14) =  (/ 11.95053_wp, 20.14766_wp, 23.40394_wp, 22.09458_wp, 55.41401_wp, &
+    &                                 102.5134_wp,  24.69814_wp, 347.5362_wp, 217.2925_wp, 343.4221_wp, &
+    &                                 129.403_wp ,  47.14264_wp, 3.172126_wp, 13.18075_wp /)
   ! New measurements of SSI from Coddington et al. 2016
   REAL(wp) :: ecrad_ssi_coddington(14) = (/ 12.045647_wp  , 20.257584_wp  , 23.604472_wp  , 23.37569292_wp, 57.56843759_wp, &
                                             105.6339255_wp, 24.72360028_wp, 345.7746485_wp, 213.5909065_wp, 344.8864993_wp, &
                                             128.6916773_wp, 45.19260459_wp, 2.825112161_wp, 12.821340_wp/)
-  ! Generalized hydrometor list 
+  ! Generalized hydrometor list
   INTEGER, ALLOCATABLE :: ecrad_hyd_list(:)
   ! Constant index for hydrometeors
   ENUM, BIND(C)
-    ENUMERATOR  :: ecrad_iqc = 1, ecrad_iqi = 2, ecrad_iqr = 3, ecrad_iqs = 4, ecrad_iqg = 5 
+    ENUMERATOR  :: ecrad_iqc = 1, ecrad_iqi = 2, ecrad_iqr = 3, ecrad_iqs = 4, ecrad_iqg = 5
   END ENUM
 
 CONTAINS
@@ -161,13 +164,17 @@ CONTAINS
   SUBROUTINE del_opt_ptrs(self)
     CLASS(t_opt_ptrs),INTENT(inout) :: self
 
+    !$ACC WAIT
     IF (ASSOCIATED(self%ptr_od) ) THEN
+      !$ACC EXIT DATA DELETE(self%ptr_od)
       NULLIFY(self%ptr_od)
     ENDIF
     IF (ASSOCIATED(self%ptr_ssa) ) THEN
+      !$ACC EXIT DATA DELETE(self%ptr_ssa)
       NULLIFY(self%ptr_ssa)
     ENDIF
     IF (ASSOCIATED(self%ptr_g) ) THEN
+      !$ACC EXIT DATA DELETE(self%ptr_g)
       NULLIFY(self%ptr_g)
     ENDIF
   END SUBROUTINE del_opt_ptrs

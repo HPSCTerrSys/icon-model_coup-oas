@@ -1,16 +1,15 @@
-! Contains the the interpolation data structures for the triangular grid.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the the interpolation data structures for the triangular grid.
 
 MODULE mo_intp_data_strc
   !-------------------------------------------------------------------------
@@ -36,9 +35,9 @@ MODULE mo_intp_data_strc
   ! NOTE: The variables will be use along the mo_interpolation sub-modules
   !       They are declared to be public
   PUBLIC
-  
+
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_intp_data_strc'
-  
+
 
 
   TYPE t_lsq
@@ -90,7 +89,7 @@ MODULE mo_intp_data_strc
   TYPE t_cell_environ
     !
     ! This derived type stores an index list of cells lying within a certain radius
-    ! around a center cell (ic,ib) 
+    ! around a center cell (ic,ib)
     ! and additionally limited by the number of halo lines.
     ! The related variable is defined in subr. 'gen_index_list_radius'.
     !
@@ -106,7 +105,7 @@ MODULE mo_intp_data_strc
 
     INTEGER, ALLOCATABLE :: nmbr_nghbr_cells(:,:)  ! number of cells around the center cell (ic,ib)
                                                    ! (including the center cell).
-         ! Recommendation: for efficient vectorization, build loops using max_nmbr_nghbr_cells 
+         ! Recommendation: for efficient vectorization, build loops using max_nmbr_nghbr_cells
          ! instead of this field.
 
     INTEGER,  ALLOCATABLE :: idx(:,:,:)             ! Index jc of the l-th neighbour cell (ic, ib, l)
@@ -122,48 +121,48 @@ MODULE mo_intp_data_strc
     INTEGER              :: max_nmbr_iter          ! maximum number of iterations used
 
   END TYPE t_cell_environ
- 
+
 
 
   TYPE t_int_state
-  
+
     ! a) weights which are inconsistent with the Hamiltonian viewpoint
     !-----------------------------------------------------------------
-  
+
     REAL(wp), ALLOCATABLE :: c_lin_e(:,:,:)   ! coefficient for interpolation
                                               ! from adjacent cells onto edge
                                               ! (nproma,2,nblks_e)
-  
+
     REAL(wp), ALLOCATABLE :: e_bln_c_s(:,:,:) ! coefficient for bilinear
                                               ! interpolation from edges to cells
                                               ! for scalar quantities
-  
+
     REAL(wp), ALLOCATABLE :: e_bln_c_u(:,:,:) ! coefficient for bilinear interpolation
                                               ! from edges to cells for vector components
                                               ! (input: v_t, v_n, output: u)
-  
+
     REAL(wp), ALLOCATABLE :: e_bln_c_v(:,:,:) ! coefficient for bilinear interpolation
                                               ! from edges to cells for vector components
                                               ! (input: v_t, v_n, output: v)
-  
+
     REAL(wp), ALLOCATABLE :: c_bln_avg(:,:,:) ! coefficients for bilinear divergence
                                               ! averaging (nproma,4,nblks_c)
-  
+
     REAL(wp), ALLOCATABLE :: e_flx_avg(:,:,:) ! coefficients for related velocity or mass flux
                                               ! averaging (nproma,5,nblks_e)
-  
+
     REAL(wp), ALLOCATABLE :: v_1o2_e(:,:,:)   ! coefficient for interpolation
                                               ! from vertices onto edges by 1/2
                                               ! weighting (nproma,2,nblks_e),
 
     REAL(wp), ALLOCATABLE :: gradc_bmat(:,:,:,:) ! Bmatrix for cell centered shape function based
                                               ! gradient (nproma,2,3,nblks_c)
-  
-  
+
+
     ! b) weights which are consistent with the Hamiltonian viewpoint
     !---------------------------------------------------------------
     ! The following weights are needed for the mass and theta brackets
-  
+
     REAL(wp), ALLOCATABLE :: e_inn_c(:,:,:)   ! coefficient for inner product
                                               ! of 2 vector components
                                               ! from edges to cells
@@ -171,11 +170,11 @@ MODULE mo_intp_data_strc
     REAL(wp), ALLOCATABLE :: verts_aw_cells(:,:,:)! coefficient for interpolation
                                               ! from vertices to cells by
                                               ! area weighting
-  
+
     REAL(wp), ALLOCATABLE :: cells_aw_verts(:,:,:)! coefficient for interpolation
                                               ! from cells to verts by
                                               ! area weighting
-  
+
     ! c) RBF related fields
     !----------------------
     INTEGER, ALLOCATABLE  :: rbf_vec_idx_c(:,:,:)  ! index array defining the
@@ -184,7 +183,7 @@ MODULE mo_intp_data_strc
                                               ! cell center
                                               ! (rbf_vec_dim_c,nproma,nblks_c)
     INTEGER, ALLOCATABLE  :: rbf_vec_blk_c(:,:,:)  ! ... dito for the blocks
-  
+
     INTEGER, ALLOCATABLE  :: rbf_vec_stencil_c(:,:) ! array defining number of
                                               ! surrounding edges in the stencil
                                               ! for vector rbf interpolation at
@@ -195,52 +194,52 @@ MODULE mo_intp_data_strc
                                               ! vector rbf interpolation
                                               ! at each cell center
                                               ! (rbf_vec_dim_c,2,nproma,nblks_c)
-  
+
     INTEGER, ALLOCATABLE  :: rbf_c2grad_idx(:,:,:)  ! index array defining the
                                               ! stencil of surrounding cells for
                                               ! 2D gradient reconstruction at each
                                               ! cell center
                                               ! (rbf_c2grad_dim,nproma,nblks_c)
     INTEGER, ALLOCATABLE  :: rbf_c2grad_blk(:,:,:)  ! ... dito for the blocks
-  
+
     REAL(wp), ALLOCATABLE :: rbf_c2grad_coeff(:,:,:,:) ! array containing the
                                               ! coefficients used for
                                               ! 2D gradient reconstruction
                                               ! at each cell center
                                               ! (rbf_c2grad_dim,2,nproma,nblks_c)
-  
+
     INTEGER, ALLOCATABLE  :: rbf_vec_idx_v(:,:,:) ! index array defining the
                                               ! stencil of surrounding edges for
                                               ! vector rbf interpolation at each
                                               ! triangle vertex
                                               ! (rbf_vec_dim_v,nproma,nblks_v)
     INTEGER, ALLOCATABLE  :: rbf_vec_blk_v(:,:,:) ! ... dito for the blocks
-  
+
     INTEGER, ALLOCATABLE  :: rbf_vec_stencil_v(:,:) ! array defining number of
                                               ! surrounding edges in the stencil
                                               ! for vector rbf interpolation at
                                               ! each triangle vertex
                                               ! (nproma,nblks_v)
-  
+
     REAL(wp), ALLOCATABLE :: rbf_vec_coeff_v(:,:,:,:) ! array containing the
                                               ! coefficients used for vector rbf
                                               ! interpolation at each tringle
                                               ! vertex (input is normal component)
                                               ! (rbf_vec_dim_v,2,nproma,nblks_v)
-  
+
     INTEGER, ALLOCATABLE  :: rbf_vec_idx_e(:,:,:) ! index array defining the
                                               ! stencil of surrounding edges for
                                               ! vector rbf interpolation at each
                                               ! triangle edge
                                               ! (rbf_vec_dim_e,nproma,nblks_e)
     INTEGER, ALLOCATABLE  :: rbf_vec_blk_e(:,:,:) ! ... dito for the blocks
-  
+
     INTEGER, ALLOCATABLE  :: rbf_vec_stencil_e(:,:) ! array defining number of
                                               ! surrounding edges in the stencil
                                               ! for vector rbf interpolation at
                                               ! each triangle edge
                                               ! (nproma,nblks_e)
-  
+
     REAL(wp), ALLOCATABLE :: rbf_vec_coeff_e(:,:,:) ! array containing the
                                               ! coefficients used for rbf inter-
                                               ! polation of the tangential velo-
@@ -256,24 +255,24 @@ MODULE mo_intp_data_strc
     REAL(wp), ALLOCATABLE :: geofac_rot(:,:,:)    ! factor for divergence (nproma,9-cell_type,nblks_v)
     REAL(wp), ALLOCATABLE :: geofac_n2s(:,:,:)    ! factor for nabla2-scalar (nproma,cell_type+1,nblks_c)
     REAL(wp), ALLOCATABLE :: geofac_grg(:,:,:,:)  ! factor for Green-Gauss gradient (nproma,4,nblks_c,2)
-  
+
     ! e) precomputed Cartesian orientation and location vectors of edge midpoints
     !    and location of cell centers(for efficiency) : it is now computed in grid generator stored
     !    in p_patch
     !------------------------------------------------------------------------------
-  
+
     ! f) patch elements restored from edges to cells to reduce frequency of indirect addressing
     !------------------------------------------------------------------------------
     REAL(wp), ALLOCATABLE :: primal_normal_ec(:,:,:,:) ! p_patch%edges%primal_normal_cell stored on
                                                        ! the cell data type (nproma,nblks_c,3,2)
     REAL(wp), ALLOCATABLE :: edge_cell_length(:,:,:)   ! p_patch%edges%edge_cell_length stored on
                                                        ! the cell data type (nproma,nblks_c,3)
-  
+
     ! g) distance from cells to vertices on local cartesian grid with origin at the cell center
     !    (used for gradient limiter)
     !------------------------------------------------------------------------------
     REAL(wp), ALLOCATABLE :: cell_vert_dist(:,:,:,:)   ! (nproma,3,2,nblks_c)
-  
+
     ! h) fields related to calculation of backward trajectories on local plane
     !    tangential to the edge midpoint
     !------------------------------------------------------------------------------
@@ -286,8 +285,8 @@ MODULE mo_intp_data_strc
                                                        ! cell circumcenter.
                                                        ! stored in an edge-based data structure
                                                        ! (nproma,nblks_e,2,5)
-  
-  
+
+
     ! i) fields related to weighted least squares polynomial reconstruction
     !------------------------------------------------------------------------------
     TYPE(t_lsq) :: lsq_lin,  &  ! coefficients for linear lsq-reconstruction
@@ -299,20 +298,20 @@ MODULE mo_intp_data_strc
     !------------------------------------------------------------------------------
     REAL(wp), ALLOCATABLE :: nudgecoeff_c(:,:)  !< Nudging coefficient for cells
     REAL(wp), ALLOCATABLE :: nudgecoeff_e(:,:)  !< Nudging coefficient for cells
-  
-  
+
+
     ! k) Quadrature points and weights for integration over triangular element
     !--------------------------------------------------------------------------
     TYPE(t_gauss_quad) ::gquad
 
     ! index list for neighbouring cells within a certain radius
     TYPE(t_cell_environ) :: cell_environ
- 
+
   END TYPE t_int_state
 
 
   ! MODULE VARIABLES --------------------------------------------------------------
 
-  TYPE(t_int_state),TARGET,ALLOCATABLE :: p_int_state(:), p_int_state_local_parent(:)  
+  TYPE(t_int_state),TARGET,ALLOCATABLE :: p_int_state(:), p_int_state_local_parent(:)
 
 END MODULE mo_intp_data_strc

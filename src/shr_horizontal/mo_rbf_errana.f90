@@ -1,19 +1,18 @@
-! Estimate floating point error in RBF interpolation. This module
-! helps to decide whether Cholesky applied to the RBF matrices will
-! succeed in floating point arithmetic and gives a qualtiy measure
-! for the chosen shape parameter.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Estimate floating point error in RBF interpolation. This module
+! helps to decide whether Cholesky applied to the RBF matrices will
+! succeed in floating point arithmetic and gives a qualtiy measure
+! for the chosen shape parameter.
 
 MODULE mo_rbf_errana
 
@@ -83,7 +82,7 @@ CONTAINS
     ! local variables
     CHARACTER(*), PARAMETER :: routine = modname//"rbf_error"
     REAL(wp), PARAMETER                         :: eps = 1.e-15_wp          !< machine epsilon
-                                                
+
     REAL(wp), ALLOCATABLE                       :: mat_A(:,:,:), z_diag(:,:), e_n(:,:),   &
       &                                            sign_v(:,:), gamma(:), gamma_2(:),     &
       &                                            a(:), b(:), v(:,:), p(:,:), q(:,:)
@@ -278,8 +277,8 @@ CONTAINS
   ! where we estimate the inverse matrix 1-norm by a single step of
   ! Hager's algorithm, see, e.g.,
   !
-  ! Higham, N. J.: "FORTRAN codes for estimating the one-norm of a 
-  !                 real or complex matrix, with applications to 
+  ! Higham, N. J.: "FORTRAN codes for estimating the one-norm of a
+  !                 real or complex matrix, with applications to
   !                 condition estimations."
   !                 ACM Trans. Math. Softw. , 1988, 14, 381-396
   !
@@ -287,20 +286,20 @@ CONTAINS
   ! log-linear relation of the form
   !   log(t(c)) = q*log(c) + beta
   ! with coefficients q, beta.
-  ! 
+  !
   ! Thus, we start with a sufficiently large value and compute
   ! Demmel's error threshold t(c) for a finite sequence of shape
   ! parameters
   !   c0, c_fak*c0, c_fak^2*c0, ..., c_fak^(n-1)*c0
   ! From this sequence we compute the coefficients q, beta by
   ! linear regression.
-  ! 
+  !
   ! When the correlation coefficient is sufficiently close to 1
   ! (measured by a given threshold value tol_r), we stop this
   ! iteration, otherwise the first value in our sequence is discarded
   ! and a new one is calculated. However, we stop at a given lower
   ! threshold for c.
-  ! 
+  !
   ! Having obtained an approximation for the function t(c), we can the
   ! estimate (extrapolate) the shape parameter which fulfils a given
   ! stability threshold tol_c1.
@@ -315,7 +314,7 @@ CONTAINS
       &                                            intp_data_iblk(:,:,:), &   !< Indices of interpolation source points
       &                                            intp_data_nstencil(:,:)
     INTEGER,               INTENT(IN)           :: max_nstencil               !< max. stencil size
-    INTEGER,               INTENT(IN)           :: global_idx(:)              !< for each lon-lat point: global idx 
+    INTEGER,               INTENT(IN)           :: global_idx(:)              !< for each lon-lat point: global idx
     REAL(wp),              INTENT(INOUT)        :: rbf_shape_param
 
     ! constants, defining the behavior of the algorithm
@@ -343,7 +342,7 @@ CONTAINS
       rbf_shape_param = 99.
       RETURN
     END IF
-    
+
     max_tests = MAX(min_tests,min_tests*max_tests_nproma/nproma)
     result_val(:) = 0._wp
     itest_stride = MAX(1, dst_nblks_c/max_tests)
@@ -365,7 +364,7 @@ CONTAINS
       beta(:) = LOG(tol_c1)
 
       ! define control samples: skip all indices with lflag==.TRUE.
-      ! 
+      !
       ! Note: Our choice here should be processor-independent!
       !
       lflag(:) = .TRUE.
@@ -379,8 +378,8 @@ CONTAINS
       kdim(:) = 0
       ! compute only for values in our control sample:
       kdim(start_idx:end_idx) = MERGE(0, intp_data_nstencil(start_idx:end_idx,jb), &
-        &                             lflag(start_idx:end_idx)) 
-      
+        &                             lflag(start_idx:end_idx))
+
       CALL rbf_error(c_seq(:,2),start_idx,end_idx,kdim,max_nstencil,jb, &
         &            center, intp_data_iidx, intp_data_iblk, t_seq(:,2), lflag)
       DO i=3,n
@@ -396,7 +395,7 @@ CONTAINS
         kdim(:) = 0
         ! compute only for values in our control sample:
         kdim(start_idx:end_idx) = MERGE(0, intp_data_nstencil(start_idx:end_idx,jb), &
-          &                             lflag(start_idx:end_idx)) 
+          &                             lflag(start_idx:end_idx))
 
         ! add a new value to the sequence
         DO jc=start_idx,end_idx
@@ -449,5 +448,5 @@ CONTAINS
 !$OMP END PARALLEL DO
     rbf_shape_param = 1._wp/MAXVAL(result_val)
   END SUBROUTINE estimate_rbf_parameter
-  
+
 END MODULE mo_rbf_errana

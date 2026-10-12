@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -19,7 +19,7 @@ ICON_DIR=$(cd "${SCRIPT_DIR}/../.."; pwd)
 GLOBAL_LIB_ROOT="/usr"
 GLOBAL_LIB_DIRS="-L${GLOBAL_LIB_ROOT}/lib64 -L${GLOBAL_LIB_ROOT}/lib"
 
-RTTOV_LIB_ROOT="/uwork1/ublahak/ICON/LIB/rttov13_rev06/linuxWS.gcc"
+RTTOV_LIB_ROOT="/uwork1/ublahak/ICON/LIB/dace_rttov/rttov13_rev06/linuxWS.gcc"
 RTTOV_INCLUDE="${RTTOV_LIB_ROOT}/include"
 RTTOV_LIB="-L${RTTOV_LIB_ROOT} -lrttov13"
 
@@ -141,9 +141,9 @@ CPPFLAGS="-I${ECCODES_INCLUDE} -I${HDF5_INCLUDE} -I${NETCDF_INCLUDE} -I${XML2_IN
 
 # Fortran compiler wrapper on Linux workstation using OpenMPI
 FC='mpif90'
-FCFLAGS="-I${GLOBAL_LIB_ROOT}/include -I${RTTOV_INCLUDE} -I${ECCODES_INCLUDE} -cpp -std=gnu -fimplicit-none -fmax-identifier-length=63 -fmax-errors=25 -Wall -Wcharacter-truncation -Wconversion -Wunderflow -Wunused-parameter -Wno-surprising -fall-intrinsics -ffree-line-length-132"
+FCFLAGS="-I${GLOBAL_LIB_ROOT}/include -I${HDF5_INCLUDE} -I${NETCDF_INCLUDE} -I${RTTOV_INCLUDE} -I${ECCODES_INCLUDE} -cpp -std=gnu -fimplicit-none -fmax-identifier-length=63 -fmax-errors=25 -Wall -Wcharacter-truncation -Wconversion -Wunderflow -Wunused-parameter -Wno-surprising -fall-intrinsics -ffree-line-length-132"
 
-ICON_FCFLAGS='-fno-range-check -fopenmp -g -fbacktrace -fcheck=all -ffpe-trap=invalid,zero,overflow -fstack-protector-all -finit-real=nan -finit-integer=-2147483648 -finit-character=127 -O2'
+ICON_FCFLAGS='-fno-range-check -g -fbacktrace -fcheck=all -ffpe-trap=invalid,zero,overflow -fstack-protector-all -finit-real=nan -finit-integer=-2147483648 -finit-character=127 -O2'
 ICON_OCEAN_FCFLAGS="${ICON_FCFLAGS}"
 
 LDFLAGS="${GLOBAL_LIB_DIRS} -g -fbacktrace"
@@ -151,7 +151,7 @@ LIBS="${XML2_LIBS} ${BLAS_LAPACK_LIBS} ${NETCDF_LIBS} ${HDF5_LIBS} ${ECCODES_LIB
 
 MPI_LAUNCH='mpiexec'
 
-EXTRA_CONFIG_ARGS='--enable-grib2 --enable-openmp --disable-ocean --disable-jsbach --disable-coupling --disable-rttov --disable-aes --disable-art --disable-rte-rrtmgp --enable-emvorado --enable-dace'
+EXTRA_CONFIG_ARGS='--enable-grib2 --enable-openmp --disable-ocean --disable-jsbach --disable-coupling --enable-rttov --disable-aes --disable-art --disable-rte-rrtmgp --enable-emvorado --enable-dace'
 
 ################################################################################
 
@@ -189,9 +189,15 @@ echo 'use_mpi_root="openmpi"' >> run/set-up.info
 if test $(pwd) != $(cd "${ICON_DIR}"; pwd); then
   echo "Copying runscript input files from the source directory..."
   rsync -uavz ${ICON_DIR}/run . --exclude='*in' --exclude='.*'
-  rsync -uavz ${ICON_DIR}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${ICON_DIR}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${ICON_DIR}/make_runscripts .
   ln -sf ${ICON_DIR}/data
   ln -sf ${ICON_DIR}/vertical_coord_tables
 fi
-

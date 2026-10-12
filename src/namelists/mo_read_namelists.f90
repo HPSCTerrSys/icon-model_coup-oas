@@ -1,11 +1,7 @@
-! Read namelists, make sanity checks specific to each namelist and make
-! a cross check once all namelists of a component are available.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,8 +9,12 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Read namelists, make sanity checks specific to each namelist and make
+! a cross check once all namelists of a component are available.
+
 MODULE mo_read_namelists
 
+  USE mo_exception           ,ONLY: finish
   USE mo_mpi                 ,ONLY: my_process_is_stdio
   USE mo_namelist            ,ONLY: open_nml_output, close_nml_output
   USE mo_nml_annotate        ,ONLY: log_nml_settings
@@ -39,20 +39,27 @@ MODULE mo_read_namelists
 
   USE mo_advection_nml       ,ONLY: read_transport_namelist
 
+#ifndef __NO_AES__
   USE mo_aes_phy_nml         ,ONLY: process_aes_phy_nml
+  USE mo_cloud_mig_nml       ,ONLY: process_cloud_mig_nml
   USE mo_aes_cov_nml         ,ONLY: process_aes_cov_nml
   USE mo_aes_cop_nml         ,ONLY: process_aes_cop_nml
   USE mo_aes_wmo_nml         ,ONLY: process_aes_wmo_nml
   USE mo_aes_rad_nml         ,ONLY: process_aes_rad_nml
   USE mo_aes_vdf_nml         ,ONLY: process_aes_vdf_nml
+  USE mo_aes_bubble_nml      ,ONLY: process_aes_bubble_nml
+#endif
   USE mo_ccycle_nml          ,ONLY: process_ccycle_nml
-  
+
   USE mo_nwp_phy_nml         ,ONLY: read_nwp_phy_namelist
   USE mo_nwp_tuning_nml      ,ONLY: read_nwp_tuning_namelist
   USE mo_ensemble_pert_nml   ,ONLY: read_ensemble_pert_namelist
   USE mo_radiation_nml       ,ONLY: read_radiation_namelist
   USE mo_synsat_nml          ,ONLY: read_synsat_namelist
   USE mo_synradar_nml        ,ONLY: read_synradar_namelist
+#ifdef __MSGWAM
+  USE mo_msgwam_nml          ,ONLY: read_msgwam_main_nml
+#endif
   USE mo_turbdiff_nml        ,ONLY: read_turbdiff_namelist
   USE mo_lnd_nwp_nml         ,ONLY: read_nwp_lnd_namelist
   USE mo_art_nml             ,ONLY: read_art_namelist
@@ -63,7 +70,6 @@ MODULE mo_read_namelists
 
   USE mo_initicon_nml        ,ONLY: read_initicon_namelist
   USE mo_nh_testcases_nml    ,ONLY: read_nh_testcase_namelist, nh_test_name
-  USE mo_aes_bubble_nml      ,ONLY: process_aes_bubble_nml
   USE mo_scm_nml             ,ONLY: read_scm_namelist
   USE mo_meteogram_nml       ,ONLY: read_meteogram_namelist
 
@@ -83,7 +89,7 @@ MODULE mo_read_namelists
   USE mo_impl_constants      ,ONLY: iaes, ILDF_ECHAM, INWP
   USE mo_assimilation_nml    ,ONLY: read_assimilation_namelist
   USE mo_nudging_nml         ,ONLY: read_nudging_namelist
-  USE mo_upatmo_nml          ,ONLY: read_upatmo_namelist
+  USE mo_upatmo_interface    ,ONLY: read_upatmo_namelist
   USE mo_ser_nml             ,ONLY: read_ser_namelist
 
   USE mo_sppt_nml            ,ONLY: read_sppt_namelist
@@ -168,13 +174,17 @@ CONTAINS
 
     ! Physics
     !
+    CALL read_turbdiff_namelist       (atm_namelist_filename(1:tlen))
+
     SELECT CASE (iforcing)
     CASE (iaes, ILDF_ECHAM)
        !
+#ifndef __NO_AES__
        ! AES physics ...
        CALL process_aes_phy_nml          (atm_namelist_filename(1:tlen))
        !
        ! ... and the employed parameterizations
+       CALL process_cloud_mig_nml        (atm_namelist_filename(1:tlen))
        CALL process_aes_cov_nml          (atm_namelist_filename(1:tlen))
        CALL process_aes_cop_nml          (atm_namelist_filename(1:tlen))
        CALL process_aes_wmo_nml          (atm_namelist_filename(1:tlen))
@@ -186,6 +196,9 @@ CONTAINS
        !
        CALL read_sea_ice_namelist        (atm_namelist_filename(1:tlen))
        CALL read_art_namelist            (atm_namelist_filename(1:tlen))
+#else
+       CALL finish('read_atmo_namelists', 'Error: remove --disable-aes and reconfigure')
+#endif
        !
     CASE (INWP)
        !
@@ -193,7 +206,6 @@ CONTAINS
        CALL read_nwp_tuning_namelist     (atm_namelist_filename(1:tlen))
        CALL read_ensemble_pert_namelist  (atm_namelist_filename(1:tlen))
        CALL read_radiation_namelist      (atm_namelist_filename(1:tlen))
-       CALL read_turbdiff_namelist       (atm_namelist_filename(1:tlen))
        CALL read_nwp_lnd_namelist        (atm_namelist_filename(1:tlen))
 
        CALL vdiff_read_namelist          (atm_namelist_filename(1:tlen))
@@ -208,6 +220,9 @@ CONTAINS
        CALL read_sppt_namelist           (atm_namelist_filename(1:tlen))
        !
     END SELECT
+#ifdef __MSGWAM
+    CALL read_msgwam_main_nml            (atm_namelist_filename(1:tlen))
+#endif
 
     ! Upper atmosphere
     !
@@ -217,10 +232,12 @@ CONTAINS
     !
     CALL read_initicon_namelist       (atm_namelist_filename(1:tlen))
     CALL read_nh_testcase_namelist    (atm_namelist_filename(1:tlen))
+#ifndef __NO_AES__
     IF (nh_test_name(1:10) == 'aes_bubble') THEN
       CALL process_aes_bubble_nml     (atm_namelist_filename(1:tlen))
-    END IF  
-    
+    END IF
+#endif
+
     CALL read_scm_namelist            (atm_namelist_filename(1:tlen))
 
     ! Boundary conditions
@@ -262,6 +279,5 @@ CONTAINS
 
   END SUBROUTINE read_atmo_namelists
   !-------------------------------------------------------------------------
-
 
 END MODULE mo_read_namelists

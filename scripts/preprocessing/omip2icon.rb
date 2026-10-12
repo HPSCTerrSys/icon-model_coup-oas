@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -18,7 +18,7 @@ require 'jobqueue'
 #
 # <ifile0..N> should be a comma separated list of the original omip data files
 # <resolution> can be R2B02, R2B04 or any thring you have a valid grid file
-#              for. This is only used to 
+#              for. This is only used to
 #   * tag the outout file
 #   * look for the right defaults for grid and weights
 # <targetGrid> is a singe ICON grid (cell-only)
@@ -27,7 +27,7 @@ require 'jobqueue'
 # <timeIntegration> is an optional operator for temporal averaging, if left
 #                   out, output is daily like in the original
 # <nProcs> is the number of parallel processing threads (default:8)
-#============================================================================== 
+#==============================================================================
 
 # CONFIG PRESETS ==============================================================
 #   target horizontal icon resolution; will influece the default values for
@@ -36,12 +36,12 @@ RESOLUTION            = 'R2B02'
 #   target averaging method; omip has daily values, other possible values are
 #   monmean, seasmean or what ever you think is usefull
 TIMEINTERVAL_OPERATOR = ''
-# COMMANDLINE OPTIONS ========================================================= 
+# COMMANDLINE OPTIONS =========================================================
 #   list of omip intput files; in the default case additional land-sea-mask
 #   files are ignored a comma separated list can be given as first argument
 #   instead
-iFiles                = ARGV[0].nil? ? Dir.glob("./orig/*nc").delete_if {|f| 
-                                              f =~ /land_sea_mask_larger_continents/ or 
+iFiles                = ARGV[0].nil? ? Dir.glob("./orig/*nc").delete_if {|f|
+                                              f =~ /land_sea_mask_larger_continents/ or
                                               f =~ /land_sea_mask.ECMWF/
                                                             }          : ARGV[0].split(',')
 #
@@ -61,7 +61,7 @@ timeIntervalOperator  = ARGV[4].nil? ? TIMEINTERVAL_OPERATOR           : ARGV[4]
 #
 #   number of parallel processes to run; depends on the hardware
 nWorkers              = ARGV[5].nil? ? 8                               : ARGV[5]
-#============================================================================== 
+#==============================================================================
 
 # lets work in debug mode if given by the user, i.e. DEBUG=1
 Cdo.debug = ENV['DEBUG'].nil? ? false : true
@@ -86,7 +86,7 @@ end
 #   is esp. important for wind stress, but here it;s done for all variables
 lsmFile = iFiles.find {|v| v =~ /land_sea_mask\.nc/}
 if lsmFile.nil?
-  warn "#================================================================================" 
+  warn "#================================================================================"
   warn "Land-Sea-Mask (land_sea_mask.nc) file is MISSING! Going on without respecting continents ..."
   sleep 1
   fillFromWater_Operator = ''
@@ -95,9 +95,9 @@ else
   # remove the lsm from the input files
   iFiles.delete(lsmFile)
 end
-#============================================================================== 
+#==============================================================================
 
-# PROCESSING ================================================================== 
+# PROCESSING ==================================================================
 # proccess variables in parallel with the following steps:
 # * correct the time axes
 # * mask out the land points with original land sea mask
@@ -123,4 +123,4 @@ jq.run
 # Merge all the results together
 timeIntervalTag = timeIntervalOperator == '' ? 'daily' : timeIntervalOperator
 Cdo.merge(:in => oFiles.sort.join(" "),:out => "omip4icon-#{resolution}-#{timeIntervalTag}.nc")
-#============================================================================== 
+#==============================================================================

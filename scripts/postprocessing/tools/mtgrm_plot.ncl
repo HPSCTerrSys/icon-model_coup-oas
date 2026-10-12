@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -9,7 +9,7 @@
 ; ------------------------------------------
 
 ;----------------------------------------------------------------------
-; mtgrm_plot.ncl 
+; mtgrm_plot.ncl
 ;----------------------------------------------------------------------
 ; Meteogram plot script for vertical variables.
 ;
@@ -47,7 +47,7 @@
 ;----------------------------------------------------------------------
 
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"  
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
 ;----------------------------------------------------------------------
@@ -75,7 +75,7 @@ end
 function substring (instr[1]:string, first[1]:numeric, last[1]:numeric)
 local instr, first, last, main, p2
 begin
-   main = stringtochar (instr)   
+   main = stringtochar (instr)
    if (last .ge. first) then
       p2 = last
    else
@@ -109,7 +109,7 @@ end
 ;    Input:  date0:date1
 ;            with the format yyyymmddhh
 ;            Missing date0 sets t0 = 0
-;            Missing date1 sets t1 to the last date index 
+;            Missing date1 sets t1 to the last date index
 ;    Output: Indices t0, t1
 ;---------------------------------------------------------------------------
 
@@ -120,9 +120,9 @@ begin
   t1 = dimsizes(cdf_file->time_step(:)) - 1
   if ( tRange .ne. "")
 ;   Convert date from string to numbers
-    datum := tostring( cdf_file->date(:,0:16)) 
+    datum := tostring( cdf_file->date(:,0:16))
     datum = str_sub_str( datum, "T", "")
-    datum = str_sub_str( datum, "Z", "") 
+    datum = str_sub_str( datum, "Z", "")
     dates = stringtodouble( datum)
 
     itr  = str_match( tRange, ":")
@@ -186,23 +186,23 @@ begin
 
   iStation     = iStation - 1
 
-  if(.not. isvar("xlabel")) then 
+  if(.not. isvar("xlabel")) then
    xlabel = "day"
    mxstride = 1
   end if
 
-  xstride      = 6  ; subdivisions of X-Axis labels (small ticks) 
+  xstride      = 6  ; subdivisions of X-Axis labels (small ticks)
   if (xlabel .eq. "month" ) mxstride     = 4  end if; minorticks xstride
-  lday         =(/1,10,20/) ; for option xlabel=month 
+  lday         =(/1,10,20/) ; for option xlabel=month
 
   ystride      = 10 ; subdivisions of right Y-Axis labels
 
 ;----------------------------------------------------------------------
 ; read data
 ;----------------------------------------------------------------------
-  
+
 ; open netCDF file
-  cdf_file  = addfile(iFile,"r") 
+  cdf_file  = addfile(iFile,"r")
   nstations = dimsizes(cdf_file->station_lon)
 ; get index corresponding to variable
   ivar2 = -1
@@ -242,20 +242,20 @@ begin
 ;----------------------------------------------------------------------
 ; plot setup
 ;----------------------------------------------------------------------
-  
+
   print("")
   print("Meteogram  '" + charactertostring(cdf_file->station_name(iStation,:))+"'" )
 ; print("Outputfile '"+str_concat((/oFile,".000001.",oType/))+"' will be created in "+systemfunc("dirname "+iFile))
 
   wks  = gsn_open_wks(oType,oFile)                 ; Opens an output file
   if ( colormap .eq. "Red2Blue")
-     gsn_define_colormap(wks,"BlueDarkRed18")  
+     gsn_define_colormap(wks,"BlueDarkRed18")
      gsn_reverse_colormap(wks)
   else if ( colormap .eq. "BlueWhite")
-     gsn_define_colormap(wks,"WhiteBlue")  
+     gsn_define_colormap(wks,"WhiteBlue")
      gsn_reverse_colormap(wks)
   else
-     gsn_define_colormap(wks,colormap)  
+     gsn_define_colormap(wks,colormap)
   end if
   end if
 
@@ -291,7 +291,7 @@ begin
   else
 ;   Do not plot a second axis on the right
     isoil = str_match_ind( varName, "_SO")
-    if ( ismissing(isoil)) 
+    if ( ismissing(isoil))
 ;     height as axis
       res@tiYAxisString     = "Height [m]"              ; y-axis label
       res@trYReverse        = False                      ; do not reverses y axis
@@ -364,8 +364,8 @@ begin
 ; do i=0,(ntimesteps(0)-1)
   do i= t0, t1
       date = convert_date(charactertostring(cdf_file->date(i,:)))
-      if ( xlabel .eq. "month" ) then 
-       if( (i .eq. 0) .or. ((.not. (date@month .eq. last_date@month))\ 
+      if ( xlabel .eq. "month" ) then
+       if( (i .eq. 0) .or. ((.not. (date@month .eq. last_date@month))\
             .or. (.not. ismissing(ind(date@day .eq. lday) )) .and. (date@hour .eq. 0)) ) then
         lcount="true"
        else
@@ -391,7 +391,7 @@ begin
        +                   ":" + sprinti("%0.2d", date@minute)
       end if
       if ( (xlabel .eq. "month") .and. (.not. ismissing(ind(date@day .eq. lday) ))  ) then
-       if (date@day .ne. 1)  then 
+       if (date@day .ne. 1)  then
         date_str =sprinti("%0.2d", date@day) + " "
        end if
        expl_labels(count) = date_str   \
@@ -477,5 +477,5 @@ begin
 ;----------------------------------------------------------------------
 
   plot = gsn_csm_contour(wks,vals,res)
-  
+
 end

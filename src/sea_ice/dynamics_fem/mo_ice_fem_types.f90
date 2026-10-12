@@ -1,16 +1,15 @@
-! Arrays used to store ice variables and organize coupling
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Arrays used to store ice variables and organize coupling
 
 MODULE mo_ice_fem_types
 
@@ -21,15 +20,21 @@ MODULE mo_ice_fem_types
   PUBLIC
   SAVE
 
-  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: u_ice, v_ice, m_ice, a_ice  
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: u_ice, v_ice, m_ice, a_ice
   REAL(wp), ALLOCATABLE, DIMENSION(:)         :: rhs_u, rhs_v, m_snow
   REAL(wp), ALLOCATABLE, DIMENSION(:)         :: rhs_m, rhs_a, rhs_mis
   REAL(wp), ALLOCATABLE, DIMENSION(:)         :: u_w, v_w
   REAL(wp), ALLOCATABLE, DIMENSION(:)         :: elevation
   REAL(wp), ALLOCATABLE, DIMENSION(:)         :: mass_matrix
   REAL(wp), ALLOCATABLE, DIMENSION(:)         :: lmass_matrix
-  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: sigma11, sigma12, sigma22  
-  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: stress_atmice_x         
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: sigma11, sigma12, sigma22
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: sigma_1, sigma_2
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: sigma_i, sigma_ii
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: p0_diag, p_diag
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: eps11, eps12, eps22
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: delta
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: si1, si2
+  REAL(wp), ALLOCATABLE, DIMENSION(:)         :: stress_atmice_x
   REAL(wp), ALLOCATABLE, DIMENSION(:)         :: stress_atmice_y
   ! auxiliary arrays required for fct
   REAL(wp), ALLOCATABLE, DIMENSION(:)         :: m_icel, a_icel, m_snowl

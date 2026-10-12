@@ -1,17 +1,16 @@
-! Contains the implementation of the semi-implicit Adams-Bashforth timestepping
-! for the ICON ocean model based on the mimetic spatial discretization approach.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the implementation of the semi-implicit Adams-Bashforth timestepping
+! for the ICON ocean model based on the mimetic spatial discretization approach.
 
 !----------------------------
 #include "iconfor_dsl_definitions.inc"
@@ -20,19 +19,18 @@
 #include "crayftn_ptr_fail.inc"
 !----------------------------
 MODULE mo_ocean_ab_timestepping_mimetic
-
   USE mo_kind,                      ONLY: wp
   USE mo_parallel_config,           ONLY: nproma
   USE mo_sync,                      ONLY: sync_e, sync_c, sync_patch_array, sync_patch_array_mult
   USE mo_impl_constants,            ONLY: sea_boundary, max_char_length, min_dolic
-  USE mo_dbg_nml,                   ONLY: idbg_mxmn
+  USE mo_dbg_nml,                   ONLY: idbg_mxmn, idbg_val
   USE mo_ocean_nml, ONLY: n_zlev, solver_tolerance,&
     & ab_const, ab_beta, ab_gam, iswm_oce, iforc_oce, &
     & no_tracer, l_rigid_lid, l_edge_based,               &
     & use_absolute_solver_tolerance, solver_max_restart_iterations, &
     & solver_max_iter_per_restart, dhdtw_abort, select_transfer, &
     & select_solver, select_gmres, select_gmres_r, select_mres, &
-    & select_gmres_mp_r, select_cg, select_cgj, select_bcgs, &
+    & select_gmres_mp_r, select_cg, select_cgo, select_cgj, select_bcgs, &
     & select_legacy_gmres, use_continuity_correction, select_cg_mp, &
     & solver_max_iter_per_restart_sp, solver_tolerance_sp, No_Forcing, &
     & MASS_MATRIX_INVERSION_TYPE,            &
@@ -72,7 +70,7 @@ MODULE mo_ocean_ab_timestepping_mimetic
   USE mo_ocean_solve_trivial_transfer, ONLY: t_trivial_transfer
   USE mo_ocean_solve_subset_transfer, ONLY: t_subset_transfer
   USE mo_ocean_solve_aux, ONLY: t_ocean_solve_parm, solve_gmres, solve_cg, solve_mres, &
-   & solve_precon_none, solve_precon_jac, solve_bcgs, solve_legacy_gmres, &
+   & solve_precon_none, solve_precon_jac, solve_cg_opt, solve_bcgs, solve_legacy_gmres, &
    & solve_trans_scatter, solve_trans_compact, solve_cell, solve_edge, solve_invalid
   USE mo_primal_flip_flop_lhs, ONLY: t_primal_flip_flop_lhs
   USE mo_surface_height_lhs, ONLY: t_surface_height_lhs
@@ -156,6 +154,9 @@ CONTAINS
       par%m = solver_max_iter_per_restart
     CASE(select_cg) ! CG (Fletcher-Reeves)
       sol_type = solve_cg
+    CASE(select_cgo) ! CG-OPT (Fletcher-Reeves)
+      sol_type = solve_cg
+      par%pt = solve_cg_opt
     CASE(select_cg_mp) ! CG (Fletcher-Reeves, sp+wp)
       sol_type = solve_cg
       par_sp = par
@@ -178,26 +179,30 @@ CONTAINS
     END SELECT ! solver
 ! init lhs object
     CALL free_sfc_solver_lhs%construct(patch_3d, ocean_state%p_diag%thick_e, &
-      & op_coeffs, solverCoeff_sp)
+      & op_coeffs, solverCoeff_sp, lacc=lzacc)
 ! allocate and init communication infrastructure object
     SELECT CASE(select_transfer)
     CASE(0) ! all ocean workers are involved in solving (input is just copied to internal arrays)
-      CALL free_sfc_solver_trans_triv%construct(solve_cell, patch_2D) ! solve only on a subset of workers
-      CALL free_sfc_solver%construct(sol_type, par, par_sp, free_sfc_solver_lhs, free_sfc_solver_trans_triv, lacc=lzacc)
+      CALL free_sfc_solver_trans_triv%construct(solve_cell, patch_2D, lacc=lzacc) ! solve only on a subset of workers
+      CALL free_sfc_solver%construct(sol_type, par, par_sp, free_sfc_solver_lhs, &
+        & free_sfc_solver_trans_triv, lacc=lzacc)
     CASE DEFAULT ! solve only on a subset of workers
       trans_mode = MERGE(solve_trans_compact, solve_trans_scatter, select_transfer .GT. 0)
-      CALL free_sfc_solver_trans_sub%construct(solve_cell, patch_2D, ABS(select_transfer), trans_mode)
-      CALL free_sfc_solver%construct(sol_type, par, par_sp, free_sfc_solver_lhs, free_sfc_solver_trans_sub, lacc=lzacc)
+      CALL free_sfc_solver_trans_sub%construct(solve_cell, patch_2D, ABS(select_transfer), &
+        & trans_mode, lacc=lzacc)
+      CALL free_sfc_solver%construct(sol_type, par, par_sp, free_sfc_solver_lhs, &
+        & free_sfc_solver_trans_sub, lacc=lzacc)
     END SELECT
 ! alloc and init solver object
     IF (l_solver_compare) THEN
-      CALL free_sfc_solver_trans_triv%construct(solve_cell, patch_2D)
+      CALL free_sfc_solver_trans_triv%construct(solve_cell, patch_2D, lacc=lzacc)
       par%tol = solver_tolerance_comp
       par_sp%nidx = -1
       CALL free_sfc_solver_comp%construct(solve_legacy_gmres, par, par_sp, &
-        & free_sfc_solver_lhs, free_sfc_solver_trans_triv)
+        & free_sfc_solver_lhs, free_sfc_solver_trans_triv, lacc=lzacc)
     END IF
-    !$ACC ENTER DATA COPYIN(free_sfc_solver, free_sfc_solver%x_loc_wp) IF(lzacc)
+    !$ACC ENTER DATA COPYIN(free_sfc_solver, free_sfc_solver%x_loc_wp) ASYNC(1) IF(lzacc)
+    !$ACC WAIT(1)
   END SUBROUTINE init_free_sfc_ab_mimetic
 
   !-------------------------------------------------------------------------
@@ -247,6 +252,8 @@ CONTAINS
     CALL dbg_print('on entry: vn-new'               ,ocean_state%p_prog(nnew(1))%vn,str_module, 2, in_subset=owned_edges)
 
     ! Apply windstress
+    ! FIXME: 2024-09 DKRZ-dzo: Additional wait in case the solver did not end with one
+    !$ACC WAIT(1)
     CALL top_bound_cond_horz_veloc(patch_3d, ocean_state, op_coeffs, p_oce_sfc, lacc=lzacc)
 
     start_timer(timer_ab_expl,3)
@@ -296,7 +303,10 @@ CONTAINS
       END IF
       IF (l_is_compare_step) THEN
         !!ICON_OMP PARALLEL WORKSHARE
+        !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         free_sfc_solver_comp%x_loc_wp(:,:) = free_sfc_solver%x_loc_wp(:,:)
+        !$ACC END KERNELS
+        !$ACC WAIT(1)
         !!ICON_OMP END PARALLEL WORKSHARE
         free_sfc_solver_comp%b_loc_wp => free_sfc_solver%b_loc_wp
       END IF
@@ -305,6 +315,7 @@ CONTAINS
 
 ! call solver
       CALL free_sfc_solver%solve(n_it, n_it_sp, lacc=lzacc)
+      ! 2024-09 DKRZ-dzo: free_sfc_solver%res_loc_wp is never in GPU memory
       rn = MERGE(free_sfc_solver%res_loc_wp(1), 0._wp, n_it .NE. 0)
 
 
@@ -335,7 +346,8 @@ CONTAINS
           !!ICON_OMP END PARALLEL WORKSHARE
 
           IF (l_is_compare_step) THEN
-            CALL free_sfc_solver_comp%solve(n_it, n_it_sp)
+            CALL free_sfc_solver_comp%solve(n_it, n_it_sp, lacc=lzacc)
+            !$ACC UPDATE SELF(free_sfc_solver%x_loc_wp, free_sfc_solver_comp%x_loc_wp) IF(lzacc)
             rn = MERGE(free_sfc_solver_comp%res_loc_wp(1), 0._wp, n_it .NE. 0)
             WRITE(string,'(a,i4,a,e28.20)') &
               & 'SUM of ocean_solve iteration =', n_it-1,', residual =', rn
@@ -350,11 +362,11 @@ CONTAINS
             CALL message('ocean_solve('//TRIM(free_sfc_solver_comp%sol_type_name)//'): surface height',TRIM(string))
           END IF
 
-          IF (createSolverMatrix) CALL free_sfc_solver%dump_matrix(timestep)
+          IF (createSolverMatrix) CALL free_sfc_solver%dump_matrix(timestep, lacc=lzacc)
     !        CALL createSolverMatrix_onTheFly(solve%lhs, ocean_state%p_aux%p_rhs_sfc_eq, timestep)
 
           !-------- end of solver ---------------
-          CALL sync_patch_array(sync_c, patch_2D, ocean_state%p_prog(nnew(1))%h)
+          CALL sync_patch_array(sync_c, patch_2D, ocean_state%p_prog(nnew(1))%h, lacc=lzacc)
           !---------DEBUG DIAGNOSTICS-------------------------------------------
           ! idt_src=2  ! output print level (1-5, fix)
           !     z_h_c = lhs_surface_height( ocean_state%p_prog(nnew(1))%h, &
@@ -375,8 +387,7 @@ CONTAINS
           IF (minmaxmean(1) + patch_3D%p_patch_1D(1)%del_zlev_m(1) <= min_top_height) THEN
     !          CALL finish(method_name, "height below min_top_height")
             CALL warning(method_name, "height below min_top_height")
-            !$ACC UPDATE HOST(ocean_state%p_prog(nnew(1))%h, ocean_state%p_prog(nnew(2))%h) ASYNC(1)
-            !$ACC WAIT(1)
+            !$ACC UPDATE SELF(ocean_state%p_prog(nnew(1))%h, ocean_state%p_prog(nnew(2))%h) IF(lzacc)
             CALL print_value_location(ocean_state%p_prog(nnew(1))%h(:,:), minmaxmean(1), owned_cells)
             CALL print_value_location(ocean_state%p_prog(nnew(2))%h(:,:), minmaxmean(1), owned_cells)
             CALL work_mpi_barrier()
@@ -458,8 +469,11 @@ CONTAINS
       stop_detail_timer(timer_extra2,4)
 
     ELSE  !  iswm_oce=1
+      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       ocean_state%p_diag%veloc_adv_vert = 0.0_wp
       ocean_state%p_diag%laplacian_vert = 0.0_wp
+      !$ACC END KERNELS
+      !$ACC WAIT(1)
     ENDIF
 
     !---------DEBUG DIAGNOSTICS-------------------------------------------
@@ -618,7 +632,7 @@ CONTAINS
 !ICON_OMP END PARALLEL WORKSHARE
        WRITE(0,*)'ADV before:', maxval(z_e(:,1,:)),minval(z_e(:,1,:))
       ocean_state%p_diag%veloc_adv_horz = invert_mass_matrix(patch_3d, ocean_state, op_coeffs, z_e)
-      CALL sync_patch_array(sync_e, patch_2D, z_e)
+      CALL sync_patch_array(sync_e, patch_2D, z_e, lacc=.FALSE.)
        WRITE(0,*)'ADV after:', maxval(ocean_state%p_diag%veloc_adv_horz(:,1,:)), &
          & minval(ocean_state%p_diag%veloc_adv_horz(:,1,:))
     END IF
@@ -687,7 +701,6 @@ CONTAINS
         END DO
       END DO
       !$ACC END PARALLEL LOOP
-      !$ACC WAIT(1)
     ELSE ! IF(l_rigid_lid)THEN
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je = start_edge_index, end_edge_index
@@ -697,7 +710,6 @@ CONTAINS
         END DO
       END DO
       !$ACC END PARALLEL LOOP
-      !$ACC WAIT(1)
     ENDIF!Rigid lid
     CALL VelocityBottomBoundaryCondition_onBlock(patch_3d, &
       & blockNo,start_edge_index, end_edge_index, &
@@ -798,7 +810,6 @@ CONTAINS
     IF(MASS_MATRIX_INVERSION_TYPE/=MASS_MATRIX_INVERSION_ADVECTION)THEN
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je = start_edge_index, end_edge_index
-        !$ACC LOOP SEQ
         DO jk = 1, patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)
           ocean_state%p_aux%g_n(je, jk, blockNo) = &
             & - ocean_state%p_diag%press_grad    (je, jk, blockNo)  &
@@ -810,11 +821,9 @@ CONTAINS
         END DO
       END DO
       !$ACC END PARALLEL LOOP
-      !$ACC WAIT(1)
     ELSEIF(MASS_MATRIX_INVERSION_TYPE==MASS_MATRIX_INVERSION_ADVECTION)THEN
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je = start_edge_index, end_edge_index
-        !$ACC LOOP SEQ
         DO jk = 1, patch_3d%p_patch_1d(1)%dolic_e(je,blockNo)
           ocean_state%p_aux%g_n(je, jk, blockNo) = &
             & - ocean_state%p_diag%press_grad    (je, jk, blockNo)  &
@@ -826,14 +835,16 @@ CONTAINS
         END DO
       END DO
       !$ACC END PARALLEL LOOP
-      !$ACC WAIT(1)
     ENDIF
     IF(is_first_timestep)THEN
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      ocean_state%p_aux%g_nimd(1:nproma,1:n_zlev, blockNo) = &
-        & ocean_state%p_aux%g_n(1:nproma,1:n_zlev,blockNo)
-      !$ACC END KERNELS
-      !$ACC WAIT(1)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO jk = 1, n_zlev
+        DO je = 1, nproma
+          ocean_state%p_aux%g_nimd(je,jk,blockNo) = &
+            & ocean_state%p_aux%g_n(je,jk,blockNo)
+        END DO
+      END DO
+      !$ACC END PARALLEL LOOP
     ELSE
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je = start_edge_index, end_edge_index
@@ -844,8 +855,8 @@ CONTAINS
         END DO
       END DO
       !$ACC END PARALLEL LOOP
-      !$ACC WAIT(1)
     ENDIF
+    !$ACC WAIT(1)
 
   END SUBROUTINE calculate_explicit_term_g_n_onBlock
 
@@ -993,7 +1004,7 @@ CONTAINS
       ! !-------------------------------------------------------------------------------
     ELSE ! IF(.NOT. l_edge_based)THEN!NOT EDGE-BASED
       ! !-------------------------------------------------------------------------------
-      CALL sync_patch_array(sync_e, patch_2D, z_vn_ab)
+      CALL sync_patch_array(sync_e, patch_2D, z_vn_ab, lacc=lzacc)
       IF( iswm_oce /= 1 ) THEN !the 3D case
         CALL map_edges2edges_viacell_3d_const_z( patch_3d, z_vn_ab, op_coeffs, z_e, lacc=lzacc )
       ELSE ! IF( iswm_oce == 1 ) THEN
@@ -1202,7 +1213,8 @@ CONTAINS
       END DO ! blockNo
 !ICON_OMP_END_PARALLEL_DO
     ENDIF
-    CALL sync_patch_array_mult(sync_e, patch, 2, ocean_state%p_prog(nnew(1))%vn, ocean_state%p_diag%vn_time_weighted)
+    CALL sync_patch_array_mult(sync_e, patch, 2, lacc=lzacc, &
+      &  f3din1=ocean_state%p_prog(nnew(1))%vn, f3din2=ocean_state%p_diag%vn_time_weighted)
 
     !$ACC END DATA
 
@@ -1211,8 +1223,8 @@ CONTAINS
     CALL dbg_print('NormVel: vn_old'            ,ocean_state%p_prog(nold(1))%vn     ,str_module,idt_src, in_subset=owned_edges )
     CALL dbg_print('NormVel: vn_pred'           ,ocean_state%p_diag%vn_pred         ,str_module,idt_src, in_subset=owned_edges)
     CALL dbg_print('NormVel: vn_time_weighted'  ,ocean_state%p_diag%vn_time_weighted,str_module,idt_src, in_subset=owned_edges)
-    CALL dbg_print('NormVel: vn_change'         ,ocean_state%p_prog(nnew(1))%vn - &
-      & ocean_state%p_prog(nold(1))%vn     ,str_module,idt_src, in_subset=owned_edges)
+    IF ((idbg_val >= idt_src) .OR. (idbg_mxmn >= idt_src)) &
+      CALL dbg_print('NormVel: vn_change'         ,ocean_state%p_prog(nnew(1))%vn - ocean_state%p_prog(nold(1))%vn     ,str_module,idt_src, in_subset=owned_edges)
     idt_src=2  ! outputm print level (1-5, fix)
     CALL dbg_print('NormVel: vn_new'            ,ocean_state%p_prog(nnew(1))%vn     ,str_module,idt_src, in_subset=owned_edges)
   END SUBROUTINE calc_normal_velocity_ab_mimetic
@@ -1381,7 +1393,7 @@ CONTAINS
       vertical_velocity(:,1,:) = 0.0_wp
     ENDIF
 
-    CALL sync_patch_array(sync_c,patch_2D,vertical_velocity)
+    CALL sync_patch_array(sync_c,patch_2D,vertical_velocity, lacc=lzacc)
 
     !-----------------------------------------------------
     IF (use_continuity_correction) THEN

@@ -38,7 +38,7 @@ Info on renaming variables
     forc_tracer(:,:,1)         -   topBoundCond_Temp_vdiff
     forc_tracer(:,:,2)         -   topBoundCond_Salt_vdiff
 
- - rename relaxation - parameter/type:              
+ - rename relaxation - parameter/type:
     temperature_relaxation     -   type_surfRelax_Temp  - 0/1/2/3
     relaxation_param           -   para_surfRelax_Temp
     irelax_2d_S                -   type_surfRelax_Salt
@@ -79,5 +79,3 @@ Info on new relaxation routines
     (none)                     -   HeatFlux_Relax     : heat flux due to relaxation [W/m2]
     (none)                     -   TempFlux_Relax     : temperature restoring rate [K/s]
     (none)                     -   SaltFlux_Relax     : salinity restoring rate [psu/s]
-
-

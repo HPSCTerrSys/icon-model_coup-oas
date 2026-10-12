@@ -1,15 +1,15 @@
-! Allocation/deallocation and reading of HAMOCC boundary conditions
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Allocation/deallocation and reading of HAMOCC boundary conditions
 
 MODULE mo_bgc_bcond
 
@@ -48,7 +48,7 @@ USE mo_master_control,       ONLY: get_my_process_name
 
 #include "add_var_acc_macro.inc"
 
-  
+
   IMPLICIT NONE
 
   PRIVATE
@@ -587,4 +587,3 @@ CONTAINS
 
   END SUBROUTINE update_bgc_bcond
 END MODULE
-

@@ -1,16 +1,15 @@
-! Contains the implementation of the top and bottom ocean boundary conditions
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the implementation of the top and bottom ocean boundary conditions
 
 MODULE mo_ocean_check_tools
   !-------------------------------------------------------------------------
@@ -31,9 +30,9 @@ MODULE mo_ocean_check_tools
   USE mo_math_constants,     ONLY: pi
   USE mo_mpi,                ONLY: get_my_global_mpi_id, p_pe
   IMPLICIT NONE
-  
+
   PRIVATE
-  
+
   PUBLIC :: init_oce_index
   PUBLIC :: ocean_check_level_sea_land_mask
   PUBLIC :: check_ocean_subsets
@@ -342,7 +341,7 @@ CONTAINS
                 patch_3D%p_patch_1D(1)%prism_thick_c(cell2_idx, edge_levels, cell2_blk))) &
             CALL finish(method_name,"edge depth /= min cell depths")
         ENDIF
-        
+
 
         ! check land
         DO level=patch_3d%p_patch_1d(1)%dolic_e(idx, block)+1, n_zlev

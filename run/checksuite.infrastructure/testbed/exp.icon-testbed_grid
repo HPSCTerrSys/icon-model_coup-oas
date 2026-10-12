@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -22,14 +22,14 @@ nlevels=40
 nlev=$nlevels
 nproma=32
 grids_folder="/pool/data/ICON/ocean_data/ocean_grid/"
-ocean_grids="iconR2B04-ocean_etopo40_planet_newgeom_noinland.nc" 
+ocean_grids="iconR2B04-ocean_etopo40_planet_newgeom_noinland.nc"
 
 #-----------------------------------------------------------------------------
 # write ICON namelist parameters
 # input: namelist_filename
 # ------------------------
 # For a complete list see Namelist_overview and Namelist_overview.pdf
-#  
+#
 create_namelist()
 {
 namelist_filename=$1
@@ -59,4 +59,3 @@ cat > $namelist_filename << EOF
 EOF
 }
 #-----------------------------------------------------------------------------
-

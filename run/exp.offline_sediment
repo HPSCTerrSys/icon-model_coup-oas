@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -31,7 +31,7 @@ checkpoint_interval="P4000Y"          # Need to set from_restart="no" after firs
                                       # sediment from reference file is loaded again!
 
 offline_sediment="yes"
-from_restart="yes"     # if yes: the sediment is initialized with sediment from reference run 
+from_restart="yes"     # if yes: the sediment is initialized with sediment from reference run
                        # if no: starts with empty sediment or continues the current run
                        #        (if isRestartRun.sem is present)
 
@@ -83,7 +83,7 @@ cat > ${ocean_namelist} << EOF
  nproma         = $nproma
  p_test_run     = .false.
  l_fast_sum     = .false.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -140,7 +140,7 @@ cat > ${ocean_namelist} << EOF
   lhamocc                                    = ${lhamocc}
   lbgcadv                                    = ${lbgcadv}
   lsediment_only                             = ${loffsed}
-/                                           
+/
 &sea_ice_nml
   stress_ice_zero = .TRUE.
 /

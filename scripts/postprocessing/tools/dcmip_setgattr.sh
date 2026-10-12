@@ -2,20 +2,21 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #----------------------------------------------------------------------------------------------
 usage()
 {
-    echo 
+    echo
     echo usage: $0 options
-    echo 
+    echo
     echo This script fixes the ICON standard global attributes for DCMIP
     echo
     echo OPTIONS:
@@ -27,7 +28,7 @@ usage()
     echo   -t      time frequency
     echo   -d      description
     echo   -f      file to change
-    echo 
+    echo
 }
 #----------------------------------------------------------------------------------------------
 while getopts ":c:r:l:g:t:d:f:h" opt
@@ -130,26 +131,25 @@ fi
 #----------------------------------------------------------------------------------------------
 # first delete attributes, if they exist ...
 
-ncatted -a Conventions,global,d,,"CF-1.0" $file 
-ncatted -a model,global,d,, $file 
-ncatted -a test_case,global,d,, $file 
-ncatted -a horizontal_resolution,global,d,, $file 
-ncatted -a levels,global,d,, $file 
-ncatted -a grid,global,d,, $file 
-ncatted -a time_frequency,global,d,, $file 
-ncatted -a equation,global,d,, $file 
-ncatted -a description,global,d,, $file 
+ncatted -a Conventions,global,d,,"CF-1.0" $file
+ncatted -a model,global,d,, $file
+ncatted -a test_case,global,d,, $file
+ncatted -a horizontal_resolution,global,d,, $file
+ncatted -a levels,global,d,, $file
+ncatted -a grid,global,d,, $file
+ncatted -a time_frequency,global,d,, $file
+ncatted -a equation,global,d,, $file
+ncatted -a description,global,d,, $file
 #----------------------------------------------------------------------------------------------
 # add the attributes
-ncatted -a Conventions,global,c,c,"CF-1.0" $file 
+ncatted -a Conventions,global,c,c,"CF-1.0" $file
 ncatted -a model,global,c,c,"icon-mpi-dwd" $file
-ncatted -a native_grid,global,c,c,"tri" $file  
-ncatted -a test_case,global,c,c,"$case" $file 
-ncatted -a horizontal_resolution,global,c,c,"$hres" $file 
-ncatted -a levels,global,c,c,"$levs" $file 
-ncatted -a grid,global,c,c,"$grid" $file 
-ncatted -a time_frequency,global,c,c,"$tfreq" $file 
-ncatted -a equation,global,c,c,"nonhydro" $file 
-ncatted -a description,global,c,c,"$desc" $file 
+ncatted -a native_grid,global,c,c,"tri" $file
+ncatted -a test_case,global,c,c,"$case" $file
+ncatted -a horizontal_resolution,global,c,c,"$hres" $file
+ncatted -a levels,global,c,c,"$levs" $file
+ncatted -a grid,global,c,c,"$grid" $file
+ncatted -a time_frequency,global,c,c,"$tfreq" $file
+ncatted -a equation,global,c,c,"nonhydro" $file
+ncatted -a description,global,c,c,"$desc" $file
 #----------------------------------------------------------------------------------------------
-

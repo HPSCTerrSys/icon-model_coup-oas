@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,7 +24,7 @@
 #
 # By default the folder in use is ./run, and the run script is named
 # exp.<name>.run.
-# 
+#
 # Basic optional parameters for the $make_runscript command are:
 #
 #    out_script=<output run script name>. By default is
@@ -143,7 +143,7 @@ done
 
 # Test for invalid arguments
 #
-# (Each time `getopts` is invoked, the getopts utility places the index of the 
+# (Each time `getopts` is invoked, the getopts utility places the index of the
 #  next argument to be processed into OPTIND. $# is the total number of
 #  arguments passed to this program.)
 if [[ "$#" -ge "$OPTIND" ]]

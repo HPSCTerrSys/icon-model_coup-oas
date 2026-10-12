@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -33,7 +33,7 @@ class TestCodeParser < Test::Unit::TestCase
     ds.add(NArray[[1.0,1.0],[1.0,1.0]])
     assert_equal(NArray[[2.0,2.0],[2.0,2.0]],ds.accumulation[0])
 
-    assert_equal(target,ds.accumulation) 
+    assert_equal(target,ds.accumulation)
   end
   def test_stat_with_source
     # check contructor with source

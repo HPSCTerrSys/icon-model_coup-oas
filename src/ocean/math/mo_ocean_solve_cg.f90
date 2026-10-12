@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -18,6 +18,7 @@
 MODULE mo_ocean_solve_cg
 
   USE mo_kind, ONLY: wp, sp
+  USE mo_exception, ONLY: finish
   USE mo_ocean_solve_backend, ONLY: t_ocean_solve_backend
   USE mo_fortran_tools, ONLY: set_acc_host_or_device
 
@@ -49,12 +50,16 @@ MODULE mo_ocean_solve_cg
 CONTAINS
 
 ! get solver arrays (alloc them, if not done so, yet) - wp-variant
-  SUBROUTINE ocean_solve_cg_recover_arrays_wp(this, x, b, z, d, r, r2)
+  SUBROUTINE ocean_solve_cg_recover_arrays_wp(this, x, b, z, d, r, r2, lacc)
     CLASS(t_ocean_solve_cg), INTENT(INOUT), TARGET :: this
-    REAL(KIND=wp), INTENT(OUT), POINTER, DIMENSION(:,:) :: &
+    REAL(KIND=wp), INTENT(INOUT), POINTER, DIMENSION(:,:) :: &
       & x, b, z, d, r, r2
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
 
     INTEGER :: nblk_e
+    LOGICAL :: lzacc
+
+    CALL set_acc_host_or_device(lzacc, lacc)
 
     nblk_e = MERGE(this%trans%nblk, 1, this%trans%nblk > 0)
 
@@ -64,7 +69,8 @@ CONTAINS
         & this%r_wp(this%trans%nidx, nblk_e), &
         & this%rsq_wp(this%trans%nidx, nblk_e))
       this%d_wp(:, this%trans%nblk+1:this%trans%nblk_a) = 0._wp
-      !$ACC ENTER DATA COPYIN(this%z_wp, this%d_wp, this%r_wp, this%rsq_wp)
+      !$ACC ENTER DATA COPYIN(this%z_wp, this%d_wp, this%r_wp, this%rsq_wp) ASYNC(1) IF(lzacc)
+      !$ACC WAIT(1)
     END IF
     x => this%x_wp
     b => this%b_wp
@@ -79,9 +85,12 @@ SUBROUTINE ocean_solve_cg_cal_wp(this, lacc)
     CLASS(t_ocean_solve_cg), INTENT(INOUT) :: this
     LOGICAL, INTENT(in), OPTIONAL :: lacc
     REAL(KIND=wp) :: alpha, beta, dz_glob, tol, tol2, rn, rn_last
-    INTEGER :: nidx_e, nblk, nblk_e, iblk, k, m, k_final
-    REAL(KIND=wp), POINTER, DIMENSION(:,:), CONTIGUOUS :: &
-      & x, b, z, d, r, r2
+    INTEGER :: nidx, nidx_e, nblk, nblk_e, iblk, idx, k, m, k_final
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(KIND=wp), POINTER, DIMENSION(:,:) :: x, b, z, d, r, r2
+#else
+    REAL(KIND=wp), POINTER, DIMENSION(:,:), CONTIGUOUS :: x, b, z, d, r, r2
+#endif
     LOGICAL :: done, lzacc
 
     CALL set_acc_host_or_device(lzacc, lacc)
@@ -89,48 +98,51 @@ SUBROUTINE ocean_solve_cg_cal_wp(this, lacc)
 ! retrieve extends of vector to solve
     nblk = this%trans%nblk
     nblk_e = MERGE(this%trans%nblk, 1, this%trans%nblk > 0)
+    nidx = this%trans%nidx
     nidx_e = this%trans%nidx_e
     m = this%par%m
     k_final = -1
 
 ! retrieve arrays
-    CALL this%recover_arrays(x, b, z, d, r, r2)
+    CALL this%recover_arrays(x, b, z, d, r, r2, lacc=lzacc)
 
-    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    b(nidx_e+1:, nblk_e) = 0._wp
-    !$ACC END KERNELS
+    !$ACC DATA PRESENT(x, b, z, d, r, r2) IF(lzacc)
+
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    DO idx = nidx_e+1, nidx
+      b(idx, nblk_e) = 0._wp
+    END DO
+    !$ACC END PARALLEL LOOP
     !$ACC WAIT(1)
 
 ! compute initial residual and auxiliary vectors
-    !$ACC UPDATE HOST(x) ASYNC(1) IF(lzacc)
-    !$ACC WAIT(1)
-    CALL this%trans%sync(x)
-    !$ACC UPDATE DEVICE(x) ASYNC(1) IF(lzacc)
-    !$ACC WAIT(1) ! can be removed when all ACC compute regions are ASYNC(1)
+    CALL this%trans%sync(x, lacc=lzacc)
 
     CALL this%lhs%apply(x, z, lacc=lzacc)
 
-    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-    z(nidx_e+1:, nblk_e) = 0._wp
-    !$ACC END KERNELS
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    DO idx = nidx_e+1, nidx
+      z(idx, nblk_e) = 0._wp
+    END DO
+    !$ACC END PARALLEL LOOP
     !$ACC WAIT(1)
 
 !ICON_OMP PARALLEL DO SCHEDULE(STATIC)
     ! The nblk_e upper limit is such that the loop runs at least once, even if the domain is empty.
     ! This ensures that r, d, and r2 are initialized.
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
     DO iblk = 1, nblk_e
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      r(:, iblk) = b(:, iblk) - z(:, iblk)
-      d(:, iblk) = r(:, iblk)
-      r2(:, iblk) = r(:, iblk) * r(:, iblk)
-      !$ACC END KERNELS
-      !$ACC WAIT(1)
+      DO idx = 1, nidx
+        r(idx, iblk) = b(idx, iblk) - z(idx, iblk)
+        d(idx, iblk) = r(idx, iblk)
+        r2(idx, iblk) = r(idx, iblk) * r(idx, iblk)
+      END DO
     END DO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
 !ICON_OMP END PARALLEL DO
 
-    !$ACC UPDATE HOST(r2) ASYNC(1) IF(lzacc)
-    !$ACC WAIT(1)
-    CALL this%trans%global_sum(r2, rn)
+    CALL this%trans%global_sum(r2, rn, lacc=lzacc)
 
     ! tolerance
     tol = this%abs_tol_wp
@@ -156,74 +168,91 @@ SUBROUTINE ocean_solve_cg_cal_wp(this, lacc)
       IF (k .GT. 1) THEN
         beta = rn / rn_last
 
-        !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-        d(nidx_e+1:, nblk_e) = 0._wp
-        !$ACC END KERNELS
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+        DO idx = nidx_e+1, nidx
+          d(idx, nblk_e) = 0._wp
+        END DO
+        !$ACC END PARALLEL LOOP
+        !$ACC WAIT(1)
 
 !ICON_OMP PARALLEL DO SCHEDULE(STATIC)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
         DO iblk = 1, nblk
-          !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-          d(:, iblk) = r(:, iblk) + beta * d(:, iblk)
-          !$ACC END KERNELS
+          DO idx = 1, nidx
+            d(idx, iblk) = r(idx, iblk) + beta * d(idx, iblk)
+          END DO
         END DO
+        !$ACC END PARALLEL LOOP
         !$ACC WAIT(1)
 !ICON_OMP END PARALLEL DO
       END IF
-      CALL this%trans%sync(d)
+
+      CALL this%trans%sync(d, lacc=lzacc)
 
       CALL this%lhs%apply(d, z, lacc=lzacc)
 
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      d(nidx_e+1:, nblk_e) = 0._wp
-      !$ACC END KERNELS
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO idx = nidx_e+1, nidx
+        d(idx, nblk_e) = 0._wp
+      END DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
 ! compute extrapolated location of minimum in direction of d
 !ICON_OMP PARALLEL DO SCHEDULE(STATIC)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
       DO iblk = 1, nblk
-        !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-        r2(:, iblk) = d(:, iblk) * z(:, iblk)
-        !$ACC END KERNELS
+        DO idx = 1, nidx
+          r2(idx, iblk) = d(idx, iblk) * z(idx, iblk)
+        END DO
       END DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
 !ICON_OMP END PARALLEL DO
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      r2(nidx_e+1:, nblk_e) = 0._wp
-      !$ACC END KERNELS
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO idx = nidx_e+1, nidx
+        r2(idx, nblk_e) = 0._wp
+      END DO
+      !$ACC END PARALLEL LOOP
       !$ACC WAIT(1)
 
-      !$ACC UPDATE HOST(r2) ASYNC(1) IF(lzacc)
-      !$ACC WAIT(1)
-      CALL this%trans%global_sum(r2, dz_glob)
+      CALL this%trans%global_sum(r2, dz_glob, lacc=lzacc)
       alpha = rn / dz_glob
 ! update guess and residuum
 !ICON_OMP PARALLEL DO SCHEDULE(STATIC)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
       DO iblk = 1, nblk
-        !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-        x(:, iblk) = x(:, iblk) + alpha * d(:, iblk)
-        r(:, iblk) = r(:, iblk) - alpha * z(:, iblk)
-        r2(:, iblk) = r(:, iblk) * r(:, iblk)
-        !$ACC END KERNELS
+        DO idx = 1, nidx
+          x(idx, iblk) = x(idx, iblk) + alpha * d(idx, iblk)
+          r(idx, iblk) = r(idx, iblk) - alpha * z(idx, iblk)
+          r2(idx, iblk) = r(idx, iblk) * r(idx, iblk)
+        END DO
       END DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
 !ICON_OMP END PARALLEL DO
-      !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      r2(nidx_e+1:, nblk_e) = 0._wp
-      !$ACC END KERNELS
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO idx = nidx_e+1, nidx
+        r2(idx, nblk_e) = 0._wp
+      END DO
+      !$ACC END PARALLEL LOOP
       !$ACC WAIT(1)
 ! save old and compute new residual norm
       rn_last = rn
 
-      !$ACC UPDATE HOST(r2) ASYNC(1) IF(lzacc)
-      !$ACC WAIT(1)
-      CALL this%trans%global_sum(r2, rn)
+      CALL this%trans%global_sum(r2, rn, lacc=lzacc)
     END DO
     this%niter_cal(1) = k_final
     this%res_wp(1) = SQRT(rn)
 
-    CALL this%trans%sync(x)
+    CALL this%trans%sync(x, lacc=lzacc)
+
+    !$ACC END DATA
   END SUBROUTINE ocean_solve_cg_cal_wp
 
 ! get solver arrays (alloc them, if not done so, yet) - sp-variant
   SUBROUTINE ocean_solve_cg_recover_arrays_sp(this, x, b, z, d, r, r2)
     CLASS(t_ocean_solve_cg), INTENT(INOUT), TARGET :: this
-    REAL(KIND=sp), INTENT(OUT), POINTER, DIMENSION(:,:) :: &
+    REAL(KIND=sp), INTENT(INOUT), POINTER, DIMENSION(:,:) :: &
       & x, b, z, d, r, r2
 
     IF (.NOT.ALLOCATED(this%z_sp)) THEN
@@ -246,9 +275,16 @@ SUBROUTINE ocean_solve_cg_cal_wp(this, lacc)
     CLASS(t_ocean_solve_cg), INTENT(INOUT) :: this
     REAL(KIND=sp) :: alpha, beta, dz_glob, tol, tol2, rn, rn_last
     INTEGER :: nidx_e, nblk, nblk_e, iblk, k, m, k_final
-    REAL(KIND=sp), POINTER, DIMENSION(:,:), CONTIGUOUS :: &
-      & x, b, z, d, r, r2
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(KIND=sp), POINTER, DIMENSION(:,:) :: x, b, z, d, r, r2
+#else
+    REAL(KIND=sp), POINTER, DIMENSION(:,:), CONTIGUOUS :: x, b, z, d, r, r2
+#endif
     LOGICAL :: done
+
+#ifdef _OPENACC
+    CALL finish("mo_ocean_solve_cg::ocean_solve_cg_cal_sp", "not ported to GPU")
+#endif
 
 ! retrieve extends of vector to solve
     nblk = this%trans%nblk

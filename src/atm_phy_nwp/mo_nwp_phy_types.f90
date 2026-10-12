@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Description:  Contains the data structures
 !  to store the physical model state and other auxiliary variables
 !  in order to run the ECHAM physics.
@@ -15,17 +25,6 @@
 !     - fill the physics tendency construction/destruction subroutine
 !     - later implement already calculated icon gradients for echam physics
 !     - think about variables for flexible time steps
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_nwp_phy_types
 
@@ -76,14 +75,16 @@ MODULE mo_nwp_phy_types
     TYPE(t_ptr_2d3d),ALLOCATABLE :: tvh_t_ptr(:) !< pointer array: turbulent transfer velocity for heat
     TYPE(t_ptr_2d3d),ALLOCATABLE :: tkr_t_ptr(:) !< pointer array: turbulent reference surface diffusion coefficient
     TYPE(t_ptr_2d3d),ALLOCATABLE :: gz0_t_ptr(:) !< pointer array: roughness length * gravity
-    TYPE(t_ptr_2d3d),ALLOCATABLE :: rlamh_fac_ptr(:) !< pointer array: scaling factor for rlam_heat
+    TYPE(t_ptr_2d3d),ALLOCATABLE :: rlamh_fac_ptr(:) !< pointer array: (static) scaling factor for rlam_heat
+    TYPE(t_ptr_2d3d),ALLOCATABLE :: rlamh_varfac_ptr(:) !< pointer array: variable scaling factor for rlam_heat save field
 
     TYPE(t_ptr_2d3d),ALLOCATABLE :: tvs_s_t_ptr(:)  !< pointer array: turbulent velocity scale at surface
     TYPE(t_ptr_2d3d),ALLOCATABLE :: tkvm_s_t_ptr(:) !< pointer array: exchange coefficient for momentum at surface
     TYPE(t_ptr_2d3d),ALLOCATABLE :: tkvh_s_t_ptr(:) !< pointer array: exchange coefficient for heat at surface
+    TYPE(t_ptr_2d3d),ALLOCATABLE :: rcld_s_t_ptr(:) !< pointer array: standard deviation of the saturation deficit at surface
     TYPE(t_ptr_2d3d),ALLOCATABLE :: u_10m_t_ptr(:)  !< pointer array: zonal wind at 10m
     TYPE(t_ptr_2d3d),ALLOCATABLE :: v_10m_t_ptr(:)  !< pointer array: meridional wind at 10m
-    TYPE(t_ptr_2d3d),ALLOCATABLE :: shfl_s_t_ptr(:) !< pointer array: surface sensible heat flux 
+    TYPE(t_ptr_2d3d),ALLOCATABLE :: shfl_s_t_ptr(:) !< pointer array: surface sensible heat flux
     TYPE(t_ptr_2d3d),ALLOCATABLE :: lhfl_s_t_ptr(:) !< pointer array: surface latent heat flux
     TYPE(t_ptr_2d3d),ALLOCATABLE :: umfl_s_t_ptr(:) !< pointer array: u-momentum flux at the surface
     TYPE(t_ptr_2d3d),ALLOCATABLE :: vmfl_s_t_ptr(:) !< pointer array: v-momentum flux at the surface
@@ -94,10 +95,10 @@ MODULE mo_nwp_phy_types
     TYPE(t_ptr_2d3d),ALLOCATABLE :: uh_max_ptr(:)   !< pointer array: max. updraft helicity in time interval
 
     REAL(wp), POINTER, CONTIGUOUS :: &
+      &   spg(:,:,:),          & !! array of nspg 2D stochastic physics patterns
       &   acdnc(:,:,:),        & !! cloud droplet number concentration                   [1/m**3]
       &   cape    (:,:),       & !! convective available energy
       &   cloud_num(:,:),      & !! 2D cloud droplet number concentration for simple aerosol-cloud coupling [1/m**3]
-      &   cloud_num_fac(:,:),  & !! scaling factor for cloud_num, can be used for icpl_aero_gscp = 3 and lscale_cdnc = true
       &   conv_eis(:,:),       & !! estimated inversion strength
       &   con_gust(:,:),       & !! convective gusts near surface
       &   con_udd(:,:,:,:),    & !!(nproma,nlev,nblks,8) convective up/downdraft fields
@@ -125,7 +126,7 @@ MODULE mo_nwp_phy_types
                                  !!      = evaporation rate at surface
       &  ashfl_s(:,:),         & !! average or accumulated since model start of shfl_s [W/m2]
       &  alhfl_s(:,:),         & !! average or accumulated since model start of lhfl_s [W/m2]
-      &  aqhfl_s(:,:),         & !! average since model start of qhfl_s ( Kg/m2/s) 
+      &  aqhfl_s(:,:),         & !! average since model start of qhfl_s ( Kg/m2/s)
                                  !! = average of evaporation rate at surface
       &  alhfl_bs(:,:),        & !! average or accumulated since model start of lhfl_bs [W/m2]
       &  alhfl_pl(:,:,:),      & !! average or accumulated since model start of lhfl_pl [W/m2]
@@ -134,7 +135,7 @@ MODULE mo_nwp_phy_types
       &  liqfl_turb(:,:,:),    & !! vertical turbulent liquid water flux [kg/m^2s]
       &  clc_rad(:,:,:),       & !! cloud cover used in radiation schemes and RTTOV, if reff and qr, qs, qg are active in radiation
       &  clc(:,:,:),           & !! cloud cover used otherwise in radiation and in other parameterizations and diagnostics
-      &  clct(:,:),            & !! total cloud cover  
+      &  clct(:,:),            & !! total cloud cover
       &  clch(:,:),            & !! cloud cover of high-level clouds
       &  clcm(:,:),            & !! cloud cover of mid-level clouds
       &  clcl(:,:),            & !! cloud cover of low-level clouds
@@ -146,9 +147,11 @@ MODULE mo_nwp_phy_types
       &  hbas_con(:,:),        & !! height of base of convection [m]
       &  htop_con(:,:),        & !! height of top of convection [m]
       &  htop_dc(:,:),         & !! height above msl of the top of dry convection [m]
+      &  pbas_con(:,:),        & !! pressure at base of convection [Pa]
+      &  ptop_con(:,:),        & !! pressure at top of convection [Pa]
       &  tot_cld(:,:,:,:),     & !! total cloud variables (qv,qc,qi)
-      &  tot_cld_vi(:,:,:),    & !! vertically integrated tot_cld (qv,qc,qi), including vertical 
-                                 !! integrals of qr and qs 
+      &  tot_cld_vi(:,:,:),    & !! vertically integrated tot_cld (qv,qc,qi), including vertical
+                                 !! integrals of qr and qs
       &  cosmu0(:,:),          & !! cosine of solar zenith angle
       &  albdif(:,:),          & !! Shortwave albedo for diffuse radiation  (0.3-5.0um)
       &  albvisdif(:,:),       & !! UV visible albedo for diffuse radiation (0.3-0.7um)
@@ -160,10 +163,14 @@ MODULE mo_nwp_phy_types
       &  albnirdif_t(:,:,:),   & !! tile-based near IR albedo for diffuse radiation (0.3-0.7um)
       &  lw_emiss(:,:),        & !! Longwave emissivity with corrections for deserts and snow cover
       &  snowalb_fac(:,:),     & !! Factor for adaptive snow albedo tuning (coupled to DA increments for T)
+      &  landalb_inc(:,:),     & !! Increment for adaptive land albedo tuning
       &  heatcond_fac(:,:),    & !! Factor for adaptive soil heat conductivity tuning (coupled to DA increments for T)
       &  heatcap_fac(:,:),     & !! Factor for adaptive soil heat capacity tuning (coupled to DA increments for T)
+      &  hydiffu_fac(:,:),     & !! Factor for adaptive tuning of hydraulic diffusivity
+      &  snowfrac_fac(:,:),    & !! Factor for adaptive tuning of snow-cover fraction diagnosis
       &  sfcfric_fac(:,:),     & !! Factor for adaptive surface friction tuning (coupled to DA increments for V_abs)
       &  hflux_si_fac(:,:),    & !! Factor for adaptive tuning of seaice bottom heat flux (coupled to DA increments for T)
+      &  r_bsmin_fac(:,:),     & !! Factor for adaptive tuning of bare-soil evaporation resistance
       &  vio3(:,:),            & !! vertically integrated ozone amount (Pa O3)
       &  hmo3(:,:),            & !! height of O3 maximum (Pa)
       &  flxdwswtoa(:,:),      & !! downward shortwave flux at TOA [W/m2]
@@ -200,7 +207,7 @@ MODULE mo_nwp_phy_types
       &  swflx_nir_sfc(:,:),   & !! shortwave downward near-infrared flux at the surface [W/m2]
       &  swflx_vis_sfc(:,:),   & !! shortwave downward visible flux at the surface [W/m2]
       &  swflx_par_sfc(:,:),   & !! shortwave downward photosynthetically active flux at the surface [W/m2]
-      &  swflx_par_sfc_tan_os(:,:), & !! shortwave downward photosynthetically active flux at the surface incl. slope-dependent and orographic shading [W/m2] 
+      &  swflx_par_sfc_tan_os(:,:), & !! shortwave downward photosynthetically active flux at the surface incl. slope-dependent and orographic shading [W/m2]
       &  fr_nir_sfc_diff(:,:), & !! diffuse fraction of downward near-infrared flux at the surface
       &  fr_vis_sfc_diff(:,:), & !! diffuse fraction of downward visible flux at the surface
       &  fr_par_sfc_diff(:,:), & !! diffuse fraction of downward photosynthetically active flux at the surface
@@ -229,18 +236,18 @@ MODULE mo_nwp_phy_types
       &  asou_t    (:,:),      & !! Top up solar radiation  [W/m2], accumulated or mean since model start
       &  athd_s    (:,:),      & !! Surface down thermal radiation [W/m2], accumulated or mean since model start
       &  athu_s    (:,:),      & !! Surface up thermal radiation [W/m2], accumulated or mean since model start
-      &  asod_s    (:,:),      & !! Surface down solar rad. [W/m2], accumulated or mean since model start 
-      &  asod_s_os    (:,:),     & !! Surface down solar rad. uncorr. [W/m2], accumulated or mean since model start 
-      &  asod_s_tan_os    (:,:), & !! Surface down solar rad. uncorr. [W/m2], accumulated or mean since model start 
-      &  asodird_s (:,:),      & !! Surface down solar direct rad. [W/m2], accumulated or mean since model start 
+      &  asod_s    (:,:),      & !! Surface down solar rad. [W/m2], accumulated or mean since model start
+      &  asod_s_os    (:,:),     & !! Surface down solar rad. uncorr. [W/m2], accumulated or mean since model start
+      &  asod_s_tan_os    (:,:), & !! Surface down solar rad. uncorr. [W/m2], accumulated or mean since model start
+      &  asodird_s (:,:),      & !! Surface down solar direct rad. [W/m2], accumulated or mean since model start
       &  asodird_s_os (:,:),   & !! Surface down solar direct rad. incl. orographic shading [W/m2], accumulated or mean since model start
       &  asodird_s_tan_os (:,:),& !! Surface down solar direct rad. incl. slope-dependent and orographic shading [W/m2], accumulated or mean since model start
-      &  asodifd_s (:,:),      & !! Surface down solar diff. rad. [W/m2], accumulated or mean since model start 
-      &  asodifu_s (:,:),      & !! Surface up solar diff. rad. [W/m2], accumulated or mean since model start 
+      &  asodifd_s (:,:),      & !! Surface down solar diff. rad. [W/m2], accumulated or mean since model start
+      &  asodifu_s (:,:),      & !! Surface up solar diff. rad. [W/m2], accumulated or mean since model start
                                  !! _a means average values if lflux_avg=.TRUE.
                                  !! and accumulated values if lflux_avg=.FALSE., default is .FALSE.
-      &  asodifu_s_os(:,:),    & !! Surface up solar diff. rad. incl. orographic shading [W/m2], accumulated or mean since model start 
-      &  asodifu_s_tan_os(:,:),& !! Surface up solar diff. rad. incl. slope-dependent and orographic shading [W/m2], accumulated or mean since model start 
+      &  asodifu_s_os(:,:),    & !! Surface up solar diff. rad. incl. orographic shading [W/m2], accumulated or mean since model start
+      &  asodifu_s_tan_os(:,:),& !! Surface up solar diff. rad. incl. slope-dependent and orographic shading [W/m2], accumulated or mean since model start
       &  snowlmt     (:,:),    & !! height of snowfall limit above MSL
       &  drag_u_grid (:,:),    & !! zonal resolved surface stress [N/m2]
       &  drag_v_grid (:,:),    & !! meridional resolved surface stress [N/m2]
@@ -255,8 +262,8 @@ MODULE mo_nwp_phy_types
       &  ttend_lhn (:,:,:),    & !! temperature increment of LHN
       &  qvtend_lhn (:,:,:),   & !! moisture increment of LHN
       &  qrs_flux (:,:,:),     & !! precipitation flux
-      &  mf_b(:,:),            & !! bulk cloud-base mass-flux  
-      &  mf_p(:,:),            & !! perturbed cloud-base mass-flux 
+      &  mf_b(:,:),            & !! bulk cloud-base mass-flux
+      &  mf_p(:,:),            & !! perturbed cloud-base mass-flux
       &  mf_num(:,:)             !! number of clouds per grid box
 
 
@@ -307,6 +314,9 @@ MODULE mo_nwp_phy_types
                                     !!  (grid-scale plus convective)
       &  tot_prec_d       (:,:),  & !! accumulated total precipitation over a time interval [kg/m2]
                                     !!  (grid-scale plus convective; reset after "tpotprec_d_interval" seconds)
+      ! accumulated frezzing rain
+      &  freez_rain_prec  (:,:),  & !! accumlated freezing total surface rain          [kg/m2]
+                                    !!  (grid-scale plus convective)
       !
       !  Time averaged precipitation rates since model start [kg/m2/s]
       &  prec_con_rate_avg(:,:),  & !! time averaged convective precipitation rate    [kg/m2/s]
@@ -334,20 +344,22 @@ MODULE mo_nwp_phy_types
       tfv(:,:)        ,    & !! laminar reduction factor for evaporation        --
       tvm(:,:)        ,    & !! turbulent transfer velocity for momentum      (m/s)
       tvh(:,:)        ,    & !! factor of laminar transfer of scalars           --
-      tkr(:,:)        ,    & !! turbulent reference surface diffusion coeff.  (m2/s) (Ustar*kap*z0)
       tkred_sfc(:,:)  ,    & !! reduction factor for minimum diffusion coefficients near the surface
                              !! (affects heat and momentum; used for EPS perturbations)
       tkred_sfc_h(:,:),    & !! reduction factor for minimum diffusion coefficient for heat near the surface
                              !! (used for model-DA coupling)
       pat_len(:,:)    ,    & !! length scale of sub-grid scale roughness elements (m)
-      rlamh_fac_t(:,:,:),  & !! tuning factor for laminar transfer resistance (rlam_heat)
+      rlamh_fac_t(:,:,:),  & !! (static) tuning factor for laminar transfer resistance (rlam_heat)
+      rlamh_varfac_t(:,:,:),& !! variable tuning factor for laminar transfer resistance (rlam_heat)
       gz0(:,:),            & !! roughness length * g of the vertically not
                              !! resolved canopy                               (m2/s2)
       z0_waves(:,:),       & !! wave-dependent roughness length               (  m  )
       tkvm(:,:,:),         & !! turbulent diffusion coefficients for momentum (m/s2 )
       tkvh(:,:,:),         & !! turbulent diffusion coefficients for heat     (m/s2 )
+      tprn(:,:,:),         & !! turbulent Prandtl-number                        --
       t_2m(:,:)       ,    & !! temperature in 2m                             (  K  )
       t_2m_land(:,:)  ,    & !! temperature in 2m (land tiles only)           (  K  )
+      t_2m_filt(:,:)  ,    & !! time-filtered T2M (used for TERRA-URB)        (  K  )
       tmax_2m(:,:)    ,    & !! maximum temperature in 2m (for specified timerange) ( K )
       tmin_2m(:,:)    ,    & !! minimum temperature in 2m (for specified timerange) ( K )
       t_tilemax_inst_2m(:,:), & !! instantaneous 2m temperature; maximum over tiles (  K  )
@@ -380,6 +392,8 @@ MODULE mo_nwp_phy_types
                              !! (tile based)
       tkvh_s_t(:,:,:)  ,   & !! surface turbulent diffusion coefficients for heat (m/s2)
                              !! (tile based)
+      rcld_s_t(:,:,:)  ,   & !! standard deviation of the saturation deficit at surface --
+                             !! (tile based)
       u_10m_t(:,:,:)   ,   & !! zonal wind at 10m                             ( m/s )
       v_10m_t(:,:,:)   ,   & !! meridional wind at 10m                        ( m/s )
       umfl_s_t(:,:,:)  ,   & !! u-momentum flux at the surface (tile based)    (N/m2)
@@ -400,6 +414,7 @@ MODULE mo_nwp_phy_types
       reff_qh(:,:,:)         !! effective radius of cloud hail                (m)
 
     REAL(wp) :: prev_v10mavg_reset  !! storage for previous reset of averaged v10m field
+    REAL(wp) :: prev_gstkeavg_reset !! storage for previous reset of averaged wind fields for GS TKE calculation
 
     !> Diagnostics for LES turbulence
     REAL(wp), POINTER, CONTIGUOUS :: &
@@ -422,23 +437,39 @@ MODULE mo_nwp_phy_types
       & aercl_du  (:,:),    &
       & aerosol   (:,:,:)
 
+    ! Fields for externally specified aerosol and gases, e.g. by ComIn
+    REAL(wp), POINTER, CONTIGUOUS :: &
+      &  od_lw(:,:,:,:),     & !< LW optical thickness of aerosols (-)
+      &  od_sw(:,:,:,:),     & !< SW aerosol optical thickness (-)
+      &  g_sw (:,:,:,:),     & !< SW aerosol asymmetry factor (-)
+      &  ssa_sw(:,:,:,:),    & !< SW aerosol single scattering albedo (-)
+      &  qvrad_ext(:,:,:),   & !< Externally specified water vapor (kg kg-1)
+      &  o3rad_ext(:,:,:),   & !< Externally specified ozone (kg kg-1)
+      &  co2rad_ext(:,:,:),  & !< Externally specified carbon dioxide (kg kg-1)
+      &  o2rad_ext(:,:,:),   & !< Externally specified oxygen (kg kg-1)
+      &  cfc11rad_ext(:,:,:),& !< Externally specified CFC11 (kg kg-1)
+      &  cfc12rad_ext(:,:,:),& !< Externally specified CFC12 (kg kg-1)
+      &  n2orad_ext(:,:,:),  & !< Externally specified N2O (kg kg-1)
+      &  ch4rad_ext(:,:,:)     !< Externally specified CH4 (kg kg-1)
+
     INTEGER, POINTER, CONTIGUOUS :: &
       &  mbas_con(:,:),     & !< cloud base level index
       &  mtop_con(:,:),     & !< cloud top  level index
       &  ktype   (:,:),     & !< Type of convection
       &  k650    (:,:),     & !< level index that corrsponds to the height
                               !< of the standard atmosphere 650hPa level above ground
-      &  k850    (:,:),     & !< level index that corrsponds to the height 
+      &  k850    (:,:),     & !< level index that corrsponds to the height
                               !< of the standard atmosphere 850hPa level above ground
-      &  k950    (:,:),     & !< level index that corresponds to the height 
+      &  k950    (:,:),     & !< level index that corresponds to the height
                               !< of the standard atmosphere 950hPa level above ground
-      &  k800    (:,:),     & !< level index that corresponds to the height 
+      &  k800    (:,:),     & !< level index that corresponds to the height
                               !< of the standard atmosphere 800hPa level above ground
-      &  k400    (:,:),     & !< level index that corresponds to the height 
+      &  k400    (:,:),     & !< level index that corresponds to the height
                               !< of the standard atmosphere 400hPa level above ground
-      &  k700    (:,:),     & !< level index that corresponds to the height 
+      &  k700    (:,:),     & !< level index that corresponds to the height
                               !< of the standard atmosphere 700hPa level above ground
       &  ktop_envel(:,:),   & !< level index of upper boundary of SSO envelope layer
+      &  k_inversion(:,:),  & !< level of lowest inversion
       &  iww     (:,:),     & !< significant weather
       &  wup_mask(:,:)        ! mask for tracking of strong updrafts
 
@@ -454,7 +485,7 @@ MODULE mo_nwp_phy_types
 
 
     !> (Optional:) Additional diagnostic fields:
-    REAL(wp), POINTER ::   &
+    REAL(wp), POINTER, CONTIGUOUS ::   &
       rh(:,:,:),           & !> relative humidity
       pv(:,:,:),           & !> potential vorticity
       sdi2(:,:),           & !> supercell detection index (SDI2)
@@ -475,14 +506,14 @@ MODULE mo_nwp_phy_types
       ceiling_height(:,:), & !> ceiling height
       vis(:,:),            & !> near surface visibility [meters]
       inversion_height(:,:),& !> lowest inversion height
-      low_ent_zone(:,:),   &  !> entreinment zone from lowest inversion 
+      low_ent_zone(:,:),   &  !> entreinment zone from lowest inversion
       hbas_sc(:,:),        & !> height of base above MSL from shallow convection parameterization
       htop_sc(:,:),        & !> height of top  above MSL from shallow convection parameterization
       twater(:,:),         & !> Total column integrated water
       q_sedim(:,:,:),      & !> Specific content of precipitation particles
       mconv(:,:),          & !> Low level horizontal moisture convergence (0-1000 m AGL average) div.(q_v*v_h) [1/s]
       tcond_max(:,:),      & !< Total column-integrated condensate
-      tcond10_max(:,:),    & !< Total column-integrated condensate above z(T=-10 degC) 
+      tcond10_max(:,:),    & !< Total column-integrated condensate above z(T=-10 degC)
       uh_max_3d(:,:,:),    & !< Updraft helicity (integrated over different vertical layers)
       vorw_ctmax(:,:),     & !< Maximum low level rotation amplitude: Time-max amplitude (positive or negative) of mean 0-3000 m MSL (or 1500 m AGL, whichever is higher) vorticity
       w_ctmax(:,:),        & !< Maximum updraft track
@@ -512,7 +543,15 @@ MODULE mo_nwp_phy_types
       srh(:,:,:),          & !< Storm relative helicity with right-moving storm motion after Bunkers et al. (2000)
       tot_pr_max(:,:),     & !< Time maximum total precipitation rate
       hpbl(:,:),           & !< Boundary layer height  (m)
-      aod_550nm(:,:)         !< aerosol optical depth visible 550 nm (spectral band 25)
+      aod_550nm(:,:),      & !< aerosol optical depth visible 550 nm (spectral band 25)
+      dm_hail(:,:,:),      & !< mean mass diameter of hail                    (m)
+      dm_hail_s(:,:),      & !< mean mass diameter of hail at surface         (m)
+      dm_hail_max_s(:,:),  & !< time maximum of mean mass diameter of hail at surface (m)
+      demax_hail_s(:,:),   & !< estimated max. diameter of hail at surface    (m)
+      demax_hail_tmax_s(:,:),&!< time maximum of estimated max. diameter of hail at surface (m)
+      kef_hail_s(:,:),     & !< hail kinetic energy flux at surface           (J/m2/s)
+      kef_hail_max_s(:,:), & !< time maximum of hail kinetic energy flux at surface (J/m2/s)
+      ke_hail_s(:,:)         !< hail kinetic energy at surface, flux accumulated over time (J/m2)
 
     ! Buffer field needed when vertical nesting is combined with a reduced radiation
     ! grid and latm_above_top = .TRUE.
@@ -529,7 +568,19 @@ MODULE mo_nwp_phy_types
 
     !> Special 1D and 0D diagnostics for LES runs
     REAL(wp), ALLOCATABLE :: &
-      turb_diag_1dvar(:,:), turb_diag_0dvar(:)  
+      turb_diag_1dvar(:,:), turb_diag_0dvar(:)
+
+    REAL(wp), POINTER ::    & !
+     &  cloud_fsd(:,:,:)    & !> radiation FSD parameter
+     &  => NULL()
+
+    REAL(wp), POINTER, CONTIGUOUS ::    & !
+         &  pop_mean(:,:,:,:), & !> [m/s]   grid-scale wind, (temporal) mean, 3 components
+         &  pop_var(:,:,:,:),  & !> [m2/s2] grid-scale wind, (temporal) variance, 3 components
+         &  gs_tke(:,:,:),     & !> [m2/s2] grid-scale TKE representative of defined time period
+         &  sgs_tke(:,:,:),    & !> [m2/s2] subgrid-scale TKE from parameterization, average over defined time period
+         &  avg_edr(:,:,:),    & !> [m2/s3] EDR, average over defined time period
+         &  tur_len_scale(:,:,:) !> [m] turbulent length scale, from Turbdiff
 
     TYPE(t_nwp_vdiff_state) :: nwp_vdiff_state
 
@@ -581,9 +632,9 @@ MODULE mo_nwp_phy_types
     !Anurag Dipankar, MPIM (2013-May-31)
     !Large-scale tendencies for idealized testcases (nlev)
     REAL(wp), ALLOCATABLE ::  &
-      ddt_u_ls        (:),    &   !! LS tendency for u 
-      ddt_v_ls        (:),    &   !! LS tendency for v 
-      ddt_temp_ls     (:),    &   !! LS tendency for temp 
+      ddt_u_ls        (:),    &   !! LS tendency for u
+      ddt_v_ls        (:),    &   !! LS tendency for v
+      ddt_temp_ls     (:),    &   !! LS tendency for temp
       ddt_tracer_ls   (:,:),  &   !! LS tendency for tracer
       ddt_temp_subs_ls(:),    &   !! Christopher Moseley: 7 LS tendencies for profile output
       ddt_qv_subs_ls  (:),    &   !! LS tendency for water vapor from subsidence
@@ -631,7 +682,7 @@ MODULE mo_nwp_phy_types
   END TYPE t_nwp_phy_tend
 
   TYPE t_nwp_phy_stochconv
-     
+
 ! Variables for SDE stochastic convection schemes
      REAL(wp), POINTER, CONTIGUOUS :: &
       & clnum_a        (:,:)     ,& ! number density of active convective clouds    ( - )
@@ -640,7 +691,7 @@ MODULE mo_nwp_phy_types
       & clmf_p         (:,:)     ,& ! cloud-base mass flux for passive conv. clouds (kg/m**2s)
       & clnum_d        (:,:)     ,& ! number density of deep convective clouds      ( - )
       & clmf_d         (:,:)        ! cloud-base mass flux for deep conv. clouds    (kg/m**2s)
-     
+
 ! Variables for explicit stochastic convection scheme
      REAL(wp), POINTER, CONTIGUOUS :: &
       & mf_i        (:,:,:)     ,& ! number density of active convective clouds    ( - )
@@ -649,14 +700,14 @@ MODULE mo_nwp_phy_types
       & area_i      (:,:,:)     ,& ! cloud-base mass flux for passive conv. clouds (kg/m**2s)
       & type_i      (:,:,:)     ,& ! number density of deep convective clouds      ( - )
       & ktype_i     (:,:,:)        ! cloud-base mass flux for deep conv. clouds    (kg/m**2s)
-     
+
     INTEGER, POINTER, CONTIGUOUS :: &
       & depth_i     (:,:,:)     ,& ! number density of passive convective clouds   ( - )
       & base_i      (:,:,:)     ,& ! cloud-base mass flux for passive conv. clouds (kg/m**2s)
       & used_cell   (:,:,:)        ! number density of deep convective clouds      ( - )
 
   END TYPE t_nwp_phy_stochconv
-    
+
   TYPE t_ptr_cloud_ensemble
      ! Pointer to variables for explicit stochastic convection scheme
      ! (nproma,nlev) dimension only
@@ -667,7 +718,7 @@ MODULE mo_nwp_phy_types
       & area_i      (:,:)     ,& ! cloud-base mass flux for passive conv. clouds (kg/m**2s)
       & type_i      (:,:)     ,& ! number density of deep convective clouds      ( - )
       & ktype_i     (:,:)        ! cloud-base mass flux for deep conv. clouds    (kg/m**2s)
-     
+
      INTEGER, POINTER, CONTIGUOUS :: &
       & depth_i     (:,:)     ,& ! number density of passive convective clouds   ( - )
       & base_i      (:,:)     ,& ! cloud-base mass flux for passive conv. clouds (kg/m**2s)
@@ -675,5 +726,5 @@ MODULE mo_nwp_phy_types
 
   END TYPE t_ptr_cloud_ensemble
 
-  
+
 END MODULE mo_nwp_phy_types

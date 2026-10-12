@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -40,7 +40,7 @@ nproma=32
 # input: namelist_filename
 # ------------------------
 # For a complete list see Namelist_overview and Namelist_overview.pdf
-#  
+#
 create_namelist()
 {
 namelist_filename=$1
@@ -64,7 +64,7 @@ cat > $namelist_filename << EOF
  nsteps      = 1            ! [day] length of run
  dtime       = 300          ! [s] timestep
  ldynamics   = .TRUE.       ! dynamics
- ltransport  = .FALSE.      ! transport 
+ ltransport  = .FALSE.      ! transport
  iforcing    = 0            ! no forcing
  ltestcase   = .TRUE.       ! run testcase
  output="none",

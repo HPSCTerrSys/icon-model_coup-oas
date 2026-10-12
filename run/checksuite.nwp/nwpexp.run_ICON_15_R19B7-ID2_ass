@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -22,7 +22,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -68,11 +68,6 @@ ln -sf $DATADIR/R19B07_DOM01_ilfff00005500.grb .
 
 # lateral boundary conditions
 ln -sf $DATADIR/ilbff* .
-
-
-# files needed for radiation
-cp $DATADIR/rrtm_cldopt.nc .
-cp $DATADIR/rrtmg_lw.nc .
 
 # files needed for synsats
 cp ${icon_data_poolFolder}/externals/rttov/const/rt13coeffs_rttov7pred54L/*.dat .
@@ -226,8 +221,8 @@ cat > ${atmo_namelist} << EOF
  dt_iau                = 600
  dt_shift              = -300
  iterate_iau           = .true.
- zpbl1                 = 500. 
- zpbl2                 = 1000. 
+ zpbl1                 = 500.
+ zpbl2                 = 1000.
  dwdfg_filename        = './R<nroot0>B<jlev>_DOM<idom>_ilfff00005500.grb'
  dwdana_filename       = './R<nroot0>B<jlev>_DOM<idom>_ilaf20200311090000.grb'
  ana_varnames_map_file = 'map_file.ana'
@@ -251,7 +246,7 @@ cat > ${atmo_namelist} << EOF
 &io_nml
  dt_checkpoint                 = 863913600
  echotop_meta(1)%time_interval = 900.0             ! Reset der Druckminimumbestimmung auf domain 1 alle 15'
- echotop_meta(1)%dbzthresh     = 18.               ! Liste der dbz-thresholds (hier nur einer) fuer domain 1 
+ echotop_meta(1)%dbzthresh     = 18.               ! Liste der dbz-thresholds (hier nur einer) fuer domain 1
  itype_pres_msl               = 5        ! (1) 3: IFS-type extrapolation
  itype_rh                     = 1         ! (1) 2: mixed phase (water and ice)
  output_nml_dict              = 'map_file.fc'
@@ -280,7 +275,6 @@ cat > ${atmo_namelist} << EOF
  timers_level          = 5                   ! can be increased up to 10 for detailed timer output
 /
 &nwp_phy_nml
- cldopt_filename    = 'rrtm_cldopt.nc'
  dt_conv            = 120,90
  dt_gwd             = 120
  dt_rad             = 720
@@ -294,7 +288,7 @@ cat > ${atmo_namelist} << EOF
  inwp_convection    = 1,0
  inwp_gscp          = 2,2
  inwp_gwd           = 0,0
- inwp_radiation     = 1
+ inwp_radiation     = 4
  inwp_satad         = 1
  inwp_sso           = 1,0
  inwp_surface       = 1
@@ -302,7 +296,6 @@ cat > ${atmo_namelist} << EOF
  itype_z0           = 2
  latm_above_top     = .true.
  ldetrain_conv_prec = .true.
- lrtm_filename      = 'rrtmg_lw.nc'
  lshallowconv_only  = .true.
  mu_rain            = 0.5
  rain_n0_factor     = 0.1
@@ -324,7 +317,7 @@ cat > ${atmo_namelist} << EOF
  imode_frcsmot = 2     ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  imode_tkesso  = 2
 ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 2    
+ itype_sher    = 2
  ltkeshs       = .true.
  ltkesso       = .true.
  pat_len       = 750.
@@ -364,7 +357,8 @@ cat > ${atmo_namelist} << EOF
   vmr_n2o     = 322.0e-09
   vmr_o2      = 0.20946
   vmr_cfc11   = 240.e-12
-  vmr_cfc12   = 532.e-12 
+  vmr_cfc12   = 532.e-12
+  ecrad_data_path = '${basedir}/externals/ecrad/data'
 /
 &nonhydrostatic_nml
   damp_height     = 12250.
@@ -477,7 +471,7 @@ cat > ${atmo_namelist} << EOF
  range_gfrcrit     = 0.
  range_c_soil      = 0.
  range_cwimax_ml   = 1.  !multiplikativ
-/ 
+/
 &gribout_nml
  backgroundProcess               = 0
  generatingProcessIdentifier     = 11, 12                            ! 12 .. nest
@@ -565,7 +559,7 @@ cat > ${atmo_namelist} << EOF
  filename_format      = '<output_filename><ddhhmmss><levtype>'
  stream_partitions_ml = 1
  pe_placement_ml      = 1
- ml_varlist           = 'QC', 'QG', 'QI', 'QR', 'QS', 'QV', 'DEN', 'THETA_V', 'TKE', 'VN', 'W', 
+ ml_varlist           = 'QC', 'QG', 'QI', 'QR', 'QS', 'QV', 'DEN', 'THETA_V', 'TKE', 'VN', 'W',
                         'ALB_SEAICE', 'C_T_LK', 'FR_ICE', 'Z0', 'H_ICE', 'H_ML_LK',
                         'HSNOW_MAX', 'SNOAG', 'T_2M_FILTBIAS'
                         'T_BOT_LK', 'T_ICE', 'T_MNW_LK', 'T_SEA', 'T_WML_LK',
@@ -661,16 +655,16 @@ dom =  1
     lfill_vr_backgroundwind = .true.,
   loutdbz = .true.,
     lextdbz = .true.,
-    ! Global switch to choose itype_refl for all radars. 
+    ! Global switch to choose itype_refl for all radars.
     !  This is then the background value for all radars, which can
     !  later be overwritten for the single stations via namelist.
     !  If no value or -99 for itype_refl_glob is given, the default
     !  value from dbz_namlst_d (3) will win.
-    !  You can override it for each station by individual settings 
+    !  You can override it for each station by individual settings
     !  in the "dbz_meta"- structure below.
     dbz_meta_glob%itype_refl=${itype_refl},
     dbz_meta_glob%itype_Dref_fmelt=${itype_Dref_fmelt},
-    ! Global switch to enable the use of Mie-lookup tables for all radars. 
+    ! Global switch to enable the use of Mie-lookup tables for all radars.
     !  This is then the background value for all radars, which can
     !  later be overwritten for the single stations via namelist.
     dbz_meta_glob%llookup_mie=.true.,
@@ -736,9 +730,9 @@ dom =  1
     ! Checking and matching of the obs file records
     !   to the obs times individually for each data type file (vr, qv, z, qz)
     !   instead of only taking one of these files for that purpose.
-    !   Does not vecorize and takes a long time! 
+    !   Does not vecorize and takes a long time!
     ! NORMALLY SET TO .FALSE.!!!
-    !   Might however help if some records are missing in a 
+    !   Might however help if some records are missing in a
     !   certain file (e.g., for qv) and are present in another file (e.g., vr).
     lcheck_inputrecords = .true.,
     lequal_azi_alldatasets = .true.,
@@ -752,7 +746,8 @@ dom =  1
       ! resolution of the cartesian grid for superobing [m]: (default: 20000.0)
       supob_cart_resolution = 20000.0,
       ! width of averaging area for superobing [m]: (default: sqrt(2)*20000.0 = 28284.3)
-      supob_ave_width = 28284.3,
+      supob_ave_width_vr = 28284.3,
+      supob_ave_width_z  = 28284.3,
       ! min. ranges of superobing points for vr and z [m]: (default: 0.75*sqrt(2)*20000.0 = 21213.2)
       supob_minrange_vr = 21213.2,
       supob_minrange_z = 21213.2,
@@ -1225,7 +1220,7 @@ done  # iteration over two model runs
 
 # Check uniqueness of lookup table files. Otherwise, the second run has produced his own files and this would be an error:
 if [ $num_luts -eq $num_luts_check ]; then
-    # 
+    #
     exit
 else
     echo ERROR Lookup tables not cleanly re-used!

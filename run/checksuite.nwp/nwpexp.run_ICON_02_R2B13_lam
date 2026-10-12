@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -55,7 +55,7 @@ dt_restart=$((${ndays_restart}*86400))
 
 
 # the grid parameters
-atmo_dyn_grids="iconR2B13_DOM01.nc" 
+atmo_dyn_grids="iconR2B13_DOM01.nc"
 
 
 # ----------------------------------------------------------------------
@@ -126,7 +126,7 @@ cat > ${atmo_namelist} << EOF
 /
 &nh_testcase_nml
  nh_test_name  = 'mrw_nh'    ! test case identifier
- u0_mrw       = 20 
+ u0_mrw       = 20
  mount_height_mrw = 5000. ! max. 7750m with 25 m/s
  mount_half_width = 2000.
  mount_latctr_mrw_deg = 0.
@@ -224,7 +224,7 @@ lfreeslip=.true.
 /
 &diffusion_nml
  hdiff_order      = 5
- hdiff_efdt_ratio = 25.0 
+ hdiff_efdt_ratio = 25.0
  hdiff_smag_fac   = 0.025
  lhdiff_vn        = .TRUE.
  lhdiff_temp      = .TRUE.
@@ -234,9 +234,9 @@ lfreeslip=.true.
 /
 &interpol_nml
  nudge_zone_width  = 8
- rbf_vec_scale_c =  0.02 
- rbf_vec_scale_v =  0.05 
- rbf_vec_scale_e =  0.25 
+ rbf_vec_scale_c =  0.02
+ rbf_vec_scale_v =  0.05
+ rbf_vec_scale_e =  0.25
  rbf_scale_mode_ll = 1
 /
 &gridref_nml

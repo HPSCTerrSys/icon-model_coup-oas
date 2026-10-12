@@ -1,10 +1,7 @@
-! Module handling the reading / on-the-fly generation and the writing of the vertical grid.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,19 +9,32 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Module handling the reading / on-the-fly generation and the writing of the vertical grid.
+
 MODULE mo_util_vgrid
 
   USE ISO_C_BINDING,                        ONLY: C_DOUBLE
   USE mo_cdi,                               ONLY: streamDefTimestep, streamOpenWrite, gridCreate, institutInq, vlistCreate, &
                                                 & vlistInqVarZaxis, vlistInqVarGrid, streamInqVlist, streamOpenRead, &
                                                 & ZAXIS_REFERENCE, zaxisCreate, TIME_CONSTANT, vlistDefVar, FILETYPE_NC2, &
-                                                & DATATYPE_INT32, DATATYPE_FLT64, CDI_UNDEFID, CDI_GLOBAL, cdiDefAttInt, &
+                                                & DATATYPE_INT32, CDI_UNDEFID, CDI_GLOBAL, cdiDefAttInt, &
                                                 & cdiInqAttInt, zaxisDestroy, gridDestroy, vlistDestroy, streamClose, &
-                                                & streamWriteVarSlice, streamWriteVar, streamDefVlist, vlistDefVarTsteptype, &
+                                                & streamDefVlist, vlistDefVarTsteptype, &
                                                 & vlistDefVarDatatype, vlistDefVarName, zaxisDefNumber, zaxisDefUUID, &
                                                 & gridDefPosition, gridInqUUID, gridDefNumber, gridDefUUID, zaxisDefLevels, &
-                                                & gridDefNvertex, vlistDefInstitut, zaxisInqUUID, streamReadVar, &
+                                                & gridDefNvertex, vlistDefInstitut, zaxisInqUUID, &
                                                 & GRID_UNSTRUCTURED, TSTEP_CONSTANT
+#ifdef __SINGLE_PRECISION
+  USE mo_cdi,                               ONLY: streamReadVar_wp  => streamReadVarF,  &
+                                                & streamWriteVar_wp => streamWriteVarF, &
+                                                & streamWriteVarSlice_wp => streamWriteVarSliceF, &
+                                                & DATATYPE_FLT_WP   => DATATYPE_FLT32
+#else
+  USE mo_cdi,                               ONLY: streamReadVar_wp  => streamReadVar,   &
+                                                & streamWriteVar_wp => streamWriteVar,  &
+                                                & streamWriteVarSlice_wp => streamWriteVarSlice,  &
+                                                & DATATYPE_FLT_WP   => DATATYPE_FLT64
+#endif
   USE mo_kind,                              ONLY: wp, dp
   USE mo_exception,                         ONLY: finish, message, message_text, warning
   !
@@ -192,7 +202,7 @@ CONTAINS
           jb_c = blk_no(j)
           IF (p_patch(jg)%cells%decomp_info%decomp_domain(jc_c,jb_c) /= 0)  CYCLE
           iidx = iidx + 1
-          r_in(:,iidx) = vgrid_buffer(jg)%z_ifc(jc_c,1:nlevels,jb_c)
+          r_in(:,iidx) = REAL(vgrid_buffer(jg)%z_ifc(jc_c,1:nlevels,jb_c), KIND=C_DOUBLE)
           glbidx(iidx) = p_patch(jg)%cells%decomp_info%glb_index(j)
         ENDDO
         CALL uuid_generate(p_comm_work, r_in(:,1:iidx), glbidx(1:iidx), &
@@ -304,15 +314,17 @@ CONTAINS
       !--- add variables
       cdiVarID_vct_a    = vlistDefVar(cdiVlistID, cdiColumnGridID, cdiZaxisID, TIME_CONSTANT)
       CALL vlistDefVarName(cdiVlistID, cdiVarID_vct_a, "vct_a")
-      CALL vlistDefVarDatatype(cdiVlistID, cdiVarID_vct_a, DATATYPE_FLT64)
+      CALL vlistDefVarDatatype(cdiVlistID, cdiVarID_vct_a, DATATYPE_FLT_WP)
       CALL vlistDefVarTsteptype(cdiVlistID, cdiVarID_vct_a, TSTEP_CONSTANT)
+
       cdiVarID_vct_b    = vlistDefVar(cdiVlistID, cdiColumnGridID, cdiZaxisID, TIME_CONSTANT)
       CALL vlistDefVarName(cdiVlistID, cdiVarID_vct_b, "vct_b")
-      CALL vlistDefVarDatatype(cdiVlistID, cdiVarID_vct_b, DATATYPE_FLT64)
+      CALL vlistDefVarDatatype(cdiVlistID, cdiVarID_vct_b, DATATYPE_FLT_WP)
       CALL vlistDefVarTsteptype(cdiVlistID, cdiVarID_vct_b, TSTEP_CONSTANT)
+
       cdiVarID_c        = vlistDefVar(cdiVlistID, cdiCellGridID,   cdiZaxisID, TIME_CONSTANT)
       CALL vlistDefVarName(cdiVlistID, cdiVarID_c, "z_ifc")
-      CALL vlistDefVarDatatype(cdiVlistID, cdiVarID_c, DATATYPE_FLT64)
+      CALL vlistDefVarDatatype(cdiVlistID, cdiVarID_c, DATATYPE_FLT_WP)
       CALL vlistDefVarTsteptype(cdiVlistID, cdiVarID_c, TSTEP_CONSTANT)
       !--- add "nflat"
       oneInt(1) = nflat
@@ -333,8 +345,8 @@ CONTAINS
       ! streamDefTimestep is required, even without time axis!
       iret = streamDefTimestep(cdiFileID, 0)
       !--- write 1D coordinate arrays:
-      CALL streamWriteVar(cdiFileID, cdiVarID_vct_a, vct_a, 0)
-      CALL streamWriteVar(cdiFileID, cdiVarID_vct_b, vct_b, 0)
+      CALL streamWriteVar_wp(cdiFileID, cdiVarID_vct_a, vct_a, 0) ! cdiVarID_a - FLT_WP
+      CALL streamWriteVar_wp(cdiFileID, cdiVarID_vct_b, vct_b, 0) ! cdiVarID_b - FLT_WP
     END IF
 
 
@@ -348,7 +360,7 @@ CONTAINS
       CALL exchange_data(in_array=vgrid_buffer(p_patch%id)%z_ifc(:,jk,:), &
         &                out_array=r1d, gather_pattern=p_patch%comm_pat_gather_c)
       IF (my_process_is_mpi_workroot()) THEN
-        CALL streamWriteVarSlice(cdiFileID, cdiVarID_c, jk-1, r1d, 0)
+        CALL streamWriteVarSlice_wp(cdiFileID, cdiVarID_c, jk-1, r1d, 0) ! cdiVarID_c - FLT_WP
 
         !--- set UUID for vertical grid
         CALL zaxisDefUUID(cdiZaxisID, vgrid_buffer(p_patch%id)%uuid%data)
@@ -415,9 +427,9 @@ CONTAINS
 
       !--- read vct_a, vct_b
       cdiVarID_vct_a     = get_cdi_varID(cdiFileID, "vct_a")
-      CALL streamReadVar(cdiFileID, cdiVarID_vct_a, vct_a, nmiss)
+      CALL streamReadVar_wp(cdiFileID, cdiVarID_vct_a, vct_a, nmiss)
       cdiVarID_vct_b     = get_cdi_varID(cdiFileID, "vct_b")
-      CALL streamReadVar(cdiFileID, cdiVarID_vct_b, vct_b, nmiss)
+      CALL streamReadVar_wp(cdiFileID, cdiVarID_vct_b, vct_b, nmiss)
       cdiVlistID         = streamInqVlist(cdiFileID)
       iret = cdiInqAttInt(cdiVlistID, CDI_GLOBAL, "nflat", 1, oneInt)
       nflat = oneInt(1)

@@ -72,7 +72,7 @@ The following settings are available for forcing_windstress_u_type and forcing_w
   END init_ocean_bathymetry
   !-------------------------------------------------------------------------------
 
-  
+
   !-------------------------------------------------------------------------------
   init_ocean_salinity(patch_3d, ocean_salinity)
 
@@ -222,7 +222,7 @@ The following settings are available for forcing_windstress_u_type and forcing_w
 
   !-------------------------------------------------------------------------------
   init_ocean_surface_height
-  
+
     SELECT CASE (sea_surface_height_type)
     !------------------------------
     CASE (200)
@@ -258,7 +258,7 @@ The following settings are available for forcing_windstress_u_type and forcing_w
   !-------------------------------------------------------------------------
   !-------------------------------------------------------------------------
   OLD testcases initial conditions and the corresponding new values
-  
+
   !-------------------------------------------------------------------------
   !>
   !! Initialization of test cases for the hydrostatic ocean model.
@@ -268,28 +268,28 @@ The following settings are available for forcing_windstress_u_type and forcing_w
   !
   !-------------------------------------------------------------------------
   SUBROUTINE init_ocean_analytically(patch_3d, ocean_state)
-     
+
     !IF shallow-water option is NOT selected then)
     IF ( iswm_oce /= 1 )THEN
-      
+
       SELECT CASE (itestcase_oce)
-      
+
       CASE (oce_testcase_zero)
         CALL message(TRIM(method_name), 'you have selected the "no-testcase" option')
       CASE (oce_testcase_init)
-        
+
       CASE (oce_testcase_file)
         CALL finish(TRIM(method_name), 'Initialization from file NOT SUPPORTED YET - TERMINATE')
         !CALL init_from_file(patch_2D)
-        
+
       CASE (30, 31)
         CALL message(TRIM(method_name), 'Simple Initialization of testcases (30, 31)')
         CALL message(TRIM(method_name), ' - here: horizontally homogen, vertical profile for T and S')
         CALL message(TRIM(method_name), ' - Add forcing / restoring / wave for dynamic test')
-        
+
         !Ocean at rest
         ocean_state%p_prog(nold(1))%vn(:,:,:) = 0.0_wp
-        
+
         !init temperature and salinity with vertical profiles
         ! use initial_salinity_type    = 401
         ! use initial_temperature_type = 401
@@ -297,32 +297,32 @@ The following settings are available for forcing_windstress_u_type and forcing_w
         IF (itestcase_oce == 31) THEN
           CALL message(TRIM(method_name), 'Simple Initialization of testcases (31)')
           CALL message(TRIM(method_name), ' - here: external gravity wave')
-          
+
           ! set sea_surface_height_type = 201
 
         END IF
-        
+
       CASE (33)
         ! collapsing density front testcase, taken from Stuhne-Peltier (JCP, 2006)
         CALL message(TRIM(method_name), 'Initialization of testcases (33)')
         CALL message(TRIM(method_name), ' - here: Collapsing density front, Stuhne-Peltier')
         ! use initial_salinity_type    = 401
         ! use initial_temperature_type = 201
-        
+
 
       CASE (34)
         ! Adjusting density front in a basin: vertical wall at basin_center_lon
         CALL message(TRIM(method_name), 'Initialization of testcases (34)')
         CALL message(TRIM(method_name),' - here: Adjusting density front in a basin with vertical wall')
         ! use initial_temperature_type = 202
-        
-        
+
+
       CASE (32) !from Sergy Danilov
         CALL message(TRIM(method_name), 'Simple Initialization of testcases (32)')
         CALL message(TRIM(method_name), ' - here: Danilovs Munk gyre flow')
         ! use initial_temperature_type = 203
         ! use sea_surface_height_type = 202
-        
+
       CASE (40)
         ! Temperature profile depends on latitude and depth
         ! Construct temperature profile
@@ -339,13 +339,13 @@ The following settings are available for forcing_windstress_u_type and forcing_w
         CALL message(TRIM(method_name), 'Simple Initialization of testcases (41)')
         CALL message(TRIM(method_name), ' - here: old erroneous profile saved for reference')
 
-        
+
       CASE (43)
         ! #slo# collapsing density front with much weaker gradient than testcase 33
         ! without temperature restoring / relaxation
         CALL message(TRIM(method_name), 'Initialization of testcases (43)')
         CALL message(TRIM(method_name), ' - here: Collapsing density front with weaker gradient')
-        
+
         ! use initial_temperature_type = 205
         ! use initial_salinity_type = 401
 
@@ -355,7 +355,7 @@ The following settings are available for forcing_windstress_u_type and forcing_w
         CALL message(TRIM(method_name), ' - here: horizontally homogen, stable vertical profile')
 
         ! use initial_temperature_type = 200
-        
+
       CASE (45)
         ! T and S are horizontally homegeneous. Values are taken from t_prof[_var] and s_prof[_var]
         CALL message(TRIM(method_name), 'Initialization of testcases (45)')
@@ -363,7 +363,7 @@ The following settings are available for forcing_windstress_u_type and forcing_w
           & ' - here: horizontally homogen, use tprof_var and salinity_profile_20levels vertical profiles')
         ! use initial_temperature_type = 402
         ! use initial_salinity_type = 402
-        
+
       CASE (46,461)
         ! T and S are horizontally and vertically homegeneous
         ! Values are taken from namelist and used for comparison with MPIOM; default: t=16 C, s=35 psu
@@ -379,11 +379,11 @@ The following settings are available for forcing_windstress_u_type and forcing_w
         CALL message(TRIM(method_name), 'Initialization of testcases (47)')
         CALL message(TRIM(method_name), &
           & ' - here: horizontally and vertically homogen+warm/salty Indonesia')
-        
+
         ! use initial_temperature_type = 206
         ! use initial_salinity_type = 201
 
-        
+
       CASE (50)
         ! Testcase for coupled Aquaplanet:
         !  - following APE_ATLAS Equations (2.1) - (2.5)
@@ -392,7 +392,7 @@ The following settings are available for forcing_windstress_u_type and forcing_w
         !  - use parameter 'sst_qobs' - maximum temperature = 27, minimum polar temperature = 0 deg C
         CALL message(TRIM(method_name), 'Initialization of testcases (50)')
         CALL message(TRIM(method_name), ' - here: testcase for coupled aquaplanet, using sst_qobs')
-        
+
         ! use initial_salinity_type = 402
         ! use initial_temperature_type = 207
         ! use initial_sst_type='sst1'
@@ -400,12 +400,12 @@ The following settings are available for forcing_windstress_u_type and forcing_w
         ! Important:
         !   use initial_temperature_top=27.0 initial_temperature_bottom=0.0
         !   to be consistent with the old setup
-        
+
       CASE (1050)
         ! as 50, but salinity is analytically calculated
         CALL message(TRIM(method_name), 'Initialization of testcase (1050)')
         CALL message(TRIM(method_name), ' - here: testcase for coupled aquaplanet, using analytic s')
-        
+
         ! use initial_temperature_type = 200 top_temperature = bottom_temperature = 10
         ! use initial_salinity_type = 202    top_salinity = 34.1, bottom_salinity = 35.0
 
@@ -428,15 +428,15 @@ The following settings are available for forcing_windstress_u_type and forcing_w
         ! Important:
         !   use initial_temperature_top=27.0 initial_temperature_bottom=10.0
         !   to be consistent with the old setup
-        
-        
+
+
        CASE (51)
         CALL message(TRIM(method_name), 'Simple Initialization of testcases (51)')
         CALL message(TRIM(method_name), &
           & ' - here: horizontally varying T with local perturbation')
-        
+
         ! use initial_temperature_type = 208, top_temperature = 30.5,  bottom_temperature = 0,5
-        
+
       CASE(53)
         CALL message(TRIM(method_name), 'LOCK exchange (53)')
         ! use initial_temperature_type = 209
@@ -448,15 +448,15 @@ The following settings are available for forcing_windstress_u_type and forcing_w
 
       ! Shallow water testcases:
     ELSEIF( iswm_oce == 1 )THEN
-      
+
       SELECT CASE (itestcase_oce)
-      
+
       CASE (oce_testcase_zero)
-        
+
         CALL message(TRIM(method_name), 'you have selected the "no-testcase" option')
-        
+
       CASE (24)
-        
+
         CALL message(TRIM(method_name), 'Shallow-Water-Testcase (24)')
         CALL message(TRIM(method_name), ' - here: h and bathy for solid body rotation (Laeuter Test)')
         ! use topography_type = 200, topography_height_reference = 0
@@ -473,23 +473,23 @@ The following settings are available for forcing_windstress_u_type and forcing_w
       CASE (26)
         CALL message(TRIM(method_name), 'Shallow-Water-Testcase (26)')
         CALL message(TRIM(method_name), ' - here: h and bathy of Williamson Test 5')
-        
+
         ! use topography_type = 201 (test5_oro)
         ! use sea_surface_height_type = 205
         ! use initial_velocity_type = 203, initial_velocity_amplitude = 20.0
-        
+
       CASE(27)!temperature ditribution
         CALL message(TRIM(method_name), 'Shallow-Water-Testcase (27)')
 
         ! use topography_type = 200, topography_height_reference = -200
         ! use initial_temperature_type = 210
-        
+
       CASE(28)
         CALL message(TRIM(method_name), 'Shallow-Water-Testcase (28)')
 
         ! use initial_velocity_type = 203, initial_velocity_amplitude = 20.0
         ! use initial_temperature_type = 210
-        
+
       CASE(29)!State at rest, forced by wind
         CALL message(TRIM(method_name), 'Shallow-Water-Testcase (29)')
 
@@ -500,7 +500,6 @@ The following settings are available for forcing_windstress_u_type and forcing_w
     ENDIF  !  iswm_oce
 
     !---------------------------------------------------
-    
+
   END SUBROUTINE init_ocean_analytically
   !-------------------------------------------------------------------------------
-

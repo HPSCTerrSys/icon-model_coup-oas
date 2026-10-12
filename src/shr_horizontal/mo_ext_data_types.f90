@@ -1,10 +1,7 @@
-! External data type definition.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,10 +9,12 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! External data type definition.
+
 MODULE mo_ext_data_types
 
   USE mo_kind,               ONLY: wp
-  USE mo_fortran_tools,      ONLY: t_ptr_2d3d, t_ptr_i2d3d 
+  USE mo_fortran_tools,      ONLY: t_ptr_2d3d, t_ptr_i2d3d
   USE mo_var_list,           ONLY: t_var_list_ptr
   USE mo_idx_list,           ONLY: t_idx_list_blocked
 
@@ -24,12 +23,12 @@ MODULE mo_ext_data_types
 
   PRIVATE
 
+
   PUBLIC :: t_external_data
   PUBLIC :: t_external_atmos
   PUBLIC :: t_external_atmos_td
   PUBLIC :: t_external_ocean
   PUBLIC :: t_external_bgc
-
 
 
   !>
@@ -222,7 +221,7 @@ MODULE mo_ext_data_types
       &  sai(:,:)              ! index1=1,nproma, index2=1,nblks_c
     REAL(wp), POINTER ::   &   !< transpiration area index (vegetation period)   [ ]
       &  tai(:,:)              ! index1=1,nproma, index2=1,nblks_c
-    REAL(wp), POINTER ::   &   !< earth area (evaporative surface area)          [ ] 
+    REAL(wp), POINTER ::   &   !< earth area (evaporative surface area)          [ ]
       &  eai(:,:)              ! index1=1,nproma, index2=1,nblks_c
     REAL(wp), POINTER ::   &   !< surface area index (vegetation period)         [ ]
       &  sai_t(:,:,:)          ! index1=1,nproma, index2=1,nblks_c, ntiles_total+ntiles_water
@@ -260,7 +259,7 @@ MODULE mo_ext_data_types
     REAL(wp), POINTER ::   &   !< annual maximum NDVI                     [ ]
       &  ndvi_max(:,:)         ! index1=1,nproma, index2=1,nblks_c
 
-    REAL(wp), POINTER ::   &   !< proportion of actual value/maximum 
+    REAL(wp), POINTER ::   &   !< proportion of actual value/maximum
       &  ndviratio(:,:)        !< normalized differential vegetation index [ ]
                                !< for starting time of model integration
                                !< (derived from atm_td%ndvi_mrat)
@@ -295,9 +294,6 @@ MODULE mo_ext_data_types
     REAL(wp), POINTER ::   &   !< horizon angle from flat topography in nhori sectors [ deg ]
       &  horizon(:,:,:)        ! index1=1,nproma, index2=1,nblks_c, index3=1,nhori
 
-    REAL(wp), POINTER ::   &   !< geometric sky-view factor scaled with sinus(horizon)**2 [1]
-      &  skyview(:,:)          ! index1=1,nproma, index2=1,nblks_c
-
     REAL(wp), POINTER ::   &   !< ozone mixing ratio                        [ kg kg^-1 ]
       &  o3(:,:,:)             ! index1=1,nproma, index2=nlev,index3=1,nblks_c
 
@@ -310,6 +306,12 @@ MODULE mo_ext_data_types
     REAL(wp), POINTER ::   &   !< Sulfur dioxide emission for 2D-aerosol [ kg m-2 s-1 ]
       &  emi_so2(:,:)          ! index1=1,nproma, index2=1,nblks_c
 
+    REAL(wp), POINTER ::   &   !< Ammonium emission for 2D-aerosol [ kg m-2 s-1 ]
+      &  emi_nh3(:,:)          ! index1=1,nproma, index2=1,nblks_c
+
+    REAL(wp), POINTER ::   &   !< Nitrogen oxides emission for 2D-aerosol [ kg m-2 s-1 ]
+      &  emi_nox(:,:)          ! index1=1,nproma, index2=1,nblks_c
+
     REAL(wp), POINTER ::   &   !< Black Carbon emission from wildfires for 2D-aerosol [ kg m-2 s-1 ]
       &  bcfire(:,:)           ! index1=1,nproma, index2=1,nblks_c
 
@@ -318,6 +320,15 @@ MODULE mo_ext_data_types
 
     REAL(wp), POINTER ::   &   !< Sulfur dioxide emission from wildfires for 2D-aerosol [ kg m-2 s-1 ]
       &  so2fire(:,:)          ! index1=1,nproma, index2=1,nblks_c
+
+    REAL(wp), POINTER ::   &   !< Black Carbon emission from wildfires for 2D-aerosol (climatological) [ kg m-2 s-1 ]
+      &  bcfire_clim(:,:,:)    ! index1=1,nproma, index2=1,nblks_c, index3=nseasons
+
+    REAL(wp), POINTER ::   &   !< Organic Carbon emission from wildfires for 2D-aerosol (climatological) [ kg m-2 s-1 ]
+      &  ocfire_clim(:,:,:)    ! index1=1,nproma, index2=1,nblks_c, index3=nseasons
+
+    REAL(wp), POINTER ::   &   !< Sulfur dioxide emission from wildfires for 2D-aerosol (climatological) [ kg m-2 s-1 ]
+      &  so2fire_clim(:,:,:)   ! index1=1,nproma, index2=1,nblks_c, index3=nseasons
 
     REAL(wp), POINTER ::   &   !< longwave surface emissivity             [ ]
       &  emis_rad(:,:)         ! index1=1,nproma, index2=1,nblks_c
@@ -367,8 +378,8 @@ MODULE mo_ext_data_types
       & frac_t(:,:,:)         ! index1=1,nproma, index2=1,nblks_c, index3=ntiles_total
 
     REAL(wp), POINTER ::  &   !< Inverse of fr_land derived from actual land tile fractions [ ]
-      & inv_frland_from_tiles(:,:) ! needed for aggregation of land-only fields. 
-                              ! Approximately equal to inverse of  
+      & inv_frland_from_tiles(:,:) ! needed for aggregation of land-only fields.
+                              ! Approximately equal to inverse of
                               ! fr_land (extpar) + fr_lake(extpar, where fr_lake<frlake_thrhld)
                               ! index1=1,nproma, index2=1,nblks_c
 
@@ -376,25 +387,25 @@ MODULE mo_ext_data_types
     ! Index lists for land, lake and water points
     !
     TYPE(t_idx_list_blocked) :: list_land   !< Static, blocked grid point index list
-                                            !< contains all points for which the land fraction (fr_land) 
+                                            !< contains all points for which the land fraction (fr_land)
                                             !< exceeds the threshold frlnd_thrhld
 
     TYPE(t_idx_list_blocked) :: list_sea    !< Static, blocked grid point index list
-                                            !< contains all points for which the sea fraction (1-fr_land-fr_lake) 
+                                            !< contains all points for which the sea fraction (1-fr_land-fr_lake)
                                             !< exceeds the threshold frsea_thrhld
 
     TYPE(t_idx_list_blocked) :: list_seawtr !< Dynamic, blocked grid point index list
-                                            !< contains all sea points which are at least partly ice-free. 
-                                            !< I.e. for which the ice-free fraction (1-fr_ice) 
+                                            !< contains all sea points which are at least partly ice-free.
+                                            !< I.e. for which the ice-free fraction (1-fr_ice)
                                             !< exceeds a certain threshold.
 
     TYPE(t_idx_list_blocked) :: list_seaice !< Dynamic, blocked grid point index list
-                                            !< contains all sea points which are at least partly ice covered. 
-                                            !< I.e. for which the seaice fraction fr_ice 
+                                            !< contains all sea points which are at least partly ice covered.
+                                            !< I.e. for which the seaice fraction fr_ice
                                             !< exceeds the threshold frice_thrhld
 
     TYPE(t_idx_list_blocked) :: list_lake   !< Static, blocked grid point index list
-                                            !< contains all points for which the lake fraction fr_lake 
+                                            !< contains all points for which the lake fraction fr_lake
                                             !< exceeds the threshold frlake_thrhld
 
 
@@ -464,81 +475,96 @@ MODULE mo_ext_data_types
   !!
   TYPE :: t_external_atmos_td
 
+    ! *** ozone parameters ***
+    !> ozone mixing ratio    [ ]
+    !! index1=1,nproma, index2=nlev_o3, index3=1,nblks_c, index4=1,ntimes
+    REAL(wp), POINTER :: o3(:,:,:,:) => NULL()
+
+    !> full levels of ozone gemometric height
+    REAL(wp), POINTER :: zf  (:) => NULL()
+
+    !> full levels of of ozone pressure
+    REAL(wp), POINTER :: pfoz(:) => NULL()
+
+    !> half levels of ozone pressure field
+    REAL(wp), POINTER :: phoz(:) => NULL()
+
+
     ! *** radiation parameters ***
-    REAL(wp), POINTER ::   &   !< ozone mixing ratio    [ ]
-      &  o3(:,:,:,:)           ! index1=1,nproma, index2=nlev_o3,
-                               ! index3=1,nblks_c, index4=1,ntimes
+    !> aerosol optical thickness of black carbon    [ ]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: aer_bc(:,:,:) => NULL()
 
-    REAL(wp),POINTER::  &
-      &   zf  (:),      &      !full levels of ozone gemometric height
-      &   pfoz(:),      &      !full levels of of ozone pressure
-      &   phoz(:)              !half levels of ozone pressure field 
-    !
-    ! *** radiation parameters ***
-    REAL(wp), POINTER ::   &   !< aerosol optical thickness of black carbon    [ ]
-      &  aer_bc(:,:,:)         ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> aerosol optical thickness of ambient aerosol [ ]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: aer_dust(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< aerosol optical thickness of ambient aerosol [ ]
-      &  aer_dust(:,:,:)       ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> aerosol optical thickness of particulate organic_matter_ambient_aerosol [ ]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: aer_org(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< aerosol optical thickness of particulate     [ ]
-      &  aer_org(:,:,:)        !< organic_matter_ambient_aerosol             
-                               ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> aerosol optical thickness of sulfate aerosol [ ]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: aer_so4(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< aerosol optical thickness of sulfate aerosol [ ]
-      &  aer_so4(:,:,:)        ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> aerosol optical thickness of seasalt aerosol [ ]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: aer_ss(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< aerosol optical thickness of seasalt aerosol [ ]
-      &  aer_ss(:,:,:)         ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> shortwave broadband albedo for diffuse radiation  [1] (0.3 - 5.0 um)
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: alb_dif(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< shortwave broadband albedo for diffuse radiation  [1]
-      &  alb_dif(:,:,:)        !< (0.3 - 5.0 um)
-                               ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> UV visible broadband albedo for diffuse radiation [1] (0.3 - 0.7 um)
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: albuv_dif(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< UV visible broadband albedo for diffuse radiation [1]
-      &  albuv_dif(:,:,:)      !< (0.3 - 0.7 um)
-                               ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> Near IR broadband albedo for diffuse radiation    [1] (0.7 - 5.0 um)
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: albni_dif(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< Near IR broadband albedo for diffuse radiation    [1]
-      &  albni_dif(:,:,:)      !< (0.7 - 5.0 um)
-                               ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> Broadband longwave (thermal) emissivity of the surface   [1]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: lw_emiss(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< Broadband longwave (thermal) emissivity of the surface   [1]
-      &  lw_emiss(:,:,:)       !< index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !< Cloud droplet number climatology, monthly-mean values [m-3]
+    REAL(wp), POINTER :: cdnc(:,:,:) => NULL()
 
-    REAL(wp), POINTER ::   &   !< Cloud droplet number climatology 
-      &  cdnc(:,:,:)           !< monthly-mean values [m-3]
 
-    !
     ! *** vegetation parameters ***
-    REAL(wp), POINTER ::   &   !< (monthly) proportion of actual value/maximum 
-      &  ndvi_mrat(:,:,:)      !< normalized differential vegetation index   [ ]
-                               ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
-    !
+    !< (monthly) proportion of actual value/maximum normalized differential vegetation index   [ ]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: ndvi_mrat(:,:,:) => NULL()
+
     ! ***SST, sea ice fraction and T2M climatology
-    REAL(wp), POINTER ::   &   !< (monthly) SST
-      &  sst_m(:,:,:)          ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
-    REAL(wp), POINTER ::   &   !< (monthly) sea ice fraction
-      &  fr_ice_m(:,:,:)       ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
-    REAL(wp), POINTER ::   &   !< (monthly) T2M
-      &  t2m_m(:,:,:)          ! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    !> (monthly) SST climatology [K]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: sst_m(:,:,:) => NULL()
+
+    !> (monthly) sea ice fraction climatology [1]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: fr_ice_m(:,:,:) => NULL()
+
+    !> (monthly) T2M climatology [K]
+    !! index1=1,nproma, index2=1,nblks_c, index3=1,ntimes
+    REAL(wp), POINTER :: t2m_m(:,:,:) => NULL()
 
   END TYPE t_external_atmos_td
 
 
   TYPE :: t_external_bgc
-   REAL(wp), POINTER ::   &   !< (monthly) dust deposition
-      &  dust(:,:,:)   
-   REAL(wp), POINTER ::   &   !< (monthly) nitrogen deposition
-      &  nitro(:,:,:)   
-   REAL(wp), POINTER ::   &   !< org. C flux for offline sed.
-      &  prorca(:,:)          !  index1=1,nproma, index2=1,nblks_c
-   REAL(wp), POINTER ::   &   !< inorg. C flux for offline sed.
-      &  prcaca(:,:)          !  index1=1,nproma, index2=1,nblks_c
-   REAL(wp), POINTER ::   &   !< Si flux for offline sed.
-      &  silpro(:,:)          !  index1=1,nproma, index2=1,nblks_c
-   REAL(wp), POINTER ::   &   !< dust flux for offline sed.
-      &  produs(:,:)          !  index1=1,nproma, index2=1,nblks_c
+    REAL(wp), POINTER ::   &   !< (monthly) dust deposition
+      &  dust(:,:,:)
+    REAL(wp), POINTER ::   &   !< (monthly) nitrogen deposition
+      &  nitro(:,:,:)
+    REAL(wp), POINTER ::   &   !< org. C flux for offline sed.
+      &  prorca(:,:)           !  index1=1,nproma, index2=1,nblks_c
+    REAL(wp), POINTER ::   &   !< inorg. C flux for offline sed.
+      &  prcaca(:,:)           !  index1=1,nproma, index2=1,nblks_c
+    REAL(wp), POINTER ::   &   !< Si flux for offline sed.
+      &  silpro(:,:)           !  index1=1,nproma, index2=1,nblks_c
+    REAL(wp), POINTER ::   &   !< dust flux for offline sed.
+      &  produs(:,:)           !  index1=1,nproma, index2=1,nblks_c
 
   END TYPE t_external_bgc
 
@@ -549,7 +575,7 @@ MODULE mo_ext_data_types
   !!
   TYPE :: t_external_ocean
 
-    ! ocean topography <=> bathymetric height used in the ocean 
+    ! ocean topography <=> bathymetric height used in the ocean
     ! cell centers and edges only
     !
     REAL(wp), POINTER ::   &  !<  bathymetric height at cell centers [m]
@@ -577,20 +603,6 @@ MODULE mo_ext_data_types
   END TYPE t_external_ocean
 
 
-
-!  !>
-!  !! ocean external data class (time dependent)
-!  !!
-!  !! This data type contains auxiliary time dependent versions of
-!  !! some external oceanic data fields already defined in external_ocean. These
-!  !! fields will be used to store e.g. montly means from which interpolated external
-!  !! data can be derived. The updated fields are copied into the time independent
-!  !! counterparts which are defined in external_ocean.
-!  !!
-!  TYPE :: external_ocean_td
-!  END TYPE external_ocean_td
-
-
   !>
   !! External data class including lists
   !!
@@ -610,12 +622,6 @@ MODULE mo_ext_data_types
     TYPE(t_external_bgc)      :: bgc
     TYPE(t_var_list_ptr)          :: bgc_list
 
-!    TYPE(t_external_ocean_td) :: oce_td
-!    TYPE(t_var_list_ptr), POINTER :: oce_td_list
-
   END TYPE t_external_data
 
-
-
 END MODULE mo_ext_data_types
-

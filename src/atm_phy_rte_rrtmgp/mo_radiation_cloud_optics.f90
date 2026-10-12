@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Prepares and provides cloud optical properties
 !
 ! Remarks
@@ -6,18 +17,6 @@
 !
 ! Origin
 !   Rewrite and synthesis of ECHAM5 code, particularly rad_int.f90
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_radiation_cloud_optics
 
@@ -63,8 +62,8 @@ MODULE mo_radiation_cloud_optics
   REAL(wp), PUBLIC :: & ! values for liquid-cloud inhomogeneity factor:
     zinhomi, & ! ice-cloud inhomogeneity factor
     zinhoml1, & ! without convection
-    zinhoml2, & ! with shallow convection  
-    zinhoml3, & ! deep/mid-level convection  
+    zinhoml2, & ! with shallow convection
+    zinhoml3, & ! deep/mid-level convection
     zinpar ! exponent for variable lquid-cloud inhomogeneity
   REAL (wp) :: &
     wavenumber(n_mdl_bnds), & ! effective wavenumber for table band
@@ -154,12 +153,12 @@ CONTAINS
 
     ! Cloud Optical Properties by interpolating tables in effective radius
     effective_radius = &
-      1.0e6_wp * scale * (3.0e-9_wp / (4.0_wp * pi * rhoh2o))**(1.0_wp/3.0_wp) 
+      1.0e6_wp * scale * (3.0e-9_wp / (4.0_wp * pi * rhoh2o))**(1.0_wp/3.0_wp)
 
   END SUBROUTINE setup_cloud_optics
 
   !! Calculates cloud optical from cloud physical properties
-  !! Remarks  
+  !! Remarks
   !!   Currently this model assumes four bands in the SW and maps these to the
   !!   six-band model of ECHAM5.
   SUBROUTINE cloud_optics(laglac, laland, kproma, kbdim, klev, ktype, &
@@ -169,7 +168,7 @@ CONTAINS
     INTEGER, INTENT(IN) :: kproma, kbdim, klev, &
       ktype(KBDIM), & ! type of convection
       icldlyr(KBDIM,klev)
-    LOGICAL, DIMENSION(KBDIM), INTENT(IN) :: & 
+    LOGICAL, DIMENSION(KBDIM), INTENT(IN) :: &
       laglac, & ! logical for glacier points
       laland ! logical for land points
     REAL(wp), DIMENSION(KBDIM,klev), INTENT (IN)  :: &
@@ -213,7 +212,7 @@ CONTAINS
         END DO
       END DO
       zinhoml(1:kproma) = 1.0_wp
-      WHERE (zlwpt(1:kproma) > 1.0_wp) 
+      WHERE (zlwpt(1:kproma) > 1.0_wp)
         zinhoml(1:kproma) = zlwpt(1:kproma)**(-zinpar)
       END WHERE
     ELSE
@@ -228,15 +227,15 @@ CONTAINS
       END DO
     END IF
 
-    zkap(1:kproma) = zkap_mrtm! maritime breadth factor 
-    WHERE (laland(1:kproma).AND.(.NOT.laglac(1:kproma))) 
+    zkap(1:kproma) = zkap_mrtm! maritime breadth factor
+    WHERE (laland(1:kproma).AND.(.NOT.laglac(1:kproma)))
       zkap(1:kproma) = zkap_cont ! continental breadth factor
     END WHERE
 
     DO jk=1,klev
       DO jl=1,kproma
         IF (icldlyr(jl,jk)==1 .AND. (zlwp(jl,jk)+ziwp(jl,jk))>ccwmin) THEN
-          
+
           re_crystals = MAX(reimin,&
             MIN(reimax,83.8_wp*ziwc(jl,jk)**0.216_wp))
           re_droplets = MAX(relmin, MIN(relmax, &
@@ -280,7 +279,7 @@ CONTAINS
             0.2854650784_wp * EXP(-0.088968393014_wp * re_droplets)
           DO ii = 1,16
             iband = ii
-            IF (ii == 16) iband=30 
+            IF (ii == 16) iband=30
             zmsaid = (rebcuh(ii)+rebcug(ii)/re_crystals) ! WRONG PARENTHESIS?
             ztau(jl,jk,iband) = zmsald * zlwp(jl,jk) * zinhoml(jl) + &
               zmsaid * ziwp(jl,jk) * zinhomi

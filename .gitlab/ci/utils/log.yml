@@ -1,0 +1,67 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+# Implements a before_script that defines shell functions for structured and
+# colorized output. It is safe to reference the before_script (i.e.
+# !reference [.utils:log, before_script]) more than once.
+#
+# The script defines the following shell functions:
+#   1. icon_ci_log_section_start(): emits a marker that starts a collapsible
+#      section (see https://docs.gitlab.com/ci/jobs/job_logs/#custom-collapsible-sections).
+#      Accepts the following positional arguments:
+#        - $1 (defaults to `unknown`): a string to be used as the header of the
+#          section;
+#        - $2 (defaults to `collapsed=true`): a string that specifies whether
+#          the section must be automatically collapsed, possible values:
+#            - `collapsed=true`: collapse the section;
+#            - `collapsed=false`: keep the section uncollapsed.
+#   2. icon_ci_log_section_end(): emits a marker that ends the current
+#      collapsible section (must be called in the same subshell as the
+#      respective icon_ci_log_section_start()).
+#   3. icon_ci_log_info_msg(): colorizes the provided string (the only
+#      positional argument of the function) with a generally noticeable but
+#      non-disturbing color (using the ANSI escape sequence) and emits the
+#      result to the standard output stream.
+#   4. icon_ci_log_error_msg(): colorizes the provided string (the only
+#      positional argument of the function) with a generally noticeable and
+#      disturbing color (using the ANSI escape sequence) and emits the result to
+#      the standard output stream.
+#
+.utils:log:
+  before_script:
+    - |
+      # !reference [.utils:log, before_script]
+      test yes = "${icon_ci_utils_log_skip-}" || {
+        icon_ci_log_style_default="\e[0m"
+        icon_ci_log_style_section="\e[1;38;5;214m"
+        icon_ci_log_style_info="\e[1;38;5;183m"
+        icon_ci_log_style_error="\e[1;31m"
+        icon_ci_log_section_stack='iconci'
+        icon_ci_log_section_start ()
+        {
+          icon_ci_log_section_stack="${icon_ci_log_section_stack}_${RANDOM:-$(shuf -i 0-32767 -n 1)}"
+          echo -e "\e[0Ksection_start:$(date +%s):${icon_ci_log_section_stack}[${2:-collapsed=true}]\r\e[0K${icon_ci_log_style_section}${1:-'unknown'}${icon_ci_log_style_default}"
+        }
+        icon_ci_log_section_end ()
+        {
+          echo -e "\e[0Ksection_end:$(date +%s):${icon_ci_log_section_stack}\r\e[0K"
+          icon_ci_log_section_stack=${icon_ci_log_section_stack%_*}
+        }
+        icon_ci_log_info_msg ()
+        {
+          echo -e "${icon_ci_log_style_info}${1}${icon_ci_log_style_default}"
+        }
+        icon_ci_log_error_msg ()
+        {
+          echo -e "${icon_ci_log_style_error}${1}${icon_ci_log_style_default}"
+        }
+        icon_ci_utils_log_skip=yes
+      }

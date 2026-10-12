@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -16,7 +16,7 @@ require 'fileutils'
 require 'jobqueue'
 require 'gsl'
 
-#=============================================================================== 
+#===============================================================================
 # check input
 if ARGV[0].nil?
   warn "no input files given"
@@ -34,14 +34,14 @@ files.each {|file|
 q         = JobQueue.new([JobQueue.maxnumber_of_processors,20].min)
 p         = JobQueue.new([JobQueue.maxnumber_of_processors,20].min)
 lock      = Mutex.new
-#=============================================================================== 
+#===============================================================================
 # setup of CDO on different machines
 Cdp.setCDO
 Cdp.setDebug
 Cdo.forceOutput = ! ENV['FORCE'].nil?
 Cdo.debug       = ! ENV['DEBUG'].nil?
-#=============================================================================== 
-#=============================================================================== 
+#===============================================================================
+#===============================================================================
 # helper method for plotting ice volume and extent for NH and SH
 def plot(nhIceVolume,shIceVolume,nhIceExtent,shIceExtent,oType=nil,oTag=nil)
   volumeOutput, extentOutput = '',''
@@ -56,9 +56,9 @@ def plot(nhIceVolume,shIceVolume,nhIceExtent,shIceExtent,oType=nil,oTag=nil)
                     [GSL::Vector.linspace(0,size-1,size),shIceExtent],
                     "-C -g 3 -X 'timesteps' -Y 'Ice Extent [km^2]' -L 'IceExtent (red:NH, green:SH)' #{extentOutput}")
 end
-#=============================================================================== 
+#===============================================================================
 # compute the experiments from the data directories and link the corresponding files
-#=============================================================================== 
+#===============================================================================
 # MAIN
 gridfile, experimentFiles, experimentAnalyzedData = Cdp.splitFilesIntoExperiments(files)
 iceHeight                                         = 'p_ice_hi'
@@ -85,8 +85,8 @@ experimentFiles.each {|experiment, files|
                 :output => iceDiagFile)
 
       # split the file in norther and sourtern hemisphere
-      Cdo.fldsum(:input => "-sellonlatbox,-180,180,50,90 #{iceDiagFile}",  :output => nhFile) 
-      Cdo.fldsum(:input => "-sellonlatbox,-180,180,-50,-90 #{iceDiagFile}",:output => shFile) 
+      Cdo.fldsum(:input => "-sellonlatbox,-180,180,50,90 #{iceDiagFile}",  :output => nhFile)
+      Cdo.fldsum(:input => "-sellonlatbox,-180,180,-50,-90 #{iceDiagFile}",:output => shFile)
 
       lock.synchronize {experimentAnalyzedData[experiment] << [nhFile,shFile] }
     }

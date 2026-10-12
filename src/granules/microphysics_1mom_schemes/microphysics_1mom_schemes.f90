@@ -1,47 +1,50 @@
-! Public interfaces to the 1moment microhpysics-schemes
-! This includes routines to
-!   - initialize the microphysics
-!   - run the microphysics
-!   - getters and setters for variables private to microphysics
-! 
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Public interfaces to the 1moment microhpysics-schemes
+! This includes routines to
+!   - initialize the microphysics
+!   - run the microphysics
+!   - getters and setters for variables private to microphysics
+
 MODULE microphysics_1mom_schemes
 
-  USE, INTRINSIC :: iso_fortran_env, ONLY: wp => real64
+  USE mo_kind, ONLY: wp
   USE gscp_graupel, ONLY: graupel
   USE gscp_cloudice, ONLY: cloudice
   USE gscp_kessler, ONLY: kessler
   USE gscp_ice, ONLY: cloudice2mom
-  USE gscp_data, ONLY: & 
+  USE gscp_data, ONLY: &
       zvz0i, znimax_Thom, zthn, isnow_n0temp, mu_rain, zami, &
       zams_ci, zams_gr, zbms, zcnue, &
       mma, mmb, gscp_set_coefficients, zmi0, zmimax, zn0r, ageo_snow,zmsmin, &
-      zn0s1, zn0s2, zxiconv, cloud_num
-  
+      zn0s1, zn0s2, zxiconv, zxidrift, cloud_num
+
 
   IMPLICIT NONE
 
-  PRIVATE 
+  PRIVATE
 
   PUBLIC :: microphysics_1mom_init
   PUBLIC :: graupel_run, cloudice_run, kessler_run, cloudice2mom_run
   PUBLIC :: set_terminal_fall_velocity_ice, get_terminal_fall_velocity_ice
   PUBLIC :: get_params_for_dbz_calculation
   PUBLIC :: get_params_for_reff_coefficients
+  PUBLIC :: get_params_for_reff_coefficients_gscp3
   PUBLIC :: get_params_for_ncn_calculation
   PUBLIC :: get_mean_crystal_mass
+  PUBLIC :: get_mean_snowdrift_mass
   PUBLIC :: get_cloud_number
   PUBLIC :: get_snow_temperature
-  
+
 
 CONTAINS
   ! Returns the cloud number from module gscp_data
@@ -56,20 +59,33 @@ CONTAINS
     mean_crystal_mass = zxiconv
   END SUBROUTINE get_mean_crystal_mass
 
+  ! Returns the mean snow drift mass from module gscp_data
+  SUBROUTINE get_mean_snowdrift_mass(mean_snow_mass)
+    REAL(wp), INTENT(OUT) :: mean_snow_mass
+    mean_snow_mass = zxidrift
+  END SUBROUTINE get_mean_snowdrift_mass
+
   ! Returns the parameters required for the reff coefficients from module gscp_data
   SUBROUTINE get_params_for_reff_coefficients(zami_arg, zmi0_arg, zmimax_arg, zn0r_arg, mu_rain_arg, &
     ageo_snow_arg, zbms_arg, zmsmin_arg)
     REAL(wp), INTENT(OUT) :: zami_arg, zmi0_arg, zmimax_arg, zn0r_arg, mu_rain_arg, &
-                            ageo_snow_arg, zbms_arg, zmsmin_arg
+                             ageo_snow_arg, zbms_arg, zmsmin_arg
     zami_arg = zami
+    zbms_arg = zbms
     zmi0_arg = zmi0
-    zmimax_arg = zmimax
     zn0r_arg = zn0r
+    zmimax_arg = zmimax
+    zmsmin_arg = zmsmin
     mu_rain_arg = mu_rain
     ageo_snow_arg = ageo_snow
-    zbms_arg = zbms
-    zmsmin_arg = zmsmin
   END SUBROUTINE get_params_for_reff_coefficients
+
+  ! Returns the parameters required for the reff coefficients from module gscp_data for cloudice2mom
+  SUBROUTINE get_params_for_reff_coefficients_gscp3(zami_arg, zmi0_arg)
+    REAL(wp), INTENT(OUT) :: zami_arg, zmi0_arg
+    zami_arg = zami
+    zmi0_arg = zmi0
+  END SUBROUTINE get_params_for_reff_coefficients_gscp3
 
   ! Returns the parameters required for the ncn calculation from module gscp_data
   SUBROUTINE get_params_for_ncn_calculation(isnow_n0temp_arg, ageo_snow_arg,&
@@ -131,26 +147,36 @@ CONTAINS
     igscp, &
     tune_zceff_min,  &
     tune_v0snow,  &
+    tune_zcsg, &
     tune_zvz0i, &
     tune_mu_rain,  &
+    tune_dice_conv, &
     tune_icesedi_exp, &
-    tune_rain_n0_factor)
+    tune_rain_n0_factor, &
+    lvariable_rain_n0)
 
     INTEGER  ,INTENT(IN) ::  igscp
     REAL(wp) ,INTENT(IN) ::  tune_zceff_min
     REAL(wp) ,INTENT(IN) ::  tune_v0snow
+    REAL(wp), INTENT(IN) ::  tune_zcsg
     REAL(wp) ,INTENT(IN) ::  tune_zvz0i
     REAL(wp) ,INTENT(IN) ::  tune_mu_rain
+    REAL(wp) ,INTENT(IN) ::  tune_dice_conv
     REAL(wp) ,INTENT(IN) ::  tune_icesedi_exp
     REAL(wp) ,INTENT(IN) ::  tune_rain_n0_factor
+    LOGICAL  ,INTENT(IN) ::  lvariable_rain_n0
 
     CALL gscp_set_coefficients( igscp    = igscp, &
       &                        tune_zceff_min   = tune_zceff_min, &
       &                        tune_v0snow      = tune_v0snow, &
+      &                        tune_zcsg        = tune_zcsg, &
       &                        tune_zvz0i       = tune_zvz0i, &
+      &                        tune_dice_conv   = tune_dice_conv, &
       &                        tune_icesedi_exp = tune_icesedi_exp, &
       &                        tune_mu_rain        = tune_mu_rain,&
-      &                        tune_rain_n0_factor = tune_rain_n0_factor)
+      &                        tune_rain_n0_factor = tune_rain_n0_factor,&
+      &                        lvar_rain_n0 = lvariable_rain_n0)
+
 
   END SUBROUTINE microphysics_1mom_init
 
@@ -161,8 +187,8 @@ CONTAINS
     ivstart,ivend, kstart,             & !! optional start/end indicies
     idbg,                              & !! optional debug level
     zdt, dz,                           & !! numerics parameters
-    t,p,rho,qv,qc,qi,qr,qs,qg,qnc,     & !! prognostic variables
-    qi0,qc0, zninc,                    & !! cloud ice/water threshold for autoconversion
+    t,p,rho,qv,qc,qi,qr,qs,qg,qnc,qnc3d, & !! prognostic variables
+    qi0,qc0,use3Dcdnc, zninc,           & !! cloud ice/water threshold for autoconversion
     prr_gsp,prs_gsp,pri_gsp,prg_gsp,   & !! surface precipitation rates
     qrsflux,                           & !  total precipitation flux
     l_cv,                              &
@@ -193,6 +219,8 @@ CONTAINS
 
     INTEGER, INTENT(IN):: ithermo_water          !! water thermodynamics
 
+    LOGICAL, INTENT(IN):: use3Dcdnc              ! if true, use 3D CDNC
+
     LOGICAL, INTENT(IN):: ldiag_ttend,         & ! if true, temperature tendency shall be diagnosed
       ldiag_qtend            ! if true, moisture tendencies shall be diagnosed
 
@@ -212,6 +240,9 @@ CONTAINS
       prg_gsp,             & !! precipitation rate of graupel, grid-scale     (kg/(m2*s))
       qnc                    !! cloud number concentration
 
+    REAL(KIND=wp), OPTIONAL, DIMENSION(:,:), INTENT(IN)::   &     ! dim (ie,ke)
+      qnc3d                    !! 3D cloud number concentration
+
     REAL(KIND=wp), DIMENSION(:), INTENT(INOUT)::   pri_gsp                !! precipitation rate of ice, grid-scale        (kg/(m2*s))
 
     REAL(KIND=wp), DIMENSION(:,:), INTENT(OUT)::   ddt_tend_t      , & !> tendency T                                       ( 1/s )
@@ -228,8 +259,9 @@ CONTAINS
       & ivend  =ivend                          ,    & !< in:  end index of calculation
       & kstart =kstart                  ,    & !< in:  vertical start index
       & zdt    =zdt                     ,    & !< in:  timestep
-      & qi0    =qi0        ,    & 
-      & qc0    =qc0        ,    & 
+      & qi0    =qi0        ,    &
+      & qc0    =qc0        ,    &
+      & use3Dcdnc =use3Dcdnc,   &  !< in: if true, use 3D CDNC
       & dz     =dz     ,    & !< in:  vertical layer thickness
       & t      =t           ,    & !< in:  temp,tracer,...
       & p      =p           ,    & !< in:  full level pres
@@ -241,6 +273,7 @@ CONTAINS
       & qs     =qs    ,    & !< in:  snow
       & qg     =qg    ,    & !< in:  graupel
       & qnc    = qnc                            ,    & !< cloud number concentration
+      & qnc3d  = qnc3d                          ,    & !< cloud number concentration
       & zninc  = zninc                          ,    & !< number of cloud ice crystals at nucleation
       & prr_gsp=prr_gsp     ,    & !< out: precipitation rate of rain
       & prs_gsp=prs_gsp     ,    & !< out: precipitation rate of snow
@@ -333,8 +366,8 @@ CONTAINS
       & ivend  =ivend                          ,    & !< in:  end index of calculation
       & kstart =kstart                  ,    & !< in:  vertical start index
       & zdt    =zdt                     ,    & !< in:  timestep
-      & qi0    =qi0        ,    & 
-      & qc0    =qc0        ,    & 
+      & qi0    =qi0        ,    &
+      & qc0    =qc0        ,    &
       & dz     =dz     ,    & !< in:  vertical layer thickness
       & t      =t           ,    & !< in:  temp,tracer,...
       & p      =p           ,    & !< in:  full level pres
@@ -425,14 +458,14 @@ CONTAINS
       & ivend  =ivend                          ,    & !< in:  end index of calculation
       & kstart =kstart                  ,    & !< in:  vertical start index
       & zdt    =zdt                     ,    & !< in:  timestep
-      & qc0    =qc0        ,    & 
+      & qc0    =qc0        ,    &
       & dz     =dz     ,    & !< in:  vertical layer thickness
       & t      =t           ,    & !< in:  temp,tracer,...
       & p      =p           ,    & !< in:  full level pres
       & rho    =rho          ,    & !< in:  density
       & qv     =qv    ,    & !< in:  spec. humidity
       & qc     =qc    ,    & !< in:  cloud water
-      & qr     =qr    ,    & 
+      & qr     =qr    ,    &
       & prr_gsp=prr_gsp     ,    & !< out: precipitation rate of rain
       & qrsflux= qrsflux       ,    & !< out: precipitation flux
       & ldiag_ttend = ldiag_ttend                 ,    & !< in:  if temp. tendency shall be diagnosed
@@ -448,98 +481,125 @@ CONTAINS
   END SUBROUTINE kessler_run
 
   ! Calls the cloudice2mom microphysics scheme
-  SUBROUTINE cloudice2mom_run(             &
+  SUBROUTINE cloudice2mom_run(         &
     nvec,ke,                           & !> array dimensions
     ivstart,ivend, kstart,             & !! optional start/end indicies
     idbg,                              & !! optional debug level
     zdt, dz,                           & !! numerics parameters
-    w,t,p,rho,qv,qc,qi,qr,qs,qnc,     & !! prognostic variables
+    w,t,p,rho,qv,qc,qi,qr,qs,          & !! prognostic variables
+    qnc,                               & !! diagnostic cloud droplet number
+    tropicsmask,                       & !! tropicsmask
     qi0,qc0,                           & !! cloud ice/water threshold for autoconversion
-    qni, ninact, &
-    prr_gsp,prs_gsp,pri_gsp,   & !! surface precipitation rates
-    qrsflux,                           & !  total precipitation flux
+    qni, ninact,                       & !! number density of cloud ice and corresponding IN tracer
+    dustnum,                           & !! prognostic dust concentration
+    dustsfc,                           & !! prognostic dust surface area
+    prr_gsp,prs_gsp,pri_gsp,           & !! surface precipitation rates
+    qrsflux,                           & !! total precipitation flux
     l_cv,                              &
-    ithermo_water,                     & !  water thermodynamics
+    ithermo_water,                     & !! water thermodynamics
+    ice_nucleation,                    & !! choice of ice nucleation
     ldass_lhn,                         &
-    ldiag_ttend,     ldiag_qtend     , &
-    ddt_tend_t     , ddt_tend_qv     , &
-    ddt_tend_qc    , ddt_tend_qi     , & !> ddt_tend_xx are tendencies
-    ddt_tend_qr    , ddt_tend_qs)!!    necessary for dynamics
+    ldiag_ttend,     ldiag_qtend,      &
+    ddt_tend_t,      ddt_tend_qv,      &
+    ddt_tend_qc,     ddt_tend_qi,      & !! ddt_tend_xx are tendencies
+    ddt_tend_qr,     ddt_tend_qs)        !!    necessary for dynamics
 
-    INTEGER, INTENT(IN) :: nvec          ,    & !> number of horizontal points
+    INTEGER, INTENT(IN) :: &
+      nvec      ,          & !> number of horizontal points
       ke                     !! number of grid points in vertical direction
 
-    INTEGER, INTENT(IN) ::  ivstart   ,    & !> optional start index for horizontal direction
-      ivend     ,    & !! optional end index   for horizontal direction
-      kstart    ,    & !! optional start index for the vertical index
-      idbg             !! optional debug level
+    INTEGER, INTENT(IN) :: &
+      ivstart   ,    &       !> optional start index for horizontal direction
+      ivend     ,    &       !! optional end index   for horizontal direction
+      kstart    ,    &       !! optional start index for the vertical index
+      idbg                   !! optional debug level
 
-    REAL(KIND=wp), INTENT(IN) :: zdt             ,    & !> time step for integration of microphysics     (  s  )
-      qi0,qc0 !> cloud ice/water threshold for autoconversion
+    REAL(KIND=wp), INTENT(IN) :: &
+      zdt       ,    &       !> time step for integration of microphysics     (  s  )
+      qi0,qc0                !> cloud ice/water threshold for autoconversion
 
-    REAL(KIND=wp), DIMENSION(:,:), INTENT(IN) :: dz              ,    & !> layer thickness of full levels                (  m  )
-      rho             ,    & !! density of moist air                          (kg/m3)
+    REAL(KIND=wp), DIMENSION(:,:), INTENT(IN) :: &
+      dz        ,    &       !> layer thickness of full levels                (  m  )
+      rho       ,    &       !! density of moist air                          (kg/m3)
       p                      !! pressure                                      ( Pa  )
 
-    LOGICAL, INTENT(IN):: l_cv, &                   !! if true, cv is used instead of cp
+    REAL(KIND=wp), DIMENSION(:), INTENT(IN) ::   &
+      tropicsmask            !> tropicsmask
+
+    LOGICAL, INTENT(IN):: &
+      l_cv,               &  !! if true, cv is used instead of cp
       ldass_lhn
 
-    INTEGER, INTENT(IN):: ithermo_water          !! water thermodynamics
+    INTEGER, INTENT(IN):: &
+      ice_nucleation,     &  !! ice nucleation choice
+      ithermo_water          !! water thermodynamics
 
-    LOGICAL, INTENT(IN):: ldiag_ttend,         & ! if true, temperature tendency shall be diagnosed
-      ldiag_qtend            ! if true, moisture tendencies shall be diagnosed
+    LOGICAL, INTENT(IN)::  &
+      ldiag_ttend,         & !! if true, temperature tendency shall be diagnosed
+      ldiag_qtend            !! if true, moisture tendencies shall be diagnosed
 
-    REAL(KIND=wp), DIMENSION(:,:), INTENT(INOUT) ::  t               ,    & !> temperature                                   (  K  )
+    REAL(KIND=wp), DIMENSION(:,:), INTENT(INOUT) ::  &
+      t               ,    & !> temperature                                   (  K  )
       qv              ,    & !! specific water vapor content                  (kg/kg)
       qc              ,    & !! specific cloud water content                  (kg/kg)
       qi              ,    & !! specific cloud ice   content                  (kg/kg)
       qr              ,    & !! specific rain content                         (kg/kg)
       qs              ,    & !! specific snow content                         (kg/kg)
-      qni             ,    & !< cloud ice number
-      w               ,    &
+      qni             ,    & !! cloud ice number
+      w               ,    & !! vertical velocity
       ninact                 !< activated ice nuclei
 
-    REAL(KIND=wp), INTENT(INOUT) :: qrsflux(:,:)       ! total precipitation flux (nudg)
+    REAL(KIND=wp), DIMENSION(:,:), INTENT(INOUT), OPTIONAL ::  &
+      dustnum         ,    & !! dust concentration                            ( 1/kg)
+      dustsfc                !! mean surface area of dust                     ( m2  )
 
-    REAL(KIND=wp), DIMENSION(:), INTENT(INOUT) ::  prr_gsp,             & !> precipitation rate of rain, grid-scale        (kg/(m2*s))
+    REAL(KIND=wp), INTENT(INOUT) :: &
+      qrsflux(:,:)           ! total precipitation flux (nudg)
+
+    REAL(KIND=wp), DIMENSION(:), INTENT(INOUT) ::  &
+      prr_gsp,             & !> precipitation rate of rain, grid-scale        (kg/(m2*s))
       prs_gsp,             & !! precipitation rate of snow, grid-scale        (kg/(m2*s))
-      pri_gsp, &
+      pri_gsp,             & !! precipitation rate of ice,  grid-scale        (kg/(m2*s))
       qnc                    !! cloud number concentration
 
 
-    REAL(KIND=wp), DIMENSION(:,:), INTENT(OUT)::   ddt_tend_t      , & !> tendency T                                       ( 1/s )
+    REAL(KIND=wp), DIMENSION(:,:), INTENT(OUT)::   &
+      ddt_tend_t      , & !> tendency T                                       ( 1/s )
       ddt_tend_qv     , & !! tendency qv                                      ( 1/s )
       ddt_tend_qc     , & !! tendency qc                                      ( 1/s )
       ddt_tend_qi     , & !! tendency qi                                      ( 1/s )
       ddt_tend_qr     , & !! tendency qr                                      ( 1/s )
       ddt_tend_qs         !! tendency qs                                      ( 1/s )
 
-    CALL cloudice2mom(                                     &
-      & nvec   =nvec                            ,    & !> in:  actual array size
-      & ke     =ke                              ,    & !< in:  actual array size
-      & ivstart=ivstart                        ,    & !< in:  start index of calculation
-      & ivend  =ivend                          ,    & !< in:  end index of calculation
-      & kstart =kstart                  ,    & !< in:  vertical start index
-      & zdt    =zdt                     ,    & !< in:  timestep
-      & qi0    =qi0        ,    & 
-      & qc0    =qc0        ,    & 
-      & dz     =dz     ,    & !< in:  vertical layer thickness
-      & t      =t           ,    & !< in:  temp,tracer,...
-      & p      =p           ,    & !< in:  full level pres
-      & rho    =rho          ,    & !< in:  density
-      & w = w, &
-      & qv     =qv    ,    & !< in:  spec. humidity
-      & qc     =qc    ,    & !< in:  cloud water
-      & qi     =qi    ,    & !< in:  cloud ice
-      & qr     =qr    ,    & !< in:  rain water
-      & qs     =qs    ,    & !< in:  snow
-      & qni    = qni  ,    & !< inout:  cloud ice number
-      & ninact = ninact,   & !< inout:  activated ice nuclei
-      & qnc    = qnc                            ,    & !< cloud number concentration
-      & prr_gsp=prr_gsp     ,    & !< out: precipitation rate of rain
-      & prs_gsp=prs_gsp     ,    & !< out: precipitation rate of snow
-      & pri_gsp=pri_gsp      ,    & !< out: precipitation rate of cloud ice
-      & qrsflux= qrsflux       ,    & !< out: precipitation flux
+    CALL cloudice2mom(                                 &
+      & nvec   = nvec                             ,    & !> in:  actual array size
+      & ke     = ke                               ,    & !< in:  actual array size
+      & ivstart= ivstart                          ,    & !< in:  start index of calculation
+      & ivend  = ivend                            ,    & !< in:  end index of calculation
+      & kstart = kstart                           ,    & !< in:  vertical start index
+      & zdt    = zdt                              ,    & !< in:  timestep
+      & qi0    = qi0                              ,    & !< in:  qi threshold
+      & qc0    = qc0                              ,    & !< in:  qc threshold
+      & dz     = dz                               ,    & !< in:  vertical layer thickness
+      & t      = t                                ,    & !< in:  temp,tracer,...
+      & p      = p                                ,    & !< in:  full level pres
+      & rho    = rho                              ,    & !< in:  density
+      & w      = w                                ,    & !< in:  vertical velocity
+      & qv     = qv                               ,    & !< in:  spec. humidity
+      & qc     = qc                               ,    & !< in:  cloud water
+      & qi     = qi                               ,    & !< in:  cloud ice
+      & qr     = qr                               ,    & !< in:  rain water
+      & qs     = qs                               ,    & !< in:  snow
+      & qni    = qni                              ,    & !< inout:  cloud ice number
+      & ninact = ninact                           ,    & !< inout:  activated ice nuclei
+      & qnc    = qnc                              ,    & !< cloud number concentration
+      & dustnum = dustnum                         ,    & !< prognostic dust concentration
+      & dustsfc = dustsfc                         ,    & !< prognostic dust surface area
+      & tropicsmask = tropicsmask                 ,    & !< latitude
+      & prr_gsp = prr_gsp                         ,    & !< out: precipitation rate of rain
+      & prs_gsp = prs_gsp                         ,    & !< out: precipitation rate of snow
+      & pri_gsp = pri_gsp                         ,    & !< out: precipitation rate of cloud ice
+      & qrsflux = qrsflux                         ,    & !< out: precipitation flux
       & ldiag_ttend = ldiag_ttend                 ,    & !< in:  if temp. tendency shall be diagnosed
       & ldiag_qtend = ldiag_qtend                 ,    & !< in:  if moisture tendencies shall be diagnosed
       & ddt_tend_t  = ddt_tend_t                  ,    & !< out: tendency temperature
@@ -548,12 +608,12 @@ CONTAINS
       & ddt_tend_qi = ddt_tend_qi                 ,    & !< out: tendency QI
       & ddt_tend_qr = ddt_tend_qr                 ,    & !< out: tendency QR
       & ddt_tend_qs = ddt_tend_qs                 ,    & !< out: tendency QS
-      & idbg=idbg                          ,    &
-      & l_cv=l_cv                               ,    &
+      & inucleation = ice_nucleation              ,    & !< choice of ice nucleation
+      & ithermo_water = ithermo_water             ,    & !< in: latent heat choice
+      & l_cv = l_cv                               ,    &
       & ldass_lhn = ldass_lhn                     ,    &
-      & ithermo_water=ithermo_water)!< in: latent heat choice
+      & idbg = idbg                               )
 
   END SUBROUTINE cloudice2mom_run
 
 END MODULE microphysics_1mom_schemes
-

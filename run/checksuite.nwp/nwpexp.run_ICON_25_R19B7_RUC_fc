@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -30,7 +30,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -40,7 +40,7 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/buildbot_data/nwp
 # base directory for ICON sources, binary and auxilary data:
 ICONDIR="${basedir}" # basedir can be set with create_target_header
 
-# experiment identifier for output files 
+# experiment identifier for output files
 EXP="ICON-D2-RUC"    # experiment identifier
 
 # root directory for input data
@@ -210,7 +210,7 @@ cat > ${atmo_namelist} << EOF
  start_time  = 0., 1800.,3600.,
 /
 &initicon_nml
- init_mode                    = 5 ! 1: operation mode, 5: IAU, 6: 5+sma_inc
+ init_mode                    = 5 ! 1: operation mode, 5: IAU
  dt_iau                       = 600    ! Window for incr.analysis update
  dt_shift                     = -300  ! Offset for incr.analysis update
  type_iau_wgt                 = 1           ! IAU weighting function (const.)
@@ -224,7 +224,7 @@ cat > ${atmo_namelist} << EOF
  lp2cintp_sfcana              = .false.  ! of analyses (DET:.false.;EPS:.true.)
  dwdfg_filename        = './R<nroot0>B<jlev>_DOM<idom>_ilfff00005500.grb'
  dwdana_filename       = './R<nroot0>B<jlev>_DOM<idom>_ilaf20220914120000.grb'
- ana_varnames_map_file = 'map_file.ana' 
+ ana_varnames_map_file = 'map_file.ana'
  check_ana(1)%list            = 'P','QV','T','U','V'
  check_ana(2)%list            = 'FRESHSNW','H_SNOW'
 ! check_fg(1)%list      = 'p_lml_filtinc','t_lml_filtinc','alb_seaice','evap_pl','skt'
@@ -248,6 +248,8 @@ cat > ${atmo_namelist} << EOF
  icpl_da_tkhmin               = 1
  adjust_tso_tsnow             = .true.
  dt_ana                       = 3600             ! ... to control evaporation relevant parameters
+ parallel_grib_decoding       = .TRUE.           ! .FALSE.: Workroot PE reads and decodes GRIB file records
+                                                 ! .TRUE.:  Workroot PE reads GRIB file records, Work PEs decode them
 /
 &limarea_nml
 ! dtime_latbc             = 3600          ! 3600.
@@ -270,7 +272,7 @@ cat > ${atmo_namelist} << EOF
 &io_nml
  dt_checkpoint                 = 863913600
  echotop_meta(1)%time_interval = 900.0             ! Reset der Druckminimumbestimmung auf domain 1 alle 15'
- echotop_meta(1)%dbzthresh     = 18.               ! Liste der dbz-thresholds (hier nur einer) fuer domain 1 
+ echotop_meta(1)%dbzthresh     = 18.               ! Liste der dbz-thresholds (hier nur einer) fuer domain 1
  itype_pres_msl               = 5        ! (1) 3: IFS-type extrapolation
  itype_rh                     = 1         ! (1) 2: mixed phase (water and ice)
  output_nml_dict              = 'map_file.fc'
@@ -288,7 +290,7 @@ ydir_mielookup_read  = '${YDIR_MIELOOKUP}'
 ydir_mielookup_write = '${YDIR_MIELOOKUP}'
 ! Bright Band Correction (BB)
 synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
-/  
+/
 &run_nml
 ! check_uuid_gracefully = .true.
  dtime                 = 20              ! timestep in seconds
@@ -309,7 +311,6 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
  timers_level          = 5                   ! can be increased up to 10 for detailed timer output
 /
 &nwp_phy_nml
- cldopt_filename    = 'rrtm_cldopt.nc'
  dt_conv   = 120.
  dt_gwd    = 120.  ! Previous Hindcast 360. Probably it does not matter because inwp_gwd  =0
  dt_rad    = 720.
@@ -322,7 +323,7 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
  icpl_o3_tp       = 1
  icpl_rad_reff    = 1
  inwp_cldcover   = 1
- inwp_convection = 1  
+ inwp_convection = 1
  inwp_gscp       = 4,4
  inwp_gwd        = 0,0
  inwp_radiation  = 4
@@ -344,39 +345,39 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
 /
 
 &nwp_tuning_nml
- itune_albedo     = 1 
+ itune_albedo     = 1
  tune_box_liq_asy = 4.0
- tune_gfrcrit     = 0.333 
+ tune_gfrcrit     = 0.333
  tune_grcrit       = 0.65
  tune_minsso_gwd   = 40.
- tune_gkdrag      = 0.125 
- tune_gkwake      = 0.25 
+ tune_gkdrag      = 0.125
+ tune_gkwake      = 0.25
  tune_gust_factor = 7.0
  tune_gustsso_lim  = 20.
- tune_minsnowfrac = 0.3 
+ tune_minsnowfrac = 0.3
  tune_sgsclifac   = 0.0
 ! cp-cv-bugfix:
  tune_rcucov      = 0.075
- tune_rhebc_land  = 0.825 
- tune_zvz0i       = 0.85 
- icpl_turb_clc    = 2 
- max_calibfac_clcl = 2.0 
+ tune_rhebc_land  = 0.825
+ tune_zvz0i       = 0.85
+ icpl_turb_clc    = 2
+ max_calibfac_clcl = 2.0
  tune_box_liq     = 0.04
  itune_gust_diag   = 3
  tune_sbmccn      = 1.1   ! to avoid possible entering into sbm ccn
 /
 
-&twomom_mcrph_nml                                                                                                                     
+&twomom_mcrph_nml
  ccn_type = 7
  luse_mu_Dm_rain = .true.
- lturb_enhc = .true. 
- rain_cmu0  = -1.0 
- ecoll_gg_wet = 0.40 
+ lturb_enhc = .true.
+ rain_cmu0  = -1.0
+ ecoll_gg_wet = 0.40
  ecoll_gg     = 0.05
  Tcoll_gg_wet = 273.16
- isnow_stick    = 6  
+ isnow_stick    = 6
  Tmax_gr_rime   = 305.16
- avel_g         = 45.32  
+ avel_g         = 45.32
  bvel_g         = 0.26
 /
 
@@ -388,7 +389,7 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
 ! imode_frcsmot = 2     ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  imode_tkesso  = 2
 ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 2    
+ itype_sher    = 2
  ltkeshs       = .true.
  ltkesso       = .true.
  pat_len       = 750.
@@ -411,11 +412,11 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
  itype_heatcond = 3
  itype_lndtbl   = 4
  itype_root     = 2
- itype_snowevap = 3  
+ itype_snowevap = 3
  itype_trvg     = 3
  llake          = .true.
  lmulti_snow    = .false.
- lprog_albsi    = .true.  
+ lprog_albsi    = .true.
  itype_canopy   = 2
  lseaice        = .true.
  lsnowtile      = .true.
@@ -438,8 +439,8 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
   direct_albedo_water = 3
   direct_albedo = 4
   albedo_whitecap = 1
-  ecrad_llw_cloud_scat         = .false. 
-  ecrad_data_path = "./ecrad_data" 
+  ecrad_llw_cloud_scat         = .false.
+  ecrad_data_path = "./ecrad_data"
 /
 
 &nonhydrostatic_nml
@@ -449,7 +450,7 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
   divdamp_order   = 24
  !divdamp_type    =   ! optional: 2 assimilation cycle, 3 forecast
   divdamp_type    = 32
-  exner_expol     = 0.6 
+  exner_expol     = 0.6
   hbot_qvsubstep  = 22500 ! r3b7: 19000.  else: 22500.
   htop_moist_proc = 22500.
   iadv_rhotheta   = 2
@@ -556,7 +557,7 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
  range_gfrcrit     = 0.
  range_c_soil      = 0.
  range_cwimax_ml   = 1.  !multiplikativ
-/ 
+/
 &gribout_nml
  backgroundProcess               = 0
  generatingProcessIdentifier     = 11, 12                            ! 12 .. nest
@@ -576,7 +577,7 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
  dace_time_ctrl  = 0,3600,1800 ! [s] time slices of DACE (start, stop, inc)
  rttend =            0.0
  lhn_logscale =     .true.
- lhn_updt_rule   =  1 
+ lhn_updt_rule   =  1
  lhn_coef  =        2.0
  fac_lhn_up  =      1.1
  fac_lhn_down =     0.7
@@ -588,7 +589,7 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
    blacklist_file  = 'blacklist_dx.nc'
    height_file     = 'radar_dx.nc'
    nradar          = 12       ! number of levele with radar heights within height_file
- lhn_refbias         = .false.  
+ lhn_refbias         = .false.
  lhn_bright      = .true.
  lhn_diag        = .true.
  lhn_hum_adj     = .true.
@@ -608,7 +609,7 @@ synradar_meta%Tmeltbegin_g = 270.16    ! default 263.160
  zlev_artif_max  = 3000.
 /
 &nudging_nml
- nudge_type = 0 
+ nudge_type = 0
 /
 
 &output_nml
@@ -835,25 +836,25 @@ dom =  1
   lout_geom = .true.,
   lwrite_ready = .true.,
   loutradwind = .true.,
-    lweightdbz = .true.,  
+    lweightdbz = .true.,
     lfall = .true.,
     lfill_vr_backgroundwind = .true.,
   loutdbz = .true.,
     lextdbz = .true.,
-    ! Global switch to choose itype_refl for all radars. 
+    ! Global switch to choose itype_refl for all radars.
     !  This is then the background value for all radars, which can
     !  later be overwritten for the single stations via namelist.
     !  If no value or -99 for itype_refl_glob is given, the default
     !  value from dbz_namlst_d (3) will win.
-    !  You can override it for each station by individual settings 
+    !  You can override it for each station by individual settings
     !  in the "dbz_meta"- structure below.
     dbz_meta_glob%itype_refl=${itype_refl},
     dbz_meta_glob%itype_Dref_fmelt=${itype_Dref_fmelt},
-    ! Global switch to enable the use of Mie-lookup tables for all radars. 
+    ! Global switch to enable the use of Mie-lookup tables for all radars.
     !  This is then the background value for all radars, which can
     !  later be overwritten for the single stations via namelist.
     dbz_meta_glob%llookup_mie=.true.,
-    dbz_meta_glob%Tmeltbegin_g = 270.16    
+    dbz_meta_glob%Tmeltbegin_g = 270.16
       itype_mpipar_lookupgen = 2,
       pe_start_lookupgen = 1,
       ydir_mielookup_read = '${YDIR_MIELOOKUP}'
@@ -939,9 +940,9 @@ dom =  1
     ! Checking and matching of the obs file records
     !   to the obs times individually for each data type file (vr, qv, z, qz)
     !   instead of only taking one of these files for that purpose.
-    !   Does not vecorize and takes a long time! 
+    !   Does not vecorize and takes a long time!
     ! NORMALLY SET TO .FALSE.!!!
-    !   Might however help if some records are missing in a 
+    !   Might however help if some records are missing in a
     !   certain file (e.g., for qv) and are present in another file (e.g., vr).
     lcheck_inputrecords = .true.,
     lequal_azi_alldatasets = .false.,
@@ -955,7 +956,8 @@ dom =  1
       ! resolution of the cartesian grid for superobing [m]: (default: 20000.0)
       supob_cart_resolution = 10000.0,
       ! width of averaging area for superobing [m]: (default: sqrt(2)*20000.0 = 28284.3)
-      supob_ave_width = 14142.1,
+      supob_ave_width_vr = 14142.1,
+      supob_ave_width_z  = 14142.1,
       ! min. ranges of superobing points for vr and z [m]: (default: 0.75*sqrt(2)*20000.0 = 21213.2)
       supob_minrange_vr = 10606.6,
       supob_minrange_z = 10606.6,
@@ -1022,7 +1024,7 @@ dom =  1
     rs_meta(1)%dt_obs         = 300.0,
     rs_meta(1)%lobstimes_ovwrt_recalc = .true.,
 !
-    dbz_meta(1)%station_id   = 10132  
+    dbz_meta(1)%station_id   = 10132
 !
 ! STATION 18: rs_meta(18) and dbzparams(18): BOO Boosted precip scan
 !
@@ -1042,7 +1044,7 @@ dom =  1
     rs_meta(18)%dt_obs         = 300.0,
     rs_meta(18)%lobstimes_ovwrt_recalc = .true.,
 !
-    dbz_meta(18)%station_id  = 10132  
+    dbz_meta(18)%station_id  = 10132
 !
 !========================================================
 !
@@ -1064,7 +1066,7 @@ dom =  1
     rs_meta(2)%dt_obs         = 300.0,
     rs_meta(2)%lobstimes_ovwrt_recalc = .true.,
 !
-    dbz_meta(2)%station_id   = 10488  
+    dbz_meta(2)%station_id   = 10488
 !
 ! STATION 19: rs_meta(19) and dbz_meta(19): DRS Dresden precip scan
 !
@@ -1084,7 +1086,7 @@ dom =  1
     rs_meta(19)%dt_obs         = 300.0,
     rs_meta(19)%lobstimes_ovwrt_recalc = .true.,
 !
-    dbz_meta(19)%station_id  = 10488  
+    dbz_meta(19)%station_id  = 10488
 !
 !========================================================
 !
@@ -1847,7 +1849,7 @@ cat > namelist  << end_input_MEC
     surf_class_vers =  3
     pl_method       =  7
     pl_vis          =  50000
-    plev_min        =  20100 !TESTSU check 
+    plev_min        =  20100 !TESTSU check
     use_reff        =  T
     scale_qi        =  F
   /
@@ -1868,8 +1870,8 @@ cat > namelist  << end_input_MEC
     !-----------------------------------------
  chan =
   21      1       '  sea clear land                              '       '0.04' 0
-  21      5       'passive sea clear land                              '       '36.0' 0   
-  21      6       'passive sea clear land                              '       '36.0'  0   
+  21      5       'passive sea clear land                              '       '36.0' 0
+  21      6       'passive sea clear land                              '       '36.0'  0
   /
 
  &tovs_obs_chan
@@ -1888,8 +1890,8 @@ cat > namelist  << end_input_MEC
     !-----------------------------------------
  chan =
   21      1       '  sea clear land                              '       '0.04' 0
-  21      5       'passive sea clear land                              '       '36.0' 0   
-  21      6       'passive sea clear land                              '       '36.0'  0   
+  21      5       'passive sea clear land                              '       '36.0' 0
+  21      6       'passive sea clear land                              '       '36.0'  0
   /
 
 !------------------------

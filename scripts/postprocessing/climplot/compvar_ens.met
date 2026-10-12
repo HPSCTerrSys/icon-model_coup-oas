@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -160,7 +160,7 @@ outfile(dir,title,output)
 var_modm= 0.
 var_ctrm= 0.
 
-if vartype = "ins" then 
+if vartype = "ins" then
 
 # --- retrieve
 
@@ -172,45 +172,45 @@ if vartype = "ins" then
 
 # --- special treatment for "total precip"
 
-      case varid of 
-       #"TP": 
+      case varid of
+       #"TP":
        #  #res=2.5   # fix for metview/emos porblem (no interpolation on IFS precip data!)
        #   var_ctr_all=multiget(spec_par_tp     ,expv22,levtype,lev,dates,res,file_ctr)
        #   var_mod_all=multiget(spec_par_tp_icon,expv1, levtype,lev,dates,res,file_mod)
        #   unit = "[mm d<sup>-1</sup>]"
        #  #unit = "[mm/day]"
        #end
-        "SURFRADN": 
+        "SURFRADN":
            var_ctr_all=multiget(spec_par_surfradn,expv22,levtype,lev,dates,res,file_ctr)
            var_mod_all=multiget(spec_par_surfradn,expv1, levtype,lev,dates,res,file_mod)
            unit = "[W m<sup>-2</sup>]"
           #unit = "[W/m2]"
         end
-        "SURFNET": 
+        "SURFNET":
            var_ctr_all=multiget(spec_par_surfnet,expv22,levtype,lev,dates,res,file_ctr)
            var_mod_all=multiget(spec_par_surfnet,expv1, levtype,lev,dates,res,file_mod)
            unit = "[W m<sup>-2</sup>]"
           #unit = "[W/m2]"
         end
-        "CP": 
+        "CP":
           #var_ctr_all=multiget("CP"       ,expv22,levtype,lev,dates,res,file_ctr)    # IFS
            var_ctr_all=multiget(spec_par_cp,expv2, levtype,lev,dates,res,file_ctr)    # ICON
            var_mod_all=multiget(spec_par_cp,expv1, levtype,lev,dates,res,file_mod)
   	   unit = "[mm d<sup>-1</sup>]"
         end
-        "LSP": 
+        "LSP":
           #var_ctr_all=multiget("LSP"       ,expv22,levtype,lev,dates,res,file_ctr)   # IFS
            var_ctr_all=multiget(spec_par_lsp,expv2, levtype,lev,dates,res,file_ctr)   # ICON
            var_mod_all=multiget(spec_par_lsp,expv1, levtype,lev,dates,res,file_mod)
   	   unit = "[mm d<sup>-1</sup>]"
         end
-        "TCW": 
+        "TCW":
           #var_ctr_all=multiget("TCW"            ,expv22,levtype,lev,dates,res,file_ctr) # IFS
            var_ctr_all=multiget(spec_par_tcw_icon,expv2, levtype,lev,dates,res,file_ctr) # ICON
            var_mod_all=multiget(spec_par_tcw_icon,expv1, levtype,lev,dates,res,file_mod)
   	   unit = "[mm d<sup>-1</sup>]"
         end
-        otherwise: 
+        otherwise:
           if  lev = 0  then
             lev0=''
           else
@@ -224,7 +224,7 @@ if vartype = "ins" then
             grid	:	[res,res],
             source	:	file_mod
             )
-          print("Read model from file: ", file_mod) 
+          print("Read model from file: ", file_mod)
           print("Read level: ", lev0, " variable: ", varidm, " dates: ", dates, " resol:  ", res, "deg # flds: ", var_mod_all)
 
           var_ctr_all = read(
@@ -235,22 +235,22 @@ if vartype = "ins" then
             grid	:	[res,res],
             source	:	file_ctr
             )
-          print("Read control from file: ", file_ctr) 
+          print("Read control from file: ", file_ctr)
           print("Read level: ", lev0, " variable: ", varidm, " dates: ", dates, " resol: ", res, "deg # flds: ", var_ctr_all)
 
           if (varid = "SD") then
             if (search(expv1,'_') > 0) then                    # test for ICON run
               nsnowlev    = count(var_mod_all) / count(dates)  #multi-layer snow in ICON)
-              var_mod_all = mean(var_mod_all) * nsnowlev              
+              var_mod_all = mean(var_mod_all) * nsnowlev
             end if
             if (search(expv2,'_') > 0) then                    # test for ICON run
               nsnowlev    = count(var_ctr_all) / count(dates)  #multi-layer snow in ICON)
-              var_ctr_all = mean(var_ctr_all) * nsnowlev              
+              var_ctr_all = mean(var_ctr_all) * nsnowlev
             end if
           end if
 
           if (varid = "SST") then
-            seapoints=(var_mod_all[1]>260.) # and var_mod_all[1]<250)  
+            seapoints=(var_mod_all[1]>260.) # and var_mod_all[1]<250)
             seamask=bitmap(seapoints,0)
             var_mod_all=bitmap(var_mod_all,seamask)
             var_ctr_all=bitmap(var_ctr_all,seamask)
@@ -268,7 +268,7 @@ if vartype = "ins" then
           #units=grib_get_string(var_mod_all,"units")
           units=grib_get_string(var_ctr_all,"units")
           unit=units[1]
-	end 
+	end
       end case
 end if
 
@@ -276,7 +276,7 @@ end if
 # --- special units for precipitation
 
 if varid = "CP"  or varid = 143
-or varid = "LSP" or varid = 142 
+or varid = "LSP" or varid = 142
 or varid = "TP"  or varid = 228 then
         if (search(expv1,'_') < 0) then     # test for IFS run
           var_mod_all = var_mod_all * 86400 * 1000
@@ -297,16 +297,16 @@ end if
 if varid = "SSR"
 or varid = "STR"
 or varid = "TSR"
-or varid = "TTR" then 
+or varid = "TTR" then
    unit = "[W m<sup>-2</sup>]"
   #unit = "[W/m2]"
 end if
 if varid = "ssr"
 or varid = "str"
 or varid = "tsr"
-or varid = "ttr" 
+or varid = "ttr"
 or varid = "sshf"
-or varid = "slhf" then 
+or varid = "slhf" then
    unit = "[W m<sup>-2</sup>]"
   #unit = "[W/m2]"
 end if
@@ -332,7 +332,7 @@ if stat = "avg" then
   if lsigt  and nens > 2 then
     tcrit=ttest_thresh(sig,dof)
     mod_ctr_std = sqrt((var(var_mod_all)+var(var_ctr_all))/2.)  #stdev of all months and dates!
-    mod_ctr_std = bitmap(mod_ctr_std,0.0) # replace zeros with missing 
+    mod_ctr_std = bitmap(mod_ctr_std,0.0) # replace zeros with missing
     tstat=sqrt(nens/2.0)*abs(var_diff)/mod_ctr_std
     if varid="TP" or  varid="LSP" or  varid="CP" then
       sig=(var_ctr > 0.5) and (tstat > tcrit)
@@ -378,7 +378,7 @@ coastlines = pcoast(
     map_grid_latitude_increment		:	30,
     map_grid_longitude_increment	:	45
     )
-    
+
 map_view = mapview(
    map_projection		:	"cylindrical",
    area		   		:	gl_area,
@@ -450,7 +450,7 @@ maxlevelpos = nconts * intlevelpos + minlevelpos
 
 # --- special contours for precipitation
 
-if varid = "CP"  or varid = 143 or 
+if varid = "CP"  or varid = 143 or
    varid = "LSP" or varid = 142 or
    varid = "TP"  or varid = 228 then
   maxlevelvar = 15.0
@@ -466,10 +466,10 @@ end if
 if varid = "CAPE"  or varid = 59 then
   maxlevelvar = 2600.0
   minlevelvar = 25.0
-  intlevelvar =300 
+  intlevelvar =300
   maxlevelpos =300
   minlevelpos =25
-  intlevelpos =40 
+  intlevelpos =40
 end if
 
 if varid = "STL1" then
@@ -601,7 +601,7 @@ intlevelneg = intlevelpos
 
 # --- define contours
 
-if lcol = 2 then 
+if lcol = 2 then
 
   min_col="RGB(0.7,0.7,0.7)"
   max_col="RGB(0.45,0.45,0.45)"
@@ -616,7 +616,7 @@ if lcol = 2 then
   pos_dir="clockwise"
   csm="area_fill"
   cs="on"
-else 
+else
   neg_min_col="blue"
   neg_max_col="yellow_green"
 
@@ -677,7 +677,7 @@ timestr=yymm_start&" nmon="&mm_len&" nens="&ndates
 text1=statnametitle&varname&"  "&expv1&"  "&timestr&"   Mean: "&mn_mod
 text2=statnametitle&varname&"  "&expv2&"  "&timestr&"   Mean: "&mn_ctr
 text3=statnametitle&varname&"  "&expv1&"-"&expv2&"  "&timestr&"   Diff: "&mn_diff&"   Stdev: "&std_diff
-if larticle=2 then 
+if larticle=2 then
   text1='(a)'
   text2='(b)'
   text3='(c)'
@@ -707,16 +707,16 @@ legend = mlegend(
 #######################################################################
 
 display_window = plot_superpage(
-    	LAYOUT_SIZE            : "CUSTOM", 
-    	CUSTOM_WIDTH           : 21.1, 
-    	CUSTOM_HEIGHT          : 29.6, 
+    	LAYOUT_SIZE            : "CUSTOM",
+    	CUSTOM_WIDTH           : 21.1,
+    	CUSTOM_HEIGHT          : 29.6,
         pages    	       :    [page_1,page_2,page_3]
         )
 
 plot(    display_window[1], var_mod, var_cont,                          ptext1,               legend)
 if expv1 <> expv2 then
   plot(  display_window[2], var_ctr, var_cont,                          ptext2,               legend)
-  if tcrit = -999  then 
+  if tcrit = -999  then
     plot(display_window[3], var_diff,var_diff_cont_neg,var_diff_cont_pos,ptext3,              legend)
   else
     plot(display_window[3], var_diff,var_diff_cont_neg,var_diff_cont_pos,ptext3,sig,sig_cont, legend)
@@ -751,7 +751,7 @@ end outfile
 
 function set_cont(cmin,cmax,cint,line_style,min_col,max_col,neg_lim,pos_lim)
 
-# sets the contour style for the full fields when INTERVALS are used 
+# sets the contour style for the full fields when INTERVALS are used
 # (i.e. not used for specified conts such as nonlinear rainfall int.)
 
 	cont = pcont(
@@ -792,7 +792,7 @@ end set_cont
 function set_text(title:string)
 
 # sets the legend text and plot title
-   
+
   text = mtext(
     TEXT_LINE_1              :  title,
     TEXT_COLOUR              :  'BLACK',
@@ -810,7 +810,7 @@ end set_text
 
 function multiget(list,expver,levtype,lev,dates,res,file)
 
-  for i=1 to count(list) do 
+  for i=1 to count(list) do
 
      if list[i] = '500134' then    # fix 201608 from Fernando Ii because MARS doesn't distinguish 500134 & 134
         filetmp = tmpfile()        # temporary file that will be deleted when metview exits
@@ -830,11 +830,11 @@ function multiget(list,expver,levtype,lev,dates,res,file)
 	        grid	:	[res,res],
                 source	:	filetmp
 		)
-     print("Read model from file: ", file) 
+     print("Read model from file: ", file)
      print("Read level: ", lev, " variable: ", list[i], " dates: ", dates, " resol:  ", res, "deg # flds: ", fld)
      print("Average field value: ", average(fld))
 
-     if i=1 then 
+     if i=1 then
        fldset=fld
      else
        fldset=fldset+fld

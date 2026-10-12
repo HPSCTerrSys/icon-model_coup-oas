@@ -1,16 +1,15 @@
-!
-! Subroutine cloud_mig calls the saturation adjustment and cloud scheme
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutine cloud_mig calls the saturation adjustment and cloud scheme
 
 MODULE mo_cloud_mig
 
@@ -20,7 +19,12 @@ MODULE mo_cloud_mig
        &                            timer_sat, timer_grp
 
   USE mo_aes_thermo          ,ONLY: saturation_adjustment
+
+#ifndef __NO_RAGNAROK__
+  USE mo_ragnarok_microphysics, ONLY: graupel_run
+#else
   USE mo_aes_graupel         ,ONLY: graupel_run
+#endif
 
   IMPLICIT NONE
   PRIVATE
@@ -32,6 +36,7 @@ CONTAINS
 
   SUBROUTINE cloud_mig     ( jcs, jce   ,&
        &                     pdtime     ,&
+       &                     cia        ,&
        &                     dz         ,&
        &                     rho        ,&
        &                     pf         ,&
@@ -59,6 +64,7 @@ CONTAINS
     !
     INTEGER , INTENT(in)  :: jcs, jce      !< column index range
     REAL(wp), INTENT(in)  :: pdtime        !< timestep
+    REAL(wp), INTENT(in)  :: cia           !<
     !
     REAL(wp), INTENT(in)  :: dz      (:,:) !< vertical layer thickness
     REAL(wp), INTENT(in)  :: rho     (:,:) !< density
@@ -105,7 +111,6 @@ CONTAINS
     REAL(wp) :: zqrsflux (SIZE(dz,1),SIZE(dz,2))
     !
     REAL(wp) :: zdtr ! reciprocal of timestep
-    REAL(wp), PARAMETER :: cloud_num = 200.00e+06_wp
 
     !$ACC DATA PRESENT(dz, rho, pf, ta, qv, qc, qi, qr, qs, qg) &
     !$ACC   PRESENT(tend_ta, tend_qv, tend_qc, tend_qi, tend_qr, tend_qs, tend_qg) &
@@ -165,12 +170,19 @@ CONTAINS
     !
     IF (ltimer) call timer_start(timer_grp)
     !
+
+#ifndef __NO_RAGNAROK__
+    !$ACC HOST_DATA USE_DEVICE(rho, zta, pf, dz, zqv, zqc, zqi, zqr, zqs, zqg) &
+    !$ACC   USE_DEVICE(zqnc, zqrsflux, pr_rain, pr_ice, pr_snow, pr_grpl, pr_eflx)
+#endif
+
     CALL graupel_run( nvec= nproma        ,& !< in
          &        ke      = jke           ,& !< in
          &        ivstart = jcs           ,& !< in
          &        ivend   = jce           ,& !< in
          &        kstart  = jks           ,& !< in
          &        dt      = pdtime        ,& !< in   : timestep
+         &        cia     = cia           ,& !< in   : parameter to control ice amount
          &        qnc     = zqnc    (:)   ,& !< in
          &        dz      = dz      (:,:) ,& !< in   : vertical layer thickness
          &        rho     = rho     (:,:) ,& !< in   : density
@@ -190,11 +202,25 @@ CONTAINS
          &        prs_gsp = pr_snow (:)   ,& !<   out: precip rate snow
          &        prg_gsp = pr_grpl (:)   ,& !<   out: precip rate graupel
          &        pre_gsp = pr_eflx (:)   )  !<   out: precip energy flux
+
+#ifndef __NO_RAGNAROK__
+   !$ACC END HOST_DATA
+#endif
+
     !
     IF (ltimer) call timer_stop(timer_grp)
 
     ! Final saturation adjustment
     !
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC LOOP GANG VECTOR COLLAPSE(2)
+    DO jk = jks,jke
+       DO jc = jcs,jce
+          total_ice(jc,jk) = zqg(jc,jk)+zqs(jc,jk)+zqi(jc,jk)
+       END DO
+    END DO
+    !$ACC END PARALLEL
+
     IF (ltimer) call timer_start(timer_sat)
     !
     CALL saturation_adjustment(                  &

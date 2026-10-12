@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,13 +13,13 @@
 ; --------------------------
 ; Skripts are based on NCL MJO Climate Variability Tools
 ; https://www.ncl.ucar.edu/Applications/mjoclivar.shtml
-; 
-; These were developed following the recommendations 
+;
+; These were developed following the recommendations
 ; of US-CLIVAR MJO Working Group
-; 
+;
 ; Adapted for use at DWD by Julia Keller, FE 13, August 2015
 ; Works with NCL 6.3.0
-; 
+;
 ; This script contains the functions, provided in NCL's
 ; ==> diagnostic_cam.ncl
 ; Functions are adapted so that they work with various data
@@ -39,9 +39,9 @@
 ;-------------------------------------------------------------
 undef("decompose2SymAsym")
 function decompose2SymAsym( z, iret[1] )
-; supports: z(lat,lon), z(time,lat,lon), z(time,lev,lat,lon) 
+; supports: z(lat,lon), z(time,lat,lon), z(time,lev,lat,lon)
 
-; antisymmetric part is stored in one hemisphere [eg: Northern Hemisphere]  
+; antisymmetric part is stored in one hemisphere [eg: Northern Hemisphere]
 ;          xOut( lat) = (x(lat)-x(-lat))/2
 ; symmetric part is stored in other hemisphere [eg: Southern Hemisphere]
 ;          xOut(-lat) = (x(lat)+x(-lat))/2
@@ -63,7 +63,7 @@ begin
 
     return( xsa )
   end
-  ; ==== 
+  ; ====
 
   dimz  = dimsizes( z )
   rankz = dimsizes( dimz )
@@ -78,7 +78,7 @@ begin
   else
       nlat = dimz(rankz-2)
   end if
-  
+
   N2   = nlat/2
   N    = N2
   if ((nlat%2).eq.1) then
@@ -111,7 +111,7 @@ begin
       klev = dimz(1)
       do nt=0,ntim-1
         do kl=0,klev-1
-           zSymAsym(nt,kl,:,:) = dec2SymAsym( z(nt,kl,:,:), nlat, N2, N ) 
+           zSymAsym(nt,kl,:,:) = dec2SymAsym( z(nt,kl,:,:), nlat, N2, N )
         end do
       end do
   end if
@@ -121,8 +121,8 @@ begin
       zSymAsym@units = z@units
   end if
   copy_VarCoords( z, zSymAsym)
-  
-  if (iret.eq.0) 
+
+  if (iret.eq.0)
       return( zSymAsym )                      ; original order
   else
       dNam = getvardims( zSymAsym )
@@ -131,7 +131,7 @@ begin
       end if
       if (rankz.eq.4) then
                                       ; return (lev,lat,lon,time)
-          return( zSymAsym($dNam(1)$|:,$dNam(2)$|:,$dNam(3)$|:,$dNam(0)$|:)) 
+          return( zSymAsym($dNam(1)$|:,$dNam(2)$|:,$dNam(3)$|:,$dNam(0)$|:))
       end if
   end if
 end
@@ -156,12 +156,12 @@ begin
   dNam = getvardims( z )                        ; input dimension names
   zt   = z($dNam(1)$|:,$dNam(2)$|:,$dNam(0)$|:) ; reorder: time fastest varying
 
-  cf   = ezfftf( zt )                           
+  cf   = ezfftf( zt )
   cf!0 = "cmplx"                                ; dimension clarity
   cf!1 = "lat"
   cf!2 = "lon"
   cf!3 = "freq"
- 
+
   cf&cmplx = (/ 0,1 /)
   cf&lat   = z&$dNam(1)$
   cf&lon   = z&$dNam(2)$
@@ -179,7 +179,7 @@ begin
       xbar    = 0.0                             ; set all means = 0.0
       cf@xbar = xbar                            ; reassign new values
   end if
-                                                ; reconstruct 
+                                                ; reconstruct
   zt = (/ ezfftb(cf,cf@xbar) /)                 ; (/ ... /) avoid meta warning msg
 
   if (iret.eq.0) then                           ; return in original order
@@ -190,10 +190,10 @@ begin
 end
 
 ;-------------------------------------------------------------
-; Special reordering to resolve the Progressive and Retrogressive waves 
-; Reference: Hayashi, Y. 
-;    A Generalized Method of Resolving Disturbances into 
-;    Progressive and Retrogressive Waves by Space and  
+; Special reordering to resolve the Progressive and Retrogressive waves
+; Reference: Hayashi, Y.
+;    A Generalized Method of Resolving Disturbances into
+;    Progressive and Retrogressive Waves by Space and
 ;    Fourier and TimeCross Spectral Analysis
 ;    J. Meteor. Soc. Japan, 1971, 49: 125-128.
 ;-------------------------------------------------------------
@@ -211,24 +211,24 @@ function resolveWavesHayashi ( varfft[*][*][*], nDayWin[1], spd[1] )  ; (2,mlon,
 ; Information about time mean will be for pt=NT/2  .
 ; Information about the Nyquist Frequency is at pt=0 and pt=NT
 ;
-; In PEE, define the 
+; In PEE, define the
 ; WESTWARD waves to be either +ve frequency
 ;          and -ve wavenumber or -ve freq and +ve wavenumber.
-; EASTWARD waves are either +ve freq and +ve wavenumber 
+; EASTWARD waves are either +ve freq and +ve wavenumber
 ;          OR -ve freq and -ve wavenumber.
 
 ; Note that frequencies are returned from fftpack are ordered like so
 ;    input_time_pos [ 0    1   2    3     4      5    6   7  ]
-;    ouput_fft_coef [mean 1/7 2/7  3/7 nyquist -3/7 -2/7 -1/7]  
+;    ouput_fft_coef [mean 1/7 2/7  3/7 nyquist -3/7 -2/7 -1/7]
 ;                    mean,pos freq to nyq,neg freq hi to lo
 ;
 ; Rearrange the coef array to give you power array of freq and wave number east/west
-; Note east/west wave number *NOT* eq to fft wavenumber see Hayashi '71 
+; Note east/west wave number *NOT* eq to fft wavenumber see Hayashi '71
 ; Hence, NCL's 'cfftf_frq_reorder' can *not* be used.
 ;
 ; For ffts that return the coefficients as described above, here is the algorithm
 ; coeff array varfft(2,n,t)   dimensioned (2,0:numlon-1,0:numtim-1)
-; new space/time pee(2,pn,pt) dimensioned (2,0:numlon  ,0:numtim  ) 
+; new space/time pee(2,pn,pt) dimensioned (2,0:numlon  ,0:numtim  )
 ;
 ; NOTE: one larger in both freq/space dims
 ; the initial index of 2 is for the real (indx 0) and imag (indx 1) parts of the array
@@ -259,9 +259,9 @@ begin
   varspacetime(:,:mlon/2-1,N/2:)   = varfft(:,mlon/2:1,:N/2)
   varspacetime(:, mlon/2: ,:N/2)   = varfft(:,:mlon/2,N/2:0)
   varspacetime(:, mlon/2: ,N/2+1:) = varfft(:,:mlon/2,N-1:N/2)
- 
+
 ;  Create the real power spectrum pee = sqrt(real^2+imag^2)^2
- 
+
   pee       = new((/mlon+1,N+1/),typeof(varfft),1e20)
   pee       = (sqrt(varspacetime(0,:,:)^2+varspacetime(1,:,:)^2))^2
 
@@ -269,7 +269,7 @@ begin
   pee!0     = "wave"
   pee!1     = "freq"
             ; JET fortran code 'wavep1'
-  wave      = ispan(-mlon/2,mlon/2,1)  
+  wave      = ispan(-mlon/2,mlon/2,1)
   wave!0    = "wave"
   wave&wave =  wave
             ; JET fortran code 'frqfftwin'
@@ -294,7 +294,7 @@ procedure genDispersionCurves( nWaveType[1]:integer      \
                              , Afreq[*][*][*]:numeric    \
                              , Apzwn[*][*][*]:numeric    )
 local pi, re, g, omega, U, Un, ll, Beta, maxwn, ww, ed, wn, he \
-    , T, L, s, k, kn, del, deif, n, i, eif, P, dps, R, Rdeg, fillval 
+    , T, L, s, k, kn, del, deif, n, i, eif, P, dps, R, Rdeg, fillval
 begin
     pi    = 4.0*atan(1.0)
     re    = 6.37122e06     ; [m]   average radius of earth
@@ -306,22 +306,22 @@ begin
     Beta  = 2.*omega*cos(abs(rlat))/re
     maxwn = nPlanetaryWave
     fillval = 1e20
-    
-    do ww = 1, nWaveType      ; wave type 
-    
+
+    do ww = 1, nWaveType      ; wave type
+
       do ed = 1, nEquivDepth  ; equivalent depth
         he = Ahe(ed-1)
         T = 1./sqrt(Beta)*(g*he)^(0.25)
         L = (g*he)^(0.25)/sqrt(Beta)
-    
+
         do wn = 1, nPlanetaryWave     ; planetary wave number
-    
+
           s  = -20.*(wn-1)*2./(nPlanetaryWave-1) + 20.
           k  = 2.*pi*s/ll
           kn = k*L
-    
+
           ; Anti-symmetric curves
-    
+
           if (ww.eq.1) then              ; MRG wave
             if (k.lt.0.) then
               del  = sqrt(1.+(4.*Beta)/(k^2*sqrt(g*he)))
@@ -355,8 +355,8 @@ begin
              deif = sqrt((2.*n+1.)*del + (g*he)*k^2 + g*he*Beta*k/deif)
             end do
           end if
-    
-    
+
+
           ; symmetric curves
           if (ww.eq.4) then              ; n=1 ER wave
             n=1.
@@ -379,13 +379,13 @@ begin
               deif = sqrt((2.*n+1.)*del + (g*he)*k^2 + g*he*Beta*k/deif)
             end do
           end if
-        
+
           eif  = deif  ; + k*U since  U=0.0
           P    = 2.*pi/(eif*24.*60.*60.)
           dps  = deif/k
           R    = L
           Rdeg = (180.*R)/(pi*6.37e6)
-    
+
           Apzwn(ww-1,ed-1,wn-1) = s
           if (deif.ne.fillval) then
             P = 2.*pi/(eif*24.*60.*60.)
@@ -398,7 +398,7 @@ begin
     end do
 end
 ;-------------------------------------------------------------
-; Graphics Utility: Add temporal info the freq[y]- wave[x] contour 
+; Graphics Utility: Add temporal info the freq[y]- wave[x] contour
 ;                   freq is cpd [cycles per day]
 ;-------------------------------------------------------------
 undef("addHorVertLines")
@@ -426,11 +426,11 @@ begin
     gsn_text(wks, plot, "30 days",-14.7,.045,txres)
 end
 
-;----------------------------------------------------------- 
+;-----------------------------------------------------------
 ; Utility: Unix does not allow spaces in file names
 ;          When 5.0.1 becomes available, delete this and
 ;          use replaceSingleChar in contributed.ncl
-;----------------------------------------------------------- 
+;-----------------------------------------------------------
 undef("replaceChars")
 procedure replaceChars (s[1]:string, oldStr[1]:string, newStr[1]:string )
 local cOld, cNew, c, i
@@ -446,20 +446,20 @@ begin
   end if
 end
 
-;----------------------------------------------------------- 
-; Graphics Utility: This info may be of use if users want 
+;-----------------------------------------------------------
+; Graphics Utility: This info may be of use if users want
 ;                   to set there own plot limits
 ; Activated if opt=True and (opt@debug=True or opt@Fig_3_statInfo=True)
-;----------------------------------------------------------- 
+;-----------------------------------------------------------
 undef("statAsymSym")
 procedure statAsymSym (x[*][*]:numeric, name[1]:string )
 local statx, work, nwork
 begin
-   statx    = new ( 7, typeof(x), 1e20) 
+   statx    = new ( 7, typeof(x), 1e20)
    statx(0) = avg(x)                ; mean
    statx(1) = stddev(x)             ; std. deviation
-   work     = ndtooned(x) 
-   nwork    = dimsizes(work)  
+   work     = ndtooned(x)
+   nwork    = dimsizes(work)
    qsort( work )                    ; sort into ascending order
    statx(2) = min ( work )
    statx(3) = work( nwork/4  )      ; lower quartile
@@ -469,16 +469,16 @@ begin
 
    print(" ")
    print("   ===> Statistics: "+name+" <===")
-   print("        Mean="+statx(0)  ) 
-   print("      StdDev="+statx(1)  ) 
-   print("         Min="+statx(2)  ) 
-   print(" lowQuartile="+statx(3)  ) 
-   print("      Median="+statx(4)  ) 
-   print("highQuartile="+statx(5)  ) 
-   print("         Max="+statx(6)  ) 
+   print("        Mean="+statx(0)  )
+   print("      StdDev="+statx(1)  )
+   print("         Min="+statx(2)  )
+   print(" lowQuartile="+statx(3)  )
+   print("      Median="+statx(4)  )
+   print("highQuartile="+statx(5)  )
+   print("         Max="+statx(6)  )
    print(" ")
 end
-   
+
 ;###################################################################
 ;###################################################################
 ;==================================================================
@@ -488,18 +488,18 @@ end
 ;###################################################################
 
 ;-------------------------------------------------------------
-; Note_1: The full logitudinal domain is used. 
+; Note_1: The full logitudinal domain is used.
 ;         This means that every planetary
 ;         wavenumber will be represented.
 ; Note_2: Tapering in time is done to make the variable periodic.
-;         
+;
 ; The calculations are also only made for the latitudes
-; between '-latBound' and 'latBound'. 
+; between '-latBound' and 'latBound'.
 ;
 ;********************   REFERENCES  *******************************
-; Wheeler, M., G.N. Kiladis 
-;    Convectively Coupled Equatorial Waves: 
-;    Analysis of Clouds and Temperature in the 
+; Wheeler, M., G.N. Kiladis
+;    Convectively Coupled Equatorial Waves:
+;    Analysis of Clouds and Temperature in the
 ;    Wavenumber-Frequency Domain
 ;    J. Atmos. Sci., 1999,  56: 374-399.
 ;---
@@ -581,7 +581,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 ;-------------------------------------------------------------------
 
 ;  if ((ntim%spd).ne.0) then
-;      nExtra = ntim%spd          
+;      nExtra = ntim%spd
 ;      print("nExtra="+nExtra+" input array must have complete days only ")
 ;      exit
 ;  end if
@@ -597,8 +597,8 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 
   fCrit   = 1./nDayWin  ; remove all contributions 'longer'
 
-  tim_taper  = 0.1   ; time taper      [0.1   => 10%]  
-  lon_taper  = 0.0   ; longitude taper [0.0 for globe; only global supported]  
+  tim_taper  = 0.1   ; time taper      [0.1   => 10%]
+  lon_taper  = 0.0   ; longitude taper [0.0 for globe; only global supported]
 
 ;-------------------------------------------------------------------
 ; Check for not allowed actions
@@ -619,7 +619,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
       end if
   end if
 
-  pltTit   = caseName + varName     
+  pltTit   = caseName + varName
   pltTitle = pltTit+" LOG[Power: "+latBound+"S-"+latBound+"N]"
   if (opt .and. isatt(opt, "pltTitle") ) then
       pltTitle = opt@pltTitle
@@ -638,8 +638,8 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 ; Create required temporal sampling variables
 ;-------------------------------------------------------------------
 
-  nDayTot   = ntim/spd         ; # of days (total) for input variable 
-  nSampTot  = nDayTot*spd      ; # of samples (total)      
+  nDayTot   = ntim/spd         ; # of days (total) for input variable
+  nSampTot  = nDayTot*spd      ; # of samples (total)
   nSampWin  = nDayWin*spd      ; # of samples per temporal window
   nSampSkip = nDaySkip*spd     ; # of samples to skip between window segments
                                ;   neg means overlap
@@ -648,7 +648,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
   print(nSampWin)
   print(nSampSkip)
   nWindow   = (nSampTot-nSampWin)/(nSampWin+nSampSkip)  + 1
-  N         =  nSampWin        ; convenience [historical]         
+  N         =  nSampWin        ; convenience [historical]
 
   if (nDayTot.lt.nDayWin) then
       print("nDayTot="+nDayTot+" is less the nDayWin="+nDayWin)
@@ -667,7 +667,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 
   dNam = getvardims( x )
 ;;work = x($dNam(1)$|:,$dNam(2)$|:,$dNam(0)$|:)    ; reorder  (lat,lon,time)
-;;work = dtrend( work , False )   ; remove mean + overall long term temporal trend 
+;;work = dtrend( work , False )   ; remove mean + overall long term temporal trend
 ;;work = dtrend_msg(ispan(0,ntim-1,1)*1.0, work, False, False)  ; remove just  trend
 ;;if (isatt(work,"_FillValue")) then
 ;;    delete(work@_FillValue)                  ; dtrend_msg adds this att
@@ -700,7 +700,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 ;-------------------------------------------------------------------
 ; Because there is the possibility of overlapping *temporal* segments,
 ; we must use a less efficient approach and detrend/taper
-; each window segment as it arises. 
+; each window segment as it arises.
 ;          t0   t1   t2   t3   t4  .................. t(N)
 ; lon(0):  x00  x01  x02  x03  x04 .................. x0(N)
 ;     :    :   :   :   :   :                     :
@@ -711,21 +711,21 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 ;         This is one instance [realization] of space-time decomposition.
 ;
 ; peeAS - symmetric and asymmetric power values in each latitude hemisphere.
-;         Add extra lon/time to match JET 
+;         Add extra lon/time to match JET
 ;-------------------------------------------------------------------
   q      = new((/2,mlon,nSampWin/)       ,typeof(xAS), "No_FillValue")
   peeAS  = new((/nlat,mlon+1,nSampWin+1/),typeof(xAS), "No_FillValue")
-  peeAS  = 0.0                       ; initialize 
+  peeAS  = 0.0                       ; initialize
 
 ;-------------------------------------------------------------------
 ; Operate on the xAS array
 ; NCL does not have a complex 2D FFT at this time.
 ; Perform a "poorman's" complex 2D FFT by looping over time and space.
-; Loop over all latitudes and then perform summing/averaging 
+; Loop over all latitudes and then perform summing/averaging
 ; on the spectral results.
 ;-------------------------------------------------------------------
 
-  do nl=0,nlat-1 
+  do nl=0,nlat-1
 
      ntStrt = 0
      ntLast = nSampWin-1
@@ -733,36 +733,36 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
          print("==============> nl="+nl+" <==============")
      end if
 
-    do nw=0,nWindow-1                        ; temporal window          
+    do nw=0,nWindow-1                        ; temporal window
        if (debug .and. nl.eq.0) then         ; debug
            print("nw="+nw+"  ntStrt="+ntStrt+"   ntLast="+ntLast)
        end if
        work = dtrend( xAS(:,:,ntStrt:ntLast), False )    ; detrend temporal window
-       work = taper ( work, tim_taper, 0)    ; taper in "time" [periodic] 
+       work = taper ( work, tim_taper, 0)    ; taper in "time" [periodic]
                                              ; work(nlat,mlon,N)
       do nt=0,nSampWin-1                     ; for each time perform complex fft in longitude
-         q(:,:,nt) = cfftf( work(nl,:,nt), 0.0, 0)   ; space 
-      end do                                  
+         q(:,:,nt) = cfftf( work(nl,:,nt), 0.0, 0)   ; space
+      end do
        q = q/mlon                                    ; normalize by # lon samples
 
-      do ml=0,mlon-1                         ; for each lon perform complex fft in time 
-         q(:,ml,:) = cfftf( q(0,ml,:), q(1,ml,:), 0) ; time 
+      do ml=0,mlon-1                         ; for each lon perform complex fft in time
+         q(:,ml,:) = cfftf( q(0,ml,:), q(1,ml,:), 0) ; time
       end do
        q = q/nSampWin                                ; normalize by # time samples
 
 ;-------------------------------------------------------------------
-; At this point 'q(2,mlon,nSampWin)' contains the 
+; At this point 'q(2,mlon,nSampWin)' contains the
 ; real and imaginary space-time spectrum for this latitude
 ; ---
 ; Use Hayashi method to resolve into Progressive [Eastward]
 ;     and Retrogressive [Westward] Waves.
 ;-------------------------------------------------------------------
 
-       pee = resolveWavesHayashi( q, nDayWin, spd )        
-       peeAS(nl,:,:) = peeAS(nl,:,:) + (pee/nWindow)   ; sum window contribution 
-           
+       pee = resolveWavesHayashi( q, nDayWin, spd )
+       peeAS(nl,:,:) = peeAS(nl,:,:) + (pee/nWindow)   ; sum window contribution
+
        ntStrt = ntLast+nSampSkip+1           ; set index for next temporal window
-       ntLast = ntStrt+nSampWin-1    
+       ntLast = ntStrt+nSampWin-1
     end do                                   ; nw (windows)
 
   end do                                     ; nl (lat)
@@ -777,11 +777,11 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
   peeAS!2     = "freq"
   peeAS&lat   = xAS&$dNam(1)$     ; nominally, xAS&lat
   peeAS&wave  = pee&wave
-  peeAS&freq  = pee&freq      
+  peeAS&freq  = pee&freq
   peeAS@long_name =  "symmetric and asymmetric components"
 
   if (debug) then
-      printVarSummary( peeAS )                 
+      printVarSummary( peeAS )
       printMinMax( peeAS , True)
   end if
 
@@ -820,19 +820,19 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
     ;;psumanti = dim_sum_Wrap(peeAS(wave|:,freq|:,lat|nlat/2+1:nlat-1))
     ;;psumsym  = dim_sum_Wrap(peeAS(wave|:,freq|:,lat|0:nlat/2)     )
   end if
-    
+
 ;-------------------------------------------------------------------
 ; since summing over half the array (symmetric,asymmetric) the
 ; total variance is 2x the half sum
 ;-------------------------------------------------------------------
   psumanti = 2.0*psumanti
-  psumsym  = 2.0*psumsym 
+  psumsym  = 2.0*psumsym
 
 ;-------------------------------------------------------------------
 ; set the mean to missing to match original code
 ;-------------------------------------------------------------------
 ;
-  psumanti(:,{0.0}) = (/ psumanti@_FillValue /)  
+  psumanti(:,{0.0}) = (/ psumanti@_FillValue /)
   psumsym (:,{0.0}) = (/ psumsym@_FillValue /)
 
   if (debug) then
@@ -843,20 +843,20 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 ;-------------------------------------------------------------------
 ; Apply smoothing to the spectrum. smooth over limited wave numbers
 ; Smoothing in frequency only (check if mean should be smoothed not smoothing now)
-;--                                                                 
+;--
 ; Smoothing parameters set these larger than the plotting
 ; wavenumbers to avoid smoothing artifacts
 ;-------------------------------------------------------------------
   minwav4smth = -27
   maxwav4smth =  27
-    
+
   do wv=minwav4smth,maxwav4smth
      wk_smooth121( psumanti({wv},N/2+1:N-1) )
      wk_smooth121( psumsym ({wv},N/2+1:N-1) )
   end do
 
 ;-------------------------------------------------------------------
-; Log10 scaling 
+; Log10 scaling
 ;-------------------------------------------------------------------
 
   psumanti_nolog = psumanti
@@ -869,19 +869,19 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
   psumsym@long_name  = "log10(Symmetric)"
 
   if (debug) then
-      printVarSummary( psumanti )             ; (wave,freq)                 
+      printVarSummary( psumanti )             ; (wave,freq)
       printMinMax( psumanti , True)
-      printVarSummary( psumsym )                 
+      printVarSummary( psumsym )
       printMinMax( psumsym , True)
   end if
 
 ;-------------------------------------------------------------
-;        PLOT CODE follows 
+;        PLOT CODE follows
 ; --- set some 'plot variables
 ; set frequency maximum for plotting
 ; min(user specified frq, maxfrq in window)
 ;-------------------------------------------------------------
-; The following allow DJS variable naming 
+; The following allow DJS variable naming
 ; to be used with original plot code.
 ;-------------------------------------------------------------
  ;caseName       = case
@@ -899,7 +899,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
       printVarSummary( wavep1 )
       printMinMax( wavep1, True )
   end if
- 
+
 ;-------------------------------------------------------------------
 ; plotting parameters freq and wavenumbers to plot
 ;-------------------------------------------------------------------
@@ -907,12 +907,12 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
   maxfrq4plt =  0.8
   minwav4plt = -15
   maxwav4plt =  15
-    
+
   minfrq     = minfrq4plt
   maxfrq     = min((/maxfrq4plt,max(frqfftwin)/))
 
   fillVal    = 1e20           ; miscellaneous
-    
+
 ;-------------------------------------------------------------
 ;             Start Common Graphics Resources
 ;-------------------------------------------------------------
@@ -935,7 +935,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 
    res@cnFillOn          = True
    if (opt .and. isatt(opt, "cnLinesOn") \
-           .and. .not.opt@cnLinesOn) then   
+           .and. .not.opt@cnLinesOn) then
        res@cnLinesOn     = False
    else
        res@cnLineThicknessF  = 0.5
@@ -954,7 +954,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 
    res@tiYAxisString     = "Frequency (cpd)"
    res@tiYAxisFontHeightF= res@tiXAxisFontHeightF
- 
+
    if (.not.(pltTitle.eq."" .or. pltTitle.eq." ")) then
        res@tiMainString      = pltTitle
        res@tiMainFontHeightF = tiFontHgtF
@@ -963,7 +963,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 
 ;------------------------------------------------------
 ; Create a list of variable names that have predefined
-; contour intervals. 
+; contour intervals.
 ;------------------------------------------------------
    varCnLevels = (/"FLUT" ,"OLR", "olr","U200","U850"   \
                   ,"PRECT","OMEGA500" /)
@@ -973,7 +973,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
    else
        res@cnLevelSelectionMode = "AutomaticLevels"
    end if
-   
+
 ;-------------------------------
 ; horizontal dashed lines and text for frequency axis [plot only]
 ;-------------------------------
@@ -982,7 +982,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
    wavenumber = wavep1({wave|minwav4plt:maxwav4plt})
    NWVN       = dimsizes(wavenumber)         ; number of wavenumbers
 
-   x1   = wavenumber 
+   x1   = wavenumber
    x1!0 = "wave"
    y1   = new (NWVN,float)
    y1!0 = "freq"
@@ -990,13 +990,13 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
    y2   = y1
    y2   = 1./6.           ; 6 days
    y3   = y1
-   y3   = 1./30.          ; 30 days 
+   y3   = 1./30.          ; 30 days
    x2   = new(25,float)
    x2   = 0.0
    y4   = fspan(0.0,1.0,25)
 
 ;---------------------------------------------------------------
-; dispersion: curves 
+; dispersion: curves
 ;---------------------------------------------------------------
 
    rlat           = 0.0
@@ -1020,14 +1020,14 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
    txres@txPerimOn     = True
    txres@txFontHeightF = 0.013
    txres@txBackgroundFillColor = "Background"
-       
+
 ;-------------------------------------------------------------
 ; plotting params for fig 1; subset for plot
 ;-------------------------------------------------------------
                                               ; reorder so freq is "y"
    asym       = psumanti({freq|minfrq:maxfrq},{wave|minwav4plt:maxwav4plt})
    asym!0     = "freq"
-   asym&freq  =  freq 
+   asym&freq  =  freq
    asym!1     = "wave"
    asym&wave  =  wavenumber
    asym@long_name = "Fig_1: log10(Asymmetric)"
@@ -1069,25 +1069,25 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
        res@cnLevelSelectionMode = "ExplicitLevels"
        res@cnLevels = opt@Fig_1                    ; user specified limits
    end if
-  
+
 ;------------------------------------------------------
 ; Fig 1: ANTI-SYMMETRIC
 ;------------------------------------------------------
   ;print("======> Fig 1a: ASYMMETRIC <=====")
-    
+
    wks  = gsn_open_wks(pltType,wkdir+"/"+"Fig1.Asym."+pltFilTit)
    gsn_define_colormap(wks,pltColorMap)
    res@gsnCenterString = "Anti-Symmetric"
    plot = gsn_csm_contour(wks,asym,res)
    addHorVertLines(wks, plot, x1,x2,y1,y2,y3,y4 ) ; add dashed lines
    frame(wks)
-   delete(wks)    ; not required 
-    
+   delete(wks)    ; not required
+
 ;------------------------------------------------------
 ; Fig 1: SYMMETRIC
 ;------------------------------------------------------
   ;print("======> Fig 1b: SYMMETRIC <=====")
-    
+
    wks  = gsn_open_wks(pltType,wkdir+"/"+"Fig1.Sym."+pltFilTit)
    gsn_define_colormap(wks,pltColorMap)
    res@gsnCenterString = "Symmetric"
@@ -1103,7 +1103,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
        if (isatt(opt,"dirNetCDF")) then
            dirNetCDF = opt@dirNetCDF
        else
-           dirNetCDF = "./" 
+           dirNetCDF = "./"
        end if
        if (isatt(opt,"filNetCDF")) then
            filNetCDF = opt@filNetCDF
@@ -1112,34 +1112,34 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
        end if
        fNam      = dirNetCDF+filNetCDF
        system ("/bin/rm -f "+fNam)
-        
+
        ncdf      = addfile(fNam, "c")
 
        ncdf->FIG_1_SYM  =  sym
        ncdf->FIG_1_ASYM = asym
    end if
-    
+
 ;-----------------------------------------------------------------------------
 ; ******  now derive and plot the background spectrum (red noise) ************
-; [1] Sum power over all latitude 
+; [1] Sum power over all latitude
 ; [2] Put fill value in mean
 ; [3] Apply smoothing to the spectrum. This smoothing DOES include wavenumber zero.
 ;-----------------------------------------------------------------------------
   ;print("======> BACKGROUND <=====")
-    
+
    psumb = dim_sum_n_Wrap(peeAS, 0)                  ; sum over all latitudes
  ;;psumb = dim_sum_Wrap(peeAS(wave|:,freq|:,lat|:))  ; sum over all latitudes
    psumb@long_name = "Background Spectrum"
-    
-   psumb@_FillValue       = fillVal    
+
+   psumb@_FillValue       = fillVal
    psumb(wave|:,freq|N/2) = fillVal
    psumb@_FillValue       = fillVal
 
    if (debug) then
-       printVarSummary(psumb)             ; (wave,freq)      
+       printVarSummary(psumb)             ; (wave,freq)
        printMinMax(psumb, True)
    end if
-    
+
    do tt = N/2+1,N
       smthlen = maxwav4smth-minwav4smth+1
       if (frqfftwin(tt).lt.0.1) then
@@ -1164,21 +1164,21 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
         end do
       end if
    end do
-       
+
    do nw = minwav4smth,maxwav4smth ; smth frequency up to .8 cycles per day
       pt8cpd  = min((/closest_val(.8,frqfftwin),dimsizes(frqfftwin)-1/))
       smthlen = pt8cpd-(N/2+1)+1
      do i = 1,10
         wk_smooth121( psumb({nw},N/2+1:pt8cpd) )
      end do
-   end do    
+   end do
 
 ;----------------------------------------------------------------
 ; [1] Put fill value in mean (again)
 ; [2] SAVE the background spectrum for plotting Fig 3
-; [3] LOGARITHMIC SCALING for plotting the background spectrum 
+; [3] LOGARITHMIC SCALING for plotting the background spectrum
 ;----------------------------------------------------------------
-    
+
    psumb(wave|:,freq|N/2) = fillVal
    psumb_nolog = psumb
    psumb       = log10(psumb)            ; LOG10
@@ -1191,11 +1191,11 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
        printVarSummary(psumb)
        printMinMax(psumb, True)
    end if
-    
+
 ;----------------------------------------------------------------
 ; set up for plotting  [ subset of frequencies: not necessary]
 ;----------------------------------------------------------------
-    
+
    freq      = frqfftwin({freq|minfrq:maxfrq})
    spec      = psumb({freq|minfrq:maxfrq},{wave|minwav4plt:maxwav4plt})
 
@@ -1203,7 +1203,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
        printVarSummary(spec)                 ; (freq,wave)
        printMinMax(spec, True)
    end if
-    
+
 ;----------------------------------------------------------------
 ; Fig 2: Predefined explicit contour levels BACKGROUND spectrum  [LOG10]
 ;----------------------------------------------------------------
@@ -1211,7 +1211,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
    if (isatt(res,"cnLevels")) then
        delete(res@cnLevels)       ; allow size to change
    end if
-   
+
    if (varName .eq. "FLUT" .or. varName .eq. "OLR" .or. varName .eq. "olr") then
        res@cnLevels = (/-1.2,-1.1,-1.0,-0.8,-0.6,-0.4,-0.2 \     ; unequal 15
                        , 0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.1,1.2/)
@@ -1232,9 +1232,9 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 
    if (opt .and. isatt(opt, "Fig_2")) then
        res@cnLevelSelectionMode = "ExplicitLevels"
-       res@cnLevels = opt@Fig_2                   ; user specified 
+       res@cnLevels = opt@Fig_2                   ; user specified
    end if
-   
+
    wks  = gsn_open_wks(pltType,wkdir+"/Fig2."+pltFilTit)
    gsn_define_colormap(wks,pltColorMap)
 
@@ -1242,11 +1242,11 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
    plot = gsn_csm_contour(wks,spec,res)
    addHorVertLines(wks, plot, x1,x2,y1,y2,y3,y4 ) ; add dashed lines
    frame(wks)
-    
+
 ;-------------------------------------------------------------
 ; Fig 3a, 3b:  psum_nolog/psumb_nolog  [ratio]
 ;-------------------------------------------------------------
-    
+
    psumsym_nolog  = psumsym_nolog /psumb_nolog   ; (wave,freq)
    psumanti_nolog = psumanti_nolog/psumb_nolog
 
@@ -1257,9 +1257,9 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
        printMinMax(psumsym_nolog, True)
    end if
 
-;----------------------------------------------------------- 
+;-----------------------------------------------------------
 ; ANTI-SYMMETRIC: RATIO ( subset to plot )
-;----------------------------------------------------------- 
+;-----------------------------------------------------------
 
    asym = psumanti_nolog({freq|minfrq:maxfrq},{wave|minwav4plt:maxwav4plt})
    sym  = psumsym_nolog({freq|minfrq:maxfrq},{wave|minwav4plt:maxwav4plt})
@@ -1295,9 +1295,9 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 
    if (opt .and. isatt(opt, "Fig_3a")) then
        res@cnLevelSelectionMode = "ExplicitLevels"
-       res@cnLevels = opt@Fig_3a                  ; user specified 
+       res@cnLevels = opt@Fig_3a                  ; user specified
    end if
-   
+
    wks  = gsn_open_wks(pltType,wkdir+"/Fig3.Asym."+pltFilTit)
    gsn_define_colormap(wks,pltColorMap)
    res@gsnCenterString = "Anti-Symmetric/Background"
@@ -1353,7 +1353,7 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 
    if (opt .and. isatt(opt, "Fig_3b")) then
        res@cnLevelSelectionMode = "ExplicitLevels"
-       res@cnLevels = opt@Fig_3b                  ; user specified 
+       res@cnLevels = opt@Fig_3b                  ; user specified
    end if
 
    wks  = gsn_open_wks(pltType, wkdir+"/Fig3.Sym."+pltFilTit)
@@ -1401,10 +1401,10 @@ local latN, latS, lonL, lonR, spd, fCrit, tim_taper        \
 end
 
 ;-------------------------------------------------------------
-; CAM interface to wkSpaceTime 
+; CAM interface to wkSpaceTime
 ;-------------------------------------------------------------
 undef("wkSpaceTime_cam")
-procedure wkSpaceTime_cam                    \  
+procedure wkSpaceTime_cam                    \
                      ( diri[1]:string        \ ; input directory
                      , fili[*]:string        \ ; input file
                      , diro[1]:string        \ ; output directory [plots]
@@ -1414,7 +1414,7 @@ procedure wkSpaceTime_cam                    \
                      , spd[1]:numeric        \ ; samples per day
                      , level[1]:numeric      \ ; if 4D ... what level?
                      , nDayWin[1]:integer    \ ; temporal window length [days]
-                     , nDaySkip[1]:integer   \ ; days between time windows 
+                     , nDaySkip[1]:integer   \ ; days between time windows
                      , opt[1]:logical        \ ; future options
                      )
 ;
@@ -1422,7 +1422,7 @@ procedure wkSpaceTime_cam                    \
 local latN, latS, lonL, lonR, SPD, tskip, debug, fillVal     \
           , nfil, f, rank, nMsg, x, dNam, flist, dNamx       \
           , TIME, pltId
-begin 
+begin
   latN    = latBound
   latS    =-latBound ; make symmetric about the equator
 
@@ -1435,15 +1435,15 @@ begin
       debug = opt@debug
   end if
 
-  SPD   = spd        ; SPD *actual* "samples per day" 
-                     ; *after* possible 'decimation' 
+  SPD   = spd        ; SPD *actual* "samples per day"
+                     ; *after* possible 'decimation'
   tskip = 1          ; used to skip samples on input
   if (opt .and. isatt(opt, "spdSkip") .and. opt@spdSkip.gt.1 ) then
       SPD     = spd/opt@spdSkip
       tskip   = max( (/1,SPD/) )      ; decimate
   end if
 
-  fillVal    = 1e20           ; miscellaneous          
+  fillVal    = 1e20           ; miscellaneous
 
 ;-------------------------------------------------------------------
 ; Read data from file(s): maintain meta data and original dim names
@@ -1457,7 +1457,7 @@ begin
       exit
   end if
 
-  if (nfil.eq.1) then                    ; SINGLE FILE    
+  if (nfil.eq.1) then                    ; SINGLE FILE
       if (rank.eq.3) then
           x  = f->$varName$(::tskip,{latS:latN},{lonL:lonR})
       else
@@ -1471,7 +1471,7 @@ begin
       flist  = addfiles( diri+fili, "r")
                                              ; make TIME  [tedious]
       TIME           = flist[:]->$dNam(0)$   ; values
-      if (isfilevaratt(flist[0],  dNam(0) ,  "units") ) then  
+      if (isfilevaratt(flist[0],  dNam(0) ,  "units") ) then
           TIME@units = flist[0]->$dNam(0)$@units   ; assign units attribute
       end if
       if (isfilevarcoord( flist[0], dNam(0), dNam(0) ) ) then
@@ -1491,7 +1491,7 @@ begin
           x!2 = dNam(3)
       end if
                              ; NOT required but create meta data
-      dNamx  = getvardims(x)            
+      dNamx  = getvardims(x)
 
       x&$dNamx(0)$ = TIME      ; assign coordinates
       x&$dNamx(1)$ = flist[0]->$dNamx(1)$({latS:latN})
@@ -1499,20 +1499,20 @@ begin
       if (isfilevaratt( flist[0], varName, "long_name")) then
           x@long_name = flist[0]->$varName$@long_name
       end if
-      if (isfilevaratt( flist[0], varName, "units"    )) then  
+      if (isfilevaratt( flist[0], varName, "units"    )) then
           x@units = flist[0]->$varName$@units
-      end if     
+      end if
   end if
 ;-------------------------------------------------------------------
 ; Call the procedure that will do the calculations and plots.
 ;-------------------------------------------------------------------
   wkSpaceTime (x, diro, caseName, varName             \
-              ,latBound, SPD, nDayWin, nDaySkip, opt  )  
+              ,latBound, SPD, nDayWin, nDaySkip, opt  )
 end
-;------------------------------------------------------- 
+;-------------------------------------------------------
 ; L2 error norms
-;------------------------------------------------------- 
- undef("l2_norma")        
+;-------------------------------------------------------
+ undef("l2_norma")
  function l2_norma( x[*][*][*][*]:numeric, wy[*], wz )
  local dimx, dimwz, rankwz, ntim, l2a, nt, xzon, xzonc \
      , dif2, wyc, wywz, wywzs
@@ -1520,18 +1520,18 @@ end
    dimx   = dimsizes( x )
    dimwz  = dimsizes( wz )
    rankwz = dimsizes( dimwz )
-   
+
    ntim   = dimx(0)
    l2a    = new ( ntim, typeof(x), getFillValue(x) )
                                                        ; constant all times
    wyc    =  conform(x(0,:,:,:), wy, 1)                ; (klev,nlat,mlon)
- 
+
    if (rankwz.eq.1) then                               ; constant weight
        wywz  = wyc*conform( x(0,:,:,:), wz, 0 )        ; (klev,nlat,mlon)
        wywzs = sum(wywz)                               ; scalar
        delete( wyc )
    end if
- 
+
    do nt=0,ntim-1
       xzon    = dim_avg( x(nt,:,:,:) )                 ; (klev,nlat)
       xzonc   = conform( x(nt,:,:,:), xzon, (/0,1/))   ; (klev,nlat,mlon)
@@ -1543,18 +1543,18 @@ end
           l2a(nt) = sqrt( sum(dif2*wywz)/sum(wywz)  )  ; (nt)
       end if
    end do
- 
-   l2a@long_name = "l2" 
+
+   l2a@long_name = "l2"
    if (isatt(x, "units")) then
       l2a@units = x@units
    end if
-   
-   return( l2a ) 
+
+   return( l2a )
  end
-;------------------------------------------------------- 
+;-------------------------------------------------------
 ; L2 error norms
-;------------------------------------------------------- 
- undef("l2_normb")         
+;-------------------------------------------------------
+ undef("l2_normb")
  function l2_normb( x[*][*][*][*]:numeric, wy[*], wz )
  local dimx, dimwz, rankwz, ntim, l2b, nt, xzon0, xzonc \
      , dif2, wyc, wywz, wywz
@@ -1564,18 +1564,18 @@ end
    rankwz  = dimsizes( dimwz )
                                                       ; time=0
    xzon0   = dim_avg( x(0,:,:,:) )                    ; (klev,nlat)
-   xzon0c  = conform( x(0,:,:,:), xzon0, (/0,1/))     ; (klev,nlat,mlon)    
+   xzon0c  = conform( x(0,:,:,:), xzon0, (/0,1/))     ; (klev,nlat,mlon)
    wyc     = conform( x(0,:,:,:), wy, 1)              ; (klev,nlat,mlon)
- 
+
    if (rankwz.eq.1) then
        wywz  = wyc*conform( x(0,:,:,:), wz, 0 )       ; (klev,nlat,mlon)
        wywzs = sum(wywz)                              ; scalar
        delete( wyc )
    end if
-   
+
    ntim = dimx(0)
    l2b  = new ( ntim, typeof(x), getFillValue(x) )
- 
+
    do nt=0,ntim-1
       dif2    = (x(nt,:,:,:)-xzon0c)^2                ; (klev,nlat,mlon)
       if (rankwz.eq.1) then
@@ -1585,18 +1585,18 @@ end
           l2b(nt) = sqrt( sum(dif2*wywz)/sum(wywz) )  ; (nt)
       end if
    end do
- 
-   l2b@long_name = "l2" 
+
+   l2b@long_name = "l2"
    if (isatt(x, "units")) then
       l2b@units = x@units
    end if
    l2b@info = "x(:,:,:,:)-dimavg(x(0,:,:,:))"
-   return( l2b ) 
+   return( l2b )
  end
-;------------------------------------------------------- 
+;-------------------------------------------------------
 ; l2 norm written by Mark Taylor
 ; function  || T || on 2D horizontal array
-;------------------------------------------------------- 
+;-------------------------------------------------------
 undef ("norml2")
 function norml2 (varz[*][*]:numeric,gw[*]:numeric)
 local s2, gs, varl
@@ -1613,14 +1613,14 @@ begin
   return( sqrt( sum(varl)/s2(1) ))
 end
 
-;------------------------------------------------------- 
+;-------------------------------------------------------
 ; Energy
-;------------------------------------------------------- 
+;-------------------------------------------------------
  undef ("energy_a")
  function energy_a(u[*][*][*][*]:numeric,   v[*][*][*][*]:numeric\
                   ,t[*][*][*][*]:numeric,phis[*][*][*]:numeric   \
                   ,wy[*]:numeric, wz:numeric, opt[1]:integer )
-;------------------------------------------------------- 
+;-------------------------------------------------------
 ; energy  = SUM(0.5*(U^2+V^2) + cp*T + S )*wz
 ;-------------------------------------------------------
  local dimu, dimwz, rankwz, ntim, e, nt, x, wyc, wywz, wywzs
@@ -1628,19 +1628,19 @@ end
    dimu   = dimsizes( u )
    dimwz  = dimsizes( wz )
    rankwz = dimsizes( dimwz )
-   
+
    ntim   = dimu(0)
    e      = new ( ntim, typeof(u), getFillValue(u) )
                                                     ; constant all times
    wyc    =  conform(u(0,:,:,:), wy, 1)             ; (klev,nlat,mlon)
- 
+
    if (rankwz.eq.1) then                            ; constant weight
        wywz  = wyc*conform( u(0,:,:,:), wz, 0 )     ; (klev,nlat,mlon)
        wywzs = sum(wywz)                            ; scalar
        delete( wyc )
    end if
 
-   a     = 6.371229e6   ; m            
+   a     = 6.371229e6   ; m
    g     = 9.80616      ; m/s^2
    cp    = 1004.64      ; J/(kg-K)
    twopi = 8.*atan(1.0)
@@ -1659,20 +1659,20 @@ end
    e = (twopi*a*a/g)*e                              ; total energy e(t)
 
    if (opt.eq.0) then
-       e@long_name = "E: eqn 155" 
+       e@long_name = "E: eqn 155"
        e@units     = "J"                            ; ==>'kg m^2 / s^2'.
    else
        e = (e-e(0))/e(0)                            ; normalized
-       e@long_name = "Normalized Energy Difference"     
-       e@units     = "(E-E(0))/E(0)"                   
+       e@long_name = "Normalized Energy Difference"
+       e@units     = "(E-E(0))/E(0)"
    end if
-   return( e ) 
+   return( e )
  end
 ;-------------------------------------------------------------
 undef("mjo_ApplyLanczosWgt_LeftDim")
 function mjo_ApplyLanczosWgt_LeftDim(x:numeric, wgt[*]:numeric, opt[1]:integer)
 ;++++
-; The wgt_runave_n function made this function obsolete. 
+; The wgt_runave_n function made this function obsolete.
 ; It is included for backward compatibility. It replaces *ALL* the
 ; reordering with the wgt_runave_n function.
 ;++++
@@ -1687,7 +1687,7 @@ end
 undef("apply_dtrend_LeftDim")
 function apply_dtrend_LeftDim(x:numeric, wgt[*]:numeric, opt[1]:integer)
 ;++++
-; The dtrend_n function made this function obsolete. 
+; The dtrend_n function made this function obsolete.
 ; It is included for backward compatibility. It replaces *ALL* the
 ; reordering with the wgt_runave_n function.
 ;++++
@@ -1698,9 +1698,9 @@ function apply_dtrend_LeftDim(x:numeric, wgt[*]:numeric, opt[1]:integer)
 local xdtr
 ;;local dimx, rank, dNam, x_dtrend, xWork
 begin
-  xdtr = dtrend_n( x, False, 0)  
+  xdtr = dtrend_n( x, False, 0)
   copy_VarMeta(x, xdtr)
-  return( xdtr ) 
+  return( xdtr )
 
 
 end
@@ -1722,7 +1722,7 @@ function band_pass_area_time \
                  ,bpf[3]:numeric                       \
                  ,wy[*]:numeric, opt:logical)
 local nMsg, dimx, dimwy, ntim, bpfStrt, bpfLast, bpfNwgt     \
-    , dumy, save_FillValue, fca, fcb, ihp, sigma, xts    
+    , dumy, save_FillValue, fca, fcb, ihp, sigma, xts
 begin
                                       ; error check
   nMsg = num( ismissing(x) )
@@ -1735,8 +1735,8 @@ begin
   dimwy   = dimsizes(wy)
   if (dimx(1).ne.dimwy(0)) then
       print("band_pass_area_time: sizes of y/lat dimension do not match")
-      print("                     dimsizes(wy)="+dimwy)              
-      print("                     dimx(1)=nlat="+dimx(1))              
+      print("                     dimsizes(wy)="+dimwy)
+      print("                     dimx(1)=nlat="+dimx(1))
       exit
   end if
 
@@ -1745,7 +1745,7 @@ begin
 
   bpfStrt = bpf(0)                     ; days
   bpfLast = bpf(1)
-  bpfNwgt = bpf(2)                     ; effective # weights 
+  bpfNwgt = bpf(2)                     ; effective # weights
 
   bpfNwgt = (bpfNwgt/2)*2 + 1          ; make sure it is odd
 
@@ -1758,9 +1758,9 @@ begin
   fca  = 1.0/(spd*bpfLast)             ; freq start/end
   fcb  = 1.0/(spd*bpfStrt)             ; bpf{Strt/Last}
 
-  if (isatt(x,"_FillValue")) then 
+  if (isatt(x,"_FillValue")) then
       xts  = new( (/3,ntim/), "double", todouble(getFillValue(x)))
-  else 
+  else
       xts  = new( (/3,ntim/), "double"); use default _FillValue
   end if
   fillvalue=getFillValue(xts)
@@ -1773,7 +1773,7 @@ begin
           delete(xts@_FillValue)           ; avoid annoying warning msg
       end if                               ; from dtrend
 
-      xts(1,:) = dtrend(xts(1,:), False )  ; detrend 
+      xts(1,:) = dtrend(xts(1,:), False )  ; detrend
 
       if (isvar("save_FillValue")) then
           xts@_FillValue = save_FillValue  ; reassign
@@ -1790,7 +1790,7 @@ begin
   else
       Nrun = 101
   end if
-  
+
   len  = floattoint((Nrun*spd)/2)                      ; half total length
   print(len)
   do n = len,ntim-(len+1)
@@ -1802,7 +1802,7 @@ begin
   end do
 
   xts@bpfStrt = bpfStrt
-  xts@bpfLast = bpfLast 
+  xts@bpfLast = bpfLast
   xts@bpfNwgt = bpfNwgt
 
   xts@var_0   = "band pass"
@@ -1813,7 +1813,7 @@ begin
 end
 ;-------------------------------------------------------------
 undef("band_pass_area_time_plot")
-procedure band_pass_area_time_plot(           \ 
+procedure band_pass_area_time_plot(           \
           xts[3][*]:numeric, time[*]:numeric, \
           pltDir[1]:string, pltType[1]:string,\
           pltName[1]:string, opt[1]:logical)
@@ -1823,22 +1823,22 @@ begin
   delete(yrfrac@long_name)
 
   pltPath= pltDir+"/"+pltName
-  
-  wks  = gsn_open_wks(pltType , pltPath)   
-  gsn_merge_colormaps(wks,"amwg_blueyellowred","BlAqGrYeOrReVi200") 
+
+  wks  = gsn_open_wks(pltType , pltPath)
+  gsn_merge_colormaps(wks,"amwg_blueyellowred","BlAqGrYeOrReVi200")
 
  ;gsn_draw_colormap(wks)                      ; draw color map
 
   plot  = new ( 3, "graphic")
- 
+
 ; left variable
-  res                         = True 
+  res                         = True
   res@gsnDraw                 = False
   res@gsnFrame                = False
 
-  res@vpXF                    = 0.15   
-  res@vpYF                    = 0.3     
-  res@vpWidthF                = 0.65   
+  res@vpXF                    = 0.15
+  res@vpYF                    = 0.3
+  res@vpWidthF                = 0.65
   res@vpHeightF               = 0.18
 
   res@tmXBLabelsOn            = False         ; do not draw bottom labels
@@ -1848,9 +1848,9 @@ begin
   res@tiYAxisString           = "Raw areal Avg"
   plot(0) = gsn_csm_xy(wks,yrfrac,xts(1,:),res)
 
-  res@gsnYRefLine             =  0.   
-  res@gsnAboveYRefLineColor   = "Red"   
-  res@gsnBelowYRefLineColor   = "Blue" 
+  res@gsnYRefLine             =  0.
+  res@gsnAboveYRefLineColor   = "Red"
+  res@gsnBelowYRefLineColor   = "Blue"
   res@tiYAxisString           = "Band-Pass"
   plot(1) = gsn_csm_xy(wks,yrfrac,xts(0,:),res)
 
@@ -1862,7 +1862,7 @@ begin
   res@tmXBOn                  = True
   res@tmXBFormat              = "f"                 ; remove trailing .0s
 
-  res@xyLineColor             = "green"         
+  res@xyLineColor             = "green"
   res@xyLineThicknessF        = 2.                  ; 1 is default
 
   yrfrac@long_name            = "date as fraction of year"
@@ -1875,17 +1875,17 @@ begin
   else
       resP@txString        = xts@long_name+": Areal Averaged & Filtered: "  \
                             +xts@bpfStrt+"-"+xts@bpfLast+" days: nw="  \
-                            +xts@bpfNwgt 
+                            +xts@bpfNwgt
   end if
   resP@gsnMaximize         = True
   resP@gsnPaperOrientation = "portrait"          ; force portrait
-  resP@gsnPanelBottom      = 0.05                ; add some space at bottom 
-  gsn_panel(wks,plot,(/3,1/),resP)     
+  resP@gsnPanelBottom      = 0.05                ; add some space at bottom
+  gsn_panel(wks,plot,(/3,1/),resP)
 
 end
 ;-------------------------------------------------------------
 undef ("band_pass_area_time_plot_cam")
-procedure band_pass_area_time_plot_cam(          \ 
+procedure band_pass_area_time_plot_cam(          \
           xts[3][*]:numeric, date[*]:integer, datesec[*]:integer, \
           pltDir[1]:string, pltType[1]:string, pltName[1]:string)
 begin
@@ -1941,9 +1941,9 @@ begin
   bpfwgt = filwgts_lanczos (bpfNwgt, ihp, fca, fcb, sigma )
 ;;printVarSummary(bpfwgt))
 
-  if (opt .and. isatt(opt,"fft") .and. opt@fft) then 
+  if (opt .and. isatt(opt,"fft") .and. opt@fft) then
 
-; As of 6.2.0 there are no ezfft_n / exfftb_n 
+; As of 6.2.0 there are no ezfft_n / exfftb_n
 ; until there is an ezfft_n (exfftb_n) the opt@fft=True option
 ; must be handled in the 'old-fashioned' way' (dimension reordering)
 
@@ -1958,7 +1958,7 @@ begin
                                            ; By default ... no detrend
       if (opt .and.(isatt(opt,"detrend") .and. opt@detrend)) then
           work  = dtrend(work, False)         ; detrend reordered array
-          work@detrend = "data detrended in time"        
+          work@detrend = "data detrended in time"
       end if
                                            ; By default ... no taper
       if (isatt(opt,"taper")) then
@@ -1967,8 +1967,8 @@ begin
           tim_taper = 0.10                 ; default taper is 10%
       end if
 
-      work       = taper(work, tim_taper, 0)  ; rightmost dimension (time) 
-      work@taper = "data tapered in time"        
+      work       = taper(work, tim_taper, 0)  ; rightmost dimension (time)
+      work@taper = "data tapered in time"
                                            ; fft in time
       cf   = ezfftf (work)                 ; cf(2,nlat,mlon,ntim/2)
     ;;printVarSummary(cf)
@@ -1979,11 +1979,11 @@ begin
     ;;printVarSummary(wcf)
       WCF  = conform(cf(0,:,:,:), wcf, 2)
       delete(wcf)
-                               
+
       cf(0,:,:,:) = cf(0,:,:,:)*WCF        ; apply response coef
       cf(1,:,:,:) = cf(1,:,:,:)*WCF
       delete(WCF)
-       
+
       work = ezfftb(cf, 0.0)               ; fourier synthesis
       delete(cf)
       work@process  =  "FFT with digital respoonse mapped tp FFT space"
@@ -1992,8 +1992,8 @@ begin
     ;;printVarSummary(work)
                                           ; By default ... no detrend
       work  = dtrend_n(work, False, 0 )   ; detrend
-      work@detrend = "data detrended in time"        
-      
+      work@detrend = "data detrended in time"
+
       work   = wgt_runave_n_Wrap(work,bpfwgt,0,0)
       work@process  =  "wgt_runave"
   end if
@@ -2002,7 +2002,7 @@ begin
   work@band_pass_last  = bpfLast
   work@band_pass_Nwgts = bpfNwgt
 
-;;X      = work($dNam(0)$|:, $dNam(1)$|:, $dNam(2)$|:)   
+;;X      = work($dNam(0)$|:, $dNam(1)$|:, $dNam(2)$|:)
 ;;copy_VarMeta (x, X)
 ;;X@long_name = "Band Pass: "
 ;;if (isatt(x,"long_name")) then
@@ -2019,7 +2019,7 @@ begin
   return(work)
 end
 ; ----------------------------------------------------
-undef ("band_pass_hovmueller")  
+undef ("band_pass_hovmueller")
 function band_pass_hovmueller(                         \
                   x[*][*][*]:numeric, spd[1]:numeric   \
                  ,bpf[3]:numeric, wy[*]:numeric, opt:logical)
@@ -2035,7 +2035,7 @@ begin
       exit
   end if
 
-  dimx    = dimsizes(x)                 
+  dimx    = dimsizes(x)
   dimwy   = dimsizes(wy)                ; size wy
   if (dimwy.gt.1 .and. dimx(1).ne.dimwy(0)) then
       print("band_pass_hovmueller: sizes of y/lat dimension do not match")
@@ -2043,7 +2043,7 @@ begin
       print("                      dimx(1)     ="+dimx(1))
       exit
   end if
-      
+
   if (dimwy.eq.1) then                  ; scalar
       wgty = new( dimwy, typeof(wy), getFillValue(wy))
   end if
@@ -2070,33 +2070,33 @@ begin
 
   dNam = getvardims(x)                 ; get dimension names
   do n=0,2                             ; only used if detrending
-     if (ismissing(dNam(n))) then     
-         x!n  = "dim"+n              
+     if (ismissing(dNam(n))) then
+         x!n  = "dim"+n
          dNam =  x!n
      end if
   end do
                                        ; weighted average at each (lon,time)
-  work = dim_avg_wgt_n_Wrap(x, wgty, 0, 1) 
-;;work = dim_avg_wgt_Wrap(x($dNam(2)$|:, $dNam(0)$|:, $dNam(1)$|:), wgty, 0) 
+  work = dim_avg_wgt_n_Wrap(x, wgty, 0, 1)
+;;work = dim_avg_wgt_Wrap(x($dNam(2)$|:, $dNam(0)$|:, $dNam(1)$|:), wgty, 0)
                                        ; unweighted average at each (lon,time)
-;;work = dim_avg_n_Wrap(x, 0, 1) 
-;;work = dim_avg_Wrap(x($dNam(2)$|:, $dNam(0)$|:, $dNam(1)$|:)) 
+;;work = dim_avg_n_Wrap(x, 0, 1)
+;;work = dim_avg_Wrap(x($dNam(2)$|:, $dNam(0)$|:, $dNam(1)$|:))
 
-                                       ; Remove overall mean 
-  work = work - avg(work)   
+                                       ; Remove overall mean
+  work = work - avg(work)
                                        ; By default ... no detrend in time
   if (opt .and.(isatt(opt,"detrend") .and. opt@detrend)) then
       if (isatt(work,"_FillValue")) then
           saveFillV = work@_FillValue  ; avoid annoying warning msg
           delete(work@_FillValue)
-      end if                           
+      end if
 
       work  = dtrend(work, False )     ; detrend in time
 
       if (isvar("saveFillV")) then
-          work@_FillValue = saveFillV  ; reassign 
+          work@_FillValue = saveFillV  ; reassign
       end if
-      work@detrend = "data detrended in time"        
+      work@detrend = "data detrended in time"
   end if
 
   ihp    = 2                               ; bpf=>band pass filter
@@ -2112,7 +2112,7 @@ begin
 
 ;;printVarSummary(work)
 
-  
+
   return(  work )  ; (time,lon)
 ;;return(  work($dNam(0)$|:, $dNam(2)$|:) )  ; (time,lon)
 end
@@ -2135,7 +2135,7 @@ begin
   pltPath = pltDir+"/"+pltName
 
   wks     = gsn_open_wks(pltType , pltPath)
-  gsn_define_colormap(wks,"amwg_blueyellowred") 
+  gsn_define_colormap(wks,"amwg_blueyellowred")
 
   resH                       = True     ; plot mods desired
   resH@cnFillOn              = True     ; turn on color fill
@@ -2146,7 +2146,7 @@ begin
   resH@pmLabelBarHeightF     = 0.1      ; default is taller
 
   resH@trYReverse            = True     ; reverse the y (time) axis
-  resH@gsnMaximize           = True  
+  resH@gsnMaximize           = True
   resH@gsnPaperOrientation   = "portrait"
 
   symMinMaxPlt (x,16,False,resH)        ; nice symmetric range
@@ -2161,7 +2161,7 @@ begin
       resH@cnMaxLevelValF = opt@cnMaxLevelValF
   end if
   if (isatt(opt,"cnMinLevelValF") .and. \  ; user should have -/+ and be =
-      isatt(opt,"cnMaxLevelValF") ) then 
+      isatt(opt,"cnMaxLevelValF") ) then
       if (abs(opt@cnMinLevelValF).ne.opt@cnMaxLevelValF) then
           print(" ")
           print("band_pass_hovmueller_plot: user min/max are not symmetric")
@@ -2203,7 +2203,7 @@ begin
       tLabL = new(ntim, "string", "No_FillValue")      ; needed
      ;tValR = tValL
      ;tLabR = tLabL
- 
+
       if (opt .and. isatt(opt,"monthLabels")) then
           monthLabels = opt@monthLabels
       else
@@ -2231,7 +2231,7 @@ begin
       resH@tmYLMode              = "Explicit"
       resH@tmYLValues            = tValL(0:ntm)
       resH@tmYLLabels            = tLabL(0:ntm)
-    
+
      ;resH@tmYRLabelsOn          = True              ; use for year
      ;resH@tmYUseLeft            = False
      ;resH@tmYRMode              = "Explicit"
@@ -2243,9 +2243,9 @@ begin
  ;resH@cnMaxLevelValF  =  80
  ;resH@cnMinLevelValF  = -80
  ;resH@cnLevelSelectionMode = "ManualLevels"
-				    
- ;hplt   = gsn_csm_hov(wks, x, resH)   
-  hplt   = gsn_csm_contour(wks, x, resH)   
+
+ ;hplt   = gsn_csm_hov(wks, x, resH)
+  hplt   = gsn_csm_contour(wks, x, resH)
 
   if (isatt(resH,"tmYLMode") .and. resH@tmYLMode.eq."Manual") then
       x&time = time   ; reassign original time coordinate variable
@@ -2289,8 +2289,8 @@ begin
   dimwy = dimsizes(wy)
   if (dimx(1).ne.dimwy(0)) then
       print("band_pass_area_time: sizes of y/lat dimension do not match")
-      print("                     dimsizes(wy)="+dimwy)              
-      print("                     dimx(1)=nlat="+dimx(1))              
+      print("                     dimsizes(wy)="+dimwy)
+      print("                     dimx(1)=nlat="+dimx(1))
       exit
   end if
   ntim = dimx(0)
@@ -2302,7 +2302,7 @@ begin
           delete(xts@_FillValue)           ; avoid annoying warning msg
       end if                               ; from dtrend
 
-      xts = dtrend(xts, False )  ; detrend 
+      xts = dtrend(xts, False )  ; detrend
 
       if (isvar("save_FillValue")) then
           xts@_FillValue = save_FillValue  ; reassign
@@ -2341,14 +2341,14 @@ begin
     nSea = num(mmdd.eq.mmddStrt)        ; count number of seasons
     iSea = ind(mmdd.eq.mmddStrt) 		; get index for seasons
 
-  else if (spd .eq. 0.5) then			; for data every other day, the 1st and 2nd day of 							 			    ; the season have to be considered 
+  else if (spd .eq. 0.5) then			; for data every other day, the 1st and 2nd day of 							 			    ; the season have to be considered
      mmddStrt2nd = mmddStrt+1
      nSea = num(mmdd.eq.mmddStrt) + num(mmdd.eq.mmddStrt2nd)
      iSea = ind(mmdd.eq.mmddStrt2nd .or. mmdd.eq.mmddStrt)
      print(nSea)
      print(iSea)
-  end if 
-  end if 
+  end if
+  end if
   if (seaName.eq."winter") then
       nSea = nSea-1                        ; last season not complete
   end if
@@ -2370,17 +2370,17 @@ begin
   if (opt .and. isatt(opt,"taper_seg") ) then
       pct = opt@taper_seg
   else
-      pct = 0.0 ; percent tapered: (0.0 <= pct <= 1.0) 0.10 common. 
+      pct = 0.0 ; percent tapered: (0.0 <= pct <= 1.0) 0.10 common.
   end if
 
   spec  = new ( nDay/2, typeof(x))
   spec  = 0.0
-  z1    = 0.0                              
+  z1    = 0.0
   xtsVar= 0.0
 
   do ns=0,nSea-1                           ; segment averaging
-     iStrt  = iSea(ns) 
-     iLast  = iSea(ns)+nDay-1 
+     iStrt  = iSea(ns)
+     iLast  = iSea(ns)+nDay-1
      sdof   = specx_anal(xts(iStrt:iLast),d,sm,pct)
      spec   = spec + sdof@spcx
      xtsVar = xtsVar + sdof@xvari
@@ -2395,9 +2395,9 @@ begin
   smjo       = 2*nSea                       ; # degrees freedom
   smjo@bw    = sdof@bw
   smjo@spcx  = spec
-  smjo@xvari = xvari       
+  smjo@xvari = xvari
   smjo@frq   = sdof@frq
-  smjo@xlag1 = (exp(2*z1)-1)/(exp(2*z1)+1)  ; match specx_anal 
+  smjo@xlag1 = (exp(2*z1)-1)/(exp(2*z1)+1)  ; match specx_anal
 
   if (opt .and. isatt(opt,"smooth_seg") ) then
       smjo      = smjo*opt@smooth_seg
@@ -2418,7 +2418,7 @@ procedure mjo_spectra \
 ; driver for MJO CLIVAR segment averaging
 
 ; MJO CLIVAR:  http://climate.snu.ac.kr/mjo_diagnostics/index.htm
-;              Plot spectra with x-axis as frequency with log scaling and 
+;              Plot spectra with x-axis as frequency with log scaling and
 ;              y-axis as power times frequency
 
 local frqmnPlt, frqmxPlt, nameSeason, nSeason, r, resP, tiXAxisString \
@@ -2441,8 +2441,8 @@ begin
   r@gsnDraw         = False                     ; do not draw
   r@gsnFrame        = False                     ; do not advance frame
   r@tiYAxisString   = "Power x freq"            ; yaxis
-  r@xyLineThicknesses   = (/2, 2, 1, 1/)        ; Define line thicknesses 
-  r@xyDashPatterns  = (/0, 0, 1, 1/)            ; Dash patterns 
+  r@xyLineThicknesses   = (/2, 2, 1, 1/)        ; Define line thicknesses
+  r@xyDashPatterns  = (/0, 0, 1, 1/)            ; Dash patterns
   r@xyLineColors    = (/"foreground","red","blue","blue"/)
   r@vpHeightF       = 0.4               ; change aspect ratio of plot
   r@vpWidthF 	    = 0.7
@@ -2451,10 +2451,10 @@ begin
   if (opt .and. isatt(opt,"logXAxis") .and. .not.opt@logXAxis) then
       delete(r@trXLog)                          ; linear x (freq) axis
   end if
-  
+
   if (opt .and. isatt(opt,"periodXAxis") .and. .not.opt@periodXAxis) then
       tiXAxisString = "Frequency (cycles/day)"  ; x (freq) axis
-  else                                          
+  else
       r@tmXBMode    = "Explicit"                ; default
       r@tmXBValues  = (/0.1, 0.05, 0.0333, 0.0167, 0.01, frqmnPlt/)
       r@tmXBLabels  = (/ 10,   20,   30  ,   60  ,  100,   365/)
@@ -2465,9 +2465,9 @@ begin
       r@trYLog  = True
   end if
 
-  resP                  = True             
-  resP@gsnMaximize      = True            
-  resP@gsnStringFontHeightF = 0.025   
+  resP                  = True
+  resP@gsnMaximize      = True
+  resP@gsnStringFontHeightF = 0.025
   resP@gsnPanelBottom   = 0.05
 
   plot = new ( nSeason, "graphic")
@@ -2500,13 +2500,13 @@ begin
   end if
 
   do nr=0,nRegion-1
-                                                ;  extract region 
-     x    = X(:,{latS(nr):latN(nr)},{lonL(nr):lonR(nr)}) 
+                                                ;  extract region
+     x    = X(:,{latS(nr):latN(nr)},{lonL(nr):lonR(nr)})
      wgty = wy({latS(nr):latN(nr)})
 
-     pltNameLocal = pltName+"_"+nameRegion(nr)        
+     pltNameLocal = pltName+"_"+nameRegion(nr)
      pltPath      = pltDir+pltNameLocal
-     wks          = gsn_open_wks(pltTypeLocal,pltPath)        
+     wks          = gsn_open_wks(pltTypeLocal,pltPath)
 
     do ns=0,nSeason-1
        print(nameSeason(ns))
@@ -2517,7 +2517,7 @@ begin
        r@gsnCenterString = nameSeason(ns)
 
        if (isatt(r,"trXLog") .and. r@trXLog) then
-           r@trXMinF  = frqmnPlt      
+           r@trXMinF  = frqmnPlt
        end if
 
        if (isatt(r,"trYLog") .and. r@trYLog) then
@@ -2542,12 +2542,12 @@ begin
        delete(splt)
        delete(work)
        delete(ifrqmxPlt)
-    end do    
+    end do
      resP@txString = nameRegion(nr)+": "+x@long_name
-     gsn_panel(wks,plot,(/3,1/),resP)   
+     gsn_panel(wks,plot,(/3,1/),resP)
 
      if (pltType.eq."png") then
-         if (isatt(opt,"pltConvert")) then 
+         if (isatt(opt,"pltConvert")) then
              pltConvert = opt@pltConvert    ; convert options
          else
              pltConvert = " "               ; default
@@ -2558,7 +2558,7 @@ begin
 
      delete(x)
      delete(wgty)
-  end do    
+  end do
 
 end
 
@@ -2573,26 +2573,26 @@ end
 ;###################################################################
 ;####################################################################
 undef("mjo_xcor_lag_season")
-function mjo_xcor_lag_season(x[*]:numeric, y[*][*]:numeric, mxlag[1]:integer, opt[1]:logical) 
+function mjo_xcor_lag_season(x[*]:numeric, y[*][*]:numeric, mxlag[1]:integer, opt[1]:logical)
 ; cross correlations at assorted lags
 local dNam, dimy, N, yNew, xNew, y_Lead_x, x_Lead_y, ccr
 begin
   dNam     = getvardims(y)
   dimy     = dimsizes(y)
   N        = dimy(1)                         ; N = mlon or nlat
- 
+
   yNew     = y($dNam(1)$|:,$dNam(0)$|:)
-  xNew     = conform(yNew,x,1)                     
+  xNew     = conform(yNew,x,1)
 
   y_Lead_x = esccr(xNew,yNew,mxlag)          ; (N,mxlag+1)
-  x_Lead_y = esccr(yNew,xNew,mxlag)    
+  x_Lead_y = esccr(yNew,xNew,mxlag)
 
-  ccr      = new ( (/N,2*mxlag+1/), float)    
+  ccr      = new ( (/N,2*mxlag+1/), float)
   ccr(:,0:mxlag-1) = x_Lead_y(:,1:mxlag:-1)  ; "negative lag", -1 reverses order
   ccr(:,mxlag:)    = y_Lead_x(:,0:mxlag)     ; "positive lag"
 
-  ccr      = where(ccr.gt. 1.0, 1.0, ccr)   
-  ccr      = where(ccr.lt.-1.0,-1.0, ccr)     
+  ccr      = where(ccr.gt. 1.0, 1.0, ccr)
+  ccr      = where(ccr.lt.-1.0,-1.0, ccr)
 
   if (opt .and. isatt(opt,"smth9") ) then
       if (abs(opt@smth9).eq.0.25) then
@@ -2611,7 +2611,7 @@ begin
   ccr&lag@units  = "lag (days)"
   ccr@long_name  = "cross-correlation"
 
-  return(ccr(lag|:,$dNam(1)$|:))            
+  return(ccr(lag|:,$dNam(1)$|:))
 end
 
 ; ----------------------------------------------------
@@ -2631,21 +2631,21 @@ begin
       pltTypeLocal = pltType
   end if
 
-  wks  = gsn_open_wks(pltTypeLocal,pltPath)  
+  wks  = gsn_open_wks(pltTypeLocal,pltPath)
   if (opt .and. isatt(opt,"colorTable") .or. isatt(opt,"pltColorTable")) then
       if (isatt(opt,"colorTable")) then
-          gsn_define_colormap(wks,opt@colorTable) 
+          gsn_define_colormap(wks,opt@colorTable)
       else
-          gsn_define_colormap(wks,opt@pltColorTable) 
+          gsn_define_colormap(wks,opt@pltColorTable)
       end if
   else
-     gsn_define_colormap(wks,"BlWhRe") 
+     gsn_define_colormap(wks,"BlWhRe")
   end if
 
-  res1                      = True          ; color precip     
+  res1                      = True          ; color precip
   res1@gsnDraw              = False
   res1@gsnFrame             = False
-  res1@gsnMaximize          = True 
+  res1@gsnMaximize          = True
   res1@gsnPaperOrientation  = "portrait"
 
   res1@cnFillOn             = True          ; turn on color
@@ -2695,7 +2695,7 @@ begin
 
   CCR_a = ccr_a             ; possible smooth and delete of attribute
   CCR_b = ccr_b
- 
+
   if (opt .and. isatt(opt,"smth9") .and. abs(opt@smth9).eq.0.25) then
       CCR_a = smth9(CCR_a, 0.50, opt@smth9, False)
   end if
@@ -2709,11 +2709,11 @@ begin
   plot_b = gsn_csm_contour(wks,CCR_b,res2)       ; contour the variable
 
   overlay(plot_a, plot_b)
-  draw(plot_a)     
+  draw(plot_a)
   frame(wks)
 
   if (pltType.eq."png") then
-      if (isatt(opt,"pltConvert")) then 
+      if (isatt(opt,"pltConvert")) then
           pltConvert = opt@pltConvert    ; convert options
       else
           pltConvert = " "               ; default
@@ -2741,21 +2741,21 @@ begin
       pltTypeLocal = pltType
   end if
 
-  wks  = gsn_open_wks(pltTypeLocal,pltPath)  
+  wks  = gsn_open_wks(pltTypeLocal,pltPath)
   if (opt .and. isatt(opt,"colorTable") .or. isatt(opt,"pltColorTable")) then
       if (isatt(opt,"colorTable")) then
-          gsn_define_colormap(wks,opt@colorTable) 
+          gsn_define_colormap(wks,opt@colorTable)
       else
-          gsn_define_colormap(wks,opt@pltColorTable) 
+          gsn_define_colormap(wks,opt@pltColorTable)
       end if
   else
-     gsn_define_colormap(wks,"BlWhRe") 
+     gsn_define_colormap(wks,"BlWhRe")
   end if
 
-  res1                      = True          ; color precip     
+  res1                      = True          ; color precip
   res1@gsnDraw              = False
   res1@gsnFrame             = False
-  res1@gsnMaximize          = True 
+  res1@gsnMaximize          = True
   res1@gsnPaperOrientation  = "portrait"
 
   res1@cnFillOn             = True          ; turn on color
@@ -2816,17 +2816,17 @@ begin
          CCR1 = ccr_c             ; possible smooth and delete of attribute
          CCR2 = ccr_d
      end if
-    
+
      if (opt .and. isatt(opt,"smth9") .and. abs(opt@smth9).eq.0.25) then
          CCR1 = smth9(CCR1, 0.50, opt@smth9, False)
          CCR2 = smth9(CCR2, 0.50, opt@smth9, False)
      end if
      delete(CCR1@long_name)
      plt1 = gsn_csm_contour(wks,CCR1,res1)       ; contour the variable
-   
+
      delete(CCR2@long_name)
      plt2 = gsn_csm_contour(wks,CCR2,res2)       ; contour the variable
-   
+
      overlay(plt1, plt2)
      plot(np) = plt1
 
@@ -2844,7 +2844,7 @@ begin
   gsn_panel(wks,plot,(/2,1/),resP)                ; now draw as one plot
 
   if (pltType.eq."png") then
-      if (isatt(opt,"pltConvert")) then 
+      if (isatt(opt,"pltConvert")) then
           pltConvert = opt@pltConvert    ; convert options
       else
           pltConvert = " "               ; default
@@ -2855,19 +2855,19 @@ begin
 end
 ; ----------------------------------------------------
 undef("mjo_xcor_lag")
-function mjo_xcor_lag (xio[*]:numeric , y[*][*]:numeric \ 
-                      ,date[*]:integer, mxlag[1]:integer, seaName:string, spd[1]:numeric, opt[1]:logical) 
+function mjo_xcor_lag (xio[*]:numeric , y[*][*]:numeric \
+                      ,date[*]:integer, mxlag[1]:integer, seaName:string, spd[1]:numeric, opt[1]:logical)
 
 ; driver to calculate mean seasonal lags
 local ns, ntim, dimy, ntmy, my, nDay, mmddStrt, yyyy, mmdd, nSea, iSea, rtyp
     , rLag, nLag, rr, iStrt, iLast
 begin
 
-     ntim = dimsizes(xio) 
+     ntim = dimsizes(xio)
      dimy = dimsizes(y)
      ntmy = dimy(0)
      my   = dimy(1)
-     
+
      if (ntim.ne.ntmy) then
          print("mjo_xcor_lag: time dimensions do not match")
          print("              ntim="+ntim+"  ntmy="+ntmy)
@@ -2897,23 +2897,23 @@ begin
        end if
        mmddStrt = 101                       ; Jan 1 (read mdd)
      end if
-     
+
      yyyy = date/10000
      mmdd = date - yyyy*10000
      if (spd .ge. 1) then				; for daily data counting 1st day of season is enough
        nSea = num(mmdd.eq.mmddStrt)     ; count number of seasons
        iSea = ind(mmdd.eq.mmddStrt) 	; get index for seasons
-     else if (spd .eq. 0.5) then		; for data every other day, the 1st and 2nd day of 							 			    ; the season have to be considered 
+     else if (spd .eq. 0.5) then		; for data every other day, the 1st and 2nd day of 							 			    ; the season have to be considered
        mmddStrt2nd = mmddStrt+1
        nSea = num(mmdd.eq.mmddStrt) + num(mmdd.eq.mmddStrt2nd)
        iSea = ind(mmdd.eq.mmddStrt2nd .or. mmdd.eq.mmddStrt)
-       
-     end if 
-     end if 
-     
-     
+
+     end if
+     end if
+
+
      rtyp = "float"
-     if (typeof(xio).eq."double" .or. typeof(y).eq."double") then 
+     if (typeof(xio).eq."double" .or. typeof(y).eq."double") then
          rtyp = "double"
      end if
 
@@ -2922,8 +2922,8 @@ begin
      rz   = 0.0
 
      do ns=0,nSea-1                           ; seasonal averaging
-        iStrt  = iSea(ns) 
-        iLast  = iSea(ns)+nDay-1 
+        iStrt  = iSea(ns)
+        iLast  = iSea(ns)+nDay-1
         if (iLast.gt.(ntim-1)) then
             break
         end if
@@ -2936,7 +2936,7 @@ begin
      end do
 
      rz  = rz/nSea                           ; mean Fischer-z
-     rz  = (exp(2*rz)-1)/(exp(2*rz)+1)       ; transform back  
+     rz  = (exp(2*rz)-1)/(exp(2*rz)+1)       ; transform back
 
      copy_VarMeta(rLag, rz)
      return( rz )
@@ -2963,13 +2963,13 @@ function mjo_wavenum_freq_season \
 ; of different years, calculate the
 ; pooled space-time spectra
 
-; MJO CLIVAR: wavenumber-frequency spectra 
+; MJO CLIVAR: wavenumber-frequency spectra
 ;             winter starts Nov 1  [180 days]
 ;             summer starts May 1  [180 days]
 ;             annual starts Jan 1  [365 days]
 
 local nMsg, dimX, ntim, mlon, x,  N, pow, xAvg, xSeason       \
-    , nDay, ny, nYear, iSea, mmdd, yyyy, mmddStrt, work, work1\    
+    , nDay, ny, nYear, iSea, mmdd, yyyy, mmddStrt, work, work1\
     , d, sm, pct, xVarSea, kSea, wave, freq, iStrt, iLast
 begin
                                       ; error check
@@ -3014,36 +3014,36 @@ begin
          nDay=365
        end if
   end if
-     
+
   yyyy = date/10000
   mmdd = date - yyyy*10000
   if (spd .ge. 1) then				    ; for daily data counting 1st day of season is enough
        nYear = num(mmdd.eq.mmddStrt)     ; count number of seasons
        iSea = ind(mmdd.eq.mmddStrt) 	; get index for seasons
-  else if (spd .eq. 0.5) then		    ; for data every other day, the 1st and 2nd day of 							 			    ; the season have to be considered 
+  else if (spd .eq. 0.5) then		    ; for data every other day, the 1st and 2nd day of 							 			    ; the season have to be considered
        mmddStrt2nd = mmddStrt+1
        nYear = num(mmdd.eq.mmddStrt) + num(mmdd.eq.mmddStrt2nd)
        iSea = ind(mmdd.eq.mmddStrt2nd .or. mmdd.eq.mmddStrt)
-       
-  end if 
-  end if 
-  
+
+  end if
+  end if
+
 
 ; ----------------------------------------------------
-; For a specific season, calculate spectra via averaging 
+; For a specific season, calculate spectra via averaging
 ; over each seasonal segment.
 ; MJO Clivar says "no" to detrending/tapering.
 ; Hence, the following are just 'place holders'
 ; ----------------------------------------------------
-  x       = dtrend_leftdim(x, False )       ; detrend overall series in time 
+  x       = dtrend_leftdim(x, False )       ; detrend overall series in time
 
-  work    = new((/2,mlon  ,nDay  /), typeof(x), "No_FillValue")  
-          ; the +1 is for the 0-th  component 
-  pow     = new((/  mlon+1,nDay+1/), typeof(x), "No_FillValue")  
+  work    = new((/2,mlon  ,nDay  /), typeof(x), "No_FillValue")
+          ; the +1 is for the 0-th  component
+  pow     = new((/  mlon+1,nDay+1/), typeof(x), "No_FillValue")
   pow!0   = "wave"
-  pow!1   = "frq"  
+  pow!1   = "frq"
   pow     = 0.0
-  
+
   xAvgSea = 0.0
   xVarSea = 0.0                             ; variance (raw)
   xVarTap = 0.0                             ; variance after tapering
@@ -3053,7 +3053,7 @@ begin
   if (opt .and. isatt(opt,"taper_seg") ) then
       pct = opt@taper_seg   ; over-ride default
   else
-      pct = 0.10            ; default; taper 10% of series 
+      pct = 0.10            ; default; taper 10% of series
   end if
 
 ; -------------------------------------------------------------------
@@ -3070,23 +3070,23 @@ begin
      end if
     ;print("iStrt="+iStrt+" ("+yyyy(iStrt)+mmdd(iStrt)+");  " \
     ;     +"iLast="+iLast+" ("+yyyy(iLast)+mmdd(iLast)+")"  )
-     
+
      xSeason = x(iStrt:iLast,:)            ; keep meta data
      xAvg    = avg( xSeason )              ; season average all time/lon
-     xSeason = xSeason - xAvg              ; remove season time-lon mean 
+     xSeason = xSeason - xAvg              ; remove season time-lon mean
      xVarSea = xVarSea + variance( xSeason )    ; overall variance
      kSea    = kSea + 1
-                                           
+
      xSeason = taper_leftdim( xSeason, pct, 0)  ; for each lon detrend in time
      xVarTap = xVarTap + variance( xSeason )    ; variance after tapering
 
      do nt=0,nDay-1                         ; each time perform complex fft(lon)
-       work(:,:,nt) = cfftf( xSeason(nt,:), 0.0, 0)   ; space 
-     end do                                  
+       work(:,:,nt) = cfftf( xSeason(nt,:), 0.0, 0)   ; space
+     end do
      work = work/mlon                      ; normalize by # lon samples
 
      do ml=0,mlon-1                         ; each lon perform complex fft(time)
-       work(:,ml,:) = cfftf( work(0,ml,:), work(1,ml,:), 0) ; time 
+       work(:,ml,:) = cfftf( work(0,ml,:), work(1,ml,:), 0) ; time
      end do
      work = work/nDay                      ; normalize by # time samples
                                            ; work(2,wave,freq)
@@ -3098,19 +3098,19 @@ begin
   xVarSea   = xVarSea/kSea               ; pooled seasonal variance
   xVarTap   = xVarTap/kSea               ; pooled seasonal variance
   pow       = pow/kSea                   ; pooled spectra
- 
+
   if (isatt(X,"long_name")) then
       pow@long_name = x@long_name
   end if
             ; add meta data for use upon return
   pow!0     = "wave"
   pow!1     = "freq"
-          
-  wave      = ispan(-mlon/2,mlon/2,1) 
+
+  wave      = ispan(-mlon/2,mlon/2,1)
   wave!0    = "wave"
   wave@long_name= "zonal wavenumber"         ; for plot
   wave&wave =  wave
-         
+
   freq      = fspan(-1*nDay/2,nDay/2,nDay+1)/nDay
   freq!0    = "freq"
   freq@long_name= "frequency (cycles/day)"   ; for plot
@@ -3119,7 +3119,7 @@ begin
 
   pow&wave  =  wave
   pow&freq  =  freq
-   
+
   return( pow )
 end
 ;--------------------------------------------------------------------
@@ -3127,24 +3127,24 @@ undef("mjo_wavenum_freq_season_plot")
 procedure mjo_wavenum_freq_season_plot (wf[*][*],seaName[1]:string\
                      ,pltDir[1]:string, pltType[1]:string         \
                      ,pltName[1]:string, opt[1]:logical)
-begin 
+begin
   pltPath= pltDir+"/"+pltName+"."+seaName
-  
+
   if (pltType.eq."png") then
       pltTypeLocal = "eps"
   else
       pltTypeLocal = pltType
   end if
 
-  wks  = gsn_open_wks(pltTypeLocal, pltPath)  
+  wks  = gsn_open_wks(pltTypeLocal, pltPath)
   if (opt .and. isatt(opt,"colorTable") .or. isatt(opt,"pltColorTable")) then
       if (isatt(opt,"colorTable")) then
-          gsn_define_colormap(wks,opt@colorTable) 
+          gsn_define_colormap(wks,opt@colorTable)
       else
-          gsn_define_colormap(wks,opt@pltColorTable) 
+          gsn_define_colormap(wks,opt@pltColorTable)
       end if
   else
-     gsn_define_colormap(wks,"prcp_2") 
+     gsn_define_colormap(wks,"prcp_2")
   end if
 
   res                     = True          ; plot mods desired
@@ -3155,7 +3155,7 @@ begin
 ;;No longer needed in V6.1.0 and later
 ;;res@gsnSpreadColors     = True          ; use full range of colormap
 ;;res@lbLabelAutoStride   = True
-  
+
   if (isatt(opt,"tiMainString") .and. opt@tiMainString.ne."") then
       res@tiMainString    = opt@tiMainString
     else if (seaName.ne."") then
@@ -3201,27 +3201,27 @@ begin
   if (isatt(opt,"lbOrientation")) then
       res@lbOrientation = opt@lbOrientation
   end if
-  
+
   NW = 6
   if (isatt(opt,"maxWavePlot")) then     ; wave [Y] axis
       NW  = opt@maxWavePlot
   end if
 
-  fMin = -0.05  
+  fMin = -0.05
   fMax =  0.05
-  
+
   if (isatt(opt,"minFreqPlot")) then
       fMin  = opt@minFreqPlot
-  end if 
+  end if
   if (isatt(opt,"maxFreqPlot")) then
       fMax  = opt@maxFreqPlot
   end if
-  
+
  ;res@trXMinF = fMin
- ;res@trXMaxF = fMax  
- 
-  WORK  = wf({0:NW},{fMin:fMax}) 
-  
+ ;res@trXMaxF = fMax
+
+  WORK  = wf({0:NW},{fMin:fMax})
+
   if (opt .and. isatt(opt,"smth9") .and. opt@smth9) then
       WORK = smth9(WORK, 0.50,  0.25, False)
   end if
@@ -3232,7 +3232,7 @@ begin
   if (isatt(opt,"label_freq") .and. .not.opt@label_freq) then
       delete(WORK&freq@long_name)
   end if
-  
+
   plot = gsn_csm_contour(wks, WORK , res)
 
   resp                  = True                      ; polyline mods desired
@@ -3249,12 +3249,12 @@ begin
           day = min(opt@dayLine)
       end if
   else
-       day = 30         ; default 
+       day = 30         ; default
   end if
   fline = 1./day
 
  ;resp@gsLineLabelString= day+"d"                   ; adds a line label string
-  gsn_polyline(wks,plot,(/fline,fline/),(/ 0.,NW/), resp)      
+  gsn_polyline(wks,plot,(/fline,fline/),(/ 0.,NW/), resp)
   gsn_text(wks,plot, (day+"d"),fline+0.005,0.93*NW,tres)
 
                                                     ; orig code rename
@@ -3265,18 +3265,18 @@ begin
           day = max(opt@dayLine)
       end if
   else
-       day = 80  
+       day = 80
   end if
   fline = 1./day
 
  ;resp@gsLineLabelString= day+"d"                    ; adds a line label string
-  gsn_polyline(wks,plot,(/fline,fline/),(/ 0.,NW/), resp)      
+  gsn_polyline(wks,plot,(/fline,fline/),(/ 0.,NW/), resp)
   gsn_text(wks,plot, (day+"d"),fline+0.005,0.93*NW,tres)
 
   frame(wks)
-  
+
   if (pltType.eq."png") then
-      if (isatt(opt,"pltConvert")) then 
+      if (isatt(opt,"pltConvert")) then
           pltConvert = opt@pltConvert    ; convert options
       else
           pltConvert = " "               ; default
@@ -3285,16 +3285,16 @@ begin
       system("convert "+pltConvert+" "+pltPath+".eps "+pltPath+".png")
       system("/bin/rm -f "+pltPath+".eps")
   end if
-  
-  if (pltType.eq."x11" .and. isatt(opt,"debug") .and. opt@debug) then 
-      
+
+  if (pltType.eq."x11" .and. isatt(opt,"debug") .and. opt@debug) then
+
       res@gsnCenterString = "wf"
       plot = gsn_csm_contour(wks, wf, res)
-      
+
       res@gsnCenterString = "wf({-5:5},{-0.075:0.075})"
       plot = gsn_csm_contour(wks, wf({-5:5},{-0.075:0.075}), res)
-  end if  
-end  
+  end if
+end
 
 ;###################################################################
 ;###################################################################
@@ -3335,29 +3335,29 @@ begin
   mlon = dimX(2)
 
   x    = X                             ; local copy (time,lat,lon)
-  y    = Y            
+  y    = Y
 
-  x    = decompose2SymAsym( x, 0)      ; decompose     
+  x    = decompose2SymAsym( x, 0)      ; decompose
   y    = decompose2SymAsym( y, 0)
                                        ; x may change
   if (isatt(x,"_FillValue")) then
       delete(x@_FillValue)             ; avoid annoying warning msg
   end if                               ; from dtrend
   if (isatt(y,"_FillValue")) then
-      delete(y@_FillValue)     
-  end if                      
+      delete(y@_FillValue)
+  end if
 
-  x       = dtrend_leftdim(x, False )  ; detrend overall series in time 
-  y       = dtrend_leftdim(y, False )   
+  x       = dtrend_leftdim(x, False )  ; detrend overall series in time
+  y       = dtrend_leftdim(y, False )
 
   if (opt .and. isatt(opt,"taper_seg") ) then
       pct = opt@taper_seg   ; over-ride default
   else
-      pct = 0.10            ; default; taper 10% of series 
+      pct = 0.10            ; default; taper 10% of series
   end if
 
   x       = taper_leftdim(x, pct, 0 )  ; taper in time
-  y       = taper_leftdim(y, pct, 0 )  
+  y       = taper_leftdim(y, pct, 0 )
 
 ; -------------------------------------------------------------------
 
@@ -3369,7 +3369,7 @@ begin
   ntStrt = 0
   switch = True
   do while (switch)
-     ntLast = ntStrt + segLen-1 
+     ntLast = ntStrt + segLen-1
      if (ntLast.gt.(ntim-1)) then
          switch = False
          break
@@ -3409,21 +3409,21 @@ begin
                   ,"P12_SYM"    , "P12_ASY"     \
                   ,"Q12_SYM"    , "Q12_ASY"     \
                   ,"COH2_SYM"   , "COH2_ASY"    \
-                  ,"PHAS_SYM"   , "PHAS_ASY"    \ 
-                  ,"V1_SYM"     , "V1_ASY"      \ 
+                  ,"PHAS_SYM"   , "PHAS_ASY"    \
+                  ,"V1_SYM"     , "V1_ASY"      \
                   ,"V2_SYM"     , "V2_ASY"      /)
 
   STC@segmentLength  = segLen
   STC@segmentOverLap = segOverLap
   STC@segmentRepeat  = segLen-segOverLap
   STC@number_of_segments = kseg
-  STC@dof            = 2.667*kseg     ; conservative estimate   
+  STC@dof            = 2.667*kseg     ; conservative estimate
                                       ; 2.667 is for 1-2-1 smoother
 
   p = (/0.80, 0.85, 0.90, 0.925, 0.95, 0.99/); probability levels
   STC@prob       = p
   STC@prob_coh2  = 1.-(1.-p^(0.5*STC@dof -1))
-         
+
   return( STC )
 end
 ; -----------
@@ -3464,7 +3464,7 @@ end
 ; -----------
 undef("mjo_elimIsolatedValues")
 procedure mjo_elimIsolatedValues(c2, ph1, ph2, iopt)
-; cosmetic and arbitrary ... eliminate isolated points ... 
+; cosmetic and arbitrary ... eliminate isolated points ...
 ; crude and not complete but 'good enough'
 local npts, dimc2, nfreq, nwave, nf, nw
 begin
@@ -3523,21 +3523,21 @@ procedure mjo_cross_plot(STC[*][*][*]:numeric \
 local pltPath, pltTypeLocal,wks, res
 begin
   pltPath= pltDir+"/"+pltName
-  
+
   if (pltType.eq."png") then
       pltTypeLocal = "eps"
   else
       pltTypeLocal = pltType
   end if
-  wks  = gsn_open_wks(pltTypeLocal, pltPath)  
+  wks  = gsn_open_wks(pltTypeLocal, pltPath)
   if (opt .and. isatt(opt,"colorTable") .or. isatt(opt,"pltColorTable")) then
       if (isatt(opt,"colorTable")) then
-          gsn_define_colormap(wks,opt@colorTable) 
+          gsn_define_colormap(wks,opt@colorTable)
       else
-          gsn_define_colormap(wks,opt@pltColorTable) 
+          gsn_define_colormap(wks,opt@pltColorTable)
       end if
   else
-     gsn_define_colormap(wks,"amwg") 
+     gsn_define_colormap(wks,"amwg")
   end if
 
   plot = new ( 2, "graphic")
@@ -3547,7 +3547,7 @@ begin
   res@gsnFrame             = False
 
   res@cnFillOn             = True          ; turn on color
-  res@cnFillMode           = "RasterFill"  ; match WMO Clivar 
+  res@cnFillMode           = "RasterFill"  ; match WMO Clivar
 
   res@gsnSpreadColors      = True          ; use full range of colormap
   if (opt .and. isatt(opt,"gsnSpreadColorStart") ) then
@@ -3558,11 +3558,11 @@ begin
   end if
   res@cnLinesOn            = False
   res@cnLineLabelsOn       = False
-  res@cnLevelSelectionMode = "ManualLevels"   
+  res@cnLevelSelectionMode = "ManualLevels"
   res@cnMinLevelValF       =  0.05
-  res@cnMaxLevelValF       =  0.65         ; correlation^2 = 0.8  
+  res@cnMaxLevelValF       =  0.65         ; correlation^2 = 0.8
   res@cnLevelSpacingF      =  0.05
-  res@cnInfoLabelOn        =  False 
+  res@cnInfoLabelOn        =  False
   res@lbLabelBarOn         =  False        ; no individual label bars
 
   if (.not.opt .or. .not.isatt(opt,"pltPhase") .or. opt@pltPhase) then
@@ -3572,7 +3572,7 @@ begin
       res@vcRefAnnoOrthogonalPosF   = -1.0            ; move ref vector
       res@vcRefAnnoArrowLineColor   = "black"         ; change ref vector color
       res@vcMinDistanceF            = 0.0075          ; thin out vectors
-      res@vcMapDirection            = False           ; 
+      res@vcMapDirection            = False           ;
       res@vcRefAnnoOn               = False           ; do not draw
       res@gsnScalarContour          = True            ; contours desired
   else
@@ -3590,7 +3590,7 @@ begin
   end if
 
 ;---------------------------------------------------------------
-; dispersion: curves 
+; dispersion: curves
 ;---------------------------------------------------------------
   rlat           = 0.0
   Ahe            = (/50.,25.,12./)
@@ -3615,13 +3615,13 @@ begin
    txres@txBackgroundFillColor = "Background"
 
 ;---------------------------------------------------------------
-; plot symmetric data      
+; plot symmetric data
 ;---------------------------------------------------------------
   n = 8
 
-  c2s = STC(n,:,{-nWavePlt:nWavePlt})                     
+  c2s = STC(n,:,{-nWavePlt:nWavePlt})
   c2s@_FillValue = 1e20
-  c2s(0,:)       = c2s@_FillValue 
+  c2s(0,:)       = c2s@_FillValue
   c2s = where(c2s.lt.0.05, c2s@_FillValue, c2s) ; mask
 
   n = 12
@@ -3661,15 +3661,15 @@ begin
       mjo_elimIsolatedValues (c2s, phs1, phs2, 1)
       mjo_elimIsolatedValues (c2s, phs1, phs2, 2)
   end if
- 
+
  ;res@gsnCenterString   = "var="+n+"  "+STC@varName(n)
   if (plotPhase) then
       scl_one = sqrt(1./(phs1^2 + phs2^2))
       phs1    = scl_one*phs1
       phs2    = scl_one*phs2
-      plot(0) = gsn_csm_vector_scalar(wks, phs1, phs2, c2s, res)       
+      plot(0) = gsn_csm_vector_scalar(wks, phs1, phs2, c2s, res)
   else
-      plot(0) = gsn_csm_contour(wks, c2s, res)       
+      plot(0) = gsn_csm_contour(wks, c2s, res)
   end if
 
   dums    = new (25, "graphic")    ; for _add_ *s*ymmetric graphical objects
@@ -3694,7 +3694,7 @@ begin
   dumdcs(14) = gsn_add_text(wks,plot(0),"h=12",-14.0,.46,txres)
 
 ;---------------------------------------------------------------
-; plot asymmetric data      
+; plot asymmetric data
 ;---------------------------------------------------------------
 
   n = 9
@@ -3703,7 +3703,7 @@ begin
                       +"  5%="+sprintf("%3.2f", STC@prob_coh2(4))
   c2a = STC(n,:,{-nWavePlt:nWavePlt})
   c2a@_FillValue = 1e20
-  c2a(0,:) = c2a@_FillValue 
+  c2a(0,:) = c2a@_FillValue
   c2a = where(c2a.lt.0.05, c2a@_FillValue, c2a) ; mask
 
   n = 13
@@ -3746,9 +3746,9 @@ begin
       scl_one = sqrt(1./(pha1^2 + pha2^2))
       pha1    = scl_one*pha1
       pha2    = scl_one*pha2
-      plot(1) = gsn_csm_vector_scalar(wks, pha1, pha2, c2a, res)       
+      plot(1) = gsn_csm_vector_scalar(wks, pha1, pha2, c2a, res)
   else
-      plot(1) = gsn_csm_contour(wks, c2a, res)       
+      plot(1) = gsn_csm_contour(wks, c2a, res)
   end if
 
   duma    = new (25, "graphic")    ; for _add_ *a*symmetric graphical objects
@@ -3782,8 +3782,8 @@ begin
   resP@cnLabelBarEndStyle   = "ExcludeOuterBoxes"
 
   resP@cnLevelSelectionMode = res@cnLevelSelectionMode
-  resP@cnMinLevelValF       = res@cnMinLevelValF 
-  resP@cnMaxLevelValF       = res@cnMaxLevelValF    ; correlation^2 = 0.8  
+  resP@cnMinLevelValF       = res@cnMinLevelValF
+  resP@cnMaxLevelValF       = res@cnMaxLevelValF    ; correlation^2 = 0.8
   resP@cnLevelSpacingF      = res@cnLevelSpacingF
 
   if (opt .and. isatt(opt,"txString") ) then
@@ -3815,14 +3815,14 @@ end
 undef ("mjo_phase_background")
 function mjo_phase_background (wks:graphic , opt[1]:logical   )
 begin
-  if (opt .and. isatt(opt,"axisExtent") .and. opt@axisExtent.gt.0) then 
+  if (opt .and. isatt(opt,"axisExtent") .and. opt@axisExtent.gt.0) then
       axisExtent        = opt@axisExtent
   else
       axisExtent        =  4
   end if
   nPhase                =  8
 
-  res                   = True   
+  res                   = True
   res@gsnDraw           = False
   res@gsnFrame          = False
  ;res@gsnPaperOrientation =  "portrait"
@@ -3830,14 +3830,14 @@ begin
   res@vpXF              = 0.1            ; default=0.2
   res@vpYF              = 0.8            ; default=0.8
 
-  res@trYMinF           = -axisExtent 
-  res@trYMaxF           =  axisExtent 
-  res@trXMinF           = -axisExtent 
-  res@trXMaxF           =  axisExtent + 0.05 
+  res@trYMinF           = -axisExtent
+  res@trYMaxF           =  axisExtent
+  res@trXMinF           = -axisExtent
+  res@trXMaxF           =  axisExtent + 0.05
 
-  vpExtent              = 0.45           
+  vpExtent              = 0.45
   res@vpWidthF          = vpExtent       ; default=0.6
-  res@vpHeightF         = vpExtent       ; default=0.6 
+  res@vpHeightF         = vpExtent       ; default=0.6
 
   res@tmXBFormat        = "f"            ; integer, no decimal
   res@tmYLFormat        = "f"            ; 3 rather than 3.0
@@ -3846,19 +3846,19 @@ begin
   res@tmYLLabelDeltaF   = -0.75
 
   labelFontHeightF      = 0.0167         ; default=0.0167
-  res@tiXAxisFontHeightF= labelFontHeightF 
+  res@tiXAxisFontHeightF= labelFontHeightF
   res@tiYAxisFontHeightF= labelFontHeightF
   res@tiDeltaF          =  1.25          ; default=1.5
 
   res@xyLineThicknessF  = 1
 
   rad   = 4.*atan(1.0)/180.
-  if (opt .and. isatt(opt,"radius") .and. opt@radius.gt.0) then 
+  if (opt .and. isatt(opt,"radius") .and. opt@radius.gt.0) then
       radius = opt@radius
   else
       radius= 1.0                        ; unit length (default)
   end if
-          
+
   nCirc = 361
   xCirc = radius*cos(fspan(0, 360, nCirc)*rad)
   yCirc = radius*sin(fspan(0, 360, nCirc)*rad)
@@ -3866,37 +3866,37 @@ begin
   xCirc@long_name = "Phase 2 (Indian Ocean) Phase 3"
   yCirc@long_name = "Phase 1 (Western Hem, Africa) Phase 8"
 
- ;res@gsnCenterStringOrthogonalPosF = 
+ ;res@gsnCenterStringOrthogonalPosF =
   res@gsnCenterStringFontHeightF    = labelFontHeightF
   res@gsnCenterString = "Phase 7 (Western Pacific) Phase 6"
 
-  if (opt .and. isatt(opt,"tiMainString")) then 
+  if (opt .and. isatt(opt,"tiMainString")) then
       res@tiMainString = opt@tiMainString
   end if
 
   plt   = gsn_csm_xy (wks, xCirc, yCirc, res)  ; base plot
 
-  txres               = True             
+  txres               = True
   txres@txFontHeightF = labelFontHeightF
   txres@txAngleF      = -90
   txid = gsn_create_text(wks, "Phase 5 (Maritime) Phase 4", txres)
 
-  amres                  = True 
-  amres@amParallelPosF   =  0.575  
-  amres@amOrthogonalPosF =  0.0   
+  amres                  = True
+  amres@amParallelPosF   =  0.575
+  amres@amOrthogonalPosF =  0.0
   amres@amJust           = "CenterCenter"
   ann3  = gsn_add_annotation(plt, txid, amres)
 
 ;----------------------------------------------------------------
 ; Add the phase separator lines.
-; Each line must be associated with a unique dummy variable. 
-; Draw each line separately. Each line must contain two 
+; Each line must be associated with a unique dummy variable.
+; Draw each line separately. Each line must contain two
 ;      points (begin/end).
 ;----------------------------------------------------------------
   plres                  = True      ; polyline mods desired
  ;plres@gsLineColor      = "red"     ; color of lines
   plres@gsLineThicknessF = 1.0       ; thickness of lines
-  if (opt .and. isatt(opt,"gsLineDashPattern")) then 
+  if (opt .and. isatt(opt,"gsLineDashPattern")) then
       plres@gsLineDashPattern = opt@gsLineDashPattern
   else
       plres@gsLineDashPattern = 1
@@ -3907,19 +3907,19 @@ begin
   R    = radius
 
   phaLine      = new ( (/nPhase,4/), "float", "No_FillValue")
-  phaLine(0,:) = (/   R,   E,   0,   0/) ; (xBegin,xEnd,yBegin,yEnd) 
-  phaLine(1,:) = (/ c45,   E, c45,   E/) 
-  phaLine(2,:) = (/   0,   0,   R,   E/) 
-  phaLine(3,:) = (/-c45,  -E, c45,   E/) 
-  phaLine(4,:) = (/  -R,  -E,   0,   0/) 
-  phaLine(5,:) = (/-c45,  -E,-c45,  -E/) 
-  phaLine(6,:) = (/   0,   0,  -R,  -E/) 
-  phaLine(7,:) = (/ c45,   E,-c45,  -E/) 
+  phaLine(0,:) = (/   R,   E,   0,   0/) ; (xBegin,xEnd,yBegin,yEnd)
+  phaLine(1,:) = (/ c45,   E, c45,   E/)
+  phaLine(2,:) = (/   0,   0,   R,   E/)
+  phaLine(3,:) = (/-c45,  -E, c45,   E/)
+  phaLine(4,:) = (/  -R,  -E,   0,   0/)
+  phaLine(5,:) = (/-c45,  -E,-c45,  -E/)
+  phaLine(6,:) = (/   0,   0,  -R,  -E/)
+  phaLine(7,:) = (/ c45,   E,-c45,  -E/)
 
   do i =0,nPhase-1
      plt@$unique_string("dum")$ = gsn_add_polyline(wks,plt \
                                  ,(/phaLine(i,0),phaLine(i,1)/) \
-                                 ,(/phaLine(i,2),phaLine(i,3)/) ,plres)      
+                                 ,(/phaLine(i,2),phaLine(i,3)/) ,plres)
   end do
 
   return(plt)

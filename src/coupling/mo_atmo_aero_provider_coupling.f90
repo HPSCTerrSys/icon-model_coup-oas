@@ -1,10 +1,7 @@
-! @brief Interface between atmosphere and the aero provider, through a coupler
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,19 +9,19 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! @brief Interface between atmosphere and the aero provider, through a coupler
+
 !----------------------------
 #include "omp_definitions.inc"
 !----------------------------
 
 MODULE mo_atmo_aero_provider_coupling
 
-  USE mo_kind,            ONLY: wp
-  USE mo_model_domain,    ONLY: t_patch
-  USE mo_exception,       ONLY: finish
-  USE mo_aes_rad_config,  ONLY: aes_rad_config
-  USE mo_coupling_config, ONLY: is_coupled_to_aero
-  USE mo_coupling_utils,  ONLY: cpl_def_field, cpl_get_field, &
-                                cpl_get_field_collection_size
+  USE mo_kind,             ONLY: wp
+  USE mo_model_domain,     ONLY: t_patch
+  USE mo_exception,        ONLY: finish
+  USE mo_coupling_utils,   ONLY: cpl_def_field, cpl_get_field, &
+                                 cpl_get_field_collection_size
 
   IMPLICIT NONE
 
@@ -70,13 +67,6 @@ CONTAINS
     CHARACTER(LEN=*), PARAMETER   :: &
       routine = str_module // ':construct_atmo_aero_provider_coupling_post_sync'
 
-    IF (.NOT. is_coupled_to_aero() .OR. &
-        (aes_rad_config(jg)%irad_aero /= 12 .AND. &
-         aes_rad_config(jg)%irad_aero /= 13 .AND. &
-         aes_rad_config(jg)%irad_aero /= 15 .AND. &
-         aes_rad_config(jg)%irad_aero /= 18 .AND. &
-         aes_rad_config(jg)%irad_aero /= 19)) &
-      CALL finish(routine, "invalid configuration")
 
     IF ( nb_lw /= &
          cpl_get_field_collection_size( &
@@ -185,9 +175,9 @@ CONTAINS
     ! asy_c_s       = asy_sw_b14_coa -> zg_c   (sw band )
     ! z_km_aer_c_mo = aer_sw_b14_coa -> duplicated, take from aer_lw_b16_coa
 
-    ! aod_lw_b16_coa -> aod_c_f ( band )
+    ! aod_sw_b14_coa -> aod_c_s ( band )
     CALL cpl_get_field( &
-      routine, field_id_aod_c_s, 'aod_c_f', &
+      routine, field_id_aod_c_s, 'aod_c_s', &
       aod_c_s(:,1:nb_sw,:,1), recv_buf)
 
     !ssa_sw_b14_coa -> ssa_c_s ( band )

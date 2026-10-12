@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -76,7 +76,7 @@ cat > ${ocean_namelist} << EOF
   output_grid      = .TRUE.
   filename_format  = "<output_filename>_<datetime2>"
   ml_varlist       =  'h_acc', 'u_acc', 'v_acc', 't_acc', 'vort_acc'
-!'veloc_adv_horz_u','veloc_adv_horz_v', 
+!'veloc_adv_horz_u','veloc_adv_horz_v',
 /
 &dbg_index_nml
   idbg_mxmn=3                     ! initialize MIN/MAX  debug output
@@ -105,7 +105,7 @@ cat > ${ocean_namelist} << EOF
   veloc_diffusion_form  = 1
   veloc_diffusion_order = 1
   iswm_oce= 1
-  MASS_MATRIX_INVERSION_TYPE = 1 !0=no mass matrix inversio, =1 for advective term  
+  MASS_MATRIX_INVERSION_TYPE = 1 !0=no mass matrix inversio, =1 for advective term
 /
 &ocean_tracer_transport_nml
   no_tracer             = 1      ! tracer-transport: 0=no transport, 1=temperature, 2=temp. and salinity
@@ -136,8 +136,8 @@ cat > ${ocean_namelist} << EOF
   iforc_oce                   = 10       ! ocean forcing
 /
 &ocean_initialConditions_nml
-  initial_velocity_type  = 202     !Williamson test2:202, Williamson test 5:203  
-  sea_surface_height_type= 204     !Williamson test2:204, Williamson test 5:205 
+  initial_velocity_type  = 202     !Williamson test2:202, Williamson test 5:203
+  sea_surface_height_type= 204     !Williamson test2:204, Williamson test 5:205
   topography_type=200              !For Williamson test5=201 otherwise =200
   initial_temperature_type=211
 /

@@ -1,0 +1,59 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+final_status_file="${basedir}/run/${job_name}.final_status"
+
+# Avoid a false positive result (e.g. if the code below does not have enough
+# time to finish):
+echo '255' > "${final_status_file}"
+
+# Default parameters:
+builddirs=${basedir}
+job_count=${SLURM_NTASKS:-10}
+
+# Override the default parameters for specific builders:
+case $builder in
+  rcl_nec)
+    builddirs+=" ${MODEL_SCAL%'/bin/icon'}"
+    job_count=24
+    ;;
+esac
+
+# Sanitize the environment:
+unset MAKEFLAGS
+
+# Make flags to be used when building the test executables:
+build_makeflags="--jobs=${job_count} --keep-going"
+
+# Synchronize the output of the parallel build jobs if the version of make in
+# use supports it:
+make --help | grep 'output-sync' >/dev/null && build_makeflags+=' --no-print-directory --output-sync=target'
+
+# Initalize the exit code:
+exitcode=0
+
+set -x
+
+# Build and run the tests in two separate steps for better output in the log:
+for builddir in ${builddirs}; do
+  make -C "${builddir}" ${build_makeflags} V=1 TESTS= check-icon || exitcode=$?
+done
+
+for builddir in ${builddirs}; do
+    make -C "${builddir}" --keep-going ICON_VERBOSE_TESTS=1 ICON_COLOR_TESTS=always check-icon || exitcode=$?
+done
+
+set +x
+
+# Generate the status file for the buildbot:
+echo "${exitcode}" > "${final_status_file}"
+
+# Exit with the exit code of the last unsuccessful make command (if any):
+exit ${exitcode}

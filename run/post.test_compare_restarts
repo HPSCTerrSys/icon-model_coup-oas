@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -22,16 +22,16 @@ get_last_1_restart()
 {
   model_restart_param=$1
   restart_list=$(ls restart_*${model_restart_param}*_DOM*.nc)
-  
+
   last_restart=""
-  last_1_restart=""  
+  last_1_restart=""
   for restart_file in $restart_list
   do
     last_1_restart=$last_restart
     last_restart=$restart_file
 
     echo $restart_file $last_restart $last_1_restart
-  done  
+  done
 }
 #-----------------------------------------------------------------------------
 check_restarts()
@@ -49,7 +49,7 @@ check_restarts()
 
   ${cdo_diff} $restart_folder_1/$restart_file $restart_folder_2/$restart_file > $diff_file
 
-  # check if  diff_file contains 'records' 
+  # check if  diff_file contains 'records'
   grep "records" $diff_file
   return_status=$?
   if [ $return_status != 0 ] ; then

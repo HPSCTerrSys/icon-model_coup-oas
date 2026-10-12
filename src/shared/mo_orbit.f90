@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Computation of orbital parameters for use in radiative transfer
 ! calculations (among other things)
 !
@@ -18,8 +29,8 @@
 ! spherical variables - VSOP 87 solutions. Astronomy and Astrophysics,
 ! 202:309-315, 1988.
 !
-! Simon, J.L., P. Bretagnon, et al., "Numerical expressions for precession 
-! formulae and mean elements for the Moon and the planets", Astron. and 
+! Simon, J.L., P. Bretagnon, et al., "Numerical expressions for precession
+! formulae and mean elements for the Moon and the planets", Astron. and
 ! Astrophys. 282 (1994) 663-683.
 !
 ! J. Laskar, F. Joutel, and F. Boudin. Orbital, precessional, and
@@ -32,40 +43,29 @@
 ! A. Berger. Obliquity and precession for the last 5,000,000
 ! years. Astronomy and Astrophysics, 51:127-135, 1976.
 !
-! Monin, A. S.: An Introduction to the Theory of Climate  D. Reidel 
+! Monin, A. S.: An Introduction to the Theory of Climate  D. Reidel
 ! Publishing Company, Dordrecht, 1986 (pp 10-12).
 !
 ! J. Meeus. Astronomical Algorithms. Willmann-Bell, Richmond, 2 edition,
 ! 1998.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_orbit
 
-  USE mo_kind,           ONLY : wp, i8
-  USE mo_math_constants, ONLY : pi           ,& ! pi
-       &                        twopi => pi2 ,& ! pi*2
+  USE mo_kind,           ONLY : wp
+  USE mo_math_constants, ONLY : twopi => pi2 ,& ! pi*2
        &                        deg2rad         ! pi/180
   USE mo_exception,      ONLY : finish, message, message_text,warning, print_value
-  USE mtime,             ONLY : julianday, newJulianday, deallocateJulianday, getJulianDayFromDatetime, &
-       &                        newDateTime, deallocateDateTime, datetime, no_of_ms_in_a_day, &
+  USE mtime,             ONLY : julianday, getJulianDayFromDatetime, &
+       &                        datetime, date, time, no_of_ms_in_a_day, &
        &                        getNoOfDaysInYearDateTime
+  USE mo_fortran_tools,  ONLY: set_acc_host_or_device, set_acc_async_queue
 
   IMPLICIT NONE
-  PRIVATE 
+  PRIVATE
   PUBLIC :: orbit_kepler, orbit_vsop87, inquire_declination, &
             get_orbit_times
 
-  TYPE terms 
+  TYPE terms
     REAL(wp) :: A
     REAL(wp) :: B
     REAL(wp) :: C
@@ -75,6 +75,7 @@ MODULE mo_orbit
   REAL(wp), PARAMETER :: sec2rad     = deg2rad/3600.0_wp
 
   REAL(wp), SAVE      :: declination  = 0.0_wp
+  !$ACC DECLARE COPYIN(declination)
   LOGICAL , SAVE      :: decl_warning = .TRUE.
 
 CONTAINS
@@ -82,15 +83,15 @@ CONTAINS
   !>
   !! @brief Simple model for sun-earth geometry versus time of year
   !!
-  !! @remarks 
+  !! @remarks
   !!   This routine computes three orbital parameters depending on the time of
-  !!   the day as well as of the year (both in radians). The main parameters 
+  !!   the day as well as of the year (both in radians). The main parameters
   !!   are the eccentricity (cecc); the obliquity (cobld) and the longitude of
   !!   of perihelion (clonp).
   !
   SUBROUTINE orbit_kepler (cecc, cobld, clonp, time, rasc_sun, decl_sun, dist_sun)
 
-    REAL(wp), PARAMETER   :: ceps = 1.0e-9_wp        
+    REAL(wp), PARAMETER   :: ceps = 1.0e-9_wp
 
     REAL(wp), INTENT(in)  :: cecc  !< Eccentricity of the Kepler orbit
     REAL(wp), INTENT(in)  :: cobld !< Obliquity of the Earth axis [Deg]
@@ -121,22 +122,22 @@ CONTAINS
     sq_ecc = SQRT((1.0_wp+cecc)/(1.0_wp-cecc))
     big_e  = 2.0_wp*ATAN(TAN(0.5_wp*phl_rad)/sq_ecc)
     !
-    ! Calculation of true anomaly of vernal equinox (Kepler) 
+    ! Calculation of true anomaly of vernal equinox (Kepler)
     ! --------------------------------
     !
     ! -- make first guess of the eccentric anomaly (big_e) a correction is
-    ! applied for special cases where the first guest will not lead to 
-    ! convergence.  
+    ! applied for special cases where the first guest will not lead to
+    ! convergence.
     !
     delt = time-(big_e-cecc*SIN(big_e))
     guess = delt/(1.0_wp-cecc)
     big_e = delt
-    IF ( cecc > 0.975_wp .AND. ABS(delt) <  0.52359_wp) THEN  
+    IF ( cecc > 0.975_wp .AND. ABS(delt) <  0.52359_wp) THEN
       a     = (1.0_wp-cecc)/(4.0_wp*cecc+0.5_wp)
       b     = delt/(8.0_wp*cecc+1.0_wp)
       z1    = SIGN(SQRT(b*b+a*a*a), b)
       z2    = SIGN((ABS(b+z1))**1.5_wp,b+z1) - 0.5_wp*a
-      z3    = z2-(0.078_wp*z2**5)/(1.0_wp+cecc)        
+      z3    = z2-(0.078_wp*z2**5)/(1.0_wp+cecc)
       big_e = delt+cecc*(3.0_wp*z3 - 4.0_wp*z3*z3*z3)
     END IF
     !
@@ -149,7 +150,7 @@ CONTAINS
       cos_e = COS(big_e)
       big_e = (delt+cecc*(SIN(big_e)-big_e*cos_e)) / (1.0_wp-cecc*cos_e)
       diff  = guess - big_e
-      iter  = iter+1      
+      iter  = iter+1
     END DO
     IF (iter >= 25 ) CALL finish('orbit_kepler','Eccentric anomaly not found!')
     !
@@ -164,6 +165,7 @@ CONTAINS
     dist_sun  = 1.0_wp-cecc*COS(big_e)
 
     declination = decl_sun
+    !$ACC UPDATE DEVICE(declination)
     initialized = .TRUE.
 
   END SUBROUTINE orbit_kepler
@@ -171,12 +173,12 @@ CONTAINS
   !>
   !! @brief Advanced model for calculating orbital parameters
   !!
-  !! @remarks 
+  !! @remarks
   !!   This routine computes orbital parameters depending on the Julian Day.
   !!   The model is based on the Variations Seculaires des Orbites Plan
-  !!   Planetaires (VSOP) method, as implemented in the VSOP87 model. The VSOP 
+  !!   Planetaires (VSOP) method, as implemented in the VSOP87 model. The VSOP
   !!   model provides the sun-earth distance, right ascention and declination
-  !!   of the sun and the hour angle as output.  This is the standard orbital 
+  !!   of the sun and the hour angle as output.  This is the standard orbital
   !!   model used by ECHAM/ICON.
   !
   SUBROUTINE orbit_vsop87 (julian_day, rasc_sun, decl_sun, dist_sun)
@@ -190,7 +192,7 @@ CONTAINS
     REAL(wp), PARAMETER     :: sun_helio(3) = (/ 0.0_wp, 0.0_wp, 0.0_wp/)
     REAL(wp)                :: t, obl, coords(2), sun_geo(3)
     !
-    ! --- Preliminary calculations 
+    ! --- Preliminary calculations
     !
     IF (ABS(julian_day) >= 1.e+07_wp) CALL finish('orbit_vsop87',             &
          'Orbital model not valid for extreme times')
@@ -209,6 +211,7 @@ CONTAINS
     CALL aberration (t, obl, rasc_sun, decl_sun)
 
     declination = decl_sun
+    !$ACC UPDATE DEVICE(declination)
     initialized = .TRUE.
 
   END SUBROUTINE orbit_vsop87
@@ -235,8 +238,8 @@ CONTAINS
     coords = sun_position (t) ! returns longitude and eccentric
     coslon = COS (coords(1))
     sinlon = SIN (coords(1))
-    ! 
-    ! --- the next three terms are corrections for the FK5 system 
+    !
+    ! --- the next three terms are corrections for the FK5 system
     !
     pir    = (102.93735_wp+t*(1.71954_wp+t*0.00046_wp))*deg2rad
     coslon = coslon-coords(2)*COS(pir)
@@ -305,7 +308,7 @@ CONTAINS
   !
   PURE FUNCTION helio2geo(shelio, searth)
 
-    REAL(wp) :: helio2geo(3) 
+    REAL(wp) :: helio2geo(3)
     REAL(wp), INTENT(in)  :: shelio(3), searth(3)
 
     helio2geo(1:3)   = rect2sph (sph2rect (shelio) - sph2rect (searth) )
@@ -433,9 +436,9 @@ CONTAINS
   !-----------------------------------------------------------------------------
   !>
   !! @brief Calculates obliquity given Julian time
-  !! 
+  !!
   !
-  PURE FUNCTION obliquity(t) 
+  PURE FUNCTION obliquity(t)
 
     REAL(wp) :: obliquity     !< obliquity
     REAL(wp), INTENT(in) :: t !< Centuries since J2000.0
@@ -455,7 +458,7 @@ CONTAINS
   !-----------------------------------------------------------------------------
   !>
   !! @brief Julian Day to Time (in centuries since J2000.0)
-  !! 
+  !!
   !! @note 2451545 is the Julian Day of 2000-01-01.
   !
   PURE FUNCTION jd2t(jd)
@@ -463,7 +466,7 @@ CONTAINS
     REAL(wp) :: jd2t           !< centuries since J2000.0
     REAL(wp), INTENT(in) :: jd !< Julian Day
 
-    jd2t = (jd-2451545.0_wp)/36525.0_wp 
+    jd2t = (jd-2451545.0_wp)/36525.0_wp
 
   END FUNCTION jd2t
   !-----------------------------------------------------------------------------
@@ -494,10 +497,10 @@ CONTAINS
   !-----------------------------------------------------------------------------
   !>
   !! @brief calculate the heliocentric earth position at time t
-  !! 
+  !!
   !! @remarks
   !!   Incorporated from mo_vosp87 and rewritten as a function. Trailing zeros
-  !!   removed from data, and continuation lines limited to no more than 40 
+  !!   removed from data, and continuation lines limited to no more than 40
   !!   (per FORTRAN standard).
   !
   PURE FUNCTION earth_position (t)
@@ -506,7 +509,7 @@ CONTAINS
     REAL(wp), INTENT(in)  :: t    !< number of centuries since J2000
     !
     ! --- Data given are based on VSOP87D:  Some terms are broken up so that the
-    !     number of continuation linds conform with the F95 standard, hence 
+    !     number of continuation linds conform with the F95 standard, hence
     !     L1 = (/L1A,L1B/) and R1 = (/R1A,R1B/)
     !
     TYPE (terms), PARAMETER :: L1A(32) = (/ &
@@ -757,7 +760,7 @@ CONTAINS
     r = r+sum_vsop87 (t, R5, 5)
     !
     ! --- Convert from Dynamic to FK5 equator & ecliptic (need extra factor 0.1
-    !     for t in the equation for ld compared to Meeus original development). 
+    !     for t in the equation for ld compared to Meeus original development).
     !
     ld = l-0.1_wp*t*(1.397_wp+0.000031_wp*t)*deg2rad;
     l  = l+(-0.09033_wp+0.03916_wp*TAN(b)*(COS(ld)+SIN(ld)))*sec2rad;
@@ -799,9 +802,17 @@ CONTAINS
   !>
   !! @brief Returns declination calculated in last orbit call, or default value
   !
-  SUBROUTINE inquire_declination(xdec)
+  SUBROUTINE inquire_declination(xdec, lacc, opt_acc_async_queue)
 
     REAL(wp), INTENT(out) :: xdec !< declination of the sun
+    LOGICAL, OPTIONAL, INTENT(IN) :: lacc
+    INTEGER, INTENT(IN), OPTIONAL :: opt_acc_async_queue
+
+    LOGICAL :: lzacc
+    INTEGER :: acc_async_queue
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+    CALL set_acc_async_queue(acc_async_queue, opt_acc_async_queue)
 
     IF (.NOT.initialized .AND. decl_warning) THEN
       CALL warning    ('mo_radiation_radiation/inquire_declination',                                  &
@@ -810,7 +821,9 @@ CONTAINS
       decl_warning = .FALSE.
     END IF
 
+    !$ACC KERNELS PRESENT(xdec, declination) ASYNC(acc_async_queue) IF(lzacc)
     xdec = declination
+    !$ACC END KERNELS
 
   END SUBROUTINE inquire_declination
 
@@ -824,35 +837,27 @@ CONTAINS
                            & time_of_day, orbit_date    )
 
     LOGICAL, INTENT(IN) :: l_orbvsop87
-    TYPE(datetime), POINTER, INTENT(IN) :: current_datetime
+    TYPE(datetime), INTENT(IN) :: current_datetime
     LOGICAL, INTENT(in) :: lyr_perp
     INTEGER, INTENT(in) :: yr_perp
     REAL (wp), INTENT (OUT) :: time_of_day, orbit_date
 
-    TYPE(julianday), POINTER :: jd, jd_pal
-    TYPE(datetime), POINTER  :: valid_datetime, pal_datetime
+    TYPE(julianday) :: jd, jd_pal
+    TYPE(datetime) :: valid_datetime, pal_datetime
     REAL(wp)    :: zdy, zdy_mar0, zscr, zyearlen_days
 
-       valid_datetime => newDateTime(current_datetime)
-       IF (lyr_perp) THEN
-         valid_datetime%date%year = yr_perp
-       END IF
-
+    valid_datetime = current_datetime
+    IF (lyr_perp) valid_datetime%date%year = yr_perp
+    CALL getJulianDayFromDatetime(valid_datetime, jd)
     IF (l_orbvsop87) THEN
-      jd => newJulianday(0_i8, 0_i8)
-      CALL getJulianDayFromDatetime(valid_datetime, jd) 
       orbit_date = REAL(jd%day,wp) + REAL(jd%ms,wp)/REAL(no_of_ms_in_a_day,wp)
       time_of_day = (REAL(jd%ms,wp)/REAL(no_of_ms_in_a_day,wp)-0.5_wp)*twopi
-      CALL deallocateJulianday(jd)
-      CALL deallocateDateTime(valid_datetime)
     ELSE
       ! Kepler orbit that needs fraction with respect to vernal equinox in rad
       ! mtime routines should be able to handle different calendars...
-      jd => newJulianday(0_i8, 0_i8)
-      CALL getJulianDayFromDatetime(valid_datetime, jd)
       time_of_day = (REAL(jd%ms,wp)/REAL(no_of_ms_in_a_day,wp)-0.5_wp)*twopi
-      jd_pal => newJulianday(0_i8, 0_i8)
-      pal_datetime => newDateTime('1900-01-01T00:00:00Z')
+      pal_datetime = dateTime(date(year=1900, month=1, day=1), &
+        &                     time(hour=0, minute=0, second=0, ms=0))
       CALL getJulianDayFromDatetime(pal_datetime, jd_pal)
       zyearlen_days=REAL(getNoOfDaysInYearDateTime(valid_datetime),wp)
       zdy = (REAL(jd%day,wp)+REAL(jd%ms,wp)/REAL(no_of_ms_in_a_day,wp))-       &
@@ -863,11 +868,8 @@ CONTAINS
       zdy_mar0   = 78.41_wp - 0.0078_wp*(1900-1987) + 0.25_wp*MOD(1900,4)
       zscr       = zdy + zyearlen_days - zdy_mar0
       orbit_date = MOD(zscr/zyearlen_days,1.0_wp)*twopi
-      CALL deallocateJulianday(jd)
-      CALL deallocateJulianday(jd_pal)
-      CALL deallocateDateTime(valid_datetime)
     END IF
-      
+
   END SUBROUTINE get_orbit_times
 
 END MODULE mo_orbit

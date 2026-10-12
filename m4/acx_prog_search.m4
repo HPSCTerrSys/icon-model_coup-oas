@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2024, MPI-M
+# Copyright (c) 2018-2026, MPI-M
 #
 # Author: Sergey Kosukhin <sergey.kosukhin@mpimet.mpg.de>
 #
@@ -100,32 +100,35 @@ AC_DEFUN([ACX_PROG_SEARCH],
 # The result is stored in the acx_prog_search_abspath shell variable.
 #
 AC_DEFUN([ACX_PROG_SEARCH_ABSPATH],
-  [acx_prog_search_abspath=unknown
-   set dummy $1; shift; acx_prog_exec=$[1]; shift; acx_prog_args="$[@]"
-   AC_MSG_CHECKING([for the absolute path to $acx_prog_exec])
-   AS_CASE([$acx_prog_exec],
-     [*[[\\/]]*],
-     [AS_IF([AS_EXECUTABLE_P([$acx_prog_exec])],
-        [acx_prog_search_abspath=$acx_prog_exec])],
-     [_AS_PATH_WALK([$4],
-        [AS_IF([AS_EXECUTABLE_P(["$as_dir/$acx_prog_exec"])],
-           [acx_prog_search_abspath="$as_dir/$acx_prog_exec"; break])])])
+  [AC_REQUIRE_SHELL_FN([acx_prog_search_abspath_fn], [],
+     [acx_prog_exec=$[1]
+      AS_CASE([$acx_prog_exec],
+        [*[[\\/]]*],
+        [AS_IF([AS_EXECUTABLE_P([$acx_prog_exec])],
+           [acx_prog_search_abspath=$acx_prog_exec])],
+        [_AS_PATH_WALK([$4],
+           [AS_IF([AS_EXECUTABLE_P(["$as_dir/$acx_prog_exec"])],
+              [acx_prog_search_abspath="$as_dir/$acx_prog_exec"; break])])])
 dnl If acx_prog_search_abspath is not "unknown", it is a path to an executable
 dnl (without arguments).
-   AS_CASE([$acx_prog_search_abspath],
-     [unknown], [],
-     [[[\\/]]* | ?:[[\\/]]*], [],
-     [asx_dir=`echo "$acx_prog_search_abspath" | dnl
+      AS_CASE([$acx_prog_search_abspath],
+        [unknown], [],
+        [[[\\/]]* | ?:[[\\/]]*], [],
+        [asx_dir=`echo "$acx_prog_search_abspath" | dnl
 sed 's%/@<:@^/@:>@*$%%' 2>/dev/null`
-      asx_file=`echo "$acx_prog_search_abspath" | sed 's%.*/%%' 2>/dev/null`
-      asx_dir=`cd "$asx_dir" >/dev/null 2>&1 && pwd 2>/dev/null`
+         asx_file=`echo "$acx_prog_search_abspath" | sed 's%.*/%%' 2>/dev/null`
+         asx_dir=`cd "$asx_dir" >/dev/null 2>&1 && pwd 2>/dev/null`
 dnl Set the result to unknown until we make sure that we can provide a correct
 dnl one.
-      acx_prog_search_abspath=unknown
-      AS_CASE([$asx_dir],
-        [[[\\/]]* | ?:[[\\/]]*],
-        [AS_IF([AS_EXECUTABLE_P(["$asx_dir/$asx_file"])],
-           [acx_prog_search_abspath="$asx_dir/$asx_file"])])])
+         acx_prog_search_abspath=unknown
+         AS_CASE([$asx_dir],
+           [[[\\/]]* | ?:[[\\/]]*],
+           [AS_IF([AS_EXECUTABLE_P(["$asx_dir/$asx_file"])],
+              [acx_prog_search_abspath="$asx_dir/$asx_file"])])])])dnl
+   acx_prog_search_abspath=unknown
+   set dummy $1; shift; acx_prog_exec=$[1]; shift; acx_prog_args="$[@]"
+   AC_MSG_CHECKING([for the absolute path to $acx_prog_exec])
+   acx_prog_search_abspath_fn "$acx_prog_exec"
    AC_MSG_RESULT([$acx_prog_search_abspath])
    AS_VAR_IF([acx_prog_search_abspath], [unknown],
      [m4_default([$3],
@@ -134,3 +137,30 @@ dnl one.
      [AS_IF([test -n "$acx_prog_args"],
         [AS_VAR_APPEND([acx_prog_search_abspath], [" $acx_prog_args"])])
       $2])])
+
+# ACX_PROG_SEARCH_ABSPATH_IF_NOT_ABSPATH(VARIABLE,
+#                                        [ACTION-IF-SUCCESS],
+#                                        [ACTION-IF-FAILURE = WARNING],
+#                                        [PATH = $PATH])
+# -----------------------------------------------------------------------------
+# Gets the name of an executable stored in the shell variable VARIABLE and
+# searches for the absolute path to it. If the name is already an absolute
+# path, silently skips all checks (does not even check whether the provided
+# path exists and points to an executable). Otherwise, expands
+# ACX_PROG_SEARCH_ABSPATH with the value of the VARIABLE as the
+# PROG-TO-CHECK-FOR argument (see ACX_PROG_SEARCH_ABSPATH).
+#
+# If successful, runs ACTION-IF-SUCCESS (defaults to assigning the shell
+# variable VARIABLE with the result of the check), otherwise runs
+# ACTION-IF-FAILURE (defaults to a warning message).
+#
+AC_DEFUN([ACX_PROG_SEARCH_ABSPATH_IF_NOT_ABSPATH],
+  [AS_CASE([AS_VAR_GET([$1])],
+     [[[\\/]]* | ?:[[\\/]]*], [$2],
+     [ACX_PROG_SEARCH_ABSPATH([AS_VAR_GET([$1])],
+        [m4_default([$2], [AS_VAR_SET([$1], ["$acx_prog_search_abspath"])])],
+        [m4_default([$3],
+           [set dummy AS_VAR_GET([$1]); shift
+            AC_MSG_WARN(
+              [unable to find the absolute path to $[]1])])],
+        [m4_default([$4], [$PATH])])])])

@@ -1,14 +1,14 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
       MODULE mo_hamocc_output
 
 #include "add_var_acc_macro.inc"
@@ -17,8 +17,8 @@
       USE mo_master_control,       ONLY: get_my_process_name
 
       USE mo_control_bgc,          ONLY: dtb
-     
-      USE mo_dynamics_config,      ONLY: nnow 
+
+      USE mo_dynamics_config,      ONLY: nnow
 
       USE mo_exception, ONLY      : message, finish
 
@@ -43,7 +43,7 @@
 
 
       USE mo_hamocc_types,       ONLY: t_hamocc_diag, t_hamocc_state, &
-    &                                  t_hamocc_sed, t_hamocc_tend,   &
+    &                                  t_hamocc_sed, t_hamocc_tend, t_hamocc_vertint, &
     &                                  t_hamocc_monitor, t_hamocc_prog, t_hamocc_agg
 
       USE mo_zaxis_type
@@ -59,10 +59,10 @@
       USE mo_io_config,           ONLY: lnetcdf_flt64_output
 
       USE mo_grib2,               ONLY:  grib2_var
-       
+
       USE mo_parallel_config,     ONLY: nproma
 
-      USE mo_hamocc_nml,         ONLY: io_stdo_bgc, l_N_cycle, i_settling
+      USE mo_hamocc_nml,         ONLY: io_stdo_bgc, l_N_cycle, i_settling, l_hamocc_vertint
 
       USE mo_var_metadata,       ONLY: post_op, get_timelevel_string
 
@@ -71,9 +71,9 @@
       USE mo_var_metadata_types, ONLY: POST_OP_SCALE
 
       USE mo_sedmnt,          ONLY: ks
-  
+
       USE mo_bgc_constants,    ONLY: kilo, s2year, n2tgn, c2gtc
-     
+
       USE mo_ocean_tracer_transport_types, ONLY: t_ocean_tracer
 
       USE mo_param1_bgc,       ONLY: ntraad, n_bgctra, set_tracer_indices
@@ -89,10 +89,10 @@
       TYPE(t_var_list_ptr)                              :: hamocc_aggregate_list ! for aggregate outout
 
       CONTAINS
-      
-!================================================================================== 
+
+!==================================================================================
   SUBROUTINE construct_hamocc_state( patch_3d, hamocc_state )
-    
+
     TYPE(t_hamocc_state), TARGET :: hamocc_state
     TYPE(t_patch_3D), TARGET, INTENT(in) :: patch_3d
 
@@ -101,25 +101,28 @@
 
     CHARACTER(LEN=max_char_length), PARAMETER :: &
       & routine = 'mo_bgc_icon_comm:construct_hamocc_state'
-    
+
     TYPE(t_patch), POINTER :: patch_2d
 
     patch_2d => patch_3d%p_patch_2d(1)
-    
+
     ! Using Adams-Bashforth semi-implicit timestepping with 3 prognostic time levels:
     prlength = 3
     CALL message(TRIM(routine), 'start to construct hamocc state' )
-    
+
     CALL set_tracer_indices()
 
     !$ACC ENTER DATA COPYIN(hamocc_state, hamocc_state%p_diag, hamocc_state%p_sed) &
-    !$ACC   COPYIN(hamocc_state%p_agg, hamocc_state%p_tend, hamocc_state%p_tend%monitor)
+    !$ACC   COPYIN(hamocc_state%p_agg, hamocc_state%p_tend, hamocc_state%p_tend%monitor) &
+    !$ACC   COPYIN(hamocc_state%p_tend%vertint)
     CALL construct_hamocc_diag(patch_2d, hamocc_state%p_diag)
-     
+
     CALL message(TRIM(routine), 'start to construct hamocc state: tend' )
     CALL construct_hamocc_tend(patch_2d, hamocc_state%p_tend)
     CALL construct_hamocc_moni(patch_2d, hamocc_state%p_tend%monitor)
-   
+    IF (l_hamocc_vertint) THEN
+      CALL construct_hamocc_vertint(patch_2d, hamocc_state%p_tend%vertint)
+    END IF
     CALL message(TRIM(routine), 'start to construct hamocc state: sed' )
     CALL construct_hamocc_sed(patch_2d, hamocc_state%p_sed)
 
@@ -139,16 +142,16 @@
         IF (timelevel .ne. nnow(1)) THEN
           CALL construct_hamocc_state_prog(patch_3d, &
             &                              hamocc_state%p_prog(timelevel), &
-            &                              get_timelevel_string(timelevel) &  
+            &                              get_timelevel_string(timelevel) &
             )
-          
+
         END IF
     END DO
 
     CALL message(TRIM(routine),'construction of hamocc state finished')
-      
- 
-  END SUBROUTINE 
+
+
+  END SUBROUTINE
 
   SUBROUTINE construct_hamocc_state_prog(patch_3d, hamocc_state_prog,&
           &                      var_suffix)
@@ -162,7 +165,7 @@
     TYPE(t_patch_3d), TARGET, INTENT(in)        :: patch_3d
     TYPE(t_hamocc_prog), INTENT(inout)         :: hamocc_state_prog
     CHARACTER(LEN=4), intent(in)               :: var_suffix
-    
+
     INTEGER :: alloc_cell_blocks,  datatype_flt, jtrc
     TYPE(t_ocean_tracer), POINTER :: tracer
     CHARACTER(LEN=max_char_length), PARAMETER :: &
@@ -172,9 +175,9 @@
 
     !-------------------------------------------------------------------------
     !$ACC ENTER DATA COPYIN(hamocc_state_prog)
-    
+
     alloc_cell_blocks = patch_3d%p_patch_2d(1)%alloc_cell_blocks
-  
+
     CALL add_var(hamocc_restart_list, 'tracers'//TRIM(var_suffix), hamocc_state_prog%tracer , &
           & grid_unstructured_cell, za_depth_below_sea, &
           & t_cf_var('tracers'//TRIM(var_suffix), '', ' ', &
@@ -187,7 +190,7 @@
     ! Reference to individual tracer, for I/O
     ALLOCATE(hamocc_state_prog%tracer_ptr(n_bgctra))
     !$ACC ENTER DATA COPYIN(hamocc_state_prog%tracer_ptr)
-         
+
         !---------------------------------------------------------------------------
 
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
@@ -211,7 +214,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(ialkali)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'phosph'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(iphosph)%p,                         &
@@ -222,7 +225,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(iphosph)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'nitrate'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(iano3)%p,                         &
@@ -233,7 +236,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(iano3)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'gasnit'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(igasnit)%p,                         &
@@ -244,7 +247,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(igasnit)%p)
- 
+
     IF (my_process_is_stdio()) CALL message(routine,'phy:'//TRIM(int2string(iphy)))
 
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
@@ -279,7 +282,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(icya)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'oxygen'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(ioxygen)%p,                         &
@@ -290,7 +293,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(ioxygen)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'silica'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(isilica)%p,                         &
@@ -301,7 +304,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(isilica)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'doc'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(idoc)%p,                         &
@@ -312,7 +315,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(idoc)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'an2o'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(ian2o)%p,                         &
@@ -323,7 +326,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(ian2o)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'det'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(idet)%p,                         &
@@ -334,7 +337,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(idet)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'iron'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(iiron)%p,                         &
@@ -345,7 +348,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(iiron)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'dms'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(idms)%p,                         &
@@ -356,7 +359,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(idms)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'h2s'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(ih2s)%p,                         &
@@ -367,7 +370,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.TRUE.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(ih2s)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'agesc'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(iagesc)%p,                         &
@@ -389,7 +392,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.True.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(icalc)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'opal'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(iopal)%p,                         &
@@ -400,7 +403,7 @@
           & ldims=(/nproma,n_zlev,alloc_cell_blocks/), tlev_source=TLEV_NNEW, &
           & lrestart_cont=.True.,in_group=groups("HAMOCC_BASE"))
     __acc_attach(hamocc_state_prog%tracer_ptr(iopal)%p)
- 
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'dust'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(idust)%p,                         &
@@ -413,7 +416,7 @@
     __acc_attach(hamocc_state_prog%tracer_ptr(idust)%p)
 
     IF (l_N_cycle) THEN
-      
+
     CALL add_ref( hamocc_restart_list, 'tracers'//TRIM(var_suffix),   &
           & 'ammo'//TRIM(var_suffix),        &
           & hamocc_state_prog%tracer_ptr(iammo)%p,                         &
@@ -437,18 +440,18 @@
     __acc_attach( hamocc_state_prog%tracer_ptr(iano2)%p)
 
      ENDIF ! l_N_cycle
- 
+
      ALLOCATE(hamocc_state_prog%tracer_collection%tracer(n_bgctra))
      hamocc_state_prog%tracer_collection%no_of_tracers = n_bgctra
      hamocc_state_prog%tracer_collection%patch_3d => patch_3d
-     hamocc_state_prog%tracer_collection%typeOfTracers = "hamocc"    
+     hamocc_state_prog%tracer_collection%typeOfTracers = "hamocc"
      hamocc_state_prog%tracer_collection%patch_3d => patch_3d
- 
+
      DO jtrc = 1, n_bgctra
           tracer => hamocc_state_prog%tracer_collection%tracer(jtrc)
           ! point the concentration to the 4D tracer
           ! this is a tmeporary solution until the whole code is cleaned
-          tracer%concentration => hamocc_state_prog%tracer(:,:,:,jtrc) 
+          tracer%concentration => hamocc_state_prog%tracer(:,:,:,jtrc)
           NULLIFY(tracer%top_bc)
           NULLIFY(tracer%bottom_bc)
           IF (jtrc <= ntraad) THEN
@@ -456,25 +459,25 @@
           ELSE
             tracer%is_advected = .false.
           ENDIF
-            
+          tracer%diagnostics%is_activated = .false. ! by_nils ts_bal
      ENDDO
 
     !$ACC ENTER DATA &
     !$ACC   COPYIN(hamocc_state_prog%tracer_collection) &
     !$ACC   COPYIN(hamocc_state_prog%tracer_collection%tracer)
-     
+
   END SUBROUTINE construct_hamocc_state_prog
 
-!================================================================================== 
+!==================================================================================
   SUBROUTINE construct_hamocc_diag(patch_2d, hamocc_state_diag)
-    
+
 
 
     TYPE(t_patch), TARGET, INTENT(in)          :: patch_2d
     TYPE(t_hamocc_diag), INTENT(inout)         :: hamocc_state_diag
 
     ! local variables
-    
+
     INTEGER :: alloc_cell_blocks,  datatype_flt
     CHARACTER(LEN=max_char_length), PARAMETER :: &
       & routine = 'mo_bgc_icon_comm:construct_hamocc_diag'
@@ -503,16 +506,16 @@
      __acc_attach(hamocc_state_diag%co3)
 
     CALL message(TRIM(routine), 'construct diagnostic hamocc end')
-  END SUBROUTINE 
+  END SUBROUTINE
 
-!================================================================================== 
+!==================================================================================
   SUBROUTINE construct_hamocc_moni(patch_2d, hamocc_state_moni)
-    
+
     TYPE(t_patch), TARGET, INTENT(in)          :: patch_2d
     TYPE(t_hamocc_monitor), INTENT(inout)      :: hamocc_state_moni
-    
+
     ! local variables
-    
+
     INTEGER ::  datatype_flt
     CHARACTER(LEN=max_char_length), PARAMETER :: &
       & routine = 'mo_bgc_icon_comm:construct_hamocc_tend'
@@ -525,7 +528,7 @@
     !-----DIAG W/O restart-----------------------------------------------------------------
     ! for tracers restart is handled by ICON
     CALL message(TRIM(routine), 'start to construct hamocc monitoring')
- ! 
+ !
 
     ! add monitoring
     CALL add_var(hamocc_tendency_list, 'HAMOCC_NPP_global', hamocc_state_moni%phosy , &
@@ -1005,19 +1008,19 @@
 
   ENDIF
 
-  END SUBROUTINE 
+  END SUBROUTINE
 
 
 
 
-!================================================================================== 
+!==================================================================================
   SUBROUTINE construct_hamocc_tend(patch_2d, hamocc_state_tend)
-    
+
     TYPE(t_patch), TARGET, INTENT(in)          :: patch_2d
     TYPE(t_hamocc_tend), INTENT(inout)         :: hamocc_state_tend
-    
+
     ! local variables
-    
+
     INTEGER :: alloc_cell_blocks, datatype_flt
     CHARACTER(LEN=max_char_length), PARAMETER :: &
       & routine = 'mo_bgc_icon_comm:construct_hamocc_moni'
@@ -1032,7 +1035,7 @@
     !-----DIAG W/O restart-----------------------------------------------------------------
     ! for tracers restart is handled by ICON
     CALL message(TRIM(routine), 'start to construct hamocc tendency state')
-   
+
     CALL add_var(hamocc_tendency_list, 'HAMOCC_NPP',hamocc_state_tend%npp,    &
       & grid_unstructured_cell, za_depth_below_sea,&
       & t_cf_var('NPP','kmolP m-3 s-1','net primary production', datatype_flt,'NPP'), &
@@ -1056,7 +1059,7 @@
       & ldims=(/nproma,n_zlev,alloc_cell_blocks/),in_group=groups("HAMOCC_TEND"),&
       & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
     __acc_attach(hamocc_state_tend%remins)
-      
+
     CALL add_var(hamocc_tendency_list, 'HAMOCC_REMIN',hamocc_state_tend%remina,    &
       & grid_unstructured_cell, za_depth_below_sea,&
       & t_cf_var('REMIN','kmolP m-3 s-1','aerob detritus remineralization', datatype_flt,'remin'), &
@@ -1685,7 +1688,7 @@
     __acc_attach(hamocc_state_tend%satoxy)
 
     CALL add_var(hamocc_tendency_list, 'HAMOCC_satn2',hamocc_state_tend%satn2,    &
-      & grid_unstructured_cell, za_depth_below_sea,&
+      & grid_unstructured_cell, za_surface,&
       & t_cf_var('satn2','','N2 at saturation', datatype_flt,'satn2'), &
       & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell),&
       & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_TEND"),&
@@ -1693,7 +1696,7 @@
     __acc_attach(hamocc_state_tend%satn2)
 
     CALL add_var(hamocc_tendency_list, 'HAMOCC_satn2o',hamocc_state_tend%satn2o,    &
-      & grid_unstructured_cell, za_depth_below_sea,&
+      & grid_unstructured_cell, za_surface,&
       & t_cf_var('satn2o','','N2O at saturation', datatype_flt,'satn2o'), &
       & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell),&
       & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_TEND"),&
@@ -1701,7 +1704,7 @@
     __acc_attach(hamocc_state_tend%satn2o)
 
     CALL add_var(hamocc_tendency_list, 'HAMOCC_solco2',hamocc_state_tend%solco2,    &
-      & grid_unstructured_cell, za_depth_below_sea,&
+      & grid_unstructured_cell, za_surface,&
       & t_cf_var('solco2','','CO2 solubility', datatype_flt,'solco2'), &
       & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell),&
       & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_TEND"),&
@@ -1765,7 +1768,7 @@
       & ldims=(/nproma,n_zlev,alloc_cell_blocks/),in_group=groups("HAMOCC_TEND"),&
       & loutput=.FALSE., lrestart=.FALSE.,lopenacc=.TRUE.)
     __acc_attach(hamocc_state_tend%wcal)
-    
+
     END IF
 
     IF (l_N_cycle) THEN
@@ -1905,16 +1908,119 @@
 
     CALL message(TRIM(routine), 'construct hamocc tend end')
 
-  END SUBROUTINE 
+  END SUBROUTINE
 
-!================================================================================== 
+!==================================================================================
+  SUBROUTINE construct_hamocc_vertint(patch_2d, hamocc_state_vertint)
+
+    TYPE(t_patch), TARGET, INTENT(in)          :: patch_2d
+    TYPE(t_hamocc_vertint), INTENT(inout)      :: hamocc_state_vertint
+
+    ! local variables
+    INTEGER ::  alloc_cell_blocks,datatype_flt
+    CHARACTER(LEN=max_char_length), PARAMETER :: &
+      & routine = 'mo_bgc_icon_comm:construct_hamocc_vertint'
+
+    alloc_cell_blocks = patch_2d%alloc_cell_blocks
+
+    ! set correct output data type
+    datatype_flt = MERGE(DATATYPE_FLT64, DATATYPE_FLT32, lnetcdf_flt64_output)
+
+    !-----DIAG W/O restart-----------------------------------------------------------------
+    ! for tracers restart is handled by ICON
+    CALL message(TRIM(routine), 'start to construct hamocc vertint')
+
+    ! add vertint
+    CALL add_var(hamocc_tendency_list, 'dic_i', hamocc_state_vertint%dic, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('dic_i','kmol P m-2','top90m dissolved inorganic carbon', datatype_flt,'dic_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%dic)
+
+    CALL add_var(hamocc_tendency_list, 'alk_i', hamocc_state_vertint%alk, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('alk_i','kmol m-2','top90m alkalinity', datatype_flt,'alk_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%alk)
+
+    CALL add_var(hamocc_tendency_list, 'phy_i', hamocc_state_vertint%phy, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('phy_i','kmol P m-2','top90m phytoplankton concentration', datatype_flt,'phy_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%phy)
+
+    CALL add_var(hamocc_tendency_list, 'HAMOCC_npp_i', hamocc_state_vertint%npp, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('npp_i','kmol P m-2 s-1','top90m net primary production', datatype_flt,'npp_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%npp)
+
+    CALL add_var(hamocc_tendency_list, 'HAMOCC_pho_cya_i',hamocc_state_vertint%phoc, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('pho_cya_i','kmol P m-2 s-1','top90m total cyanobacteria growth', datatype_flt,'pho_cya_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%phoc)
+
+    CALL add_var(hamocc_tendency_list, 'HAMOCC_grazing_i',hamocc_state_vertint%graz, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('grazing_i','kmol P m-2 s-1','top90m zooplankton grazing', datatype_flt,'grazing_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%graz)
+
+    CALL add_var(hamocc_tendency_list, 'HAMOCC_zoomor_i',hamocc_state_vertint%zoomor, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('zoomor_i','kmol P m-2 s-1','top90m zooplankton mortality', datatype_flt,'zoomor_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%zoomor)
+
+   CALL add_var(hamocc_tendency_list, 'HAMOCC_bacfra_i',hamocc_state_vertint%bacfra, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('bacfra_i','kmol P m-2 s-1','top90m bacterial decomposition of DOC', datatype_flt,'bacfra_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE., lopenacc=.TRUE.)
+   __acc_attach(hamocc_state_vertint%bacfra)
+
+    CALL add_var(hamocc_tendency_list, 'HAMOCC_remina_i',hamocc_state_vertint%remina, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('remina_i','kmol P m-2 s-1','top90m aerob detritus remineralization', datatype_flt,'remina_i'), &
+      & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%remina)
+
+    CALL add_var(hamocc_tendency_list, 'HAMOCC_delcar_i',hamocc_state_vertint%delcar, &
+      & grid_unstructured_cell, za_surface, &
+      & t_cf_var('delcar_i','kmol C m-2 s-1','top90m calcium carbonate production', datatype_flt,'delcar_i'), &
+      & grib2_var(255, 255, 85, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell), &
+      & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_VINT"), &
+      & loutput=.TRUE., lrestart=.FALSE.,lopenacc=.TRUE.)
+    __acc_attach(hamocc_state_vertint%delcar)
+
+  END SUBROUTINE
+
+!==================================================================================
   SUBROUTINE construct_hamocc_sed(patch_2d, hamocc_state_sed)
-    
+
     TYPE(t_patch), TARGET, INTENT(in)          :: patch_2d
     TYPE(t_hamocc_sed), INTENT(inout)          :: hamocc_state_sed
-    
+
     ! local variables
-    
+
     INTEGER :: alloc_cell_blocks,  datatype_flt
     CHARACTER(LEN=max_char_length), PARAMETER :: &
       & routine = 'mo_bgc_icon_comm:construct_hamocc_sed'
@@ -1925,7 +2031,7 @@
     datatype_flt = MERGE(DATATYPE_FLT64, datatype_flt32, lnetcdf_flt64_output)
 
     CALL message(TRIM(routine), 'start to construct hamocc sed state')
-  
+
     CALL add_var(hamocc_sediment_list, 'HAMOCC_SED_C12org',hamocc_state_sed%so12,    &
       & grid_unstructured_cell, za_ocean_sediment,&
       & t_cf_var('SED_C12org','kmol P m-3 ','solid sediment C org', DATATYPE_FLT64,'ssso12'), &
@@ -2085,7 +2191,7 @@
       & ldims=(/nproma,alloc_cell_blocks/),in_group=groups("HAMOCC_SED"),&
       & loutput=.TRUE., lrestart=.TRUE.,lrestart_cont=.TRUE.,lopenacc=.TRUE.)
    __acc_attach(hamocc_state_sed%bsil)
-  
+
    CALL add_var(hamocc_sediment_list, 'HAMOCC_bolay',hamocc_state_sed%bolay,    &
       & grid_unstructured_cell, za_surface,&
       & t_cf_var('bolay','m ','bottom layer thickness', datatype_flt,'bolay'), &
@@ -2124,9 +2230,9 @@
 
     CALL message(TRIM(routine), 'construct hamocc sed end')
 
-  END SUBROUTINE 
+  END SUBROUTINE
 
-!================================================================================== 
+!==================================================================================
   SUBROUTINE construct_hamocc_agg(patch_2d, hamocc_state_agg)
 
     TYPE(t_patch), TARGET, INTENT(in)          :: patch_2d
@@ -2238,30 +2344,30 @@
 
   END SUBROUTINE
 
-!================================================================================== 
+!==================================================================================
   SUBROUTINE destruct_hamocc_state(hamocc_state)
     TYPE(t_hamocc_state), TARGET,INTENT(inout)   :: hamocc_state!(n_dom)
-    
+
     ! local variables
-    
-    
+
+
     CHARACTER(LEN=max_char_length), PARAMETER :: &
       & routine = 'mo_bgc_icon_comm:destruct_hamocc_state'
-    
+
     !-------------------------------------------------------------------------
     CALL message(TRIM(routine), 'start to destruct hamocc state ')
-    
-    
+
+
     CALL vlr_del(hamocc_restart_list)
     CALL vlr_del(hamocc_default_list)
     CALL vlr_del(hamocc_tendency_list)
     CALL vlr_del(hamocc_sediment_list)
     CALL vlr_del(hamocc_aggregate_list)
-    
+
     CALL message(TRIM(routine),'destruction of hamocc state finished')
-    CALL close_bgcout 
-   
-  END SUBROUTINE 
+    CALL close_bgcout
+
+  END SUBROUTINE
 
 
     SUBROUTINE construct_hamocc_var_lists(patch_2d)
@@ -2270,7 +2376,7 @@
     CHARACTER(:), ALLOCATABLE :: model_name
 
     model_name = get_my_process_name()
-    
+
     CALL vlr_add(hamocc_restart_list, 'hamocc_restart_list',   &
       & patch_id=patch_2d%id, lrestart=.TRUE., loutput=.TRUE., &
       & model_type=model_name)
@@ -2294,7 +2400,7 @@
 
 
     END SUBROUTINE construct_hamocc_var_lists
-!================================================================================== 
+!==================================================================================
   SUBROUTINE close_bgcout
 !
 
@@ -2311,4 +2417,3 @@
   END SUBROUTINE close_bgcout
 
  END MODULE
-

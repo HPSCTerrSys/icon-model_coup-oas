@@ -1,0 +1,107 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/utils/git.yml
+
+# Implements a before_script that installs the required Advanced Package Tool
+# (APT) packages using the GitLab CI caching.
+#
+# Jobs that extend the template must ensure that their runtime environments
+# provide the apt-get command, i.e. they run in a Debian-based Docker image.
+#
+.utils:apt:
+  extends: .utils:git:ignore
+  variables:
+    # Space-separated list of packages to install with APT:
+    ICON_CI_UTILS_APT_PACKAGES: null
+
+    # Path inside $CI_PROJECT_DIR to the APT cache directory:
+    #   Hint: to disable caching, nullify this variable and the cache parameter, i.e.
+    #     variables:
+    #       ICON_CI_UTILS_APT_CACHE_PATH: null
+    #     cache: null
+    ICON_CI_UTILS_APT_CACHE_PATH: ${ICON_CI_UTILS_GIT_IGNORE_PATH}/apt
+  before_script:
+    - |
+      # !reference [.utils:apt, before_script]
+      icon_ci_log_section_start 'Installing APT packages'
+      (
+        set -u
+
+        test -z "${ICON_CI_UTILS_APT_PACKAGES-}" && {
+          icon_ci_log_info_msg \
+            'ICON_CI_UTILS_APT_PACKAGES is empty: nothing to install'
+          # Drop the cache if the list of required packages is empty:
+          test -z "${ICON_CI_UTILS_APT_CACHE_PATH-}" || (
+            set -x
+            rm -rf "${ICON_CI_UTILS_APT_CACHE_PATH}"
+          )
+        } || {
+
+          DEBIAN_FRONTEND=noninteractive; export DEBIAN_FRONTEND
+
+          apt-get --version
+
+          test -z "${ICON_CI_UTILS_APT_CACHE_PATH-}" && {
+            icon_ci_log_info_msg \
+              'ICON_CI_UTILS_APT_CACHE_PATH is empty: the caching is disabled'
+          } || {
+            cache_path="${ICON_CI_UTILS_APT_CACHE_PATH}/apt-cache"
+
+            # Enable the cache:
+            (
+              set -x
+              echo "Dir::Cache::Archives \"${cache_path}/archives\";"
+              echo "Dir::State::Lists \"${cache_path}/lists\";"
+            ) >"/etc/apt/apt.conf.d/${CI_JOB_NAME_SLUG}"
+
+            # Invalidate the cache if the list of required packages has changed:
+            cache_key=${ICON_CI_UTILS_APT_PACKAGES}
+            cache_key_path="${ICON_CI_UTILS_APT_CACHE_PATH}/apt-cache-key"
+
+            echo "${cache_key}" | diff - "${cache_key_path}" >/dev/null 2>&1 && (
+              icon_ci_log_info_msg "Using cache from '${cache_path}'..."
+              set -x
+            ) || (
+              icon_ci_log_info_msg "Initializing cache in '${cache_path}'..."
+              set -x
+              # Fully reset the cache:
+              rm -rf "${cache_path}"
+              mkdir -p \
+                "${cache_path}/archives/partial" \
+                "${cache_path}/lists/partial"
+              echo "${cache_key}" > "${cache_key_path}"
+            )
+          }
+
+          # Install the required packages:
+          (
+            set -x
+            apt-get -yq update
+            apt-get -qq install \
+              --no-install-recommends \
+              ${ICON_CI_UTILS_APT_PACKAGES}
+          )
+
+          # Clean up the cache to prevent the accumulation of outdated
+          # packages:
+          test -z "${ICON_CI_UTILS_APT_CACHE_PATH-}" || (
+            set -x
+            apt-get -yq autoclean
+          )
+        }
+      ) 2>&1
+      icon_ci_log_section_end
+  cache:
+    - key: apt-${CI_RUNNER_TAGS}-${CI_JOB_IMAGE}-${CI_JOB_NAME_SLUG}
+      paths:
+        - ${ICON_CI_UTILS_APT_CACHE_PATH}

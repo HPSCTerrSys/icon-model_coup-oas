@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -37,9 +37,9 @@ begin
  PlotFile = PlotPath+EXPNAME+"."+Resolution+"."+expnum+".timeseries"
 
 
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 ; setup (synchronize with batch file iconplot.zonal.s)
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 
  VarNames2 = (/"Cloud Cover [1]"            , \
                "Temperature [K]"            , \
@@ -51,16 +51,16 @@ begin
                "U-wind (ms~S~-1~N~)"        , \
                "V-wind (ms~S~-1~N~)"        , \
                "OMEGA-wind (Pas~S~-1~N~)"    /)
- 
+
  VarNames = (/"ACLC", "T", "Qv", "Qw", "Qi", "Q4", "Q5", "U", "V", "OMEGA"/)
  Scale =     (/1e2,    1.,  1e3,  1e6,  1e6,  1e6,  1e6,  1.,  1.,  1./)
 ;Levels   = (/80,69,52,38,11/)  ; 1000m, 5000m, 10000m, and 30000m on 80 levels
  Levels   = (/30,20,10,5/)  ; 1000m, 5000m, 10000m, and 30000m on 80 levels
 
 
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 ; plot settings
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 
  ResC = True
 
@@ -77,14 +77,14 @@ begin
  ResC@tmYLMinorLengthF       = 0.005
  ResC@tmYRMajorLengthF       = 0.01
  ResC@tmYRMinorLengthF       = 0.005
- ResC@tmYLMajorThicknessF    = 3. 
+ ResC@tmYLMajorThicknessF    = 3.
  ResC@tmYRMajorThicknessF    = 3.
 
  ResC@tmXBLabelFontHeightF   = 0.014
  ResC@tmXBMajorLengthF       = 0.01
  ResC@tmXBMinorLengthF       = 0.005
- ResC@tmXBMajorThicknessF    = 3. 
- ResC@tmXTMajorThicknessF    = 3. 
+ ResC@tmXBMajorThicknessF    = 3.
+ ResC@tmXTMajorThicknessF    = 3.
 
  ResC@cnFillOn               = True
  ResC@cnLinesOn              = False
@@ -101,9 +101,9 @@ begin
  ResC@gsnSpreadColorEnd        = 101
 
 
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 ; plot
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 
  wks_type = PlotFormat        ; "ps" or "pdf"
  wks_type@wkOrientation = "landscape"
@@ -154,7 +154,7 @@ begin
    ResC@tiXAxisString       = "Time (days)"
    ResC@tiXAxisFontHeightF  = 0.016
    delete(height)
- 
+
    contour = gsn_csm_lat_time( wks, var(lat|:,time|:), ResC )
 
  end do

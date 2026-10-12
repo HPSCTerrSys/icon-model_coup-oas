@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #
 # Needs as first line - ksh for DWD, bash for MPI:
@@ -30,9 +31,9 @@
 # - flow chart of LSM in ICON:
 #   * lsm_oce2atm_extpar_coupled.sh: interpolate ocean-grid LSM (cell_sea_land_mask)
 #                        onto atmo-grid and append to extparfile with same name.
-#   * mo_ext_data_init/read_ext_data_atm: read cell_sea_land_mask from extpar file 
+#   * mo_ext_data_init/read_ext_data_atm: read cell_sea_land_mask from extpar file
 #                        and put in variable ext_data%atmo%lsm_ctr_c
-#   * mo_ext_data_init/lsm_ocean_atmo: convert with some rules lsm_ctr_c 
+#   * mo_ext_data_init/lsm_ocean_atmo: convert with some rules lsm_ctr_c
 #                        to fr_land and fr_lake
 #   * mo_atmo_coupling_frame: give ext_data%atm%lsm_ctr_c to YAC representing the atmo LSM
 #
@@ -56,7 +57,7 @@ atmos_gridID="0030"           # 0012            0030            0024
 atmos_refinement="R02B05"     # R02B04          R02B05          R02B06
 
 # ICON-O ocean grids:
-ocean_gridID="0035"           # 0036            not             0035          
+ocean_gridID="0035"           # 0036            not             0035
 ocean_refinement="R02B06"     # R02B04          used            R02B06
 
 #_____________________________________________________________________________
@@ -117,4 +118,3 @@ mv lsm_temp.nc icon_extpar_oceLSM_a${atmos_gridID}_${atmos_refinement}_o${ocean_
 mv lsm_atmos.nc fractional_atm${atmos_gridID}_oce${ocean_gridID}.nc
 
 \rm -f lsm_0-1.nc
-

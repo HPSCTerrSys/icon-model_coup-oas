@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! @brief configuration setup for output name lists
 !
 ! Configuration setup for output name lists
@@ -6,21 +17,9 @@
 !       for output name lists; based on R. Johanni's name list
 !       handling which was originally implemented in
 !       "shared/mo_name_list_output"
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_name_list_output_config
 
-  USE mo_kind,                  ONLY: wp
   USE mo_exception,             ONLY: finish
   USE mo_impl_constants,        ONLY: max_var_ml, max_var_pl, &
     &                                 max_var_hl, max_var_il, &
@@ -57,7 +56,7 @@ MODULE mo_name_list_output_config
   TYPE(t_storage_array), POINTER, PRIVATE :: outputvar_dom(:) => NULL()
 
 CONTAINS
-  
+
   !-------------------------------------------------------------------------------------------------
   !>
   !! @return .TRUE. if one of the output namelists has been specified with GRIB output.

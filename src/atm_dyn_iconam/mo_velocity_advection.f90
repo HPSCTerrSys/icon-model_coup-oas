@@ -1,20 +1,17 @@
-!
-! This module contains the subroutine calculating the velocity advection tendencies
-! for the nonhydrostatic dynamical core. Separated from mo_solve_nonhydro in order
-! to speed up compile time
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains the subroutine calculating the velocity advection tendencies
+! for the nonhydrostatic dynamical core. Separated from mo_solve_nonhydro in order
+! to speed up compile time
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -36,7 +33,8 @@ MODULE mo_velocity_advection
   USE mo_loopindices,       ONLY: get_indices_c, get_indices_e
   USE mo_impl_constants,    ONLY: min_rlcell_int, min_rledge_int, min_rlvert_int
   USE mo_impl_constants_grf,ONLY: grf_bdywidth_c, grf_bdywidth_e
-  USE mo_timer,             ONLY: timer_solve_nh_veltend, timer_start, timer_stop
+  USE mo_timer,             ONLY: timer_solve_nh_veltend, timer_acc_data_copies, &
+                                  timer_start, timer_stop
 
   IMPLICIT NONE
 
@@ -118,7 +116,7 @@ MODULE mo_velocity_advection
     ! Variables for conditional additional diffusion for vertical advection
     REAL(vp) :: cfl_w_limit, vcfl, maxvcfl, vcflmax(p_patch%nblks_c)
     REAL(wp) :: w_con_e, scalfac_exdiff, difcoef, max_vcfl_dyn
-                
+
     INTEGER  :: ie, nrdmax_jg, nflatlev_jg, clip_count
     LOGICAL  :: levmask(p_patch%nblks_c,p_patch%nlev),levelmask(p_patch%nlev)
     LOGICAL  :: cfl_clipping(nproma,p_patch%nlevp1)   ! CFL > 0.85
@@ -132,7 +130,7 @@ MODULE mo_velocity_advection
 
     IF (timers_level > 5) CALL timer_start(timer_solve_nh_veltend)
 
-    IF ((lvert_nest) .AND. (p_patch%nshift > 0)) THEN  
+    IF ((lvert_nest) .AND. (p_patch%nshift > 0)) THEN
       l_vert_nested = .TRUE.
     ELSE
       l_vert_nested = .FALSE.
@@ -181,11 +179,11 @@ MODULE mo_velocity_advection
 
     ! Compute w at vertices
     IF (.NOT. lvn_only) CALL cells2verts_scalar_ri(p_prog%w, p_patch, &
-      p_int%cells_aw_verts, z_w_v, opt_rlend=min_rlvert_int-1, opt_acc_async=.TRUE.)
+      p_int%cells_aw_verts, z_w_v, lacc=.TRUE., opt_rlend=min_rlvert_int-1, opt_acc_async=.TRUE.)
 
     ! Compute vertical vorticity component at vertices
-    CALL rot_vertex_ri (p_prog%vn, p_patch, p_int, zeta, &
-      opt_rlend=min_rlvert_int-1, opt_acc_async=.TRUE.)
+    CALL rot_vertex_ri (p_prog%vn, p_patch, p_int, zeta, lacc=.TRUE.,   &
+                        opt_rlend=min_rlvert_int-1, opt_acc_async=.TRUE.)
 
 !$OMP PARALLEL PRIVATE(rl_start, rl_end, i_startblk, i_endblk, rl_start_2, rl_end_2, i_startblk_2, i_endblk_2)
 
@@ -349,7 +347,7 @@ MODULE mo_velocity_advection
              (p_prog%w(icidx(je,jb,1),jk,icblk(je,jb,1)) - p_prog%w(icidx(je,jb,2),jk,icblk(je,jb,2))) &
              + z_vt_ie(je,jk,jb) * p_patch%edges%inv_primal_edge_length(je,jb) *                       &
              p_patch%edges%tangent_orientation(je,jb) *                                                 &
-             (z_w_v(jk,ividx(je,jb,1),ivblk(je,jb,1)) - z_w_v(jk,ividx(je,jb,2),ivblk(je,jb,2))) 
+             (z_w_v(jk,ividx(je,jb,1),ivblk(je,jb,1)) - z_w_v(jk,ividx(je,jb,2),ivblk(je,jb,2)))
 #else
 !$NEC outerloop_unroll(2)
         DO jk = 1, nlev
@@ -358,7 +356,7 @@ MODULE mo_velocity_advection
              (p_prog%w(icidx(je,jb,1),jk,icblk(je,jb,1)) - p_prog%w(icidx(je,jb,2),jk,icblk(je,jb,2))) &
              + z_vt_ie(je,jk,jb) * p_patch%edges%inv_primal_edge_length(je,jb) *                       &
              p_patch%edges%tangent_orientation(je,jb) *                                                 &
-             (z_w_v(ividx(je,jb,1),jk,ivblk(je,jb,1)) - z_w_v(ividx(je,jb,2),jk,ivblk(je,jb,2))) 
+             (z_w_v(ividx(je,jb,1),jk,ivblk(je,jb,1)) - z_w_v(ividx(je,jb,2),jk,ivblk(je,jb,2)))
 #endif
           ENDDO
         ENDDO
@@ -498,7 +496,7 @@ MODULE mo_velocity_advection
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR
       DO jc = i_startidx, i_endidx
-        z_w_con_c(jc,nlevp1) = 0.0_wp
+        z_w_con_c(jc,nlevp1) = 0.0_vp
       ENDDO
       !$ACC END PARALLEL
 
@@ -515,10 +513,10 @@ MODULE mo_velocity_advection
 
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       ! Search for grid points for which w_con is close to or above the CFL stability limit
-      ! At these points, additional diffusion is applied in order to prevent numerical 
+      ! At these points, additional diffusion is applied in order to prevent numerical
       ! instability if lextra_diffu = .TRUE.
       ! WS:  We split out levmask in order to collapse the subsequent loop, and avoid problems with two levels of REDUCTION
-      !$ACC LOOP
+      !$ACC LOOP GANG VECTOR
       DO jk = MAX(3,nrdmax_jg-2), nlev-3
         levmask(jb,jk) = .FALSE.
       ENDDO
@@ -529,7 +527,7 @@ MODULE mo_velocity_advection
         maxvcfl = 0
 
 ! DA this kernel is ASYNC(1), so need to wait to retrieve the value
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) REDUCTION(MAX: maxvcfl)
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) COPY(maxvcfl)
       !$ACC LOOP GANG VECTOR COLLAPSE(2) PRIVATE(vcfl) REDUCTION(MAX: maxvcfl)
       DO jk = MAX(3,nrdmax_jg-2), nlev-3
 #ifndef _OPENACC
@@ -624,10 +622,10 @@ MODULE mo_velocity_advection
 
         ! Apply extra diffusion at grid points where w_con is close to or above the CFL stability limit
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-        !$ACC LOOP GANG
+        !$ACC LOOP SEQ
         DO jk = MAX(3,nrdmax_jg-2), nlev-3
           IF (levmask(jb,jk)) THEN
-            !$ACC LOOP VECTOR PRIVATE(difcoef)
+            !$ACC LOOP GANG VECTOR PRIVATE(difcoef)
             DO jc = i_startidx_2, i_endidx_2
               IF (cfl_clipping(jc,jk) .AND. p_patch%cells%decomp_info%owner_mask(jc,jb)) THEN
                 difcoef = scalfac_exdiff * MIN(0.85_wp - cfl_w_limit*dtime,                       &
@@ -727,12 +725,12 @@ MODULE mo_velocity_advection
         END IF
 
       ELSE
-        ! Deep atmosphere: grad(Ekin_h) is multiplied by metrical modification factor to account 
-        ! for spherical geometry, in addition metrical terms and contribution of vertical wind to 
-        ! Coriolis acceleration have been added: wcon_e * dvn/dz -> wcon_e * ( dvn/dz + vn / r - ft ), 
-        ! where r is radius and ft is tangential component of horizontal Coriolis parameter. 
-        ! The vorticity 'zeta' has to be multiplied by 'deepatmo_gradh_mc(jk)', 
-        ! because the subroutine 'rot_vertex_ri', which computes 'zeta', is itself not 
+        ! Deep atmosphere: grad(Ekin_h) is multiplied by metrical modification factor to account
+        ! for spherical geometry, in addition metrical terms and contribution of vertical wind to
+        ! Coriolis acceleration have been added: wcon_e * dvn/dz -> wcon_e * ( dvn/dz + vn / r - ft ),
+        ! where r is radius and ft is tangential component of horizontal Coriolis parameter.
+        ! The vorticity 'zeta' has to be multiplied by 'deepatmo_gradh_mc(jk)',
+        ! because the subroutine 'rot_vertex_ri', which computes 'zeta', is itself not
         ! modified for spherical geometry.
 
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -744,8 +742,8 @@ MODULE mo_velocity_advection
 !DIR$ PREFERVECTOR
 #endif
           DO jk = 1, nlev
-            p_diag%ddt_vn_apc_pc(je,jk,jb,ntnd) = - (                                             & 
-               (                                                                                  & 
+            p_diag%ddt_vn_apc_pc(je,jk,jb,ntnd) = - (                                             &
+               (                                                                                  &
                 z_kin_hor_e(je,jk,jb) *                                                           &
                 (p_metrics%coeff_gradekin(je,1,jb) - p_metrics%coeff_gradekin(je,2,jb)) +         &
                 p_metrics%coeff_gradekin(je,2,jb)*z_ekinh(jk,icidx(je,jb,2),icblk(je,jb,2)) -     &
@@ -755,10 +753,10 @@ MODULE mo_velocity_advection
                (zeta(jk,ividx(je,jb,1),ivblk(je,jb,1)) + zeta(jk,ividx(je,jb,2),ivblk(je,jb,2)))  &
                * p_metrics%deepatmo_gradh_mc(jk) )                                                &
                + (p_int%c_lin_e(je,1,jb)*z_w_con_c_full(icidx(je,jb,1),jk,icblk(je,jb,1)) +       &
-               p_int%c_lin_e(je,2,jb)*z_w_con_c_full(icidx(je,jb,2),jk,icblk(je,jb,2))) *         & 
+               p_int%c_lin_e(je,2,jb)*z_w_con_c_full(icidx(je,jb,2),jk,icblk(je,jb,2))) *         &
                (                                                                                  &
                 (p_diag%vn_ie(je,jk,jb) - p_diag%vn_ie(je,jk+1,jb))/p_metrics%ddqz_z_full_e(je,jk,jb) &
-                + p_prog%vn(je,jk,jb) * p_metrics%deepatmo_invr_mc(jk)                            & 
+                + p_prog%vn(je,jk,jb) * p_metrics%deepatmo_invr_mc(jk)                            &
                 - p_patch%edges%ft_e(je,jb)                                                       &
                )                                                                                  &
               )
@@ -773,7 +771,7 @@ MODULE mo_velocity_advection
                 z_kin_hor_e(je,jk,jb) *                                                           &
                 (p_metrics%coeff_gradekin(je,1,jb) - p_metrics%coeff_gradekin(je,2,jb)) +         &
                 p_metrics%coeff_gradekin(je,2,jb)*z_ekinh(icidx(je,jb,2),jk,icblk(je,jb,2)) -     &
-                p_metrics%coeff_gradekin(je,1,jb)*z_ekinh(icidx(je,jb,1),jk,icblk(je,jb,1))       &         
+                p_metrics%coeff_gradekin(je,1,jb)*z_ekinh(icidx(je,jb,1),jk,icblk(je,jb,1))       &
                ) * p_metrics%deepatmo_gradh_mc(jk)                                                &
                + p_diag%vt(je,jk,jb) * ( p_patch%edges%f_e(je,jb) + 0.5_vp*                       &
                (zeta(ividx(je,jb,1),jk,ivblk(je,jb,1)) + zeta(ividx(je,jb,2),jk,ivblk(je,jb,2)))  &
@@ -781,7 +779,7 @@ MODULE mo_velocity_advection
                + (p_int%c_lin_e(je,1,jb)*z_w_con_c_full(icidx(je,jb,1),jk,icblk(je,jb,1)) +       &
                p_int%c_lin_e(je,2,jb)*z_w_con_c_full(icidx(je,jb,2),jk,icblk(je,jb,2))) *         &
                (                                                                                  &
-               (p_diag%vn_ie(je,jk,jb) - p_diag%vn_ie(je,jk+1,jb))/p_metrics%ddqz_z_full_e(je,jk,jb) & 
+               (p_diag%vn_ie(je,jk,jb) - p_diag%vn_ie(je,jk+1,jb))/p_metrics%ddqz_z_full_e(je,jk,jb) &
                + p_prog%vn(je,jk,jb) * p_metrics%deepatmo_invr_mc(jk)                             &
                - p_patch%edges%ft_e(je,jb)                                                        &
                )                                                                                  &
@@ -818,10 +816,10 @@ MODULE mo_velocity_advection
 
         ie = 0
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-        !$ACC LOOP GANG
+        !$ACC LOOP SEQ
         DO jk = MAX(3,nrdmax_jg-2), nlev-4
           IF (levelmask(jk) .OR. levelmask(jk+1)) THEN
-            !$ACC LOOP VECTOR PRIVATE(difcoef, w_con_e)
+            !$ACC LOOP GANG VECTOR PRIVATE(difcoef, w_con_e)
             DO je = i_startidx, i_endidx
               w_con_e = p_int%c_lin_e(je,1,jb)*z_w_con_c_full(icidx(je,jb,1),jk,icblk(je,jb,1)) + &
                         p_int%c_lin_e(je,2,jb)*z_w_con_c_full(icidx(je,jb,2),jk,icblk(je,jb,2))
@@ -851,7 +849,7 @@ MODULE mo_velocity_advection
       ENDIF
 
     ENDDO
-!$OMP END DO 
+!$OMP END DO
 !$OMP END PARALLEL
 
     !$ACC WAIT
@@ -919,6 +917,8 @@ MODULE mo_velocity_advection
        REAL(vp), DIMENSION(:,:,:,:), POINTER  :: ddt_vn_cor_pc_tmp
        REAL(vp), DIMENSION(:,:,:,:), POINTER  :: ddt_w_adv_pc_tmp
 
+      IF (timers_level > 9) CALL timer_start(timer_acc_data_copies)
+
        vt_tmp              => p_diag%vt
        vn_ie_tmp           => p_diag%vn_ie
        w_concorr_c_tmp     => p_diag%w_concorr_c
@@ -935,6 +935,7 @@ MODULE mo_velocity_advection
        END IF
 
        !$ACC WAIT(1)
+       IF (timers_level > 9) CALL timer_stop(timer_acc_data_copies)
 
      END SUBROUTINE d2h_velocity_tendencies
 #endif

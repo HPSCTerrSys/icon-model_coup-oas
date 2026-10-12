@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Subroutine to initialize testcase 31 (gravity wave on a small planet) proposed
 ! for the DCMIP summer school
 !
@@ -11,18 +22,6 @@
 ! - Dynamical Core Model Intercomparison Project (DCMIP)
 !   Test Case Document (P. Ullrich et al, 2012)
 ! - Baldauf, M. et al. (2013): in preparation
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_nh_dcmip_gw
 
@@ -70,14 +69,14 @@ CONTAINS
 !-------------------------------------------------------------------------
 !
   !>
-  !! Initialization of prognostic state vector for the DCMIP nh gravity 
-  !! wave test 
+  !! Initialization of prognostic state vector for the DCMIP nh gravity
+  !! wave test
   !!
-  !! The non-hydrostatic gravity wave test examines the response of models to 
-  !! short time-scale wavemotion triggered by a localized perturbation. The 
-  !! formulation presented in this document is new, but is based on previous 
+  !! The non-hydrostatic gravity wave test examines the response of models to
+  !! short time-scale wavemotion triggered by a localized perturbation. The
+  !! formulation presented in this document is new, but is based on previous
   !! approaches by Skamarock et al. (JAS 1994), Tomita and Satoh (FDR 2004), and
-  !! Jablonowski et al. (NCAR Tech Report 2008) 
+  !! Jablonowski et al. (NCAR Tech Report 2008)
   !!
   SUBROUTINE init_nh_dcmip_gw( p_patch, p_nh_prog, p_nh_diag, p_metrics, l_hydro_adjust)
 
@@ -93,14 +92,14 @@ CONTAINS
     TYPE(t_nh_metrics),   INTENT(IN)    :: &  !< NH metrics state
       &  p_metrics
 
-    LOGICAL,              INTENT(IN)    :: &  !< TRUE: compute hydrostatically balanced state 
-      & l_hydro_adjust                        !  by integrating the discretized third equation 
+    LOGICAL,              INTENT(IN)    :: &  !< TRUE: compute hydrostatically balanced state
+      & l_hydro_adjust                        !  by integrating the discretized third equation
                                               !  of motion.
 
     REAL(wp) :: z_lon, z_lat          !< geographical coordinates
 
     REAL(wp) ::           &           !< surface temperature              [K]
-      & z_tsfc(nproma,p_patch%nblks_c) 
+      & z_tsfc(nproma,p_patch%nblks_c)
 
     REAL(wp) ::           &           !< zonal and meridional velocity
       & zu(nproma), zv(nproma)
@@ -113,7 +112,7 @@ CONTAINS
     INTEGER  :: jc, je, jk, jb        !< loop indices
     INTEGER  :: ist                   !< error status
     INTEGER  :: i_startidx, i_endidx, i_startblk, i_endblk
-    INTEGER  :: i_rlstart, i_rlend  
+    INTEGER  :: i_rlstart, i_rlend
     INTEGER  :: nlev, nlevp1          !< number of full and half levels
 
     REAL(wp) :: brunt2                !< Brunt-Vaisala frequency squared  [s^-1]
@@ -121,8 +120,8 @@ CONTAINS
     REAL(wp) :: phic                  !< Lat of perturbation center       [rad]
 
     REAL(wp), ALLOCATABLE :: zrelhum(:,:,:) !< dummy relative humidity field
-    REAL(wp), ALLOCATABLE :: zqv    (:,:,:) !< dummy specific moisture field 
-                                            !  both needed in case of hydrostatic adjustment. 
+    REAL(wp), ALLOCATABLE :: zqv    (:,:,:) !< dummy specific moisture field
+                                            !  both needed in case of hydrostatic adjustment.
     ! test case parameters
     !
     REAL(wp), PARAMETER :: peq = 100000._wp !< reference surface pressure
@@ -140,7 +139,7 @@ CONTAINS
     REAL(wp), PARAMETER :: lz = 20000._wp   !< vert. wavelength of perturbation [m]
 
     CHARACTER(len=MAX_CHAR_LENGTH), PARAMETER ::  &
-      &  routine = 'mo_nh_dcmip_gw:init_nh_dcmip_gw' 
+      &  routine = 'mo_nh_dcmip_gw:init_nh_dcmip_gw'
 !--------------------------------------------------------------------
 !
 
@@ -150,7 +149,7 @@ CONTAINS
 
     ! initialize some constants:
     !
-    brunt2  = brunt * brunt    ! Brunt-Vaisala frequency squared 
+    brunt2  = brunt * brunt    ! Brunt-Vaisala frequency squared
     big_g   = (grav*grav)/(brunt2*cpd)
 
 
@@ -322,7 +321,7 @@ CONTAINS
 
       !
       ! remark: calling hydro_adjust would be equally fine here
-      ! 
+      !
       CALL hydro_adjust_iterative ( p_patch       = p_patch,                      & !in
         &                           p_nh_metrics  = p_metrics,                    & !in
         &                           temp_ini      = p_nh_diag%temp,               & !in
@@ -337,7 +336,7 @@ CONTAINS
       ! cleanup
       DEALLOCATE(zrelhum, zqv, STAT=ist)
       IF (ist /= 0) CALL finish(TRIM(routine),'Deallocation of zrelhum and zqv failed')
-    END IF   
+    END IF
 
 
 
@@ -371,8 +370,8 @@ CONTAINS
           zsin = SIN(z_lat) * SIN(phic)
           zcos = COS(z_lat) * COS(phic)
 
-          ! great circle distance with 'a/X' 
-          dist  = grid_sphere_radius * ACOS (zsin + zcos*COS(z_lon-lambdac)) 
+          ! great circle distance with 'a/X'
+          dist  = grid_sphere_radius * ACOS (zsin + zcos*COS(z_lon-lambdac))
           shape_func = (width**2)/(width**2 + dist**2)
 
           theta_pert = delta_theta*shape_func*SIN(2.0_wp*pi*p_metrics%z_mc(jc,jk,jb)/lz)
@@ -382,13 +381,13 @@ CONTAINS
           p_nh_prog%theta_v(jc,jk,jb) = p_nh_prog%theta_v(jc,jk,jb) + theta_pert
 
 
-          ! add perturbation to temperature field 
-          ! (not strictly necessary, only for plotting purposes) 
+          ! add perturbation to temperature field
+          ! (not strictly necessary, only for plotting purposes)
           p_nh_diag%temp(jc,jk,jb) = p_nh_diag%temp(jc,jk,jb) + theta_pert    &
             &                      * (p_nh_diag%pres(jc,jk,jb)/p0ref)**(rd/cpd)
 
 
-! In order to match the equation of state, a perturbation should be added to the density 
+! In order to match the equation of state, a perturbation should be added to the density
 ! field as well. However, the DCMIP tets case uses an initially unperturbed density field.
 !          ! add perturbation to density field
 !          p_nh_prog%rho(jc,jk,jb) = p_nh_prog%exner(jc,jk,jb)**cvd_o_rd*p0ref  &
@@ -410,24 +409,24 @@ CONTAINS
 
 
   !>
-  !! Initialization of prognostic state vector for the nh gravity 
-  !! wave test. 
+  !! Initialization of prognostic state vector for the nh gravity
+  !! wave test.
   !!
-  !! The non-hydrostatic gravity wave test examines the response of models to 
-  !! short time-scale wavemotion triggered by a localized perturbation. The 
-  !! formulation presented here is based on work by Baldauf et al. (2012). 
-  !! For this particular setup an analytical reference solution is available.  
+  !! The non-hydrostatic gravity wave test examines the response of models to
+  !! short time-scale wavemotion triggered by a localized perturbation. The
+  !! formulation presented here is based on work by Baldauf et al. (2012).
+  !! For this particular setup an analytical reference solution is available.
   !!
   !! Available options:
   !! - gravity wave without coriolis force and without background (soild body) flow
-  !! - gravity wave with coriolis force (f-plane) approximation and without 
+  !! - gravity wave with coriolis force (f-plane) approximation and without
   !!   background (solid body) flow
   !! - gravity wave with coriolis force and with background (soild body) flow.
-  !!   This third option is somewhat special in the sense, that the sum of the 
-  !!   coriolis force and centrifugal force exactly cancel the additional 
-  !!   centrifugal force due to the background flow. I.e. in an inertial 
-  !!   frame, the atmosphere is at rest. However, in the rotating frame, 
-  !!   a wind speed of gw_u0*cos(\phi) is observed.  
+  !!   This third option is somewhat special in the sense, that the sum of the
+  !!   coriolis force and centrifugal force exactly cancel the additional
+  !!   centrifugal force due to the background flow. I.e. in an inertial
+  !!   frame, the atmosphere is at rest. However, in the rotating frame,
+  !!   a wind speed of gw_u0*cos(\phi) is observed.
   !!
   !! Literature
   !! - Baldauf, M. et al. (2013): in preparation
@@ -461,7 +460,7 @@ CONTAINS
     INTEGER  :: jc, je, jv, jk, jb    !< loop indices
     INTEGER  :: ilv1, ibv1, ilv2, ibv2 !< vertex line and block indices
     INTEGER  :: i_startidx, i_endidx, i_startblk, i_endblk
-    INTEGER  :: i_rlstart, i_rlend, i_nchdom  
+    INTEGER  :: i_rlstart, i_rlend, i_nchdom
     INTEGER  :: nlev, nlevp1          !< number of full and half levels
     INTEGER  :: iorient
     REAL(wp) :: phic                  !< Lat of perturbation center       [rad]
@@ -477,7 +476,7 @@ CONTAINS
       &  routine = 'mo_nh_dcmip_gw:init_nh_gw_analyt'
 
     ! Note:
-    ! p0ref = 100000.0_wp   !> [Pa]  (mo_physical_constants.f90)   
+    ! p0ref = 100000.0_wp   !> [Pa]  (mo_physical_constants.f90)
 !--------------------------------------------------------------------
 !
     ! center of temperature/density perturbation in radians
@@ -488,7 +487,7 @@ CONTAINS
     delta = grav/(rd * t0)
 
     ! surface density
-    rhos  = p0ref/(rd * t0) 
+    rhos  = p0ref/(rd * t0)
 
 
     ! number of vertical levels
@@ -520,9 +519,9 @@ CONTAINS
     !
     ! Init prognostic variables vn, w
     !
-    ! Use stream function initialization, in order to get a discretely 
+    ! Use stream function initialization, in order to get a discretely
     ! non-divergent horizontal wind field
-    ! 
+    !
     ! compute velocity stream function at vertices
     !
 !$OMP DO PRIVATE(jv,jb,i_startidx,i_endidx,z_lat)
@@ -694,7 +693,7 @@ CONTAINS
 
           CALL rotate_latlon(z_lat, z_lon, phic, 0._wp)
 
-          ! note that from now on, z_lat and z_lon are given with respect to 
+          ! note that from now on, z_lat and z_lon are given with respect to
           ! the rotated north pole (at (lat,lon)=(phic,0.0))
 
           shape_func = exp(kappa*(SIN(z_lat)-1._wp))                             &
@@ -709,8 +708,8 @@ CONTAINS
           rho_pert = rho_b * exp(-0.5_wp * delta * p_metrics%z_mc(jc,jk,jb))
 
 
-          ! add perturbation to temperature field 
-          ! (not strictly necessary, only done for plotting) 
+          ! add perturbation to temperature field
+          ! (not strictly necessary, only done for plotting)
           p_nh_diag%temp(jc,jk,jb) = p_nh_diag%temp(jc,jk,jb) + temp_pert
 
 
@@ -721,8 +720,8 @@ CONTAINS
 
 
 
-          ! In order to match the equation of state, a perturbation should be 
-          ! added to the density field as well. 
+          ! In order to match the equation of state, a perturbation should be
+          ! added to the density field as well.
           p_nh_prog%rho(jc,jk,jb) = p_nh_prog%rho(jc,jk,jb) + rho_pert
 
 
@@ -743,7 +742,7 @@ CONTAINS
     IF ( lcoriolis ) THEN
 
       ! test case version without background flow
-      IF ( gw_u0==0._wp ) THEN 
+      IF ( gw_u0==0._wp ) THEN
 
         ! center of f-plane
         z_lat = 0.25_wp * pi
@@ -811,7 +810,7 @@ CONTAINS
       ELSE ! gw_u0 .NE. 0._wp
 
 
-        ! earth angular velocity is chosen such, that the metric term (u**/r*tan(\phi)) 
+        ! earth angular velocity is chosen such, that the metric term (u**/r*tan(\phi))
         ! is balanced by the sum of coriolis and centrifugal force.
         ! \OMEGA = -gw_u0/r
         !
@@ -924,7 +923,7 @@ CONTAINS
 
 
     ! diag for Output
-    CALL div(p_nh_prog%vn, p_patch, p_int, p_nh_diag%div)
+    CALL div(p_nh_prog%vn, p_patch, p_int, p_nh_diag%div, lacc=.FALSE.)
 
 
   END SUBROUTINE init_nh_gw_analyt

@@ -1,14 +1,14 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
 #include "omp_definitions.inc"
 !----------------------------
 
@@ -23,9 +23,6 @@ MODULE mo_icon_output_coupling
   USE mo_mpi,                 ONLY: p_pe_work
   USE mo_run_config,          ONLY: ltimer
   USE mo_dynamics_config,     ONLY: nold, nnew
-  USE mo_timer,               ONLY: timer_start, timer_stop, timer_coupling, &
-       &                            timer_coupling_put, timer_coupling_get,  &
-       &                            timer_coupling_1stget, timer_coupling_init
   USE mo_sync,                ONLY: sync_c, sync_patch_array
   USE mo_util_dbg_prnt,       ONLY: dbg_print
   USE mo_model_domain,        ONLY: t_patch, t_patch_3d
@@ -40,7 +37,7 @@ MODULE mo_icon_output_coupling
   USE mo_math_constants,      ONLY: pi
   USE mo_parallel_config,     ONLY: nproma
   USE mo_coupling_config,     ONLY: is_coupled_run
-  USE mo_time_config,         ONLY: time_config 
+  USE mo_time_config,         ONLY: time_config
   USE mo_hamocc_nml,          ONLY: l_cpl_co2
 
   !-------------------------------------------------------------
@@ -81,10 +78,9 @@ CONTAINS
 
     ! local variables
     CHARACTER(LEN=*), PARAMETER :: method_name = 'couple_icon_output_tomodel'
-    
+
 
   END SUBROUTINE couple_icon_output_tomodel
   !--------------------------------------------------------------------------
 
 END MODULE mo_icon_output_coupling
-

@@ -29,9 +29,9 @@ MODULE mo_oasis_land_coupling
   USE mo_physical_constants,ONLY: lh_v => alv, lh_s => als, t0_melt => tmelt,          &
                                   r_d => rd, rvd_m_o => vtmpc1,                        &
                                   cp_d => cpd, rd_o_cpd
-  USE mo_satad,             ONLY: sat_pres_water, spec_humi
+  USE mo_thdyn_functions,   ONLY: sat_pres_water, spec_humi
   USE sfc_terra_data,       ONLY: eps_soil
-  USE data_turbulence,      ONLY: vel_min
+  USE mo_turbdiff_config,   ONLY: turbdiff_config
   USE mo_loopindices,       ONLY: get_indices_c 
   USE mo_grid_config,       ONLY: n_dom
   USE mo_mpi,               ONLY: p_pe_work, p_comm_work_only, mpi_comm_null, p_sum
@@ -576,7 +576,7 @@ CONTAINS
           DO jc = i_startidx, i_endidx
             IF ( loas_clm_c(jc,jb) ) THEN
               ! Calculate 2D wind speed at lowest level with minimum threshold
-              vel_2d = MAX( vel_min, SQRT(p_diag%u(jc,nlev,jb)**2 + p_diag%v(jc,nlev,jb)**2) )
+              vel_2d = MAX( turbdiff_config(1)%vel_min, SQRT(p_diag%u(jc,nlev,jb)**2 + p_diag%v(jc,nlev,jb)**2) )
 
               ! Exchange coefficients
               ! Convert from eCLM

@@ -1,15 +1,15 @@
-! @brief branch for the non-hydrostatic ICON workflow
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief branch for the non-hydrostatic ICON workflow
 
 MODULE mo_atmo_nonhydrostatic
 
@@ -41,7 +41,6 @@ USE mo_run_config,           ONLY: dtime,                & !    namelist paramet
   &                                lvert_nest, ntracer,  &
   &                                ldass_lhn, msg_level, &
   &                                iqc, iqt,             &
-  &                                ico2, io3,            &
   &                                number_of_grid_used
 USE mo_lnd_nwp_config,       ONLY: lseaice
 USE mo_initicon_config,      ONLY: pinit_seed, pinit_amplitude, init_mode, iterate_iau
@@ -81,8 +80,6 @@ USE mo_nh_stepping,          ONLY: perform_nh_stepping
 ! Initialization with real data
 USE mo_initicon,            ONLY: init_icon
 USE mo_ext_data_state,      ONLY: ext_data
-! Community Interface (ComIn)
-USE mo_comin_config,        ONLY: configure_comin
 ! meteogram output
 USE mo_meteogram_output,    ONLY: meteogram_init, meteogram_finalize
 USE mo_meteogram_config,    ONLY: meteogram_output_config
@@ -99,9 +96,11 @@ USE mo_pp_scheduler,        ONLY: pp_scheduler_init, pp_scheduler_finalize
 USE mo_nwp_phy_state,        ONLY: prm_diag, prm_nwp_tend, prm_nwp_stochconv,  &
   &                                construct_nwp_phy_state
 USE mo_nwp_lnd_state,        ONLY: p_lnd_state, construct_nwp_lnd_state
+USE mo_lookup_tables_constants, ONLY: init_satpres_coeffs
 USE mo_atm_phy_nwp_config,   ONLY: configure_atm_phy_nwp, atm_phy_nwp_config
 USE mo_synsat_config,        ONLY: configure_synsat
 USE mo_iau,                  ONLY: save_initial_state, reset_to_initial_state
+USE mo_physical_constants,   ONLY: amd, amco2
 #ifndef __NO_NWP__
 USE mo_ensemble_pert_config, ONLY: configure_ensemble_pert
 USE mo_ext_data_init,        ONLY: init_index_lists
@@ -110,6 +109,7 @@ USE mo_sppt_config,          ONLY: sppt_config, configure_sppt
 USE mo_nwp_phy_cleanup,      ONLY: cleanup_nwp_phy
 USE mo_nwp_ww,               ONLY: configure_ww
 USE mo_nwp_vdiff_interface,  ONLY: nwp_vdiff_setup
+USE mo_radiation_config,     ONLY: vmr_co2
 #endif
 #ifdef __ICON_ART
 ! ICON-ART
@@ -117,35 +117,36 @@ USE mo_art_init_interface,   ONLY: art_init_atmo_tracers_nwp
 #endif
 
 ! AES physics
-USE mo_aes_phy_config,      ONLY: aes_phy_tc, dt_zero, aes_phy_config
+USE mo_aes_phy_config,      ONLY: aes_phy_config
 USE mo_aes_rad_config,      ONLY: aes_rad_config
 USE mo_aes_vdf_config,      ONLY: aes_vdf_config
 #ifndef __NO_AES__
+USE mo_bc_aeropt_splumes_memory, ONLY: construct_bc_aeropt_splumes_memory
 USE mo_aes_phy_memory,      ONLY: construct_aes_phy_memory
 USE mo_cloud_mig_memory,    ONLY: construct_cloud_mig_memory
 USE mo_cloud_two_memory,    ONLY: construct_cloud_two_memory
 USE mo_radiation_forcing_memory, ONLY: construct_rad_forcing_list => construct_radiation_forcing_list
-USE mo_physical_constants,  ONLY: amd, amco2
+USE mo_atm_energy_memory,   ONLY: construct_atm_energy
 USE mo_aes_phy_dims,        ONLY: init_aes_phy_dims
 USE mo_aes_phy_init,        ONLY: init_aes_phy_params, init_aes_phy_external, &
    &                              init_aes_phy_field, init_o3_lcariolle
 USE mo_aes_phy_cleanup,     ONLY: cleanup_aes_phy
 USE mo_interface_aes_tmx,   ONLY: init_tmx
 #endif
+
 #ifndef __NO_JSBACH__
   USE mo_jsb_model_init,    ONLY: jsbach_init_after_restart
 #endif
-! Needed for upper atmosphere configuration
+
+#ifndef __NO_ICON_UPATMO__
 USE mo_sleve_config,        ONLY: flat_height
 USE mo_io_units,            ONLY: filename_max
 USE mo_vertical_coord_table,ONLY: vct_a
 USE mo_upatmo_impl_const,   ONLY: iUpatmoPrcStat
 USE mo_upatmo_config,       ONLY: upatmo_config, upatmo_phy_config, &
     &                             configure_upatmo, destruct_upatmo
-#ifndef __NO_ICON_UPATMO__
-USE mo_upatmo_state,        ONLY: construct_upatmo_state, &
-    &                             destruct_upatmo_state
-USE mo_upatmo_phy_setup,    ONLY: finalize_upatmo_phy_nwp
+USE mo_upatmo_interface,    ONLY: construct_upatmo_state, destruct_upatmo_state, &
+                                  finalize_upatmo_phy_nwp
 #endif
 
 USE mo_util_mtime,          ONLY: getElapsedSimTimeInSeconds
@@ -162,7 +163,6 @@ USE mo_rttov_interface,     ONLY: rttov_finalize, rttov_initialize
 USE mo_synsat_config,       ONLY: lsynsat
 USE mo_mpi,                 ONLY: my_process_is_stdio, p_comm_work_only, my_process_is_work_only
 USE mo_var_list_register_utils, ONLY: vlr_print_groups
-USE mo_sync,                ONLY: sync_patch_array, sync_c
 USE mo_nudging_config,      ONLY: l_global_nudging
 USE mo_random_util,         ONLY: add_random_noise_3d, add_random_noise_2d
 
@@ -184,6 +184,8 @@ USE mo_icon2dace,           ONLY: init_dace, finish_dace
     &                               destruct_atmo_coupling
 
 #ifndef __NO_ICON_COMIN__
+! Community Interface (ComIn)
+  USE mo_comin_config,      ONLY: configure_comin, comin_config
   USE comin_host_interface, ONLY: EP_SECONDARY_CONSTRUCTOR,           &
     &                             EP_ATM_INIT_FINALIZE,               &
     &                             EP_DESTRUCTOR,                      &
@@ -195,7 +197,10 @@ USE mo_icon2dace,           ONLY: init_dace, finish_dace
     &                             icon_append_comin_tracer_variables, &
     &                             icon_append_comin_tracer_phys_tend, &
     &                             icon_expose_variables,              &
-    &                             icon_call_callback
+    &                             icon_call_callback,                 &
+    &                             icon_prune_unused_variables
+  USE mo_comin_config,      ONLY: comin_secondary_constructor_called
+
 #endif
 #ifdef COUP_OAS_ECLM
   USE mo_oasis_land_coupling,     ONLY: construct_oasis_coupling
@@ -222,7 +227,6 @@ CONTAINS
     CLASS(t_RestartDescriptor), POINTER  :: restartDescriptor
 
     CHARACTER(*), PARAMETER :: routine = "atmo_nonhydrostatic"
-    INTEGER :: ierr
 
     ! construct the atmospheric nonhydrostatic model
     CALL construct_atmo_nonhydrostatic(latbc)
@@ -295,14 +299,12 @@ CONTAINS
     CALL deleteRestartDescriptor(restartDescriptor)
 
 #ifndef __NO_ICON_COMIN__
-    CALL icon_call_callback(EP_DESTRUCTOR, COMIN_DOMAIN_OUTSIDE_LOOP)
-
-    CALL comin_var_list_finalize(ierr)
-    IF (ierr /= 0) STOP
-    CALL comin_descrdata_finalize(ierr)
-    IF (ierr /= 0) STOP
-    CALL comin_setup_finalize(ierr)
-    IF (ierr /= 0) STOP
+    CALL icon_call_callback(EP_DESTRUCTOR, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.TRUE.)
+    IF (comin_config%nplugins /= 0) THEN
+       CALL comin_var_list_finalize()
+       CALL comin_descrdata_finalize()
+       CALL comin_setup_finalize()
+    END IF
 #endif
 
     !---------------------------------------------------------------------
@@ -330,16 +332,24 @@ CONTAINS
 
     INTEGER :: jg, ist, jt
 
-    TYPE(t_sim_step_info) :: sim_step_info  
-    REAL(wp) :: sim_time
+    TYPE(t_sim_step_info) :: sim_step_info
+    REAL(wp) :: sim_time, dt_loc
     TYPE(t_key_value_store), POINTER :: restartAttributes
+#ifndef __NO_ICON_UPATMO__
     CHARACTER(LEN=filename_max) :: model_base_dir
+#endif
     INTEGER :: seed_size, i
     INTEGER, ALLOCATABLE :: seed(:)
 
 
     IF (timers_level > 1) CALL timer_start(timer_model_init)
 
+    ! Initialize coefficients for saturation pressure - this is even needed without physics forcing
+    IF(iforcing == inwp) THEN
+      CALL init_satpres_coeffs(atm_phy_nwp_config(1)%itype_satpres_coeffs)
+    ELSE
+      CALL init_satpres_coeffs()
+    END IF
 
     DO jg =1,n_dom
       CALL configure_nonhydrostatic( jg, p_patch(jg)%nlev,     &
@@ -347,7 +357,7 @@ CONTAINS
     ENDDO
 
     IF (iforcing == iaes) THEN
-#ifdef __NO_AES__   
+#ifdef __NO_AES__
       CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
 #else
       CALL init_aes_phy_dims
@@ -394,7 +404,7 @@ CONTAINS
     ! initialize ldom_active flag if this is not a restart run
 
     ! calculate elapsed simulation time in seconds
-    sim_time = getElapsedSimTimeInSeconds(time_config%tc_current_date) 
+    sim_time = getElapsedSimTimeInSeconds(time_config%tc_current_date)
 
     DO jg=1, n_dom
       p_patch(jg)%ldom_active &
@@ -442,51 +452,49 @@ CONTAINS
     END IF
 
     IF (iforcing == iaes) THEN
-#ifdef __NO_AES__   
+#ifdef __NO_AES__
       CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
 #else
       CALL construct_aes_phy_memory    ( p_patch(1:), ntracer )
       CALL construct_cloud_mig_memory  ( p_patch(1:) )
       CALL construct_cloud_two_memory  ( p_patch(1:) )
       CALL construct_rad_forcing_list  ( p_patch(1:) )
+      CALL construct_atm_energy        ( p_patch(1:) )
+      IF ( (ANY(aes_rad_config(:)%irad_aero == 18) .OR. &
+       &   ANY(aes_rad_config(:)%irad_aero == 19)) .AND. &
+       &  ANY(aes_phy_config(:)%dt_rad /= '')) THEN
+      CALL construct_bc_aeropt_splumes_memory ( p_patch(1:) )
+    END IF
 #endif
     END IF
 
-! Upper atmosphere
-
+#ifndef __NO_ICON_UPATMO__
     model_base_dir = getModelBaseDir()
 
     CALL configure_upatmo( n_dom_start, n_dom, p_patch(n_dom_start:), isRestart(), atm_phy_nwp_config(:)%lupatmo_phy,      &
-      &                    init_mode, iforcing, time_config%tc_exp_startdate, time_config%tc_exp_stopdate, start_time(:),  & 
+      &                    init_mode, iforcing, time_config%tc_exp_startdate, time_config%tc_exp_stopdate, start_time(:),  &
       &                    end_time(:), dtime, atm_phy_nwp_config(:)%dt_rad, ndyn_substeps, flat_height,                   &
-      &                    aes_rad_config(:)%l_orbvsop87, aes_rad_config(:)%cecc, aes_rad_config(:)%cobld,                 & 
+      &                    aes_rad_config(:)%l_orbvsop87, aes_rad_config(:)%cecc, aes_rad_config(:)%cobld,                 &
       &                    aes_rad_config(:)%clonp, aes_rad_config(:)%lyr_perp, aes_rad_config(:)%yr_perp, model_base_dir, &
       &                    msg_level, vct_a )
 
-#ifndef __NO_ICON_UPATMO__
-! Create state only if enabled
     CALL construct_upatmo_state( n_dom, nproma, p_patch(1:), upatmo_config(1:), upatmo_phy_config(1:), vct_a )
 #endif
 
 #ifndef __NO_ICON_COMIN__
     ! ----------------------------------------------------------
-    ! UNDER DEVELOPMENT (ICON ComIn)
+    ! ICON ComIn
     !
     ! loop over the total list of additional requested variables and
     ! perform `add_var` / `add_ref` operations needed.
-    ! remark: variables are added to a separate variable list.
-    CALL icon_append_comin_tracer_variables(p_patch(1:), p_nh_state, p_nh_state_lists)
-    CALL icon_append_comin_tracer_phys_tend(p_patch(1:))
-    CALL icon_append_comin_variables(p_patch(1:))
-
-    ! expose ICON's variables to the ComIn infrastructure.
-
-    CALL icon_expose_variables()
-
-    ! call to secondary constructor
-    !   third party modules retrieve pointers to data arrays, telling
-    !   ICON ComIn about the context where these will be accessed.
-    CALL icon_call_callback(EP_SECONDARY_CONSTRUCTOR, COMIN_DOMAIN_OUTSIDE_LOOP)
+    !
+    ! Remarks:
+    ! - Variables are added to a separate variable list.
+    IF (comin_config%nplugins /= 0) THEN
+       CALL icon_append_comin_tracer_variables(p_patch(1:), p_nh_state, p_nh_state_lists)
+       CALL icon_append_comin_tracer_phys_tend(p_patch(1:))
+       CALL icon_append_comin_variables(p_patch(1:))
+    END IF
     ! ----------------------------------------------------------
 #endif
 
@@ -518,7 +526,7 @@ CONTAINS
     IF (ldass_lhn) THEN
       CALL message(routine,'configure_lhn')
       DO jg =1,n_dom
-        CALL configure_lhn(jg)
+        CALL configure_lhn(p_patch(jg))
       ENDDO
       !$ACC ENTER DATA COPYIN(assimilation_config)
 
@@ -562,6 +570,15 @@ CONTAINS
     ! Prepare initial conditions for time integration.
     !------------------------------------------------------------------
     !
+
+#ifndef __NO_ICON_LES__
+    ! LS forcing for idealised SCM and LES cases must be called for both restart and non-restart runs
+    ! because forcing arrays are not stored in restart files.
+    IF (is_ls_forcing .OR. is_nudging) THEN
+      CALL init_ls_forcing(p_nh_state(1)%metrics)
+    END IF
+#endif
+
     IF (isRestart()) THEN
       !
       ! This is a resumed integration. Read model state from restart file(s).
@@ -587,14 +604,14 @@ CONTAINS
         END IF
       END DO
 #endif
-      !
+
     ELSE
       !
       ! This is a new integration.
       !
       IF (ltestcase) THEN
         !
-        ! Initialize testcase analytically
+        ! Initialize testcases
         !
         IF (l_scm_mode) THEN
           CALL init_nh_testcase_scm(p_patch(1:)     ,&
@@ -610,12 +627,6 @@ CONTAINS
             &                       ext_data        ,&
             &                       ntl=2           )
         ENDIF
-        !
-#ifndef __NO_ICON_LES__
-        IF(is_ls_forcing .OR. is_nudging) &
-          CALL init_ls_forcing(p_nh_state(1)%metrics)
-#endif
-        !
       ELSE
         !
         ! Initialize with real atmospheric data
@@ -636,7 +647,7 @@ CONTAINS
             &             p_lnd_state(1:) )
           !
         ELSE ! iforcing == iaes, inoforcing, ...
-#ifdef __NO_AES__   
+#ifdef __NO_AES__
           CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
 #else
           !
@@ -669,94 +680,78 @@ CONTAINS
         CALL RANDOM_SEED(PUT = seed)
 
         DO jg=1,n_dom
-          CALL add_random_noise_3d(p_patch(jg)%cells%all, pinit_amplitude, &
-                                   p_nh_state(jg)%prog(nnow(jg))%w)
-          CALL add_random_noise_3d(p_patch(jg)%edges%all, pinit_amplitude, &
-                                   p_nh_state(jg)%prog(nnow(jg))%vn)
-          CALL add_random_noise_3d(p_patch(jg)%cells%all, pinit_amplitude, &
-                                   p_nh_state(jg)%prog(nnow(jg))%theta_v)
-          CALL add_random_noise_3d(p_patch(jg)%cells%all, pinit_amplitude, &
-                                   p_nh_state(jg)%prog(nnow(jg))%exner)
-          CALL add_random_noise_3d(p_patch(jg)%cells%all, pinit_amplitude, &
-                                   p_nh_state(jg)%prog(nnow(jg))%rho)
+          CALL add_random_noise_3d(subset=p_patch(jg)%cells%all, &
+                                   coordinates=p_patch(jg)%cells%center, &
+                                   amplitude=pinit_amplitude, &
+                                   field=p_nh_state(jg)%prog(nnow(jg))%w, &
+                                   seed_in=pinit_seed+5)
+          CALL add_random_noise_3d(subset=p_patch(jg)%edges%all, &
+                                   coordinates=p_patch(jg)%edges%center, &
+                                   amplitude=pinit_amplitude, &
+                                   field=p_nh_state(jg)%prog(nnow(jg))%vn, &
+                                   seed_in=pinit_seed+53)
+          CALL add_random_noise_3d(subset=p_patch(jg)%cells%all, &
+                                   coordinates=p_patch(jg)%cells%center, &
+                                   amplitude=pinit_amplitude, &
+                                   field=p_nh_state(jg)%prog(nnow(jg))%theta_v, &
+                                   seed_in=pinit_seed+157)
+          CALL add_random_noise_3d(subset=p_patch(jg)%cells%all, &
+                                   coordinates=p_patch(jg)%cells%center, &
+                                   amplitude=pinit_amplitude, &
+                                   field=p_nh_state(jg)%prog(nnow(jg))%exner, &
+                                   seed_in=pinit_seed+173)
+          CALL add_random_noise_3d(subset=p_patch(jg)%cells%all, &
+                                   coordinates=p_patch(jg)%cells%center, &
+                                   amplitude=pinit_amplitude, &
+                                   field=p_nh_state(jg)%prog(nnow(jg))%rho, &
+                                   seed_in=pinit_seed+211)
 
           IF (lseaice) THEN
-            CALL add_random_noise_2d(p_patch(jg)%cells%all, pinit_amplitude, &
-                                     p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice)
+            CALL add_random_noise_2d(subset=p_patch(jg)%cells%all, &
+                                    coordinates=p_patch(jg)%cells%center, &
+                                    amplitude=pinit_amplitude, &
+                                    field=p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_ice, &
+                                    seed_in=pinit_seed+257)
+            CALL add_random_noise_2d(subset=p_patch(jg)%cells%all, &
+                                    coordinates=p_patch(jg)%cells%center, &
+                                    amplitude=pinit_amplitude, &
+                                    field=p_lnd_state(jg)%prog_wtr(nnow_rcf(jg))%t_snow_si, &
+                                    seed_in=pinit_seed+257)
           ENDIF
 
           IF (.NOT. ltestcase .OR. nh_test_name == 'dcmip_pa_12') THEN
-            CALL add_random_noise_3d(p_patch(jg)%cells%all, pinit_amplitude, &
-                                     p_nh_state(jg)%prog(nnow_rcf(jg))%tracer(:,:,:,1))
+            CALL add_random_noise_3d(subset=p_patch(jg)%cells%all, &
+                                    coordinates=p_patch(jg)%cells%center, &
+                                    amplitude=pinit_amplitude, &
+                                    field=p_nh_state(jg)%prog(nnow_rcf(jg))%tracer(:,:,:,1), &
+                                    seed_in=pinit_seed+263)
           ENDIF
 
           IF (iforcing == inwp ) THEN
             DO jt = 1, SIZE(p_lnd_state(jg)%prog_lnd(nnow_rcf(jg))%t_so_t,4)
-              CALL add_random_noise_3d(p_patch(jg)%cells%all, pinit_amplitude, &
-                                  p_lnd_state(jg)%prog_lnd(nnow_rcf(jg))%t_so_t(:,:,:,jt) )
+              CALL add_random_noise_3d(subset=p_patch(jg)%cells%all, &
+                                      coordinates=p_patch(jg)%cells%center, &
+                                      amplitude=pinit_amplitude, &
+                                      field=p_lnd_state(jg)%prog_lnd(nnow_rcf(jg))%t_so_t(:,:,:,jt), &
+                                      seed_in=pinit_seed+373)
             ENDDO
           ENDIF
 
           CALL duplicate_prog_state(p_nh_state(jg)%prog(nnow(jg)), p_nh_state(jg)%prog(nnew(jg)))
         ENDDO
       ENDIF
-
-      !
-      ! Initialize tracers which are not available in the analysis file,
-      ! but may be used with AES physics, for real cases or test cases.
-      !
-      IF (iforcing == iaes ) THEN
-#ifdef __NO_AES__   
-        CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
-#else
-        DO jg = 1,n_dom
-          IF (.NOT. p_patch(jg)%ldom_active) CYCLE
-          !
-          ! CO2 tracer
-          IF ( iqt <= ico2 .AND. ico2 <= ntracer) THEN
-!$OMP PARALLEL
-            CALL init(p_nh_state(jg)%prog(nnow_rcf(jg))%tracer(:,:,:,ico2),aes_rad_config(jg)% vmr_co2*amco2/amd, lacc=.FALSE.)
-!$OMP END PARALLEL
-            CALL print_value('CO2 tracer initialized with constant vmr', &
-              &              aes_rad_config(jg)% vmr_co2*amco2/amd,    &
-              &              routine=routine)
-          END IF
-          !
-          ! O3 tracer
-          IF ( iqt <= io3 .AND. io3 <= ntracer) THEN
-            IF (aes_phy_tc(jg)%dt_car > dt_zero) THEN
-              CALL init_o3_lcariolle( time_config%tc_current_date                          ,&
-                &                     p_patch(jg)                                          ,&
-                &                     p_nh_state(jg)%diag% pres               (:,:,:)      ,&
-                &                     p_nh_state(jg)%prog(nnow_rcf(jg))%tracer(:,:,:,io3)  )
-              CALL sync_patch_array ( sync_c,p_patch(jg)                                   ,&
-                &                     p_nh_state(jg)%prog(nnow_rcf(jg))%tracer(:,:,:,io3)  )
-              CALL message(routine,'o3 tracer is initialized by the Cariolle lin. o3 scheme')
-            ELSE
-!$OMP PARALLEL
-              CALL init(p_nh_state(jg)%prog(nnow_rcf(jg))%tracer(:,:,:,io3),0.0_wp, lacc=.FALSE.)
-!$OMP END PARALLEL
-              CALL message(routine,'o3 tracer is initialized to zero, check setup')
-            END IF
-          END IF
-          !
-        END DO
-        !
-#endif
-      END IF
-      !
     END IF ! isRestart()
 
 
     ! Now set up AES physics fields
     !
     IF ( iforcing == iaes ) THEN
-#ifdef __NO_AES__   
+#ifdef __NO_AES__
         CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
 #else
       !
       ! read external data for real case
-      IF (.NOT. ltestcase) THEN 
+      IF (.NOT. ltestcase) THEN
         CALL init_aes_phy_external( p_patch(1:), ext_data(1:)     ,&
            &                          time_config%tc_current_date )
       END IF
@@ -764,7 +759,9 @@ CONTAINS
       ! prepare fields of the physics state, real and test case
       DO jg = 1,n_dom
         CALL init_aes_phy_field( p_patch(jg)                       ,&
-          &                      p_nh_state(jg)% diag% temp(:,:,:) )
+          &                      p_nh_state(jg)% diag% temp(:,:,:) ,&
+          &                      p_nh_state(jg)% diag% pres(:,:,:) ,&
+          &                      p_nh_state(jg)% prog(nnow_rcf(jg)) )
       END DO
       !
 #endif
@@ -787,7 +784,9 @@ CONTAINS
     ! Status output for the Community Interface (ComIn)
     !------------------------------------------------------------------
 
+#ifndef __NO_ICON_COMIN__
     CALL configure_comin()
+#endif
 
 
     !------------------------------------------------------------------
@@ -877,7 +876,8 @@ CONTAINS
 #ifndef __NO_AES__
     DO jg =1,n_dom
       IF (aes_vdf_config(jg)%use_tmx) THEN
-        CALL init_tmx(p_patch(jg), dtime)
+        dt_loc = time_config%get_model_timestep_sec(p_patch(jg)%nest_level)
+        CALL init_tmx(p_patch(jg), dt_loc)
       END IF
     END DO
 #endif
@@ -888,8 +888,23 @@ CONTAINS
 #endif
 
 #ifndef __NO_ICON_COMIN__
-    CALL icon_call_callback(EP_ATM_INIT_FINALIZE, COMIN_DOMAIN_OUTSIDE_LOOP)
+    ! ----------------------------------------------------------
+    ! expose ICON's variables to the ComIn infrastructure.
+    IF (comin_config%nplugins /= 0) THEN
+       CALL icon_expose_variables()
+    END IF
+    ! call to secondary constructor
+    !   third party modules retrieve pointers to data arrays, telling
+    !   ICON ComIn about the context where these will be accessed.
+    CALL icon_call_callback(EP_SECONDARY_CONSTRUCTOR, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE.)
+    comin_secondary_constructor_called = .TRUE.
+
+    CALL icon_prune_unused_variables
+
+    ! ----------------------------------------------------------
+    CALL icon_call_callback(EP_ATM_INIT_FINALIZE, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE.)
 #endif
+
     ! Determine if temporally averaged vertically integrated moisture quantities need to be computed
 
     IF (iforcing == inwp) THEN
@@ -941,7 +956,7 @@ CONTAINS
                &  prm_diag(jg),                                 &
                &  p_nh_state(jg)%prog(nnow(jg)),                &
                &  p_nh_state(jg)%prog(nnow_rcf(jg))%tracer,     &
-               &  p_nh_state_lists(jg)%prog_list(nnow_rcf(jg)), & 
+               &  p_nh_state_lists(jg)%prog_list(nnow_rcf(jg)), &
                &  p_patch(jg)%nest_level)
         ENDDO
       END IF  ! lart
@@ -969,7 +984,7 @@ CONTAINS
 
 
     INTEGER :: jg
-    
+
 #ifdef HAVE_CDI_PIO
     INTEGER :: prev_cdi_namespace
 #endif
@@ -1019,7 +1034,7 @@ CONTAINS
     ENDIF
 
     IF (iforcing == iaes) THEN
-#ifdef __NO_AES__   
+#ifdef __NO_AES__
       CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
 #else
       CALL cleanup_aes_phy()
@@ -1027,8 +1042,8 @@ CONTAINS
     ENDIF
 
 #ifndef __NO_ICON_UPATMO__
-    ! This is required for NWP forcing only. 
-    ! For AES forcing, the following will likely be done in 
+    ! This is required for NWP forcing only.
+    ! For AES forcing, the following will likely be done in
     ! 'src/atm_phy_aes/mo_aes_phy_cleanup: cleanup_aes_phy'
     DO jg = 1, n_dom
       IF (upatmo_config( jg )%nwp_phy%l_phy_stat( iUpatmoPrcStat%enabled )) THEN
@@ -1041,7 +1056,6 @@ CONTAINS
     !---------------------------------------------------------------------
 
     CALL destruct_upatmo_state( n_dom, upatmo_config(1:) )
-#endif
 
     !---------------------------------------------------------------------
     !          Destruct the upper-atmosphere configuration type
@@ -1049,6 +1063,7 @@ CONTAINS
 
     ! After the following call, 'upatmo_config' cannot be used anymore!
     CALL destruct_upatmo( n_dom_start, n_dom )
+#endif
 
     ! call close name list prefetch
     IF ((l_limited_area .OR. l_global_nudging) .AND. latbc_config%itype_latbc > 0) THEN
@@ -1110,4 +1125,3 @@ CONTAINS
   !---------------------------------------------------------------------
 
 END MODULE mo_atmo_nonhydrostatic
-

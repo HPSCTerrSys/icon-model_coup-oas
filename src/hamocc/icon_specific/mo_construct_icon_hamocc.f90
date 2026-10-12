@@ -1,14 +1,14 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
 #include "omp_definitions.inc"
 
 MODULE mo_construct_icon_hamocc
@@ -39,7 +39,7 @@ MODULE mo_construct_icon_hamocc
        &                        ini_atmospheric_concentrations, &
        &                        set_parameters_bgc, &
        &                        ini_continental_carbon_input, &
-       &                        ini_wpoc, bgc_param_conv_unit, & 
+       &                        ini_wpoc, bgc_param_conv_unit, &
        &                        ini_aggregate_parameters
 
   USE mo_model_domain,        ONLY: t_patch, t_patch_3D
@@ -53,25 +53,25 @@ MODULE mo_construct_icon_hamocc
   USE mo_parallel_config,     ONLY: nproma
   USE mo_sync,                ONLY: global_sum_array
   USE mo_math_utilities,      ONLY: set_zlev
-  USE mo_ocean_surface_types, ONLY: t_atmos_for_ocean 
+  USE mo_ocean_surface_types, ONLY: t_atmos_for_ocean
   USE mo_end_bgc,             ONLY: cleanup_hamocc
   USE mo_bgc_bcond,           ONLY: construct_bgc_ext_data, destruct_bgc_ext_data, ext_data_bgc
   USE mo_timer,               ONLY: timer_start, timer_stop, timer_bgc_ini, ltimer
   USE mo_ext_data_types,      ONLY: t_external_data
   USE mo_hamocc_output,       ONLY: construct_hamocc_var_lists, construct_hamocc_state, &
-    &                                destruct_hamocc_state         
+    &                                destruct_hamocc_state
   USE mo_master_config,       ONLY: isRestart
   USE mo_ocean_hamocc_couple_state, ONLY: t_ocean_to_hamocc_state, t_hamocc_to_ocean_state, &
     & t_hamocc_ocean_state
-    
+
   USE mo_bgc_memory_types
   USE mo_var_list_gpu,        ONLY: gpu_update_var_list
-  
+
   IMPLICIT NONE
   PRIVATE
-  
-  
-  PUBLIC:: construct_icon_hamocc, destruct_icon_hamocc, init_icon_hamocc 
+
+
+  PUBLIC:: construct_icon_hamocc, destruct_icon_hamocc, init_icon_hamocc
 CONTAINS
 
 !------------------------------------------------------------
@@ -88,7 +88,7 @@ END SUBROUTINE destruct_icon_hamocc
 SUBROUTINE construct_icon_hamocc(patch_3d, ext_data)
    TYPE(t_patch_3D),             TARGET,INTENT(IN)    :: patch_3D
    TYPE(t_external_data), TARGET, INTENT(inout) :: ext_data
-   
+
     CALL construct_hamocc_var_lists(patch_3d%p_patch_2d(1))
     CALL construct_hamocc_state(patch_3d, hamocc_state)
     CALL construct_bgc_ext_data(patch_3d%p_patch_2d(1), ext_data,ext_data_bgc)
@@ -101,13 +101,13 @@ SUBROUTINE init_icon_hamocc(hamocc_ocean_state)
   TYPE(t_hamocc_ocean_state), TARGET   :: hamocc_ocean_state
 
   if(ltimer)call timer_start(timer_bgc_ini)
-  
+
   CALL ini_bgc_icon(hamocc_ocean_state, isRestart())
   if(ltimer)call timer_stop(timer_bgc_ini)
-   
+
 END SUBROUTINE init_icon_hamocc
 !------------------------------------------------------------
- 
+
 !------------------------------------------------------------
 !------------------------------------------------------------
 SUBROUTINE INI_BGC_ICON(hamocc_ocean_state,l_is_restart)
@@ -120,7 +120,7 @@ SUBROUTINE INI_BGC_ICON(hamocc_ocean_state,l_is_restart)
 
 
   !! Local variables
-  
+
   TYPE(t_bgc_memory), POINTER :: local_bgc_memory
   TYPE(t_sediment_memory), POINTER :: local_sediment_memory
   TYPE(t_aggregates_memory), POINTER :: local_aggregate_memory
@@ -137,7 +137,7 @@ SUBROUTINE INI_BGC_ICON(hamocc_ocean_state,l_is_restart)
   INTEGER, POINTER              :: regions(:,:)
 
   REAL(wp) :: dlevels_m(n_zlev),dlevels_i(n_zlev+1)
- 
+
   CALL message(TRIM(routine), 'start')
   p_patch_3D => hamocc_ocean_state%patch_3D
   !
@@ -152,7 +152,7 @@ SUBROUTINE INI_BGC_ICON(hamocc_ocean_state,l_is_restart)
   inv_dtb = 1._wp/ dtb
 
 
-   ! determine size of arrays 
+   ! determine size of arrays
    p_patch           => p_patch_3D%p_patch_2D(1)
 
    bgc_zlevs = n_zlev
@@ -167,7 +167,7 @@ SUBROUTINE INI_BGC_ICON(hamocc_ocean_state,l_is_restart)
   !
   ldtrunbgc = 0
 
-  
+
   CALL message(TRIM(routine), 'set_parameters_bgc' )
 
   CALL set_parameters_bgc
@@ -185,17 +185,17 @@ SUBROUTINE INI_BGC_ICON(hamocc_ocean_state,l_is_restart)
   !
   CALL message(TRIM(routine), 'alloc_mem_sedmnt' )
   CALL ALLOC_MEM_SEDMNT
-   
+
   !
   ! Initialize sediment layering
   !
   CALL message(TRIM(routine), 'sediment_bottom')
   CALL sediment_bottom
-  
+
   ! convert 1/d to 1/ts
   CALL bgc_param_conv_unit
 
-  CALL print_bgc_parameters 
+  CALL print_bgc_parameters
 
   CALL message(TRIM(routine), 'bgc_param_conv_unit')
 
@@ -212,7 +212,7 @@ SUBROUTINE INI_BGC_ICON(hamocc_ocean_state,l_is_restart)
   ENDDO
   totalarea     = global_sum_array(totalarea)
   CALL ini_continental_carbon_input(totalarea)
-  
+
 ! set level for 90m, 1000m, 2000m for diagnostic output
   CALL set_zlev(dlevels_i, dlevels_m, n_zlev, dzlev_m)
 
@@ -220,15 +220,15 @@ SUBROUTINE INI_BGC_ICON(hamocc_ocean_state,l_is_restart)
   n1000depth = maxloc(dlevels_i,DIM=1,MASK=(dlevels_i < 1000._wp))
   n2000depth = maxloc(dlevels_i,DIM=1,MASK=(dlevels_i < 2000._wp))
 
-  IF (i_settling == 2) CALL init_aggregate_params  
-  
+  IF (i_settling == 2) CALL init_aggregate_params
+
   local_memory_idx = 0
   local_bgc_memory => bgc_local_memory(local_memory_idx)
   local_sediment_memory => sediment_local_memory(local_memory_idx)
   local_aggregate_memory => aggregates_memory(local_memory_idx)
-  
+
   kpke = MAXVAL(p_patch_3D%p_patch_1d(1)%dolic_c(:,:))
- 
+
 !   CALL debug_messages_on()
 
 !DIR$ INLINE
@@ -244,15 +244,15 @@ local_aggregate_memory => aggregates_memory(local_memory_idx)
 test_memory_copies = OMP_GET_NUM_THREADS()
 IF (test_memory_copies /= bgc_memory_copies) &
   & CALL finish(routine, "test_memory_copies /= bgc_memory_copies")
-!ICON_OMP_END_SINGLE        
+!ICON_OMP_END_SINGLE
 !ICON_OMP_DO PRIVATE(levels, start_index, end_index)
 #endif
  DO jb = all_cells%start_block, all_cells%end_block
- 
+
         CALL get_index_range(all_cells, jb, start_index, end_index)
         !  tracer 1: potential temperature
         !  tracer 2: salinity
-        
+
         levels(start_index:end_index) = p_patch_3d%p_patch_1d(1)%dolic_c(start_index:end_index,jb)
 
 ! Initialize POC sinking speed
@@ -261,7 +261,7 @@ IF (test_memory_copies /= bgc_memory_copies) &
 
 !         CALL message(TRIM(routine), 'ini_bottom...')
         CALL ini_bottom(local_bgc_memory, start_index,end_index,levels,p_patch_3D%p_patch_1d(1)%prism_thick_flat_sfc_c(:,:,jb))
- 
+
         IF(l_is_restart.and..not.l_init_bgc)then
 
           CALL update_bgc(local_bgc_memory, local_sediment_memory, start_index,end_index,levels,&
@@ -278,19 +278,19 @@ IF (test_memory_copies /= bgc_memory_copies) &
 !           CALL message(TRIM(routine), 'ini_pore_water_tracers...')
           CALL ini_pore_water_tracers(local_bgc_memory, local_sediment_memory, start_index,end_index)
 
-         ENDIF 
+         ENDIF
 
-!         CALL message(TRIM(routine), 'ini_atmospheric_concentrations...')        
+!         CALL message(TRIM(routine), 'ini_atmospheric_concentrations...')
         CALL ini_atmospheric_concentrations(local_bgc_memory)
 
-!         CALL message(TRIM(routine), 'initial_update_icon...')        
+!         CALL message(TRIM(routine), 'initial_update_icon...')
         CALL initial_update_icon(local_bgc_memory, local_sediment_memory, start_index,end_index,levels, &
               &               p_patch_3D%p_patch_1d(1)%prism_thick_flat_sfc_c(:,:,jb),&  ! cell thickness
               &              jb, &
               &              hamocc_state%p_prog(nold(1))%tracer(:,:,jb,:),&
               &              hamocc_state%p_sed, hamocc_state%p_diag,&
               &              hamocc_ocean_state%hamocc_to_ocean_state%co2_flux(:,jb))
-     
+
 
   ENDDO
 !ICON_OMP_END_DO

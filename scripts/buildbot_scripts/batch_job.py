@@ -1,15 +1,18 @@
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
-
+# ---------------------------------------------------------------
 import subprocess
-class BatchJob(object):
+from abc import ABC, abstractmethod
+
+
+class BatchJob(ABC):
     def __init__(self, cmd, cwd):
         self.system = "undefined"
         self.cmd = cmd
@@ -22,22 +25,28 @@ class BatchJob(object):
     def add_parent(self, parent):
         self.parents.append(parent)
 
-    def wait(self):
-        self.poll(timeout=None)
+    @abstractmethod
+    def submit(self, script):
+        pass
 
+    @abstractmethod
     def poll(self, timeout):
-        """Check if task is still running.
+        pass
 
-        Waits up to specified timeout in seconds for job to finish. If job
-        finishes in time or has finished before, return True and set returncode.
-        """
-        try:
-            returncode = self.job.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            return False
-        else:
-            self.returncode = returncode
-            return True
-
+    @abstractmethod
     def cancel(self):
-        self.job.cancel()
+        pass
+
+    @abstractmethod
+    def wasCanceled(self):
+        pass
+
+    def failed(self):
+        # this only makes sense IF there is a returncode at all
+        if None == self.returncode:
+            print("This process has not yet returned any code!")
+            return None
+
+        _returncode = self.returncode
+        _canceled = self.wasCanceled()
+        return (0 != _returncode) or _canceled

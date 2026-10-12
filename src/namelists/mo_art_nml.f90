@@ -1,12 +1,7 @@
-! Namelist for ART-package
-!
-!
-! Subroutine is called by read_atmo_namelists for setting up the ART-package
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,8 +9,12 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Namelist for ART-package
+!
+! Subroutine is called by read_atmo_namelists for setting up the ART-package
+
 MODULE mo_art_nml
- 
+
   USE mo_kind,                ONLY: wp
   USE mo_exception,           ONLY: message, finish, message_text
   USE mo_run_config,          ONLY: lart
@@ -29,7 +28,7 @@ MODULE mo_art_nml
   USE mo_art_config,          ONLY: art_config, IART_PATH_LEN
   USE mo_nml_annotate,        ONLY: temp_defaults, temp_settings
 
-  
+
   IMPLICIT NONE
   PRIVATE
 
@@ -46,21 +45,24 @@ MODULE mo_art_nml
   INTEGER :: iart_init_gas(1:max_dom)           !< Initialization of gaseous species
   INTEGER :: iart_fplume             !< run FPlume model (Volcanic Plumes)
   INTEGER :: iart_volc_numb          !< number of volcanoes
-  CHARACTER(LEN=IART_PATH_LEN)  :: cart_fplume_inp          
+  INTEGER :: iart_solvar_type        !< type of solar variability
+  CHARACTER(LEN=IART_PATH_LEN)  :: cart_fplume_inp
                                      !< path to FPlume input files (use without file extension)
   LOGICAL :: lart_diag_out           !< Enable output of diagnostic fields
+  LOGICAL :: lart_diag_xml           !< Create diagnostic fields only if they are defined in diagnostics.xml
   LOGICAL :: lart_pntSrc             !< Enables point sources
+  LOGICAL :: lart_excl_end_pntSrc    !< Main switch to exclude endTime from active time interval of point sources
   LOGICAL :: lart_emiss_turbdiff     !< Switch if emissions should be included as surface flux condition
-  CHARACTER(LEN=20) :: & 
-   &  cart_io_suffix(1:max_dom)      !< user given suffix instead of automatically generated grid number 
-                                     !  in ICON-ART input filename convention: 
+  CHARACTER(LEN=20) :: &
+   &  cart_io_suffix(1:max_dom)      !< user given suffix instead of automatically generated grid number
+                                     !  in ICON-ART input filename convention:
                                      !  ART_iconR<n>B<kk>-grid-<yyyy-mm-dd-hh>_<grid_suffix>.nc
 
   ! Atmospheric Chemistry (Details: cf. Tab. 2.2 ICON-ART User Guide)
   LOGICAL :: lart_chem               !< Main switch to enable chemistry
   LOGICAL :: lart_chemtracer         !< switch for parametrised chemtracers
   LOGICAL :: lart_mecca              !< switch for MECCA chemistry
-  LOGICAL :: lart_psc                !< switch for computation of PSCs 
+  LOGICAL :: lart_psc                !< switch for computation of PSCs
   CHARACTER(LEN=IART_PATH_LEN)  :: &
     &  cart_vortex_init_date         !< Date of vortex initialization
   CHARACTER(LEN=IART_PATH_LEN)  :: &
@@ -87,10 +89,12 @@ MODULE mo_art_nml
   CHARACTER(LEN=IART_PATH_LEN)  :: &
     &  cart_emiss_xml_file           !< path and file name of the xml files for emission metadata
   CHARACTER(LEN=IART_PATH_LEN)  :: &
-    &  cart_ext_data_xml             !< Path to XML file for metadata of datasets 
+    &  cart_ext_data_xml             !< Path to XML file for metadata of datasets
                                      !  that can prescribe tracers
   CHARACTER(LEN=IART_PATH_LEN)  :: &
     &  cart_aero_emiss_xml           !< Path to XML file for aerosol emission routines
+  CHARACTER(LEN=IART_PATH_LEN)  :: &
+    &  cart_opt_props_nc             !< Path to NetCDF file for prescribed optical properties
 
   ! Atmospheric Aerosol (Details: cf. Tab. 2.3 ICON-ART User Guide)
   LOGICAL :: lart_aerosol            !< Main switch for the treatment of atmospheric aerosol
@@ -98,6 +102,7 @@ MODULE mo_art_nml
   INTEGER :: iart_dust               !< Treatment of mineral dust aerosol
   INTEGER :: iart_anthro             !< Treatment of anthropogenic aerosol
   INTEGER :: iart_fire               !< Treatment of wildfire aerosol
+  INTEGER :: iart_gfas_dt_ovrwrite   !< Interval of overwriting biomass burning emissions
   INTEGER :: iart_volcano            !< Treatment of volcanic ash aerosol
   INTEGER :: iart_nonsph             !< Treatment of nonspherical particles
   INTEGER :: iart_isorropia          !< Treatment of aerosol gas partioning
@@ -109,15 +114,15 @@ MODULE mo_art_nml
     &  cart_radioact_file            !< Absolute path + filename of input file for radioactive emissions
   INTEGER :: iart_pollen             !< Treatment of pollen
   INTEGER :: iart_modeshift          !< Doing mode shift (only temporary switch for debug)
-    
+
   ! Feedback processes (Details: cf. Tab. 2.4 ICON-ART User Guide)
   INTEGER :: iart_aci_warm           !< Nucleation of aerosol to cloud droplets
   INTEGER :: iart_aci_cold           !< Nucleation of aerosol to cloud ice
   INTEGER :: iart_ari                !< Direct interaction of aerosol with radiation
 
   LOGICAL :: lart_dusty_cirrus       !< Dusty cirrus parameterization in cloud cover scheme
-  REAL(wp):: rart_dustyci_crit            !< Dust threshold for dusty cirrus  [mug/kg]
-  REAL(wp):: rart_dustyci_rhi             !< RHi  threshold for dusty cirrus  [-]
+  REAL(wp):: rart_dustyci_crit       !< Dust threshold for dusty cirrus  [mug/kg]
+  REAL(wp):: rart_dustyci_rhi        !< RHi  threshold for dusty cirrus  [-]
 
   ! Treatment of grid scale and convective precipitation in dust washout
   INTEGER :: iart_aero_washout       !< 0:gscp+con; 1:gscp,con; 2:gscp,rcucov*con
@@ -133,27 +138,46 @@ MODULE mo_art_nml
   ! Restart-DEBUG: Write DEBUG-Restartfile
   LOGICAL :: lart_debugRestart
 
+  ! MieAI (internal mixing)
+  INTEGER :: iart_MieAI
+  CHARACTER(LEN=IART_PATH_LEN)  :: &
+    &  cart_MieAI_files              !< Path to MieAI model files like ANN model parameters,
+                                     ! quantile mapping parmaters and min/max values
+                                     ! used for preprocessing
+  CHARACTER(LEN=IART_PATH_LEN)  :: &
+    &  cart_ri                       !< Path to Directory containing refractive indices data
+
   ! Time interval over which maximum of air concentration of radionuclides is taken
   REAL(wp):: radioact_maxtint(1:max_dom)
+
+  ! Radiation multiple call
+  INTEGER  :: irad_multicall
+
+  !< rart_shfl_fire > 0.0 -> Enable treatment of wildfire sensible heat release
+  REAL(wp) :: rart_shfl_fire         !< set enhancement factor
+  !< rart_qv_fire > 0.0 -> Enable treatment of wildfire moisture release
+  REAL(wp) :: rart_qv_fire           !< set enhancement factor
 
 
   NAMELIST/art_nml/ cart_input_folder, lart_chem, lart_chemtracer, lart_mecca,          &
    &                cart_io_suffix, lart_pntSrc, lart_aerosol, iart_seasalt, iart_dust, &
-   &                iart_anthro, iart_fire, iart_volcano, cart_volcano_file,            &
-   &                iart_fplume, iart_volc_numb, cart_fplume_inp, iart_radioact,        &
-   &                cart_radioact_file, iart_pollen, iart_nonsph, iart_isorropia,       &
-   &                iart_seas_water, lart_dusty_cirrus, rart_dustyci_crit,              &
-   &                rart_dustyci_rhi, &
+   &                iart_anthro, iart_fire,iart_gfas_dt_ovrwrite, rart_shfl_fire, rart_qv_fire, iart_volcano, &
+   &                cart_volcano_file, iart_fplume, iart_volc_numb, cart_fplume_inp,    &
+   &                iart_radioact, cart_radioact_file, iart_pollen, iart_nonsph,        &
+   &                iart_isorropia, iart_seas_water, lart_dusty_cirrus,                 &
+   &                rart_dustyci_crit, rart_dustyci_rhi, lart_excl_end_pntSrc,          &
    &                iart_modeshift, iart_aci_warm, iart_aci_cold, iart_ari,             &
    &                iart_aero_washout, lart_conv, lart_turb, iart_init_aero,            &
-   &                iart_init_gas, lart_diag_out, cart_emiss_xml_file,                  &
+   &                iart_init_gas, lart_diag_out, lart_diag_xml, cart_emiss_xml_file,   &
    &                cart_ext_data_xml, cart_vortex_init_date , cart_cheminit_file,      &
    &                cart_cheminit_coord, cart_cheminit_type,                            &
    &                lart_emiss_turbdiff, nart_substeps_sedi,                            &
    &                cart_chemtracer_xml, cart_mecca_xml, cart_aerosol_xml,              &
    &                cart_modes_xml, cart_pntSrc_xml, cart_diagnostics_xml,              &
-   &                lart_psc, cart_coag_xml, cart_aero_emiss_xml, cart_type_sedim,      &
-   &                lart_debugRestart, radioact_maxtint
+   &                lart_psc, cart_coag_xml, cart_aero_emiss_xml, cart_opt_props_nc,    &
+   &                cart_type_sedim, lart_debugRestart, radioact_maxtint,               &
+   &                irad_multicall, iart_solvar_type, iart_MieAI, cart_MieAI_files,     &
+   &                cart_ri
 
 CONTAINS
   !-------------------------------------------------------------------------
@@ -174,7 +198,7 @@ CONTAINS
     CHARACTER(LEN=*), INTENT(IN) :: filename
     INTEGER :: istat, funit
     INTEGER :: jg            !< patch loop index
-    LOGICAL :: l_exist       !< variable for inquiring if the xml file 
+    LOGICAL :: l_exist       !< variable for inquiring if the xml file
                                         !   and emission base path exist.
     CHARACTER(len=*), PARAMETER ::  &
       &  routine = 'mo_art_nml: read_art_nml'
@@ -189,13 +213,16 @@ CONTAINS
     iart_init_aero(:)          = 0
     iart_init_gas(:)           = 0
     lart_diag_out              = .FALSE.
+    lart_diag_xml              = .FALSE.
     lart_pntSrc                = .FALSE.
+    lart_excl_end_pntSrc       = .FALSE.
     lart_emiss_turbdiff        = .FALSE.
     cart_io_suffix(1:max_dom)  = 'grid-number'
     iart_fplume                = 0
     iart_volc_numb             = 0
+    iart_solvar_type           = 1    ! fixed from input file FJX_spec.dat
     cart_fplume_inp            = ''
- 
+
     ! Atmospheric Chemistry (Details: cf. Tab. 2.2 ICON-ART User Guide)
     lart_chem             = .FALSE.
     lart_chemtracer       = .FALSE.
@@ -217,6 +244,7 @@ CONTAINS
     cart_emiss_xml_file   = ''
     cart_ext_data_xml     = ''
     cart_aero_emiss_xml   = ''
+    cart_opt_props_nc     = ''
 
     ! Atmospheric Aerosol (Details: cf. Tab. 2.3 ICON-ART User Guide)
     lart_aerosol        = .FALSE.
@@ -224,6 +252,7 @@ CONTAINS
     iart_dust           = 0
     iart_anthro         = 0
     iart_fire           = 0
+    iart_gfas_dt_ovrwrite = 0
     iart_volcano        = 0
     cart_volcano_file   = ''
     iart_radioact       = 0
@@ -258,8 +287,23 @@ CONTAINS
     ! Write DEBUG-Restartfile
     lart_debugRestart   = .FALSE.
 
+    ! MieAI (internal mixing)
+    iart_MieAI          = 0
+    cart_MieAI_files    = ''
+    cart_ri             = ''
+
     ! Time interval over which maximum of air concentration of radionuclides is taken
     radioact_maxtint(:) = 3600._wp
+
+    ! Radiation multiple call
+    irad_multicall = 0
+
+    ! Enhancement factor of wildfire sensible heat release
+    rart_shfl_fire    = 0.0_wp
+
+    ! Enhancement factor of wildfire moisture release
+    rart_qv_fire      = 0.0_wp
+
 
     !------------------------------------------------------------------
     ! 2. If this is a resumed integration, overwrite the defaults above
@@ -319,7 +363,7 @@ CONTAINS
     !----------------------------------------------------
 
     IF (lart) THEN
-    
+
       IF (iart_aci_cold == 6 .AND. iart_dust == 0) THEN
         CALL finish('mo_art_nml:read_art_namelist',  &
           &         'Invalid combination: iart_aci_cold = 6 and iart_dust = 0')
@@ -332,18 +376,18 @@ CONTAINS
         CALL finish('mo_art_nml:read_art_namelist',  &
           &         'Invalid combination: lart_dusty_cirrus = .TRUE. and iart_dust = 0')
       ENDIF
-  
+
       ! Emission paths and file
       IF (TRIM(cart_emiss_xml_file) /= '') THEN
         INQUIRE(file = TRIM(cart_emiss_xml_file), EXIST = l_exist)
-      
+
         IF (.NOT. l_exist) THEN
           CALL finish('mo_art_nml:read_art_namelist',  &
                       TRIM(cart_emiss_xml_file)//  &
                       & ' could not be found. Check cart_emiss_xml_file.')
         END IF
       END IF
-  
+
 
       ! Diagnostics paths and file
       IF (TRIM(cart_diagnostics_xml) /= '') THEN
@@ -359,10 +403,31 @@ CONTAINS
       ! FPLUME input path
       IF (iart_fplume>=1) THEN
         IF(TRIM(cart_fplume_inp) == '') THEN
-          CALL finish('mo_art_nml:read_art_namelist','namelist parameter cart_fplume_inp' &       
+          CALL finish('mo_art_nml:read_art_namelist','namelist parameter cart_fplume_inp' &
                     //' has to be given for iart_fplume>=1')
         END IF
         IF (iart_volc_numb==0) iart_volc_numb = 1
+      END IF
+
+      ! MieAI data path
+      IF (iart_MieAI>=1) THEN
+        IF (iart_MieAI>=2) THEN
+          CALL finish('mo_art_nml:read_art_namelist','namelist parameter iart_MieAI >= 2' &
+                    //' has not been implemented yet.')
+        END IF
+
+        IF(TRIM(cart_MieAI_files) == '') THEN
+          CALL finish('mo_art_nml:read_art_namelist','namelist parameter cart_MieAI_files' &
+                    //' has to be given for iart_MieAI>=1. Also, please ensure that ' &
+                    //' MieAI.txt, mlp_min_max.csv and quantile_transform.csv files ' &
+                    //' are present in that directory.')
+        END IF
+
+        IF(TRIM(cart_ri) == '') THEN
+          CALL finish('mo_art_nml:read_art_namelist','namelist parameter cart_ri' &
+                    //' has to be given for iart_MieAI>=1. Also, please ensure that ' &
+                    //' all 6 refractive indices datasets are present in that directory.')
+        END IF
       END IF
 
     END IF  ! lart
@@ -374,17 +439,20 @@ CONTAINS
 
     DO jg= 1,max_dom !< Do not take into account reduced radiation grid
       ! General variables (Details: cf. Tab. 2.1 ICON-ART User Guide)
-      art_config(jg)%cart_input_folder   = TRIM(cart_input_folder)
-      art_config(jg)%iart_init_aero      = iart_init_aero(jg)
-      art_config(jg)%iart_init_gas       = iart_init_gas(jg)
-      art_config(jg)%lart_diag_out       = lart_diag_out
-      art_config(jg)%lart_pntSrc         = lart_pntSrc
-      art_config(jg)%lart_emiss_turbdiff = lart_emiss_turbdiff
-      art_config(jg)%cart_io_suffix      = TRIM(cart_io_suffix(jg))
-      art_config(jg)%iart_fplume         = iart_fplume
-      art_config(jg)%iart_volc_numb      = iart_volc_numb
-      art_config(jg)%cart_fplume_inp     = TRIM(cart_fplume_inp)
-      
+      art_config(jg)%cart_input_folder    = TRIM(cart_input_folder)
+      art_config(jg)%iart_init_aero       = iart_init_aero(jg)
+      art_config(jg)%iart_init_gas        = iart_init_gas(jg)
+      art_config(jg)%lart_diag_out        = lart_diag_out
+      art_config(jg)%lart_diag_xml        = lart_diag_xml
+      art_config(jg)%lart_pntSrc          = lart_pntSrc
+      art_config(jg)%lart_excl_end_pntSrc = lart_excl_end_pntSrc
+      art_config(jg)%lart_emiss_turbdiff  = lart_emiss_turbdiff
+      art_config(jg)%cart_io_suffix       = TRIM(cart_io_suffix(jg))
+      art_config(jg)%iart_fplume          = iart_fplume
+      art_config(jg)%iart_volc_numb       = iart_volc_numb
+      art_config(jg)%iart_solvar_type     = iart_solvar_type
+      art_config(jg)%cart_fplume_inp      = TRIM(cart_fplume_inp)
+
       ! Atmospheric Chemistry (Details: cf. Tab. 2.2 ICON-ART User Guide)
       art_config(jg)%lart_chem             = lart_chem
       art_config(jg)%lart_chemtracer       = lart_chemtracer
@@ -406,6 +474,7 @@ CONTAINS
       art_config(jg)%cart_emiss_xml_file   = TRIM(cart_emiss_xml_file)
       art_config(jg)%cart_ext_data_xml     = TRIM(cart_ext_data_xml)
       art_config(jg)%cart_aero_emiss_xml   = TRIM(cart_aero_emiss_xml)
+      art_config(jg)%cart_opt_props_nc     = TRIM(cart_opt_props_nc)
 
       ! Atmospheric Aerosol (Details: cf. Tab. 2.3 ICON-ART User Guide)
       art_config(jg)%lart_aerosol        = lart_aerosol
@@ -413,6 +482,7 @@ CONTAINS
       art_config(jg)%iart_dust           = iart_dust
       art_config(jg)%iart_anthro         = iart_anthro
       art_config(jg)%iart_fire           = iart_fire
+      art_config(jg)%iart_gfas_dt_ovrwrite = iart_gfas_dt_ovrwrite
       art_config(jg)%iart_volcano        = iart_volcano
       art_config(jg)%iart_nonsph         = iart_nonsph
       art_config(jg)%iart_isorropia      = iart_isorropia
@@ -422,7 +492,7 @@ CONTAINS
       art_config(jg)%cart_radioact_file  = TRIM(cart_radioact_file)
       art_config(jg)%iart_pollen         = iart_pollen
       art_config(jg)%iart_modeshift      = iart_modeshift
-      
+
       ! Feedback processes (Details: cf. Tab. 2.4 ICON-ART User Guide)
       art_config(jg)%iart_aci_warm       = iart_aci_warm
       art_config(jg)%iart_aci_cold       = iart_aci_cold
@@ -447,8 +517,22 @@ CONTAINS
       ! Write DEBUG-Restartfile
       art_config(jg)%lart_debugRestart   = lart_debugRestart
 
+      ! MieAI (internal mixing)
+      art_config(jg)%iart_MieAI          = iart_MieAI
+      art_config(jg)%cart_MieAI_files    = cart_MieAI_files
+      art_config(jg)%cart_ri             = cart_ri
+
       ! Time interval over which maximum of air concentration of radionuclides is taken
       art_config(jg)%radioact_maxtint    = radioact_maxtint(jg)
+
+      ! Radiation multiple call
+      art_config(jg)%irad_multicall      = irad_multicall
+
+      ! Enhancement factor of wildfire sensible heat release
+      art_config(jg)%rart_shfl_fire      = rart_shfl_fire
+      ! Enhancement factor of wildfire moisture release
+      art_config(jg)%rart_qv_fire        = rart_qv_fire
+
     ENDDO !jg
 
     !-----------------------------------------------------

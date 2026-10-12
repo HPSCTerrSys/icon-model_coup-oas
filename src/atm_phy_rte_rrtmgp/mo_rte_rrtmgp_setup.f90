@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -26,13 +26,11 @@ MODULE mo_rte_rrtmgp_setup
 
   TYPE(ty_gas_optics_rrtmgp) :: k_dist_lw, k_dist_sw
   TYPE(ty_cloud_optics)      :: cloud_optics_lw, cloud_optics_sw
-  REAL(wp)                   :: inhoml, inhomi, inhoms
 
   PUBLIC :: rte_rrtmgp_basic_setup
   PUBLIC :: k_dist_lw, k_dist_sw
   PUBLIC :: cloud_optics_lw, cloud_optics_sw
   PUBLIC :: stop_on_err
-  PUBLIC :: inhoml, inhomi, inhoms
 
 CONTAINS
 
@@ -46,17 +44,10 @@ CONTAINS
     END IF
   END SUBROUTINE
 
-  SUBROUTINE rte_rrtmgp_basic_setup(nproma, nlev, &
-    pressure_scale_, droplet_scale_, &
-    zinhoml_, zinhomi_, zinhoms_)
-
-!!    USE mo_radiation_cloud_optics, ONLY: setup_cloud_optics
+  SUBROUTINE rte_rrtmgp_basic_setup
 
     IMPLICIT NONE
 
-    INTEGER, INTENT(IN) :: nproma, nlev
-    REAL(wp), INTENT(IN) :: pressure_scale_, droplet_scale_, &
-      zinhoml_, zinhomi_, zinhoms_
     INTEGER :: i
     REAL(wp) :: log_factor
     INTEGER, PARAMETER :: n_gas_names = 8
@@ -64,15 +55,6 @@ CONTAINS
     CHARACTER(len=5), PARAMETER :: gas_names(n_gas_names) = (/ &
        'h2o  ', 'co2  ', 'ch4  ', 'o2   ', 'o3   ', 'n2o  ','cfc11', 'cfc12'/)
     TYPE(ty_gas_concs) :: gas_concs
-
-    !pressure_scale = pressure_scale_
-    !droplet_scale = droplet_scale_
-
-!!    CALL setup_cloud_optics(droplet_scale_, &
-!!      zinhoml1_, zinhoml2_, zinhoml3_, zinhomi_)
-    inhoml = zinhoml_
-    inhomi = zinhomi_
-    inhoms = zinhoms_
 
     ! Turn off error checking
     CALL rte_config_checks(LOGICAL(.FALSE.,wl))  ! Dressing to please gfortran
@@ -86,15 +68,13 @@ CONTAINS
     ENDDO
     CALL load_and_init(k_dist_lw, 'coefficients_lw.nc', gas_concs)
     CALL load_and_init(k_dist_sw, 'coefficients_sw.nc', gas_concs)
-!!    CALL load_and_init
-!!    CALL load_and_init(cloud_optics_sw, 'rrtmgp-cloud-optics-coeffs-sw.nc')
     IF (luse_luts) THEN
       CALL load_cld_lutcoeff(cloud_optics_lw, 'rrtmgp-cloud-optics-coeffs-lw.nc')
       CALL load_cld_lutcoeff(cloud_optics_sw, 'rrtmgp-cloud-optics-coeffs-sw.nc')
     ELSE
       CALL load_cld_padecoeff(cloud_optics_lw, 'rrtmgp-cloud-optics-coeffs-lw.nc')
       CALL load_cld_padecoeff(cloud_optics_sw, 'rrtmgp-cloud-optics-coeffs-sw.nc')
-    ENDIF 
+    ENDIF
     CALL stop_on_err(cloud_optics_lw%set_ice_roughness(2))
     CALL stop_on_err(cloud_optics_sw%set_ice_roughness(2))
 

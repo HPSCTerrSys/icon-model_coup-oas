@@ -1,10 +1,7 @@
-! Routines for handling proxy variables e.g. accumulation buffers
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,14 +9,21 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Routines for handling proxy variables e.g. accumulation buffers
+
 #include <omp_definitions.inc>
 MODULE mo_derived_variable_handling
 
-  USE mo_kind,                ONLY: wp, sp
+  USE mo_kind,                ONLY: wp, xwp, dp, sp
   USE mo_model_domain,        ONLY: t_patch
   USE mo_io_config,           ONLY: lnetcdf_flt64_output
   USE mo_dynamics_config,     ONLY: nnow, nnew, nold
-  USE mo_impl_constants,      ONLY: vname_len, REAL_T, TIMELEVEL_SUFFIX, max_dom
+  USE mo_impl_constants,      ONLY: vname_len, TIMELEVEL_SUFFIX, max_dom
+#ifdef __SINGLE_PRECISION
+  USE mo_impl_constants,      ONLY: SINGLE_T
+#else
+  USE mo_impl_constants,      ONLY: REAL_T
+#endif
   USE mo_cdi_constants,       ONLY: GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_EDGE, &
                               & GRID_ZONAL, GRID_UNSTRUCTURED_VERT
   USE mo_name_list_output_types, ONLY: t_output_name_list
@@ -34,7 +38,7 @@ MODULE mo_derived_variable_handling
   USE mo_time_config,         ONLY: time_config
   USE mo_cdi,                 ONLY: DATATYPE_FLT32, DATATYPE_FLT64, GRID_LONLAT, TSTEP_CONSTANT
   USE mo_util_texthash,       ONLY: text_hash_c
-  USE mo_mpi,                 ONLY: p_bcast, i_am_accel_node
+  USE mo_mpi,                 ONLY: p_bcast
   USE ISO_C_BINDING,          ONLY: C_INT
 
 #include <add_var_acc_macro.inc>
@@ -256,6 +260,19 @@ CONTAINS
     TYPE(t_var_metadata), POINTER :: info
 
     info => deriv%src(1)%p%info
+
+#ifdef __SINGLE_PRECISION
+    CALL add_var(SINGLE_T, src_list, dname, info%hgrid, info%vgrid, info%cf, &
+      & info%grib2, info%used_dimensions(1:info%ndims), vl_elem, &
+      & tlev_source=info%tlev_source, isteptype=info%isteptype, &
+      & post_op=info%post_op, initval_s=info%initval%sval, &
+      & resetval_s=info%resetval%sval, lmiss=info%lmiss, &
+      & missval_s=info%missval%sval, &
+      & vert_interp=info%vert_interp, hor_interp=info%hor_interp, &
+      & in_group=info%in_group, &
+      & loutput=.TRUE., lrestart=.FALSE., var_class=info%var_class, &
+      & lopenacc = info%lopenacc )
+#else
     CALL add_var(REAL_T, src_list, dname, info%hgrid, info%vgrid, info%cf, &
       & info%grib2, info%used_dimensions(1:info%ndims), vl_elem, &
       & tlev_source=info%tlev_source, isteptype=info%isteptype, &
@@ -266,6 +283,8 @@ CONTAINS
       & in_group=info%in_group, &
       & loutput=.TRUE., lrestart=.FALSE., var_class=info%var_class, &
       & lopenacc = info%lopenacc )
+#endif
+
     SELECT CASE(info%hgrid)
     CASE(GRID_UNSTRUCTURED_CELL)
       vl_elem%info%subset = patch_2d%cells%owned
@@ -283,43 +302,53 @@ CONTAINS
 
   END SUBROUTINE init_op
 
-  SUBROUTINE perform_op(src, dest, funccode, weight, miss, miss_s)
+  SUBROUTINE perform_op(src, dest, funccode, lacc, weight, miss_r, miss_s)
     TYPE(t_var), POINTER, INTENT(IN) :: src
     TYPE(t_var), POINTER, INTENT(INOUT) :: dest
     INTEGER(C_INT), INTENT(IN) :: funccode
-    REAL(wp), INTENT(IN), OPTIONAL :: weight, miss
+    LOGICAL, INTENT(IN) :: lacc
+    REAL(wp), INTENT(IN), OPTIONAL :: weight
+    REAL(dp), INTENT(IN), OPTIONAL :: miss_r
     REAL(sp), INTENT(IN), OPTIONAL :: miss_s
+    ! Local var
+    CHARACTER(*), PARAMETER :: routine = modname//":perform_op"
     REAL(wp) :: miss_src, miss_dst, weight_dst
     INTEGER :: ic,si,sj,sk,sl,sm,ei,ej,ek,el,em,sbi,ebi,bk,sbk,ebk
-    REAL(wp), POINTER :: sd5d(:,:,:,:,:)
-    REAL(sp), POINTER :: ss5d(:,:,:,:,:)
-    LOGICAL :: lacc
+
+    REAL(wp), POINTER :: s_wp5d(:,:,:,:,:)
+    REAL(xwp), POINTER :: s_xwp5d(:,:,:,:,:)
 
     IF (PRESENT(weight)) weight_dst = weight
-    IF (PRESENT(miss)) miss_dst = miss
-    IF (PRESENT(miss)) miss_src = MERGE(miss, REAL(miss_s, wp), ASSOCIATED(src%r_ptr))
+    IF (PRESENT(miss_r) .OR. PRESENT(miss_s)) THEN
+      IF ( .NOT. (PRESENT(miss_r) .AND. PRESENT(miss_s)) ) THEN
+        CALL finish(routine, "miss_r and miss_s must both or none be provided")
+      END IF
+      miss_dst = MERGE(REAL(miss_r,wp), REAL(miss_s,wp), ASSOCIATED(src%r_ptr))
+      miss_src = MERGE(REAL(miss_r,wp), REAL(miss_s,wp), ASSOCIATED(src%r_ptr))
+    END IF
     sm = 1; sl = 1; sk = 1; sj = 1; si = 1
-    em = SIZE(dest%r_ptr, 5); el = SIZE(dest%r_ptr, 4); ek = SIZE(dest%r_ptr, 3)
-    ej = SIZE(dest%r_ptr, 2); ei = SIZE(dest%r_ptr, 1)
+    em = SIZE(dest%wp_ptr, 5); el = SIZE(dest%wp_ptr, 4);
+    ek = SIZE(dest%wp_ptr, 3); ej = SIZE(dest%wp_ptr, 2);
+    ei = SIZE(dest%wp_ptr, 1)
     bk = 0; sbk = -1; ebk = HUGE(ebk); sbi = -1; ebi = HUGE(ebi)
-    NULLIFY(sd5d, ss5d)
-    IF (ASSOCIATED(src%r_ptr)) sd5d => src%r_ptr(:,:,:,:,:)
-    IF (ASSOCIATED(src%s_ptr)) ss5d => src%s_ptr(:,:,:,:,:)
+    NULLIFY(s_wp5d, s_xwp5d)
+    IF (ASSOCIATED(src%wp_ptr)) s_wp5d => src%wp_ptr
+    IF (ASSOCIATED(src%xwp_ptr)) s_xwp5d => src%xwp_ptr
     IF (funccode .NE. F_MISS .AND. src%info%lcontained) THEN
       ic = src%info%ncontained
       SELECT CASE(src%info%var_ref_pos)
       CASE(1)
-        IF (ASSOCIATED(src%r_ptr)) sd5d => src%r_ptr(ic:ic,:,:,:,:)
-        IF (ASSOCIATED(src%s_ptr)) ss5d => src%s_ptr(ic:ic,:,:,:,:)
+        IF (ASSOCIATED(src%wp_ptr))   s_wp5d  => s_wp5d (ic:ic,:,:,:,:)
+        IF (ASSOCIATED(src%xwp_ptr))  s_xwp5d => s_xwp5d(ic:ic,:,:,:,:)
       CASE(2)
-        IF (ASSOCIATED(src%r_ptr)) sd5d => src%r_ptr(:,ic:ic,:,:,:)
-        IF (ASSOCIATED(src%s_ptr)) ss5d => src%s_ptr(:,ic:ic,:,:,:)
+        IF (ASSOCIATED(src%wp_ptr))   s_wp5d  => s_wp5d (:,ic:ic,:,:,:)
+        IF (ASSOCIATED(src%xwp_ptr))  s_xwp5d => s_xwp5d(:,ic:ic,:,:,:)
       CASE(3)
-        IF (ASSOCIATED(src%r_ptr)) sd5d => src%r_ptr(:,:,ic:ic,:,:)
-        IF (ASSOCIATED(src%s_ptr)) ss5d => src%s_ptr(:,:,ic:ic,:,:)
+        IF (ASSOCIATED(src%wp_ptr))   s_wp5d  => s_wp5d (:,:,ic:ic,:,:)
+        IF (ASSOCIATED(src%xwp_ptr))  s_xwp5d => s_xwp5d(:,:,ic:ic,:,:)
       CASE(4)
-        IF (ASSOCIATED(src%r_ptr)) sd5d => src%r_ptr(:,:,:,ic:ic,:)
-        IF (ASSOCIATED(src%s_ptr)) ss5d => src%s_ptr(:,:,:,ic:ic,:)
+        IF (ASSOCIATED(src%wp_ptr))   s_wp5d  => s_wp5d (:,:,:,ic:ic,:)
+        IF (ASSOCIATED(src%xwp_ptr))  s_xwp5d => s_xwp5d(:,:,:,ic:ic,:)
       END SELECT
     ELSE IF (funccode .NE. F_MISS) THEN
       IF (dest%info%ndims .EQ. 3) THEN
@@ -335,11 +364,12 @@ CONTAINS
       sbi = dest%info%subset%start_index
       ebi = dest%info%subset%end_index
     END IF
-    lacc = dest%info%lopenacc .AND. i_am_accel_node
-    CALL perform_op_5d()
+
+    CALL perform_op_5d(lacc=(dest%info%lopenacc.AND.lacc) )
   CONTAINS
 
-  SUBROUTINE perform_op_5d()
+  SUBROUTINE perform_op_5d(lacc)
+    LOGICAL, INTENT(IN) :: lacc
     INTEGER :: i,j,k,l,m,lblk
     REAL(wp), POINTER :: tmp1(:,:,:,:,:), tmp2(:,:,:,:,:)
 
@@ -362,19 +392,21 @@ END DO
 #define _idx_ i,j,k,l,m
 #define __myACC_directive !$ACC PARALLEL LOOP PRESENT(tmp1, tmp2) COLLAPSE(5) GANG VECTOR ASYNC(1) IF(lacc)
 #define __myOMP_directive !ICON_OMP PARALLEL DO PRIVATE(lblk) COLLAPSE(4)
-    IF (ASSOCIATED(sd5d)) THEN
-      tmp1 => sd5d
+
+    IF (ASSOCIATED(s_wp5d)) THEN
+      tmp1 => s_wp5d
       __acc_attach(tmp1)
     ELSE IF (funccode .NE. F_MISS .OR. funccode .NE. F_WGT) THEN
         ALLOCATE(tmp1(si:ei,sj:ej,sk:ek,sl:el,sm:em))
         !$ACC ENTER DATA CREATE(tmp1) IF(lacc)
 __myOMP_directive
-!$ACC PARALLEL LOOP PRESENT(ss5d, tmp1) COLLAPSE(5) GANG VECTOR ASYNC(1) IF(lacc)
+!$ACC PARALLEL LOOP PRESENT(s_xwp5d, tmp1) COLLAPSE(5) GANG VECTOR ASYNC(1) IF(lacc)
       _begin_loop_construct_
-        tmp1(_idx_) = REAL(ss5d(_idx_), wp)
+        tmp1(_idx_) = REAL(s_xwp5d(_idx_), wp)
       _close_loop_construct_
     END IF
-    tmp2 => dest%r_ptr
+
+    tmp2 => dest%wp_ptr
     __acc_attach(tmp2)
     SELECT CASE(funccode)
     CASE(F_ACC)
@@ -385,48 +417,49 @@ __myACC_directive
        _close_loop_construct_
     CASE(F_MAX)
 __myOMP_directive
-__myACC_directive       
+__myACC_directive
         _begin_loop_construct_
         IF (tmp1(_idx_) .GT. tmp2(_idx_)) tmp2(_idx_) = tmp1(_idx_)
         _close_loop_construct_
     CASE(F_MIN)
 __myOMP_directive
-__myACC_directive       
+__myACC_directive
         _begin_loop_construct_
         IF (tmp1(_idx_) .LT. tmp2(_idx_)) tmp2(_idx_) = tmp1(_idx_)
         _close_loop_construct_
     CASE(F_ACC_SQ)
 __myOMP_directive
-__myACC_directive       
+__myACC_directive
         _begin_loop_construct_
         tmp2(_idx_) = tmp2(_idx_) + tmp1(_idx_) * tmp1(_idx_)
         _close_loop_construct_
     CASE(F_ASS)
 __myOMP_directive
-__myACC_directive       
+__myACC_directive
         _begin_loop_construct_
         tmp2(_idx_) = tmp1(_idx_)
-        _close_loop_construct_               
+        _close_loop_construct_
     CASE(F_ASS_SQ)
 __myOMP_directive
-__myACC_directive       
+__myACC_directive
         _begin_loop_construct_
-        tmp2(_idx_) = tmp1(_idx_) * tmp1(_idx_) 
-        _close_loop_construct_          
+        tmp2(_idx_) = tmp1(_idx_) * tmp1(_idx_)
+        _close_loop_construct_
     CASE(F_WGT)
 __myOMP_directive
-__myACC_directive       
+__myACC_directive
         _begin_loop_construct_
         tmp2(_idx_) = tmp2(_idx_) * weight_dst
         _close_loop_construct_
     CASE(F_MISS)
 __myOMP_directive
-__myACC_directive       
+__myACC_directive
         _begin_loop_construct_
         IF (tmp1(_idx_) .EQ. miss_src) tmp2(_idx_) = miss_dst
         _close_loop_construct_
     END SELECT
-    IF (ASSOCIATED(ss5d) .AND. ASSOCIATED(tmp1)) THEN
+
+    IF (ASSOCIATED(s_xwp5d) .AND. ASSOCIATED(tmp1)) THEN
       DEALLOCATE(tmp1)
       !$ACC EXIT DATA DELETE(tmp1) IF(lacc)
     END IF
@@ -436,16 +469,18 @@ __myACC_directive
 
   !! Execute the accumulation forall internal variables and compute mean values
   !! if the corresponding event is active
-  SUBROUTINE update_statistics()
+  SUBROUTINE update_statistics(lacc)
+    LOGICAL, INTENT(IN) :: lacc
     INTEGER :: iop
 
     DO iop = 1, nops
       IF (ALLOCATED(ops(iop)%events)) &
-        CALL update_op()
+        CALL update_op(lacc=lacc)
     END DO
   CONTAINS
 
-  SUBROUTINE update_op()
+  SUBROUTINE update_op(lacc)
+    LOGICAL, INTENT(IN) :: lacc
     INTEGER :: tl, iv, ie, it, ne, nv
     INTEGER, POINTER :: ct
     TYPE(t_var), POINTER :: src, dst
@@ -470,16 +505,16 @@ __myACC_directive
           src => ederiv%vars(iv)%a%src(it)%p
         END IF
         IF (ct .EQ. 0) THEN ! initial assignment
-          CALL perform_op(src, dst, MERGE(F_ASS_SQ, F_ASS, opcodes(iop) .EQ. O_MEAN_SQ))
+          CALL perform_op(src, dst, MERGE(F_ASS_SQ, F_ASS, opcodes(iop) .EQ. O_MEAN_SQ), lacc=lacc)
         ELSE ! actual update
-          CALL perform_op(src, dst, opfuncs(iop))
+          CALL perform_op(src, dst, opfuncs(iop), lacc=lacc)
         END IF
         ct = ct + 1
         IF (isactive) THEN ! output step, so weighting is applied this time for time mean operators
           IF ((O_MEAN .EQ. opcodes(iop) .OR. O_MEAN_SQ .EQ. opcodes(iop)) .AND. ct .GT. 1) &
-            & CALL perform_op(src, dst, F_WGT, weight=(1._wp / REAL(ct, wp)))
+            & CALL perform_op(src, dst, F_WGT, lacc=lacc, weight=(1._wp / REAL(ct, wp)))
           IF (dst%info%lmiss) & ! (re)set missval where applicable
-            & CALL perform_op(src, dst, F_MISS, miss=dst%info%missval%rval, &
+            & CALL perform_op(src, dst, F_MISS, lacc=lacc, miss_r=dst%info%missval%rval, &
                 &             miss_s=src%info%missval%sval)
           ct = 0
         END IF

@@ -1,11 +1,7 @@
-! @brief Setup for 2-moment cloud microphysics scheme
-!
-! configuration setup for synthetic radar data on the model grid
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,8 +9,12 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! @brief Setup for 2-moment cloud microphysics scheme
+!
+! configuration setup for synthetic radar data on the model grid
+
 MODULE mo_2mom_mcrph_config
-  
+
   USE mo_kind, ONLY: wp
 
   IMPLICIT NONE
@@ -25,7 +25,16 @@ MODULE mo_2mom_mcrph_config
   !--------------------------------------------------------------------------
 
   ! Container for some configuration parameters of the Seifert-Beheng 2-moment cloud microphysical scheme,
-  ! which may be changed by namelist:
+  ! which may be changed by namelist.
+
+  ! INFO: if new parameters are added which are candidates for ens perturbations,
+  !       or if existing parameters are to be made perturbable,
+  !       also add them to the below type
+  !          t_cfg_2mom_pert
+  !       and to the copy routines
+  !          copy_cfg_2mom_all2pert ()
+  !          copy_cfg_2mom_pert2all ()
+
   TYPE t_cfg_2mom
 
     !-----------------------
@@ -44,12 +53,12 @@ MODULE mo_2mom_mcrph_config
     ! .. Parameters for rain:
     !------------------------
     LOGICAL  :: luse_mu_Dm_rain ! if the mu-Dm-Relation of Seifert (2008) should be applied outside the cloud cores
-    REAL(wp) :: nu_r         ! nu for rain, N(x) = N0 * D^nu * exp(-lambda*x^mu). 
+    REAL(wp) :: nu_r         ! nu for rain, N(x) = N0 * D^nu * exp(-lambda*x^mu).
                              ! This nu is used incloud for luse_mu_Dm_rain = .true. or everywhere when .false.
     REAL(wp) :: rain_cmu0    ! asymptotic mue-value for small D_m in the mu-Dm-Relation of Seifert (2008)
     REAL(wp) :: rain_cmu1    ! asymptotic mue-value for large D_m in the mu-Dm-Relation of Seifert (2008)
     REAL(wp) :: rain_cmu3    ! D_br: equilibrium diameter for breakup and selfcollection
-    REAL(wp) :: rain_cmu4       
+    REAL(wp) :: rain_cmu4
 
     !-----------------------------
     ! .. Parameters for cloud ice:
@@ -84,7 +93,7 @@ MODULE mo_2mom_mcrph_config
     REAL(wp) :: bgeo_g    ! bgeo for graupel, D = ageo*x^bgeo
     REAL(wp) :: avel_g    ! avel for graupel, v = avel*x^bvel
     REAL(wp) :: bvel_g    ! bvel for graupel, v = avel*x^bvel
-    REAL(wp) :: melt_g_tune_fak ! Factor multiplying melting of graupel
+    REAL(wp) :: melt_g_tune_fac ! Factor multiplying melting of graupel
 
     !------------------------
     ! .. Parameters for hail:
@@ -95,7 +104,8 @@ MODULE mo_2mom_mcrph_config
     REAL(wp) :: bgeo_h    ! bgeo for hail, D = ageo*x^bgeo
     REAL(wp) :: avel_h    ! avel for hail, v = avel*x^bvel
     REAL(wp) :: bvel_h    ! bvel for hail, v = avel*x^bvel
-    REAL(wp) :: melt_h_tune_fak ! Factor to increase/decrease hail melting rate
+    REAL(wp) :: xmax_h    ! bvel for hail, v = avel*x^bvel
+    REAL(wp) :: melt_h_tune_fac ! Factor to increase/decrease hail melting rate
 
     !------------------------------------------
     ! .. Parameters for conversions/collisions:
@@ -129,5 +139,91 @@ MODULE mo_2mom_mcrph_config
 
   END TYPE t_cfg_2mom
 
+
+  !--------------------------------------------------------------------------
+  ! Subset of the above namelist parameters which may be
+  !  perturbed during timestepping
+  !--------------------------------------------------------------------------
+
+  TYPE t_cfg_2mom_pert
+
+    !---------------------------------
+    ! .. Parameters for cloud droplets:
+    !----------------------------------
+    REAL(wp) :: ccn_Ncn0     ! CN concentration at ground
+
+    !------------------------
+    ! .. Parameters for rain:
+    !------------------------
+
+    !-----------------------------
+    ! .. Parameters for cloud ice:
+    !-----------------------------
+    REAL(wp) :: cap_ice   ! capacitance for ice deposition/sublimation
+    REAL(wp) :: in_fact   ! factor for tuning IN concentration for heterogenous ice nucleation
+    !  Only effective in the init phase, because otherwise it may need recomputations
+    !   of collision coefficients.
+    REAL(wp) :: avel_i    ! avel for cloud ice, v = avel*x^bvel
+
+    !------------------------
+    ! .. Parameters for snow:
+    !------------------------
+    REAL(wp) :: cap_snow  ! capacitance for snow deposition/sublimation
+
+    !------------------------
+    ! .. Parameters for graupel:
+    !------------------------
+
+    !  Only effective in the init phase, because otherwise it may need recomputations
+    !   of collision coefficients and dmin wetgrowth.
+    REAL(wp) :: avel_g    ! avel for graupel, v = avel*x^bvel
+
+    !------------------------
+    ! .. Parameters for hail:
+    !------------------------
+
+    !------------------------------------------
+    ! .. Parameters for conversions/collisions:
+    !------------------------------------------
+
+  END TYPE t_cfg_2mom_pert
+
+  !--------------------------------------------------------------------------
+  !--------------------------------------------------------------------------
+
+CONTAINS
+
+  !--------------------------------------------------------------------------
+  !--------------------------------------------------------------------------
+
+  SUBROUTINE copy_cfg_2mom_pert2all (pert, all)
+
+    TYPE(t_cfg_2mom_pert), INTENT(in)    :: pert
+    TYPE(t_cfg_2mom)     , INTENT(inout) :: all
+
+    ! transfer the perturbed parameters to the 2-mom config:
+    all%ccn_Ncn0 = pert%ccn_Ncn0
+    all%in_fact  = pert%in_fact
+    all%cap_ice  = pert%cap_ice
+    all%cap_snow = pert%cap_snow
+    all%avel_i   = pert%avel_i
+    all%avel_g   = pert%avel_g
+
+  END SUBROUTINE copy_cfg_2mom_pert2all
+
+  SUBROUTINE copy_cfg_2mom_all2pert (all, pert)
+
+    TYPE(t_cfg_2mom)     , INTENT(in)    :: all
+    TYPE(t_cfg_2mom_pert), INTENT(inout) :: pert
+
+    ! get the actual values of the set of perturbed parameters from the 2-mom config:
+    pert%ccn_Ncn0 = all%ccn_Ncn0
+    pert%in_fact  = all%in_fact
+    pert%cap_ice  = all%cap_ice
+    pert%cap_snow = all%cap_snow
+    pert%avel_i   = all%avel_i
+    pert%avel_g   = all%avel_g
+
+  END SUBROUTINE copy_cfg_2mom_all2pert
 
 END MODULE mo_2mom_mcrph_config

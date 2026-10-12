@@ -1,15 +1,16 @@
-! Definition of variables and allocation of memory
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Definition of variables and allocation of memory
+
 #include "omp_definitions.inc"
 
 MODULE mo_bgc_memory_types
@@ -19,21 +20,21 @@ MODULE mo_bgc_memory_types
 
   USE mo_kind, ONLY   : wp
   USE mo_exception, ONLY      : message
-  
-  
+
+
   USE mo_param1_bgc, ONLY: n_bgctra, natm, npowtra, nbgctend,nbgcflux, &
     & nsedtra, nsed_diag
 
   USE mo_control_bgc, ONLY: rmasko, bgc_nproma, bgc_zlevs
-  USE mo_hamocc_nml, ONLY: l_cpl_co2, & 
+  USE mo_hamocc_nml, ONLY: l_cpl_co2, &
     & isac,ks,ksp,dzs,porwat
- 
+
   USE mo_memory_agg, ONLY: naggdiag
-  
+
   IMPLICIT NONE
 
   PUBLIC
- 
+
   !-------------------------------------------------------------------------
   TYPE t_bgc_memory
 
@@ -66,9 +67,9 @@ MODULE mo_bgc_memory_types
     REAL(wp), POINTER :: atdifv(:)       ! not used
     REAL(wp), POINTER :: suppco2(:)      ! not used
     REAL(wp), POINTER :: sedfluxo(:,:)
-    REAL(wp), POINTER :: aksurf(:,:)    !> dissociation constants for DIC,bor and water 
-                                              !> at the sea surface, no pressure dependency 
-    REAL(wp), POINTER :: atm(:,:)  
+    REAL(wp), POINTER :: aksurf(:,:)    !> dissociation constants for DIC,bor and water
+                                              !> at the sea surface, no pressure dependency
+    REAL(wp), POINTER :: atm(:,:)
 
     REAL(wp), POINTER :: co2flux(:)     !> sea-air C-flux, ingetrated over whole simulation period,  not used
     REAL(wp), POINTER :: o2flux(:)      !> sea-air O2-flux, ingetrated over whole simulation period, not used
@@ -87,20 +88,20 @@ MODULE mo_bgc_memory_types
     REAL(wp), POINTER :: alar1max(:)  ! not used
     REAL(wp), POINTER :: TSFmax(:)    ! not used
     REAL(wp), POINTER :: TMFmax(:)    ! not used
-    
+
     REAL(wp), POINTER :: wpoc(:,:)        ! depth-dependent detritus settling speed, global variable
     REAL(wp), POINTER :: wdust(:,:)     ! depth-dependent dust settling speed
     REAL(wp), POINTER :: wopal(:,:)     ! daily sinking speed of opal (namelist parameter)
     REAL(wp), POINTER :: wcal(:,:)     ! daily sinking speed of cal (namelist parameter)
     REAL(wp), POINTER :: ws_agg(:,:)    ! daily sinking speed of aggregates (namelist parameter)
-    
+
 
   END TYPE t_bgc_memory
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   TYPE t_sediment_memory
-  
+
     REAL(wp), POINTER :: sedlay (:,:,:)
     REAL(wp), POINTER :: powtra (:,:,:)
     REAL(wp), POINTER :: sedtend(:,:,:)
@@ -122,8 +123,8 @@ MODULE mo_bgc_memory_types
 
   END TYPE t_sediment_memory
   !-------------------------------------------------------------------------
-  
-  
+
+
   !-------------------------------------------------------------------------
   TYPE t_aggregates_memory
       REAL(wp),POINTER :: av_dp(:,:),              &  ! mean primary particle diameter
@@ -144,11 +145,11 @@ MODULE mo_bgc_memory_types
   END TYPE t_aggregates_memory
   !-------------------------------------------------------------------------
 
-    
+
   TYPE(t_bgc_memory), ALLOCATABLE, TARGET :: bgc_local_memory(:)
   TYPE(t_sediment_memory), ALLOCATABLE, TARGET :: sediment_local_memory(:)
   TYPE(t_aggregates_memory), ALLOCATABLE, TARGET :: aggregates_memory(:)
-  
+
 !   TYPE(t_bgc_memory), POINTER :: bgc_memory
 !   TYPE(t_sediment_memory), POINTER :: sediment_memory
 
@@ -159,12 +160,12 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   SUBROUTINE allocate_all_bgc_memory
-  
+
     INTEGER :: i
     CHARACTER(LEN=*), PARAMETER :: routine_name = 'allocate_all_bgc_memory'
 
 #ifdef _OPENMP
-!ICON_OMP_PARALLEL 
+!ICON_OMP_PARALLEL
 !ICON_OMP_SINGLE
     bgc_memory_copies = OMP_GET_NUM_THREADS()
 !ICON_OMP_END_SINGLE
@@ -199,20 +200,20 @@ CONTAINS
     !
     ! done in allocate_bgc_memory_types
 !     CALL message(TRIM(routine_name), 'alloc_mem_carbch')
-     
+
     CALL message(TRIM(routine_name), 'alloc_mem_aggregates')
     ALLOCATE(aggregates_memory(0:bgc_memory_copies-1))
     DO i=0,bgc_memory_copies-1
       CALL allocate_mem_aggregates_types(aggregates_memory(i))
     ENDDO
-    
+
   END SUBROUTINE allocate_all_bgc_memory
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
   SUBROUTINE allocate_mem_aggregates_types(local_aggregates_memory)
     TYPE(t_aggregates_memory) :: local_aggregates_memory
-    
+
         !-----------------------------------------------------------------------
      !>
      !! Initialization/allocation fields
@@ -275,11 +276,11 @@ CONTAINS
 
   END SUBROUTINE deallocate_mem_aggregates_types
   !-------------------------------------------------------------------------
- 
+
   !-------------------------------------------------------------------------
   SUBROUTINE allocate_bgc_memory_types(bgc_mem_instance)
     TYPE(t_bgc_memory) :: bgc_mem_instance
-    
+
     CALL allocate_memory_carbch(bgc_mem_instance)
     CALL alloc_mem_biomod_types(bgc_mem_instance)
 
@@ -294,17 +295,17 @@ CONTAINS
     !$ACC   COPYIN(bgc_mem_instance%sedfluxo)
 
 !     bgc_memory => bgc_local_memory(1)
-  
+
   END SUBROUTINE allocate_bgc_memory_types
-  !------------------------------------------------------------------------- 
-  
+  !-------------------------------------------------------------------------
+
   !-------------------------------------------------------------------------
   SUBROUTINE allocate_memory_carbch(bgc_mem_instance)
-    
+
     TYPE(t_bgc_memory) :: bgc_mem_instance
 
     ALLOCATE (bgc_mem_instance%bgctra(bgc_nproma,bgc_zlevs,n_bgctra))
-    
+
     ALLOCATE (bgc_mem_instance%bgctend(bgc_nproma,bgc_zlevs,nbgctend))
     bgc_mem_instance%bgctend = 0._wp
 
@@ -383,43 +384,43 @@ CONTAINS
 
     !ToDo: probably there is abetter place for these allocations
     ALLOCATE (bgc_mem_instance%kbo(bgc_nproma))
-        
+
     ALLOCATE (bgc_mem_instance%wpoc(bgc_nproma,bgc_zlevs))
     ALLOCATE (bgc_mem_instance%wdust(bgc_nproma,bgc_zlevs))
     ALLOCATE (bgc_mem_instance%wopal(bgc_nproma,bgc_zlevs))
     ALLOCATE (bgc_mem_instance%wcal(bgc_nproma,bgc_zlevs))
     ALLOCATE (bgc_mem_instance%ws_agg(bgc_nproma,bgc_zlevs))
-        
+
   END SUBROUTINE allocate_memory_carbch
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
   SUBROUTINE deallocate_all_bgc_memory_types()
-  
+
     INTEGER :: i
- 
+
     DO i=1,bgc_memory_copies-1
       CALL deallocate_bgc_local_memory_types(bgc_local_memory(i))
       CALL deallocate_sediment_local_mem(sediment_local_memory(i))
       CALL deallocate_mem_aggregates_types(aggregates_memory(i))
     ENDDO
-    
+
     DEALLOCATE(bgc_local_memory)
     DEALLOCATE(sediment_local_memory)
     DEALLOCATE(aggregates_memory)
- 
+
   END SUBROUTINE deallocate_all_bgc_memory_types
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
   SUBROUTINE deallocate_bgc_local_memory_types(bgc_mem_instance)
-    
+
     TYPE(t_bgc_memory) :: bgc_mem_instance
-  
+
     DEALLOCATE (bgc_mem_instance%bgctra)
-    
+
     DEALLOCATE (bgc_mem_instance%bgctend)
- 
+
     DEALLOCATE (bgc_mem_instance%bgcflux)
 
     DEALLOCATE (bgc_mem_instance%hi)
@@ -433,7 +434,7 @@ CONTAINS
     DEALLOCATE (bgc_mem_instance%satoxy)
 
     DEALLOCATE (bgc_mem_instance%satn2)
- 
+
     DEALLOCATE (bgc_mem_instance%sedfluxo)
 
     DEALLOCATE (bgc_mem_instance%aksp)
@@ -475,7 +476,7 @@ CONTAINS
       DEALLOCATE (bgc_mem_instance%co2conc)
       DEALLOCATE (bgc_mem_instance%co2flux_cpl)
     ENDIF
-    
+
     ! dealloc_mem_biomod_types
     DEALLOCATE (bgc_mem_instance%expoor)
     DEALLOCATE (bgc_mem_instance%expoca)
@@ -489,12 +490,11 @@ CONTAINS
 
   END SUBROUTINE deallocate_bgc_local_memory_types
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   SUBROUTINE alloc_mem_biomod_types(bgc_mem_instance)
-    USE mo_control_bgc
-    USE mo_param1_bgc
-    
+    USE mo_control_bgc, ONLY : bgc_nproma, wp
+
     TYPE(t_bgc_memory) :: bgc_mem_instance
 
     ALLOCATE (bgc_mem_instance%expoor(bgc_nproma))
@@ -520,14 +520,14 @@ CONTAINS
 
     CALL allocate_local_mem_sediment(sediment_local_mem)
 !     sediment_memory => sediment_local_memory(1)
-    
+
   END SUBROUTINE allocate_mem_sediment_types
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
   SUBROUTINE allocate_local_mem_sediment(sediment_local_mem)
     TYPE(t_sediment_memory) :: sediment_local_mem
-  
+
     ALLOCATE (sediment_local_mem%sedlay(bgc_nproma,ks,nsedtra))
     sediment_local_mem%sedlay(:,:,:) = 0._wp
 
@@ -560,11 +560,11 @@ CONTAINS
 
   END SUBROUTINE allocate_local_mem_sediment
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   SUBROUTINE deallocate_sediment_local_mem(sediment_local_mem)
     TYPE(t_sediment_memory) :: sediment_local_mem
-    
+
     DEALLOCATE (sediment_local_mem%sedlay)
 
     DEALLOCATE (sediment_local_mem%sedhpl)

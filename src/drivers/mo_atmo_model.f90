@@ -1,15 +1,15 @@
-! @brief Main program for the ICON atmospheric model
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief Main program for the ICON atmospheric model
 
 MODULE mo_atmo_model
 
@@ -50,7 +50,10 @@ MODULE mo_atmo_model
 #endif
   USE mo_coupling_config,         ONLY: is_coupled_run
   USE mo_coupling_utils,          ONLY: cpl_construct, cpl_destruct
-  USE mo_impl_constants,          ONLY: SUCCESS, inwp, LSS_JSBACH, min_rlcell_int, min_rlcell
+  USE mo_impl_constants,          ONLY: SUCCESS, inwp, LSS_JSBACH, &
+    &                                   min_rlcell_int, min_rlcell, max_rlcell, &
+    &                                   min_rlvert_int, min_rlvert, max_rlvert, &
+    &                                   min_rledge_int, min_rledge, max_rledge
   USE mo_impl_constants_grf,      ONLY: grf_bdywidth_c, grf_bdywidth_e
   USE mo_zaxis_type,              ONLY: zaxisTypeList, t_zaxisTypeList
   USE mo_load_restart,            ONLY: read_restart_header
@@ -64,7 +67,7 @@ MODULE mo_atmo_model
   USE mo_dynamics_config,         ONLY: configure_dynamics, lmoist_thdyn
   USE mo_run_config,              ONLY: configure_run,                                        &
     &                                   ltimer, ltestcase,                                    &
-    &                                   ldynamics, ltransport,                                &
+    &                                   ldynamics, ltransport, lmsgwam,                       &
     &                                   nshift,                                               &
     &                                   num_lev,                                              &
     &                                   msg_level,                                            &
@@ -75,7 +78,7 @@ MODULE mo_atmo_model
     &                                   iqni, iqg, iqm_max, iqtke, iqh, iqnr, iqns, iqng,     &
     &                                   iqnh, iqnc, iqgl, iqhl, inccn, ininact, ininpot,      &
     &                                   lart, nqtendphy, ntracer,                             &
-    &                                   iqbin, iqb_i, iqb_e, iqb_s
+    &                                   iqbin, iqb_length, iqb_last
   USE mo_gribout_config,          ONLY: configure_gribout
   USE mo_atm_phy_nwp_config,      ONLY: atm_phy_nwp_config
 #ifndef __NO_JSBACH__
@@ -111,7 +114,7 @@ MODULE mo_atmo_model
   USE mo_util_vgrid,              ONLY: construct_vertical_grid
 
   ! external data, physics
-  USE mo_ext_data_state,          ONLY: ext_data, destruct_ext_data
+  USE mo_ext_data_state,          ONLY: ext_data, construct_ext_data, destruct_ext_data
   USE mo_ext_data_init,           ONLY: init_ext_data
 
   USE mo_diffusion_config,        ONLY: configure_diffusion
@@ -145,29 +148,30 @@ MODULE mo_atmo_model
     &                                   art_calc_ntracer_and_names
 #endif
   USE mo_sync,                    ONLY: global_max
+#ifdef __MSGWAM
+  USE mo_setup_msgwam_interface,  ONLY: setup_msgwam_interface  ! MS-GWaM
+#endif
+  USE mo_check_ext_constants,     ONLY: check_ext_constants
 #ifdef COUP_OAS_ECLM
   USE mo_oasis_define
 #endif
+
 #ifndef __NO_ICON_COMIN__
-  USE comin_host_interface,       ONLY: comin_parallel_mpi_handshake,     &
-    &                                   comin_plugin_primaryconstructor,  &
-    &                                   comin_setup_set_verbosity_level,  &
-    &                                   mpi_handshake_dummy
+  USE comin_host_interface,       ONLY: comin_plugin_primaryconstructor
   USE mo_comin_config,            ONLY: comin_config
-  USE mo_comin_adapter,           ONLY: icon_expose_descrdata_global,   &
-    &                                   icon_expose_descrdata_domain,   &
-    &                                   icon_expose_descrdata_state,    &
-    &                                   icon_expose_timesteplength_domain
+  USE mo_comin_adapter,           ONLY: icon_expose_descrdata
   USE mo_time_config,             ONLY: time_config
-  USE mtime,                      ONLY: datetimeToString, MAX_DATETIME_STR_LEN
+  USE mo_timer,                   ONLY: timer_comin_primary_constructors
   USE mo_run_config,              ONLY: number_of_grid_used
   USE mo_util_vgrid_types,        ONLY: vgrid_buffer
   USE mo_run_config,              ONLY: dtime
-  USE mo_grid_config,             ONLY: start_time, end_time
-  USE mo_vertical_coord_table,    ONLY: vct_a
-  USE mo_mpi,                     ONLY: p_comm_comin
+  USE mo_grid_config,             ONLY: start_time, end_time, l_limited_area
   USE mo_impl_constants,          ONLY: max_dom
-  USE mo_timer,                   ONLY: timer_comin_primary_constructors
+#endif
+
+#ifndef __NO_RAGNAROK__
+  USE mo_ragnarok, ONLY: init_ragnarok, finalize_ragnarok
+  USE mo_ragnarok_support, ONLY: init_ragnarok_support
 #endif
 
   !-------------------------------------------------------------------------
@@ -272,11 +276,6 @@ CONTAINS
     CHARACTER(len=1000)     :: message_text = ''
     INTEGER                 :: icomm_cart, my_cart_id, nproma_max, iart_ntracer
 
-#ifndef __NO_ICON_COMIN__
-    INTEGER :: ierr
-    CHARACTER(LEN=MAX_DATETIME_STR_LEN)    :: sim_start, sim_end, sim_current, run_start, run_stop
-#endif
-
     ! initialize global registry of lon-lat grids
     CALL lonlat_grids%init()
 
@@ -318,7 +317,8 @@ CONTAINS
     ! complete initicon config-state
     CALL configure_initicon()
 
-
+    ! check whether the external impl_constants are still the same as their original values
+    CALL check_ext_constants()
     !-------------------------------------------------------------------
     ! 3.1 Initialize the mpi work groups
     !-------------------------------------------------------------------
@@ -338,14 +338,8 @@ CONTAINS
          &                          radar_flag_doms_model=luse_radarfwo(1:n_dom), &
          &                          num_dio_procs=proc0_shift)
 
-#ifndef __NO_ICON_COMIN__
-    ! Non-work PEs dont participate in the plugin comms
-    IF (my_process_is_work()) THEN
-      CALL comin_parallel_mpi_handshake(p_comm_comin, &
-           & comin_config%plugin_list(1:comin_config%nplugins)%comm, TRIM(get_my_process_name()))
-    ELSE
-      CALL mpi_handshake_dummy(p_comm_comin)
-    ENDIF
+#ifndef __NO_RAGNAROK__
+    IF (my_process_is_work()) CALL init_ragnarok()
 #endif
 
 
@@ -603,14 +597,11 @@ CONTAINS
     !------------------------------------------------------------------
     ! Create and optionally read external data fields
     !------------------------------------------------------------------
-    ALLOCATE (ext_data(n_dom), STAT=error_status)
-    IF (error_status /= SUCCESS) THEN
-      CALL finish(routine, 'allocation for ext_data failed')
-    ENDIF
 
     ! allocate memory for atmospheric/oceanic external data and
     ! optionally read those data from netCDF file.
     IF (timers_level > 4) CALL timer_start(timer_ext_data)
+    CALL construct_ext_data (p_patch(1:), ext_data)
     CALL init_ext_data (p_patch(1:), p_int_state(1:), ext_data)
     IF (timers_level > 4) CALL timer_stop(timer_ext_data)
 
@@ -683,29 +674,39 @@ CONTAINS
 #endif
 
 #ifndef __NO_ICON_COMIN__
-    CALL comin_setup_set_verbosity_level(msg_level, ierr)
-    IF (ierr /= 0) STOP
     ! expose descriptive data structures
-    CALL icon_expose_descrdata_global(n_dom, max_dom, nproma, min_rlcell_int, min_rlcell, &
-         &                     grf_bdywidth_c, grf_bdywidth_e, isRestart(),      &
-         &                     vct_a)
-    ! p_patch is used from index 1 to exclude potential coarse radiation grid
-    CALL icon_expose_descrdata_domain(p_patch(1:), number_of_grid_used, vgrid_buffer, &
-         &                     start_time, end_time)
-    CALL datetimeToString(time_config%tc_exp_startdate, sim_start)
-    CALL datetimeToString(time_config%tc_exp_stopdate, sim_end)
-    CALL datetimeToString(time_config%tc_exp_startdate, sim_current)
-    CALL datetimeToString(time_config%tc_startdate, run_start)
-    CALL datetimeToString(time_config%tc_stopdate, run_stop)
-    CALL icon_expose_descrdata_state(sim_start, sim_end, sim_current, run_start, run_stop)
-    CALL icon_expose_timesteplength_domain(1, dtime)
+    IF(comin_config%nplugins /= 0) THEN
+       CALL icon_expose_descrdata( &
+            &  msg_level = msg_level, &
+            &  n_dom = n_dom, &
+            &  max_dom = max_dom, &
+            &  nproma = nproma, &
+            &  min_rlcell_int = min_rlcell_int, &
+            &  min_rlcell = min_rlcell, &
+            &  max_rlcell = max_rlcell, &
+            &  min_rlvert_int = min_rlvert_int, &
+            &  min_rlvert = min_rlvert, &
+            &  max_rlvert = max_rlvert, &
+            &  min_rledge_int = min_rledge_int, &
+            &  min_rledge = min_rledge, &
+            &  max_rledge = max_rledge, &
+            &  grf_bdywidth_c = grf_bdywidth_c, &
+            &  grf_bdywidth_e = grf_bdywidth_e, &
+            &  lrestart = isRestart(), &
+            &  vct_a = vct_a, &
+            &  p_patch = p_patch(1:), &
+            &  number_of_grid_used = number_of_grid_used, &
+            &  vgrid_buffer = vgrid_buffer, &
+            &  start_time = start_time, &
+            &  end_time = end_time, &
+            &  time_config = time_config, &
+            &  dtime = dtime, &
+            &  l_limited_area = l_limited_area)
+    END IF
     ! - call primary constructors
     IF (timers_level > 2) CALL timer_start(timer_comin_primary_constructors)
-    CALL comin_plugin_primaryconstructor(comin_config%plugin_list(1:comin_config%nplugins), ierr)
+    CALL comin_plugin_primaryconstructor(comin_config%plugin_list(1:comin_config%nplugins))
     IF (timers_level > 2) CALL timer_stop(timer_comin_primary_constructors)
-    IF (ierr /= SUCCESS) THEN
-      CALL finish(routine, "ICON ComIn: Call of primary constructors failed!")
-    ENDIF
 #endif
 
     CALL init_tracer_settings(iforcing, n_dom, ltransport,                 &
@@ -719,7 +720,7 @@ CONTAINS
       &                       iqgl, iqhl, inccn, ininact, ininpot,         &
       &                       iqtke, iqm_max, ntracer, nqtendphy,          &
       &                       atm_phy_nwp_config(:)%nclass_gscp,           &
-      &                       iqbin, iqb_i, iqb_e, iqb_s)
+      &                       iqbin, iqb_length, iqb_last)
 
     IF (lmoist_thdyn .AND. .NOT.(iqv>0)) THEN
       CALL finish( routine, 'Trying to run moist thermodynamics without moisture')
@@ -732,8 +733,22 @@ CONTAINS
 
     CALL art_init_interface(n_dom,'construct',ntracer,advection_config(1)%npassive_tracer)
 #endif
+#ifdef __MSGWAM
+    !------------------------------------------------------------------
+    ! 12. Setup MS-GWaM
+    !------------------------------------------------------------------
+
+    CALL setup_msgwam_interface(lmsgwam,n_dom,p_patch(1:),'construct')
+#endif
 
     !------------------------------------------------------------------
+
+#ifndef __NO_RAGNAROK__
+    !------------------------------------------------------------------
+    ! 12. Connect ICON and ragnarok
+    !------------------------------------------------------------------
+    IF (my_process_is_work()) CALL init_ragnarok_support()
+#endif
 
     IF (timers_level > 1) CALL timer_stop(timer_model_init)
 
@@ -746,6 +761,12 @@ CONTAINS
     CHARACTER(*), PARAMETER :: routine = "mo_atmo_model:destruct_atmo_model"
 
     INTEGER :: error_status
+
+#ifdef __MSGWAM
+    ! destruct MS-GWaM
+    CALL setup_msgwam_interface(lmsgwam,n_dom,p_patch(1:),'destruct')
+#endif
+
 
     ! Destruct external data state
     CALL destruct_ext_data()
@@ -817,6 +838,13 @@ CONTAINS
 #ifndef __NO_JSBACH__
     CALL jsbach_finalize()
 #endif
+
+#ifndef __NO_RAGNAROK__
+    ! finalize ragnarok & Kokkos
+    !------------------------------------------------------------------
+    IF (my_process_is_work()) CALL finalize_ragnarok()
+#endif
+
     CALL message(routine, 'clean-up finished')
 
   END SUBROUTINE destruct_atmo_model

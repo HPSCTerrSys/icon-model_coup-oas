@@ -1,15 +1,15 @@
-! Interface for the RTTOV13 library
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+! Interface for the RTTOV13 library
+!
 
 MODULE mo_rtifc_13
 
@@ -352,8 +352,9 @@ MODULE mo_rtifc_13
     type(rttov_options)       :: opts
     ! logical                 :: lscat   = .false.
     ! type(rttov_options_scatt) :: opt_sc
-    integer                   :: iatl(m_atl) = -1 ! index of corresponding atlases in "atlas" array
-    integer                   :: natl        =  0 ! Number of associated atlases
+    integer                   :: iatl(m_atl)    = -1 ! index of corresponding atlases in "atlas" array
+    integer                   :: atl_typ(m_atl) =  0 ! Type of atlas: 0=emis-atlas, 1=brdf-atlas
+    integer                   :: natl           =  0 ! Number of associated atlases
   end type t_rtopts
   type(t_rtopts),            pointer            :: rt_opts(:) => null()
   integer                                       :: n_opts = 0
@@ -382,7 +383,8 @@ MODULE mo_rtifc_13
 #if defined(_RTTOV_ATLAS)
   type(rttov_emis_atlas_data), pointer          :: atlas(:)      => NULL()
   integer                                       :: n_atlas       =  0
-  type(rttov_brdf_atlas_data),             save :: vis_atlas
+  type(rttov_brdf_atlas_data), pointer          :: vis_atlas(:)  => NULL()
+  integer                                       :: n_atlas_vis   =  0
 #endif
 
 
@@ -1163,7 +1165,7 @@ FTRACE_BEGIN('rtifc_init')
       ! Determine channel indices
       do i = 1, nchans
         if (chans(i) <= 0 .or. chans(i) > mx_chan) call finish(proc, 'Either invalid &
-             &channel number of mx_chan too small.')
+             &channel number or mx_chan too small.')
         ch_id_(chans(i)) = i
       end do
       ch_id(1:nchans_inst(instr),instr) = ch_id_(channels(1:nchans_inst(instr),instr))
@@ -1681,7 +1683,13 @@ FTRACE_BEGIN('rtifc_init')
         end do
         deallocate(atlas)
       end if
-      if (vis_atlas%init) call rttov_deallocate_brdf_atlas(vis_atlas)
+      if (associated(vis_atlas)) then
+        do k = 1, size(vis_atlas)
+          if (.not. vis_atlas(k)% init) cycle
+          call rttov_deallocate_brdf_atlas(vis_atlas(k))
+        end do
+        deallocate(vis_atlas)
+      end if
     endif
 #endif
   end subroutine rtifc_cleanup
@@ -2526,8 +2534,8 @@ FTRACE_END('rtifc_fill_input_var')
   end subroutine rttov_write_profile
 
 
-  subroutine rtifc_direct (iopt,lprofs,chans,emissiv,t_b,status,                    &
-                           refl,sat_zen,sat_azi,specularity, t_b_clear,rad,radclear,&
+  subroutine rtifc_direct (iopt,lprofs,chans,emissiv,t_b,status, refl, sat_zen,     &
+                           sat_azi,specularity, tskin, t_b_clear,rad,radclear,      &
                            radupclear,raddnclear,refdnclear,radovercast,radtotal,   &
                            radrefl,radrefl_clear,quality,transm,transmcld,          &
                            transmtotal,opdep,height,istore,reg_lim,rflag,dealloc,   &
@@ -2548,6 +2556,7 @@ FTRACE_END('rtifc_fill_input_var')
                                                                        ! order to use the same profile for different
                                                                        ! satellites, e.g. for synsat calc.)
     real(wp),            intent(in),    optional :: specularity  (:,:) ! specularity for do_lambertian option
+    real(wp),            intent(in),    optional :: tskin          (:) ! t_skin
     real(wp),            intent(out),   optional :: t_b_clear    (:,:) ! calc. clear sky b.t. (nchans,nprof) [K]
     real(wp),            intent(out),   optional :: rad          (:,:) ! calculated total radiance
                                                                        ! (nchans,nprof) [mW/cm^-1/ster/m^2]
@@ -2623,7 +2632,7 @@ FTRACE_END('rtifc_fill_input_var')
 #endif
 
     logical                      :: lpio
-    logical                      :: l_opdep, l_transm, l_radoverc, l_spec, l_transmcld, l_refl
+    logical                      :: l_opdep, l_transm, l_radoverc, l_spec, l_transmcld, l_refl, l_tskin
     logical                      :: l_chk_god
 
     type(rttov_options)          :: ropts_
@@ -2650,6 +2659,7 @@ FTRACE_BEGIN('rtifc_direct')
     l_spec     = .false. ; if (present(specularity)) l_spec     = (size(specularity) > 0)
     l_transmcld= .false. ; if (present(transmcld  )) l_transmcld= (size(transmcld)   > 0)
     l_refl     = .false. ; if (present(refl       )) l_refl     = (size(refl  )      > 0)
+    l_tskin    = .false. ; if (present(tskin      )) l_tskin    = (size(tskin )      > 0)
 
     npr = 0 ; ipr = 0
     if (present(iprint)) then
@@ -2658,11 +2668,6 @@ FTRACE_BEGIN('rtifc_direct')
     end if
     if (npr > 0) then
       ipr_deb = ipr(1)
-      do i = 1, npr
-        write(msg,*) 'rttov input profile ',ipr(i),trim(profiles(ipr(i))%id)
-        call rttov_print_profile(profiles(ipr(i)), usd, trim(msg))
-        call rttov_print_opts(ropts, usd, 'ropts (options for rttov_direct call):')
-      end do
     else
       ipr_deb = 0
     end if
@@ -2690,14 +2695,17 @@ FTRACE_BEGIN('rtifc_direct')
       l_dealloc = .true.
     end if
 
+    if (.not.associated(profiles)) call finish(proc, 'profiles not associated')
+
     ! Dimensions
     nchansprofs    = size(chans)
     if (present(istore)) then
        nchans      = maxval(istore(1:nchansprofs,1))
        nprof_store = maxval(istore(1:nchansprofs,2))
     else
-       nchans      = nchansprofs/nprof
-       nprof_store = nprof
+      !TODO: not a good method:
+       nprof_store = min(nprof,size(lprofs))
+       nchans      = nchansprofs/nprof_store
     end if
     nlay       = profiles(1)% nlayers
     nlevs_coef = coefs(ic)%coef%nlevels
@@ -2712,6 +2720,10 @@ FTRACE_BEGIN('rtifc_direct')
     ! 1. Determine the used profiles
     iprof_s     = minval(lprofs(:))
     iprof_e     = maxval(lprofs(:))
+    if (iprof_s < lbound(profiles,1) .or. iprof_e > ubound(profiles,1)) then
+      write(0,*) 'lprofs:',iprof_s,iprof_e,' profiles:',lbound(profiles,1),ubound(profiles,1)
+      call finish(proc, 'lprofs inconsistent with profiles array')
+    end if
     allocate(prof_used(iprof_s:iprof_e))
     prof_used(:) = .false.
     do i = 1, nchansprofs
@@ -2745,7 +2757,7 @@ FTRACE_BEGIN('rtifc_direct')
     if (.not.present(istore)) then
       sind = 1
       eind = nchans
-      do iprof=1,nprof
+      do iprof=1,nprof_store
         emissivity(sind:eind)%emis_in           = emissiv(1:nchans,iprof)
         emissivity(sind:eind)%emis_out          = 0._jprb
         if (l_spec) then
@@ -2800,6 +2812,7 @@ FTRACE_BEGIN('rtifc_direct')
       endif
       if ((size(t_b,1) < nchans)  .or. &
            (size(t_b,2) < nprof_store )) then
+        write(0,*) size(t_b,1),size(t_b,2), nchans, nprof_store, nprof, nchansprofs
         DIM_ERROR('t_b')
       endif
       if (l_refl) then
@@ -3033,27 +3046,39 @@ FTRACE_BEGIN('rtifc_direct')
 
     ! Put satellite direction into profiles
     if (present(sat_azi)) then
-       if (size(sat_azi(:)) < nprof) then
+       if (size(sat_azi(:)) < nprof_store) then
          DIM_ERROR('sat_azi')
        endif
-       do i = 1, nprof
+       do i = 1, nprof_store
           profiles(i)% azangle  = sat_azi(i)
        enddo
     endif
     if (present(sat_zen)) then
-       if (size(sat_zen(:)) < nprof) then
+       if (size(sat_zen(:)) < nprof_store) then
          DIM_ERROR('sat_zen')
        endif
-       do i = 1, nprof
+       do i = 1, nprof_store
           profiles(i)% zenangle = sat_zen(i)
        enddo
+    endif
+    if (l_tskin) then
+      if (lbound(tskin,1) /= iprof_s .or. ubound(tskin,1) /= iprof_e) then
+        DIM_ERROR('tskin')
+      endif
+      profiles(iprof_s:iprof_e)%skin%t = tskin(:)
     endif
 
 #undef DIM_ERROR
 
+    do i = 1, npr
+      write(msg,*) proc,ipr(i),trim(profiles(ipr(i))%id)
+      call rttov_print_profile(profiles(ipr(i)), usd, trim(msg))
+      call rttov_print_opts(ropts, usd, 'ropts (options for rttov_direct call):')
+    end do
+
     ! Allocate/initialize arrays
 #if defined(_RTTOV_GOD)
-    l_chk_god = (chk_god /= 0 .and. nprof > 0 .and. &
+    l_chk_god = (chk_god /= 0 .and. nprof_store > 0 .and. &
                  present(rflag) .and. associated(coefs(ic)%coef%god))
     ! for l_chk_god the original opdep (on rt-levels) is only required if addinterp=T,
     ! otherwise the transmission is used.
@@ -3082,9 +3107,10 @@ FTRACE_BEGIN('rtifc_direct')
     if (npr > 0) then
       do i = 1, nchansprofs
         if (any(chanprof(i)% prof == ipr(1:npr))) then
-          write(usd,*) 'debug_spot rttov emissivity input: ',i,chanprof(i),emissivity(i)%emis_in,calcemis(i)
           if (l_refl) then
             write(usd,*) 'debug_spot rttov reflectance input: ',i,chanprof(i),reflectance(i)%refl_in,calcrefl(i)
+          else
+            write(usd,*) 'debug_spot rttov emissivity input: ',i,chanprof(i),emissivity(i)%emis_in,calcemis(i)
           endif
         end if
       end do
@@ -3131,7 +3157,11 @@ FTRACE_BEGIN('rtifc_direct')
     if (npr > 0) then
       do i = 1, nchansprofs
         if (any(chanprof(i)% prof == ipr(1:npr))) then
-          write(usd,*) 'debug_spot rttov emissivity output: ',i,chanprof(i),emissivity(i)%emis_out
+          if (l_refl) then
+            write(usd,*) 'debug_spot rttov reflectance output: ',i,chanprof(i),reflectance(i)%refl_out,calcrefl(i)
+          else
+            write(usd,*) 'debug_spot rttov emissivity output: ',i,chanprof(i),emissivity(i)%emis_out
+          endif
         end if
       end do
     end if
@@ -3162,7 +3192,7 @@ FTRACE_BEGIN('rtifc_direct')
     if (.not.present(istore)) then
       sind = 1
       eind = nchans
-      do iprof=1,nprof
+      do iprof=1,nprof_store
         where (calcemis(sind:eind)) &
              emissiv(1:nchans,iprof) = dble(emissivity(sind:eind)%emis_out)
         t_b(1:nchans,iprof) = dble(radiance% bt(sind:eind))
@@ -3171,20 +3201,20 @@ FTRACE_BEGIN('rtifc_direct')
                refl(1:nchans,iprof) = dble(reflectance(sind:eind)%refl_out)
         end if
         if (btest(rad_out,OUT_CSB)) then
-          if (present(t_b_clear)) t_b_clear(1:nchans,iprof)=dble(radiance%bt_clear(sind:eind))
+          if (present(t_b_clear  )) t_b_clear  (1:nchans,iprof)=dble(radiance%bt_clear    (sind:eind))
         end if
         if (btest(rad_out,OUT_ASR)) then
-          if (present(rad      )) rad      (1:nchans,iprof)=dble(radiance%total   (sind:eind))
+          if (present(rad        )) rad        (1:nchans,iprof)=dble(radiance%total       (sind:eind))
         end if
         if (btest(rad_out,OUT_CSR)) then
-          if (present(radclear )) radclear (1:nchans,iprof)=dble(radiance%clear   (sind:eind))
-          if (present(radupclear )) radupclear (1:nchans,iprof)=dble(radiance2%upclear   (sind:eind))
-          if (present(raddnclear )) raddnclear (1:nchans,iprof)=dble(radiance2%dnclear   (sind:eind))
-          if (present(refdnclear )) refdnclear (1:nchans,iprof)=dble(radiance2%refldnclear   (sind:eind))
+          if (present(radclear   )) radclear   (1:nchans,iprof)=dble(radiance%clear       (sind:eind))
+          if (present(radupclear )) radupclear (1:nchans,iprof)=dble(radiance2%upclear    (sind:eind))
+          if (present(raddnclear )) raddnclear (1:nchans,iprof)=dble(radiance2%dnclear    (sind:eind))
+          if (present(refdnclear )) refdnclear (1:nchans,iprof)=dble(radiance2%refldnclear(sind:eind))
         end if
-        if (present(radtotal))  radtotal (1:nchans,iprof)=dble(radiance%clear   (sind:eind)) !clear -> total ???
+        if (present(radtotal     )) radtotal   (1:nchans,iprof)=dble(radiance%clear       (sind:eind)) !clear -> total ???
         if (btest(rad_out,OUT_VIS)) then
-          if (present(radrefl      )) radrefl      (1:nchans,iprof)=dble(radiance%refl      (sind:eind))
+          if (present(radrefl    )) radrefl    (1:nchans,iprof)=dble(radiance%refl        (sind:eind))
         end if
         if (btest(rad_out,OUT_VIS)) then
           if (present(radrefl_clear)) radrefl_clear(1:nchans,iprof)=dble(radiance%refl_clear(sind:eind))
@@ -3255,7 +3285,7 @@ FTRACE_BEGIN('rtifc_direct')
     end if
 
     ! Check profile limits
-    if (chk_reg_lims /= 0 .and. nprof > 0) then
+    if (chk_reg_lims /= 0 .and. nprof_store > 0) then
       call realloc_rttov_arrays(status, nprof_aux,profiles(1)%nlevels,0,ropts,profs=profiles_aux)
       if (status /= NO_ERROR) return
       ropts_ = ropts
@@ -3264,7 +3294,7 @@ FTRACE_BEGIN('rtifc_direct')
           call check_prof(iprof, coefs(ic), lims_flag, ropts_, lpio)
           if (chk_reg_lims > 1 .and. present(reg_lim)) then
             if (.not.present(istore)) then
-              do i = 1, nprof
+              do i = 1, nprof_store
                 if (lprofs((i-1)*nchans+1) ==iprof) then
                   reg_lim(:,:,i) = lims_flag(:,:)
                   exit
@@ -3417,7 +3447,6 @@ FTRACE_END('rtifc_direct')
     type(rttov_options),pointer  :: ropts  => null()
     integer                      :: ic
     integer                      :: rad_out
-    integer                      :: pe_loc
     integer                      :: ipr(5),npr
     integer(jpim)                :: iprof
     integer(jpim)                :: ichan
@@ -3477,9 +3506,8 @@ FTRACE_BEGIN('rtifc_k')
     l_refl     = .false. ; if (present(refl       )) l_refl     = (size(refl  )      > 0)
 
     if (present(pe)) then
-      pe_loc = pe
-    else
-      pe_loc = -1
+      pe_ifc = pe
+      pe_rt  = pe_ifc
     end if
 
     if (present(rad_out_flg)) then
@@ -3498,11 +3526,6 @@ FTRACE_BEGIN('rtifc_k')
     end if
     if (npr > 0) then
       ipr_deb = ipr(1)
-      do i = 1, npr
-        write(msg,*) 'rttov input profile ',ipr(i),trim(profiles(ipr(i))%id)
-        call rttov_print_profile(profiles(ipr(i)), usd, trim(msg))
-        call rttov_print_opts(ropts, usd, 'ropts (options for rttov_k call):')
-      end do
     else
       ipr_deb = 0
     end if
@@ -3513,14 +3536,17 @@ FTRACE_BEGIN('rtifc_k')
       l_dealloc = .true.
     end if
 
+    if (.not.associated(profiles)) call finish(proc, 'profiles not associated')
+
     ! Dimensions
     nchansprofs  = size(chans)
     if (present(istore)) then
       nchans      = maxval(istore(1:nchansprofs,1))
       nprof_store = maxval(istore(1:nchansprofs,2))
     else
+      !TODO: not a good method:
+      nprof_store = min(nprof,size(lprofs))
       nchans      = nchansprofs / nprof
-      nprof_store = nprof
     end if
     nlay       = profiles(1)% nlayers
     nlevs_coef = coefs(ic)%coef%nlevels
@@ -3536,6 +3562,10 @@ FTRACE_BEGIN('rtifc_k')
     ! 1. Determine the used profiles
     iprof_s     = minval(lprofs(:))
     iprof_e     = maxval(lprofs(:))
+    if (iprof_s < lbound(profiles,1) .or. iprof_e > ubound(profiles,1)) then
+      write(0,*) 'lprofs:',iprof_s,iprof_e,' profiles:',lbound(profiles,1),ubound(profiles,1)
+      call finish(proc, 'lprofs inconsistent with profiles array')
+    end if
     allocate(prof_used(iprof_s:iprof_e))
     prof_used(:) = .false.
     do i = 1, nchansprofs
@@ -3569,7 +3599,7 @@ FTRACE_BEGIN('rtifc_k')
     if (.not.present(istore)) then
       sind = 1
       eind = nchans
-      do iprof=1,nprof
+      do iprof=1,nprof_store
         emissivity  (sind:eind)%emis_in           = real(emissiv(1:nchans,iprof),jprb)
         emissivity_k(sind:eind)%emis_in           = 0.0_jprb
         emissivity  (sind:eind)%emis_out          = 0.0_jprb
@@ -3817,27 +3847,33 @@ FTRACE_BEGIN('rtifc_k')
 
     ! Put satellite direction into profiles
     if (present(sat_azi)) then
-       if (size(sat_azi(:)) < nprof) then
+       if (size(sat_azi(:)) < nprof_store) then
          DIM_ERROR('sat_azi')
        endif
-       do i = 1, nprof
+       do i = 1, nprof_store
           profiles(i)% azangle  = sat_azi(i)
        enddo
     endif
     if (present(sat_zen)) then
-       if (size(sat_zen(:)) < nprof) then
+       if (size(sat_zen(:)) < nprof_store) then
          DIM_ERROR('sat_zen')
        endif
-       do i = 1, nprof
+       do i = 1, nprof_store
           profiles(i)% zenangle = sat_zen(i)
        enddo
     endif
 
 #undef DIM_ERROR
 
+    do i = 1, npr
+      write(msg,*) proc,ipr(i),trim(profiles(ipr(i))%id)
+      call rttov_print_profile(profiles(ipr(i)), usd, trim(msg))
+      call rttov_print_opts(ropts, usd, 'ropts (options for rttov_direct call):')
+    end do
+
     ! Allocate/initialize arrays
 #if defined(_RTTOV_GOD)
-    l_chk_god = (chk_god /= 0 .and. nprof > 0 .and. &
+    l_chk_god = (chk_god /= 0 .and. nprof_store > 0 .and. &
                  present(rflag) .and. associated(coefs(ic)%coef%god))
     ! for l_chk_god the original opdep (on rt-levels) is only required if addinterp=T,
     ! otherwise the transmission is used.
@@ -3948,7 +3984,7 @@ FTRACE_BEGIN('rtifc_k')
       sind   = 0
       eind   = 0
       count1 = 0
-      do iprof=1,nprof
+      do iprof=1,nprof_store
         nusedchans = count (lprofs == iprof)
         sind       = eind + 1
         eind       = eind + nusedchans
@@ -4109,7 +4145,7 @@ FTRACE_BEGIN('rtifc_k')
     FTRACE_END('rtifc_k:store')
 
     ! Check profiles
-    if (chk_reg_lims /= 0 .and. nprof > 0) then
+    if (chk_reg_lims /= 0 .and. nprof_store > 0) then
       call realloc_rttov_arrays(status, nprof_aux,profiles(1)%nlevels,0,ropts,profs=profiles_aux)
       if (status /= NO_ERROR) return
       ropts_ = ropts
@@ -4118,7 +4154,7 @@ FTRACE_BEGIN('rtifc_k')
           call check_prof(iprof, coefs(ic), lims_flag, ropts_, lpio)
           if (chk_reg_lims > 1 .and. present(reg_lim)) then
             if (.not.present(istore)) then
-              do i = 1, nprof
+              do i = 1, nprof_store
                 if (lprofs((i-1)*nchans+1) ==iprof) then
                   reg_lim(:,:,i) = lims_flag(:,:)
                   exit
@@ -4405,47 +4441,78 @@ FTRACE_END('rtifc_k')
    integer,                 allocatable :: iatl_mw(:)
    type(rttov_emis_atlas_data), pointer :: atlas_(:)
    integer                              :: instr_cnrm(mcnrm), iatl_cnrm(mcnrm)
+   logical                              :: msk_iopts(size(iopts))
    integer                              :: ierr
-   integer                              :: n_opt
+   integer                              :: n_opt, n_new
    integer                              :: n_cnrm
+   integer                              :: n_atlas_old
    logical                              :: l_distrib
    integer                              :: ic, iopt
-   integer                              :: i, j
+   integer                              :: i, j, k
 
    pe_ifc = my_proc_id
    pe_rt  = pe_ifc
-
-   n_atlas = 0
    ierr    = 0
-
    l_distrib = .false.
 #if defined(_RTIFC_DISTRIBCOEF)
    l_distrib = (n_proc > 1) .and. read1pe
 #endif
 
-   if (associated(atlas)) call finish(proc, 'Atlases initialized already.')
-
-   ! Remove double entries
    n_opt = size(iopts)
-   if (n_opt == 0) return
+   msk_iopts = .true.
+   ! Check for atlases, that are initialized already:
+   do i = 1, n_opt
+     iopt = iopts(i)
+     if (iopt<=0 .or. iopt>n_opts) call finish(proc, 'invalid option index')
+     rto => rt_opts(iopt)
+     do k = 1, rto%natl
+       j = rto%iatl(k)
+       if (j <= 0 .or. j > n_atlas) call finish(proc, 'invalid rto%iatl')
+       if (rto%atl_typ(k) == 0 .and. atlas(j)% atlas_id == atlas_id(i)) msk_iopts(i) = .false.
+     end do
+   end do
+   n_new = count(msk_iopts)
+   if (n_new <= 0) return
 
    ! do i = 1, n_opt
    !   write(0,*) 'init_atlas',i,iopts(i),atlas_id(i),rt_opts(iopts(i))%satid,rt_opts(iopts(i))%instr
    ! end do
 
-   i = maxval(atlas_id)
-   allocate(iatl_ir(i), iatl_mw(i))
-   iatl_ir = 0 ; iatl_mw = 0
+   n_atlas_old = n_atlas
 
    if (io_proc_id == pe_ifc .or. .not.l_distrib) then
-     allocate(atlas(n_opt))
-     n_atlas = 0
-     n_cnrm  = 0
-     write(*,*)
-     write(*,'(1x,A)') 'Initialize RTTOV emissivity atlases:'
+     if (io_proc_id == pe_ifc) then
+       write(*,*)
+       write(*,'(" Initialize RTTOV emissivity atlases for ",I2," datasets:")') n_new
+     end if
+     ! Information on initialized atlases
+     i = max(maxval(atlas_id),maxval(atlas(1:n_atlas)%atlas_id))
+     allocate(iatl_ir(i), iatl_mw(i))
+     iatl_ir = 0 ; iatl_mw = 0
+     instr_cnrm = -1 ; iatl_cnrm  = -1 ; n_cnrm     = 0
+     do i = 1, n_atlas
+       if (atlas(i)%is_mw) then
+         iatl_mw(atlas(i)%atlas_id) = i
+         if (atlas(i)%atlas_id == cnrm_mw_atlas_id) then
+           n_cnrm = n_cnrm + 1
+           iatl_cnrm(n_cnrm) = i
+           instr_cnrm(n_cnrm) = atlas(i)%cnrm_mw_atlas%inst_id
+         end if
+       else
+         iatl_ir(atlas(i)%atlas_id) = i
+       end if
+     end do
+     ! Allocate/reallocate
+     allocate(atlas_(n_atlas+n_new))
+     if (n_atlas > 0) then
+       atlas_(1:n_atlas) = atlas(1:n_atlas)
+       deallocate(atlas)
+     end if
+     atlas => atlas_
+     ! Init (new) atlases
      do i = 1, n_opt
+       if (.not.msk_iopts(i)) cycle
        iopt = iopts(i)
-       if (iopt<=0 .or. iopt>n_opts) call finish(proc, 'invalid option index')
        rto => rt_opts(iopt)
        ic = rto%icoeff
        ierr = 0
@@ -4471,9 +4538,9 @@ FTRACE_END('rtifc_k')
        case(sensor_id_mw,sensor_id_po) !MW
          if (atlas_id(i) == cnrm_mw_atlas_id) then
            if (any(instr_cnrm(1:n_cnrm) == coefs(ic)%coef%id_inst)) then
-             do j = 1, n_cnrm
-               if (instr_cnrm(j) == coefs(ic)%coef%id_inst) then
-                 call add_iatl(iatl_cnrm(j))
+             do k = 1, n_cnrm
+               if (instr_cnrm(k) == coefs(ic)%coef%id_inst) then
+                 call add_iatl(iatl_cnrm(k))
                  exit
                endif
              end do
@@ -4521,17 +4588,24 @@ FTRACE_END('rtifc_k')
    if (l_distrib) then
      call p_bcast(n_atlas,io_proc_id,mpi_comm_type)
      if (io_proc_id == pe_ifc) then
-       write(stdout,'(3x,A,I2,A)') 'Distribute ',n_atlas,' emissivity atlases.'
+       write(stdout,'(3x,A,I2,A)') 'Distribute ',n_new,' emissivity atlases.'
      else
-       allocate(atlas(n_atlas))
+       allocate(atlas_(n_atlas))
+       if (n_atlas_old > 0) then
+         atlas_(1:n_atlas_old) = atlas(1:n_atlas_old)
+         deallocate(atlas)
+       end if
+       atlas => atlas_
      end if
-     do i = 1, n_atlas
+     do i = n_atlas_old+1, n_atlas
        if (io_proc_id /= pe_ifc) call rttov_deallocate_emis_atlas(atlas(i))
        call p_bcast(atlas(i),io_proc_id,mpi_comm_type)
      end do
      do i = 1, n_opt
-       call p_bcast(rt_opts(iopts(i))%natl,io_proc_id,mpi_comm_type)
-       call p_bcast(rt_opts(iopts(i))%iatl,io_proc_id,mpi_comm_type)
+       if (.not.msk_iopts(i)) cycle
+       call p_bcast(rt_opts(iopts(i))%natl   ,io_proc_id,mpi_comm_type)
+       call p_bcast(rt_opts(iopts(i))%iatl   ,io_proc_id,mpi_comm_type)
+       call p_bcast(rt_opts(iopts(i))%atl_typ,io_proc_id,mpi_comm_type)
      end do
    end if
 #endif
@@ -4543,7 +4617,8 @@ FTRACE_END('rtifc_k')
      if (.not.any(rto%iatl(1:rto%natl) == iatl)) then
        rto%natl = rto%natl + 1
        if (rto%natl > m_atl) call finish('add_iatl@'//proc, 'rto%natl > m_atl')
-       rto%iatl(rto%natl) = iatl
+       rto%iatl   (rto%natl) = iatl
+       rto%atl_typ(rto%natl) = 0
      end if
    end subroutine add_iatl
 
@@ -4584,6 +4659,7 @@ FTRACE_END('rtifc_k')
    iatl = 0
    do i = 1, rto%natl
      j = rto%iatl(i)
+     if (rto%atl_typ(i) /= 0) cycle
      if (j <= 0 .or. j > n_atlas) call finish(proc, 'invalid rto%iatl')
      if (atlas(j)% atlas_id == atlas_id) then
        iatl = j
@@ -4592,8 +4668,11 @@ FTRACE_END('rtifc_k')
    end do
    if (iatl <= 0) then
      write(0,*) 'sat,instr',rto%satid,rto%instr
-     write(0,*) 'atlas',atlas_id
-     call finish(proc, 'atlas not intialized')
+     write(0,*) 'atlas,natl',atlas_id,rto%natl
+     do i = 1, rto%natl
+       write(0,*) 'rto',rto%iatl(i),rto%atl_typ(i)
+     end do
+     call finish(proc, 'atlas not initialized')
    end if
 
    if (size(lprofs) /= size(chan) .or. &
@@ -4601,15 +4680,16 @@ FTRACE_END('rtifc_k')
      stat = ERR_DIM
      return
    end if
-   if (any(lprofs(:) /= 1 )) then
-     ! Can only deal with one profile at a time
-     stat = ERR_DIM
-     return
-   end if
+   ! if (minval(lprofs(:)) /= maxval(lprofs)) then
+   !   ! Can only deal with one profile at a time
+   !   stat = ERR_DIM
+   !   return
+   ! end if
    do i = 1,size(chan)
       chanprof(i)% chan = chan(i)
       chanprof(i)% prof = lprofs(i)
    enddo
+   if (ldeb) write(usd,*) 'rtifc_emis_atlas lprofs:',lprofs,'chans:',chan
    if (ldeb) call rttov_print_profile(profiles(lprofs(1)), usd, trim(proc))
    call rttov_get_emis(stat, ropts, chanprof, profiles, coefs(ic), atlas(iatl), emis &
 #if defined(_DACE_) && !defined(__ICON__)
@@ -4672,7 +4752,8 @@ FTRACE_END('rtifc_k')
  end function c_atlas
 
 
- subroutine rtifc_init_brdf_atlas(month, path, my_proc_id, n_proc, io_proc_id, mpi_comm_type, stat)
+ subroutine rtifc_init_brdf_atlas(iopts, month, path, my_proc_id, n_proc, io_proc_id, mpi_comm_type, stat)
+   integer,            intent(in)           :: iopts(:)        ! option indices
    integer,            intent(in)           :: month          ! Month number
    character(len=128), intent(in)           :: path           ! path to atlases
    integer,            intent(in)           :: my_proc_id     ! ID of local processors
@@ -4681,52 +4762,110 @@ FTRACE_END('rtifc_k')
    integer,            intent(in)           :: io_proc_id     ! ID of IO processor
    integer,            intent(in)           :: mpi_comm_type  ! mpi communicator type
    integer,            intent(out)          :: stat           ! error status
-
-   integer :: k
-   logical :: l_distrib
+   !--------------------------
+   ! Loads BRDF(VIS) atlas(es)
+   !--------------------------
+   character(len=*),       parameter   :: proc   = 'rtifc_init_brdf_atlas'
+   character(len=300)                  :: msg    = ''
+   type(t_rtopts),         pointer     :: rto
+   type(rttov_brdf_atlas_data), pointer:: vis_atlas_(:) => null()
+   integer                             :: iopts_(size(iopts))
+   integer                             :: i, j, iopt, ic, n_new
+   integer                             :: n_opt
+   logical                             :: l_distrib
 
    stat = 0
    pe_ifc = my_proc_id
    pe_rt  = pe_ifc
-
-   if (idef0 <= 0) then
-     stat = ERR_NO_OPTS_TMPL
-     return
-   end if
-
    l_distrib = .false.
 #if defined(_RTIFC_DISTRIBCOEF)
    l_distrib = (n_proc > 1) .and. read1pe
 #endif
 
+   n_opt = size(iopts)
+   iopts_ = iopts
+   ! Check for atlases, that are initialized already:
+   do i = 1, n_opt
+     iopt = iopts_(i)
+     if (iopt<=0 .or. iopt>n_opts) call finish(proc, 'invalid option index')
+     rto => rt_opts(iopt)
+     if (any(rto%atl_typ(1:rto%natl) == 1)) iopts_(i) = -1 ! BRDF initialized already
+   end do
+   n_new = count(iopts_ > 0)
+   iopts_(1:n_new) = pack(iopts_(:), mask=(iopts_(:)>0))
+   if (n_new <= 0) return
+
+   allocate(vis_atlas_(n_atlas_vis+n_new))
+   if (n_atlas_vis > 0) then
+     vis_atlas_(1:n_atlas_vis) = vis_atlas(1:n_atlas_vis)
+     deallocate(vis_atlas)
+   end if
+   vis_atlas => vis_atlas_
+
    if (io_proc_id == pe_ifc .or. .not.l_distrib) then
-     do k = 1, size(coefs)
-       ! RF: we can ignore the connection between rttov_coefs and rttov_options here,
-       !     since the only option used by rttov_setup_brdf_atlas is opts%config%verbose.
-       if ( coefs(k)%coef%id_sensor == sensor_id_mw .or. &
-            coefs(k)%coef%id_sensor == sensor_id_po .or. &
-            all(coefs(k)%coef%ss_val_chn(:) == 0)) cycle
-       call rttov_setup_brdf_atlas(stat, rt_opts_tmpl(idef0)%opts, month, vis_atlas, path=path, coefs=coefs(k))
+     if (io_proc_id == pe_ifc) then
+       write(*,*)
+       write(*,'(" Initialize RTTOV BRDF reflectivity atlases for ",I2," datasets:")') n_new
+     end if
+     do i = 1, n_new
+       j = n_atlas_vis + i
+       iopt = iopts_(i)
+       rto => rt_opts(iopt)
+       ic = rto%icoeff
+       write(msg,'(4(A,"=",I3,1x))') "platform",coefs(ic)%coef%id_platform,"sat",coefs(ic)%coef%id_sat,&
+              "inst",coefs(ic)%coef%id_inst,"sensor",coefs(ic)%coef%id_sensor
+       if ( coefs(ic)%coef%id_sensor == sensor_id_mw .or. &
+            coefs(ic)%coef%id_sensor == sensor_id_po .or. &
+            all(coefs(ic)%coef%ss_val_chn(:) == 0))       &
+            call finish(proc, 'Invalid instrument in BRDF-atlas initialization: '//trim(msg))
+       call rttov_setup_brdf_atlas(stat, rto%opts, month, vis_atlas(j), path=path, coefs=coefs(ic))
        if (stat == 0) then
-         if (io_proc_id == pe_ifc) write(stdout,*) 'BRDF atlas initialized'
+         if (io_proc_id == pe_ifc) write(stdout,*) 'BRDF atlas initialized: '//trim(msg)
        else
-         write(0,*) 'Failed to initialize BRDF atlas.'
+         write(0,*) 'Failed to initialize BRDF atlas: '//trim(msg)
          return
        end if
-       exit
+       call add_iatl(j)
      end do
    else
-     call rttov_deallocate_brdf_atlas(vis_atlas)
+     do i = 1, n_new
+       call rttov_deallocate_brdf_atlas(vis_atlas(n_atlas_vis+i))
+     end do
    end if
 #if defined(_RTIFC_DISTRIBCOEF)
    if (l_distrib) then
-     call p_bcast(vis_atlas%init,io_proc_id,mpi_comm_type)
-     if (vis_atlas%init) then
-       if (io_proc_id == pe_ifc) write(stdout,*) 'Distribute BRDF atlas'
-       call p_bcast(vis_atlas,io_proc_id,mpi_comm_type)
-     end if
+     do i = 1, n_new
+       j = n_atlas_vis+i
+       call p_bcast(vis_atlas(j)%init,io_proc_id,mpi_comm_type)
+       if (vis_atlas(j)%init) then
+         if (io_proc_id == pe_ifc) then
+           write(msg,'(3(A,"=",I3,1x))') "platform",vis_atlas(j)%brdf_atlas%platform_id,"sat",&
+                vis_atlas(j)%brdf_atlas%sat_id,"inst",vis_atlas(j)%brdf_atlas%inst_id
+           write(stdout,*) 'Distribute BRDF atlas: '//trim(msg)
+         end if
+         call p_bcast(vis_atlas(j),io_proc_id,mpi_comm_type)
+       end if
+       call p_bcast(rt_opts(iopts_(i))%natl   ,io_proc_id,mpi_comm_type)
+       call p_bcast(rt_opts(iopts_(i))%iatl   ,io_proc_id,mpi_comm_type)
+       call p_bcast(rt_opts(iopts_(i))%atl_typ,io_proc_id,mpi_comm_type)
+     end do
    end if
 #endif
+
+   n_atlas_vis = n_atlas_vis + n_new
+
+ contains
+
+   subroutine add_iatl(iatl)
+     integer, intent(in) :: iatl
+     if (.not.any(rto%iatl(1:rto%natl) == iatl)) then
+       rto%natl = rto%natl + 1
+       if (rto%natl > m_atl) call finish('add_iatl@'//proc, 'rto%natl > m_atl')
+       rto%iatl   (rto%natl) = iatl
+       rto%atl_typ(rto%natl) = 1
+     end if
+   end subroutine add_iatl
+
  end subroutine rtifc_init_brdf_atlas
 
  subroutine rtifc_brdf_atlas(iopt, profs, chans, refl, stat,refl_flag)
@@ -4740,10 +4879,11 @@ FTRACE_END('rtifc_k')
    ! Get emissivity from atlas
    !--------------------------
    character(len=16),  parameter :: proc   = 'rtifc_brdf_atlas'
+   character(len=300)                  :: msg    = ''
    type(t_rtopts),     pointer   :: rto    => null()
    type(rttov_options),pointer   :: ropts  => null()
    integer                       :: ic
-   integer              :: k
+   integer              :: i, j, iatl
    type(rttov_chanprof) :: chanprof(size(chans))
 
    if (iopt<=0 .or. iopt>n_opts) call finish(proc, 'invalid option index')
@@ -4753,33 +4893,61 @@ FTRACE_END('rtifc_k')
 
    if (size(chans) <= 0) RETURN
 
+   write(msg,'(4(A,"=",I3,1x))') "platform",coefs(ic)%coef%id_platform,"sat",coefs(ic)%coef%id_sat,&
+        "inst",coefs(ic)%coef%id_inst,"sensor",coefs(ic)%coef%id_sensor
+
+
    if ( coefs(ic)%coef%id_sensor == sensor_id_mw .or. &
         coefs(ic)%coef%id_sensor == sensor_id_po .or. &
         all(coefs(ic)%coef%ss_val_chn(:) == 0)) then
+     write(0,*) trim(proc)//': invalid instr '//trim(msg)
      stat = ERR_INVALID_INSTR
      return
    end if
    if (size(profs) /= size(chans) .or. &
         size(profs) /= size(refl) ) then
+     write(0,*) trim(proc)//': dim. error '//trim(msg)
      stat = ERR_DIM
      return
    end if
    if (any(profs(:) /= 1 )) then
      ! Can only deal with one profile at a time
+     write(0,*) trim(proc)//': dim error (profs) '//trim(msg)
      stat = ERR_DIM
      return
    end if
-   if (.not.vis_atlas%init) then
+   iatl = 0
+   do i = 1, rto%natl
+     j = rto%iatl(i)
+     if (rto%atl_typ(i) /= 1) cycle
+     if (j <= 0 .or. j > n_atlas_vis) then
+       write(0,*) trim(proc)//': invalid rto%iatl '//trim(msg)
+       call finish(proc, 'invalid rto%iatl')
+     end if
+     if ( vis_atlas(j)% brdf_atlas% platform_id == coefs(ic)%coef%id_platform .and. &
+          vis_atlas(j)% brdf_atlas% sat_id      == coefs(ic)%coef%id_sat      .and. &
+          vis_atlas(j)% brdf_atlas% inst_id     == coefs(ic)%coef%id_inst  ) then
+       iatl = j
+       exit
+     end if
+   end do
+   if (iatl <= 0) then
+     write(0,*) trim(proc)//': atlas not initialized(1) '//trim(msg)
+     stat = ERR_ATLAS_INIT
+     return
+   end if
+   if (.not.vis_atlas(iatl)%init) then
+     write(0,*) trim(proc)//': atlas not initialized(2) '//trim(msg)
      stat = ERR_ATLAS_INIT
      return
    end if
 
-   do k = 1,size(chans)
-     chanprof(k)% chan = chans(k)
-     chanprof(k)% prof = profs(k)
+   do j = 1,size(chans)
+     chanprof(j)% chan = chans(j)
+     chanprof(j)% prof = profs(j)
    enddo
 
-   call rttov_get_brdf(stat, ropts, chanprof, profiles, coefs(ic), vis_atlas, refl, brdf_flag=refl_flag)
+   call rttov_get_brdf(stat, ropts, chanprof, profiles, coefs(ic), vis_atlas(iatl), refl, brdf_flag=refl_flag)
 
  end subroutine rtifc_brdf_atlas
 
@@ -4803,9 +4971,10 @@ FTRACE_END('rtifc_k')
    ! Dynamic retrieve of skin temperature (following Karbou)
    !--------------------------------------------------
    character(len=*),   parameter   :: proc   = 'rtifc_tskin_retrieve'
+   character(len=80)               :: msg    = ''
    type(t_rtopts),     pointer     :: rto    => null()
    type(rttov_options),pointer     :: ropts  => null()
-   integer                         :: ic, ipr, k, ndrts, nlevs, nl
+   integer                         :: ic, ipr, ipr_deb, k, ndrts, ilev
    logical                         :: ld
    real(jprb),         allocatable :: t_b(:,:)
    real(jprb),         allocatable :: emis_in(:,:)
@@ -4825,184 +4994,193 @@ FTRACE_END('rtifc_k')
    else
      ld = .false.
    end if
+   if (ld) then
+     if (present(spt_hd_id)) then
+       write(msg,*) trim(proc), spt_hd_id
+     else
+       msg = proc
+     end if
+   end if
 
    if (iopt<=0 .or. iopt>n_opts) call finish(proc, 'invalid option index')
    rto   => rt_opts(iopt)
    ropts => rto%opts
    ic    =  rto%icoeff
-    nlevs = coefs(ic)%coef%nlevels - 1
-    ! Check inputs consistency -  ! 1 = Infrared  ! 3 = Highspectral
-    if (coefs(ic)% coef% id_sensor /= 1 .and. coefs(ic)% coef% id_sensor /= 3) then
-      stat = ERR_INVALID_INSTR
-      return
-    end if
-    if (size(lprofs) /= size(chans) .or. &
+   ! Check inputs consistency -  ! 1 = Infrared  ! 3 = Highspectral
+   if (coefs(ic)% coef% id_sensor /= 1 .and. coefs(ic)% coef% id_sensor /= 3) then
+     stat = ERR_INVALID_INSTR
+     return
+   end if
+   if (size(lprofs) /= size(chans) .or. &
         size(lprofs) /= size(obs)  ) then
-      stat = ERR_DIM
-      return
-    end if
-    if (any(lprofs(:) /= 1 )) then
-      stat = ERR_DIM
-      return
-    end if
-    if (size(tskin) /= 1) then
-      stat = ERR_DIM
-      return
-    end if
-    ! Allocate auxiliary arrays
-    allocate(t_b       (size(lprofs),1))
-    allocate(emis_in   (size(lprofs),1))
-    emis_in(:,1) = emis ! if land-atlas is used, emis_in gets its value from atlas
-                        ! if surface is sea and emis=-1, then emis_in gets calcualted
-                        ! in rtifc_direct where it is smaller that 0.01.
-    allocate(radclear  (size(lprofs),1))
-    allocate(radupclear(size(lprofs),1))
-    allocate(raddnclear(size(lprofs),1))
-    allocate(gamma     (size(lprofs),1))
-    allocate(obsrad    (size(lprofs)))
-    allocate(radup     (size(lprofs)))
-    allocate(rademi    (size(lprofs)))
-    allocate(gamma_k   (nlevs,size(lprofs),1))
+     stat = ERR_DIM
+     return
+   end if
+   if (maxval(lprofs(:)) /= minval(lprofs(:))) then
+     stat = ERR_DIM
+     return
+   end if
+   if (size(tskin) /= 1) then
+     stat = ERR_DIM
+     return
+   end if
+   ! Allocate auxiliary arrays
+   allocate(t_b       (size(lprofs),1))
+   allocate(emis_in   (size(lprofs),1))
+   emis_in(:,1) = emis ! if land-atlas is used, emis_in gets its value from atlas
+                       ! if surface is sea and emis=-1, then emis_in gets calcualted
+                       ! in rtifc_direct where it is smaller that 0.01.
+   allocate(radclear  (size(lprofs),1))
+   allocate(radupclear(size(lprofs),1))
+   allocate(raddnclear(size(lprofs),1))
+   allocate(gamma     (size(lprofs),1))
+   allocate(obsrad    (size(lprofs)))
+   allocate(radup     (size(lprofs)))
+   allocate(rademi    (size(lprofs)))
+!   allocate(gamma_k   (nlevs,size(lprofs),1)) !nlevs is wrong -> should be determined by rtifc_coef_prop
 
-    if (ld) then
-      ipr = 1
-    else
-      ipr = -1
-    end if
-    ! Call rtifc_direct for first guesses needed
-    call rtifc_direct (                  &
-        iopt,                           & ! <--  options index
-        lprofs,                         & ! <--  list of profile indices
-        chans,                          & ! <--  list of channel indices
-        emis_in,                        & ! <--> emissivities -
-        t_b,                            & !  --> calculated brightness
-        stat,                           & !  --> exit status
-        specularity  = spec,            & ! <--  specularities
-        radclear     = radclear,        & !  --> TOA radiance
-        radupclear   = radupclear,      & !  --> TOA upweeling radiance(with emissivity term)
-        raddnclear   = raddnclear,      & !  --> downelling radiance at surface
-        transmtotal  = gamma,           & !  --> total surface to TOA transmission (nchans,nprof)
-        transm       = gamma_k,         & !  --> transmission (nlevs,nchans,nprof)
-        iprint       = (/ipr/)          )! <--  debug
-    if (stat /= NO_ERROR) return
+   ipr = lprofs(1)
+   if (ld) then
+     ipr_deb = ipr
+   else
+     ipr_deb = -1
+   end if
 
-    tsfl = .false.
-    ndrts = 0
-    tskin(:) = 0
-    BlackBody_rad = 0.0
-    temp_t = 0.0
-    allocate(tskin_temp(size(chans)))
-    tskin_temp(:) = 0.0
+   if (ld) write(usd,*) proc,'lprofs:',lprofs,'chans:',chans
 
-    ! loop over channel
-    do k = 1, size(chans)
-      ! Adjustemnts for the finite spectral bandwidth if needed
-      ! Brightness temperatures are modified using band correction coefficients
-      if (coefs(ic)%coef%ff_val_bc) then
-        obs_eff = coefs(ic)%coef%ff_bcs(chans(k))*obs(k) + coefs(ic)%coef%ff_bco(chans(k))
-      else
-        obs_eff = obs(k)
-      end if
-      ! Compute radiance associated to observed brightness temperatures
-      call planck(coefs(ic)%coef% planck1(chans(k)),coefs(ic)%coef% planck2(chans(k)), &
-            obs_eff,obsrad(k))
-      ! Adjustemnts for the finite spectral bandwidth if needed
-      if (coefs(ic)%coef%ff_val_bc) then
-        temp_t = coefs(ic)%coef%ff_bcs(chans(k))* profiles(1)% skin% t + coefs(ic)%coef%ff_bco(chans(k))
-      else
-        temp_t = profiles(1)% skin% t
-      end if
-      ! Compute radiance associated to model skin temperature
-      call planck(coefs(ic)%coef% planck1(chans(k)),coefs(ic)%coef% planck2(chans(k)), &
-        temp_t, rademi(k))
+   ! Call rtifc_direct for first guesses needed
+   call rtifc_direct (                 &
+        iopt,                          & ! <--  options index
+        lprofs,                        & ! <--  list of profile indices
+        chans,                         & ! <--  list of channel indices
+        emis_in,                       & ! <--> emissivities -
+        t_b,                           & !  --> calculated brightness
+        stat,                          & !  --> exit status
+        specularity  = spec,           & ! <--  specularities
+        radclear     = radclear,       & !  --> TOA radiance
+        radupclear   = radupclear,     & !  --> TOA upweeling radiance(with emissivity term)
+        raddnclear   = raddnclear,     & !  --> downelling radiance at surface
+        transmtotal  = gamma,          & !  --> total surface to TOA transmission (nchans,nprof)
+!        transm       = gamma_k,        & !  --> transmission (nlevs,nchans,nprof)
+        iprint       = (/ipr_deb/)      )! <--  debug
+   if (stat /= NO_ERROR) return
 
-      ! Compute upwelling radiance without emission term
-      radup(k) = radupclear(k,1)-rademi(K)*emis_in(k,1)*gamma(k,1)
+   tsfl = .false.
+   ndrts = 0
+   tskin(:) = 0
+   BlackBody_rad = 0.0
+   temp_t = 0.0
+   allocate(tskin_temp(size(chans)))
+   tskin_temp(:) = 0.0
 
-      ! Compute radiance emitted by black body at temperature ts
-      BlackBody_rad  =(obsrad(k) - raddnclear(k,1)*(1.-emis_in(k,1))*gamma(k,1) - radup(k))/(emis_in(k,1) * gamma(k,1))
+   ! loop over channel
+   do k = 1, size(chans)
+     ! Adjustemnts for the finite spectral bandwidth if needed
+     ! Brightness temperatures are modified using band correction coefficients
+     if (coefs(ic)%coef%ff_val_bc) then
+       obs_eff = coefs(ic)%coef%ff_bcs(chans(k))*obs(k) + coefs(ic)%coef%ff_bco(chans(k))
+     else
+       obs_eff = obs(k)
+     end if
+     ! Compute radiance associated to observed brightness temperatures
+     call planck(coefs(ic)%coef% planck1(chans(k)),coefs(ic)%coef% planck2(chans(k)), &
+          obs_eff,obsrad(k))
+     ! Adjustemnts for the finite spectral bandwidth if needed
+     if (coefs(ic)%coef%ff_val_bc) then
+       temp_t = coefs(ic)%coef%ff_bcs(chans(k))* profiles(ipr)% skin% t + coefs(ic)%coef%ff_bco(chans(k))
+     else
+       temp_t = profiles(ipr)% skin% t
+     end if
+     ! Compute radiance associated to model skin temperature
+     call planck(coefs(ic)%coef% planck1(chans(k)),coefs(ic)%coef% planck2(chans(k)), &
+          temp_t, rademi(k))
 
-      ! call inverse Planck function only if Blackbody radiation is positive
-      if (BlackBody_rad > 0 ) then
-        ! Calculate temperature from Black body radiance
-        call inv_planck(coefs(ic)%coef% planck1(chans(k)), coefs(ic)%coef% planck2(chans(k)), &
-        BlackBody_rad, tskin_temp(k) )
+     ! Compute upwelling radiance without emission term
+     radup(k) = radupclear(k,1)-rademi(K)*emis_in(k,1)*gamma(k,1)
 
-        ! revert the band correction adjustments if needed
-        if (coefs(ic)%coef%ff_val_bc) then
-          tskin_temp(k) = (tskin_temp(k) - coefs(ic)%coef%ff_bco(chans(k)) )/coefs(ic)%coef%ff_bcs(chans(k))
-        else
-          tskin_temp(k) = tskin_temp(k)
-        end if
+     ! Compute radiance emitted by black body at temperature ts
+     BlackBody_rad  =(obsrad(k) - raddnclear(k,1)*(1.-emis_in(k,1))*gamma(k,1) - radup(k))/(emis_in(k,1) * gamma(k,1))
 
-        ! if derived tskin is valid and does not deviate from model tskin more than +/- 15 degree
-        if ( tskin_temp(k) > 0 .and. &
-          abs(tskin_temp(k) - dble(profiles(1)% skin% t)) <= 15.0) then
-          tskin(:) = tskin(:) + tskin_temp(k)
-          ndrts = ndrts + 1
-          tsfl = .true.
+     ! call inverse Planck function only if Blackbody radiation is positive
+     if (BlackBody_rad > 0 ) then
+       ! Calculate temperature from Black body radiance
+       call inv_planck(coefs(ic)%coef% planck1(chans(k)), coefs(ic)%coef% planck2(chans(k)), &
+            BlackBody_rad, tskin_temp(k) )
 
-          ! ------- print some info -----------
-          if (ld) then
-            write(*,*) proc,&
-            ' chan:', channum(k), &
-            ' obs:', obs(k), &
-            ' obsrad:', obsrad(k), &
-            ' radup:', radup(k), &
-            ' B_ts:', BlackBody_rad , &
-            ' ~radupclear::', radup(k) + BlackBody_rad, &
-            ' refl-raddnclear:', raddnclear(k,1)*(1.-emis_in(k,1))*gamma(k,1) , &
-            ' term1:', radclear(k,1) -  gamma(k,1)*emis_in(k,1)*rademi(k), &
-            ' term2:', obsrad(k) - gamma(k,1)*emis_in(k,1)*BlackBody_rad , &
-            ' raddnclear:',raddnclear(k,1), &
-            ' transtot:',gamma(k,1), &
-            ' emis:',emis_in(k,1), &
-            ' input emis:',emis(:), &
-            ' ts:', tskin_temp(k), &
-            ' tsm:', profiles(1)% skin% t
-            do nl = 1, nlevs
-              write(*,*) proc, spt_hd_id, ' nlev:', nl, ' trans_lev:', gamma_k(nl, k, 1)
-            end do
-          end if
-          !------- end of print info ------------
-        else
-          !call finish(proc, 'invalid derived tskin')
-          if (ld) then
-            write(*,*) proc, " Invalid/Unacceptable derived ts for spot_hd_id:", spt_hd_id, &
-            ' ret_ts:',tskin_temp(k), ' model_ts:', profiles(1)% skin% t, ' chan:', channum(k),&
-            ' bt:', obs(k), ' FG:', t_b, &
-            ' gamma:', gamma(k,1), ' emis:', emis_in(k,1)
-          end if
+       ! revert the band correction adjustments if needed
+       if (coefs(ic)%coef%ff_val_bc) then
+         tskin_temp(k) = (tskin_temp(k) - coefs(ic)%coef%ff_bco(chans(k)) )/coefs(ic)%coef%ff_bcs(chans(k))
+       else
+         tskin_temp(k) = tskin_temp(k)
+       end if
 
-        end if
-      else
-        ! find where surface level lies
-        do nl = 1, nlevs - 1
-            if (gamma_k(nl, k, 1) < gamma(k,1) ) then
-              exit
-            end if
-        end do
-        if (ld) then
-          write(*,*) proc, " Invalid Black-body rad computed for spot_hd_id: ", spt_hd_id, &
-          ' model_ts:', profiles(1)% skin% t, &
-          ' gamma:', gamma(k,1), ' gamma-nl:',&
-          !gamma_k(nl, k, 1), ' gamma-nl-1:', gamma_k(nl-1, k, 1),&
-          ' chan:', channum(k), ' bt:', obs(k), ' FG:', t_b, &
-          ' obsrad:', obsrad(k), ' radup:', radup(k), &
-          ' raddnclear:', raddnclear(k,1), ' emis:',emis_in(k,1)
-        end if
-      end if ! end if BlackBody_rad
-    end do ! end do k on chans
+       ! if derived tskin is valid and does not deviate from model tskin more than +/-15 degree
+       if ( tskin_temp(k) > 0 .and. &
+            abs(tskin_temp(k) - dble(profiles(ipr)% skin% t)) <= 15.0) then
+         tskin(:) = tskin(:) + tskin_temp(k)
+         ndrts = ndrts + 1
+         tsfl = .true.
 
-    if (tsfl) then
-      tskin(:) = tskin(:)/ndrts
-      emis(:) = emis_in(:,1) ! in case emissivity is calculated during rtifc_direct call
-    else                     ! it should be passed out to be used later again. For land
-                             ! it does not change anything and is only an extra assigment operation!
-      tskin = profiles(1)% skin% t ! In case the derived tskin is invalid, the model ts is returned
-    end if
+         if (ld) then
+           write(*,*) proc,&
+                ' chan:', channum(k), &
+                ' obs:', obs(k), &
+                ' obsrad:', obsrad(k), &
+                ' radup:', radup(k), &
+                ' B_ts:', BlackBody_rad , &
+                ' ~radupclear::', radup(k) + BlackBody_rad, &
+                ' refl-raddnclear:', raddnclear(k,1)*(1.-emis_in(k,1))*gamma(k,1) , &
+                ' term1:', radclear(k,1) -  gamma(k,1)*emis_in(k,1)*rademi(k), &
+                ' term2:', obsrad(k) - gamma(k,1)*emis_in(k,1)*BlackBody_rad , &
+                ' raddnclear:',raddnclear(k,1), &
+                ' transtot:',gamma(k,1), &
+                ' emis:',emis_in(k,1), &
+                ' t_b:',t_b(k,1), &
+                ' input emis:',emis(:), &
+                ' ts:', tskin_temp(k), &
+                ' tsm:', profiles(ipr)% skin% t
+           ! do ilev = 1, nlevs
+           !   write(*,*) trim(msg)//' ilev:', ilev, ' trans_lev:', gamma_k(ilev, k, 1)
+           ! end do
+         end if
+       else
+         !call finish(proc, 'invalid derived tskin')
+         if (ld) then
+           write(*,*) trim(msg)//" Invalid/Unacceptable derived ts for spot_hd_id:", &
+                ' ret_ts:',tskin_temp(k), ' model_ts:', profiles(ipr)% skin% t, ' chan:', channum(k),&
+                ' bt:', obs(k), ' FG:', t_b, &
+                ' gamma:', gamma(k,1), ' emis:', emis_in(k,1)
+         end if
 
-  end subroutine rtifc_tskin_retrieve
+       end if
+     else
+       ! find where surface level lies
+       ! do ilev = 1, nlevs - 1
+       !   if (gamma_k(ilev, k, 1) < gamma(k,1) ) then
+       !     exit
+       !   end if
+       ! end do
+       if (ld) then
+         write(*,*) trim(msg)//" Invalid Black-body rad computed for spot_hd_id: ", &
+              ' model_ts:', profiles(ipr)% skin% t, &
+              ' gamma:', gamma(k,1), ' gamma-nl:',&
+              !gamma_k(nl, k, 1), ' gamma-nl-1:', gamma_k(nl-1, k, 1),&
+              ' chan:', channum(k), ' bt:', obs(k), ' FG:', t_b, &
+              ' obsrad:', obsrad(k), ' radup:', radup(k), &
+              ' raddnclear:', raddnclear(k,1), ' emis:',emis_in(k,1)
+       end if
+     end if ! end if BlackBody_rad
+   end do ! end do k on chans
+
+   if (tsfl) then
+     tskin(:) = tskin(:)/ndrts
+     emis(:) = emis_in(:,1) ! in case emissivity is calculated during rtifc_direct call
+   else                     ! it should be passed out to be used later again. For land
+                            ! it does not change anything and is only an extra assigment operation!
+     tskin = profiles(ipr)% skin% t ! In case the derived tskin is invalid, the model ts is returned
+   end if
+
+ end subroutine rtifc_tskin_retrieve
 
 #endif /* _RTTOV_ATLAS */
 
@@ -5027,7 +5205,7 @@ FTRACE_END('rtifc_k')
     type(t_rtopts),     pointer   :: rto    => null()
     type(rttov_options),pointer   :: ropts  => null()
     integer                       :: ic
-    integer                       :: nl, nlevs_user
+    integer                       :: nl, nlevs_user, nl_top
     integer                       :: vers
 
     if (present(version   )) version    = -1
@@ -5063,8 +5241,9 @@ FTRACE_END('rtifc_k')
       nlevs_user = min(size(preslev), nl)
       if (nlevs_user < nl - 1) &
            call finish(proc, 'invalid size of preslev array')
-      nlevs_top = nl - nlevs_user
-      preslev(1:nlevs_user) = coefs(ic)%coef%ref_prfl_p(1+nlevs_top:)
+      ! nlevs_top = nl - nlevs_user
+      nl_top = nl - nlevs_user
+      preslev(1:nlevs_user) = coefs(ic)%coef%ref_prfl_p(1+nl_top:)
     end if
 
     if (present(gas_bkg)) then
@@ -5074,8 +5253,9 @@ FTRACE_END('rtifc_k')
       nlevs_user = min(size(gas_bkg), nl)
       if (nlevs_user < nl - 1) &
            call finish(proc, 'invalid size of preslev array')
-      nlevs_top = nl - nlevs_user
-      gas_bkg(1:nlevs_user) = coefs(ic)%coef%bkg_prfl_mr(1+nlevs_top:,coefs(ic)%coef%fmv_gas_pos(igas))
+      ! nlevs_top = nl - nlevs_user
+      nl_top = nl - nlevs_user
+      gas_bkg(1:nlevs_user) = coefs(ic)%coef%bkg_prfl_mr(1+nl_top:,coefs(ic)%coef%fmv_gas_pos(igas))
     end if
 
   end subroutine rtifc_coef_prop

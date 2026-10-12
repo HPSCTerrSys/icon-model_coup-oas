@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Module containing type defintions and constructors for GRIB2 tile output
 !
 ! GRIB2 tile output can be written by using either the official WMO tile
@@ -6,17 +17,6 @@
 ! wrt the naming of tile-specific keys.
 ! The aim of the templates below is to enable ICON to make use of either
 ! WMO or DWD templates for writing GRIB2 tile output.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_grib2_tile
 
@@ -36,7 +36,7 @@ MODULE mo_grib2_tile
     CHARACTER(len=50) :: attributeOfTile
   END TYPE t_grib2_keys_tile
 
-  ! Type for defining the set of employed tile templates 
+  ! Type for defining the set of employed tile templates
   ! and corresponding key names.
   TYPE t_grib2_template_tile
     ! set of allowed tile templates

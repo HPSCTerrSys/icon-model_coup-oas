@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -56,8 +56,8 @@ set_env="Post.${EXP}.set_env"
 
 # Remove old ${set_env} file
 #
-if [ -f ${set_env} ] 
-then 
+if [ -f ${set_env} ]
+then
   rm -f ${set_env}
 fi
 

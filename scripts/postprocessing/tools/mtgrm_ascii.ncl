@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -28,14 +28,14 @@
 ;----------------------------------------------------------------------
 
 ; open netCDF file
-cdf_file = addfile(DataFileName,"r") 
+cdf_file = addfile(DataFileName,"r")
 nstations = dimsizes(cdf_file->station_lon)
 
 colwidth = 15 ; table column width
 
 ; loop over meteogram stations:
 do istation = 0,(nstations-1)
-  
+
   print(str_get_nl())
   title_str = "STATION NAME: " + charactertostring(cdf_file->station_name(istation,:)) \
   +           "   (idx: "  + cdf_file->station_idx(istation) \
@@ -56,7 +56,7 @@ do istation = 0,(nstations-1)
   print("   LON       : " + cdf_file->station_lon(istation))
   print("   FC        : " + cdf_file->station_fc(istation))
   print("   SOIL TYPE : " + cdf_file->station_soiltype(istation))
-  
+
   ; build title string with variable names and units
   ; atmospheric (3D) variables:
   nvars = dimsizes(cdf_file->var_name)
@@ -108,7 +108,7 @@ do istation = 0,(nstations-1)
     print(tostring(title_str+border_str))
 
     ; ------------------------------------------------
-    ; Atmospheric (3D) variables:    
+    ; Atmospheric (3D) variables:
 
     ; build a matrix containing values of sampled variables
     print(str_get_nl() + "ATMOSPHERIC VARIABLES:" + str_get_nl())
@@ -130,7 +130,7 @@ do istation = 0,(nstations-1)
     write_matrix (values, "14f"+tostring(colwidth)+".3 ", opt)
 
     ; ------------------------------------------------
-    ; Surface (2D) variables:    
+    ; Surface (2D) variables:
 
     ; build a matrix containing values of sampled variables
     print(str_get_nl() + "SURFACE VARIABLES:" + str_get_nl())

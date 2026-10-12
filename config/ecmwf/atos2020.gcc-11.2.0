@@ -3,50 +3,62 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ------------------------------------------
 
+#####################################################################################
+###   Configure wrapper for ATOS System at ECMWF/Bologna (From 2020 procurement)  ###
+###       Atos Sequana XH2000                                                     ###
+###       Red Hat Enterprise Linux                                                ###
+###       Compiler: gcc 11.2.0                                                    ###
+#####################################################################################
+
 set -eu
-unset CDPATH
 
 SCRIPT_DIR=$(cd "$(dirname "$0")"; pwd)
 ICON_DIR=$(cd "${SCRIPT_DIR}/../.."; pwd)
 
-MODULES='prgenv/gnu gcc/11.2.0 openmpi/4.1.1.1 hdf5/1.10.6 netcdf4/4.7.4 intel-mkl/19.0.5 ecmwf-toolbox/2021.12.0.0 aec/1.0.4'
-
-# XML
-XML2_ROOT='/usr/include/libxml2'
-XML2_LIBS='-lxml2 -lz'
+MODULES='prgenv/gnu gcc/11.2.0 hpcx-openmpi hdf5 netcdf4 intel-mkl/19.0.5 ecmwf-toolbox aec libfyaml'
+#MODULES+=' python3/3.12.9-01'
 
 ################################################################################
 
 BUILD_ENV=". $MODULESHOME/init/sh ; module purge ;  module load $MODULES; FC=mpif90 ; CC=gcc;"
 eval "$BUILD_ENV"
 
-MKL_ROOT=$MKLROOT
-MKL_FCFLAGS="-m64  -I${MKLROOT}/include"
-BLAS_LAPACK_LDFLAGS='-lmkl_gf_lp64 -lmkl_sequential -lmkl_core'
+# XML2 library
+XML_INCLUDE='-I/usr/include/libxml2/'
+XML_LIB='-L/usr/lib64 -lxml2 -lz'
 
+# RTTOV Version 13 (built with gcc/11.2.0)
+RTTOV_INCLUDE="-I/perm/dwg/rttov13_icon/build_atos_gcc/include"
+RTTOV_LIBDIR="-L/perm/dwg/rttov13_icon/build_atos_gcc"
+RTTOV_LIB="-lrttov13"
+
+# Compilers and flags
 CC='mpicc'
 CFLAGS='-g -march=native -mpc64'
 ICON_CFLAGS='-O2'
 ICON_BUNDLED_CFLAGS='-O2'
-CPPFLAGS="$ECCODES_INCLUDE $HDF5_INCLUDE $NETCDF4_INCLUDE -I${XML2_ROOT}"
+CPPFLAGS="$ECCODES_INCLUDE $HDF5_INCLUDE $NETCDF4_INCLUDE $LIBFYAML_INCLUDE $RTTOV_INCLUDE $XML_INCLUDE"
 
 FC='mpif90'
-FCFLAGS="$ECCODES_INCLUDE $HDF5_INCLUDE $NETCDF4_INCLUDE -std=legacy -fimplicit-none -fmax-identifier-length=63 -fmax-errors=25 -Wall -Wcharacter-truncation -Wconversion -Wunderflow -Wunused-parameter -Wno-surprising -fall-intrinsics -ffree-line-length-132"
-LDFLAGS="$ECCODES_LIB $HDF5_LIB $NETCDF4_LIB  ${BLAS_LAPACK_LDFLAGS} -L${MKL_ROOT}/lib/intel64"
+FCFLAGS="$ECCODES_INCLUDE $HDF5_INCLUDE $NETCDF4_INCLUDE $RTTOV_INCLUDE $XML_INCLUDE -std=legacy -fimplicit-none -fmax-identifier-length=63 -fmax-errors=25 -Wall -Wcharacter-truncation -Wconversion -Wunderflow -Wunused-parameter -Wno-surprising -fall-intrinsics -ffree-line-length-132"
+LDFLAGS="$ECCODES_LIB $HDF5_LIB $NETCDF4_LIB  $LIBFYAML_LIB ${RTTOV_LIBDIR} ${XML_LIB} -L$MKLROOT/lib/intel64"
 
-LIBS="${XML2_LIBS}"
+LIBS="${RTTOV_LIB} -lmkl_gf_lp64 -lmkl_sequential -lmkl_core -lstdc++"
 
 ICON_FCFLAGS='-fno-range-check -g -fbacktrace -ffpe-trap=invalid,zero,overflow -fstack-protector-all -finit-real=nan -finit-integer=-2147483648 -finit-character=127 -O2'
 ICON_ECRAD_FCFLAGS="-fallow-invalid-boz -D__ECRAD_LITTLE_ENDIAN"
 
-EXTRA_CONFIG='--disable-ocean --enable-openmp --enable-grib2 --disable-coupling --disable-yaxt --disable-cdi-pio --disable-mpi-checks --enable-ecrad --disable-jsbach --enable-mixed-precision --disable-rte-rrtmgp'
+EXTRA_CONFIG='--disable-ocean --enable-grib2 --enable-ecrad --enable-openmp --disable-jsbach --disable-aes --enable-mixed-precision --disable-rte-rrtmgp --disable-mpi-checks'
+#EXTRA_CONFIG+=' --enable-rttov'
+#EXTRA_CONFIG+=' --enable-art --enable-coupling --enable-comin'
+#EXTRA_CONFIG+=' --enable-bundled-python'
 
 ################################################################################
 
@@ -63,5 +75,3 @@ LDFLAGS="$LDFLAGS" \
 LIBS="$LIBS" \
 ${EXTRA_CONFIG} \
 "$@"
-
-

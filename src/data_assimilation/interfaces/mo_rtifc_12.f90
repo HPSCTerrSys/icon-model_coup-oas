@@ -1,15 +1,15 @@
-! Interface for the RTTOV12 library
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+! Interface for the RTTOV12 library
+!
 
 MODULE mo_rtifc_12
 
@@ -4026,7 +4026,8 @@ FTRACE_END('rtifc_k')
  end function c_atlas
 
 
- subroutine rtifc_init_brdf_atlas(month, path, my_proc_id, n_proc, io_proc_id, mpi_comm_type, stat)
+ subroutine rtifc_init_brdf_atlas(iopts, month, path, my_proc_id, n_proc, io_proc_id, mpi_comm_type, stat)
+   integer,            intent(in) :: iopts(:)        ! option indices
    integer,            intent(in) :: month          ! Month number
    character(len=128), intent(in) :: path           ! path to atlases
    integer,            intent(in) :: my_proc_id     ! ID of local processors

@@ -1,19 +1,17 @@
-!
-! Updates dynamical fields with slow physics tendencies in the special case
-! that dynamics are switched off (ldynamics=F). An option is added where Coriolis force
-! should be used (lcoriolis=T).
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Updates dynamical fields with slow physics tendencies in the special case
+! that dynamics are switched off (ldynamics=F). An option is added where Coriolis force
+! should be used (lcoriolis=T).
 
 MODULE mo_update_dyn_scm
 
@@ -27,9 +25,6 @@ MODULE mo_update_dyn_scm
   USE mo_sync,               ONLY: SYNC_E, SYNC_C, sync_patch_array
   USE mo_dynamics_config,    ONLY: lcoriolis
   USE mo_impl_constants_grf, ONLY: grf_bdywidth_c, grf_bdywidth_e
-#ifdef _OPENACC
-  USE mo_mpi,                ONLY: i_am_accel_node
-#endif
 
   IMPLICIT NONE
 
@@ -46,7 +41,7 @@ CONTAINS
 !! Updates dynamical fields with slow physics tendencies
 !!
 !!
-  SUBROUTINE add_slowphys_scm(p_nh, p_patch, p_int, nnow, nnew, dtime)
+  SUBROUTINE add_slowphys_scm(p_nh, p_patch, p_int, nnow, nnew, dtime, lacc)
 
     TYPE(t_nh_state),  TARGET, INTENT(INOUT) :: p_nh
     TYPE(t_int_state), TARGET, INTENT(IN)    :: p_int
@@ -56,6 +51,8 @@ CONTAINS
     INTEGER,                   INTENT(IN)    :: nnow, nnew
     ! Time step
     REAL(wp),                  INTENT(IN)    :: dtime
+    ! ACC activated?
+    LOGICAL,                   INTENT(IN)    :: lacc
 
     INTEGER :: nlev                  ! number of vertical (full) levels
 
@@ -78,11 +75,11 @@ CONTAINS
     iqblk => p_patch%edges%quad_blk
     i_nchdom = MAX(1,p_patch%n_childdom)
 
-    !$ACC DATA PRESENT(p_nh) IF(i_am_accel_node)
+    !$ACC DATA PRESENT(p_nh) IF(lacc)
 
 !$OMP PARALLEL PRIVATE(rl_start,rl_end,i_startblk,i_endblk)
-    rl_start = grf_bdywidth_c+1 
-    rl_end   = min_rlcell_int 
+    rl_start = grf_bdywidth_c+1
+    rl_end   = min_rlcell_int
 
     i_startblk = p_patch%cells%start_blk(rl_start,1)
     i_endblk   = p_patch%cells%end_blk(rl_end,i_nchdom)
@@ -93,7 +90,7 @@ CONTAINS
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
                          i_startidx, i_endidx, rl_start, rl_end)
 
-      !$ACC PARALLEL ASYNC(1) IF(i_am_accel_node)
+      !$ACC PARALLEL ASYNC(1) IF(lacc)
       !$ACC LOOP GANG VECTOR COLLAPSE(2)
       DO jk = 1, nlev
         DO jc = i_startidx, i_endidx
@@ -125,7 +122,7 @@ CONTAINS
       CALL get_indices_e(p_patch, jb, i_startblk, i_endblk, &
                          i_startidx, i_endidx, rl_start, rl_end)
 
-      !$ACC PARALLEL ASYNC(1) IF(i_am_accel_node)
+      !$ACC PARALLEL ASYNC(1) IF(lacc)
       !$ACC LOOP GANG VECTOR COLLAPSE(2)
       DO jk = 1, nlev
         DO je = i_startidx, i_endidx
@@ -158,8 +155,8 @@ CONTAINS
 !$OMP END PARALLEL
 
     ! Synchronize updated prognostic variables
-    CALL sync_patch_array(SYNC_C,p_patch,p_nh%prog(nnew)%exner)
-    CALL sync_patch_array(SYNC_E,p_patch,p_nh%prog(nnew)%vn)
+    CALL sync_patch_array(SYNC_C,p_patch,p_nh%prog(nnew)%exner,lacc=lacc)
+    CALL sync_patch_array(SYNC_E,p_patch,p_nh%prog(nnew)%vn,lacc=lacc)
 
     !$ACC END DATA
 
@@ -212,6 +209,3 @@ CONTAINS
   END SUBROUTINE rbf_coeff_scm
 
 END MODULE mo_update_dyn_scm
-
-
-

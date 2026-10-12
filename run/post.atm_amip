@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@
 # Post-processing for a simulation from 1979 to 2008 (30 years)
 #
 # Marco Giorgetta, MPI-M, 2015-12-10
-# 
+#
 #-----------------------------------------------------------------------------
 
 echo ' '

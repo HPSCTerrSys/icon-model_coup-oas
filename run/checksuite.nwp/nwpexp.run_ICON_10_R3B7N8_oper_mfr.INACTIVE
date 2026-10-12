@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 EXIT_STATUS=$?
@@ -64,11 +64,6 @@ ln -sf $EXTPDIR/icon_extpar_0027_R03B08_N02_20161124_tiles.nc extpar_iconR3B08_D
  ln -sf  $INDIR/ieaf20170703000000R.grb  an_R03B08_DOM02.grb
  ln -sf $INDIR/igfff2017070221-0130R.grb fg_R03B07_DOM01.grb
  ln -sf $INDIR/iefff2017070221-0130R.grb fg_R03B08_DOM02.grb
-
-# files needed for radiation
-cp $ICONDIR/data/ECHAM6_CldOptProps.nc rrtm_cldopt.nc
-cp $ICONDIR/data/rrtmg_lw.nc .
-
 
 ln -sf ${icon_data_poolFolder}/externals/rttov/const/rt12coeffs_rttov7pred54L/rtcoef_msg_2_seviri.dat .
 ln -sf ${icon_data_poolFolder}/externals/rttov/const/rt12coeffs_rttov7pred54L/sccldcoef_msg_2_seviri.dat .
@@ -194,15 +189,15 @@ cat > ${atmo_namelist} << EOF
 /
 &synsat_nml
  lsynsat = .false.,.false.  ! left out for the time being ! output only within nest1
-/ 
+/
 &initicon_nml
   init_mode             = 5
   lread_ana             = .true.
   dt_iau                = 10800
   dt_shift              = -5400
   iterate_iau           = .true.
-  zpbl1                 = 500. 
-  zpbl2                 = 1000. 
+  zpbl1                 = 500.
+  zpbl2                 = 1000.
  dwdfg_filename         = "<path>fg_R<nroot0>B<jlev>_DOM<idom>.grb"
  dwdana_filename        = "<path>an_R<nroot0>B<jlev>_DOM<idom>.grb"
   ana_varnames_map_file = 'map_file.ana'
@@ -239,7 +234,7 @@ cat > ${atmo_namelist} << EOF
 &nwp_phy_nml
  inwp_gscp         = 1
  inwp_convection   = 1
- inwp_radiation    = 1
+ inwp_radiation    = 4
  inwp_cldcover     = 1
  inwp_turb         = 1
  inwp_satad        = 1
@@ -252,8 +247,6 @@ cat > ${atmo_namelist} << EOF
  itype_z0          = 2
  icpl_aero_conv    = 1
  icpl_aero_gscp    = 1
- lrtm_filename     = 'rrtmg_lw.nc'
- cldopt_filename   = 'rrtm_cldopt.nc'
  dt_rad  = 1440
  dt_conv = 360,180
  dt_sso  = 720
@@ -270,7 +263,7 @@ cat > ${atmo_namelist} << EOF
   frcsmot       = 0.2   ! these 2 switches together apply vertical smoothing of the TKE source terms
   imode_frcsmot = 2     ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
-  itype_sher    = 3    
+  itype_sher    = 3
   ltkeshs       = .true.
   a_hshr        = 2.0
   alpha0        = 0.0123
@@ -287,7 +280,7 @@ cat > ${atmo_namelist} << EOF
   lseaice        = .true.
   llake          = .true.
   lprog_albsi    = .true.
-  itype_lndtbl   = 4 
+  itype_lndtbl   = 4
   itype_root     = 2
   itype_evsl     = 4
   cwimax_ml      = 5.e-4
@@ -304,7 +297,8 @@ cat > ${atmo_namelist} << EOF
   vmr_n2o     = 322.0e-09
   vmr_o2      = 0.20946
   vmr_cfc11   = 240.e-12
-  vmr_cfc12   = 532.e-12 
+  vmr_cfc12   = 532.e-12
+  ecrad_data_path = '${basedir}/externals/ecrad/data'
 /
 &nonhydrostatic_nml
   iadv_rhotheta   = 2
@@ -418,9 +412,9 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 1
  pe_placement_ml      = 0
- ml_varlist           = '-grid:VLAT', '-grid:VLON', 'DEPTH_LK', 'FR_LAKE', 
-                        'FR_LAND', 'HHL', 'HSURF', 'LAI', 'NDVIRATIO', 'PLCOV', 
-                        'ROOTDP', 'SOILTYP', 
+ ml_varlist           = '-grid:VLAT', '-grid:VLON', 'DEPTH_LK', 'FR_LAKE',
+                        'FR_LAND', 'HHL', 'HSURF', 'LAI', 'NDVIRATIO', 'PLCOV',
+                        'ROOTDP', 'SOILTYP',
  output_grid          = .true.
 /
 &output_nml
@@ -441,8 +435,8 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 1
  pe_placement_ml      = 1
- ml_varlist           = 'DEPTH_LK', 'FR_LAKE', 'FR_LAND', 'HHL', 'HSURF', 
-                        'LAI', 'PLCOV', 'ROOTDP', 'SOILTYP', 
+ ml_varlist           = 'DEPTH_LK', 'FR_LAKE', 'FR_LAND', 'HHL', 'HSURF',
+                        'LAI', 'PLCOV', 'ROOTDP', 'SOILTYP',
  reg_lon_def          = 0.,0.25,359.755
  reg_lat_def          = -90.,0.25,90.
  output_grid          = .true.
@@ -466,9 +460,9 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 3
  pe_placement_ml      = 2,3,1
- ml_varlist           = 'FRESHSNW', 'H_ICE', 'P', 'QC', 'QI', 'QR', 'QS', 
-                        'QV', 'QV_S', 'RHO_SNOW', 'T', 'T_G', 'T_ICE', 'T_SNOW', 
-                        'T_SO', 'U', 'V', 'W', 'W_I', 'W_SNOW', 'W_SO', 
+ ml_varlist           = 'FRESHSNW', 'H_ICE', 'P', 'QC', 'QI', 'QR', 'QS',
+                        'QV', 'QV_S', 'RHO_SNOW', 'T', 'T_G', 'T_ICE', 'T_SNOW',
+                        'T_SO', 'U', 'V', 'W', 'W_I', 'W_SNOW', 'W_SO',
  output_grid          = .false.
 /
 &output_nml
@@ -492,17 +486,17 @@ cat > ${atmo_namelist} << EOF
  pe_placement_ml      = 4,5
  stream_partitions_pl = 1
  pe_placement_pl      = 10
- ml_varlist           = 'ALB_RAD', 'ALHFL_S', 'ASHFL_S', 'ASOB_S', 'ASOB_T', 
-                        'ASWDIFD_S', 'ASWDIFU_S', 'ASWDIR_S', 'ATHB_S', 'ATHB_T', 
-                        'AUMFL_S', 'AVMFL_S', 'CAPE_CON', 'CLC', 'CLCH', 
-                        'CLCL', 'CLCM', 'CLCT', 'CLCT_MOD', 'C_T_LK', 'DEN', 
-                        'FR_ICE', 'HBAS_CON', 'HTOP_CON', 'HTOP_DC', 'HZEROCL', 
-                        'H_ML_LK', 'H_SNOW', 'PMSL', 'PS', 'RAIN_CON', 'RAIN_GSP', 
-                        'RUNOFF_G', 'RUNOFF_S', 'SNOW_CON', 'SNOW_GSP', 'TCH', 
-                        'TCM', 'TD_2M',        'TMAX_2M', 'TMIN_2M', 'TOT_PREC', 
-                        'TQC', 'TQC_DIA', 'TQI', 'TQI_DIA', 'TQR', 'TQS', 
-                        'TQV', 'T_2M', 'T_BOT_LK', 'T_MNW_LK', 'T_S', 'T_WML_LK', 
-                        'U_10M', 'V_10M', 'WW', 'W_SO_ICE', 'Z0', 
+ ml_varlist           = 'ALB_RAD', 'ALHFL_S', 'ASHFL_S', 'ASOB_S', 'ASOB_T',
+                        'ASWDIFD_S', 'ASWDIFU_S', 'ASWDIR_S', 'ATHB_S', 'ATHB_T',
+                        'AUMFL_S', 'AVMFL_S', 'CAPE_CON', 'CLC', 'CLCH',
+                        'CLCL', 'CLCM', 'CLCT', 'CLCT_MOD', 'C_T_LK', 'DEN',
+                        'FR_ICE', 'HBAS_CON', 'HTOP_CON', 'HTOP_DC', 'HZEROCL',
+                        'H_ML_LK', 'H_SNOW', 'PMSL', 'PS', 'RAIN_CON', 'RAIN_GSP',
+                        'RUNOFF_G', 'RUNOFF_S', 'SNOW_CON', 'SNOW_GSP', 'TCH',
+                        'TCM', 'TD_2M',        'TMAX_2M', 'TMIN_2M', 'TOT_PREC',
+                        'TQC', 'TQC_DIA', 'TQI', 'TQI_DIA', 'TQR', 'TQS',
+                        'TQV', 'T_2M', 'T_BOT_LK', 'T_MNW_LK', 'T_S', 'T_WML_LK',
+                        'U_10M', 'V_10M', 'WW', 'W_SO_ICE', 'Z0',
  m_levels             = '25...(nlev+1)',
  pl_varlist           = 'U',         'V',         'T',         'FI',        'RELHUM',
  p_levels             = 30000, 50000, 70000, 85000, 95000, 100000
@@ -576,20 +570,20 @@ cat > ${atmo_namelist} << EOF
  pe_placement_pl      = 9
 !stream_partitions_hl = 1
 !pe_placement_hl      = 9
- ml_varlist           = 'ALB_RAD', 'ALHFL_S', 'APAB_S', 'ASHFL_S', 'ASOB_S', 
-                        'ASOB_T', 'ASWDIFD_S', 'ASWDIFU_S', 'ASWDIR_S', 'ATHB_S', 
-                        'ATHB_T', 'AUMFL_S', 'AVMFL_S', 'CAPE_ML', 'CIN_ML', 
-                        'CLC', 'CLCH', 'CLCL', 'CLCM', 'CLCT', 'CLCT_MOD', 
-                        'CLDEPTH', 'FR_ICE', 'HBAS_CON', 'HTOP_CON', 'HTOP_DC', 
-                        'HZEROCL', 'H_ICE', 'H_SNOW', 'P', 'PMSL', 'PS', 
-                        'QC', 'QI', 'QV', 'QV_2M', 'QV_S', 'RAIN_CON', 'RAIN_GSP', 
-                        'RELHUM_2M', 'RHO_SNOW', 'RUNOFF_G', 'RUNOFF_S', 
-                        'SNOW_CON', 'SNOW_GSP', 'SOBS_RAD', 'T', 'TCH', 'TCM', 
-                        'TD_2M', 'THBS_RAD', 'TKE', 'TMAX_2M', 'TMIN_2M', 
-                        'TOT_PREC', 'TQC', 'TQC_DIA', 'TQI', 'TQI_DIA', 'TQR', 
-                        'TQS', 'TQV', 'T_2M', 'T_G', 'T_ICE', 'T_SNOW', 'T_SO', 
-                        'U', 'V', 'W', 'WW', 'W_SNOW', 'W_SO', 'W_SO_ICE', 
-                        'Z0', 
+ ml_varlist           = 'ALB_RAD', 'ALHFL_S', 'APAB_S', 'ASHFL_S', 'ASOB_S',
+                        'ASOB_T', 'ASWDIFD_S', 'ASWDIFU_S', 'ASWDIR_S', 'ATHB_S',
+                        'ATHB_T', 'AUMFL_S', 'AVMFL_S', 'CAPE_ML', 'CIN_ML',
+                        'CLC', 'CLCH', 'CLCL', 'CLCM', 'CLCT', 'CLCT_MOD',
+                        'CLDEPTH', 'FR_ICE', 'HBAS_CON', 'HTOP_CON', 'HTOP_DC',
+                        'HZEROCL', 'H_ICE', 'H_SNOW', 'P', 'PMSL', 'PS',
+                        'QC', 'QI', 'QV', 'QV_2M', 'QV_S', 'RAIN_CON', 'RAIN_GSP',
+                        'RELHUM_2M', 'RHO_SNOW', 'RUNOFF_G', 'RUNOFF_S',
+                        'SNOW_CON', 'SNOW_GSP', 'SOBS_RAD', 'T', 'TCH', 'TCM',
+                        'TD_2M', 'THBS_RAD', 'TKE', 'TMAX_2M', 'TMIN_2M',
+                        'TOT_PREC', 'TQC', 'TQC_DIA', 'TQI', 'TQI_DIA', 'TQR',
+                        'TQS', 'TQV', 'T_2M', 'T_G', 'T_ICE', 'T_SNOW', 'T_SO',
+                        'U', 'V', 'W', 'WW', 'W_SNOW', 'W_SO', 'W_SO_ICE',
+                        'Z0',
  m_levels             = '25...(nlev+1)',
  pl_varlist           = 'FI', 'T', 'U', 'V', 'RELHUM', 'OMEGA', 'CLC'
  p_levels             =   500,  1000,  3000,  5000,  7000, 10000, 12500, 15000,
@@ -648,7 +642,7 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 1
  pe_placement_ml      = 0
- ml_varlist           = 'U_10M', 'VMAX_10M', 'V_10M', 
+ ml_varlist           = 'U_10M', 'VMAX_10M', 'V_10M',
  reg_lon_def          = 0.,0.25,359.755
  reg_lat_def          = -90.,0.25,90.
  output_grid          = .false.
@@ -671,9 +665,9 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 1
  pe_placement_ml      = 0
- ml_varlist           = '-grid:VLAT', '-grid:VLON', 'DEPTH_LK', 'FR_LAKE', 
-                        'FR_LAND', 'HHL', 'HSURF', 'LAI', 'PLCOV', 'ROOTDP', 
-                        'SOILTYP', 
+ ml_varlist           = '-grid:VLAT', '-grid:VLON', 'DEPTH_LK', 'FR_LAKE',
+                        'FR_LAND', 'HHL', 'HSURF', 'LAI', 'PLCOV', 'ROOTDP',
+                        'SOILTYP',
  output_grid          = .true.
 /
 &output_nml
@@ -694,9 +688,9 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 1
  pe_placement_ml      = 1
- ml_varlist           = 'DEPTH_LK', 'FR_LAKE', 'FR_LAND', 'HHL', 'HSURF', 
-                        'LAI', 'PLCOV', 'ROOTDP', 'SOILTYP', 
-!pl_varlist           = 
+ ml_varlist           = 'DEPTH_LK', 'FR_LAKE', 'FR_LAND', 'HHL', 'HSURF',
+                        'LAI', 'PLCOV', 'ROOTDP', 'SOILTYP',
+!pl_varlist           =
  reg_lon_def          = -23.5,0.0625,62.5
  reg_lat_def          = 29.5,0.0625,70.5
  output_grid          = .true.
@@ -720,9 +714,9 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 1
  pe_placement_ml      = 11
- ml_varlist           = 'FRESHSNW', 'H_ICE', 'P', 'QC', 'QI', 'QR', 'QS', 
-                        'QV', 'QV_S', 'RHO_SNOW', 'T', 'T_G', 'T_ICE', 'T_SNOW', 
-                        'T_SO', 'U', 'V', 'W', 'W_I', 'W_SNOW', 'W_SO', 
+ ml_varlist           = 'FRESHSNW', 'H_ICE', 'P', 'QC', 'QI', 'QR', 'QS',
+                        'QV', 'QV_S', 'RHO_SNOW', 'T', 'T_G', 'T_ICE', 'T_SNOW',
+                        'T_SO', 'U', 'V', 'W', 'W_I', 'W_SNOW', 'W_SO',
  output_grid          = .false.
 /
 &output_nml
@@ -744,11 +738,11 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 1
  pe_placement_ml      = 10
- ml_varlist           = 'ALHFL_S', 'ASHFL_S', 'ASOB_S', 'CLCH', 'CLCL', 'CLCM', 
-                        'CLCT', 'C_T_LK', 'FR_ICE', 'H_ML_LK', 'PS', 'TCH', 
-                        'TCM', 'TD_2M', 'TMAX_2M', 'TMIN_2M', 'TOT_PREC', 
-                        'T_2M', 'T_BOT_LK', 'T_MNW_LK', 'T_WML_LK', 'U_10M', 
-                        'VMAX_10M', 'V_10M', 'W_SO_ICE', 
+ ml_varlist           = 'ALHFL_S', 'ASHFL_S', 'ASOB_S', 'CLCH', 'CLCL', 'CLCM',
+                        'CLCT', 'C_T_LK', 'FR_ICE', 'H_ML_LK', 'PS', 'TCH',
+                        'TCM', 'TD_2M', 'TMAX_2M', 'TMIN_2M', 'TOT_PREC',
+                        'T_2M', 'T_BOT_LK', 'T_MNW_LK', 'T_WML_LK', 'U_10M',
+                        'VMAX_10M', 'V_10M', 'W_SO_ICE',
 !m_levels             = '1...(nlev+1)',
  output_grid          = .false.
 /
@@ -798,20 +792,20 @@ cat > ${atmo_namelist} << EOF
  pe_placement_pl      = 9
 !stream_partitions_hl = 1
 !pe_placement_hl      = 9
- ml_varlist           = 'ALB_RAD', 'ALHFL_S', 'APAB_S', 'ASHFL_S', 'ASOB_S', 
-                        'ASOB_T', 'ASWDIFD_S', 'ASWDIFU_S', 'ASWDIR_S', 'ATHB_S', 
-                        'ATHB_T', 'AUMFL_S', 'AVMFL_S', 'CAPE_CON', 'CAPE_ML', 
-                        'CIN_ML', 'CLC', 'CLCH', 'CLCL', 'CLCM', 'CLCT', 
-                        'CLCT_MOD', 'CLDEPTH',             'HBAS_CON', 'HTOP_CON', 
-                        'HTOP_DC', 'HZEROCL', 'H_ICE', 'H_SNOW', 'P', 'PMSL', 
-                        'PS', 'QC', 'QI', 'QV', 'QV_2M', 'QV_S', 'RAIN_CON', 
-                        'RAIN_GSP', 'RELHUM_2M', 'RHO_SNOW', 'RUNOFF_G', 
+ ml_varlist           = 'ALB_RAD', 'ALHFL_S', 'APAB_S', 'ASHFL_S', 'ASOB_S',
+                        'ASOB_T', 'ASWDIFD_S', 'ASWDIFU_S', 'ASWDIR_S', 'ATHB_S',
+                        'ATHB_T', 'AUMFL_S', 'AVMFL_S', 'CAPE_CON', 'CAPE_ML',
+                        'CIN_ML', 'CLC', 'CLCH', 'CLCL', 'CLCM', 'CLCT',
+                        'CLCT_MOD', 'CLDEPTH',             'HBAS_CON', 'HTOP_CON',
+                        'HTOP_DC', 'HZEROCL', 'H_ICE', 'H_SNOW', 'P', 'PMSL',
+                        'PS', 'QC', 'QI', 'QV', 'QV_2M', 'QV_S', 'RAIN_CON',
+                        'RAIN_GSP', 'RELHUM_2M', 'RHO_SNOW', 'RUNOFF_G',
                         'RUNOFF_S', 'SNOWLMT', 'SNOW_CON', 'SNOW_GSP',
-                        'T', 'TCH', 'TCM', 'TD_2M', 
-                        'TKE', 'TMAX_2M', 'TMIN_2M', 'TOT_PREC', 'TQC', 'TQI', 
-                        'TQR', 'TQS', 'TQV', 'T_2M', 'T_G', 'T_ICE', 'T_SNOW', 
-                        'T_SO', 'U', 'V', 'W', 'WW', 'W_SNOW', 'W_SO', 'W_SO_ICE', 
-                        'Z0', 
+                        'T', 'TCH', 'TCM', 'TD_2M',
+                        'TKE', 'TMAX_2M', 'TMIN_2M', 'TOT_PREC', 'TQC', 'TQI',
+                        'TQR', 'TQS', 'TQV', 'T_2M', 'T_G', 'T_ICE', 'T_SNOW',
+                        'T_SO', 'U', 'V', 'W', 'WW', 'W_SNOW', 'W_SO', 'W_SO_ICE',
+                        'Z0',
 ! 'SYNMSG_BT_CL_IR10.8', 'SYNMSG_BT_CL_WV6.2',
 !m_levels             = '1...(nlev+1)',
  pl_varlist           = 'U',         'V',         'OMEGA',         'T',         'FI',
@@ -847,7 +841,7 @@ cat > ${atmo_namelist} << EOF
 ! ready_file           = 'ready//IGLO_<ddhhmmss>'
  stream_partitions_ml = 1
  pe_placement_ml      = 0
- ml_varlist           = 'U_10M', 'VMAX_10M', 'V_10M', 
+ ml_varlist           = 'U_10M', 'VMAX_10M', 'V_10M',
  reg_lon_def          = -23.5,0.0625,62.5
  reg_lat_def          = 29.5,0.0625,70.5
  output_grid          = .false.
@@ -933,11 +927,11 @@ cat > ${atmo_namelist} << EOF
                         36.606,   262.515,  'ARMsouthernGreatPlains',
                         71.323,   203.39,   'ARMnorthSlopeAlaskaBarrow',
                         47.419,    10.982,  'Schneefernerhaus',
-                        78.923,    11.921,  'Nyalesund_ac3',   
+                        78.923,    11.921,  'Nyalesund_ac3',
                         39.0911,  331.9703, 'ARM-Azores',
                         -7.97,    345.6,    'ARM-Ascension-Island',
                         -2.146,  -59.006,   'ATTO_Amazon',
-                       -77.85,    166.67,   'ARM-McMurdo-Antarctica', 
+                       -77.85,    166.67,   'ARM-McMurdo-Antarctica',
                         13.16,    -59.43,   'Barbados-cloud-observatory',
 /
 EOF
@@ -1010,9 +1004,9 @@ cat > map_file.fc << EOF3
 # vn                VN
 # w                 W
 
-  alb_rad           ALBDIF 
+  alb_rad           ALBDIF
   alb_seaice        ALB_SI
-  apab_s            ASWFLX_PAR_SFC 
+  apab_s            ASWFLX_PAR_SFC
   aswdifd_s         ASODIFD_S
   aswdifu_s         ASODIFU_S
   aswdir_s          ASODIRD_S

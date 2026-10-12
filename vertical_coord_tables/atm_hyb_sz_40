@@ -42,5 +42,5 @@
    41      0.0000000000  1.0000000000
 # =====================================
 # HYB_PARAMS table for nonhydrostatic model
-# Comments: Added (arbitrarily) five more levels to 
+# Comments: Added (arbitrarily) five more levels to
 #           the 35 levels file to have a higher top.

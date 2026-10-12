@@ -1,18 +1,18 @@
-! Namelist for scalar transport
-!
-! These subroutines are called by  read_atmo_namelists and do the transport
-! setup.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Namelist for scalar transport
+!
+! These subroutines are called by  read_atmo_namelists and do the transport
+! setup.
 
 MODULE mo_advection_nml
 
@@ -29,9 +29,9 @@ MODULE mo_advection_nml
   USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_restart_nml_and_att, ONLY: open_tmpfile, store_and_close_namelist,     &
     &                               open_and_restore_namelist, close_tmpfile
-  USE mo_advection_config,    ONLY: advection_config 
+  USE mo_advection_config,    ONLY: advection_config
   USE mo_nml_annotate,        ONLY: temp_defaults, temp_settings
-  
+
   IMPLICIT NONE
   PRIVATE
 
@@ -44,8 +44,8 @@ MODULE mo_advection_nml
   ! transport_nml namelist variables !
   !----------------------------------!
 
-  CHARACTER(len=VNAME_LEN) ::  &   !< tracer-specific name suffixes  
-    &  tracer_names(MAX_NTRACER)   !< these are only required for 
+  CHARACTER(len=VNAME_LEN) ::  &   !< tracer-specific name suffixes
+    &  tracer_names(MAX_NTRACER)   !< these are only required for
                                    !< idealized runs without NWP or ECHAM forcing.
 
   CHARACTER(len=MAX_CHAR_LENGTH) :: &!< list of tracers to initialize
@@ -67,8 +67,8 @@ MODULE mo_advection_nml
   INTEGER :: &                     !< selects vertical transport scheme
     &  ivadv_tracer(max_ntracer)   !< 0 : no vertical advection
                                    !< 1 : 1st order upwind
-                                   !< 2 : 3rd order PSM for CFL>                            
-                                   !< 3 : 3rd order PPM for CFL>               
+                                   !< 2 : 3rd order PSM for CFL>
+                                   !< 3 : 3rd order PPM for CFL>
 
   INTEGER :: &                     !< advection of TKE
     &  iadv_tke                    !< 0 : none
@@ -79,13 +79,13 @@ MODULE mo_advection_nml
   LOGICAL :: lvadv_tracer          !< if .TRUE., calculate vertical tracer advection
   LOGICAL :: lclip_tracer          !< if .TRUE., clip negative tracer values
 
-  LOGICAL :: llsq_svd              !< least squares reconstruction with 
-                                   !< singular value decomposition (TRUE) or 
+  LOGICAL :: llsq_svd              !< least squares reconstruction with
+                                   !< singular value decomposition (TRUE) or
                                    !< QR decomposition (FALSE) of design matrix A
 
   INTEGER :: &                     !< parameter used to select the limiter
     &  itype_vlimit(max_ntracer)   !< for vertical transport
-                               
+
 
   INTEGER :: &                     !< parameter used to select the limiter
     &  itype_hlimit(max_ntracer)   !< for horizontal transport
@@ -93,32 +93,32 @@ MODULE mo_advection_nml
                                    !< 3: monotonous flux limiter
                                    !< 4: positive definite flux limiter
 
-  INTEGER :: &                     !< additional method for identifying and avoiding 
+  INTEGER :: &                     !< additional method for identifying and avoiding
     & ivlimit_selective(max_ntracer)!< spurious limiting of smooth extrema
                                    !< 1: switch on
                                    !< 0: switch off
 
-  REAL(wp):: beta_fct              !< global boost factor for range of permissible values in 
-                                   !< (semi-) monotonous flux limiter. A value larger than 
-                                   !< 1 allows for (small) over and undershoots, while a value 
-                                   !< of 1 gives strict monotonicity (at the price of increased 
+  REAL(wp):: beta_fct              !< global boost factor for range of permissible values in
+                                   !< (semi-) monotonous flux limiter. A value larger than
+                                   !< 1 allows for (small) over and undershoots, while a value
+                                   !< of 1 gives strict monotonicity (at the price of increased
                                    !< diffusivity).
 
   INTEGER :: igrad_c_miura         !< parameter used to select the gradient
                                    !< reconstruction method at cell center
                                    !< for second order miura scheme
 
-  INTEGER :: ivcfl_max             !< determines stability range of vertical 
-                                   !< ppm-scheme (approximate allowable maximum 
+  INTEGER :: ivcfl_max             !< determines stability range of vertical
+                                   !< ppm-scheme (approximate allowable maximum
                                    !< CFL-number)
 
   INTEGER :: npassive_tracer       !< number of additional passive tracers, in addition to
-                                   !< microphysical- and ART tracers. 
+                                   !< microphysical- and ART tracers.
 
-  INTEGER :: nadv_substeps(max_dom)!< domain specific number of substeps per fast physics time step 
+  INTEGER :: nadv_substeps(max_dom)!< domain specific number of substeps per fast physics time step
                                    !< for the Miura-type substepping schemes 20, 22, 32, 42, 52
 
-  CHARACTER(len=MAX_CHAR_LENGTH) :: &!< Comma separated list of initialization formulae 
+  CHARACTER(len=MAX_CHAR_LENGTH) :: &!< Comma separated list of initialization formulae
     &  init_formula                  !< for passive tracers.
 
   NAMELIST/transport_nml/ ihadv_tracer, ivadv_tracer, lvadv_tracer,       &
@@ -136,16 +136,16 @@ CONTAINS
 
   !-------------------------------------------------------------------------
   !
-  !! Read Namelist for tracer transport. 
+  !! Read Namelist for tracer transport.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for tracer transport
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)   
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_transport_namelist( filename )
 
@@ -163,7 +163,7 @@ CONTAINS
       &  routine = 'mo_advection_nml: read_transport_nml'
 
     !-----------------------
-    ! 1. default settings   
+    ! 1. default settings
     !-----------------------
     ctracer_list         = ''
     ihadv_tracer(:)      = MIURA     ! miura horizontal advection scheme
@@ -185,11 +185,11 @@ CONTAINS
 
     tracer_names(:) = '...'          ! default name for undefined tracers
 
-    nadv_substeps(:)     = default_nadv_substeps  ! domain specific number of substeps per fast physics time step 
+    nadv_substeps(:)     = default_nadv_substeps  ! domain specific number of substeps per fast physics time step
                                                   ! for the Miura-type substepping schemes 20, 22, 32, 42, 52
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -219,7 +219,7 @@ CONTAINS
       READ (nnml, transport_nml)                                        ! overwrite default settings
 
       ! Restore default values for global domain where nothing at all has been specified
-      ! 
+      !
       IF (nadv_substeps(1) < 0) nadv_substeps(1) = default_nadv_substeps
 
       ! Copy values of parent domain (in case of linear nesting) to nested domains where nothing has been specified
@@ -331,9 +331,9 @@ CONTAINS
     ENDIF
 
     ! FCT multiplicative spreading - sanity check
-    ! 
+    !
     IF ( (beta_fct < 1.0_wp) .OR. (beta_fct >= 2.0_wp) ) THEN
-      CALL finish(routine,                                     & 
+      CALL finish(routine,                                     &
         & 'permissible range of values for beta_fct:  [1,2[ ')
     ENDIF
 
@@ -371,13 +371,13 @@ CONTAINS
       advection_config(jg)%igrad_c_miura       = igrad_c_miura
       advection_config(jg)%iadv_tke            = iadv_tke
       advection_config(jg)%ivcfl_max           = ivcfl_max
-      advection_config(jg)%npassive_tracer     = npassive_tracer 
+      advection_config(jg)%npassive_tracer     = npassive_tracer
       IF (jg==0) THEN
         advection_config(jg)%nadv_substeps     = -1   ! dummy value, as nadv_substeps is only defined from dom01 onwards.
       ELSE
-        advection_config(jg)%nadv_substeps     = nadv_substeps(jg) 
+        advection_config(jg)%nadv_substeps     = nadv_substeps(jg)
       ENDIF
-      advection_config(jg)%init_formula        = init_formula 
+      advection_config(jg)%init_formula        = init_formula
     ENDDO
 
 
@@ -387,8 +387,8 @@ CONTAINS
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=transport_nml)                    
-      CALL store_and_close_namelist(funit, 'transport_nml')             
+      WRITE(funit,NML=transport_nml)
+      CALL store_and_close_namelist(funit, 'transport_nml')
     ENDIF
 
     ! 7. write the contents of the namelist to an ASCII file

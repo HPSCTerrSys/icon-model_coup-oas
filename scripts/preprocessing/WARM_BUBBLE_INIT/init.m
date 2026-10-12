@@ -1,7 +1,7 @@
 % ICON
 %
 % ------------------------------------------
-% Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+% Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 % Contact information: icon-model.org
 % See AUTHORS.TXT for a list of authors
 % See LICENSES/ for license information
@@ -18,7 +18,7 @@ clear; clc;
 cpd = 1004; cpl = 4186; cpv = 1885;
 g = 9.81; Rd = 287; Rv = 461; e = Rd/Rv;
 rd_o_cpd = Rd/cpd;
-pref = 1e5; 
+pref = 1e5;
 
 ps = pref; pt = 1000; %surface and top pressure in Pa
 
@@ -34,16 +34,16 @@ rv = zeros(n,1);
 pi = zeros(n,1);
 
 for i = 1:n
-    
+
     fun = @(temp) findzero(the,p(i),temp,cpl,cpv,e,rt,cpd,Rd,pref);
-    
-    temp = fzero(fun,temp0);       
-    
+
+    temp = fzero(fun,temp0);
+
     pi(i)  = (p(i)/pref)^rd_o_cpd;
-    th(i)  = temp/pi(i);    
+    th(i)  = temp/pi(i);
     esat = 610.78 * exp( (17.2694 * (temp-273.15))/(temp-35.86) );
     rv(i) = 0.622 * esat / (p(i)-0.378*esat);
-   
+
     temp0 = temp;
 end;
 
@@ -60,4 +60,3 @@ end;
 data = [z th rv rc zeros(n,1)];
 str = strcat('sound_WarmBubble_the_',num2str(the),'_rt_',num2str(rt));
 save(str,'data','-ascii');
-

@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -10,8 +10,10 @@
 ! ---------------------------------------------------------------
 PROGRAM microphysics_1mom_driver
   USE netcdf
-  USE ISO_FORTRAN_ENV, ONLY: error_unit, wp => real64, i8 => int64
+  USE ISO_FORTRAN_ENV, ONLY: error_unit
+  USE mo_kind, ONLY: wp, i8
   USE microphysics_1mom_schemes, ONLY: microphysics_1mom_init, graupel_run, cloudice_run, kessler_run, cloudice2mom_run
+  USE mo_lookup_tables_constants, ONLY: init_satpres_coeffs
   USE mo_exception, ONLY: init_logger, message_text, finish, message
 
   IMPLICIT NONE
@@ -54,15 +56,19 @@ CONTAINS
 
     ! base config
     CALL microphysics_1mom_driver_interface('graupel_1.nc', igscp=2, ldiag_ttend=.FALSE., &
-                                            ldiag_qtend=.FALSE., ldass_lhn=.FALSE., msg_level=5)
+                                            ldiag_qtend=.FALSE., ldass_lhn=.FALSE., use3Dcdnc=.FALSE., msg_level=5)
 
     ! activate tendencies
     CALL microphysics_1mom_driver_interface('graupel_2.nc', igscp=2, ldiag_ttend=.TRUE., &
-                                            ldiag_qtend=.TRUE., ldass_lhn=.FALSE., msg_level=5)
+                                            ldiag_qtend=.TRUE., ldass_lhn=.FALSE., use3Dcdnc=.FALSE., msg_level=5)
 
     ! activate lhn, verbose
     CALL microphysics_1mom_driver_interface('graupel_3.nc', igscp=2, ldiag_ttend=.TRUE., &
-                                            ldiag_qtend=.TRUE., ldass_lhn=.FALSE., msg_level=100)
+                                            ldiag_qtend=.TRUE., ldass_lhn=.FALSE., use3Dcdnc=.FALSE., msg_level=100)
+
+    ! activate 3D qnc
+    CALL microphysics_1mom_driver_interface('graupel_4.nc', igscp=2, ldiag_ttend=.FALSE., &
+                                            ldiag_qtend=.FALSE., ldass_lhn=.FALSE., use3Dcdnc=.TRUE., msg_level=5)
 
   END SUBROUTINE graupel_with_all_options
 
@@ -74,15 +80,15 @@ CONTAINS
 
     ! base config
     CALL microphysics_1mom_driver_interface('cloudice_1.nc', igscp=1, ldiag_ttend=.FALSE., &
-                                            ldiag_qtend=.FALSE., ldass_lhn=.FALSE., msg_level=5)
+                                            ldiag_qtend=.FALSE., ldass_lhn=.FALSE., use3Dcdnc=.FALSE., msg_level=5)
 
     ! activate tendencies
     CALL microphysics_1mom_driver_interface('cloudice_2.nc', igscp=1, ldiag_ttend=.TRUE., &
-                                            ldiag_qtend=.TRUE., ldass_lhn=.FALSE., msg_level=5)
+                                            ldiag_qtend=.TRUE., ldass_lhn=.FALSE., use3Dcdnc=.FALSE., msg_level=5)
 
     ! activate lhn, verbose
     CALL microphysics_1mom_driver_interface('cloudice_3.nc', igscp=1, ldiag_ttend=.TRUE., &
-                                            ldiag_qtend=.TRUE., ldass_lhn=.TRUE., msg_level=100)
+                                            ldiag_qtend=.TRUE., ldass_lhn=.TRUE., use3Dcdnc=.FALSE., msg_level=100)
 
   END SUBROUTINE cloudice_with_all_options
 
@@ -94,15 +100,15 @@ CONTAINS
 
     ! base config
     CALL microphysics_1mom_driver_interface('cloudice2mom_1.nc', igscp=3, ldiag_ttend=.FALSE., &
-                                            ldiag_qtend=.FALSE., ldass_lhn=.FALSE., msg_level=5)
+                                            ldiag_qtend=.FALSE., ldass_lhn=.FALSE., use3Dcdnc=.FALSE., msg_level=5)
 
     ! activate tendencies
     CALL microphysics_1mom_driver_interface('cloudice2mom_2.nc', igscp=3, ldiag_ttend=.TRUE., &
-                                            ldiag_qtend=.TRUE., ldass_lhn=.FALSE., msg_level=5)
+                                            ldiag_qtend=.TRUE., ldass_lhn=.FALSE., use3Dcdnc=.FALSE., msg_level=5)
 
     ! activate lhn, verbose
     CALL microphysics_1mom_driver_interface('cloudice2mom_3.nc', igscp=3, ldiag_ttend=.TRUE., &
-                                            ldiag_qtend=.TRUE., ldass_lhn=.TRUE., msg_level=100)
+                                            ldiag_qtend=.TRUE., ldass_lhn=.TRUE., use3Dcdnc=.FALSE., msg_level=100)
 
   END SUBROUTINE cloudice2mom_with_all_options
 
@@ -114,14 +120,14 @@ CONTAINS
 
     ! base config, activate tendencies and lhn, verbose
     CALL microphysics_1mom_driver_interface('kessler_1.nc', igscp=9, ldiag_ttend=.TRUE., &
-                                            ldiag_qtend=.TRUE., ldass_lhn=.TRUE., msg_level=100)
+                                            ldiag_qtend=.TRUE., ldass_lhn=.TRUE., use3Dcdnc=.FALSE., msg_level=100)
 
   END SUBROUTINE kessler_with_all_options
 
-  SUBROUTINE microphysics_1mom_driver_interface(out_file, igscp, ldiag_ttend, ldiag_qtend, ldass_lhn, msg_level)
+  SUBROUTINE microphysics_1mom_driver_interface(out_file, igscp, ldiag_ttend, ldiag_qtend, ldass_lhn, use3Dcdnc, msg_level)
 
     CHARACTER(LEN=*), INTENT(in) :: out_file
-    LOGICAL, INTENT(in) :: ldiag_ttend, ldiag_qtend, ldass_lhn
+    LOGICAL, INTENT(in) :: ldiag_ttend, ldiag_qtend, ldass_lhn, use3Dcdnc
     INTEGER, INTENT(in) :: igscp, msg_level
 
     CHARACTER(LEN=:), ALLOCATABLE :: input_file
@@ -137,11 +143,14 @@ CONTAINS
     REAL(wp), DIMENSION(:, :), ALLOCATABLE :: dz
 
     ! Extra fields required to call graupel
-    REAL(wp), DIMENSION(:, :), ALLOCATABLE :: pflx, zninc
+    REAL(wp), DIMENSION(:, :), ALLOCATABLE :: pflx, zninc, qnc3d
     REAL(wp), DIMENSION(:), ALLOCATABLE :: prr_gsp, pri_gsp, prs_gsp, prg_gsp
     REAL(wp), DIMENSION(:), ALLOCATABLE :: qnc_s
     REAL(wp), DIMENSION(:, :), ALLOCATABLE :: ddt_tend_t, ddt_tend_qv, ddt_tend_qc
     REAL(wp), DIMENSION(:, :), ALLOCATABLE :: ddt_tend_qi, ddt_tend_qr, ddt_tend_qs, qni, ninact
+
+    ! tropicsmask for cloudice2mom
+    REAL(wp), DIMENSION(:), ALLOCATABLE :: tropics
 
     ! Timer variables
     INTEGER(i8) :: start_count, end_count, count_rate
@@ -168,24 +177,31 @@ CONTAINS
     ALLOCATE (ddt_tend_qr(ncells, nlev)); ddt_tend_qr(:, :) = 0
     ALLOCATE (ddt_tend_qs(ncells, nlev)); ddt_tend_qs(:, :) = 0
     ALLOCATE (qni(ncells, nlev)); qni(:, :) = qnc
-    ALLOCATE (ninact(ncells, nlev)); ninact(:, :) = 100.0
+    ALLOCATE (ninact(ncells, nlev)); ninact(:, :) = 0.0
     ALLOCATE (zninc(ncells, nlev)); zninc(:, :) = qnc
+    ALLOCATE (qnc3d(ncells, nlev)); qnc3d(:, :) = qnc
 
     ALLOCATE (qnc_s(ncells)); qnc_s(:) = qnc
+    ALLOCATE (tropics(ncells)); tropics(:) = 1.0
 
     !$ACC DATA &
     !$ACC   COPY(dz, t, p, rho, qv, qc, qi, qr, qs, qg, qnc_s, w, qni, ninact, zninc) &
     !$ACC   COPY(prr_gsp, prs_gsp, pri_gsp, prg_gsp, pflx) &
     !$ACC   COPY(ddt_tend_t, ddt_tend_qv, ddt_tend_qc, ddt_tend_qi, ddt_tend_qr, ddt_tend_qs)
 
+    CALL init_satpres_coeffs()
+
     CALL microphysics_1mom_init( &
       igscp=igscp, &
       tune_zceff_min=0.01_wp, &
       tune_v0snow=-1.0_wp, &
+      tune_zcsg=0.5_wp, &
       tune_zvz0i=1.25_wp, &
       tune_mu_rain=0.0_wp, &
+      tune_dice_conv=100e-6_wp, &
       tune_icesedi_exp=0.30_wp, &
-      tune_rain_n0_factor=1.0_wp)
+      tune_rain_n0_factor=1.0_wp, &
+      lvariable_rain_n0=.FALSE.)
 
     CALL SYSTEM_CLOCK(start_count, count_rate)
 
@@ -199,6 +215,7 @@ CONTAINS
           & zdt=dt, & !< in:  timestep
           & qi0=0.00_wp,    &
           & qc0=0.00_wp,    &
+          & use3Dcdnc =use3Dcdnc, &  !< in: if true, use 3D CDNC
           & dz=dz, & !< in:  vertical layer thickness
           & t=t, & !< in:  temp,tracer,...
           & p=p, & !< in:  full level pres
@@ -210,6 +227,7 @@ CONTAINS
           & qs=qs, & !< in:  snow
           & qg=qg, & !< in:  graupel
           & qnc=qnc_s, & !< cloud number concentration
+          & qnc3d  = qnc3d,  & !< cloud number concentration
           & zninc=zninc, & !< number of cloud ice crystals at nucleation
           & prr_gsp=prr_gsp, & !< out: precipitation rate of rain
           & prs_gsp=prs_gsp, & !< out: precipitation rate of snow
@@ -289,6 +307,7 @@ CONTAINS
           & qnc=qnc_s, & !< cloud number concentration
           & qni=qni, &
           & ninact=ninact, &
+          & tropicsmask=tropics, &
           & prr_gsp=prr_gsp, & !< out: precipitation rate of rain
           & prs_gsp=prs_gsp, & !< out: precipitation rate of snow
           & pri_gsp=pri_gsp, & !< out: precipitation rate of cloud ice
@@ -304,6 +323,7 @@ CONTAINS
           & idbg=msg_level, &
           & l_cv=.TRUE., &
           & ldass_lhn=ldass_lhn, &
+          & ice_nucleation=1, &
           & ithermo_water=ithermo_water) !< in: latent heat choice
 
     ELSEIF (igscp == 9) THEN
@@ -362,6 +382,7 @@ CONTAINS
     DEALLOCATE (zninc)
 
     DEALLOCATE (qnc_s)
+    DEALLOCATE (tropics)
 
   END SUBROUTINE microphysics_1mom_driver_interface
 

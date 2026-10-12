@@ -1,9 +1,7 @@
-! Configuration for interpolation and reconstruction.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -11,15 +9,18 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Configuration for interpolation and reconstruction.
+
 MODULE mo_interpol_config
 
   USE mo_kind,                ONLY: wp
   USE mo_math_constants,      ONLY: ln2
   USE mo_impl_constants,      ONLY: max_dom
   USE mo_exception,           ONLY: message, message_text, finish
-  USE mo_grid_geometry_info,  ONLY: t_grid_geometry_info, planar_torus_geometry
+  USE mo_lib_grid_geometry_info,  ONLY: t_grid_geometry_info, planar_torus_geometry
   USE mo_grid_config,         ONLY: grid_rescale_factor
   USE mo_run_config,          ONLY: msg_level
+  USE mo_io_units,            ONLY: filename_max
 
 
   IMPLICIT NONE
@@ -34,6 +35,7 @@ MODULE mo_interpol_config
   PUBLIC :: rbf_scale_mode_ll                                                   !< variables
   PUBLIC :: support_baryctr_intp                                                !< variables
   PUBLIC :: lreduced_nestbdry_stencil                                           !< variables
+  PUBLIC :: rbf_coeffs_filename, lrbf_read, lrbf_write                 !< variables
   PUBLIC :: configure_interpolation                                             !< subroutine
 
   PUBLIC :: t_lsq_set
@@ -59,14 +61,14 @@ MODULE mo_interpol_config
     LOGICAL  :: llsq_lin_consv      ! conservative (TRUE) or non-conservative (FALSE)
                                     ! linear least squares reconstruction
     LOGICAL  :: llsq_high_consv     ! conservative (TRUE) or non-conservative (FALSE)
-                                    ! high order least squares reconstruction 
-                                                                                 
-    INTEGER  :: lsq_high_ord        ! specific order for higher order lsq        
-                                                                                 
-    INTEGER  :: rbf_vec_kern_c,   & ! parameter determining the type             
-       &        rbf_vec_kern_v,   & ! of vector rbf kernel                       
-       &        rbf_vec_kern_e,   &                                             
-       &        rbf_vec_kern_ll                                                  
+                                    ! high order least squares reconstruction
+
+    INTEGER  :: lsq_high_ord        ! specific order for higher order lsq
+
+    INTEGER  :: rbf_vec_kern_c,   & ! parameter determining the type
+       &        rbf_vec_kern_v,   & ! of vector rbf kernel
+       &        rbf_vec_kern_e,   &
+       &        rbf_vec_kern_ll
 
     ! "rbf_scale_mode_ll": mode, how the RBF shape parameter is
     ! determined for lon-lat interpolation.
@@ -76,29 +78,29 @@ MODULE mo_interpol_config
     !
     INTEGER :: rbf_scale_mode_ll
 
-    ! Parameter fields determining the scale factor used by the vector rbf       
-    ! interpolator.                                                              
+    ! Parameter fields determining the scale factor used by the vector rbf
+    ! interpolator.
     ! Note: these fields are defined on each grid level; to allow the namelist input
-    ! going from 1 to depth (rather than from start_lev to end_lev), the namelist input         
-    ! fields defined here differ from those used in the model                    
-  
+    ! going from 1 to depth (rather than from start_lev to end_lev), the namelist input
+    ! fields defined here differ from those used in the model
+
     REAL(wp) :: rbf_vec_scale_c(max_dom)
     REAL(wp) :: rbf_vec_scale_e(max_dom)
     REAL(wp) :: rbf_vec_scale_v(max_dom)
     REAL(wp) :: rbf_vec_scale_ll(max_dom)
 
-    ! Namelist variables setting up the lateral boundary nudging (applicable to limited-area   
-    ! runs and one-way nesting). The nudging coefficients start with nudge_max_coeff in        
-    ! the cell row bordering to the boundary interpolation zone, and decay exponentially       
+    ! Namelist variables setting up the lateral boundary nudging (applicable to limited-area
+    ! runs and one-way nesting). The nudging coefficients start with nudge_max_coeff in
+    ! the cell row bordering to the boundary interpolation zone, and decay exponentially
     ! with nudge_efold_width (in units of cell rows)
-  
+
     REAL(wp) :: nudge_max_coeff, nudge_efold_width
     INTEGER  :: nudge_zone_width    ! total width of nudging zone in units of cell rows
                                     ! if < 0 the patch boundary_depth_index is used
 
-    INTEGER  ::  rbf_vec_dim_c,    & ! parameter determining the size            
-       &         rbf_vec_dim_v,    & ! of vector rbf stencil                     
-       &         rbf_vec_dim_e,    & !                                           
+    INTEGER  ::  rbf_vec_dim_c,    & ! parameter determining the size
+       &         rbf_vec_dim_v,    & ! of vector rbf stencil
+       &         rbf_vec_dim_e,    & !
        &         rbf_c2grad_dim      ! ... and for cell-to-gradient reconstruction
 
     ! Flag. If .TRUE. we directly interpolate from cell centers to
@@ -106,15 +108,15 @@ MODULE mo_interpol_config
     ! reconstruction:
     LOGICAL :: l_intp_c2l
 
-    ! monotonicity can be enforced by demanding that the interpolated 
+    ! monotonicity can be enforced by demanding that the interpolated
     ! value is not higher or lower than the stencil point values.
     LOGICAL :: l_mono_c2l
 
     ! dimension of stencil for interpolation from cell
     ! centers to lon-lat points:
     INTEGER ::   rbf_dim_c2l
-                                                                                 
-    TYPE(t_lsq_set) :: lsq_lin_set, &! Parameter settings for linear and higher order  
+
+    TYPE(t_lsq_set) :: lsq_lin_set, &! Parameter settings for linear and higher order
       &                lsq_high_set  ! least squares
 
     ! Flag. If .FALSE. barycentric interpolation is replaced by a
@@ -124,7 +126,13 @@ MODULE mo_interpol_config
     ! Flag. If .TRUE. then the nest boundary points are taken out from
     ! the lat-lon interpolation stencil.
     LOGICAL :: lreduced_nestbdry_stencil
-  
+
+    ! Reading/writing rbf coefficients from file
+    CHARACTER(LEN=filename_max) :: rbf_coeffs_filename(max_dom) ! Filename for rbf coefficients for each grid file in
+                                                                ! grid_nml::dynamics_grid_filename(max_dom)
+    LOGICAL :: lrbf_read                  ! Read RBF coefficients from file
+    LOGICAL :: lrbf_write                 ! Write RBF coefficients to file
+
   !END TYPE t_interpol_config
   !>
   !!
@@ -139,7 +147,7 @@ CONTAINS
     INTEGER,INTENT(IN) :: n_dom
     INTEGER,INTENT(IN) :: grid_level(n_dom)
     TYPE(t_grid_geometry_info), INTENT(in) :: geometry_info(:)
-    
+
     INTEGER :: jg, jlev, jlev_shift, geometry_type
     CHARACTER(len=*),PARAMETER :: routine = 'mo_interpol_config:configure_interpol'
     REAL(wp) :: resol
@@ -154,19 +162,19 @@ CONTAINS
 
     !-----------------------------------------------------------------------
     ! If RBF scaling factors are not supplied by the namelist, they are now
-    ! initialized with meaningful values depending on the characteristic grid 
+    ! initialized with meaningful values depending on the characteristic grid
     ! size.
     ! Please note: RBF scaling factors for p_patch(0) (if it exists)
     ! are not set here - they are taken from p_patch(1) in the setup routines
-    ! Please note: The following RBF scaling factors are also valid for 
-    ! simulations in which a scaling is applied to the earth radius 
-    ! (a.k.a. small earth simulations). The characteristic grid size which is 
-    ! used below takes account of the scaling. 
+    ! Please note: The following RBF scaling factors are also valid for
+    ! simulations in which a scaling is applied to the earth radius
+    ! (a.k.a. small earth simulations). The characteristic grid size which is
+    ! used below takes account of the scaling.
     !-----------------------------------------------------------------------
 
 
     !-----------------
-    ! rbf_vec_scale_c 
+    ! rbf_vec_scale_c
     !-----------------
     ! - values are specified for Gaussian kernel
     ! (need to be smaller for inv. multiquadric)
@@ -176,7 +184,7 @@ CONTAINS
       IF (rbf_vec_scale_c(jg) > 0.0_wp) CYCLE
 
       resol = geometry_info(jg)%mean_characteristic_length/1000._wp  ! resolution in km
-      IF (resol >= 2.5_wp) THEN 
+      IF (resol >= 2.5_wp) THEN
         rbf_vec_scale_c(jg) = 0.5_wp
       ELSE
         rbf_vec_scale_c(jg) = 0.5_wp/(1._wp+1.8_wp*LOG(2.5_wp/resol)**3.75)
@@ -194,7 +202,7 @@ CONTAINS
       IF (rbf_vec_scale_v(jg) > 0.0_wp) CYCLE
 
       resol = geometry_info(jg)%mean_characteristic_length/1000._wp  ! resolution in km
-      IF (resol >= 2._wp) THEN 
+      IF (resol >= 2._wp) THEN
         rbf_vec_scale_v(jg) = 0.5_wp
       ELSE
         rbf_vec_scale_v(jg) = 0.5_wp/(1._wp+1.8_wp*LOG(2._wp/resol)**3)
@@ -204,7 +212,7 @@ CONTAINS
     ENDDO
 
     !-----------------
-    ! rbf_vec_scale_e 
+    ! rbf_vec_scale_e
     !-----------------
     ! - values are specified for inverse multiquadric kernel
 
@@ -214,7 +222,7 @@ CONTAINS
       IF (rbf_vec_scale_e(jg) > 0.0_wp) CYCLE
 
       resol = geometry_info(jg)%mean_characteristic_length/1000._wp  ! resolution in km
-      IF (resol >= 2._wp) THEN 
+      IF (resol >= 2._wp) THEN
         rbf_vec_scale_e(jg) = 0.5_wp
       ELSE
         rbf_vec_scale_e(jg) = 0.5_wp/(1._wp+0.4_wp*LOG(2._wp/resol)**2)
@@ -232,7 +240,7 @@ CONTAINS
     ENDIF
 
     !-----------------
-    ! rbf_vec_scale_ll 
+    ! rbf_vec_scale_ll
     !-----------------
     ! - values are specified for Gaussian kernel
     ! (need to be smaller for inv. multiquadric)
@@ -261,9 +269,9 @@ CONTAINS
 
     rbf_vec_scale_ll(:) = -1.0_wp
     DO jg = 1,n_dom
-       
+
       jlev = grid_level(jg) + jlev_shift
-        
+
       IF      (jlev <= 6 ) THEN ; rbf_vec_scale_ll(jg) = 0.5_wp
       ELSE IF (jlev == 7 ) THEN ; rbf_vec_scale_ll(jg) = 0.35_wp
       ELSE IF (jlev == 8 ) THEN ; rbf_vec_scale_ll(jg) = 0.20_wp
@@ -277,19 +285,15 @@ CONTAINS
 
     ENDDO
 
-    !AD (20 Sept 2013) Modification required for planar torus grid: the scale factor
-    !is based on the width of the Gaussian but very soon it will adapted in more
-    !analytical manner by Florian
-    !AD (19 Oct 2014) No update from Florian yet: For exp(0.5r^2/r0^2), the r0 (scale_factor) 
-    !should be greater than the minimal distance between points, and rather less than the 
-    !maximal distance. For now, for the default 2nd order cases, using r0=dual_edge_length 
-    !for all scales but tesing is required
-
+    ! For planar geometry the RBF scale needs to be divided by sphere_radius
+    ! because arc_length_generic from libiconmath returns
+    ! planar_distance / sphere_radius
     DO jg = 1, n_dom
       geometry_type = geometry_info(jg)%geometry_type
 
       IF( geometry_type==planar_torus_geometry ) THEN
-        rbf_vec_scale_c(jg)  = geometry_info(jg)%mean_dual_edge_length
+        rbf_vec_scale_c(jg)  = geometry_info(jg)%mean_dual_edge_length /&
+            geometry_info(jg)%sphere_radius
         rbf_vec_scale_e(jg)  = rbf_vec_scale_c(jg)
         rbf_vec_scale_v(jg)  = rbf_vec_scale_c(jg)
         rbf_vec_scale_ll(jg) = rbf_vec_scale_c(jg)
@@ -319,7 +323,7 @@ CONTAINS
         CALL message('','! is 0.02 <= rbf_vec_scale_v <= 1.0')
       ENDIF
     ENDDO
-   
+
     DO jg = 1, n_dom
       IF (rbf_vec_scale_e(jg) < 1.e-10_wp) THEN
         CALL finish( TRIM(routine),'wrong value of rbf_vec_scale_e')
@@ -363,7 +367,7 @@ CONTAINS
         lsq_high_set%wgt_exp = 0
       ELSE
         lsq_high_set%wgt_exp = 2
-      ENDIF      
+      ENDIF
     ELSE IF (lsq_high_ord == 2) THEN
       lsq_high_set%dim_c   = 9
       lsq_high_set%dim_unk = 5

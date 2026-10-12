@@ -1,0 +1,245 @@
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+#--------------------------------------------------------------------------------------------------
+#
+# Ray-volume 3D propagation experiment
+#
+author_list="Alena Kosareva, GUF"
+#
+#--------------------------------------------------------------------------------------------------
+#
+# This is a global, idealized test case for the MS-GWaM submodule
+# in an isothermal atmosphere. The primary goal is to verify the correctness
+# of ray-volume handling procedures and 3D propagation routines by simulating
+# the propagation of ray volumes along great circles.
+#
+#
+#--------------------------------------------------------------------------------------------------
+
+# (1) Variables provided by the scripting mechanism
+
+# EXPNAME                       = name of exp. in 'exp.<name>'
+# basedir                       = base directory, where src/, run/ etc exist
+# icon_data_poolFolder          = base directory, where grids/, input/ and setup/ exist
+# nproma                        = blocking length for array dimensioning and inner loop lengths
+
+icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}"
+
+#--------------------------------------------------------------------------------------------------
+# directories with absolute paths
+
+# (2) Set variables needed by the scripting mechanism
+thisdir=$(pwd)
+
+# horizontal grid(s)
+#
+grids_folder=${icon_data_poolFolder}/grids/public/mpim/0013/
+#
+# global domain
+#
+dynamics_grid_filename=icon_grid_0013_R02B04_G.nc
+atmo_dyn_grids="'${dynamics_grid_filename}',"
+
+# start and end date+time
+start_date=${start_date:="1979-01-01T00:00:00Z"}
+end_date=${end_date:="1979-01-01T00:16:00Z"}
+
+# output intervals
+file_interval="PT8M"
+output_interval="PT2M"
+
+# restart intervals
+checkpoint_interval="PT8M"
+restart_interval="PT16M"
+
+
+# namelist files
+atmo_namelist=NAMELIST_${EXPNAME}_atm
+
+#--------------------------------------------------------------------------------------------------
+
+# (3) Define the model configuration
+
+cat > ${atmo_namelist} << EOF
+!
+&parallel_nml
+ nproma                 = ${nproma}
+ nblocks_c              = ${nblocks_c}
+ nproma_sub             = ${nproma_sub}
+ p_test_run             = .false.
+ l_test_openmp          = .false.
+ l_log_checks           = .false.
+ iorder_sendrecv        = 1
+/
+&grid_nml
+ dynamics_grid_filename = ${atmo_dyn_grids},
+ grid_rescale_factor    = 1.0
+/
+&run_nml
+ num_lev                = 300,              ! number of full levels of vertical grid
+ dtime                  = 120              ! [s] timestep in seconds
+ ltestcase              = .TRUE.           ! run testcase
+ ldynamics              = .FALSE.          ! dynamics
+ ltransport             = .FALSE.           ! transport
+ iforcing               = 3                !
+ msg_level              = 10               ! detailed report during integration
+ restart_filename = "${EXPNAME}_restart_atm_<rsttime>.nc"
+ ltimer                 = .TRUE.
+ timers_level           = 10
+ output                 = "nml"
+ lmsgwam                = .TRUE.        ! main logical switch for using MS-GWaM
+/
+&dynamics_nml
+ iequations             = 3                ! 3: non-hydrost. atmosphere
+ divavg_cntrwgt         = 0.50
+ lcoriolis              = .TRUE.        ! Coriolis force
+ ldeepatmo              = .FALSE.        ! deep atmosphere equations
+/
+&nh_testcase_nml
+ nh_test_name           = 'isothermal'    ! test case identifier
+/
+&sleve_nml
+ min_lay_thckn               =                          0.0       ! layer thickness of lowermost layer
+ max_lay_thckn               =                        700.0       ! max. layer thickness below htop_thcknlimit
+ htop_thcknlimit             =                      40000.0       ! level below whick layer thickness is <= max_lay_thckn
+ top_height                  =                     100000.0       ! height of model top
+ stretch_fac                 =                          1.0       ! stretching factor to vary distribution of model levels
+ decay_scale_1               =                       4000.0       ! decay scale of large-scale topography component
+ decay_scale_2               =                       2500.0       ! decay scale of small-scale topography component
+ decay_exp                   =                          1.2       ! exponent of decay function
+ flat_height                 =                      16000.0       ! height above which the coordinate surfaces are flat
+/
+&nonhydrostatic_nml
+ itime_scheme           = 4
+ ndyn_substeps          = 1                ! reset to 1 for matching output times
+ ivctype                = 2                ! Gal-Chen hybrid
+ vwind_offctr           = 0.2              ! default=0.15
+/
+&nwp_phy_nml
+ inwp_gscp                   =                          0         ! cloud microphysics and precipitation
+ inwp_convection             =                          0         ! convection
+ inwp_radiation              =                          0         ! radiation
+ inwp_cldcover               =                          0         ! cloud cover scheme for radiation
+ inwp_turb                   =                          0         ! vertical diffusion and transfer
+ inwp_satad                  =                          0         ! saturation adjustment
+ inwp_sso                    =                          0         ! subgrid scale orographic drag
+ inwp_gwd                    =                          1         ! non-orographic gravity wave drag
+ dt_gwd                      =                        120.        ! time step for MS-GWaM
+ inwp_surface                =                          0         ! surface scheme
+ latm_above_top              =                       .FALSE.      ! take into account atmosphere above model top for radiation computation
+ efdt_min_raylfric           =                       7200.0       ! minimum e-folding time of Rayleigh friction
+ itype_z0                    =                          2         ! type of roughness length data
+ lupatmo_phy                 =                       .FALSE.      ! main switch for upper-atmosphere physics in NWP-mode
+/
+&diffusion_nml
+ hdiff_order            = 5
+ hdiff_efdt_ratio       = 24.0
+ hdiff_min_efdt_ratio   = 1.0
+ lhdiff_vn              = .TRUE.
+ lhdiff_temp            = .TRUE.
+ hdiff_tv_ratio         = 1.0
+/
+&initicon_nml
+  init_mode                  =                           2        ! start from IFS analysis
+  ifs2icon_filename          =       '${icon_data_poolFolder}/grids/public/mpim/0013/initial_condition/r0001/ifs2icon_1979010100_R02B04_G.nc'         ! filename of IFS2ICON input file
+  zpbl1                      =                        500.0       ! bottom height of layer used for gradient computation
+  zpbl2                      =                       1000.0       ! top height of layer used for gradient computation
+  itype_vert_expol           =                           2        ! extrapolation of initial data towards climatology
+/
+&io_nml
+ lnetcdf_flt64_output   = .TRUE.
+/
+&interpol_nml
+ rbf_scale_mode_ll      = 1
+ !l_intp_c2l             = .true.
+ !l_mono_c2l             = .true.
+/
+&msgwam_nml
+ lmsgwam_pmomflux            =                     .FALSE.        ! logical switch for using pseudomomentum fluxes
+ lmsgwam_noforce             =                      .TRUE.        ! logical switch for no forcing
+ lmsgwam_offline             =                     .FALSE.        ! logical switch for using MS-GWaM in offline mode
+ ltest_hprop                 =                      .TRUE.        ! logical switch for horizontal propagation test
+ ltest_gcircle               =                      .TRUE.        ! test propagation on great circle
+ l1ray                       =                      .FALSE.        ! use a single ray for horizontal propagation
+ dt_add                      =                         60.        ! timestep for adding new rays (let dt_add = dt_gwd = dtime)
+ nstages                     =                          4         ! 1: forward Euler, 4: Runge-Kutta 4th order
+ dt_gw_substep               =                        120.        ! sub-timestep for gw propagation
+ limfactor                   =                         25         ! factor for limiting no. of max rays allowed (maxrays=nrays_add*limfactor+1)
+ imethod_split               =                          0
+ imethod_merge               =                          0
+ mdim                        =                          6         ! dimension of vertical wavenumber spectral array
+ omegadim                    =                          2         ! dimension of intrinsic frequency spectral array
+ branch                      =                         1          ! frequency branch (dispersion relation) MUST BE 1!
+ lon0                        =                        135.        ! center of the wave packet in latitude (deg)
+ lat0                        =                         45.        ! center of the wave packet in latitude (deg)
+ z0                          =                      30000.        ! center of the wave packet in vertical (m)
+ lonrmin                     =                        155.
+ lonrmax                     =                        165.
+ latrmin                     =                         45.
+ latrmax                     =                         55.
+ zrmin                       =                       1000.        ! bottom bound of initial rays (m)
+ zrmax                       =                      60000.        ! top bound of initial rays (m)
+ nrlon                       =                          1
+ nrlat                       =                          1
+ nrz                         =                          1         ! no. of rays initialized within one vertical layer
+ dk_ini                      =                          0.001     ! area around rays in wavenumber space (1/m)
+ dl_ini                      =                          0.001     ! area around rays in wavenumber space (1/m)
+ dm_ini                      =                          0.001     ! area around rays in wavenumber space (1/m)
+ nrk                         =                          1         ! no. of rays initialized within dk_ini
+ nrl                         =                          1         ! no. of rays initialized within dl_ini
+ nrm                         =                          1         ! no. of rays initialized within dm_ini
+ t0                          =                        240.        ! background temperature
+ a0                          =                          0.5       ! amplitude of the wave packet wrt static instab
+ sigmax_wp                   =                    1500000.        ! width of the wave packet in x (m)
+ sigmay_wp                   =                    1500000.        ! width of the wave packet in y (m)
+ sigmaz_wp                   =                       5000.        ! width of the wave packet in z (m)
+ lhsmooth                    =                     .FALSE.        ! logical switch for horizontal smoothing of momentum fluxes
+ lsmooth                     =                     .FALSE.        ! logical switch for vertical smoothing of momentum fluxes
+ nsmooth                     =                          1         ! half number of points for smoothing fluxes
+ lsaturation                 =                     .FALSE.        ! logical switch to activate wave breaking
+ alpha_sat                   =                          1.        ! tuning parameter for wave breaking
+ omegamin                    =                          0.0001    ! minimum intrinsic frequency
+ omegamax                    =                          0.0005    ! maximum intrinsic frequency
+ cimin                       =                          3.0       ! minimum horizontal phase speed in source
+ cimax                       =                         33.0       ! maximum horizontal phase speed in source
+ lambda_z_min                =                          1.        ! maximum vertical wavelength allowed
+ plaunch                     =                      30000.0       ! pressure level of the uniform source [Pa]
+ lcorrlongwaves              =                      .TRUE.        ! logical switch for psinc correction in dispersion relation
+ lfluxlatsimple              =                      .TRUE.        ! logical switch for a tanh latitude profile of launch fluxes
+ flux_bw                     =                 0.0015 , 0.0025    ! launch flux bounds at boreal winter
+ flux_bs                     =                 0.0025 , 0.0015    ! launch flux bounds at boreal summer
+ facgamma                    =                          0.2142857 ! tuning parameter for correction in dispersion relation
+ lmvisc                      =                     .FALSE.        ! logical switch for molecular viscosity
+ ldiagprof                   =                     .FALSE.        ! diagnostic printouts and data for MATLAB Hovmöller
+ mylon                       =                        -10.0       ! lon for ldiagprof
+ mylat                       =                        -55.0       ! lat for ldiagprof
+ dir_restartfiles            =           '${thisdir}'
+/
+&gw_source_nml
+ cgw_n_source                =                    0        !
+cgw_limfactor               =                        1
+/
+&output_nml
+ filetype               = 4
+ dom                    = 1
+ output_time_unit       = 1
+ output_start     = "${start_date}"       ! output_start = output_end
+ output_end       = "${end_date}"       ! --> write once only irrespective of
+ output_interval  = "${output_interval}"  !     the output interval and
+ file_interval    = "${file_interval}"    !     the file interval
+ include_last           = .TRUE.
+ remap                  = 0                ! output on triangular grid
+ output_filename        = "${EXPNAME}_out1"     ! file name base
+ filename_format        = "<output_filename>_<datetime2>"
+ output_grid            = .TRUE.
+ ml_varlist             = 'u','w','temp','pres','rho','z_ifc','z_mc', 'action_mgm_1', 'active_rays_mgm'
+/
+EOF

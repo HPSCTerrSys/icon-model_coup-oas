@@ -1,22 +1,20 @@
-!OPTION! -cont
-! this command should fix the problem of copying arrays in a subroutine call
-!
-! This module is the interface between nwp_nh_interface to the
-! convection parameterisation(s):
-! inwp_conv == 1 == Tiedtke-Bechtold convection
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module is the interface between nwp_nh_interface to the
+! convection parameterisation(s):
+! inwp_conv == 1 == Tiedtke-Bechtold convection
+
+!OPTION! -cont
+! this command should fix the problem of copying arrays in a subroutine call
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -36,15 +34,22 @@ MODULE mo_nwp_conv_interface
   USE mo_nwp_phy_types,        ONLY: t_nwp_phy_diag, t_nwp_phy_tend, &
        &                             t_nwp_phy_stochconv, t_ptr_cloud_ensemble
   USE mo_nwp_phy_state,        ONLY: phy_params
-  USE mo_run_config,           ONLY: iqv, iqc, iqi, iqr, iqs, nqtendphy, lart
-  USE mo_physical_constants,   ONLY: grav, alf, cvd, cpd, tmelt
-  USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config
+  USE mo_run_config,           ONLY: iqv, iqc, iqi, iqr, iqs, nqtendphy, lart, lmsgwam
+  USE mo_physical_constants,   ONLY: grav, alf, alv, als, cvd, cpd, tmelt
+  USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config, itype_stoch_phys
   USE mo_cumaster,             ONLY: cumastrn
   USE mo_ext_data_types,       ONLY: t_external_data
   USE mo_comin_config,         ONLY: comin_config, t_comin_tracer_info
   USE mo_art_config,           ONLY: art_config
   USE mo_util_phys,            ONLY: nwp_con_gust
-  USE mo_exception,            ONLY: finish, message_text
+  USE mo_exception,            ONLY: finish, message, message_text
+  USE mo_run_config,           ONLY: msg_level
+
+#ifdef __MSGWAM
+  USE mo_gw_source_config,     ONLY: gws_conv_config
+  USE mo_setup_msgwam_interface, ONLY: p_msgwam
+  USE mo_cumaster,             ONLY: t_msgwam_fields
+#endif
 
   ! for stochastic convection
   USE mo_sync,                 ONLY: sync_patch_array,sync_patch_array_mult,SYNC_C
@@ -119,6 +124,10 @@ CONTAINS
     REAL(wp) :: z_dtdt   (nproma,p_patch%nlev)         !< temporal temperature tendency
     REAL(wp) :: z_dtdt_sv(nproma,p_patch%nlev)         !< save array for temperature tendency
     REAL(wp) :: z_ddspeed(nproma)                      !< maximum downdraft speed at the surface
+#ifdef __MSGWAM
+    REAL(wp) :: z_heatchg_cgw(nproma,p_patch%nlev)     !< convective temperature tendency *cvd
+    TYPE(t_msgwam_fields) :: msgwam_fields
+#endif
 
     ! stochastic cloud ensemble variables:
     ! variables to contain profiles/sfc fluxes averaged over halo, only used for stoch conv
@@ -138,12 +147,15 @@ CONTAINS
     INTEGER  :: jk,jc,jb,jg,jt,l,jc2,jb2   !< block indices
     INTEGER  :: zk850, zk950               !< level indices
     REAL(wp) :: u850, u950, v850, v950     !< zonal and meridional velocity at specific heights
-    REAL(wp) :: ticeini, lfocvd, wfac, cpdocvd, area_norm
+    REAL(wp) :: ticeini, lfocvd, lvocvd, lsocvd, wfac, cpdocvd, area_norm
     INTEGER  :: iqrd, iqsd
     LOGICAL  :: lcompute_lpi               !< compute lpi_con, mlpi_con, koi, lpi_con_max and mlpi_con_max
     LOGICAL  :: lcompute_lfd               !< compute lfd_con, lfd_con_max
     LOGICAL  :: lzacc                      !< to check, if lacc is present
     REAL(wp) :: convfac                    !< Conversion fraction from snow to rain.
+
+    ! for stochastic physics scheme:
+    REAL(wp), CONTIGUOUS, POINTER :: ptr_spg(:)  !< pointer for stochastic pattern generator field
 
     ! Tracer specific variables:
     INTEGER :: nconv_tracer_tot, nconv
@@ -156,7 +168,7 @@ CONTAINS
     ! Extended list of tracers by ComIn (incl. ART if present)
     TYPE(t_ptr_tracer), ALLOCATABLE, TARGET :: ptr_conv_tracer_tend_comin(:)
     TYPE(t_ptr_tracer), ALLOCATABLE, TARGET :: ptr_conv_tracer_comin(:)
-    TYPE(t_comin_tracer_info), POINTER :: this_info => NULL()
+    TYPE(t_comin_tracer_info), POINTER :: this_info
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
@@ -181,6 +193,8 @@ CONTAINS
     i_endblk   = p_patch%cells%end_block(rl_end)
 
     lfocvd  = alf/cvd
+    lvocvd  = alv/cvd
+    lsocvd  = als/cvd
     cpdocvd = cpd/cvd
     ticeini = 256.15_wp
 
@@ -236,9 +250,11 @@ CONTAINS
     ENDIF
 
     IF (lstoch_expl .or. lstoch_sde) THEN
-      CALL sync_patch_array_mult(SYNC_C,p_patch,5,p_diag%temp,p_prog_rcf%tracer(:,:,:,iqv),p_diag%pres,p_diag%u,p_diag%v)
-      CALL sync_patch_array(SYNC_C,p_patch,prm_diag%shfl_s)
-      CALL sync_patch_array(SYNC_C,p_patch,prm_diag%qhfl_s)
+      CALL sync_patch_array_mult(SYNC_C, p_patch, 5, lacc=lzacc, &
+        f3din1=p_diag%temp, f3din2=p_prog_rcf%tracer(:,:,:,iqv), &
+        f3din3=p_diag%pres, f3din4=p_diag%u, f3din5=p_diag%v)
+      CALL sync_patch_array(SYNC_C, p_patch, prm_diag%shfl_s, lacc=lzacc)
+      CALL sync_patch_array(SYNC_C, p_patch, prm_diag%qhfl_s, lacc=lzacc)
     ENDIF
 
     ! compute lpi_con(_max) only if all relevant fields are allocated (non-dummy).
@@ -250,14 +266,13 @@ CONTAINS
     ! compute lfd_con(_max) only if all relevant fields are allocated (non-dummy).
     lcompute_lfd = SIZE(prm_diag%lfd_con_max,1) * SIZE(prm_diag%lfd_con,1) > 0
 
-#ifndef __PGI
-!FIXME: PGI + OpenMP produce deadlock in this loop. Compiler bug suspected
 !$OMP PARALLEL DO PRIVATE(jb,jc,jk,jt,i_startidx,i_endidx,z_omega_p,z_plitot,z_qhfl,z_shfl,z_dtdqv,&
-!$OMP            z_dtdt,z_dtdt_sv,zk850,zk950,u850,u950,v850,v950,wfac,z_ddspeed,convfac,&
+!$OMP            z_dtdt,z_dtdt_sv,zk850,zk950,u850,u950,v850,v950,wfac,z_ddspeed,convfac,nconv, &
 !$OMP            iseed,presmean,umean,vmean,qvmean,tempmean,qhfl_avg,shfl_avg,l,jc2,jb2,area_norm, &
-!$OMP            p_pres,p_u,p_v,p_qv,p_temp,p_qhfl_avg,p_shfl_avg,p_cloud_ensemble), ICON_OMP_GUIDED_SCHEDULE
+#ifdef __MSGWAM
+!$OMP            z_heatchg_cgw,msgwam_fields, &
 #endif
-
+!$OMP            p_pres,p_u,p_v,p_qv,p_temp,p_qhfl_avg,p_shfl_avg,p_cloud_ensemble,ptr_spg), ICON_OMP_GUIDED_SCHEDULE
     DO jb = i_startblk, i_endblk
 
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
@@ -299,9 +314,8 @@ CONTAINS
         END SELECT
 
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-        !$ACC LOOP GANG
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
         DO jk = 1, kstart_moist(jg)-1
-          !$ACC LOOP VECTOR
           DO jc = 1, nproma
             z_omega_p (jc,jk) = 0._wp
             z_dtdqv   (jc,jk) = 0._wp
@@ -342,9 +356,8 @@ CONTAINS
         ! The following input fields must be reset to zero because the convective
         ! tendencies are added to them
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-        !$ACC LOOP GANG
+        !$ACC LOOP GANG VECTOR COLLAPSE(2)
         DO jk = 1, nlev
-          !$ACC LOOP VECTOR
           DO jc = 1, nproma
             prm_nwp_tend%ddt_u_pconv (jc,jk,jb) = 0._wp
             prm_nwp_tend%ddt_v_pconv (jc,jk,jb) = 0._wp
@@ -367,7 +380,7 @@ CONTAINS
             !$ACC END PARALLEL
           ENDDO
           ptr_conv_tracer_tend_art => prm_nwp_tend%conv_tracer_tend(jb,1:art_config(jg)%nconv_tracer)
-          ptr_conv_tracer_art      => p_prog_rcf%conv_tracer(jb,1:art_config(jg)%nconv_tracer) 
+          ptr_conv_tracer_art      => p_prog_rcf%conv_tracer(jb,1:art_config(jg)%nconv_tracer)
         ELSE
           ptr_conv_tracer_art      => NULL()
           ptr_conv_tracer_tend_art => NULL()
@@ -485,7 +498,7 @@ CONTAINS
            NULLIFY(p_cloud_ensemble%ktype_i)
            NULLIFY(p_cloud_ensemble%depth_i)
            NULLIFY(p_cloud_ensemble%base_i)
-           NULLIFY(p_cloud_ensemble%used_cell)          
+           NULLIFY(p_cloud_ensemble%used_cell)
         ENDIF
 
         IF ( comin_config%comin_icon_domain_config(jg)%nconv_tracer > 0 ) THEN
@@ -505,6 +518,15 @@ CONTAINS
               nconv = nconv + 1
               ptr_conv_tracer_comin     (nconv)%ptr => p_prog_rcf%tracer(:,:,jb,this_info%idx_tracer)
               ptr_conv_tracer_tend_comin(nconv)%ptr => prm_nwp_tend%ddt_tracer_pconv(:,:,jb,this_info%idx_conv)
+              !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+              !$ACC LOOP GANG VECTOR COLLAPSE(2)
+              DO jk = 1, nlev
+                 DO jc = 1, nproma
+                    ptr_conv_tracer_tend_comin(nconv)%ptr(jc,jk) = 0._wp
+                 END DO
+              END DO
+              !$ACC END PARALLEL
+
             ENDIF !this_info%idx_conv > 0
             this_info => this_info%next
           ENDDO
@@ -522,6 +544,30 @@ CONTAINS
           ptr_conv_tracer      => ptr_conv_tracer_art
           ptr_conv_tracer_tend => ptr_conv_tracer_tend_art
         ENDIF !comin_config%comin_icon_domain_config(jg)%nconv_tracer > 0
+
+        ! independent SPPT: prepare perturbation of cloud base mass flux in convection scheme
+        IF ( ANY(itype_stoch_phys == (/1,3,4/)) ) THEN
+          ptr_spg => prm_diag%spg(:,1,jb)
+        ELSE
+          ptr_spg => NULL()   ! no stochastic perturbation of convection
+        ENDIF
+#ifdef __MSGWAM
+        IF (lmsgwam(jg)) THEN
+          msgwam_fields%ktype_cgw => p_msgwam(jg)%ktype_cgw(:,jb)
+          msgwam_fields%kcbot_cgw => p_msgwam(jg)%mbas_con_cgw(:,jb)
+          msgwam_fields%kctop_cgw => p_msgwam(jg)%mtop_con_cgw(:,jb)
+          msgwam_fields%heat_cgw => p_msgwam(jg)%heat_cgw(:,:,jb)
+          msgwam_fields%tupd_cgw => p_msgwam(jg)%tupd_cgw(:,:,jb)
+          msgwam_fields%test_cgw => p_msgwam(jg)%test_1_cgw(:,:,jb)
+        ELSE
+          msgwam_fields%ktype_cgw => NULL()
+          msgwam_fields%kcbot_cgw => NULL()
+          msgwam_fields%kctop_cgw => NULL()
+          msgwam_fields%heat_cgw => NULL()
+          msgwam_fields%tupd_cgw => NULL()
+          msgwam_fields%test_cgw => NULL()
+        ENDIF
+#endif
 
         CALL cumastrn &
 &         (kidia  = i_startidx            , kfdia  = i_endidx               ,& !> IN
@@ -542,6 +588,7 @@ CONTAINS
 &          zdph   = p_diag%dpres_mc     (:,:,jb)                            ,& !! IN
 &          zdgeoh = p_metrics%dgeopot_mc(:,:,jb)                            ,& !! IN
 &          pcloudnum = prm_diag%cloud_num(:,jb)                             ,& !! IN
+&          pertb  = ptr_spg                                                 ,& !! IN SPP perturbation
 &          ptenta = p_diag%ddt_temp_dyn(:,:,jb)                             ,& !! IN
 &          ptenqa = p_diag%ddt_tracer_adv(:,:,jb,iqv)                       ,& !! IN
 &          ptent  = z_dtdt                                                  ,& !! INOUT
@@ -576,6 +623,11 @@ CONTAINS
 &          pvddraf =     z_ddspeed(:)                                       ,& !! OUT
 &          pcen     =    ptr_conv_tracer                                    ,& !! IN
 &          ptenrhoc =    ptr_conv_tracer_tend                               ,& !! OUT
+#ifdef __MSGWAM
+&          nsrc_cgw      = gws_conv_config%n_source(jg)                     ,& !! IN
+&          msgwam_fields = msgwam_fields                                    ,& !! IN
+&          lmsgwam       = lmsgwam(jg)                                      ,& !! IN
+#endif
 &          l_lpi  =      lcompute_lpi                                       ,& !! IN
 &          l_lfd  =      lcompute_lfd                                       ,& !! IN
 &          lpi    =      prm_diag%lpi_con(:,jb)                             ,& !! OUT
@@ -589,7 +641,7 @@ CONTAINS
 &          temp_s =      p_diag%temp(:,nlev,jb)                             ,& !! IN
 &          cell_area    = p_patch%cells%area(:,jb)                          ,& !! IN
 &          iseed        = iseed                                             ,& !! IN
-&          mf_bulk=      prm_diag%mf_b(:,jb)                                ,& !! OUT  
+&          mf_bulk=      prm_diag%mf_b(:,jb)                                ,& !! OUT
 &          mf_perturb =  prm_diag%mf_p(:,jb)                                ,& !! OUT
 &          mf_num =      prm_diag%mf_num(:,jb)                              ,& !! OUT
 &          p_cloud_ensemble = p_cloud_ensemble                              ,& !! INOUT
@@ -600,7 +652,6 @@ CONTAINS
 &          pclnum_d     = prm_nwp_stochconv%clnum_d(:,jb)                   ,& !! INOUT
 &          pclmf_d      = prm_nwp_stochconv%clmf_d(:,jb)                    ,& !! INOUT
 &          lacc   = lzacc                                                   )  !! IN
-
 
         ! Postprocessing on some fields
 
@@ -619,6 +670,10 @@ CONTAINS
 
         ! Convert detrained cloud ice into cloud water if the temperature is only slightly below freezing
         ! and convective cloud top is not cold enough for substantial ice initiation
+#ifdef __MSGWAM
+        z_heatchg_cgw(:,:) = 0.0_wp
+#endif
+
         !$ACC LOOP SEQ
         DO jk = kstart_moist(jg),nlev
           !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(wfac)
@@ -631,11 +686,77 @@ CONTAINS
 
               prm_nwp_tend%ddt_temp_pconv(jc,jk,jb) = prm_nwp_tend%ddt_temp_pconv(jc,jk,jb) - &
                 lfocvd*wfac*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi)/p_prog%rho(jc,jk,jb)
+#ifdef __MSGWAM
+              IF (lmsgwam(jg)) THEN
+                ! Save the above increment of 'ddt_temp_pconv' * cvd, to correct our heating too
+                z_heatchg_cgw(jc,jk) = -alf*wfac                   &  ! ( alf = lfocvd * cvd )
+                  &  *prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi)  &
+                  &  /p_prog%rho(jc,jk,jb)
+              ENDIF
+#endif
 
               prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi) = (1._wp-wfac)*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi)
             ENDIF
           ENDDO
         ENDDO
+#ifdef __MSGWAM
+        IF ( lmsgwam(jg)) THEN
+          IF ( gws_conv_config%n_source(jg) > 0 ) THEN
+            DO jc = i_startidx, i_endidx
+              IF ( prm_diag%ktype(jc,jb) == 1 ) THEN   !CGW conv_type
+                DO jk = kstart_moist(jg), nlev
+                  p_msgwam(jg)%heat_cgw(jc,jk,jb) = p_msgwam(jg)%heat_cgw(jc,jk,jb)      &
+                    &                               + z_heatchg_cgw(jc,jk)
+                  ! entropy = (Q/T)_(updraft air)
+                  p_msgwam(jg)%entr_cgw(jc,jk,jb) = p_msgwam(jg)%heat_cgw(jc,jk,jb)      &
+                    &                              /p_msgwam(jg)%tupd_cgw(jc,jk,jb)
+                  p_msgwam(jg)%test_1_cgw(jc,jk,jb) = p_msgwam(jg)%test_1_cgw(jc,jk,jb)  &
+                    &                                 + z_heatchg_cgw(jc,jk)
+                ENDDO
+              ENDIF
+            ENDDO
+          ENDIF
+        ENDIF
+#endif
+
+        ! In case of SBM microphysics, convert qc, qi, qr, qs into qv and calculate the corresponding temperature increment
+        IF (atm_phy_nwp_config(jg)%inwp_gscp == 8) THEN
+          IF (atm_phy_nwp_config(jg)%ldetrain_conv_prec) THEN
+            DO jk = kstart_moist(jg), nlev
+              DO jc = i_startidx, i_endidx
+                prm_nwp_tend%ddt_temp_pconv(jc,jk,jb) = prm_nwp_tend%ddt_temp_pconv(jc,jk,jb) - &
+                  & (lvocvd*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqc) - &
+                  & lvocvd*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqr) - &
+                  & lsocvd*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi) - &
+                  & lsocvd*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqs))/p_prog%rho(jc,jk,jb)
+
+                prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqv) = prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqv)+ &
+                                                        & prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqc)+ &
+                                                        & prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi)+ &
+                                                        & prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqr)+ &
+                                                        & prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqs)
+                prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqc) = 0.0_wp
+                prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi) = 0.0_wp
+                prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqr) = 0.0_wp
+                prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqs) = 0.0_wp
+              END DO
+            END DO
+          ELSE
+            DO jk = kstart_moist(jg), nlev
+              DO jc = i_startidx, i_endidx
+                prm_nwp_tend%ddt_temp_pconv(jc,jk,jb) = prm_nwp_tend%ddt_temp_pconv(jc,jk,jb) - &
+                  & (lvocvd*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqc) - &
+                  & lsocvd*prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi))/p_prog%rho(jc,jk,jb)
+
+                prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqv) = prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqv)+ &
+                                                        & prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqc)+ &
+                                                        & prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi)
+                prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqc) = 0.0_wp
+                prm_nwp_tend%ddt_tracer_pconv(jc,jk,jb,iqi) = 0.0_wp
+              END DO
+            END DO
+          END IF
+        END IF
 
 !DIR$ IVDEP
         !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(convfac, zk950)
@@ -698,9 +819,7 @@ CONTAINS
 
     ENDDO  ! jb
     !$ACC WAIT(1)
-#ifndef __PGI
 !$OMP END PARALLEL DO
-#endif
 
     IF ( ALLOCATED( ptr_conv_tracer_tend_comin) ) DEALLOCATE(ptr_conv_tracer_tend_comin)
     IF ( ALLOCATED( ptr_conv_tracer_comin) )      DEALLOCATE(ptr_conv_tracer_comin)

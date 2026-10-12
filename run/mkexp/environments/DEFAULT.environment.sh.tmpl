@@ -1,0 +1,27 @@
+#%# -*- mode: sh -*-
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#%  block prologue:
+# $Id: run/mkexp/environments/DEFAULT.environment.sh.tmpl 1 2026-04-01 13:32:36Z m221078 $
+#%  endblock
+#%  for var in JOB.env:
+#%    set val = JOB.env[var]|list|join(",")
+#%    if val:
+#%      for line in JOB.env.comments[var]:
+%{line}
+#%      endfor
+#%      set inline_comment = JOB.env.inline_comments[var]
+{%__mkexp__ block set scoped %}export %{var}=%{'"'+val+'"' if ' ' in val else val}{%__mkexp__ endblock %}%{' '+inline_comment if inline_comment}
+#%    else:
+{%__mkexp__ block unset scoped %}unset %{var}{%__mkexp__ endblock %}%{' '+inline_comment if inline_comment}
+#%    endif
+#%  endfor
+#%#

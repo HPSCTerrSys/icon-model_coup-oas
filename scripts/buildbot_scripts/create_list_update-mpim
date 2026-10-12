@@ -1,0 +1,60 @@
+#!/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+# abort on error
+set -euo pipefail
+
+cd $(dirname "${BASH_SOURCE[0]}")
+
+addexp="./addexp"
+
+listname=${1:-update-mpim}
+./rmlist $listname
+./create_all_builders $listname
+./set_builder_flags Inactive --builders "$(./lslist $listname --builders-only)" --list $listname
+./set_builder_flags Active --builders "levante_cpu_nvhpc levante_gcc levante_gcc_hybrid levante_gpu_nvhpc levante_intel_hybrid_mixed levante_intel_hybrid levante_intel levante_nag" --list $listname
+
+$addexp checksuite.icon-dev/check.atm_qubicc_update --runflags "ntasks=16 queue=shared,compute memory=32G" --builders  levante_cpu_nvhpc --list $listname
+
+$addexp checksuite.icon-dev/check.aes_amip_pfts_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_gcc --list $listname
+$addexp checksuite.icon-dev/check.aes_amip_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_gcc --list $listname
+$addexp checksuite.icon-dev/check.atm_cph_nest_R2B4_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_gcc --list $listname
+$addexp checksuite.icon-dev/check.atm_qubicc_update --runflags "ntasks=16 queue=shared,compute memory=32G" --builders  levante_gcc --list $listname
+
+$addexp checksuite.icon-dev/check.aes_amip_pfts_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_gcc_hybrid --list $listname
+$addexp checksuite.icon-dev/check.aes_amip_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_gcc_hybrid --list $listname
+$addexp checksuite.icon-dev/check.atm_cph_nest_R2B4_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_gcc_hybrid --list $listname
+$addexp checksuite.icon-dev/check.atm_qubicc_update --runflags "ntasks=16 queue=shared,compute memory=32G" --builders  levante_gcc_hybrid --list $listname
+
+$addexp checksuite.icon-dev/check.atm_qubicc_update --runflags "mpi_procs_pernode=4" --builders  levante_gpu_nvhpc --list $listname
+
+$addexp checksuite.icon-dev/check.aes_amip_pfts_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel --list $listname
+$addexp checksuite.icon-dev/check.aes_amip_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel --list $listname
+$addexp checksuite.icon-dev/check.atm_cph_nest_R2B4_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel --list $listname
+$addexp checksuite.icon-dev/check.atm_qubicc_update --runflags "ntasks=16 queue=shared,compute memory=32G" --builders  levante_intel --list $listname
+
+$addexp checksuite.icon-dev/check.aes_amip_pfts_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel_hybrid --list $listname
+$addexp checksuite.icon-dev/check.aes_amip_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel_hybrid --list $listname
+$addexp checksuite.icon-dev/check.atm_cph_nest_R2B4_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel_hybrid --list $listname
+$addexp checksuite.icon-dev/check.atm_qubicc_update --runflags "ntasks=16 queue=shared,compute memory=32G" --builders  levante_intel_hybrid --list $listname
+
+$addexp checksuite.icon-dev/check.aes_amip_pfts_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel_hybrid_mixed --list $listname
+$addexp checksuite.icon-dev/check.aes_amip_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel_hybrid_mixed --list $listname
+$addexp checksuite.icon-dev/check.atm_cph_nest_R2B4_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_intel_hybrid_mixed --list $listname
+$addexp checksuite.icon-dev/check.atm_qubicc_update --runflags "ntasks=16 queue=shared,compute memory=32G" --builders  levante_intel_hybrid_mixed --list $listname
+
+$addexp checksuite.icon-dev/check.aes_amip_pfts_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_nag --list $listname
+$addexp checksuite.icon-dev/check.aes_amip_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_nag --list $listname
+$addexp checksuite.icon-dev/check.atm_cph_nest_R2B4_test_update --runflags "ntasks=16 queue=compute memory=32G" --builders  levante_nag --list $listname
+$addexp checksuite.icon-dev/check.atm_qubicc_update --runflags "ntasks=16 queue=shared,compute memory=32G" --builders  levante_nag --list $listname
+
+./lslist ${listname}

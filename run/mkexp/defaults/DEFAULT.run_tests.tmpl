@@ -1,0 +1,50 @@
+#! %{JOB.ksh} #%# -*- mode: sh -*- vi: set ft=sh :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# %{EXP_ID}.%{JOB.id}
+#
+# %{mkexp_input}
+#
+# $Id: run/mkexp/defaults/DEFAULT.run_tests.tmpl 1 2025-07-21 12:43:31Z m221078 $
+#
+# %{VERSIONS_|join('\n# ')}
+#
+
+SUMMARY='
+'
+STATUS=0
+
+function run_test {
+    typeset test_name=$1 status
+    shift
+    echo "'$test_name' test started"
+    if "$@"
+    then
+        SUMMARY+="$test_name: ok
+"
+    else
+        status=$?
+        SUMMARY+="$test_name: FAIL
+"
+        STATUS=$status
+    fi
+    echo "'$test_name' test finished ($status)"
+}
+#%  for job_name in jobs.sections:
+#%    set test_name = job_name|match('^run_(.*)_start')
+#%    if test_name and not jobs[job_name]['.hide'] is set:
+run_test %{test_name} %{SCRIPT_DIR}/%{EXP_ID}.%{job_name}
+#%    endif
+#%  endfor
+
+echo "$SUMMARY"
+exit $STATUS

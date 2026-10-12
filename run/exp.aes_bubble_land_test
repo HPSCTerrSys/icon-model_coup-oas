@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -17,7 +17,7 @@ author_list="Bjorn Stevens, Sebastian Rast, Monika Esch, Reiner Schnur (MPI-M)"
 #--------------------------------------------------------------------------------------------------
 #
 # This file describes a radiative convective equilibrium experiment based on the non-hydrostatic
-# atmosphere and the ECHAM physics with NWP "graupel" scheme. The experiment is intialized 
+# atmosphere and the ECHAM physics with NWP "graupel" scheme. The experiment is intialized
 # analytically in the atmosphere and uses constant-in-time boundary conditions for:
 # - spectral solar irradiation
 # - well mixed greenhouse gases CO2, CH4, N2O, CFCs
@@ -216,8 +216,9 @@ cat > ${atmo_namelist} << EOF
  aes_cop_config(1)%cn1sea     =  50.0
  aes_cop_config(1)%cn2sea     = 100.0
  aes_cop_config(1)%cinhomi    =   1.0
- aes_cop_config(1)%cinhoms    =   1.0
- aes_cop_config(1)%cinhoml   =   1.0
+ aes_cop_config(1)%cinhoml_cfl=   1.0
+ aes_cop_config(1)%cinhoml_cfo=   1.0
+ aes_cop_config(1)%cinhoml_sf =   1.0
 /
 &aes_cov_nml
  aes_cov_config(1)%cqx        = 1.e-6
@@ -232,7 +233,7 @@ cat > ${jsbach_namelist} << EOF
   use_lakes               = .FALSE.
   use_glacier             = .FALSE.
   fract_filename          = 'bc_land_frac.nc'
-  enforce_water_budget    = .TRUE.      ! True: stop in case of water conservation problem
+  enforce_water_budget    = 'error'     ! Error: stop in case of water conservation problem
 /
 &jsb_seb_nml
   bc_filename             = 'bc_land_phys.nc'
@@ -252,7 +253,6 @@ cat > ${jsbach_namelist} << EOF
   l_heat_cond_map         = .FALSE.
   l_heat_cap_dyn          = .FALSE.
   l_heat_cond_dyn         = .FALSE.
-  l_snow                  = .TRUE.
   l_dynsnow               = .TRUE.
   l_freeze                = .TRUE.
   l_supercool             = .FALSE.
@@ -320,7 +320,7 @@ end_year=$(( ${end_date%%-*} + 1 ))
 datadir=${icon_data_poolFolder}/Torus_Triangles_20x22_5000m/r0006
 add_link_file ${datadir}/rcemip_analytical_o3_20x22_5000m_echam_plev.nc ./bc_ozone.nc
 
-datadir=${icon_data_poolFolder}/Torus_Triangles_20x4_5000m/land/r0001
+datadir=${icon_data_poolFolder}/Torus_Triangles_20x4_5000m/land/r0002
 add_link_file $datadir/ic_land_soil_1850.nc                               ./ic_land_soil.nc
 add_link_file $datadir/bc_land_frac_1850.nc                               ./bc_land_frac.nc
 add_link_file $datadir/bc_land_phys_1850.nc                               ./bc_land_phys.nc

@@ -3,7 +3,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -31,19 +31,19 @@ outfolder=$basefolder/$outputfolder
 rm -rf $outfolder
 
 cd $infolder
-folderList=$(ls -d *) 
+folderList=$(ls -d *)
 #folderList="grid_generator"
 
 for folder in $folderList
-do 
+do
   if [ $folder == "templates" ]; then
      break
   fi
-  
+
   echo $folder
   readFolder=$infolder/$folder
   writeFolder=$outfolder/$folder
-  
+
   mkdir -p $writeFolder
   cd $readFolder
   sourcelist=`ls -f *.f90`
@@ -62,6 +62,3 @@ done
 echo "============================="
 echo "$outfolder is created"
 echo "============================="
-
-
-

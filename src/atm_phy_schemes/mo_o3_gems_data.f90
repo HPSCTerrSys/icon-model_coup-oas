@@ -28,19 +28,19 @@ MODULE mo_o3_gems_data
 
   REAL(wp) :: rghg7(64,91,12) !dimensions: latitudes, vertical levels, months
 
-  ! rghg7 taken from su_gozoclim.F90 of ECMWF's IFS (37r2). 
+  ! rghg7 taken from su_gozoclim.F90 of ECMWF's IFS (37r2).
 
   !-----------------------------------------------------------
-  !**   OZONE FROM GEMS and Cariolle above level 4 (level 4 ia average)                       
+  !**   OZONE FROM GEMS and Cariolle above level 4 (level 4 ia average)
 
-  !     AUTHOR.                                               
-  !     -------                                               
-  !     J.-J. MORCRETTE  E.C.M.W.F.    20080423               
-                                                              
-  !     MODIFICATIONS.                                        
-  !     --------------                                        
-  !        Same history as suecaesu                           
-  !        M.Hamrud      01-Oct-2003 CY28 Cleaning            
+  !     AUTHOR.
+  !     -------
+  !     J.-J. MORCRETTE  E.C.M.W.F.    20080423
+
+  !     MODIFICATIONS.
+  !     --------------
+  !        Same history as suecaesu
+  !        M.Hamrud      01-Oct-2003 CY28 Cleaning
   !     R. Elkhatib 12-10-2005 Split for faster and more robus
   !     G.Mozdzynski March 2011 read constants from files
   !-----------------------------------------------------------
@@ -14268,6 +14268,5 @@ DATA rghg7(:,91,12) / &
  .14140267E-7_wp,.11606051E-7_wp,.11114924E-7_wp,.11132386E-7_wp  /
 
 !$ACC DECLARE COPYIN(rghg7)
-  
-END MODULE mo_o3_gems_data
 
+END MODULE mo_o3_gems_data

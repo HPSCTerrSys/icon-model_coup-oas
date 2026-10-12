@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Computation of horizontal tracer flux
 !
 ! This routine computes the upwind fluxes for all edges of a uniform
@@ -20,18 +31,6 @@
 ! An improved, fully 2D version without splitting error is
 ! implemeted, too.
 ! See Miura, H. (2007), Mon. Wea. Rev., 135, 4038-4044
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -69,7 +68,9 @@ MODULE mo_advection_hflux
     &                               prep_gauss_quadrature_q,                    &
     &                               prep_gauss_quadrature_q_list,               &
     &                               prep_gauss_quadrature_c,                    &
-    &                               prep_gauss_quadrature_c_list
+    &                               prep_gauss_quadrature_c_list,               &
+    &                               prep_gauss_quadrature_q_miura3,             &
+    &                               prep_gauss_quadrature_c_miura3
   USE mo_advection_traj,      ONLY: btraj_dreg, t_back_traj, btraj_compute_o1
   USE mo_advection_geometry,  ONLY: divide_flux_area, divide_flux_area_list
   USE mo_advection_hlimit,    ONLY: hflx_limiter_mo, hflx_limiter_pd
@@ -186,7 +187,7 @@ CONTAINS
     ! tracer fields which are advected
     trAdvect => advconf%trAdvect
 
-    ! 
+    !
     IF ( PRESENT(opt_rlend) ) THEN
       i_rlend = opt_rlend
     ELSE
@@ -220,14 +221,15 @@ CONTAINS
 
       ! reconstruct tangential velocity component at edge midpoints
       CALL rbf_vec_interpol_edge( p_vn, p_patch, p_int,            &! in
-        &                         z_real_vt, opt_rlend=i_rlend_vt, &! inout
-        &                         opt_acc_async = .TRUE. )          ! in  
+        &                         z_real_vt, lacc=.TRUE.,          &! inout
+        &                         opt_rlend=i_rlend_vt,            &! in
+        &                         opt_acc_async = .TRUE. )          ! in
     ENDIF
 
 
     !
-    ! Backward trajectory computation for MIURA-scheme with linear 
-    ! reconstruction. In that case it is sufficient to compute 
+    ! Backward trajectory computation for MIURA-scheme with linear
+    ! reconstruction. In that case it is sufficient to compute
     ! only the barycenter of the departure region (instead of all the vertices).
     i_rlstart  = 5
     i_rlend_tr = MIN(i_rlend, min_rledge_int - 1)
@@ -672,15 +674,16 @@ CONTAINS
                                        !< i.e. output flux across the edge
 
     REAL(vp), TARGET ::    &                   !< reconstructed gradient vector at
-      &  z_grad(2,nproma,p_patch%nlev,p_patch%nblks_c)
+      &  z_grad(2,SIZE(p_cc,1),SIZE(p_cc,2),SIZE(p_cc,3))
                                                !< cell center (geographical coordinates)
+                                               !< dim: (2,nproma,p_patch%nlev,p_patch%nblks_c)
 
     REAL(wp), TARGET ::    &                        !< coefficient of the lsq reconstruction
-      &  z_lsq_coeff(3,nproma,p_patch%nlev,p_patch%nblks_c)
+      &  z_lsq_coeff(3,SIZE(p_cc,1),SIZE(p_cc,2),SIZE(p_cc,3))
                                                     !< at cell center (geogr. coordinates)
                                                     !< includes coeff0 and gradients in
                                                     !< zonal and meridional direction
-
+                                                    !< dim: (3,nproma,p_patch%nlev,p_patch%nblks_c)
     INTEGER  :: pid
     INTEGER  :: slev, elev         !< vertical start and end level
     INTEGER  :: je, jk, jb         !< index of edge, vert level, block
@@ -796,18 +799,20 @@ CONTAINS
         i_startblk = p_patch%cells%start_block(min_rlcell_int - 2)
         i_endblk   = p_patch%cells%end_block(min_rlcell_int - 2)
 !$OMP PARALLEL
-        CALL init(z_lsq_coeff(:,:,:,i_startblk:i_endblk), lacc=.TRUE., opt_acc_async=.TRUE.)
+        CALL init(z_lsq_coeff(:,:,:,i_startblk:i_endblk), lacc=.TRUE.)
 !$OMP END PARALLEL
       ENDIF
 
 
       IF (advection_config(pid)%llsq_svd) THEN
         CALL recon_lsq_cell_l_svd( p_cc, p_patch, lsq_lin, z_lsq_coeff,         &
+             &                   lacc=.TRUE.,                                   &
              &                   opt_slev=slev, opt_elev=elev,                  &
              &                   opt_rlstart=i_rlstart_c, opt_rlend=i_rlend_c,  &
              &                   opt_lconsv=l_consv, opt_acc_async = .TRUE. )
       ELSE
         CALL recon_lsq_cell_l( p_cc, p_patch, lsq_lin, z_lsq_coeff,             &
+        &                    lacc=.TRUE.,                                       &
         &                    opt_slev=slev, opt_elev=elev,                      &
         &                    opt_rlstart=i_rlstart_c, opt_rlend=i_rlend_c,      &
         &                    opt_lconsv=l_consv, opt_acc_async = .TRUE. )
@@ -816,15 +821,15 @@ CONTAINS
     ELSE IF (p_igrad_c_miura == 2) THEN
       ! Green-Gauss method
       CALL grad_green_gauss_cell( p_cc, p_patch, p_int, z_grad, opt_slev=slev, &
-        &                         opt_elev=elev, opt_rlstart=i_rlstart_c,      &
-        &                         opt_rlend=i_rlend_c )
+        &                         lacc=.TRUE., opt_elev=elev,                  &
+        &                         opt_rlstart=i_rlstart_c, opt_rlend=i_rlend_c )
 
 
     ELSE IF (p_igrad_c_miura == 3) THEN
       ! gradient based on three-node triangular element
-      CALL grad_fe_cell( p_cc, p_patch, p_int, z_grad, opt_slev=slev, &
-        &                opt_elev=elev, opt_rlstart=i_rlstart_c,      &
-        &                opt_rlend=i_rlend_c )
+      CALL grad_fe_cell( p_cc, p_patch, p_int, z_grad, lacc=.TRUE., &
+        &                opt_slev=slev, opt_elev=elev,              &
+        &                opt_rlstart=i_rlstart_c, opt_rlend=i_rlend_c )
 
     ENDIF
 
@@ -850,7 +855,7 @@ CONTAINS
       i_startblk = p_patch%edges%start_block(i_rlend_e-1)
       i_endblk   = p_patch%edges%end_block(min_rledge_int-3)
 
-      CALL init(p_out_e(:,:,i_startblk:i_endblk), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init(p_out_e(:,:,i_startblk:i_endblk), lacc=.TRUE.)
 !$OMP BARRIER
     ENDIF
 
@@ -1193,28 +1198,28 @@ CONTAINS
 
         IF (advection_config(pid)%llsq_svd) THEN
           CALL recon_lsq_cell_l_svd( z_tracer(:,:,:,nnow), p_patch, lsq_lin,   &
-               &                   z_lsq_coeff, opt_slev=slev, opt_elev=elev,  &
-               &                   opt_rlend=i_rlend_c, opt_lconsv=l_consv,    &
-               &                   opt_acc_async=.TRUE. )
+               &                   z_lsq_coeff, lacc=.TRUE., opt_slev=slev,    &
+               &                   opt_elev=elev, opt_rlend=i_rlend_c,         &
+               &                   opt_lconsv=l_consv, opt_acc_async=.TRUE. )
         ELSE
-          CALL recon_lsq_cell_l( z_tracer(:,:,:,nnow), p_patch, lsq_lin,           &
-          &                    z_lsq_coeff, opt_slev=slev, opt_elev=elev,          &
-          &                    opt_rlend=i_rlend_c, opt_lconsv=l_consv ,           &
-          &                     opt_acc_async=.TRUE. )
+          CALL recon_lsq_cell_l( z_tracer(:,:,:,nnow), p_patch, lsq_lin,       &
+          &                    z_lsq_coeff, lacc=.TRUE., opt_slev=slev,        &
+          &                    opt_elev=elev, opt_rlend=i_rlend_c,             &
+          &                    opt_lconsv=l_consv,  opt_acc_async=.TRUE. )
         ENDIF
 
       ELSE IF (p_igrad_c_miura == 2) THEN
         ! Green-Gauss method
         CALL grad_green_gauss_cell( z_tracer(:,:,:,nnow), p_patch, p_int, &
-          &                         z_grad, opt_slev=slev, opt_elev=elev, &
-          &                         opt_rlend=i_rlend_c )
+          &                         z_grad, lacc=.TRUE., opt_slev=slev,   &
+          &                         opt_elev=elev, opt_rlend=i_rlend_c )
 
 
       ELSE IF (p_igrad_c_miura == 3) THEN
         ! gradient based on three-node triangular element
         CALL grad_fe_cell( z_tracer(:,:,:,nnow), p_patch, p_int, &
-          &                z_grad, opt_slev=slev, opt_elev=elev, &
-          &                opt_rlend=i_rlend_c )
+          &                z_grad, lacc=.TRUE., opt_slev=slev,   &
+          &                opt_elev=elev, opt_rlend=i_rlend_c )
 
 
       ENDIF
@@ -1417,7 +1422,7 @@ CONTAINS
       nnow = nnew
       nnew = nsav
 
-      CALL sync_patch_array(SYNC_C,p_patch,z_tracer(:,:,:,nnow),opt_varname='z_tracer')
+      CALL sync_patch_array(SYNC_C,p_patch,z_tracer(:,:,:,nnow),lacc=.TRUE.,opt_varname='z_tracer')
 
 
     ENDDO  ! loop over sub-timesteps
@@ -1584,9 +1589,6 @@ CONTAINS
     REAL(vp), ALLOCATABLE, SAVE ::  & !< gauss quadrature vector
       &  z_quad_vector_sum(:,:,:,:)   !< dim: (nproma,lsq_dim_unk+1,nlev,nblks_e)
 
-    REAL(vp), ALLOCATABLE, SAVE ::  & !< area of departure region [m**2]
-      &  z_dreg_area(:,:,:)           !< dim: (nproma,nlev,nblks_e)
-
     INTEGER, ALLOCATABLE, SAVE, TARGET ::  & !< line indices of upwind cell
       &  z_cell_idx(:,:,:)             !< dim: (nproma,nlev,p_patch%nblks_e)
     INTEGER, ALLOCATABLE, SAVE, TARGET ::  & !< block indices of upwind cell
@@ -1699,17 +1701,16 @@ CONTAINS
     IF ( ld_compute ) THEN
       ! allocate temporary arrays for quadrature and upwind cells
       ALLOCATE( z_quad_vector_sum(nproma,dim_unk,nlev,p_patch%nblks_e), &
-        &       z_dreg_area(nproma,nlev,p_patch%nblks_e),               &
         &       z_cell_idx(nproma,nlev,p_patch%nblks_e),                &
         &       z_cell_blk(nproma,nlev,p_patch%nblks_e),                &
         &       STAT=ist )
       IF (ist /= SUCCESS) THEN
-        CALL finish(routine,                                 &
-          &  'allocation for z_quad_vector_sum, z_dreg_area, ' //    &
-          &  'z_cell_idx, z_cell_blk' )
+        CALL finish(routine,                                       &
+          &  'allocation for z_quad_vector_sum, z_cell_idx,' //    &
+          &  ' z_cell_blk' )
       ENDIF
 
-      !$ACC ENTER DATA CREATE(z_quad_vector_sum, z_dreg_area, z_cell_idx, z_cell_blk)
+      !$ACC ENTER DATA CREATE(z_quad_vector_sum, z_cell_idx, z_cell_blk)
 
       ! compute vertex coordinates for the departure region using a first
       ! order accurate (O(\Delta t)) backward trajectory-method
@@ -1727,16 +1728,16 @@ CONTAINS
       IF (lsq_high_ord == 2) THEN
         ! Gauss-Legendre quadrature with 4 quadrature points for integrating
         ! a quadratic 2D polynomial
-        CALL prep_gauss_quadrature_q( p_patch, z_coords_dreg_v,           &! in
-          &                      z_quad_vector_sum, z_dreg_area,          &! out
+        CALL prep_gauss_quadrature_q_miura3( p_patch, z_coords_dreg_v,    &! in
+          &                      z_quad_vector_sum,                       &! out
           &                      opt_rlstart=i_rlstart, opt_rlend=i_rlend,&! in
           &                      opt_slev=slev_ti, opt_elev=elev_ti       )! in
 
       ELSE IF (lsq_high_ord == 3) THEN
         ! Gauss-Legendre quadrature with 4 quadrature points for integrating
         ! a cubic 2D polynomial
-        CALL prep_gauss_quadrature_c( p_patch, z_coords_dreg_v,           &! in
-          &                      z_quad_vector_sum, z_dreg_area,          &! out
+        CALL prep_gauss_quadrature_c_miura3( p_patch, z_coords_dreg_v,    &! in
+          &                      z_quad_vector_sum,                       &! out
           &                      opt_rlstart=i_rlstart, opt_rlend=i_rlend,&! in
           &                      opt_slev=slev_ti, opt_elev=elev_ti       )! in
       ENDIF
@@ -1752,25 +1753,25 @@ CONTAINS
       ! quadratic reconstruction
       ! (computation of 6 coefficients -> z_lsq_coeff )
       IF (advection_config(pid)%llsq_svd) THEN
-        CALL recon_lsq_cell_q_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,    &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+        CALL recon_lsq_cell_q_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,      &
+        &                          lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                          opt_rlend=i_rlend_c, opt_rlstart=2 )
       ELSE
         CALL recon_lsq_cell_q( p_cc, p_patch, lsq_high, z_lsq_coeff,        &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+        &                      lacc=.TRUE., opt_slev=slev, opt_elev=elev,   &
+        &                      opt_rlend=i_rlend_c, opt_rlstart=2 )
       ENDIF
     ELSE IF (lsq_high_ord == 3) THEN
       ! cubic reconstruction
       ! (computation of 10 coefficients -> z_lsq_coeff )
       IF (advection_config(pid)%llsq_svd) THEN
-      CALL recon_lsq_cell_c_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,    &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+      CALL recon_lsq_cell_c_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,      &
+        &                        lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                        opt_rlend=i_rlend_c, opt_rlstart=2 )
       ELSE
-      CALL recon_lsq_cell_c( p_cc, p_patch, lsq_high, z_lsq_coeff,        &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+      CALL recon_lsq_cell_c( p_cc, p_patch, lsq_high, z_lsq_coeff,      &
+        &                    lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                    opt_rlend=i_rlend_c, opt_rlstart=2 )
       ENDIF
     ENDIF
 
@@ -1778,7 +1779,7 @@ CONTAINS
     ! Synchronize polynomial coefficients
     ! Note: a special sync routine is needed here because the fourth dimension
     ! of z_lsq_coeff is (for efficiency reasons) on the third index
-    CALL sync_patch_array_4de1(SYNC_C1,p_patch,lsq_high_set%dim_unk+1,z_lsq_coeff,opt_varname='z_lsq_coeff 1')
+    CALL sync_patch_array_4de1(SYNC_C1, p_patch, lsq_high_set%dim_unk+1, z_lsq_coeff, lacc=.TRUE., opt_varname='z_lsq_coeff 1')
 
 
 
@@ -1844,7 +1845,7 @@ CONTAINS
 !$NEC unroll(6)
             p_out_e(je,jk,jb) =                                                       &
               &  DOT_PRODUCT(z_lsq_coeff(1:6,ptr_ilc(je,jk,jb),jk,ptr_ibc(je,jk,jb)), &
-              &  z_quad_vector_sum(je,1:6,jk,jb) ) / z_dreg_area(je,jk,jb)
+              &  z_quad_vector_sum(je,1:6,jk,jb) )
 
           ENDDO
         ENDDO
@@ -1860,7 +1861,7 @@ CONTAINS
 !$NEC unroll(10)
             p_out_e(je,jk,jb) =                                                        &
               &  DOT_PRODUCT(z_lsq_coeff(1:10,ptr_ilc(je,jk,jb),jk,ptr_ibc(je,jk,jb)), &
-              &  z_quad_vector_sum(je,1:10,jk,jb) ) / z_dreg_area(je,jk,jb)
+              &  z_quad_vector_sum(je,1:10,jk,jb) )
 
           ENDDO
         ENDDO
@@ -1888,7 +1889,7 @@ CONTAINS
 !$NEC unroll(6)
             p_out_e(je,jk,jb) =                                                       &
               &  DOT_PRODUCT(z_lsq_coeff(1:6,ptr_ilc(je,jk,jb),jk,ptr_ibc(je,jk,jb)), &
-              &  z_quad_vector_sum(je,1:6,jk,jb) ) / z_dreg_area(je,jk,jb)            &
+              &  z_quad_vector_sum(je,1:6,jk,jb) )                                    &
               &  * p_mass_flx_e(je,jk,jb)
 
           ENDDO
@@ -1905,7 +1906,7 @@ CONTAINS
 !$NEC unroll(10)
             p_out_e(je,jk,jb) =                                                        &
               &  DOT_PRODUCT(z_lsq_coeff(1:10,ptr_ilc(je,jk,jb),jk,ptr_ibc(je,jk,jb)), &
-              &  z_quad_vector_sum(je,1:10,jk,jb) ) / z_dreg_area(je,jk,jb)            &
+              &  z_quad_vector_sum(je,1:10,jk,jb) )                                    &
               &  * p_mass_flx_e(je,jk,jb)
 
           ENDDO
@@ -1921,7 +1922,7 @@ CONTAINS
 !$OMP END PARALLEL
 
     !
-    ! 4. If desired, apply a monotonic or positive definite flux limiter 
+    ! 4. If desired, apply a monotonic or positive definite flux limiter
     !    to limit computed fluxes.
     !    The flux limiter is based on work by Zalesak (1979)
     !
@@ -1950,14 +1951,14 @@ CONTAINS
       ! upwind cell indices
 
       !$ACC WAIT(1)
-      !$ACC EXIT DATA DELETE(z_quad_vector_sum, z_dreg_area, z_cell_idx, z_cell_blk)
+      !$ACC EXIT DATA DELETE(z_quad_vector_sum, z_cell_idx, z_cell_blk)
 
-      DEALLOCATE( z_quad_vector_sum, z_dreg_area, z_cell_idx, z_cell_blk, &
+      DEALLOCATE( z_quad_vector_sum, z_cell_idx, z_cell_blk, &
         &         STAT=ist )
       IF (ist /= SUCCESS) THEN
-        CALL finish(routine,                                 &
-          &  'deallocation for z_quad_vector_sum, z_dreg_area, ' //  &
-          &  ' z_cell_idx, z_cell_blk failed' )
+        CALL finish(routine,                                        &
+          &  'deallocation for z_quad_vector_sum, z_cell_idx,' //   &
+          &  ' z_cell_blk failed' )
       ENDIF
     END IF
 
@@ -2307,11 +2308,11 @@ CONTAINS
       ! linear reconstruction
       ! (computation of 3 coefficients -> z_lsq_coeff )
       IF (advection_config(pid)%llsq_svd) THEN
-        CALL recon_lsq_cell_l_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,               &
+        CALL recon_lsq_cell_l_svd( p_cc, p_patch, lsq_high, z_lsq_coeff, lacc=.TRUE.,  &
              &                     opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c,  &
              &                     opt_rlstart=2, opt_lconsv=l_consv )
       ELSE
-        CALL recon_lsq_cell_l( p_cc, p_patch, lsq_high, z_lsq_coeff,        &
+        CALL recon_lsq_cell_l( p_cc, p_patch, lsq_high, z_lsq_coeff, lacc=.TRUE., &
           &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
           &                    opt_rlstart=2, opt_lconsv=l_consv )
       ENDIF
@@ -2319,25 +2320,25 @@ CONTAINS
       ! quadratic reconstruction
       ! (computation of 6 coefficients -> z_lsq_coeff )
       IF (advection_config(pid)%llsq_svd) THEN
-      CALL recon_lsq_cell_q_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,    &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+      CALL recon_lsq_cell_q_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,      &
+        &                        lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                        opt_rlend=i_rlend_c, opt_rlstart=2 )
       ELSE
       CALL recon_lsq_cell_q( p_cc, p_patch, lsq_high, z_lsq_coeff,        &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+        &                    lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                    opt_rlend=i_rlend_c, opt_rlstart=2 )
       ENDIF
     ELSE IF (lsq_high_ord == 3) THEN
       ! cubic reconstruction
       ! (computation of 10 coefficients -> z_lsq_coeff )
       IF (advection_config(pid)%llsq_svd) THEN
-      CALL recon_lsq_cell_c_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,    &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+      CALL recon_lsq_cell_c_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,      &
+        &                        lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                        opt_rlend=i_rlend_c, opt_rlstart=2 )
       ELSE
-      CALL recon_lsq_cell_c( p_cc, p_patch, lsq_high, z_lsq_coeff,        &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+      CALL recon_lsq_cell_c( p_cc, p_patch, lsq_high, z_lsq_coeff,      &
+        &                    lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                    opt_rlend=i_rlend_c, opt_rlstart=2 )
       ENDIF
     ENDIF
 
@@ -2345,7 +2346,7 @@ CONTAINS
     ! Synchronize polynomial coefficients
     ! Note: a special sync routine is needed here because the fourth dimension
     ! of z_lsq_coeff is (for efficiency reasons) on the third index
-    CALL sync_patch_array_4de1(SYNC_C,p_patch,lsq_high_set%dim_unk+1,z_lsq_coeff,opt_varname='z_lsq_coeff 2')
+    CALL sync_patch_array_4de1(SYNC_C, p_patch, lsq_high_set%dim_unk+1, z_lsq_coeff, lacc=.TRUE., opt_varname='z_lsq_coeff 2')
 
 
 
@@ -2451,7 +2452,7 @@ CONTAINS
 
 
     !
-    ! 4. If desired, apply a monotonic or positive definite flux limiter 
+    ! 4. If desired, apply a monotonic or positive definite flux limiter
     !    to limit computed fluxes.
     !    The flux limiter is based on work by Zalesak (1979)
     !
@@ -2867,11 +2868,11 @@ CONTAINS
       ! linear reconstruction
       ! (computation of 3 coefficients -> z_lsq_coeff )
       IF (advection_config(pid)%llsq_svd) THEN
-        CALL recon_lsq_cell_l_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,               &
+        CALL recon_lsq_cell_l_svd( p_cc, p_patch, lsq_high, z_lsq_coeff, lacc=.TRUE.,  &
              &                     opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c,  &
              &                     opt_rlstart=2, opt_lconsv=l_consv )
       ELSE
-        CALL recon_lsq_cell_l( p_cc, p_patch, lsq_high, z_lsq_coeff,        &
+        CALL recon_lsq_cell_l( p_cc, p_patch, lsq_high, z_lsq_coeff, lacc=.TRUE., &
           &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
           &                    opt_rlstart=2, opt_lconsv=l_consv )
       ENDIF
@@ -2879,25 +2880,25 @@ CONTAINS
       ! quadratic reconstruction
       ! (computation of 6 coefficients -> z_lsq_coeff )
       IF (advection_config(pid)%llsq_svd) THEN
-      CALL recon_lsq_cell_q_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,    &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+      CALL recon_lsq_cell_q_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,      &
+        &                        lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                        opt_rlend=i_rlend_c, opt_rlstart=2 )
       ELSE
       CALL recon_lsq_cell_q( p_cc, p_patch, lsq_high, z_lsq_coeff,        &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+        &                    lacc=.TRUE., opt_slev=slev, opt_elev=elev,   &
+        &                    opt_rlend=i_rlend_c, opt_rlstart=2 )
       ENDIF
     ELSE IF (lsq_high_ord == 3) THEN
       ! cubic reconstruction
       ! (computation of 10 coefficients -> z_lsq_coeff )
       IF (advection_config(pid)%llsq_svd) THEN
-      CALL recon_lsq_cell_c_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,    &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+      CALL recon_lsq_cell_c_svd( p_cc, p_patch, lsq_high, z_lsq_coeff,      &
+        &                        lacc=.TRUE., opt_slev=slev, opt_elev=elev, &
+        &                        opt_rlend=i_rlend_c, opt_rlstart=2 )
       ELSE
-      CALL recon_lsq_cell_c( p_cc, p_patch, lsq_high, z_lsq_coeff,        &
-        &                    opt_slev=slev, opt_elev=elev, opt_rlend=i_rlend_c, &
-        &                    opt_rlstart=2 )
+      CALL recon_lsq_cell_c( p_cc, p_patch, lsq_high, z_lsq_coeff,       &
+        &                    lacc=.TRUE., opt_slev=slev, opt_elev=elev,  &
+        &                    opt_rlend=i_rlend_c, opt_rlstart=2 )
       ENDIF
     ENDIF
     !$ACC WAIT
@@ -2905,7 +2906,7 @@ CONTAINS
     ! Synchronize polynomial coefficients
     ! Note: a special sync routine is needed here because the fourth dimension
     ! of z_lsq_coeff is (for efficiency reasons) on the third index
-    CALL sync_patch_array_4de1(SYNC_C,p_patch,lsq_high_set%dim_unk+1,z_lsq_coeff,opt_varname='z_lsq_coeff 3')
+    CALL sync_patch_array_4de1(SYNC_C, p_patch, lsq_high_set%dim_unk+1, z_lsq_coeff, lacc=.TRUE., opt_varname='z_lsq_coeff 3')
 
     !
     ! 3. Calculate approximation to the area average \Phi_{avg} of the tracer
@@ -3053,7 +3054,7 @@ CONTAINS
 
 
     !
-    ! 4. If desired, apply a monotonic or positive definite flux limiter 
+    ! 4. If desired, apply a monotonic or positive definite flux limiter
     !    to limit computed fluxes.
     !    The flux limiter is based on work by Zalesak (1979)
     !
@@ -3095,4 +3096,3 @@ CONTAINS
   END SUBROUTINE hflux_ffsl_hybrid
 
 END MODULE mo_advection_hflux
-

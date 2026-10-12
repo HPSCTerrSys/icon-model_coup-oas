@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -24,17 +23,21 @@ MODULE mo_oem_config
   !--------------------------------------------------------------------------
 
     !------------------------------------------------------------------------
-    ! oemctrl_nml:
+    ! ghgctrl_nml:
     !------------------------------------------------------------------------
     CHARACTER(LEN=filename_max) :: vertical_profile_nc,   & !< name of the oae vertical profile
                               &    hour_of_day_nc,        & !< name of the oae hour of day file
-                              &    day_of_week_nc,        & !< name of the oae day of week file
-                              &    month_of_year_nc,      & !< name of the oae month of year file
-                              &    hour_of_year_nc,       & !< name of the oae hour of year file
-                              &    gridded_emissions_nc,  & !< name of the oae gridded emission file
-                              &    ens_reg_nc,            & !< name of file with ensemble-regions
-                              &    ens_lambda_nc,         & !< name of file with ensemble-lambdas
-                              &    vegetation_indices_nc    !< name of file with MODIS reflectances
+                              &     day_of_week_nc,        & !< name of the oae day of week file
+                              &     month_of_year_nc,      & !< name of the oae month of year file
+                              &     hour_of_year_nc,       & !< name of the oae hour of year file
+                              &     gridded_emissions_nc,  & !< name of the oae gridded emission file
+                              &     chem_init_nc,          & !< name of ic-file for chemical species
+                              &     chem_restart_nc,       & !< name of restart-file for chemical species
+                              &     ens_reg_nc,            & !< name of file with ensemble-regions
+                              &     ens_lambda_nc,         & !< name of file with ensemble-lambdas
+                              &     boundary_lambda_nc,    & !< name of file with bg-lambdas
+                              &     boundary_regions_nc,   & !< name of file with boundary region mask
+                              &     vegetation_indices_nc    !< name of file with MODIS reflectances
     REAL(wp), DIMENSION(8) ::      vprm_par,              & !< VPRM parameter values for PAR_0
                               &    vprm_lambda,           & !< VPRM parameter values for lambda
                               &    vprm_alpha,            & !< VPRM parameter values for alpha
@@ -45,13 +48,11 @@ MODULE mo_oem_config
                               &    vprm_tlow                !< VPRM parameter values for T_low
     LOGICAL ::                     lcut_area                !< Switch to turn on/off to select an
                                                             !< area where no fluxes are applied
-    REAL(wp) ::                    lon_cut_start,         & !< longitude start coordinate 
+    REAL(wp) ::                    lon_cut_start,         & !< longitude start coordinate
                               &    lon_cut_end,           & !< longitude end coordinate
                               &    lat_cut_start,         & !< latitude start coordinate
-                              &    lat_cut_end              !< latitude end coordinate
- 
-
+                              &    lat_cut_end,           & !< latitude end coordinate
+                              &    restart_init_time
 
 
 END MODULE mo_oem_config
-

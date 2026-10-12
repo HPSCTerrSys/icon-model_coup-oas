@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 set -x
 
@@ -43,7 +44,7 @@ if [[ "$mocPattern" != "moc.gnuplot.dat" ]]; then
     # old: 40-60N mean value
  #  cdo outputkey,date,value -mulc,1.e-9 -fldmean -selname,$mocVar -sellonlatbox,0,1,40,60 \
  #       -sellevel,1000 $mocPattern > moc.gnuplot.dat
-    # new: at 26N, i.e. index 90+26 
+    # new: at 26N, i.e. index 90+26
     cdo outputkey,date,value -mulc,1.e-9 -selname,$mocVar -selindexbox,1,1,116,116 \
          -sellevel,1000 $mocPattern > moc.gnuplot.dat
   fi

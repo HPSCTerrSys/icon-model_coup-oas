@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -39,13 +38,13 @@ MODULE mo_gridref_config
     REAL(wp) :: rbf_scale_grf_e(max_dom)
 
     INTEGER  :: grf_intmethod_c,  &  ! switch for type of grid refinement interpolation
-      &         grf_intmethod_ct, & 
+      &         grf_intmethod_ct, &
       &         grf_intmethod_e
 
     INTEGER  :: grf_velfbk     ! switch for velocity feedback method
                                ! 1 = averaging over child edges 1 and 2;
                                ! 2 = 2nd-order method using RBF reconstruction to child vertices
-  
+
     INTEGER  :: grf_scalfbk    ! switch for feedback method of scalar dynamical variables
                                ! 1 = area-weighted averaging
                                ! 2 = bilinear interpolation
@@ -76,7 +75,7 @@ CONTAINS
 
     ! local
     INTEGER  :: jg
-    REAL(wp) :: resol   ! resolution in km    
+    REAL(wp) :: resol   ! resolution in km
 
     DO jg = 1,n_dom
 
@@ -84,7 +83,7 @@ CONTAINS
       IF (rbf_scale_grf_e(jg) > 0.0_wp) CYCLE
 
       resol = mean_characteristic_length(jg)/1000._wp  ! resolution in km
-      IF (resol >= 1._wp) THEN 
+      IF (resol >= 1._wp) THEN
         rbf_scale_grf_e(jg) = 0.5_wp
       ELSE
         rbf_scale_grf_e(jg) = 0.5_wp/(1._wp+3.25_wp*LOG(1._wp/resol)**2.75)

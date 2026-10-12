@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -72,26 +72,26 @@
   if (Model.eq."ICOHDC") then
      if (CellType.eq."3") then
         if ((VarName.eq."VOR").and.(VorAtCorners.eq.1)) then
-           latName    = "vlat" 
-           lonName    = "vlon"                                            
-        else                                                              
-           latName    = "clat"                                            
-           lonName    = "clon"                                            
-        end if                                                            
-     else                                                                 
-     if (CellType.eq."6") then                                            
-        if ((VarName.eq."VOR").and.(VorAtCorners.eq.1)) then
-           latName    = "clat"                                            
-           lonName    = "clon"                                            
-        else                                                              
            latName    = "vlat"
-           lonName    = "vlon"                                            
-        end if                                                            
-     else                                                                 
-        print("Wrong cell type. Should be 3 or 6")                        
-     end if                                                               
-     end if                                                               
-  end if                                           
+           lonName    = "vlon"
+        else
+           latName    = "clat"
+           lonName    = "clon"
+        end if
+     else
+     if (CellType.eq."6") then
+        if ((VarName.eq."VOR").and.(VorAtCorners.eq.1)) then
+           latName    = "clat"
+           lonName    = "clon"
+        else
+           latName    = "vlat"
+           lonName    = "vlon"
+        end if
+     else
+        print("Wrong cell type. Should be 3 or 6")
+     end if
+     end if
+  end if
 
 ;---------------------------------------------------------------
 ; labels and some variable dependent settings
@@ -112,20 +112,20 @@
      clevels    = (/-3,0,3/)
 
 ;     if (Model.eq."ECHAM5") then
-        vname = "svo"  ; var name given by afterburner 
+        vname = "svo"  ; var name given by afterburner
 ;     else
 ;        vname = "ha_diag_rel_vort_c"
 ;     end if
 
-  else 
+  else
   if (VarName.eq."DIV") then ;divergence
 
-     varString   = "850 hPa divergence (10~S~-6~N~ s~S~-1~N~) at day "+iday 
+     varString   = "850 hPa divergence (10~S~-6~N~ s~S~-1~N~) at day "+iday
      scale      = 1e6
 
      colormap   = "testcmap"
-     colorStart = 2 
-     colorEnd   = 200 
+     colorStart = 2
+     colorEnd   = 200
 
      varMin     = (/ -15./)
      varMax     = (/  15./)
@@ -140,12 +140,12 @@
 
   else ; omega
 
-     varString  = "850 hPa omega (Pa s~S~-1~N~) at day "+iday 
+     varString  = "850 hPa omega (Pa s~S~-1~N~) at day "+iday
      scale      = 1.
 
      colormap   = "testcmap"
-     colorStart = 2 
-     colorEnd   = 200 
+     colorStart = 2
+     colorEnd   = 200
 
      varMin     = (/ -0.4/)
      varMax     = (/  0.2/)
@@ -161,7 +161,7 @@
   end if
 
   CenterString = " "
-  expString  = ConfigStr ;+" "+Resolution 
+  expString  = ConfigStr ;+" "+Resolution
 
 ;---------------------------------------------------------------
 ; open data file and get grid information
@@ -208,7 +208,7 @@
 
   ResC                = True
 
-  ResC@gsnDraw        = False 
+  ResC@gsnDraw        = False
   ResC@gsnFrame       = False
 
   ResC@cnInfoLabelOn  = False
@@ -235,22 +235,22 @@
 ; shadings vs contours
 
   ResC@cnFillOn       = True
-  ResC@cnLinesOn      = False 
+  ResC@cnLinesOn      = False
 
   ResC2@cnFillOn       = False
-  ResC2@cnLinesOn      = True 
+  ResC2@cnLinesOn      = True
 
 ;-----------------------------------
-; label bar for the underlying plot 
+; label bar for the underlying plot
 
-  ResC@lbLabelBarOn             = True 
+  ResC@lbLabelBarOn             = True
   ResC@pmLabelBarHeightF        = 0.04
-  ResC@pmLabelBarOrthogonalPosF = 0.25 
+  ResC@pmLabelBarOrthogonalPosF = 0.25
   ResC@lbLabelAutoStride        = True
   ResC@lbLabelFontHeightF       = FontHeight +0.001
-  ResC@pmLabelBarWidthF         = 0.7 
+  ResC@pmLabelBarWidthF         = 0.7
 
-  ResC2@lbLabelBarOn            = False 
+  ResC2@lbLabelBarOn            = False
 
 ;-----------------------------------
 ; contour levels
@@ -272,7 +272,7 @@
 
   ResC2@gsnStringFontHeightF  = 7*FontHeight +0.002
   ResC2@gsnCenterString       = CenterString
-  ResC2@gsnLeftString         = varString 
+  ResC2@gsnLeftString         = varString
   ResC2@gsnRightString        = expString
 
   ResC2@gsnLeftStringOrthogonalPosF  = 0.06
@@ -285,15 +285,15 @@
   ResC@mpGeophysicalLineColor = "transparent"
   ResC@mpFillOn               = False
   ResC@mpLimitMode            = "LatLon"
-  ResC@mpMinLatF              = 25. 
-  ResC@mpMaxLatF              = 75. 
+  ResC@mpMinLatF              = 25.
+  ResC@mpMaxLatF              = 75.
   ResC@mpMinLonF              = 0.
   ResC@mpMaxLonF              = 360.
   ResC@mpCenterLonF           = 180.
 
-  ResC@gsnMajorLatSpacing = 15. 
-  ResC@gsnMajorLonSpacing = 30. 
-  ResC@gsnMinorLatSpacing =  5. 
+  ResC@gsnMajorLatSpacing = 15.
+  ResC@gsnMajorLonSpacing = 30.
+  ResC@gsnMinorLatSpacing =  5.
   ResC@gsnMinorLonSpacing = 10.
 
 ;---------------------------------------------------------------
@@ -310,9 +310,9 @@
 
      var = var*scale
 
-     ResC@cnMinLevelValF  = varMin(it) 
-     ResC@cnMaxLevelValF  = varMax(it) 
-     ResC@cnLevelSpacingF = varInt(it) 
+     ResC@cnMinLevelValF  = varMin(it)
+     ResC@cnMaxLevelValF  = varMax(it)
+     ResC@cnLevelSpacingF = varInt(it)
 
      if (VarName.eq."VOR") then
         delete(ResC@gsnSpreadColors)
@@ -327,10 +327,9 @@
      plot(it) = gsn_csm_contour_map(wks,var,ResC)
      dum (it) = gsn_csm_contour    (wks,var,ResC2)
      overlay( plot(it),dum(it) )
-     
+
   draw(plot(it))
   frame(wks)
   end do
 
 end
-

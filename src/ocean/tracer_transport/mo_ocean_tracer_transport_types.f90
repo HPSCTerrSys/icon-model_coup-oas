@@ -1,16 +1,16 @@
-! Contains the variables to set up the ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the variables to set up the ocean model.
+
 #include "iconfor_dsl_definitions.inc"
 !=============================================================================================
 MODULE mo_ocean_tracer_transport_types
@@ -21,7 +21,22 @@ MODULE mo_ocean_tracer_transport_types
   USE mo_impl_constants,      ONLY: max_char_length
 
   PUBLIC :: t_ocean_tracer, t_tracer_collection, t_ocean_transport_state
-  
+  PUBLIC :: t_tracer_diagnostics ! by_nils ts_budget
+
+ !----------------------------------------------
+  ! start by_nils ts_budget
+  TYPE t_tracer_diagnostics
+    TYPE(t_patch_3d), POINTER :: patch_3d
+
+
+    LOGICAL    :: is_activated
+    onCells_3D :: tot, had, vad, hdf, vdf, idf, sur, srf
+
+
+  END TYPE t_tracer_diagnostics
+  ! end by_nils ts_budget
+  !----------------------------------------------
+
   !----------------------------------------------
   TYPE t_ocean_tracer
     onCells :: concentration
@@ -30,16 +45,17 @@ MODULE mo_ocean_tracer_transport_types
     onCells_HalfLevels :: ver_diffusion_coeff
 
     onCells_2D :: top_bc, bottom_bc
-    
+
     onCells_3D :: vertical_trasnport_tendencies
 
     LOGICAL :: is_advected
 
     TYPE(t_tracer_metadata), POINTER :: metadata
+    TYPE(t_tracer_diagnostics) :: diagnostics ! by_nils ts_budget
 
   END TYPE t_ocean_tracer
   !----------------------------------------------
-    
+
   !-------------------------------
   TYPE t_tracer_metadata
     CHARACTER(LEN=max_char_length) :: tracer_longnames
@@ -62,7 +78,7 @@ MODULE mo_ocean_tracer_transport_types
   !----------------------------------------------
   TYPE t_ocean_transport_state
     TYPE(t_patch_3d ),POINTER :: patch_3d
-    
+
     onCells_2D :: h_new, h_old
 
     onEdges    :: mass_flux_e
@@ -72,7 +88,6 @@ MODULE mo_ocean_tracer_transport_types
 
   END TYPE t_ocean_transport_state
   !----------------------------------------------
-    
-    
-END MODULE mo_ocean_tracer_transport_types
 
+
+END MODULE mo_ocean_tracer_transport_types

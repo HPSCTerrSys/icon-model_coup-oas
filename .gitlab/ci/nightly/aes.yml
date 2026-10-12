@@ -1,0 +1,71 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/common/dkrz.yml
+  - local: .gitlab/ci/utils/icon.yml
+
+.nightly:aes:aquaplanet:build:
+  extends:
+    - .common:dkrz:levante
+    - .utils:icon:build
+  stage: system
+  needs: []
+  variables:
+    ICON_CI_COMMON_DKRZ_SLURM_NTASKS: 32
+    ICON_CI_COMMON_DKRZ_SLURM_TIMELIMIT: "20:00"
+    ICON_CI_UTILS_GIT_CLONE_PATH: ${ICON_CI_COMMON_DKRZ_SHMEM_PATH}/icon
+    ICON_CI_UTILS_ICON_SOURCE_PATH: ${ICON_CI_UTILS_GIT_CLONE_PATH}
+    ICON_CI_UTILS_ICON_BUILD_EXTRA_SUBMODULE_PATHS: externals/memman externals/rte-rrtmgp
+    ICON_CI_UTILS_ICON_BUILD_JOB_COUNT: ${ICON_CI_COMMON_DKRZ_SLURM_NTASKS}
+    ICON_CI_UTILS_GIT_SPARSE_PATTERNS: >-
+      /configure /utils/ /*.in /run/*.in /src/ /support/ /ragnarok/ /config/
+  before_script:
+    - !reference [.common:dkrz:levante, before_script]
+    - !reference [.utils:icon:build, before_script]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - !reference [.common:dkrz:levante, rules]
+    - when: on_success
+
+.nightly:aes:aquaplanet:run:
+  extends:
+    - .common:dkrz:levante
+    - .utils:icon:run
+  stage: system
+  needs: []
+  variables:
+    ICON_CI_COMMON_DKRZ_SLURM_PARTITION: compute
+    ICON_CI_COMMON_DKRZ_SLURM_NTASKS: 256
+    ICON_CI_UTILS_GIT_SPARSE_PATTERNS: >-
+      /${ICON_CI_UTILS_ICON_MKEXP_CONFIG_REL_PATH} /data/ /run/ /utils/
+    ICON_CI_UTILS_ICON_MKEXP_CONFIG_REL_PATH: >-
+      run/checksuite.atm/test_aes_ape.config
+  before_script:
+    - !reference [.common:dkrz:levante, before_script]
+    - module load python3
+    - !reference [.utils:icon:run, before_script]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - !reference [.common:dkrz:levante, rules]
+    - when: on_success
+
+aes:aquaplanet:cpu:build:
+  extends: .nightly:aes:aquaplanet:build
+  variables:
+    ICON_CI_UTILS_ICON_CONFIG_REL_PATH: config/dkrz/levante.intel
+    ICON_CI_UTILS_ICON_CONFIG_EXTRA_ARGS: >-
+      --enable-atmo --enable-aes --enable-rte-rrtmgp --enable-openmp
+
+aes:aquaplanet:cpu:run:
+  extends: .nightly:aes:aquaplanet:run
+  needs: [aes:aquaplanet:cpu:build]

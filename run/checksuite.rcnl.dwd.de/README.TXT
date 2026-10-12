@@ -58,14 +58,14 @@ h3. Nomenclature
 Plain run scripts are located in <pre>run/checksuite.rcnl.dwd.de</pre>.
 
 # It is necessary to rename the test scripts according to the following scheme: <pre>exp.<test name>.run</pre>
-# It is necessary to set the stdout log output in the PBS header according to the following scheme: 
+# It is necessary to set the stdout log output in the PBS header according to the following scheme:
 <pre>
 #PBS -j oe
-#PBS -o LOG.exp.<test name>.run.run.o 
+#PBS -o LOG.exp.<test name>.run.run.o
 </pre>
 
 The scripts are started from the subdirectory @run@ with the help of a soft link to the @run/checksuite.rcnl.dwd.de@ subdirectory.
-Therefore the environment variable @${PBS_O_WORKDIR}@ points to the @run@ subdirectory. 
+Therefore the environment variable @${PBS_O_WORKDIR}@ points to the @run@ subdirectory.
 This must be taken into account when using @${PBS_O_WORKDIR}@ together with relative paths.
 
 Other run scripts templates are located in <pre>run/checksuite.nwp</pre>.
@@ -90,13 +90,13 @@ scripts/buildbot_scripts/create_list_dwd
 as follows.
 For template job scripts:
 <pre>
-$addexp checksuite.nwp/<template name> --builders DWD_nec --list $listname
+$addexp checksuite.nwp/<template name> --builders dwd_nec_oper --list $listname
 </pre>
 Note that <template name> is the file name, including the prefix "nwpexp." but without the suffix ".run".
 
 For plain job scripts:
 <pre>
-$addexp checksuite.rcnl.dwd.de/<test name> --builders DWD_nec --list $listname
+$addexp checksuite.rcnl.dwd.de/<test name> --builders dwd_nec_oper --list $listname
 </pre>
 Note that <test name> is the full name, including the prefix "exp." and the suffix ".run".
 
@@ -128,7 +128,7 @@ h2. Admin Information
 h3. User "buildbot"
 
 A user "buildbot" is required. This user needs shell login, otherwise it is not possible to execute run scripts (though it is possible to submit them to the batch queue).
-At DWD the user "buildbot" has the unusual home directory @/hpc/sw/buildbot/home@. 
+At DWD the user "buildbot" has the unusual home directory @/hpc/sw/buildbot/home@.
 Make sure that the run scripts require a proper setting of the environment variable @$TMPDIR@.
 
 

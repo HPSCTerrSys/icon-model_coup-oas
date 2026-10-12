@@ -1,16 +1,15 @@
-! Contains the setup of the variables for meteogram output.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the setup of the variables for meteogram output.
 
 MODULE mo_meteogram_nml
 
@@ -139,16 +138,16 @@ CONTAINS
     !    max_nlevs        = 91
     !    nvars            = 27
     !    nsfcvars         = 61
-    !    
+    !
     !    p_real_dp_byte   = 8
     !    MAX_HEADER_SIZE  = 60
     !    MAX_DATE_LEN     = 16
     !    MAX_NUM_STATIONS = 60
-    !    
+    !
     !    max_sfcvar_size  = max_time_stamps*p_real_dp_byte
     !    max_var_size     = (max_time_stamps+1)*p_real_dp_byte*max_nlevs
     !    max_buf_size     = MAX_HEADER_SIZE*p_real_dp_byte + max_time_stamps*(MAX_DATE_LEN+4)
-    !                       + nvars*max_var_size  + nsfcvars*max_sfcvar_size              
+    !                       + nvars*max_var_size  + nsfcvars*max_sfcvar_size
     !    total            = max_buf_size * MAX_NUM_STATIONS
     !
     ! This means, for example, that sampling 10000 time stamps at once

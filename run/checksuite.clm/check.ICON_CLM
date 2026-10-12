@@ -3,7 +3,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -32,12 +32,12 @@ export PREFIX=clmexp
 # TYPES is a list of names identifying the files <EXPNAME>_<TYPE>_<DATE>.nc
 # to be checked.
 #
-export TYPES='out01 out02 out03 out04 out05 out06 out08 out09'
+export TYPES='out01 out02 out03 out04 out05 out06'
 
 # DATES is a list of dates identifying the files <EXPNAME>_<TYPE>_<DATE>.nc
 # to be checked.
 #
-export DATES='19790102T000000Z'
+export DATES='19790102T010000Z'
 
 # RESTART_DATE defines the date and time from which restarts should be performed.
 #
@@ -73,5 +73,3 @@ check_final_status $STATUS "$EXPERIMENT"
 
 #--------------------------------------------------------------------------------
 exit
-
-

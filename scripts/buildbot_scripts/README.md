@@ -68,7 +68,7 @@ The builder class stores the following data:
 The builder class builds ICON.
 
 ## Configuration Matrix
-With it's tabular layout, the configuration matrix is a perfect candidate to be handled by `pandas.DataFrame`. Subset creation is straight forward with the `DataFrame.loc` function. The custom class `BuildbotConfig` stores all the information needed about machines, builders and experiments. There are three main storage objects: 
+With it's tabular layout, the configuration matrix is a perfect candidate to be handled by `pandas.DataFrame`. Subset creation is straight forward with the `DataFrame.loc` function. The custom class `BuildbotConfig` stores all the information needed about machines, builders and experiments. There are three main storage objects:
 - a python `dict` storing `Builder` objects by builder name
 - a python `dict` storing machine meta data as a dictionary (machines so far only have a single meta data type `queue` which is not used in current `create_list_<list>` scripts or member functions)
 - and the configuration matrix `DataFrame` which stores `Experiment` objects in a machine-builder-experiment `MultiIndex` `DataFrame` that looks like the one at the beginning of this document.
@@ -76,7 +76,7 @@ With it's tabular layout, the configuration matrix is a perfect candidate to be 
 # Requirements
 The implementation makes use of some non-standard python libraries:
 | Library | Use
-| - | - 
+| - | -
 | click | Click is a widely used command line interface library for python and the successor of the standard `argparse`. It is used here to provide the interface to the bash scripts.
 | pandas | Pandas is a very powerful data analytics library. We use it here only for it's nice utility functions for multi-dimensional tables
 | numpy | Only used for `np.nan`. (Numpy is also a requirement of pandas.)

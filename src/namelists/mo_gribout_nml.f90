@@ -1,19 +1,18 @@
-! Namelist for Grib output
-!
-! These subroutines are called by  read_atmo_namelists and do the transport
-! setup.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Namelist for Grib output
+!
+! These subroutines are called by  read_atmo_namelists and do the transport
+! setup.
 
 MODULE mo_gribout_nml
 
@@ -24,7 +23,9 @@ MODULE mo_gribout_nml
   USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_restart_nml_and_att, ONLY: open_tmpfile, store_and_close_namelist,     &
     &                               open_and_restore_namelist, close_tmpfile
-  USE mo_gribout_config,      ONLY: gribout_config
+  USE mo_gribout_config,      ONLY: gribout_config, GRIB_UNDEFVAL, GRIB_NOTINUSEVAL,   &
+    &                               GRIB_LIB_COMPAT_ECC_2_31_0, GRIB_MAX_NUM_MOD_COMP, &
+    &                               GRIB_MAX_STR_LEN_MOD_COMP, have_gribout_nml
   USE mo_grib2_tile,          ONLY: grib2_keys_tile
   USE mo_nml_annotate,        ONLY: temp_defaults, temp_settings
   USE mo_util_string,         ONLY: int2string, tolower, one_of
@@ -40,9 +41,6 @@ MODULE mo_gribout_nml
   !> module name
   CHARACTER(LEN=*), PARAMETER :: modname = 'mo_gribout_nml'
 
-  ! constant for better readability
-  INTEGER, PARAMETER :: UNDEFINED = -1
-
   !----------------------------------!
   ! gribout_nml namelist variables   !
   !----------------------------------!
@@ -51,6 +49,8 @@ MODULE mo_gribout_nml
   !  - "none"
   !  - "deterministic"
   !  - "ensemble"
+  !  - "modcomp:deterministic"
+  !  - "modcomp:ensemble"
   !
   ! Setting this different to "none" enables a couple of defaults for
   ! the other gribout_nml namelist parameters. If, additionally, the
@@ -102,6 +102,7 @@ MODULE mo_gribout_nml
     & localDefinitionNumber             ! 252: Ensemble system incl. postprocessing
                                         ! 253: Ensemble system
                                         ! 254: Deterministic system
+                                        ! 230: Model composition
 
   INTEGER :: &                          ! Table: local.78.254.def
     & localNumberOfExperiment           !
@@ -138,6 +139,23 @@ MODULE mo_gribout_nml
       &  typeOfGrib2TileTemplate          !  'wmo': official WMO templates 55, 59, ...
                                           !  'dwd': local 'DWD' templates 40455, 40456, ...
 
+  CHARACTER(LEN=22) :: &                ! Type of GRIB library backward compatibility adjustment:
+    & grib_lib_compat                   ! 'current'
+                                        ! 'eccodes:2.31.0'
+
+  CHARACTER(LEN=GRIB_MAX_STR_LEN_MOD_COMP) :: &  ! model components for localDefinitionNumber = 230
+    &  model_components(GRIB_MAX_NUM_MOD_COMP)   ! ("Model composition"):
+                                                 ! "icon-nwp"
+                                                 ! "art-nwp"
+                                                 ! "ocean-nwp"
+                                                 ! "waves-nwp"
+
+  INTEGER :: localProductionContext(1:max_dom)   ! This GRIB key is part of Local-Use-Section-2 template:
+                                                 ! 230 "Model composition"
+                                                 ! It encodes supplementary information to the generatingProcessIdentifier.
+                                                 ! Its range of values can be found in table 2.233
+                                                 ! of the local DWD ecCodes definitions.
+
   NAMELIST/gribout_nml/  &
     &                    preset, tablesVersion,           &
     &                    localTablesVersion,              &
@@ -159,7 +177,10 @@ MODULE mo_gribout_nml
     &                    perturbationNumber,              &
     &                    lgribout_24bit,                  &
     &                    lgribout_compress_ccsds,         &
-    &                    typeOfGrib2TileTemplate
+    &                    typeOfGrib2TileTemplate,         &
+    &                    grib_lib_compat,                 &
+    &                    model_components,                &
+    &                    localProductionContext
 
 
 CONTAINS
@@ -184,9 +205,14 @@ CONTAINS
     INTEGER :: istat, funit
     INTEGER :: jg          !< patch loop index
     INTEGER :: iunit
+    INTEGER :: grib_lib_compat_int
+    INTEGER :: model_components_int(GRIB_MAX_NUM_MOD_COMP) !< integers corresponding to
+                                                           !< model component strings
+    INTEGER :: localProductionSystem  !< local production system (for localDefinitionNumber = 230):
+                                      !< 253: "ensemble system"
+                                      !< 254: "deterministic system"
 
-    CHARACTER(len=*), PARAMETER ::  &
-      &  routine = 'mo_gribout_nml: read_gribout_nml'
+    CHARACTER(len=*), PARAMETER :: routine = modname//"::read_gribout_nml"
 
     !-----------------------
     ! 1. default settings
@@ -208,15 +234,21 @@ CONTAINS
 
     typeOfGrib2TileTemplate              = 'dwd'    ! use DWD templates 40455, etc
 
-    typeOfProcessedData                  = UNDEFINED
-    typeOfGeneratingProcess              = UNDEFINED
-    localDefinitionNumber                = UNDEFINED
-    generatingCenter                     = UNDEFINED  ! output generating center
-    generatingSubcenter                  = UNDEFINED  ! output generating subcenter
-    typeOfEnsembleForecast               = UNDEFINED  ! (undefined, will not be set if unchanged)
-    localTypeOfEnsembleForecast          = UNDEFINED  ! (undefined, will not be set if unchanged)
-    numberOfForecastsInEnsemble          = UNDEFINED  ! (undefined, will not be set if unchanged)
-    perturbationNumber                   = UNDEFINED  ! (undefined, will not be set if unchanged)
+    typeOfProcessedData                  = GRIB_UNDEFVAL
+    typeOfGeneratingProcess              = GRIB_UNDEFVAL
+    localDefinitionNumber                = GRIB_UNDEFVAL
+    generatingCenter                     = GRIB_UNDEFVAL  ! output generating center
+    generatingSubcenter                  = GRIB_UNDEFVAL  ! output generating subcenter
+    typeOfEnsembleForecast               = GRIB_UNDEFVAL  ! (undefined, will not be set if unchanged)
+    localTypeOfEnsembleForecast          = GRIB_UNDEFVAL  ! (undefined, will not be set if unchanged)
+    numberOfForecastsInEnsemble          = GRIB_UNDEFVAL  ! (undefined, will not be set if unchanged)
+    perturbationNumber                   = GRIB_UNDEFVAL  ! (undefined, will not be set if unchanged)
+
+    grib_lib_compat                      = 'current'      ! i.e. switched off
+
+    model_components(:)                  = ' '
+
+    localProductionContext(:)            = GRIB_UNDEFVAL
 
     !------------------------------------------------------------------
     ! 2. If this is a resumed integration, overwrite the defaults above
@@ -239,6 +271,8 @@ CONTAINS
     END IF
     SELECT CASE (istat)
     CASE (POSITIONED)
+      have_gribout_nml = .TRUE.
+
       READ (nnml, gribout_nml)                                      ! overwrite default settings
       ! Preset values, when main switch is provided.
       CALL preset_namelist()
@@ -260,6 +294,59 @@ CONTAINS
       CALL finish(routine, "Illegal Namelist setting for typeOfGrib2TileTemplate: "//TRIM(typeOfGrib2TileTemplate))
     ENDIF
 
+    ! Currently, the following types of GRIB library backward compatibility adjustment are available:
+    ! - 'current': Switched off.
+    ! - 'eccodes:2.31.0': For ecCodes versions >= 2.32.0.
+    !    CDI uses the ecCodes sample file "GRIB2.tmpl" as a starting file for ecCodes.
+    !    The SecondFixedSurface keys are assigned the following values in GRIB2.tmpl:
+    !
+    !    - typeOfSecondFixedSurface        = 255 (Missing)
+    !    - scaleFactorOfSecondFixedSurface = MISSING (= 255)
+    !    - scaledValueOfSecondFixedSurface = MISSING (= 2,147,483,647)
+    !
+    !    Now, if typeOfSecondFixedSurface is set to a value >= 10, 102 say,
+    !    but scaleFactorOfSecondFixedSurface and scaledValueOfSecondFixedSurface
+    !    are not explicitly set, the result is as follows:
+    !
+    !    For ecCodes version < 2.32.0:
+    !    -----------------------------
+    !    - typeOfSecondFixedSurface        = 102 (Specific altitude above mean sea level)
+    !    - scaleFactorOfSecondFixedSurface = 0
+    !    - scaledValueOfSecondFixedSurface = 0
+    !
+    !    For ecCodes version >= 2.32.0:
+    !    ------------------------------
+    !    - typeOfSecondFixedSurface        = 102 (Specific altitude above mean sea level)
+    !    - scaleFactorOfSecondFixedSurface = MISSING
+    !    - scaledValueOfSecondFixedSurface = MISSING
+    !
+    !    With grib_lib_compat = 'eccodes:2.31.0', we try to overwrite the behavior of
+    !    ecCodes versions >= 2.32.0 with the behavior of versions < 2.32.0, in this respect.
+    !
+    grib_lib_compat_int = GRIB_NOTINUSEVAL
+    IF (LEN_TRIM(grib_lib_compat) > 0) THEN
+      ! lowercase namelist entry
+      grib_lib_compat = tolower(grib_lib_compat)
+      IF (TRIM(grib_lib_compat) == 'current') THEN
+        grib_lib_compat_int = GRIB_NOTINUSEVAL
+      ELSEIF (TRIM(grib_lib_compat) == 'eccodes:2.31.0') THEN
+        grib_lib_compat_int = GRIB_LIB_COMPAT_ECC_2_31_0
+      ELSE
+        ! invalid namelist entry
+        CALL finish(routine, "Invalid namelist setting for grib_lib_compat: "//TRIM(grib_lib_compat))
+      ENDIF
+    ENDIF
+
+    ! Check namelist settings for Local-Use-Section (Section 2) template: 230: "Model composition"
+    ! (as this is relatively extensive, it is moved to a separate subroutine)
+    CALL evaluate_model_composition(generatingCenter        = generatingCenter,          & ! in
+      &                             localDefinitionNumber   = localDefinitionNumber,     & ! in
+      &                             typeOfGeneratingProcess = typeOfGeneratingProcess,   & ! in
+      &                             localProductionContext  = localProductionContext(:), & ! in
+      &                             preset                  = preset,                    & ! in
+      &                             model_components_char   = model_components(:),       & ! in
+      &                             model_components_int    = model_components_int(:),   & ! out
+      &                             localProductionSystem   = localProductionSystem      ) ! out
 
     !----------------------------------------------------
     ! 5. Fill the configuration state
@@ -308,6 +395,14 @@ CONTAINS
         &                lgribout_compress_ccsds
       gribout_config(jg)%typeOfGrib2TileTemplate           = &
         &                tolower(typeOfGrib2TileTemplate)
+      gribout_config(jg)%grib_lib_compat                   = &
+        &                grib_lib_compat_int
+      gribout_config(jg)%localProductionSystem             = &
+        &                localProductionSystem
+      gribout_config(jg)%model_components                  = &
+        &                model_components_int
+      gribout_config(jg)%localProductionContext            = &
+        &                localProductionContext(jg)
     ENDDO
 
 
@@ -380,6 +475,9 @@ CONTAINS
   !> Preset values, when main switch is provided.
   !
   SUBROUTINE preset_namelist()
+    ! local variables
+    CHARACTER(LEN=*), PARAMETER :: routine = modname//"::preset_namelist"
+
     IF (TRIM(preset) == "deterministic") THEN
       !
       ! deterministic forecast
@@ -413,12 +511,45 @@ CONTAINS
       ! Note: atmospheric chemical constituents -> 41
       !       statistically processed data      -> 11
       CALL preset_value("typeOfEnsembleForecast",          typeOfEnsembleForecast,            192 , quiet=.FALSE. )
+
+    ELSE IF (TRIM(preset) == "modcomp:deterministic") THEN
+      !
+      ! model composition: deterministic production system
+      !
+      ! 2: Forecast
+      CALL preset_value("typeOfGeneratingProcess", typeOfGeneratingProcess, 2, quiet=.TRUE.)
+      ! 230: Model composition
+      CALL preset_value("localDefinitionNumber", localDefinitionNumber, 230, quiet=.TRUE.)
+      ! 1: Forecast products
+      CALL preset_value("typeOfProcessedData", typeOfProcessedData, 1, quiet=.TRUE.)
+
+    ELSE IF (TRIM(preset) == "modcomp:ensemble") THEN
+      !
+      ! model composition: ensemble production system
+      !
+      ! 4: Ensemble forecast
+      CALL preset_value("typeOfGeneratingProcess", typeOfGeneratingProcess, 4, quiet=.FALSE.)
+      ! 230: Model composition
+      CALL preset_value("localDefinitionNumber", localDefinitionNumber, 230, quiet=.TRUE.)
+      ! 5 : Control and perturbed forecast products
+      CALL preset_value("typeOfProcessedData", typeOfProcessedData, 5, quiet=.FALSE.)
+      ! 192: other types of ensemble forecasts
+      ! Note: atmospheric chemical constituents -> 41
+      !       statistically processed data      -> 11
+      CALL preset_value("typeOfEnsembleForecast", typeOfEnsembleForecast, 192, quiet=.FALSE.)
+
+    ELSE IF (LEN_TRIM(preset) > 0) THEN
+      !
+      ! invalid namelist entry for preset
+      !
+      CALL finish(routine, "Invalid namelist setting for preset: "//TRIM(preset))
+
     END IF
   END SUBROUTINE preset_namelist
 
 
   !> Sets a variable to a given value, but only if current value was
-  !> UNDEFINED
+  !> GRIB_UNDEFVAL = -1
   !
   SUBROUTINE preset_value(name, ival, preset_val, quiet)
     CHARACTER(LEN=*), INTENT(IN)    :: name              !< name of this parameter (for screen output)
@@ -429,7 +560,7 @@ CONTAINS
     CHARACTER(len=*), PARAMETER :: routine = modname//"::preset_value"
     CHARACTER(len=20) :: cval, cpre
 
-    IF (ival == UNDEFINED) THEN
+    IF (ival == GRIB_UNDEFVAL) THEN
       ival = preset_val
       IF (.NOT. quiet) THEN
         CALL message(routine, "presetting namelist parameter '"//TRIM(name)//"' as "//TRIM(int2string(preset_val)))
@@ -446,5 +577,159 @@ CONTAINS
     END IF
 
   END SUBROUTINE preset_value
+
+  !> Evaluate possible namelist input for the model composition
+  !
+  SUBROUTINE evaluate_model_composition(generatingCenter, localDefinitionNumber, typeOfGeneratingProcess, &
+    &                                   localProductionContext, preset, model_components_char,            &
+    &                                   model_components_int, localProductionSystem)
+
+    ! Arguments
+    INTEGER,                                  INTENT(IN)  :: generatingCenter
+    INTEGER,                                  INTENT(IN)  :: localDefinitionNumber
+    INTEGER,                                  INTENT(IN)  :: typeOfGeneratingProcess
+    INTEGER,                                  INTENT(IN)  :: localProductionContext(:)
+    CHARACTER(LEN=*),                         INTENT(IN)  :: preset
+    CHARACTER(LEN=GRIB_MAX_STR_LEN_MOD_COMP), INTENT(IN)  :: model_components_char(GRIB_MAX_NUM_MOD_COMP)
+    INTEGER,                                  INTENT(OUT) :: model_components_int(GRIB_MAX_NUM_MOD_COMP)
+    INTEGER,                                  INTENT(OUT) :: localProductionSystem
+
+    ! Local variables
+    INTEGER :: jg, jmc, counter_icon_nwp, counter_art_nwp, counter_ocean_nwp, counter_waves_nwp, length
+    CHARACTER(LEN=GRIB_MAX_STR_LEN_MOD_COMP) :: component
+
+    CHARACTER(LEN=*), PARAMETER :: routine = modname//"::evaluate_model_composition"
+
+    !-------------------------------------
+
+    ! Initialize intent-out arguments:
+    ! * Integer values, which correspond to the model component strings:
+    !   0: "Not in use/Does not apply" (local table 2.231.1)
+    model_components_int(:) = GRIB_NOTINUSEVAL
+    ! * Production system:
+    !   0: "Not in use/Does not apply" (local table 2.230)
+    localProductionSystem = GRIB_NOTINUSEVAL
+
+    ! The following is necessary only for
+    ! Local-Use-Section (Section 2) template: 230 "Model composition"
+    IF (localDefinitionNumber == 230) THEN
+
+      ! Some checks
+      IF (.NOT. ANY([GRIB_UNDEFVAL, 78, 80, 215] == generatingCenter)) THEN
+        ! This is only available for centres:
+        ! * 78  Offenbach
+        ! * 80  Rome
+        ! * 215 Zurich
+        CALL finish(routine, "Local template 230 is not available for generatingCenter: " &
+          &                  //TRIM(int2string(generatingCenter)))
+      ELSEIF ((TRIM(preset) /= "modcomp:deterministic") .AND. (TRIM(preset) /= "modcomp:ensemble")) THEN
+        CALL finish(routine, "Local template 230 requires preset = 'modcomp:deterministic' or 'modcomp:ensemble'")
+      ENDIF
+
+      !-------------------
+      ! Production system
+      !-------------------
+
+      IF (typeOfGeneratingProcess == 2) THEN
+        ! typeOfGeneratingProcess = 2: "Forecast"
+        ! => deterministic productions system
+        localProductionSystem = 254
+      ELSEIF (typeOfGeneratingProcess == 4) THEN
+        ! typeOfGeneratingProcess = 4: "Ensemble forecast"
+        ! ensemble productions system
+        localProductionSystem = 253
+      ENDIF
+
+      !--------------------------
+      ! Local production context
+      !--------------------------
+
+      ! This GRIB key encodes supplementary information
+      ! to the generatingProcessIdentifier.
+      ! As a 2-byte key its values cover a range of [0; 65535].
+      DO jg= 1,max_dom
+        IF (localProductionContext(jg) /= GRIB_UNDEFVAL .AND. &
+          & (localProductionContext(jg) < 0 .OR. localProductionContext(jg) > 65535)) &
+          & CALL finish(routine, "Values for localProductionContext have to be from range: [0; 65535]")
+      ENDDO
+
+      !-------------------
+      ! Model composition
+      !-------------------
+
+      !
+      ! - Template 230 allows for 8 model components in total.
+      !   Currently, 4 components at most are allowed:
+      !   - 1000 "ICON-NWP" (local table 2.231.1) *
+      !   - 2000 "ART-NWP"
+      !   - 3000 "OCEAN-NWP"
+      !   - 4000 "WAVES-NWP"
+      !
+      ! [* "ICON-NWP" stands for the model component that incorporates the atmosphere
+      ! and the land and water surface (as these are no independent components
+      ! in the numerical-weather-prediction configuration of ICON).
+      ! This component is the original basic component for NWP applications
+      ! and is therefore habitually associated with the term "icon-nwp" by users.
+      ! The other model components were introduced later.]
+      !
+      ! - It is up to the user to choose a suitable order for the model components in use.
+      !   For example:
+      !
+      !      model_components = "icon-nwp", "art-nwp", "ocean-nwp"
+      !
+      !   would be transferred into the following GRIB key/value pairs:
+      !
+      !      localDrivingModelComponent = 1000
+      !      local2ndModelComponent     = 2000
+      !      local3rdModelComponent     = 3000
+      !
+      ! - It is the user's responsibility that the namelist setting for 'model_components'
+      !   and the actual model composition correspond with each other!
+      !   This is not checked here.
+      !
+      ! - Leaving 'model_components' empty in case of 'localDefinitionNumber == 230' is permitted.
+      !
+      ! - Here, we just check for doublets, just as, e.g.:
+      !
+      !      model_components = "ocean-nwp", "ocean-nwp"
+      !
+
+      component         = " "
+      counter_icon_nwp  = 0
+      counter_art_nwp   = 0
+      counter_ocean_nwp = 0
+      counter_waves_nwp = 0
+
+      DO jmc = 1, GRIB_MAX_NUM_MOD_COMP
+        length = LEN_TRIM(model_components_char(jmc))
+        IF (length > 0) THEN
+          ! Lowercase namelist entry
+          component = tolower(model_components_char(jmc))
+          SELECT CASE(component(1:length))
+          CASE("icon-nwp")
+            model_components_int(jmc) = 1000
+            counter_icon_nwp          = counter_icon_nwp + 1
+          CASE("art-nwp")
+            model_components_int(jmc) = 2000
+            counter_art_nwp           = counter_art_nwp + 1
+          CASE("ocean-nwp")
+            model_components_int(jmc) = 3000
+            counter_ocean_nwp         = counter_ocean_nwp + 1
+          CASE("waves-nwp")
+            model_components_int(jmc) = 4000
+            counter_waves_nwp         = counter_waves_nwp + 1
+          CASE default
+            ! Invalid string
+            CALL finish(routine, "Invalid setting for model_components: "//TRIM(model_components_char(jmc)))
+          END SELECT
+          ! Check for doublets
+          IF (ANY([counter_icon_nwp, counter_art_nwp, counter_ocean_nwp, counter_waves_nwp] > 1)) &
+            & CALL finish(routine, "Invalid setting for model_components: '"//component(1:length)//"' occurs more than once")
+        ENDIF ! IF (length > 0)
+      ENDDO ! jmc
+
+    ENDIF ! IF (localDefinitionNumber == 230)
+
+  END SUBROUTINE evaluate_model_composition
 
 END MODULE mo_gribout_nml

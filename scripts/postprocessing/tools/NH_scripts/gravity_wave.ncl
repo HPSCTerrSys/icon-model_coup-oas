@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -13,7 +13,7 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 
 begin
 
-  ; Auf Nachfrage: hier muss ich die CDO benutzen, 
+  ; Auf Nachfrage: hier muss ich die CDO benutzen,
   ; um erst mal ein lat-lon Gitter zu haben
 
   dir ="/home/agassman/ICON/icon-1.0.6_RESTRUCT/experiments/"
@@ -36,7 +36,7 @@ begin
   ResC@cnLevelSelectionMode= "ManualLevels"
   ResC@cnLevelSpacingF   = 0.5e-3
   ResC@cnMinLevelValF    = -4e-3
-  ResC@cnMaxLevelValF    = 4e-3 
+  ResC@cnMaxLevelValF    = 4e-3
 
 
   ;Color(label) bar
@@ -75,7 +75,7 @@ begin
     end if
 
     fin =addfile("tmp.nc","r")
- 
+
     ; plot perturbation of potential temperature
     var      = fin->THETA_V(0,:,0,:)
     var(0,:)      = var(0,:)-331.361449957681
@@ -98,7 +98,7 @@ begin
     var(17,:)     = var(17,:)-303.848604012798
     var(18,:)     = var(18,:)-302.303272905394
     var(19,:)     = var(19,:)-300.765801133857
-    var@long_name = var@long_name+" perturbation" 
+    var@long_name = var@long_name+" perturbation"
     var&lon@units = "km"
 
     x             = fin->lon*5.0/6.0

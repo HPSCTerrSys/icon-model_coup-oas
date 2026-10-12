@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -27,7 +27,7 @@
         echo "cdo_ntl [-d] [-n name] [-t timestep] [-l level] [-o] file"
         echo "  Options:"
         echo "  -d:          produce default output"
-        echo "               (name=${name_d}, timestep=${timestep_d}, level=${level_d})" 
+        echo "               (name=${name_d}, timestep=${timestep_d}, level=${level_d})"
         echo "  -n name:     produce output         with cdo selname,name"
         echo "  -t timestep: produce output         with cdo seltimestep,timestep"
         echo "  -l level:    produce output         with cdo sellevel,level"
@@ -57,7 +57,7 @@
 
  outnc=${base}
  cdo_cmd=""
- 
+
  if [[ ${name} != "-" ]] ; then
    outnc="${outnc}_${name}"
    cdo_cmd="selname,${name} "
@@ -84,7 +84,7 @@
 
  if [[ -z ${cdo_cmd} ]] ; then
    echo "  !!! ERROR: specify at least one of the following options: -n name, -t timestep or -l level !!!"
-   echo "             (see help with option -h.)"  
+   echo "             (see help with option -h.)"
    exit
  else
    echo
@@ -112,4 +112,3 @@
    echo "  GMT-Output:    ${outgmt}"
  fi
  echo
-

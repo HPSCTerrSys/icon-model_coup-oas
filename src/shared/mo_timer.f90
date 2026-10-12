@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,7 +14,7 @@ MODULE mo_timer
 #if (defined(__GFORTRAN__) || defined(_CRAYFTN) || defined(__PGIF90__))
   USE iso_fortran_env, ONLY: compiler_version, compiler_options
 #endif
-  
+
 #ifdef __SCT__
   USE sct, ONLY: new_timer     => sct_new_timer,             &
        &         timer_start   => sct_start,                 &
@@ -31,11 +31,14 @@ MODULE mo_timer
        &                   delete_timer => del_timer
 
 #endif
+#ifndef __NO_ICON_UPATMO__
+  USE mo_upatmo_timer, ONLY: init_upatmo_timer
+#endif
 
   USE mo_run_config, ONLY: ltimer, timers_level,  activate_sync_timers, iforcing
 
   USE mo_impl_constants, ONLY: iaes
-  
+
   IMPLICIT NONE
   PRIVATE
 
@@ -45,14 +48,17 @@ MODULE mo_timer
   PUBLIC :: init_timer                                        !< procedure of this module
 
   PUBLIC :: timer_total                                       !< IDs of timers
-  PUBLIC :: timer_exch_data, timer_exch_data_rv, timer_exch_data_async, timer_exch_data_wait
+  PUBLIC :: timer_exch_data, timer_exch_data_rv, timer_exch_data_async, &
+            timer_exch_data_wait, timer_acc_data_copies
   PUBLIC :: timer_global_sum, timer_omp_global_sum, timer_ordglb_sum, timer_omp_ordglb_sum
   PUBLIC :: timer_icon_comm_sync
   PUBLIC :: timer_icon_comm_fillrecv, timer_icon_comm_wait, timer_icon_comm_isend,       &
        &    timer_icon_comm_ircv, timer_icon_comm_fillsend, timer_icon_comm_fillandsend, &
        &    timer_icon_comm_barrier_2, timer_icon_comm_send
   PUBLIC :: timer_barrier
-
+#ifdef _OPENACC
+  PUBLIC :: timer_gpu_mem_use
+#endif
   PUBLIC :: timer_integrate_nh
   PUBLIC :: timer_solve_nh, timer_solve_nh_veltend, timer_solve_nh_cellcomp, timer_solve_nh_edgecomp, &
        &    timer_solve_nh_vnupd, timer_solve_nh_vimpl, timer_solve_nh_exch
@@ -70,6 +76,7 @@ MODULE mo_timer
   PUBLIC :: timer_back_traj
   PUBLIC :: timer_adv_horz, timer_adv_vert
   PUBLIC :: timer_adv_hflx, timer_adv_vflx
+  PUBLIC :: timer_adv_2daero
 
   PUBLIC :: timer_update_prog_phy
   PUBLIC :: timer_diagnose_pres_temp
@@ -78,10 +85,34 @@ MODULE mo_timer
   ! general coupling
   PUBLIC :: timer_coupling, timer_coupling_init
   PUBLIC :: timer_coupling_init_def_comp, timer_coupling_init_enddef
-  PUBLIC :: timer_coupling_very_1stget, timer_coupling_1stget
-  PUBLIC :: timer_coupling_get, timer_coupling_put
+  ! put/get operation that did not involve any actual work
+  PUBLIC :: timer_coupling_nop
+  ! put operation required aggregation (min,max,average, or sum) of source data
+  ! but no data was sent to the target
+  PUBLIC :: timer_coupling_put_reduce
+  ! put operation that involved sending of data to at least one target
+  ! get operation that received data
+  ! (in case mapping_on_src was used, this involved a matrix vector product to
+  !  compute target points)
+  PUBLIC :: timer_coupling_put
+  ! get operation that received data
+  ! (in case mapping_on_tgt was used, this involved a matrix vector product to
+  !  compute the local target points)
+  PUBLIC :: timer_coupling_get
+  ! for the very first active get in a component this timer is used instead of
+  ! timer_coupling_get_coupling
+  ! (it can measure the imbalance between coupled components during the
+  !  initialisation)
+  PUBLIC :: timer_coupling_very_1stget
+  ! for the first active get in each timestep for each coupled component pair
+  ! this time is used instead of timer_coupling_get_coupling (except for the
+  ! very first active get)
+  ! (it can measure the imbalance of timesteps between component pairs)
+  PUBLIC :: timer_coupling_1stget
+  PUBLIC :: timer_coupling_output, timer_coupling_output_buf_prep
+  PUBLIC :: timer_coupling_output_1stput, timer_coupling_output_put
 
-  ! iconam - aes coupling
+  ! iconam - aes physics coupling
   PUBLIC :: timer_iconam_aes
   PUBLIC :: timer_dyn2phy, timer_d2p_sync
   PUBLIC :: timer_aes_bcs, timer_aes_phy
@@ -90,37 +121,59 @@ MODULE mo_timer
   ! aes physics
   PUBLIC :: timer_cov
   PUBLIC :: timer_rad , timer_rht
-  PUBLIC :: timer_vdf , timer_vdf_dn , timer_vdf_sf , timer_vdf_up
+  PUBLIC :: timer_vdf , timer_vdf_dn , timer_vdf_sf , timer_vdf_up, timer_tmx
   PUBLIC :: timer_car
   PUBLIC :: timer_wmo , timer_two
   PUBLIC :: timer_mig , timer_cld_mig
   PUBLIC :: timer_sat , timer_grp
+  PUBLIC :: timer_tcw
+  PUBLIC :: timer_clwvi
+  PUBLIC :: timer_qall
   PUBLIC :: timer_qvi
   PUBLIC :: timer_uvi
   PUBLIC :: timer_ene
+  PUBLIC :: timer_atm_energy_diag
+  PUBLIC :: timer_atm_energy_hint
+  PUBLIC :: timer_atm_energy_vint
   !
-  ! aes radiation
-  PUBLIC :: timer_rrtm_prep, timer_rrtm_post
-  PUBLIC :: timer_lrtm, timer_srtm
-#ifdef PSRAD_TIMING
-  PUBLIC :: timer_gas_optics_lw, timer_gas_optics_sw, timer_cloud_optics, &
-    timer_sample_cloud_lw, timer_sample_cloud_sw, &
-    timer_rrtm_coeffs, timer_psrad_scaling, timer_psrad_aerosol
-#endif
+  ! rte-rrtmgp radiation
+  PUBLIC :: timer_rte_rrtmgp_rad
+  PUBLIC :: timer_rte_rrtmgp_int
+  PUBLIC :: timer_rte_rrtmgp_int_onb
+  PUBLIC :: timer_gas_concs
+  PUBLIC :: timer_clamp_pr_temp
+  PUBLIC :: timer_source_lw
+  PUBLIC :: timer_atmos_lw
+  PUBLIC :: timer_k_dist_lw
+  PUBLIC :: timer_aerosol_lw
+  PUBLIC :: timer_rte_lw_clrsky
+  PUBLIC :: timer_clouds_bnd_lw
+  PUBLIC :: timer_cloud_optics_lw
+  PUBLIC :: timer_rte_lw_allsky
+  PUBLIC :: timer_atmos_sw
+  PUBLIC :: timer_k_dist_sw
+  PUBLIC :: timer_aerosol_sw
+  PUBLIC :: timer_rte_sw_clrsky
+  PUBLIC :: timer_clouds_bnd_sw
+  PUBLIC :: timer_cloud_optics_sw
+  PUBLIC :: timer_rte_sw_allsky
 
   ! nwp physics
   PUBLIC :: timer_satad_v_3D
+  PUBLIC :: timer_stoch_pattern_gen
   PUBLIC :: timer_phys_exner
   PUBLIC :: timer_phys_u_v
   PUBLIC :: timer_nwp_turbulence, timer_nwp_surface
   PUBLIC :: timer_nwp_turbtrans
-  PUBLIC :: timer_nwp_turbdiff    
+  PUBLIC :: timer_nwp_turbdiff
   PUBLIC :: timer_nwp_microphysics
   PUBLIC :: timer_phys_sync_patch
   PUBLIC :: timer_fast_phys
   PUBLIC :: timer_nwp_convection
   PUBLIC :: timer_nwp_radiation
   PUBLIC :: timer_pre_radiation_nwp
+  PUBLIC :: timer_rrtm_prep, timer_rrtm_post
+  PUBLIC :: timer_lrtm, timer_srtm
   PUBLIC :: timer_phys_acc, timer_phys_acc_1,timer_phys_acc_2, timer_phys_dpsdt
   PUBLIC :: timer_phys_sync_tracers
   PUBLIC :: timer_phys_sync_tempv
@@ -135,6 +188,7 @@ MODULE mo_timer
   PUBLIC :: timer_phys_2mom_sedi
   PUBLIC :: timer_phys_micro_specific
   PUBLIC :: timer_phys_micro_satad
+  PUBLIC :: timer_phys_2daero
 
   ! IAU
   PUBLIC :: timer_iau_save_restore
@@ -146,6 +200,19 @@ MODULE mo_timer
 !   PUBLIC :: timer_sync_psend_1, timer_sync_isend_2, timer_sync_recv_2,timer_sync_isend_3
 
   PUBLIC :: timer_sso
+  PUBLIC :: timer_msgwam
+  PUBLIC :: timer_msgwam_fieldsgrads
+  PUBLIC :: timer_msgwam_init_gw_orretal
+  PUBLIC :: timer_msgwam_sync_wave
+  PUBLIC :: timer_msgwam_split_merge
+  PUBLIC :: timer_msgwam_remove_rays
+  PUBLIC :: timer_msgwam_saturation
+  PUBLIC :: timer_msgwam_wave2grid
+  PUBLIC :: timer_msgwam_smooth_hori
+  PUBLIC :: timer_msgwam_tendency
+  PUBLIC :: timer_msgwam_diagprof
+  PUBLIC :: timer_msgwam_propagate_wave
+  PUBLIC :: timer_gw_source, timer_gws_conv
   PUBLIC :: timer_cover_koe
   PUBLIC :: timer_radiation
   PUBLIC :: timer_radheat
@@ -180,11 +247,13 @@ MODULE mo_timer
 
   PUBLIC :: timer_global_nudging
 
-  ! upper atmosphere
-  PUBLIC :: timer_expol
-  PUBLIC :: timer_upatmo, timer_upatmo_constr, timer_upatmo_destr, timer_upatmo_phy, &
-    &       timer_upatmo_phy_init, timer_upatmo_phy_tend, timer_upatmo_phy_diag,     &
-    &       timer_upatmo_phy_imf, timer_upatmo_phy_rad, timer_upatmo_phy_acc
+  ! Sub-timer to timer_init_icon
+  PUBLIC :: timer_file_reading
+  PUBLIC :: timer_raw_data_distribution
+  PUBLIC :: timer_metadata_decoding
+  PUBLIC :: timer_raw_data_decompression
+  PUBLIC :: timer_data_distribution
+  PUBLIC :: timer_file_inventory
 
   ! ocean
   PUBLIC :: timer_scalar_prod_veloc
@@ -216,7 +285,8 @@ MODULE mo_timer
   PUBLIC :: timer_restart_indices_setup
 
   ! Timer for data assimilation
-  PUBLIC :: timer_datass, timer_lhn, timer_init_dace, timer_dace_coupling
+  PUBLIC :: timer_datass, timer_lhn, timer_init_dace, timer_dace_coupling, &
+            timer_dace_acc_data_copies
 
   PUBLIC :: timer_extra1,  timer_extra2,  timer_extra3,  timer_extra4,  timer_extra5,  &
             timer_extra6,  timer_extra7,  timer_extra8,  timer_extra9,  timer_extra10, &
@@ -245,7 +315,7 @@ MODULE mo_timer
        &    timer_radar_comm     , &
        &    timer_radar_ongeom   , &
        &    timer_radar_comppolar, &
-       &    timer_radar_out      , & 
+       &    timer_radar_out      , &
        &    timer_radar_barrier  , &
        &    timer_radar_acc_data_copies
 
@@ -262,7 +332,7 @@ MODULE mo_timer
 
   ! low level timing routine
   PUBLIC :: tic, toc
-  PUBLIC :: timer_ls_forcing 
+  PUBLIC :: timer_ls_forcing
 
   !-------------------
   ! Module variables
@@ -270,14 +340,16 @@ MODULE mo_timer
 
   ! ID of timer for total model integration time
   INTEGER :: timer_total
-  INTEGER :: timer_exch_data, timer_exch_data_rv, timer_exch_data_async, timer_exch_data_wait
+  INTEGER :: timer_exch_data, timer_exch_data_rv, timer_exch_data_async, timer_exch_data_wait, timer_acc_data_copies
   INTEGER :: timer_global_sum, timer_omp_global_sum, timer_ordglb_sum, timer_omp_ordglb_sum
   INTEGER :: timer_icon_comm_sync
   INTEGER :: timer_icon_comm_fillrecv, timer_icon_comm_wait, timer_icon_comm_isend, &
        &     timer_icon_comm_ircv, timer_icon_comm_fillsend,timer_icon_comm_fillandsend,   &
        &     timer_icon_comm_barrier_2, timer_icon_comm_send
   INTEGER :: timer_barrier
-
+#ifdef _OPENACC
+  INTEGER :: timer_gpu_mem_use
+#endif
   INTEGER :: timer_nh_hdiffusion
 
   INTEGER :: timer_integrate_nh
@@ -289,6 +361,7 @@ MODULE mo_timer
   INTEGER :: timer_nh_diagnostics
   INTEGER :: timer_diagnose_pres_temp
   INTEGER :: timer_satad_v_3D
+  INTEGER :: timer_stoch_pattern_gen
   INTEGER :: timer_phys_exner
   INTEGER :: timer_phys_u_v
   INTEGER :: timer_nwp_turbulence, timer_nwp_surface
@@ -303,6 +376,8 @@ MODULE mo_timer
   INTEGER :: timer_radiaton_recv, timer_radiaton_comp, timer_radiaton_send, &
        &     timer_preradiaton
   INTEGER :: timer_pre_radiation_nwp
+  INTEGER :: timer_rrtm_prep, timer_rrtm_post
+  INTEGER :: timer_lrtm, timer_srtm
   INTEGER :: timer_phys_acc, timer_phys_acc_1,timer_phys_acc_2, timer_phys_dpsdt
   INTEGER :: timer_phys_sync_tracers
   INTEGER :: timer_phys_sync_tempv
@@ -317,6 +392,7 @@ MODULE mo_timer
   INTEGER :: timer_phys_2mom_sedi
   INTEGER :: timer_phys_micro_specific
   INTEGER :: timer_phys_micro_satad
+  INTEGER :: timer_phys_2daero
 
   INTEGER :: timer_iau_save_restore
 
@@ -326,6 +402,19 @@ MODULE mo_timer
 !   INTEGER :: timer_sync_psend_1, timer_sync_isend_2, timer_sync_recv_2,timer_sync_isend_3
 
   INTEGER :: timer_sso
+  INTEGER :: timer_msgwam
+  INTEGER :: timer_msgwam_fieldsgrads
+  INTEGER :: timer_msgwam_init_gw_orretal
+  INTEGER :: timer_msgwam_sync_wave
+  INTEGER :: timer_msgwam_split_merge
+  INTEGER :: timer_msgwam_remove_rays
+  INTEGER :: timer_msgwam_saturation
+  INTEGER :: timer_msgwam_wave2grid
+  INTEGER :: timer_msgwam_smooth_hori
+  INTEGER :: timer_msgwam_tendency
+  INTEGER :: timer_msgwam_diagprof
+  INTEGER :: timer_msgwam_propagate_wave
+  INTEGER :: timer_gw_source, timer_gws_conv
   INTEGER :: timer_cover_koe
   INTEGER :: timer_radiation
   INTEGER :: timer_radheat
@@ -340,19 +429,26 @@ MODULE mo_timer
   INTEGER :: timer_adv_horz, timer_adv_vert
   INTEGER :: timer_adv_hflx, timer_adv_vflx
   INTEGER :: timer_back_traj
+  INTEGER :: timer_adv_2daero
 
   ! Timer ID's for forcings and testcases
   INTEGER :: timer_held_suarez_intr
 
-  ! Timer ID's for ocean-atmosphere coupling
+  ! Timer ID's for coupling
   INTEGER :: timer_coupling, timer_coupling_init
   INTEGER :: timer_coupling_init_def_comp, timer_coupling_init_enddef
-  INTEGER :: timer_coupling_very_1stget, timer_coupling_1stget
-  INTEGER :: timer_coupling_get, timer_coupling_put
+  INTEGER :: timer_coupling_nop
+  INTEGER :: timer_coupling_put_reduce
+  INTEGER :: timer_coupling_put
+  INTEGER :: timer_coupling_get
+  INTEGER :: timer_coupling_very_1stget
+  INTEGER :: timer_coupling_1stget
+  INTEGER :: timer_coupling_output, timer_coupling_output_buf_prep
+  INTEGER :: timer_coupling_output_1stput, timer_coupling_output_put
 
   ! Timer ID's for physics-dynamics coupling
 
-  ! iconam - aes coupling
+  ! iconam - aes physics coupling
   INTEGER :: timer_iconam_aes
   INTEGER :: timer_dyn2phy, timer_d2p_sync
   INTEGER :: timer_aes_bcs, timer_aes_phy
@@ -361,24 +457,42 @@ MODULE mo_timer
   ! aes physics
   INTEGER :: timer_cov
   INTEGER :: timer_rad , timer_rht
-  INTEGER :: timer_vdf , timer_vdf_dn , timer_vdf_sf , timer_vdf_up
+  INTEGER :: timer_vdf , timer_vdf_dn , timer_vdf_sf , timer_vdf_up, timer_tmx
   INTEGER :: timer_car
   INTEGER :: timer_wmo , timer_two
   INTEGER :: timer_mig , timer_cld_mig
   INTEGER :: timer_sat , timer_grp
+  INTEGER :: timer_tcw
+  INTEGER :: timer_clwvi
+  INTEGER :: timer_qall
   INTEGER :: timer_qvi
   INTEGER :: timer_uvi
   INTEGER :: timer_ene
+  INTEGER :: timer_atm_energy_diag
+  INTEGER :: timer_atm_energy_hint
+  INTEGER :: timer_atm_energy_vint
   !
-  ! aes radiation
-  INTEGER :: timer_rrtm_prep, timer_rrtm_post
-  INTEGER :: timer_lrtm, timer_srtm
-#ifdef PSRAD_TIMING
-  ! Timers for EMVORADO
-  INTEGER :: timer_gas_optics_lw, timer_gas_optics_sw, timer_cloud_optics, &
-    timer_sample_cloud_lw, timer_sample_cloud_sw, &
-    timer_rrtm_coeffs, timer_psrad_scaling, timer_psrad_aerosol
-#endif
+  ! rte-rrtmgp radiation
+  INTEGER :: timer_rte_rrtmgp_rad
+  INTEGER :: timer_rte_rrtmgp_int
+  INTEGER :: timer_rte_rrtmgp_int_onb
+  INTEGER :: timer_gas_concs
+  INTEGER :: timer_clamp_pr_temp
+  INTEGER :: timer_source_lw
+  INTEGER :: timer_atmos_lw
+  INTEGER :: timer_k_dist_lw
+  INTEGER :: timer_aerosol_lw
+  INTEGER :: timer_rte_lw_clrsky
+  INTEGER :: timer_clouds_bnd_lw
+  INTEGER :: timer_cloud_optics_lw
+  INTEGER :: timer_rte_lw_allsky
+  INTEGER :: timer_atmos_sw
+  INTEGER :: timer_k_dist_sw
+  INTEGER :: timer_aerosol_sw
+  INTEGER :: timer_rte_sw_clrsky
+  INTEGER :: timer_clouds_bnd_sw
+  INTEGER :: timer_cloud_optics_sw
+  INTEGER :: timer_rte_sw_allsky
 
   INTEGER :: timer_omp_radiation
   INTEGER :: timer_write_output
@@ -414,14 +528,17 @@ MODULE mo_timer
 
   INTEGER :: timer_global_nudging
 
-  ! upper atmosphere
-  INTEGER :: timer_expol
-  INTEGER :: timer_upatmo, timer_upatmo_constr, timer_upatmo_destr, timer_upatmo_phy, &
-    &        timer_upatmo_phy_init, timer_upatmo_phy_tend, timer_upatmo_phy_diag,     &
-    &        timer_upatmo_phy_imf, timer_upatmo_phy_rad, timer_upatmo_phy_acc
+  ! Sub-timer to timer_init_icon
+  INTEGER :: timer_file_reading
+  INTEGER :: timer_raw_data_distribution
+  INTEGER :: timer_metadata_decoding
+  INTEGER :: timer_raw_data_decompression
+  INTEGER :: timer_data_distribution
+  INTEGER :: timer_file_inventory
 
   ! ocean
   INTEGER :: timer_scalar_prod_veloc
+
   ! Timer IDs for sea ice
   INTEGER :: timer_ice_fast, timer_ice_slow, timer_ice_slow2, timer_ice_momentum,       &
        &     timer_ice_interp, timer_ice_advection
@@ -448,7 +565,8 @@ MODULE mo_timer
   INTEGER :: timer_restart_indices_setup
 
   ! Data assimilation
-  INTEGER :: timer_datass, timer_lhn, timer_init_dace, timer_dace_coupling
+  INTEGER :: timer_datass, timer_lhn, timer_init_dace, timer_dace_coupling, &
+             timer_dace_acc_data_copies
 
   ! The purpose of these "extra" timers is to have otherwise unused timers available for
   ! special-purpose measurements. Please do not remove them and do not use them permanently.
@@ -481,7 +599,7 @@ MODULE mo_timer
        &     timer_radar_comm     , &
        &     timer_radar_ongeom   , &
        &     timer_radar_comppolar, &
-       &     timer_radar_out      , & 
+       &     timer_radar_out      , &
        &     timer_radar_barrier  , &
        &     timer_radar_acc_data_copies
 
@@ -500,19 +618,16 @@ CONTAINS
 #ifdef __SCT__
 
     USE mo_util_sysinfo,    ONLY: util_user_name, util_os_system, util_node_name
-    USE mo_util_vcs,        ONLY: util_repository_url, util_branch_name, util_revision_key
+    USE mo_util_vcs,        ONLY: get_revision, get_remote_url, get_local_branch
     USE mtime,              ONLY: timedelta, newTimedelta, deallocateTimedelta, &
          &                        OPERATOR(-), timedeltaToString, max_timedelta_str_len
-    USE mo_time_config,     ONLY: time_config 
+    USE mo_time_config,     ONLY: time_config
     USE mo_parallel_config, ONLY: get_nproma
     USE mo_run_config,      ONLY: nlev
     USE mo_grid_config,     ONLY: nroot, start_lev
-    
+
     INTEGER :: istat
-    
-    CHARACTER(len=256) :: repository  = ''
-    CHARACTER(len=256) :: branch      = ''
-    CHARACTER(len=256) :: revision    = ''
+
     CHARACTER(len=256) :: executable  = ''
     CHARACTER(len=256) :: user_name   = ''
     CHARACTER(len=256) :: os_name     = ''
@@ -520,42 +635,35 @@ CONTAINS
     CHARACTER(len=256) :: expname     = ''
     CHARACTER(len=256) :: jobid       = ''
     CHARACTER(len=256) :: jobname     = ''
-    CHARACTER(len=256) :: submit_date = ''        
+    CHARACTER(len=256) :: submit_date = ''
     CHARACTER(len=256) :: tmp_string  = ''
-    
-    INTEGER :: nlen, nlena, nlenb, nlenc, nlend
+
+    INTEGER :: nlena, nlenb, nlenc, nlend
 
     CHARACTER(len=max_timedelta_str_len) :: tdstring
     TYPE(timedelta), POINTER :: length_of_run
 
     CHARACTER(len=6) :: gridstring
-    
-    nlen = 256
-    call util_repository_url(repository, nlen)
-    nlen = 256
-    call util_branch_name(branch, nlen)
-    nlen = 256
-    call util_revision_key(revision, nlen)
-    
+
     tmp_string = ''
     CALL util_os_system (tmp_string, nlena)
     os_name = tmp_string(1:nlena)
-    
+
     tmp_string = ''
     CALL util_user_name (tmp_string, nlenb)
     user_name = tmp_string(1:nlenb)
-    
+
     tmp_string = ''
     CALL util_node_name (tmp_string, nlenc)
     host_name = tmp_string(1:nlenc)
 
     CALL get_command_argument(0, executable, nlend)
-    
-    CALL get_environment_variable('EXPNAME', expname, status=istat) 
+
+    CALL get_environment_variable('EXPNAME', expname, status=istat)
     CALL get_environment_variable('SCT_JOB_ID', jobid, status=istat)
     CALL get_environment_variable('SCT_JOB_NAME', jobname, status=istat)
-    CALL get_environment_variable('SCT_SUBMIT_DATE', submit_date, status=istat)         
-    
+    CALL get_environment_variable('SCT_SUBMIT_DATE', submit_date, status=istat)
+
     ! sct end date             missing, to be done in sct
 
     ! model simulation time    tc_stopdate-tc_startdate
@@ -564,30 +672,30 @@ CONTAINS
     CALL timedeltaToString(length_of_run, tdstring)
 
     write(gridstring,'(a,i2.2,a,i2.2)') 'R', nroot, 'B', start_lev
-    
+
     CALL sct_add_report_attribute('model',                 'icon')
     CALL sct_add_report_attribute('executable',            executable)
-    CALL sct_add_report_attribute('repository',            repository)
-    CALL sct_add_report_attribute('branch',                branch)
-    CALL sct_add_report_attribute('revision',              revision)
+    CALL sct_add_report_attribute('revision',              get_revision('icon'))
+    CALL sct_add_report_attribute('remote_url',            get_remote_url('icon'))
+    CALL sct_add_report_attribute('branch',                get_local_branch('icon'))
     CALL sct_add_report_attribute('user name',             user_name)
     CALL sct_add_report_attribute('operating system name', os_name)
     CALL sct_add_report_attribute('experiment name',       expname)
     CALL sct_add_report_attribute('job id',                jobid)
     CALL sct_add_report_attribute('job name',              jobname)
-    CALL sct_add_report_attribute('submit date',           submit_date)    
+    CALL sct_add_report_attribute('submit date',           submit_date)
     CALL sct_add_report_attribute('run length',            tdstring)
     CALL sct_add_report_attribute('vertical levels',       nlev)
     CALL sct_add_report_attribute('horizontal grid',       gridstring)
-    CALL sct_add_report_attribute('nproma',                get_nproma())    
+    CALL sct_add_report_attribute('nproma',                get_nproma())
 #if (defined(__GFORTRAN__) || defined(_CRAYFTN) || defined(__PGIF90__))
     CALL sct_add_report_attribute('compiler version',      compiler_version())
     CALL sct_add_report_attribute('compiler options',      compiler_options())
 #else
     CALL sct_add_report_attribute('compiler version',      'unknown')
-    CALL sct_add_report_attribute('compiler options',      'unknown')    
+    CALL sct_add_report_attribute('compiler options',      'unknown')
 #endif
-    
+
     CALL sct_report()
 
     CALL deallocateTimedelta(length_of_run)
@@ -595,7 +703,7 @@ CONTAINS
     CALL timer_report()
 #endif
   END SUBROUTINE print_timer
-    
+
   SUBROUTINE init_timer
 
 #ifdef __SCT__
@@ -608,10 +716,14 @@ CONTAINS
     IF (.NOT. ltimer)  return
 
     timer_barrier  = new_timer("mpi_barrier")
+#ifdef _OPENACC
+    timer_gpu_mem_use = new_timer("gpu_mem_use")
+#endif
     timer_exch_data = new_timer("exch_data")
     timer_exch_data_rv = new_timer("exch_data_rv")
     timer_exch_data_async = new_timer("exch_data_async")
     timer_exch_data_wait = new_timer("exch_data.wait")
+    timer_acc_data_copies = new_timer("acc_data_copies")
     timer_global_sum = new_timer("global_sum")
     timer_omp_global_sum = new_timer("omp_global_sum")
     timer_ordglb_sum = new_timer("ordglb_sum")
@@ -653,7 +765,8 @@ CONTAINS
     timer_adv_vert  = new_timer("adv_vert")
     timer_adv_hflx  = new_timer("adv_hflx")
     timer_adv_vflx  = new_timer("adv_vflx")
- 
+    timer_adv_2daero= new_timer("adv_2daero")
+
     ! dynamics timers
 
     timer_intrp_diagn = new_timer   ("intrp_diagn")
@@ -664,15 +777,21 @@ CONTAINS
     timer_corio     = new_timer("corio")
     timer_intp      = new_timer("intp")
 
-    ! atmosphere-ocean coupling
-    timer_coupling               = new_timer("coupling")
-    timer_coupling_init          = new_timer("coupling_init")
-    timer_coupling_init_def_comp = new_timer("coupling_init_def_comp")
-    timer_coupling_init_enddef   = new_timer("coupling_init_enddef")
-    timer_coupling_very_1stget   = new_timer("coupling_very_1stget")
-    timer_coupling_1stget        = new_timer("coupling_1stget")
-    timer_coupling_get           = new_timer("coupling_get")
-    timer_coupling_put           = new_timer("coupling_put")
+    ! general coupling
+    timer_coupling                 = new_timer("coupling")
+    timer_coupling_init            = new_timer("cpl_init")
+    timer_coupling_init_def_comp   = new_timer("cpl_init_def_comp")
+    timer_coupling_init_enddef     = new_timer("cpl_init_enddef")
+    timer_coupling_nop             = new_timer("cpl_nop")
+    timer_coupling_put_reduce      = new_timer("cpl_put_reduce")
+    timer_coupling_put             = new_timer("cpl_put")
+    timer_coupling_get             = new_timer("cpl_get")
+    timer_coupling_very_1stget     = new_timer("cpl_very_1stget")
+    timer_coupling_1stget          = new_timer("cpl_1stget")
+    timer_coupling_output          = new_timer("cpl_output")
+    timer_coupling_output_buf_prep = new_timer("cpl_output_buf_prep")
+    timer_coupling_output_1stput   = new_timer("cpl_output_1stput")
+    timer_coupling_output_put      = new_timer("cpl_output_put")
 
     IF (iforcing == iaes) THEN
        !
@@ -685,13 +804,14 @@ CONTAINS
        timer_phy2dyn     = new_timer("phy2dyn")
        timer_p2d_sync    = new_timer("p2d_sync")
        !
-       ! physics
+       ! aes physics
        timer_rad    = new_timer("interface_aes_rad")
        timer_rht    = new_timer("interface_aes_rht")
        timer_vdf    = new_timer("interface_aes_vdf")
        timer_vdf_dn = new_timer("vdiff_down")
        timer_vdf_sf = new_timer("update_surface")
        timer_vdf_up = new_timer("vdiff_up")
+       timer_tmx    = new_timer("interface_aes_tmx")
        timer_two    = new_timer("interface_cloud_two")
        timer_mig    = new_timer("interface_cloud_mig")
        timer_cld_mig= new_timer('cloud_mig')
@@ -700,10 +820,38 @@ CONTAINS
        timer_car    = new_timer("interface_aes_car")
        timer_wmo    = new_timer("interface_aes_wmo")
        !
+       ! rte-rrtmgp radiation
+       timer_rte_rrtmgp_rad     = new_timer("rte_rrtmgp_rad")
+       timer_rte_rrtmgp_int     = new_timer("rte_rrtmgp_int")
+       timer_rte_rrtmgp_int_onb = new_timer("rte_rrtmgp_int_onb")
+       timer_gas_concs          = new_timer("gas_concs")
+       timer_clamp_pr_temp      = new_timer("clamp_pr_temp")
+       timer_source_lw          = new_timer("source_lw")
+       timer_atmos_lw           = new_timer("atmos_lw")
+       timer_k_dist_lw          = new_timer("k_dist_lw")
+       timer_aerosol_lw         = new_timer("aerosol_lw")
+       timer_rte_lw_clrsky      = new_timer("rte_lw_clrsky")
+       timer_clouds_bnd_lw      = new_timer("clouds_bnd_lw")
+       timer_cloud_optics_lw    = new_timer("cloud_optics_lw")
+       timer_rte_lw_allsky      = new_timer("rte_lw_allsky")
+       timer_atmos_sw           = new_timer("atmos_sw")
+       timer_k_dist_sw          = new_timer("k_dist_sw")
+       timer_aerosol_sw         = new_timer("aerosol_sw")
+       timer_rte_sw_clrsky      = new_timer("rte_sw_clrsky")
+       timer_clouds_bnd_sw      = new_timer("clouds_bnd_sw")
+       timer_cloud_optics_sw    = new_timer("cloud_optics_sw")
+       timer_rte_sw_allsky      = new_timer("rte_sw_allsky")
+       !
        ! diagnostics
+       timer_tcw    = new_timer("diagnose_tcw")
+       timer_clwvi  = new_timer("diagnose_clwvi")
+       timer_qall   = new_timer("diagnose_qall")
        timer_qvi    = new_timer("diagnose_qvi")
        timer_uvi    = new_timer("diagnose_uvi")
        timer_ene    = new_timer("diagnose_ene")
+       timer_atm_energy_diag = new_timer("atm_energy_diag")
+       timer_atm_energy_hint = new_timer("atm_energy_hint")
+       timer_atm_energy_vint = new_timer("atm_energy_vint")
        timer_cov    = new_timer("diagnose_cov")
        !
     END IF
@@ -713,16 +861,6 @@ CONTAINS
     timer_rrtm_post = new_timer("rrtm_post")
     timer_lrtm      = new_timer("lrtm")
     timer_srtm      = new_timer("srtm")
-#ifdef PSRAD_TIMING
-    timer_gas_optics_lw = new_timer("gas_optics_lw")
-    timer_gas_optics_sw = new_timer("gas_optics_sw")
-    timer_rrtm_coeffs = new_timer("rrtm_coeffs")
-    timer_cloud_optics = new_timer("cloud_optics")
-    timer_sample_cloud_lw = new_timer("sample_cloud")
-    timer_sample_cloud_sw = new_timer("sample_cloud")
-    timer_psrad_scaling = new_timer("psrad_scaling")
-    timer_psrad_aerosol = new_timer("psrad_aerosol")
-#endif
 
     ! nwp physics timers
     timer_omp_radiation = new_timer("omp_radiation")
@@ -743,19 +881,21 @@ CONTAINS
     timer_phys_sync_vn  = new_timer("phys_sync_vn")
     timer_prep_aes_phy = new_timer("prep_aes_phy")
     timer_prep_phy = new_timer("prep_phy")
-    timer_phys_reff = new_timer("phys_reff") 
+    timer_phys_reff = new_timer("phys_reff")
     timer_phys_2mom_dmin_init = new_timer("phys_2mom_dmin_init")
-    timer_phys_2mom_wetgrowth = new_timer("phys_2mom_wetgrowth")  
-    timer_phys_2mom_prepost = new_timer("phys_2mom_prepost")  
-    timer_phys_2mom_proc = new_timer("phys_2mom_proc")  
-    timer_phys_2mom_sedi = new_timer("phys_2mom_sedi")  
-    timer_phys_micro_specific = new_timer("phys_micro_specific")  
-    timer_phys_micro_satad = new_timer("phys_micro_satad")  
+    timer_phys_2mom_wetgrowth = new_timer("phys_2mom_wetgrowth")
+    timer_phys_2mom_prepost = new_timer("phys_2mom_prepost")
+    timer_phys_2mom_proc = new_timer("phys_2mom_proc")
+    timer_phys_2mom_sedi = new_timer("phys_2mom_sedi")
+    timer_phys_micro_specific = new_timer("phys_micro_specific")
+    timer_phys_micro_satad = new_timer("phys_micro_satad")
+    timer_phys_2daero = new_timer("phys_2daero")
 
     timer_update_prog_phy = new_timer("update_prog_phy")
     timer_nh_diagnostics = new_timer("nh_diagnostics")
     timer_diagnose_pres_temp = new_timer("diagnose_pres_temp")
     timer_satad_v_3D = new_timer("satad")
+    timer_stoch_pattern_gen = new_timer("stoch_pattern_gen")
     timer_phys_u_v = new_timer("phys_u_v")
     timer_nwp_turbulence = new_timer("nwp_turbulence")
     timer_nwp_turbtrans = new_timer("nwp_turbtrans")
@@ -766,6 +906,20 @@ CONTAINS
     timer_fast_phys = new_timer("rediag_prog_vars")
     timer_nwp_convection = new_timer("nwp_convection")
     timer_pre_radiation_nwp = new_timer("pre_radiation_nwp")
+    timer_msgwam = new_timer("msgwam")
+    timer_msgwam_fieldsgrads = new_timer("msgwam_fieldsgrads")
+    timer_msgwam_init_gw_orretal = new_timer("msgwam_init_gw_orretal")
+    timer_msgwam_sync_wave = new_timer("msgwam_sync_wave")
+    timer_msgwam_split_merge = new_timer("msgwam_split_merge")
+    timer_msgwam_remove_rays = new_timer("msgwam_remove_rays")
+    timer_msgwam_saturation = new_timer("msgwam_saturation")
+    timer_msgwam_wave2grid = new_timer("msgwam_wave2grid")
+    timer_msgwam_smooth_hori = new_timer("msgwam_smooth_hori")
+    timer_msgwam_tendency = new_timer("msgwam_tendency")
+    timer_msgwam_diagprof = new_timer("msgwam_diagprof")
+    timer_msgwam_propagate_wave = new_timer("msgwam_propagate_wave")
+    timer_gw_source = new_timer("gw_source")
+    timer_gws_conv  = new_timer("gws_conv")
     IF (iforcing/=iaes) timer_sso = new_timer("sso")
     timer_cover_koe = new_timer("cloud_cover")
     timer_radiation = new_timer("radiation")
@@ -779,8 +933,8 @@ CONTAINS
     timer_domain_decomp = new_timer("compute_domain_decomp")
     timer_compute_coeffs = new_timer("compute_intp_coeffs")
     timer_ext_data      = new_timer("init_ext_data")
-    timer_init_icon     = new_timer("init_icon") 
-    timer_init_latbc    = new_timer("init_latbc") 
+    timer_init_icon     = new_timer("init_icon")
+    timer_init_latbc    = new_timer("init_latbc")
     timer_init_nwp_phy  = new_timer("init_nwp_phy")
     timer_read_restart  = new_timer("read_restart_files")
     timer_solve_ab      = new_timer("solve_ab")
@@ -813,24 +967,24 @@ CONTAINS
 
     timer_global_nudging = new_timer("global_nudging")
 
+    ! Sub-timer to timer_init_icon
+    timer_file_reading           = new_timer("file_reading")
+    timer_raw_data_distribution  = new_timer("raw_data_distribution")
+    timer_metadata_decoding      = new_timer("metadata_decoding")
+    timer_raw_data_decompression = new_timer("raw_data_decompression")
+    timer_data_distribution      = new_timer("data_distribution")
+    timer_file_inventory         = new_timer("file_inventory")
+
+#ifndef __NO_ICON_UPATMO__
     ! upper atmosphere
-    timer_expol           = new_timer("upatmo_expol")
-    timer_upatmo          = new_timer("upper_atmosphere")
-    timer_upatmo_constr   = new_timer("upatmo_construction") 
-    timer_upatmo_destr    = new_timer("upatmo_destruction")
-    timer_upatmo_phy      = new_timer("upatmo_physics")
-    timer_upatmo_phy_init = new_timer("upatmo_phy_initialization")
-    timer_upatmo_phy_tend = new_timer("upatmo_phy_update_tendencies")
-    timer_upatmo_phy_diag = new_timer("upatmo_phy_update_diag_vars")
-    timer_upatmo_phy_imf  = new_timer("upatmo_phy_group_imf") 
-    timer_upatmo_phy_rad  = new_timer("upatmo_phy_group_rad")
-    timer_upatmo_phy_acc  = new_timer("upatmo_phy_accmlt_tendencies")
+    CALL init_upatmo_timer
+#endif
 
     !ocean timers
     timer_gmres     = new_timer("gmres")
 
     timer_scalar_prod_veloc =new_timer("veloc_prod")
-    
+
     ! Timer IDs for sea ice
     timer_ice_fast      = new_timer("ice_fast")
     timer_ice_slow      = new_timer("ice_slow")
@@ -838,7 +992,7 @@ CONTAINS
     timer_ice_momentum  = new_timer("ice_momentum")
     timer_ice_advection = new_timer("ice_advection")
     timer_ice_interp    = new_timer("ice_interp")
-  
+
     ! Timer IDs for HAMOCC
     timer_bgc_up_bgc  = new_timer("hamocc_update_bgc")
     timer_bgc_swr     = new_timer("hamocc_swr")
@@ -846,18 +1000,18 @@ CONTAINS
     timer_bgc_depo    = new_timer("hamocc_dust_depo")
     timer_bgc_chemcon = new_timer("hamocc_chemcon")
     timer_bgc_ocprod  = new_timer("hamocc_ocprod")
-    timer_bgc_sett    = new_timer("hamocc_settling") 
-    timer_bgc_agg     = new_timer("hamocc_aggregates")    
+    timer_bgc_sett    = new_timer("hamocc_settling")
+    timer_bgc_agg     = new_timer("hamocc_aggregates")
     timer_bgc_cya     = new_timer("hamocc_cyanos")
-    timer_bgc_gx      = new_timer("hamocc_gas_ex") 
+    timer_bgc_gx      = new_timer("hamocc_gas_ex")
     timer_bgc_calc    = new_timer("hamocc_calc_dissol")
-    timer_bgc_powach  = new_timer("hamocc_powach") 
+    timer_bgc_powach  = new_timer("hamocc_powach")
     timer_bgc_up_ic   = new_timer("hamocc_update_icon")
-    timer_bgc_tend    = new_timer("hamocc_up_tendencies") 
-    timer_bgc_ini     = new_timer("hamocc_ini") 
-    timer_bgc_inv     = new_timer("hamocc_inventories") 
-    timer_bgc_tot     = new_timer("hamocc_total") 
-    timer_exchange_ocean_hamocc = new_timer("exch_hamocc_ocean") 
+    timer_bgc_tend    = new_timer("hamocc_up_tendencies")
+    timer_bgc_ini     = new_timer("hamocc_ini")
+    timer_bgc_inv     = new_timer("hamocc_inventories")
+    timer_bgc_tot     = new_timer("hamocc_total")
+    timer_exchange_ocean_hamocc = new_timer("exch_hamocc_ocean")
 
     ! timers for restart writing/loading
     timer_load_restart = new_timer("load_restart")
@@ -879,6 +1033,7 @@ CONTAINS
     timer_lhn     = new_timer("lhn")
     timer_init_dace     = new_timer("init_dace")
     timer_dace_coupling = new_timer("dace_coupling")
+    timer_dace_acc_data_copies = new_timer("dace_acc_data_copies")
 
   ! extra timers for on-demand (non-permanent) timings
     timer_extra1  = new_timer("extra1")
@@ -923,23 +1078,23 @@ CONTAINS
     timer_extra40 = new_timer("extra40")
 
     timer_ls_forcing = new_timer("ls_forcing")
-   
+
     ! ART timers around the ART interfaces
     timer_art = new_timer("ART")
     timer_art_aeroInt = new_timer("art_aeroInt")
     timer_art_coagInt = new_timer("art_coagInt")
-    timer_art_emissInt = new_timer("art_emissInt") 
-    timer_art_reacInt = new_timer("art_reacInt") 
-    timer_art_photo = new_timer("art_photo") 
+    timer_art_emissInt = new_timer("art_emissInt")
+    timer_art_reacInt = new_timer("art_reacInt")
+    timer_art_photo = new_timer("art_photo")
     timer_art_losschem = new_timer("art_losschem")
-    timer_art_cldInt = new_timer("art_cldInt") 
-    timer_art_diagInt = new_timer("art_diagInt") 
+    timer_art_cldInt = new_timer("art_cldInt")
+    timer_art_diagInt = new_timer("art_diagInt")
     timer_art_initInt = new_timer("art_initInt")
     timer_art_radInt = new_timer("art_radInt")
-    timer_art_sedInt = new_timer("art_sedInt") 
+    timer_art_sedInt = new_timer("art_sedInt")
     timer_art_toolInt = new_timer("art_toolInt")
-    timer_art_tracInt = new_timer("art_tracInt") 
-    timer_art_turbdiffInt = new_timer("art_turbdiffInt") 
+    timer_art_tracInt = new_timer("art_tracInt")
+    timer_art_turbdiffInt = new_timer("art_turbdiffInt")
     timer_art_washoutInt = new_timer("art_washoutInt")
 
     ! Timers for EMVORADO
@@ -979,7 +1134,7 @@ CONTAINS
   !  @note Currently implemented for multi-threaded runs only!
   SUBROUTINE tic(time_s)
 #ifdef _OPENMP
-    USE OMP_LIB
+    USE OMP_LIB, ONLY: omp_get_wtime
 #endif
 
     REAL, INTENT(OUT) :: time_s
@@ -997,7 +1152,7 @@ CONTAINS
   !  @note Currently implemented for multi-threaded runs only!
   FUNCTION toc(time_s)
 #ifdef _OPENMP
-    USE OMP_LIB
+    USE OMP_LIB, ONLY: omp_get_wtime
 #endif
 
     REAL :: toc

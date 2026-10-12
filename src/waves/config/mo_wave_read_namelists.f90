@@ -1,17 +1,16 @@
-! Read namelists, make sanity checks specific to each namelist and make
-! a cross check once all namelists of a component are available.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Read namelists, make sanity checks specific to each namelist and make
+! a cross check once all namelists of a component are available.
 
 MODULE mo_wave_read_namelists
 
@@ -28,10 +27,11 @@ MODULE mo_wave_read_namelists
   USE mo_grid_config,           ONLY: init_grid_configuration
   USE mo_coupling_nml,          ONLY: read_coupling_namelist
   USE mo_extpar_nml,            ONLY: read_extpar_namelist
-  USE mo_wave_nml,              ONLY: read_wave_namelist
   USE mo_interpol_nml,          ONLY: read_interpol_namelist
-  USE mo_energy_propagation_nml,ONLY: read_energy_propagation_nml
   USE mo_advection_nml,         ONLY: read_transport_namelist
+  USE mo_initwave_nml,          ONLY: read_initwave_namelist
+  USE mo_wave_nml,              ONLY: read_wave_namelist
+  USE mo_energy_propagation_nml,ONLY: read_energy_propagation_nml
 
   IMPLICIT NONE
 
@@ -53,6 +53,9 @@ CONTAINS
     is_stdio = my_process_is_stdio()
     IF (is_stdio) CALL open_nml_output('NAMELIST_ICON_output_wave')
 
+    !-----------------------------------------------------------------
+    ! Shared ICON Namelists
+    !-----------------------------------------------------------------
     CALL read_time_namelist(TRIM(shr_namelist_filename))
 
     tlen = LEN_TRIM(wave_namelist_filename)
@@ -69,17 +72,22 @@ CONTAINS
 
     CALL init_grid_configuration()
 
-    CALL read_energy_propagation_nml  (wave_namelist_filename(1:tlen))
     ! temporary hack as long as llsq_svd is used directly from advecton_config
     CALL read_transport_namelist      (wave_namelist_filename(1:tlen))
-
-    CALL read_wave_namelist           (wave_namelist_filename(1:tlen))
 
     CALL read_extpar_namelist         (wave_namelist_filename(1:tlen))
 
     CALL read_gribout_namelist        (wave_namelist_filename(1:tlen))
 
     CALL read_coupling_namelist       (wave_namelist_filename(1:tlen))
+
+
+    !-----------------------------------------------------------------
+    ! Wave-specific Namelists
+    !-----------------------------------------------------------------
+    CALL read_initwave_namelist       (wave_namelist_filename(1:tlen))
+    CALL read_energy_propagation_nml  (wave_namelist_filename(1:tlen))
+    CALL read_wave_namelist           (wave_namelist_filename(1:tlen))
 
     !-----------------------------------------------------------------
     ! Close the file in which all the namelist variables and their

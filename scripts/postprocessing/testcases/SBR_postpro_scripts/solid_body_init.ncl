@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -40,7 +40,7 @@ begin
 
 ;***** get environment variables *****
 
-  fnam      =  getenv("FNAM") 
+  fnam      =  getenv("FNAM")
   gridfile  =  getenv("GRIDFILE")
   diri      =  getenv("DIRI")
   diro      =  getenv("DIRO")
@@ -85,7 +85,7 @@ begin
   VarName4 = "Q4"  ; contains numeric solution
 
 ;***** read variable 'time' of data file *****
-  if (isfilevar(File, "time")) then 
+  if (isfilevar(File, "time")) then
     time = File->time(:)
     dims_time = dimsizes(time)
   end if
@@ -97,7 +97,7 @@ begin
 ;***** read meteorological field *****
 
 ;***** a) velocity U
-  if (isfilevar(File, VarName2)) then 
+  if (isfilevar(File, VarName2)) then
     u = File->$VarName1$(ntime,nlev,:)   ; dims: (time,lev,cell)
     u = u*scale_u
     max_u = max(u)
@@ -108,7 +108,7 @@ begin
   end if
 
 ;***** b) velocity V
-  if (isfilevar(File, VarName2)) then 
+  if (isfilevar(File, VarName2)) then
     v = File->$VarName2$(ntime,nlev,:)   ; dims: (time,lev,cell)
     v = v*scale_v
     max_v = max(v)
@@ -118,8 +118,8 @@ begin
     print("min " + VarName2 + " " + min_v )
   end if
 
-;***** c) read numerical solution Q4 
-  if (isfilevar(File, VarName4)) then 
+;***** c) read numerical solution Q4
+  if (isfilevar(File, VarName4)) then
     q4 = File ->$VarName4$(ntime,nlev,:) ; dims: (time,lev,cell)
     q4 = q4*scale_q4
     max_q4 = max(q4)
@@ -140,7 +140,7 @@ begin
 ;***** read numerical solution
 
 
-  
+
 ;***** global grid
   x = File->clon *rad2deg   ; cell center, lon
   y = File->clat *rad2deg   ; cell center, lat
@@ -158,7 +158,7 @@ begin
   ResC@gsnSpreadColors      = True
   ResC@gsnLeftString        = "Reconstructed zonal wind"
   ResC@gsnCenterString      = " "
-  ResC@gsnRightString       = ConfigStr 
+  ResC@gsnRightString       = ConfigStr
   ResC@cnFillOn             = True
   ResC@cnLinesOn            = True
   ResC@cnInfoLabelOn        = False
@@ -187,10 +187,10 @@ begin
   ResC@sfXArray             = x  ; These are 1D arrays, so a triangular
   ResC@sfYArray             = y  ; mesh will be created internally.
 
-  ResC@lbLabelBarOn         = True 
+  ResC@lbLabelBarOn         = True
   ResC@lbLabelFontHeightF   = 0.0145
   ResC@lbLabelAutoStride    = True
-  ResC@lbTitlePosition      = "Bottom" 
+  ResC@lbTitlePosition      = "Bottom"
   ResC@lbTitleFontHeightF   = 0.015
 
   ResC@pmLabelBarHeightF        = 0.08
@@ -204,7 +204,7 @@ begin
 
 
 ; Annotation resources
-  txres                = True       
+  txres                = True
   txres@txJust         = "CenterLeft"
   txres@txFontHeightF  = 0.014              ; font smaller. default big
 ;
@@ -245,8 +245,8 @@ begin
 ;***************************************************************
 
 ;****************************************************************
-; 2.) show initial conditions, the numerically calculated tracer field 
-;     in CylindricalEquidistant projection and the difference between 
+; 2.) show initial conditions, the numerically calculated tracer field
+;     in CylindricalEquidistant projection and the difference between
 ;     numerical and analytical solution (difference between q4 and q4_ini)
 ;***************************************************************
 
@@ -319,7 +319,7 @@ begin
   text5=gsn_add_text(wks,plot_q(2),"max: " + sprintf("%10.4e", max_err),-119.4,-28.0,txres)
   text6=gsn_add_text(wks,plot_q(2),"min: " + sprintf("%10.4e", min_err),-119.4,-25.0,txres)
 
-;**** plot inital conditions (plot_q(0)), result (plot_q(1)) 
+;**** plot inital conditions (plot_q(0)), result (plot_q(1))
 ;**** and error (plot_q(2)) on one panel
 
   panel_res                       = True
@@ -328,4 +328,3 @@ begin
   gsn_panel(wks,plot_q,(/1,3/),panel_res)
 
 end
-

@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -20,11 +20,11 @@ MODULE mo_ocean_solve_mres
   USE mo_exception, ONLY: finish
   USE mo_ocean_solve_backend, ONLY: t_ocean_solve_backend
   USE mo_fortran_tools, ONLY: set_acc_host_or_device
- 
+
   IMPLICIT NONE
-  
+
   PRIVATE
- 
+
   PUBLIC :: t_ocean_solve_mres
   CHARACTER(LEN=*), PARAMETER :: this_mod_name = 'mo_ocean_solve_mres'
 
@@ -51,7 +51,7 @@ CONTAINS
   SUBROUTINE ocean_solve_mres_recover_arrays_wp(this, x, b, r, p0, &
     & p1, p2, s0, s1, s2, rs, ss)
     CLASS(t_ocean_solve_mres), INTENT(INOUT), TARGET :: this
-    REAL(KIND=wp), INTENT(OUT), POINTER, DIMENSION(:,:) :: &
+    REAL(KIND=wp), INTENT(INOUT), POINTER, DIMENSION(:,:) :: &
       & x, b, r, p0, p1, p2, s0, s1, s2, rs, ss
 
     IF (.NOT.ALLOCATED(this%r_wp)) THEN
@@ -87,8 +87,13 @@ SUBROUTINE ocean_solve_mres_cal_wp(this, lacc)
     LOGICAL, INTENT(in), OPTIONAL :: lacc
     REAL(KIND=wp) :: alpha, beta1, beta2, tol, tol2, rn, rsg, ssg, ss0g, ssg_o
     INTEGER :: nidx_a, nidx_e, nblk, iblk, k, m, k_final
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(KIND=wp), POINTER, DIMENSION(:,:) :: &
+      & x, b, tmp, r, p0, p1, p2, s0, s1, s2, rs, ss
+#else
     REAL(KIND=wp), POINTER, DIMENSION(:,:), CONTIGUOUS :: &
       & x, b, tmp, r, p0, p1, p2, s0, s1, s2, rs, ss
+#endif
     LOGICAL :: done, lzacc
 
     CALL set_acc_host_or_device(lzacc, lacc)

@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #
 #
@@ -252,28 +253,28 @@ cat > NAMELIST_WW <<EOF_WW
  hstart=${hstart},
  hstop=${hstop},
  hinc=${hinc},
- ke=${nlev}, 
+ ke=${nlev},
  verbosity=${iverb},
  ww_output="${ww_output_gribs}",
 /
 &ww_tune_nml
  rkgrenz1  = ${rkgrenz1},
  rkgrenz2  = ${rkgrenz2},
-!rf_fog    = 95.,   
-!clc_fog   = 99.,  
-!rain_l_m  = 2.5,   
-!rain_m_s  = 10.0,   
-!snow_l_m  = 1.00, 
-!snow_m_s  = 5.0, 
+!rf_fog    = 95.,
+!clc_fog   = 99.,
+!rain_l_m  = 2.5,
+!rain_m_s  = 10.0,
+!snow_l_m  = 1.00,
+!snow_m_s  = 5.0,
 !rash_lm_s = 2.5,
 !rash_s_vs = 20.0,
-!snsh_l_ms = 1.00, 
-!driz_l_m  = 0.1, 
+!snsh_l_ms = 1.00,
+!driz_l_m  = 0.1,
 !driz_m_s  = 0.5,
 !drif_l_ms = 0.1,
 !raif_l_ms = 2.5,
-!rgdiff_th1= 0.015, 
-!rgdiff_th2= 0.050 
+!rgdiff_th1= 0.015,
+!rgdiff_th2= 0.050
 /
 EOF_WW
 

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -26,7 +26,23 @@ listname=${1:-oce}
 ./rmlist $listname
 # ./mklist $listname
 ./create_all_builders $listname
-./set_builder_flags Inactive --builders 'levante_aurora levante_gpu_nvhpc levante_cpu_nvhpc levante_gpu_validation' --list $listname
+
+# temporary set nvhpc builder to Inactive, because they
+# should not run all tests added to levante below
+# their tests will be set up separately
+
+NVHPC_GPU_BUILDERS='levante_gpu_nvhpc levante_gpu_validation'
+NVHPC_CPU_BUILDERS='levante_cpu_nvhpc'
+NVHPC_DEV_BUILDERS='levante_gpu_validation levante_cpu_nvhpc_dev levante_gpu_nvhpc_dev'
+GPU_BUILDERS="${NVHPC_CPU_BUILDERS} ${NVHPC_GPU_BUILDERS} ${NVHPC_DEV_BUILDERS}"
+./set_builder_flags Inactive --builders "levante_aurora ${GPU_BUILDERS}" --list $listname
+
+# temporary set single-precision builders to Inactive, because will
+# have tests set up separately (see '# Single-precision')
+LEVANTE_SP_BUILDERS='levante_gcc_sp levante_gpu_nvhpc_sp levante_intel_hybrid_sp levante_nag_sp'
+SP_BUILDERS="dwd_nec_sp lumi_cpu_sp mpimac_gcc_sp ${LEVANTE_SP_BUILDERS}"
+./set_builder_flags Inactive --builders "${SP_BUILDERS}" --list $listname
+
 
 # OES
 # add omip technical tests only with mpi parallelization
@@ -40,12 +56,14 @@ $addexp "checksuite.ocean_internal/technical/exp.test_ocean_omip_technical" \
 $addexp "checksuite.ocean_internal/technical/exp.test_ocean_omip_zstar_technical" \
 	--machines levante --without-configureflags "--without-mpi --enable-mixed" \
 	--runflags "cpu_time=00:30:00 queue=shared ntasks=32"  --list $listname
-$addexp "checksuite.ocean_internal/technical/exp.test_ocean_omip_age_technical" \
-	--machines levante --without-configureflags "--without-mpi --enable-mixed" \
-	--runflags "cpu_time=00:30:00 queue=shared ntasks=32"  --list $listname
 
+# add omip binary-identical test
+$addexp "checksuite.ocean_internal/test_ocean_WilliamsonTestCase2_Hex.config" \
+        --machines levante --without-configureflags "--enable-mixed" --runflags "cpu_time=00:30:00 queue=shared,compute ntasks=16 EXP_OPTIONS=buildbot" --list $listname
+#for levante_nag_serial we use the old test
+./rmexp checksuite.ocean_internal/test_ocean_WilliamsonTestCase2_Hex.config                   --builders levante_nag_serial --list $listname
 $addexp "checksuite.ocean_internal/ShallowWater/exp.ocean_WilliamsonTestCase2_Hex" \
-	--machines levante --without-configureflags "--enable-mixed" --runflags "cpu_time=00:30:00 queue=shared ntasks=16" --list $listname
+	--builders levante_nag_serial --without-configureflags "--enable-mixed" --runflags "cpu_time=00:30:00 queue=shared ntasks=16" --list $listname
 
 # add omip binary-identical test
 $addexp "checksuite.ocean_internal/omip/exp.test_ocean_omip_10days" \
@@ -54,33 +72,26 @@ $addexp "checksuite.ocean_internal/omip/exp.test_ocean_zstar_omip_10days" \
 	--machines levante --without-configureflags "--without-mpi --enable-mixed" --runflags "cpu_time=00:30:00 queue=shared,compute memory=32G ntasks=16" --list $listname
 $addexp "checksuite.ocean_internal/omip/exp.test_ocean_newice_omip_10days" \
 	--machines levante --without-configureflags "--without-mpi --enable-mixed" --runflags "cpu_time=00:30:00 queue=shared,compute memory=32G ntasks=16" --list $listname
-$addexp "checksuite.ocean_internal/omip/exp.test_ocean_age_omip_10days" \
-	--machines levante --without-configureflags "--without-mpi --enable-mixed" --runflags "cpu_time=00:30:00 queue=shared,compute memory=32G ntasks=16" --list $listname
+
+#ADD PYTHON PROVIDER TEST
+$addexp "checksuite.ocean_internal/era5/exp.test-ocean_era5" \
+         --machines levante --without-configureflags "--without-mpi --enable-mixed" --runflags "cpu_time=00:10:00 queue=shared,compute memory=32G ntasks=32 openmp_threads=2" --list $listname
+
+#rm nag builder because of not working python enviroment
+./rmexp checksuite.ocean_internal/era5/exp.test-ocean_era5 --builders "levante_nag" --list $listname
 
 # add omip binary-identical test on levante
 $addexp "checksuite.ocean_internal/hamocc/exp.test_hamocc_omip_10days"       \
 	--machines levante --without-configureflags "--without-mpi --enable-mixed" --runflags "cpu_time=00:30:00 queue=shared,compute memory=32G ntasks=16" --list $listname
-$addexp "checksuite.ocean_internal/hamocc/exp.test_hamocc_age_omip_10days" \
-	--machines levante --without-configureflags "--without-mpi --enable-mixed" --runflags "cpu_time=00:30:00 queue=shared,compute memory=32G ntasks=16" --list $listname
+
 $addexp "checksuite.ocean_internal/hamocc/exp.test_concurrent_hamocc_omip_10days" \
-	--machines levante --without-configureflags "--without-mpi --enable-mixed" --runflags "cpu_time=00:30:00 queue=shared,compute memory=32G ntasks=16" --list $listname
-$addexp "checksuite.ocean_internal/hamocc/exp.test_concurrent_age_hamocc_omip_10days" \
 	--machines levante --without-configureflags "--without-mpi --enable-mixed" --runflags "cpu_time=00:30:00 queue=shared,compute memory=32G ntasks=16" --list $listname
 
 $addexp "checksuite.ocean_internal/technical/exp.test_multioutput_model_40km" \
 	--machines levante --without-configureflags "--without-mpi --with-openmp --enable-mixed" --runflags "cpu_time=00:30:00 no_of_nodes=2 queue=compute" --list $listname
 
 
-#-----------------------------------------------------------
-# CSCS
-# Additional tests for GPU
-
-# NVIDIA for GPU: failing currently because:
-#              mo_ice_interface:ice_fast_interface: This part has not been ported to GPU.
-./rmexp checksuite.ocean_internal/technical/exp.ocean_omip_ptest                  --builders "DAINT_GPU_nvidia" --list $listname
-./rmexp checksuite.ocean_internal/technical/exp.test_ocean_omip_technical         --builders "DAINT_GPU_nvidia" --list $listname
-
-for builder in DWD_nec DWD_nec_yac2 DWD_nec_hybrid; do
+for builder in dwd_nec_oper dwd_nec_coupling dwd_nec_hybrid; do
   # remove non-dwd tests
   ./rmexp checksuite.ocean_internal/technical/exp.ocean_omip_ptest                   --builders ${builder} --list $listname
   ./rmexp checksuite.ocean_internal/technical/exp.test_ocean_omip_technical          --builders ${builder} --list $listname
@@ -101,8 +112,7 @@ for builder in levante_intel_pio; do
 done
 
 # activate experiments for the Mac builder and breeze
-for builder in MPIMAC_gcc breeze_gcc breeze_nag breeze_intel; do
-  [[ 'MPIMAC_gcc' = "${builder}" ]] && ./set_builder_flags Active --builders ${builder}  --list $listname
+for builder in mpimac_gcc breeze_gcc breeze_nag breeze_intel; do
   $addexp checksuite.ocean_internal/omip/exp.ocean_omip_short_r2b4 --builders ${builder} --list $listname --runflags "mpi_procs_pernode=4"
 done
 

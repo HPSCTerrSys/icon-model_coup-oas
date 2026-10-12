@@ -1,0 +1,27 @@
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+# Set up diagnostic output
+
+import logging
+import os
+
+#%  set prefix = '%(asctime)s: ' if JOB.log_timestamps is set else ''
+logging.basicConfig(format='%{prefix}%(levelname)s%(message)s',
+                    level=logging.INFO)
+logging.addLevelName(logging.DEBUG, 'Debug: ')
+logging.addLevelName(logging.INFO, '')
+logging.addLevelName(logging.WARNING, 'Hey: ')
+logging.addLevelName(logging.ERROR, 'Oops: ')
+logging.addLevelName(logging.CRITICAL, 'Sorry: ')
+#%  if JOB.debug_level|d(0)|int > 0:
+logging.getLogger().setLevel(logging.DEBUG)
+#%  endif
+#%#

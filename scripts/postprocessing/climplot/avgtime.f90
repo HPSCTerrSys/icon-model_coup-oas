@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -57,7 +57,7 @@ extern avgtime(p1:fieldset,p2:number,p3:number,p4:number,p5:number,p6:number) "f
 ! --- field size
       ISIZE = nlon*nlat
       IPNTS = ISIZE
-      
+
 ! --- allocate some memory
       allocate(values(IPNTS),stat=ierr)
        if (ierr.ne.0) stop 'E to allocate memory'

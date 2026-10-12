@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -62,7 +62,7 @@ secondary_build_dir=""
 #   in run/set-up.info.
 #
 # A job or run script is a script that can be submitted by the HPC scheduler.
-# An experiment script is the part of the job script that specifies the most 
+# An experiment script is the part of the job script that specifies the most
 # settings of the experiment. It should not contain host specific settings.
 #
 # The experiment script is build from multiple files specified in $input_name,

@@ -1,22 +1,20 @@
-; ICON
-;
+ pro paperopenl, fname
 ; ---------------------------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
 ; SPDX-License-Identifier: BSD-3-Clause
 ; ---------------------------------------------------------------
 
-pro paperopenl
-;-----------------------------------------------------------------------;
+;----------------------------------------------------------------
 ; Open postscript landscape page.
 ;
 ; Martin Koehler, 2-20-95
-;-----------------------------------------------------------------------;
+;----------------------------------------------------------------
 
  set_plot,'ps',/copy
- device,filename='plot.ps',/color,/landscape,   $
+ device,filename=fname,/color,/landscape,   $
 ;   /inches, xsize=10.5,ysize=7.7, xoffset=0.25,yoffset=10.75
     xsize=28.5,ysize=19, xoffset=0.5,yoffset=29.5
 ;, xoffset=1,yoffset=28.5
@@ -31,7 +29,7 @@ pro paperopenl
 
  !p.font=0      ;default (hardward postscript font Helvetia, problem with math)
                 ;- better for Illustrator (?)
-;device, /times ;Times postscript font 
+;device, /times ;Times postscript font
 ;device, /avantgarde
  device, /helvetica
 ;device, /palatino

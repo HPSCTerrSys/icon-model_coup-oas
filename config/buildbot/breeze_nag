@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -12,38 +12,42 @@
 
 set -eu
 
-MY_DIR=$(cd "$(dirname "$0")"; pwd)
-ICON_DIR=$(cd "${MY_DIR}/../.."; pwd)
-LINUX_CODENAME=$(lsb_release -sc)
+unset CDPATH
+script_dir=$(cd "$(dirname "$0")"; pwd)
+icon_dir=$(cd "${script_dir}/../.."; pwd)
 
-if test ! -z "${BB_NAME-}"; then
-  set -x
-fi
+linux_codename=$(lsb_release -sc)
 
-MAKE_PROCS=8
+unset MAKEFLAGS
+makeflags='--jobs=8 --no-print-directory --output-sync=target V=1'
+
+set -x
 
 # Check whether we can build with RTTOV and without DACE and EMVORADO:
 #  TODO: this is a temporary quick and dirty solution. We should run
 #  './run/checksuite.build/exp.check_rttov_BREEZE.run' as an experiment
 #  instead.
-if [ ! -z "${BB_NAME-}" ]; then
+if test -n "${BB_NAME-}"; then
   (
     mkdir -p build && cd build
-    ${ICON_DIR}/config/mpim/${LINUX_CODENAME}.nag --enable-rttov --disable-dace --disable-emvorado
-    make -j ${MAKE_PROCS}
+    ${icon_dir}/config/mpim/${linux_codename}.nag --enable-rttov --disable-dace --disable-emvorado
+    make ${makeflags}
   )
 fi
 
-${ICON_DIR}/config/mpim/${LINUX_CODENAME}.nag --enable-yaxt --disable-openmp --enable-rte-rrtmgp --enable-serialization --enable-rttov --enable-dace --enable-emvorado
+${icon_dir}/config/mpim/${linux_codename}.nag --enable-yaxt --disable-openmp --enable-rte-rrtmgp --enable-serialization --enable-rttov --enable-dace --enable-emvorado
 
-make -j ${MAKE_PROCS}
+time make ${makeflags}
 
-if test ! -z "${BB_NAME-}"; then
-  "${ICON_DIR}/scripts/buildbot_scripts/build_checks/check_depgen_warnings.sh"
-  "${ICON_DIR}/scripts/buildbot_scripts/build_checks/check_remake.sh"
+if test -n "${BB_NAME-}"; then
+  "${icon_dir}/scripts/buildbot_scripts/build_checks/check_depgen_warnings.sh"
+  "${icon_dir}/scripts/buildbot_scripts/build_checks/check_remake.sh"
   # Build the tests in parallel:
-  make -j ${MAKE_PROCS} check TESTS= XFAIL_TESTS=
+  time make ${makeflags} --keep-going TESTS= check
   # Run the tests serially:
-  make check
-  "${ICON_DIR}/scripts/buildbot_scripts/build_checks/check_git_untracked.sh"
+  time make --keep-going ICON_VERBOSE_TESTS=1 ICON_COLOR_TESTS=always \
+    TESTS_ENVIRONMENT='echo "$${mgn}RUNNING$${std}: $$f"; st=$$(date +%s.%N);' \
+    AM_TESTS_FD_REDIRECT=';printf "$${brg}duration$${std}: %s: %0.2fs\n" "$$f" "$$(echo "$$(date +%s.%N) - $${st}" | bc -l)"' \
+    check
+  "${icon_dir}/scripts/buildbot_scripts/build_checks/check_git_untracked.sh"
 fi

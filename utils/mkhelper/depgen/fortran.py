@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2024, MPI-M
+# Copyright (c) 2018-2026, MPI-M
 #
 # Author: Sergey Kosukhin <sergey.kosukhin@mpimet.mpg.de>
 #
@@ -47,7 +47,7 @@ class Parser:
         r"^\s*module\s+(?!(?:procedure|subroutine|function)\s)(\w+)\s*$", re.I
     )
     _re_submodule_start = re.compile(
-        r"^\s*submodule\s+\(\s*(\w+)(?:\s*:\s*(\w+)\s*)?\s*\)\s+(\w+)\s*$", re.I
+        r"^\s*submodule\s*\(\s*(\w+)(?:\s*:\s*(\w+)\s*)?\s*\)\s*(\w+)\s*$", re.I
     )
     _re_module_use = re.compile(
         r"^\s*use(?:\s+|(?:\s*,\s*((?:non_)?intrinsic))?\s*::\s*)(\w+)", re.I
@@ -252,7 +252,7 @@ class Parser:
                     self.debug_callback(
                         line,
                         "ignored module subroutine/function "
-                        "(not in the module scope)".format(current_module),
+                        "(not in the module scope)",
                     )
                 continue
 
@@ -329,6 +329,6 @@ class Parser:
         for line in stream:
             comment_idx = find_unquoted_string("!", line)
             if comment_idx >= 0:
-                line = line[:comment_idx]
+                line = line[:comment_idx] + "\n"
             if line and not line.isspace():
                 yield line

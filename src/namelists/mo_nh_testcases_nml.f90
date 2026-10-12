@@ -1,10 +1,7 @@
-! Defines the artificial testcases for the nonhydrostatic atmospheric model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,22 +9,25 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
-MODULE mo_nh_testcases_nml  
-!-------------------------------------------------------------------------  
-!  
-!    ProTeX FORTRAN source: Style 2  
-!    modified for ICON project, DWD/MPI-M 2006                       
-!  
-!-------------------------------------------------------------------------  
-!  
-!  
+! Defines the artificial testcases for the nonhydrostatic atmospheric model.
+
+MODULE mo_nh_testcases_nml
+!-------------------------------------------------------------------------
+!
+!    ProTeX FORTRAN source: Style 2
+!    modified for ICON project, DWD/MPI-M 2006
+!
+!-------------------------------------------------------------------------
+!
+!
 !
 !-------------------------------------------------------------------------
 !
 !
   USE mo_kind,                 ONLY: wp
+  USE mo_exception,            ONLY: finish, message_text
   USE mo_namelist,             ONLY: position_nml, POSITIONED, open_nml, close_nml
-  USE mo_impl_constants,       ONLY: MAX_CHAR_LENGTH, MAX_NTRACER 
+  USE mo_impl_constants,       ONLY: MAX_CHAR_LENGTH, MAX_NTRACER
   USE mo_io_units,             ONLY: nnml
   USE mo_nh_wk_exp,            ONLY: qv_max_wk, u_infty_wk,                          &
                                    & bubctr_lat, bubctr_lon, bubctr_z,               &
@@ -36,7 +36,7 @@ MODULE mo_nh_testcases_nml
                                    & p_base_nconst, theta0_base_nconst, h_nconst,    &
                                    & N_nconst, rh_nconst, rhgr_nconst,               &
                                    & itype_anaprof_uv, nlayers_linwind, h_linwind,   &
-                                   & u_linwind, ugr_linwind, vel_const,              &
+                                   & u_linwind, ugr_linwind, vel_const, dir_wind,    &
                                    & itype_topo_ana, schaer_h0,                      &
                                    & schaer_a, schaer_lambda, halfwidth_2dm,         &
                                    & mount_lonc_deg, mount_latc_deg, m_height,       &
@@ -51,23 +51,24 @@ MODULE mo_nh_testcases_nml
   USE mo_nh_dcmip_schaer,      ONLY: lshear_dcmip
   USE mo_nh_dcmip_gw,          ONLY: gw_clat, gw_u0, gw_delta_temp
 
-  IMPLICIT NONE  
+  IMPLICIT NONE
 
-  PRIVATE 
+  PRIVATE
 
   PUBLIC :: read_nh_testcase_namelist,layer_thickness,                       &
     &       n_flat_level, nh_test_name,                                      &
     &       ape_sst_case, ape_sst_val, w_perturb, th_perturb,                &
-    &       mount_height, mount_width, mount_width_2,                        & 
+    &       mount_height, mount_width, mount_width_2,                        &
     &       torus_domain_length, nh_brunt_vais, nh_u0, nh_t0,                &
     &       jw_up, jw_u0, jw_temp0, rh_at_1000hpa, relhum, qv_max,           &
     &       tpe_moist, tpe_psfc, tpe_temp, t0, z0, gamma0, gamma1,           &
     &       RCE_Tprescr_noise,                                               &
-    &       rotate_axis_deg, lhs_nh_vn_ptb, hs_nh_vn_ptb_scale,              & 
+    &       rotate_axis_deg, lhs_nh_vn_ptb, hs_nh_vn_ptb_scale,              &
     &       linit_tracer_fv, lhs_fric_heat, lcoupled_rho, u_cbl, v_cbl,      &
     &       th_cbl, psfc_cbl, sol_const, zenithang, bubctr_x, bubctr_y,      &
     &       tracer_inidist_list, zp_ape, ztmc_ape, is_dry_cbl, isrfc_type,   &
-    &       shflx, lhflx, ufric, albedo_set
+    &       shflx, lhflx, ufric, albedo_set, p_sfc, th_sfc, gamma, nlev_pert, &
+    &       itheta_init, t_cbl_sol
 
   PUBLIC :: dcmip_bw
   PUBLIC :: is_toy_chem, toy_chem
@@ -101,9 +102,11 @@ MODULE mo_nh_testcases_nml
   REAL(wp) :: qv_max                 ! limit of maximum specific humidity in the tropics [kg/kg]
   REAL(wp) :: tpe_moist              ! initial total moisture content for terra planet [kg/m2]
   REAL(wp) :: tpe_psfc               ! initial surface pressure for terra planet [Pa]
-  REAL(wp) :: tpe_temp               ! initial atmospheric temperature for terra planet [K], in the case of RCE_Tprescr this is the surface temperature
+  REAL(wp) :: tpe_temp               ! initial atmospheric temperature for terra planet [K],
+                                     ! in the case of RCE_Tprescr this is the surface temperature
   REAL(wp) :: t0                     ! RCE_Tprescr: initial atmospheric temperature in lowest model layer [K]
-  REAL(wp) :: z0                     ! RCE_Tprescr: altitude above surface up to which temperature increases with lapse rate gamma0 [m]
+  REAL(wp) :: z0                     ! RCE_Tprescr: altitude above surface up to which temperature increases
+                                     ! with lapse rate gamma0 [m]
   REAL(wp) :: gamma0                 ! RCE_Tprescr: lapse rate of temperature between surface and z0 [K/m]
   REAL(wp) :: gamma1                 ! RCE_Tprescr: lapse rate of temperature above z0 [K/m]
   LOGICAL  :: RCE_Tprescr_noise      ! RCE_Tprescr_noise: .TRUE. for adding
@@ -111,9 +114,9 @@ MODULE mo_nh_testcases_nml
   REAL(wp) :: ape_sst_val            ! (degC) value to be used for SST computation for aqua planet
   REAL(wp) :: zp_ape                 ! surface pressure (Pa)
   REAL(wp) :: ztmc_ape               ! total atmospheric moisture content (g/m3 ?)
-  REAL(wp) :: w_perturb, th_perturb !Random perturbation scale for torus based experiments
+  REAL(wp) :: w_perturb, th_perturb  ! Random perturbation scale for torus based experiments
   REAL(wp) :: sol_const              ! [W/m2] solar constant
-  REAL(wp) :: zenithang              ! [degrees] zenith angle 
+  REAL(wp) :: zenithang              ! [degrees] zenith angle
   REAL(wp) :: albedo_set             ! [fraction] surface albedo, only considered when
                                      ! nh_test_name = [RCEMIP_analytical]
 
@@ -122,6 +125,15 @@ MODULE mo_nh_testcases_nml
   REAL(wp) :: shflx                  ! Kinematic sensible heat flux at surface (K m/s) for isrfc_type=1
   REAL(wp) :: lhflx                  ! Kinematic latent heat flux at surface (m/s) for isrfc_type=1
   REAL(wp) :: ufric
+
+  ! aes_cbl variables
+  REAL(wp) :: p_sfc       ! surface pressure
+  REAL(wp) :: th_sfc      ! potential temperature at surface
+  REAL(wp) :: gamma       ! lapse rate of potential temperature profile
+  INTEGER  :: nlev_pert   ! number of vertical grid points from ground to perturbe initial profile
+  INTEGER  :: itheta_init ! 1: linear theta profile based on gamma and th_sfc,
+                          ! 2: analytical solution based on constant eddy diffusivity (km_constant in TMX)
+  REAL(wp) :: t_cbl_sol   ! time for analytical solution of CBL with const. surface heat flux for analytical solution.
 
   !Linear profiles of variables for LES testcases
   REAL(wp) :: u_cbl(2)   !u_cbl(1) = constant, u_cbl(2) = gradient
@@ -136,17 +148,17 @@ MODULE mo_nh_testcases_nml
   ! settings for Gal-Chen vertical coordinate
   ! Dirty stuff
   ! Should be placed in a new namelist/configure state.
-  REAL(wp) :: layer_thickness        ! constant layer thickness (A(k)-A(k+1)) for 
+  REAL(wp) :: layer_thickness        ! constant layer thickness (A(k)-A(k+1)) for
                                      ! Gal-Chen hybrid coordinate. (m)
-                                     ! If layer_thickness<0,  A(k), B(k) are read 
-                                     ! from file.                                    
+                                     ! If layer_thickness<0,  A(k), B(k) are read
+                                     ! from file.
   INTEGER  :: n_flat_level           ! Number of flat levels, i.e. where B=0.
 
   INTEGER :: tracer_inidist_list(MAX_NTRACER) ! Initial distribution of nth tracer
                                               ! Applicable to test cases
                                               ! nh_df_test, nh_pa_test, nh_jabw_exp
 
-  ! terminator toy chemistry namelist switches 
+  ! terminator toy chemistry namelist switches
   TYPE t_toy_chem
     REAL(wp) :: dt_chem       ! chemistry tendency update interval
     REAL(wp) :: dt_cpl        ! transport-chemistry coupling interval
@@ -156,7 +168,7 @@ MODULE mo_nh_testcases_nml
 
   ! DCMIP 2016 baroclinic wave namelist switches
   TYPE t_dcmip_bw
-    INTEGER :: deep           ! deep atmosphere (1 = yes or 0 = no) 
+    INTEGER :: deep           ! deep atmosphere (1 = yes or 0 = no)
     INTEGER :: moist          ! include moisture (1 = yes or 0 = no)
     INTEGER :: pertt          ! type of perturbation (0 = exponential, 1 = stream function)
   END TYPE
@@ -186,30 +198,33 @@ MODULE mo_nh_testcases_nml
                             p_base_nconst, theta0_base_nconst, h_nconst,     &
                             N_nconst, rh_nconst, rhgr_nconst,                &
                             itype_anaprof_uv, nlayers_linwind, h_linwind,    &
-                            u_linwind, ugr_linwind, vel_const,               &
+                            u_linwind, ugr_linwind, vel_const, dir_wind,     &
                             itype_topo_ana,                                  &
                             schaer_h0, schaer_a, schaer_lambda,              &
                             halfwidth_2dm, mount_lonc_deg, mount_latc_deg,   &
                             m_height, m_width_x, m_width_y, itype_atmo_ana,  &
                             nlayers_poly, p_base_poly, h_poly, t_poly,       &
                             tgr_poly, rh_poly, rhgr_poly, lshear_dcmip,      &
-                            lcoupled_rho, gw_clat, gw_u0, gw_delta_temp,     & 
+                            lcoupled_rho, gw_clat, gw_u0, gw_delta_temp,     &
                             u_cbl, v_cbl, th_cbl, w_perturb, th_perturb,     &
                             psfc_cbl, sol_const, zenithang, bubctr_x,        &
                             bubctr_y, is_toy_chem, toy_chem, dcmip_bw,       &
                             tracer_inidist_list, is_dry_cbl,                 &
-                            isrfc_type, shflx, lhflx, ufric, albedo_set
+                            isrfc_type, shflx, lhflx, ufric, albedo_set,     &
+                            p_sfc, th_sfc, gamma, nlev_pert,                 &
+                            itheta_init, t_cbl_sol
+
 
   ! Non-namelist-variables
   LOGICAL :: ltestcase_update  ! Is current testcase subject to update during integration?
-                      
+
 
   CONTAINS
 !-------------------------------------------------------------------------
   !! Defines nonhydrostatic artificial initial conditions.
-  !! 
+  !!
   !! Reads namelist
-  !! 
+  !!
   SUBROUTINE read_nh_testcase_namelist( filename )
 
     CHARACTER(LEN=*), INTENT(IN) :: filename
@@ -280,7 +295,7 @@ MODULE mo_nh_testcases_nml
     bub_ver_width          = 1400._wp
     ! for the limited area test cases
     itype_atmo_ana   = 1
-    ! for the piecewise const Brunt-Vaisala freq layers 
+    ! for the piecewise const Brunt-Vaisala freq layers
     p_base_nconst  = 100000.0_wp
     !theta0_base_nconst  = 300.0_wp
     theta0_base_nconst  = 288.0_wp
@@ -293,11 +308,11 @@ MODULE mo_nh_testcases_nml
       N_nconst(1)  = 0.01_wp
       N_nconst(2)  = 0.001_wp
       N_nconst(3)  = 0.02_wp
-    rh_nconst(:)  = 0.5_wp     
+    rh_nconst(:)  = 0.5_wp
    ! rel hum gradients,  positive for decreasing humidity with height
     rhgr_nconst(:)  = 0.0_wp
-      rhgr_nconst(1)  = 0.0_wp ! 
-      rhgr_nconst(2)  = 0.0_wp ! 
+      rhgr_nconst(1)  = 0.0_wp !
+      rhgr_nconst(2)  = 0.0_wp !
       rhgr_nconst(3)  = 0.0_wp
     ! for the piecewise polytropic layers
     nlayers_poly = 2
@@ -319,6 +334,7 @@ MODULE mo_nh_testcases_nml
      rhgr_poly(2)=0._wp   !DR rhgr_poly(1)=0._wp
     ! for the wind profiles
     vel_const = 20.0_wp
+    dir_wind = 270._wp
     itype_anaprof_uv  = 1
     nlayers_linwind   = 2
     h_linwind(:)      = 1._wp
@@ -351,15 +367,23 @@ MODULE mo_nh_testcases_nml
     gw_clat    = 90._wp      ! center of temperature/density perturbation  [deg]
     gw_delta_temp = 0.01_wp  ! Max amplitude of perturbation [K]
 
+    ! For aes_cbl testcase
+    p_sfc     = 101325._wp
+    th_sfc    = 290._wp
+    gamma     = 0.006_wp
+    nlev_pert = 5
+    itheta_init = 1
+    t_cbl_sol = 1._wp
+
 
     !For CBL testcases, Anurag Dipankar (MPIM, 2013-04)
-    u_cbl(1:2) = 0._wp 
-    v_cbl(1:2) = 0._wp 
+    u_cbl(1:2) = 0._wp
+    v_cbl(1:2) = 0._wp
     th_cbl(1)  = 290._wp
     th_cbl(2)  = 0.006_wp
     psfc_cbl   = 102000._wp
-    w_perturb  = 0.05_wp    
-    th_perturb = 0.2_wp    
+    w_perturb  = 0.05_wp
+    th_perturb = 0.2_wp
 
     !For warm bubble experiment on torus
     !Note that (0,0) is the center of the torus
@@ -382,7 +406,7 @@ MODULE mo_nh_testcases_nml
     ! nh_df_test, nh_pa_test, nh_jabw_exp
     tracer_inidist_list(:) = 1
 
-    ! Is current testcase subject to update during integration? 
+    ! Is current testcase subject to update during integration?
     ! (Final setting takes place in 'src/testcases/mo_nh_testcases: init_nh_testcase')
     ltestcase_update = .FALSE.  ! Initialize with 'No'
 
@@ -396,8 +420,41 @@ MODULE mo_nh_testcases_nml
 
     n_flat_level=MAX(2,n_flat_level)
 
+    CALL configure_g_lim_area
+
   END SUBROUTINE read_nh_testcase_namelist
 
 
+  !> Map choices of itype_anaprof_uv to the general case with a specified wind profile. This
+  !! simplifies the implementation of the test case.
+  SUBROUTINE configure_g_lim_area
+
+    SELECT CASE (itype_anaprof_uv)
+    CASE (1)
+      ! General case, no adjustments needed.
+
+    CASE (2) ! Constant wind profile.
+      nlayers_linwind = 1
+      h_linwind(1) = 0._wp
+      u_linwind(1) = vel_const
+      ugr_linwind(1) = 0._wp
+
+    ! deprecated but kept for backward compatibility
+    !
+    CASE (3) ! Constant v wind profile.
+      nlayers_linwind = 1
+      h_linwind(1) = 0._wp
+      u_linwind(1) = vel_const
+      ugr_linwind(1) = 0._wp
+      dir_wind = 180._wp
+
+    CASE DEFAULT
+      WRITE (message_text,*) 'itype_anaprof_uv = ', itype_anaprof_uv, ' unknown.'
+      CALL finish('mo_nh_testcases_nml:read_nh_testcase_namelist', message_text)
+
+    END SELECT
+
+  END SUBROUTINE configure_g_lim_area
+
 !-------------------------------------------------------------------------
-END MODULE mo_nh_testcases_nml  
+END MODULE mo_nh_testcases_nml

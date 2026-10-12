@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -38,7 +38,7 @@ MODULE mo_ocean_hamocc_communication
                                          xt_xmap_dist_dir_intercomm_new, &
                                          xt_idxvec_new, xt_idxempty_new, &
                                          xt_idxlist_delete, xt_idxlist,  &
-                                         xt_mpi_comm_mark_exclusive 
+                                         xt_mpi_comm_mark_exclusive
   USE mo_communication,            ONLY: blk_no, idx_no
 #endif
 
@@ -81,7 +81,7 @@ CONTAINS
     INTEGER :: idx, blk
     INTEGER, ALLOCATABLE :: offsets_cells(:), offsets_edges(:)
     TYPE(xt_offset_ext), ALLOCATABLE :: extents_cells_3d(:), extents_cells_3d_halfLevels(:), &
-      extents_edges_3d(:) 
+      extents_edges_3d(:)
 
     TYPE(xt_idxlist) :: idxlist_cells_2d, idxlist_cells_3d, idxlist_cells_3d_halfLevels, &
                         idxlist_empty, idxlist_edges_3d
@@ -97,9 +97,9 @@ CONTAINS
     TYPE(xt_redist) :: ocean_2_hamocc_redist_edges_3d
     TYPE(xt_redist) :: hamocc_2_ocean_redist_cells_2d
     TYPE(xt_redist) :: hamocc_2_ocean_redist_cells_3d
- 
+
     INTEGER :: ierr
-    
+
     num_unmasked_cells = &
       COUNT(p_patch%cells%decomp_info%owner_local == p_pe_work)
     n_patch_cells_g = INT(p_patch%n_patch_cells_g, xt_int_kind)
@@ -110,7 +110,7 @@ CONTAINS
     ALLOCATE(global_index_cells_3d_halfLevels(no_of_levels+1, num_unmasked_cells))
     ALLOCATE(global_index_edges_3d(no_of_levels, num_unmasked_edges))
 
-    
+
     j = 1
     DO i = 1, p_patch%n_patch_cells
       IF (p_patch%cells%decomp_info%owner_local(i) == p_pe_work) THEN
@@ -123,7 +123,7 @@ CONTAINS
       global_index_cells_3d_halfLevels(i,:) = &
         global_index_cells_3d_halfLevels(1,:) + n_patch_cells_g * INT(i - 1, xt_int_kind)
     END DO
-    
+
     j = 1
     DO i = 1, p_patch%n_patch_edges
       IF (p_patch%edges%decomp_info%owner_local(i) == p_pe_work) THEN
@@ -141,10 +141,10 @@ CONTAINS
     idxlist_cells_2d            = xt_idxvec_new(global_index_cells_3d_halfLevels(1,:))
     idxlist_cells_3d            = xt_idxvec_new(global_index_cells_3d_halfLevels(1:no_of_levels,:))
     idxlist_cells_3d_halfLevels = xt_idxvec_new(global_index_cells_3d_halfLevels(1:no_of_levels+1,:))
-    idxlist_edges_3d            = xt_idxvec_new(global_index_edges_3d(1:no_of_levels,:))   
+    idxlist_edges_3d            = xt_idxvec_new(global_index_edges_3d(1:no_of_levels,:))
 
     DEALLOCATE(global_index_cells_3d_halfLevels, global_index_edges_3d)
-    
+
     ALLOCATE(offsets_cells(num_unmasked_cells), &
              offsets_edges(num_unmasked_edges), &
              extents_cells_3d(num_unmasked_cells), &
@@ -177,8 +177,8 @@ CONTAINS
         j = j + 1;
       END IF
     END DO
-    
-    
+
+
     IF (is_ocean) THEN
        ocean_2_hamocc_xmap_cells_2d = &
         xt_xmap_dist_dir_intercomm_new( &
@@ -198,9 +198,9 @@ CONTAINS
       hamocc_2_ocean_xmap_cells_3d = &
         xt_xmap_dist_dir_intercomm_new( &
           idxlist_empty, idxlist_cells_3d, ocean_hamocc_intercomm, p_patch%comm)
-   
+
     ELSE
-    
+
       ocean_2_hamocc_xmap_cells_2d = &
         xt_xmap_dist_dir_intercomm_new( &
           idxlist_empty, idxlist_cells_2d, ocean_hamocc_intercomm, p_patch%comm)
@@ -257,9 +257,9 @@ CONTAINS
                                  ocean_2_hamocc_redist_edges_3d, & ! transport: vn
                                  ocean_2_hamocc_redist_cells_3d_halfLevels, & ! transport:w
                                  ocean_2_hamocc_redist_cells_3d, & ! press_hyd
-                                 ocean_2_hamocc_redist_cells_2d, & ! stretch_c    
+                                 ocean_2_hamocc_redist_cells_2d, & ! stretch_c
                                  ocean_2_hamocc_redist_cells_2d, & ! stretch_c_new
-                                 ocean_2_hamocc_redist_cells_2d  & ! draftave     
+                                 ocean_2_hamocc_redist_cells_2d  & ! draftave
                                  /), & !
                                ocean_hamocc_intercomm)
                               ! ocean_2_hamocc_redist_edges_3d, & ! hor_diffusion_coeff
@@ -268,7 +268,7 @@ CONTAINS
       xt_redist_collection_new((/hamocc_2_ocean_redist_cells_2d,    &  ! co2_flux
                                  hamocc_2_ocean_redist_cells_3d /), &  ! swr_fraction
                                 ocean_hamocc_intercomm)
-      
+
     ! clean up
     CALL xt_redist_delete(ocean_2_hamocc_redist_cells_2d)
     CALL xt_redist_delete(ocean_2_hamocc_redist_cells_3d)
@@ -353,7 +353,7 @@ CONTAINS
   END SUBROUTINE setup_hamocc_2_ocean_communication
 
   SUBROUTINE free_ocean_hamocc_communication
- 
+
 #ifdef USE_OCEAN_HAMOCC_COMMUNICATION
    INTEGER :: ierr
 
@@ -401,12 +401,12 @@ CONTAINS
       &  co2_mixing_ratio, &
       &  mass_flux_e, &
       &  vn, &
-      &  w , & 
+      &  w , &
       &  press_hyd, &
       &  stretch_c, &
       &  stretch_c_new, &
       &  draftave
- 
+
 
     TYPE(c_ptr) :: src_data_cptr(18), dst_data_cptr(18)
 
@@ -448,7 +448,7 @@ CONTAINS
     TYPE(c_ptr), INTENT(IN)  :: swr_fraction
 
     TYPE(c_ptr) :: src_data_cptr(2), dst_data_cptr(2)
-   
+
     src_data_cptr( 1) = co2_flux
     src_data_cptr( 2) = swr_fraction
     dst_data_cptr = src_data_cptr

@@ -1,22 +1,22 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
 ; SPDX-License-Identifier: BSD-3-Clause
 ; ------------------------------------------
 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl" 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl" 
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 
 
 undef("define_draw_strings")
  procedure define_draw_strings (Code,cArea,comment,wks)
- 
+
 ;************************************************
 ;  Define min max mean
 ;  Draw text on plot using NDC coordinates.
@@ -40,10 +40,10 @@ begin
   txres@txFontHeightF = 0.014                   ; font smaller. default big
   gsn_text_ndc(wks,pltdate,0.85,0.1,txres)
   gsn_text_ndc(wks,comment,0.18,0.1,txres)
-  txres@txFontHeightF = 0.016 
+  txres@txFontHeightF = 0.016
   gsn_text_ndc(wks,statV,0.5,0.22,txres)
 end
-;***end procedure 
+;***end procedure
 
 ;---------------------------------------
 ;-- function attach_labelbar
@@ -73,7 +73,7 @@ begin
 
   return(map)
 end
-;***end procedure 
+;***end procedure
 undef("fast_cell")
  procedure fast_cell  (wks,var,x,y,cArea,vlon,vlat,cnres_in,missColor,pltName,\
                         mainTitle,subTitle,comment )
@@ -112,11 +112,11 @@ begin
   res@sfYArray             =  y            ;-- transform y to mesh scalar field
   res@sfXCellBounds        =  vlon         ;-- needed if cnFillMode= "CellFill"
   res@sfYCellBounds        =  vlat         ;-- needed if cnFillMod = "CellFill"
-  
+
   res@lbLabelBarOn         =  False        ;-- don't draw a labelbar yet
 
   res@mpFillOn             =  True                    ;?-- fill map grey
-  res@mpOutlineOn          =  True 
+  res@mpOutlineOn          =  True
   res@mpLandFillColor      =  18
 
   res@mpMinLonF            =  lonMin         ;-- sub-region minimum longitude
@@ -124,17 +124,17 @@ begin
   res@mpMinLatF            =  latMin         ;-- sub-region minimum latitude
   res@mpMaxLatF            =  latMax         ;-- sub-region maximum latitude
   res@mpGreatCircleLinesOn =  False          ;-- important: v6.2.0 False !!
-  res@gsnSpreadColors      =  False  
-    
+  res@gsnSpreadColors      =  False
+
   res@tiMainString         =  mainTitle
   res@gsnCenterString      =  subTitle
-  res@gsnLeftString        = " " 
-  res@gsnRightString       = " " 
+  res@gsnLeftString        = " "
+  res@gsnRightString       = " "
 
 
   res=cnres_in
 
-;***create the contour plot, but don't draw it. 
+;***create the contour plot, but don't draw it.
 ;***We need it to get the colors of the data values
   plot = gsn_csm_contour_map(wks,var,res)
 
@@ -150,7 +150,7 @@ begin
   nlevels = dimsizes(levels)        ;-- number of levels
 
 ;***clear plot, but keep all the information
-  plot = setColorContourClear(plot,min(var),max(var)) 
+  plot = setColorContourClear(plot,min(var),max(var))
   print("min: "+min(var)+" max: "+max(var))
 ;***attach a labelbar to the plot
     plot = attach_labelbar(wks,plot,levels+"",colors)
@@ -176,7 +176,7 @@ begin
 ;***set colors for all cells in between var_min and var_max
   do i = 1, dimsizes(levels) - 1
 ;    get the indices of 'middle' values
-     vind := ind(var .ge. levels(i-1) .and. var .lt. levels(i))  
+     vind := ind(var .ge. levels(i-1) .and. var .lt. levels(i))
      if (.not. all(ismissing(vind))) then
         gscolors(vind) = colors(i)                  ;-- choose the colors
         ntri_calc = ntri_calc + dimsizes(vind)      ;-- number of triangles
@@ -205,7 +205,7 @@ begin
   pres@gsColors        = gscolors       ; set colors for polygons
   pres@gsSegments      = ispan(0,dimsizes(var) * 3,3)  ; assign segments array
 ;***draw all triangles
-  polygon = gsn_add_polygon(wks,plot,ndtooned(vlon),ndtooned(vlat),pres)  
+  polygon = gsn_add_polygon(wks,plot,ndtooned(vlon),ndtooned(vlat),pres)
 
 ;***do the complete plot
   draw(plot)        ;-- draw the map
@@ -234,8 +234,8 @@ begin
 
     res@tiMainString         = mainTitle
     res@gsnCenterString      = subTitle
-    res@gsnLeftString        = " " 
-    res@gsnRightString       = " " 
+    res@gsnLeftString        = " "
+    res@gsnRightString       = " "
     res=res_in
 
     res@mpCenterLonF         = 0         ; center of map
@@ -254,7 +254,7 @@ begin
 
     frame(wks) ; now advance frame
 end
-;***end procedure 
+;***end procedure
 
 ;************************************************
 ; main
@@ -295,7 +295,7 @@ begin
   cArea = GridInfoFile->cell_area   ; area of grid cell
 
 ; note: clon and clat are longitude and latitude of triangle centers.
-;       Locations of the cell corners are given by 
+;       Locations of the cell corners are given by
 ;       clon_vertices and clat_vertices in the nc file.
 
 
@@ -316,33 +316,33 @@ begin
 ;***setings
     Cvar="clt"
     fili     =  workdir+"/Ubusy_"+Cvar+".nc"
-    
+
     mainTitle = "Total cloud cover [%] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
-                
+
 if (isfilepresent(fili)) then
 ;***read code clt
-    File    = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File    = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey            ; plot name
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map 
-    i = NhlNewColor(wks,0.6,0.6,0.6)               
-    i = NhlNewColor(wks,0.4,0.4,0.4)  
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map
+    i = NhlNewColor(wks,0.6,0.6,0.6)
+    i = NhlNewColor(wks,0.4,0.4,0.4)
     missColor = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
-             
+
 ;***create plot
     res                      = True             ; plot mods desired
     res@cnLevelSelectionMode = "ExplicitLevels" ; set explicit contour levels
@@ -369,31 +369,31 @@ end if
     mainTitle = "Total precipitation [mm/d] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
-    end if          
+       fillKey="cont"
+    end if
 
 if (isfilepresent(fili)) then
 
 ;***read code pr
-    File      = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)        
+    File      = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
 ;***open plot
 
-    pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map 
-    i = NhlNewColor(wks,0.6,0.6,0.6)               
-    i = NhlNewColor(wks,0.4,0.4,0.4)  
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map
+    i = NhlNewColor(wks,0.6,0.6,0.6)
+    i = NhlNewColor(wks,0.4,0.4,0.4)
     missColor = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
-         
+
 ;***create plot
     res                      = True             ; plot mods desired
     res@cnLevelSelectionMode = "ExplicitLevels"   ; set explicit contour levels
@@ -404,7 +404,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment )
 end if
@@ -413,7 +413,7 @@ end if
 end if
 
 ;************************************************
-;   Column water vapour CMOR: prw 
+;   Column water vapour CMOR: prw
 ;************************************************
 
 ;***setings
@@ -423,25 +423,25 @@ end if
     mainTitle = "Column water vapour [kg/m~S~2~N~] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 if (isfilepresent(fili)) then
 
-    File       = addfile (fili , "r")   
-    var     = File->$Cvar$(time|0,ncells|:)         
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey    
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
@@ -453,7 +453,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment )
 end if
@@ -471,24 +471,24 @@ end if
     mainTitle = "Column water vapour [kg/m~S~2~N~] "+typ
     subTitle  = run+meantime+" - Erain"+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
 if (isfilepresent(fili)) then
 
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)         
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)
     print("ploted: "+mainTitle)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_era_"+typ+"_map_"+fillKey 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_era_"+typ+"_map_"+fillKey
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
@@ -500,7 +500,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment )
 end if
@@ -518,26 +518,26 @@ end if
     mainTitle = "Sea Level Pressure (hPa-1000) "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code 151
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
     var     = var - 1000.
     print("ploted: "+mainTitle)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey   
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.8,0.8,0.8)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.8,0.8,0.8)      ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
@@ -549,7 +549,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment )
 end if
@@ -567,26 +567,26 @@ end if
     mainTitle = "Sea Level Pressure (hPa-1000) "+typ
     subTitle  = run+meantime+" - ERAinterim "+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code 151
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
-    var     = var 
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
+    var     = var
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_era_"+typ+"_map_"+fillKey
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.8,0.8,0.8)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.8,0.8,0.8)      ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
@@ -598,7 +598,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment )
 end if
@@ -616,26 +616,26 @@ end if
     subTitle  = "ERAinterim "+eratime
 
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code 167
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_ERAin_"+typ+"_map_"+fillKey
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map
 
 
 ;***create plot
@@ -647,7 +647,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment )
 end if
@@ -664,27 +664,27 @@ end if
     subTitle  = run+meantime
 
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 
 if (isfilepresent(fili)) then
 
 ;***read code 167
-    File       = addfile (fili , "r") 
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+    File       = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map
 
 
 ;***create plot
@@ -696,7 +696,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment )
 end if
@@ -715,25 +715,25 @@ end if
     mainTitle = "Zonal wind stress [mN/m~S~2~N~] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code tauu
-    File       = addfile (fili , "r") 
+    File       = addfile (fili , "r")
     var     = File->$Cvar$(time|0,ncells|:)  ; dims: (time,ncells)
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.8,0.8,0.8)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.8,0.8,0.8)      ; add gray to color map
 
 
 ;***create plot
@@ -745,7 +745,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment)
 end if
@@ -764,25 +764,25 @@ end if
     mainTitle = "Zonal wind stress [mN/m~S~2~N~] "+typ
     subTitle  =  run+meantime+" - Erain"+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
 if (isfilepresent(fili)) then
 
 ;***read code tauu
-    File       = addfile (fili , "r") 
+    File       = addfile (fili , "r")
     var     = File->$Cvar$(time|0,ncells|:)  ; dims: (time,ncells)
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_era_"+typ+"_map_"+fillKey
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.8,0.8,0.8)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.8,0.8,0.8)      ; add gray to color map
 
     res                      = True             ; plot mods desired
     res@cnLevelSelectionMode = "ExplicitLevels" ; set explicit contour levels
@@ -795,7 +795,7 @@ if (isfilepresent(fili)) then
 if (fillKey.eq."cont") then
     plot_cont ( wks,var,x,y,cArea,res,pltName,\
                 mainTitle,subTitle,comment )
-else 
+else
     fast_cell ( wks,var,x,y,cArea,vlon,vlat,res,missColor,pltName,\
                 mainTitle,subTitle,comment )
 end if
@@ -809,33 +809,33 @@ end if
 ;***setings
     Cvar="ts"
     fili     =  workdir+"/Ubusy_"+Cvar+".nc"
-    
+
     mainTitle = "Surface temperature [C] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
-                
+
 if (isfilepresent(fili)) then
-;***read 
-    File    = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+;***read
+    File    = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map 
-    i = NhlNewColor(wks,0.6,0.6,0.6)               
-    i = NhlNewColor(wks,0.4,0.4,0.4)  
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map
+    i = NhlNewColor(wks,0.6,0.6,0.6)
+    i = NhlNewColor(wks,0.4,0.4,0.4)
     missColor = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
-             
+
 ;***create plot
     res                       = True             ; plot mods desired
     res@cnLevelSelectionMode  = "ExplicitLevels" ; set explicit contour levels
@@ -859,34 +859,34 @@ end if
 ;***setings
     Cvar="tas"
     fili     =  workdir+"/Ubusy_"+Cvar+"_erain.nc"
-    
+
     mainTitle = "2 m Temperature [C] "+typ
     subTitle  = run+meantime + " - Erain"+eratime
 
-    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.0) then   ; set key and appendix for
        fillKey="cont"                     ; contour or trigangels
     else
-       fillKey="cell"                      
+       fillKey="cell"
     end if
 
-                
+
 if (isfilepresent(fili)) then
-;***read 
-    File    = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+;***read
+    File    = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_era_"+typ+"_map_"+fillKey
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map 
-    i = NhlNewColor(wks,0.6,0.6,0.6)               
-    i = NhlNewColor(wks,0.4,0.4,0.4)  
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map
+    i = NhlNewColor(wks,0.6,0.6,0.6)
+    i = NhlNewColor(wks,0.4,0.4,0.4)
     missColor = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
-             
+
 ;***create plot
     res                       = True             ; plot mods desired
     res@cnLevelSelectionMode  = "ExplicitLevels" ; set explicit contour levels
@@ -905,38 +905,38 @@ end if
     delete (res@cnFillColors)
 end if
 ;************************************************
-;   Liquid water + ice content code231_150 
+;   Liquid water + ice content code231_150
 ;************************************************
 ;***setings
     Cvar="clwvi"
     fili     =  workdir+"/Ubusy_"+Cvar+".nc"
-    
+
     mainTitle = "Liquid water + ice content [g/m~S~2~N~] "+typ
     subTitle  = run+meantime
 
-    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for 
+    if (default.eq.1.or.cell.eq.1) then   ; set key and appendix for
        fillKey="cell"                     ; contour or trigangels
     else
-       fillKey="cont"                      
+       fillKey="cont"
     end if
-                
+
 if (isfilepresent(fili)) then
-;***read 
-    File    = addfile (fili , "r")  
-    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)    
+;***read
+    File    = addfile (fili , "r")
+    var     = File->$Cvar$(time|0,ncells|:)   ; dims: (time,ncells)
 ;   printVarSummary(var)
     print("ploted: "+mainTitle)
 
 ;***open plot
     pltName = pltPath+Cvar+"_"+typ+"_map_"+fillKey
-    wks     = gsn_open_wks(pltType, pltName) 
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map 
-    i = NhlNewColor(wks,0.6,0.6,0.6)               
-    i = NhlNewColor(wks,0.4,0.4,0.4)  
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    i = NhlNewColor(wks,0.8,0.8,0.8)              ; add gray to color map
+    i = NhlNewColor(wks,0.6,0.6,0.6)
+    i = NhlNewColor(wks,0.4,0.4,0.4)
     missColor = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
-             
+
 ;***create plot
     res                      = True             ; plot mods desired
     res@cnLevelSelectionMode = "ExplicitLevels" ; set explicit contour levels

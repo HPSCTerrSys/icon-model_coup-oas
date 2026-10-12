@@ -107,8 +107,6 @@ MODULE random_rewrite
 !     Phone: (+61) 3 9545-8016      Fax: (+61) 3 9545-8080
 
 REAL(KIND=JPRB), PRIVATE      :: zero = 0.0_JPRB, half = 0.5_JPRB, one = 1.0_JPRB
-                      
-INTEGER, PARAMETER :: dp = SELECTED_REAL_KIND(12, 60)
 
 PUBLIC             :: random_Poisson, random_normal
 
@@ -302,7 +300,7 @@ IF (mu > 10.0_JPRB) THEN
 !             THE POISSON PROBABILITIES PK EXCEED THE DISCRETE NORMAL
 !             PROBABILITIES FK WHENEVER K >= M(MU). L=IFIX(MU-1.1484)
 !             IS AN UPPER BOUND TO M(MU) FOR ALL MU >= 10 .
-  
+
   l = INT(mu - 1.1484_JPRB)
   full_init = .FALSE.
 

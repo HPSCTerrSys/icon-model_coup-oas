@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -62,7 +62,7 @@ done
 #off2# # to be checked
 #off2# # if necessary this can be done by:
 #off2# # cdo chname,oldname,newname,... ifile ofile
-#off2# 
+#off2#
 #off2# for ifile in $expdir/${model}.${case}.${res}.${levels}.${grid}.${eqs}_DOM01_?L_????.nc
 #off2# do
 #off2#   ofile=${ifile}_tmp
@@ -73,19 +73,19 @@ done
 
 #off3# # 3. Remap to longitude latitude file
 #off3# # ===================================
-#off3# 
+#off3#
 #off3# if [ "$icongrid" == "r2b4" ]
 #off3# then
 #off3#   remapgrid=r360x180
 #off3# fi
-#off3# 
+#off3#
 #off3# if [ "$icongrid" == "r5b4" ]
 #off3# then
 #off3#   remapgrid=r720x360
 #off3# fi
-#off3# 
+#off3#
 #off3# weights=../grids/weights_dis_${icongrid}_${remapgrid}.nc
-#off3# 
+#off3#
 #off3# for ifile in $expdir/${model}.${case}.${res}.${levels}.${grid}.${eqs}_DOM01_?L_????.nc
 #off3# do
 #off3#    ofile=... .latlon. ...

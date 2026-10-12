@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! SWR-ABSORPTION SCHEME
 ! Shortwave radiation is done in three steps
 ! As first step the relative swr absorption factor (swrab) in each level is calculated
@@ -12,22 +23,14 @@
 ! b) for the subsurface levels in subsurface_swr_absorption
 !    Heat is distributed over the water column in proportion to the absorption.
 !    No Heat is transpered into sea floor, but is added to the bottom level.
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
+!----------------------------
+#include "omp_definitions.inc"
+#include "icon_definitions.inc"
+!----------------------------
 MODULE mo_swr_absorption
   USE mo_kind,                      ONLY: wp
-  USE mo_ocean_nml,                 ONLY: jerlov_atten, jerlov_bluefrac, n_zlev  
+  USE mo_ocean_nml,                 ONLY: jerlov_atten, jerlov_bluefrac, n_zlev
   USE mo_physical_constants,        ONLY: rho_ref,  clw
   USE mo_sync,                      ONLY: global_sum_array, enable_sync_checks, disable_sync_checks
   USE mo_fortran_tools,             ONLY: set_acc_host_or_device
@@ -79,7 +82,6 @@ CONTAINS
     USE mo_model_domain,              ONLY: t_patch, t_patch_3d
     USE mo_ocean_types,               ONLY: t_hydro_ocean_state
     USE mo_grid_subset,               ONLY: t_subset_range, get_index_range
-    USE mo_run_config,                ONLY: dtime
 
     TYPE(t_patch_3d ),TARGET, INTENT(in)              :: patch_3D
     TYPE(t_hydro_ocean_state), TARGET, INTENT(inout)  :: ocean_state
@@ -88,19 +90,19 @@ CONTAINS
     REAL(wp), POINTER :: swrab(:,:,:)
 
     INTEGER  :: blockNo, jc, start_index, end_index, level
-  
+
     TYPE(t_patch), POINTER                   :: patch_2d
     TYPE(t_subset_range), POINTER            :: all_cells
 
 
     patch_2d => patch_3D%p_patch_2d(1)
     all_cells => patch_2d%cells%all
- 
+
     swsum => ocean_state%p_diag%swsum
     swrab => ocean_state%p_diag%swrab
 
-    
-    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index) SCHEDULE(dynamic)
+
+!ICON_OMP_PARALLEL_DO PRIVATE(jc, level, start_index, end_index) SCHEDULE(dynamic)
     DO blockNo = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, blockNo, start_index, end_index)
       DO jc =  start_index, end_index
@@ -120,6 +122,7 @@ CONTAINS
 
       END DO
     END DO
+!ICON_OMP_END_PARALLEL_DO
 
   END SUBROUTINE jerlov_swr_absorption
 
@@ -137,7 +140,6 @@ CONTAINS
     USE mo_model_domain,              ONLY: t_patch, t_patch_3d
     USE mo_ocean_types,               ONLY: t_hydro_ocean_state
     USE mo_grid_subset,               ONLY: t_subset_range, get_index_range
-    USE mo_impl_constants,            ONLY: sea_boundary
     USE mo_dynamics_config,           ONLY: nold
     USE mo_run_config,                ONLY: dtime
     USE mo_parallel_config,           ONLY: nproma
@@ -177,7 +179,7 @@ CONTAINS
 
     !$ACC DATA CREATE(heatabb, heatabs_t) IF(lzacc)
 
-    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index,hetabs_t,level,heatabb) SCHEDULE(dynamic)
+!ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index, heatabs_t, jc, level, heatabb) SCHEDULE(dynamic)
     DO blockNo = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, blockNo, start_index, end_index)
 
@@ -218,6 +220,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL
     END DO
+!ICON_OMP_END_PARALLEL_DO
     !$ACC WAIT(1)
 
     !$ACC END DATA
@@ -234,7 +237,7 @@ CONTAINS
  !    !! Absorption in the surface level is done in sbr growth.
  !    !! SWR does not penetrate into Land. Heat from SWR that would penetrate theoreticly
  !    !! below the bottom is added to the bottom layer.
- !   
+ !
  !    Adopted for zstar
  !
 
@@ -245,11 +248,10 @@ CONTAINS
     USE mo_run_config,                ONLY: dtime
     USE mo_parallel_config,           ONLY: nproma
     USE mo_impl_constants,            ONLY: max_char_length
-    USE mo_exception,                 ONLY: finish
 
     TYPE(t_patch_3d ),TARGET, INTENT(in)              :: patch_3d
     TYPE(t_hydro_ocean_state), TARGET, INTENT(inout)  :: ocean_state
-    REAL(wp), INTENT(IN   ) :: stretch_c(nproma, patch_3d%p_patch_2d(1)%alloc_cell_blocks) 
+    REAL(wp), INTENT(IN   ) :: stretch_c(nproma, patch_3d%p_patch_2d(1)%alloc_cell_blocks)
     LOGICAL, INTENT(IN), OPTIONAL                     :: lacc
 
     REAL(wp), POINTER :: swrab(:,:,:)
@@ -283,7 +285,7 @@ CONTAINS
 
     !$ACC DATA CREATE(heatabb, heatabs_t) IF(lzacc)
 
-    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index,hetabs_t,level,heatabb) SCHEDULE(dynamic)
+!ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index,heatabs_t, jc, level, heatabb) SCHEDULE(dynamic)
     DO blockNo = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, blockNo, start_index, end_index)
 
@@ -325,6 +327,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL
     END DO
+!ICON_OMP_END_PARALLEL_DO
     !$ACC WAIT(1)
 
     !$ACC END DATA
@@ -346,8 +349,9 @@ CONTAINS
     USE mo_model_domain,              ONLY: t_patch, t_patch_3d
     USE mo_ocean_types,               ONLY: t_hydro_ocean_state
     USE mo_grid_subset,               ONLY: t_subset_range, get_index_range
-    USE mo_run_config,                ONLY: dtime
+#ifdef _OPENACC
     USE mo_exception,                 ONLY: finish
+#endif
 
     TYPE(t_patch_3d ),TARGET, INTENT(in)              :: patch_3D
     TYPE(t_hydro_ocean_state), TARGET, INTENT(inout)  :: ocean_state
@@ -359,11 +363,11 @@ CONTAINS
 
     INTEGER  :: blockNo, jc, start_index, end_index, level
     LOGICAL  :: lzacc
-  
+
     REAL(wp), PARAMETER :: fvisible=0.58_wp ! visible fraction of the spectrum
                                       ! only this part has potential to
                                       ! penetrate into deeper ocean layers
-    
+
 
     TYPE(t_patch), POINTER                   :: patch_2d
     TYPE(t_subset_range), POINTER            :: all_cells
@@ -377,14 +381,14 @@ CONTAINS
 
     patch_2d => patch_3D%p_patch_2d(1)
     all_cells => patch_2d%cells%all
- 
+
     swsum => ocean_state%p_diag%swsum
     swrab => ocean_state%p_diag%swrab
     swr_frac => ocean_state%p_diag%swr_frac
 
-    
 
-    !ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index) SCHEDULE(dynamic)
+
+!ICON_OMP_PARALLEL_DO PRIVATE(start_index, end_index, jc, level) SCHEDULE(dynamic)
     DO blockNo = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, blockNo, start_index, end_index)
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
@@ -392,13 +396,13 @@ CONTAINS
 
         swsum(jc,blockNo)=swr_frac(jc,2,blockNo)
 
-    
+
         ! DO level=1,n_zlev
-        DO level=1,n_zlev-1  
-          swrab(:,level,:)=1.0_wp / swsum(jc,blockNo) &
+        DO level=1,n_zlev-1
+          swrab(jc,level,blockNo)=1.0_wp / swsum(jc,blockNo) &
           * (swr_frac(jc,level,blockNo) &
-          - swr_frac(jc,level+1,blockNo)*patch_3D%wet_c(jc,level+1,blockNo)) & 
-          * patch_3D%wet_c(jc,level,blockNo) 
+          - swr_frac(jc,level+1,blockNo)*patch_3D%wet_c(jc,level+1,blockNo)) &
+          * patch_3D%wet_c(jc,level,blockNo)
         ENDDO
 
         swsum(jc,blockNo)=swsum(jc,blockNo)*fvisible
@@ -416,21 +420,19 @@ CONTAINS
     USE mo_model_domain,              ONLY: t_patch, t_patch_3d
     USE mo_ocean_types,               ONLY: t_hydro_ocean_state
     USE mo_grid_subset,               ONLY: t_subset_range, get_index_range
-    USE mo_impl_constants,            ONLY: sea_boundary
     USE mo_dynamics_config,           ONLY: nold
-    USE mo_run_config,                ONLY: dtime
 
 
     TYPE(t_patch_3d ),TARGET, INTENT(in)              :: patch_3d
     TYPE(t_hydro_ocean_state), TARGET, INTENT(inout)  :: ocean_state
-    TYPE(t_ocean_surface),TARGET, INTENT(in)          :: p_oce_sfc   
-    
+    TYPE(t_ocean_surface),TARGET, INTENT(in)          :: p_oce_sfc
+
     REAL(wp) :: cc
     REAL(wp) :: hc(:,:), hcs
 
 
     INTEGER  :: blockNo, jc, start_index, end_index, level
- 
+
     TYPE(t_patch), POINTER                   :: patch_2d
     TYPE(t_subset_range), POINTER            :: owned_cells
 
@@ -466,7 +468,7 @@ CONTAINS
     END DO
 
     CALL disable_sync_checks()
- 
+
     hcs=0.0_wp
     hcs=global_sum_array(hc(:,:))
 
@@ -477,4 +479,3 @@ CONTAINS
 
 
 END MODULE mo_swr_absorption
-

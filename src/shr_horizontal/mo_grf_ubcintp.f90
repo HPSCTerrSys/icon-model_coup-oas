@@ -1,19 +1,18 @@
-! Contains the interpolation routines needed for grid refinement.
-!
-! These had originally been included in mo_grf_interpolation but then were
-! packed into a separate module to clean up the code
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the interpolation routines needed for grid refinement.
+!
+! These had originally been included in mo_grf_interpolation but then were
+! packed into a separate module to clean up the code
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -117,7 +116,7 @@ SUBROUTINE interpol_vec_ubc(p_pp, p_pc, p_grf, p_vn_in, p_vn_out, lacc)
           p_grf%coeff_ubcintp_e12(5,je) *                &
           p_vn_in(iidx(11,je),jk,iblk(11,je)) +             &
           p_grf%coeff_ubcintp_e12(6,je)*                 &
-          p_vn_in(iidx(12,je),jk,iblk(12,je)) 
+          p_vn_in(iidx(12,je),jk,iblk(12,je))
 
         ! child edge 2
         vn_aux(jk,je,2) = p_grf%coeff_ubcintp_e12(7,je) * &
@@ -131,7 +130,7 @@ SUBROUTINE interpol_vec_ubc(p_pp, p_pc, p_grf, p_vn_in, p_vn_out, lacc)
           p_grf%coeff_ubcintp_e12(11,je) *               &
           p_vn_in(iidx(14,je),jk,iblk(14,je)) +             &
           p_grf%coeff_ubcintp_e12(12,je)*                &
-          p_vn_in(iidx(15,je),jk,iblk(15,je)) 
+          p_vn_in(iidx(15,je),jk,iblk(15,je))
 
         ! child edge 3
         vn_aux(jk,je,3) = p_grf%coeff_ubcintp_e34(1,je) * &
@@ -142,8 +141,8 @@ SUBROUTINE interpol_vec_ubc(p_pp, p_pc, p_grf, p_vn_in, p_vn_out, lacc)
           p_vn_in(iidx(3,je),jk,iblk(3,je)) +               &
           p_grf%coeff_ubcintp_e34(4,je)*                 &
           p_vn_in(iidx(4,je),jk,iblk(4,je)) +               &
-          p_grf%coeff_ubcintp_e34(5,je) *                &  
-          p_vn_in(iidx(5,je),jk,iblk(5,je)) 
+          p_grf%coeff_ubcintp_e34(5,je) *                &
+          p_vn_in(iidx(5,je),jk,iblk(5,je))
 
         ! child edge 4
         IF (p_pp%edges%refin_ctrl(iidx(1,je),iblk(1,je)) == -1) CYCLE
@@ -156,7 +155,7 @@ SUBROUTINE interpol_vec_ubc(p_pp, p_pc, p_grf, p_vn_in, p_vn_out, lacc)
           p_grf%coeff_ubcintp_e34(9,je)*                 &
           p_vn_in(iidx(8,je),jk,iblk(8,je)) +               &
           p_grf%coeff_ubcintp_e34(10,je) *               &
-          p_vn_in(iidx(9,je),jk,iblk(9,je)) 
+          p_vn_in(iidx(9,je),jk,iblk(9,je))
       ENDDO
     ENDDO
     !$ACC END PARALLEL
@@ -179,7 +178,7 @@ END SUBROUTINE interpol_vec_ubc
 
 !-------------------------------------------------------------------------
 !
-!! Performs interpolation of scalar upper boundary condition fields from parent 
+!! Performs interpolation of scalar upper boundary condition fields from parent
 !! cells to child cells using the 2D gradient at the cell center.
 !!
 SUBROUTINE interpol_scal_ubc(p_pc, p_grf, nfields, f3din, f3dout, llimit_nneg, lacc)
@@ -242,7 +241,7 @@ SUBROUTINE interpol_scal_ubc(p_pc, p_grf, nfields, f3din, f3dout, llimit_nneg, l
   epsi = 1.e-75_wp
   ovsht_fac = 1.0_wp ! factor of allowed overshooting
   r_ovsht_fac = 1._wp/ovsht_fac
- 
+
   ! Pointers to index lists for gradient computation
   iidx => p_grf%idxlist_ubcintp_c
   iblk => p_grf%blklist_ubcintp_c
@@ -450,4 +449,3 @@ END SUBROUTINE interpol_scal_ubc
 
 !-------------------------------------------------------------------------
 END MODULE mo_grf_ubcintp
-

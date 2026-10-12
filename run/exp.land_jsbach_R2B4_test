@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -17,7 +17,7 @@ author_list="Veronika Gayler, Rainer Schneck, MPIM"
 #--------------------------------------------------------------------------------------------------
 #
 # This file describes an ICON-Land offline experiment for testing.
-# - The simulation runs only for a few days, not enough for natural or antropogenic land cover changes 
+# - The simulation runs only for a few days, not enough for natural or antropogenic land cover changes
 # - The idea is however, to switch on as many proceses as possible
 #
 #--------------------------------------------------------------------------------------------------
@@ -45,7 +45,7 @@ icon_data_poolFolder="${icon_data_rootFolder:-/pool/data/ICON}/grids/public/mpim
 # horizontal grid(s)
 #
 # domain globe
-grid_id=0043
+grid_id=0049
 grid_refinement=R02B04
 grid_label=G
 grid_name=icon_grid_${grid_id}_${grid_refinement}_${grid_label}
@@ -53,7 +53,8 @@ atmo_dyn_grids="'${grid_name}.nc',"
 #
 grids_folder=${icon_data_poolFolder}/${grid_id}
 
-lnd_data_InputFolder=${icon_data_poolFolder}/${grid_id}/land/r0004
+lnd_data_InputFolder=${icon_data_poolFolder}/${grid_id}/land/r0101
+hd_data_InputFolder=${icon_data_poolFolder}/${grid_id}/hd/r0101
 refyear=1979
 
 calendar="proleptic gregorian"  # '365 day year' or '360 day year' or 'proleptic gregorian'
@@ -77,11 +78,14 @@ jsbach_namelist="NAMELIST_${EXPNAME}_jsb"
 # interface variables input infos
 years_for_cyclic_forcing=0       # If > 0, number of years to use for cyclic forcing
 start_year_for_cyclic_forcing=9999 # First year of cyclic forcing; 9999 means use start year of experiment
-forcing_tag="GSWP3"
+forcing_tag="GSWP3" # "GSWP3", "ERA5"
 ghg_scenario="false"             # greenhouse gases file for scenario runs
 forcing_steps_per_day="1"        # Number of forcing time steps per day, e.g. 1 for daily forcing
 forcing_synchron_factor="48"     # Number of model time steps per forcing time step,
                                  #  e.g. 48 for daily forcing and half-hourly time step.
+
+num_io_procs=${num_io_procs:-0}
+proc0_shift=${proc0_shift:-0}
 #--------------------------------------------------------------------------------------------------
 
 # (3) Define the model configuration
@@ -91,7 +95,8 @@ jsbach_usecase=jsbach_pfts    # jsbach_lite or jsbach_pfts or jsbach_jedi
 jsbach_with_lakes=yes
 jsbach_with_hd=yes
 jsbach_with_carbon=yes        # yes needs jsbach_pfts usecase
-jsbach_check_wbal=yes         # check water balance
+jsbach_check_wbal=no          # check water balance
+output_lnd_mon=yes            # Generate monitoring output
 output_lnd=medium             # amount of output: none/basic/medium/full
                               #  -> Note: full output does not work with all processes switched on
                               #     (too many variables)
@@ -114,12 +119,14 @@ lcarbon=$([ "${jsbach_with_carbon:=yes}" == yes ] && echo .TRUE. || echo .FALSE.
 #
 if [[ $jsbach_usecase == *pfts* ]] || [[ $jsbach_usecase == *jedi* ]]
 then
-  pft_file_tag="11pfts_"
+  npft=11
+  pft_file_tag="${npft}pfts_"
   if [[ ${jsbach_use_jedi} == yes ]] || [[ ${output_lnd} == "full" ]]
   then
     output_tiles="${output_tiles}, 'pft*'"
   fi
 else
+  npft=0
   pft_file_tag=""
 fi
 
@@ -141,6 +148,17 @@ case ${forcing_tag} in
     forcing_co2_const_co2=367            # default for 1999
     forcing_co2_unit="ppmv"              # mol_per_mol (mol/mol) / ppmv / kg_per_kg (kg/kg)
     ;;
+  ERA5 )
+    forcing_set_ocean_to_constants=true  # in this version wind is only defined for land cells
+    forcing_precip_in_mm_per_day=false    # true: mm/day; false: mm/s (= kg/m2s)
+    forcing_qair_type=QAIR               # specific humidity in forcing data
+    forcing_height_humidity=2.           # reference height for specific humidity data
+    forcing_height_wind=10.              # reference height for wind data
+    #  CO2 forcing not included in ERA5 forcing data
+    forcing_co2_frequ=CONST              # constant CO2 forcing
+    forcing_co2_const_co2=367            # default for 1999
+    forcing_co2_unit="ppmv"              # mol_per_mol (mol/mol) / ppmv / kg_per_kg (kg/kg)
+    ;;
   * )
     print "\t|- WARNING: Check if namelist parameters correspond to forcing data!"
     # example for forcing data generated from ECHAM output (pre industrial control)
@@ -153,7 +171,7 @@ case ${forcing_tag} in
   ;;
 esac
 
-if [[ ${ghg_scenario} = false ]]; then  
+if [[ ${ghg_scenario} = false ]]; then
   forcing_co2_file="climate_"
 else
   forcing_co2_file="greenhouse_gases.nc"
@@ -170,7 +188,10 @@ fi
 cat > $jsbach_namelist << EOF
 &parallel_nml
  nproma           = ${nproma}
- num_io_procs     = 0     ! Number of procs for output (not more than number of output files!)
+ nproma_sub       = ${nproma_sub}
+ nblocks_c        = ${nblocks_c}
+ num_io_procs     = ${num_io_procs}     ! Number of procs for output (not more than number of output files!)
+ proc0_shift      = ${proc0_shift}
 ! pio_type         = 1          ! 1 is default and means pio_type_async
 ! num_restart_procs = 2         ! 0 for sync restart_write_mode
 /
@@ -178,23 +199,27 @@ cat > $jsbach_namelist << EOF
  dynamics_grid_filename = ${atmo_dyn_grids}
 ! l_limited_area = .FALSE. ! just to be sure
 ! vertical_grid_filename =
-! ifeedback_type = 2 ! default is 2. Als long as we use only one grid in JS4-driver this does not matter. However, later this has to be 2. 
-!                    ! 1: incremental feedback; 2: relaxation-based feedback. 
+! ifeedback_type = 2 ! default is 2. Als long as we use only one grid in JS4-driver this does not matter. However, later this has to be 2.
+!                    ! 1: incremental feedback; 2: relaxation-based feedback.
 !                    ! Note: vertical nesting requires option 2 to run numerically stable over longer time periods
 /
 &run_nml
  num_lev          = 1           ! Number of full levels for each domain. For JS4-driver we use 1.
  modelTimeStep    = "${modelTimeStep}"     ! this is dtime
+ iforcing         = 3 ! 2: AES, 3: NWP (which thermodynamic functions to use)
  output           = 'nml'
- msg_level        = 0          ! e.g. 15. level of details report during integration 
+ msg_level        = 0          ! e.g. 15. level of details report during integration
  restart_filename = "${EXPNAME}_restart_jsbalone_<rsttime>.nc"  ! rsttime in JS4-ICON-Driver nicht vorhanden???
  activate_sync_timers = .FALSE. ! nur zum debuggen wieder auf .FALSE. setzen
  ltimer           = .TRUE.     ! monitoring the runtime of specific routines
  timers_level     = 10
-! profiling_output = 1   ! 1 ist default. 
+! profiling_output = 1   ! 1 ist default.
                         ! TIMER_MODE_AGGREGATED=1,
                         ! TIMER_MODE_DETAILED=2,
                         ! TIMER_MODE_WRITE_FILES=3
+/
+&nwp_phy_nml
+ itype_satpres_coeffs = 2 ! For iforcing=3: 1 = old coefficients inherited from the COSMO model                                       !                 2 = more accurate coefficients used in IFS
 /
 &jsb_forcing_nml
     cyclic_nyears=${years_for_cyclic_forcing}
@@ -261,10 +286,11 @@ EOF
 cat >> $jsbach_namelist << EOF
 &jsb_model_nml  ! Same jsb_model_nml namelist name exists in namelist_standalone_master but has different content
   usecase         = "${jsbach_usecase}"
+  npft            = ${npft}
   use_lakes       = ${llake}
   fract_filename  = "bc_land_frac.nc"
   output_tiles    = ${output_tiles}     ! List of tiles to output
-  enforce_water_budget = .TRUE.         ! True: stop in case of water conservation problem
+  enforce_water_budget = 'error'        ! Error: stop in case of water conservation problem
 /
 &jsb_seb_nml
   bc_filename     = 'bc_land_phys.nc'
@@ -281,11 +307,8 @@ cat >> $jsbach_namelist << EOF
   ic_filename     = 'ic_land_soil.nc'
 /
 &jsb_sse_nml
-  l_heat_cap_map  = .FALSE.
-  l_heat_cond_map = .FALSE.
   l_heat_cap_dyn  = .TRUE.
   l_heat_cond_dyn = .TRUE.
-  l_snow          = .TRUE.
   l_dynsnow       = .TRUE.
   l_freeze        = .TRUE.
   l_supercool     = .TRUE.
@@ -293,8 +316,6 @@ cat >> $jsbach_namelist << EOF
   ic_filename     = 'ic_land_soil.nc'
 /
 &jsb_hydro_nml
-  l_organic       = .TRUE.
-  l_socmap        = .TRUE.
   bc_filename     = 'bc_land_soil.nc'
   ic_filename     = 'ic_land_soil.nc'
   bc_sso_filename = 'bc_land_sso.nc'
@@ -362,28 +383,24 @@ add_required_file ${basedir}/run/$jsbach_namelist            ./
 #
 # - land: source?, date+time?
 datadir=${lnd_data_InputFolder}
-add_link_file ${datadir}/ic_land_soil_${refyear}.nc                     ./ic_land_soil.nc
-# added in namelist, but not active and not yet available (2017-Dec-07)
-#add_link_file ${datadir}/ic_land_carbon_1976.nc                         ./ic_land_carbon.nc
+add_link_file ${datadir}/ic_land_soil.nc                                 ./ic_land_soil.nc
 
 # boundary conditions
 #
 # - well mixed greenhouse gases
-datadir=${icon_data_poolFolder}/independent/greenhouse_gases
+datadir=${icon_data_poolFolder}/common/greenhouse_gases
 add_link_file $datadir/greenhouse_historical_plus.nc                    ./bc_greenhouse_gases.nc
 #
 # - land parameters
 datadir=${lnd_data_InputFolder}
 add_link_file $datadir/bc_land_frac_${pft_file_tag}${refyear}.nc        ./bc_land_frac.nc
-add_link_file $datadir/bc_land_phys_${refyear}.nc                       ./bc_land_phys.nc
-add_link_file $datadir/bc_land_soil_${refyear}.nc                       ./bc_land_soil.nc
-add_link_file $datadir/bc_land_sso_${refyear}.nc                        ./bc_land_sso.nc
-# added in namelist, but not active and not yet available (2017-Dec-07)
-#datadir=${icon_data_poolFolder}/preliminary_land/r0002/${grid_refinement}_${grid_label}/land
-#add_link_file $datadir/bc_land_carbon_${refyear}.nc                     ./bc_land_carbon.nc
+add_link_file $datadir/bc_land_phys.nc                                  ./bc_land_phys.nc
+add_link_file $datadir/bc_land_soil.nc                                  ./bc_land_soil.nc
+add_link_file $datadir/bc_land_sso.nc                                   ./bc_land_sso.nc
 
 if [[ ${jsbach_with_hd} = yes ]]; then
-  add_link_file $datadir/hdpara_r2b4_0043_no_sinks.nc                   ./bc_land_hd.nc
+  datadir=${hd_data_InputFolder}
+  add_link_file $datadir/hdpara_r2b4_0049_sc_hfrac_s_v1.nc              ./bc_land_hd.nc
 fi
 #
 # - lctlib file for JSBACH
@@ -404,7 +421,7 @@ then
   (( end_year = start_year + years_for_cyclic_forcing + 1 ))
 fi
 #
-# Provide Links to the climate forcing files 
+# Provide Links to the climate forcing files
 
 SEP=/pool/data/JSBACH/jsbalone_forcing/${grid_refinement}/${grid_id}  # path on DKRZ and MPIM machines
 
@@ -416,6 +433,18 @@ while [[ $year -le $end_year ]]
     GSWP3 )
       forcing_dir=${SEP}/GSWP3-W5E5/data
       add_link_file   ${forcing_dir}/climate_gswp3-w5e5_daily_${year}.nc            ./climate_${year}.nc
+      ;;
+    ERA5 )
+      forcing_dir=${SEP}/ERA5/data
+      case ${grid_refinement} in
+        'R02B04')
+          era5_grid_id="R2B4"
+        ;;
+        'R02B05')
+          era5_grid_id="R2B5"
+        ;;
+      esac
+      add_link_file   ${forcing_dir}/ERA5_${era5_grid_id}_${year}.nc            ./climate_${year}.nc
       ;;
     * )
       add_link_file   Climate_${forcing_tag}_${year}.nc                             ./climate_${year}.nc
@@ -440,15 +469,15 @@ cat >> $jsbach_namelist << EOF
 ! &jsb_io_nml  ! R: von Julia: src_jsbach4/src/base/mo_jsb_io.f90 ruft auf: src_jsbach4/src/adapters/mo_jsb_io_iface.f90: SUBROUTINE read_io_namelist(filename)
 !     ! --- Experiment name ---
 !     out_expname = "${expid}"
-! 
+!
 !     read_interface_vars=.${read_interface_vars:-false}.
 !     write_interface_vars=.${write_interface_vars:-false}.
 ! /
 &io_nml
  restart_file_type= 5
- restart_write_mode = "sync"  ! Default: " " =Fallback mode. If num_restart_proc == 0 (parallel_nml), then this behaves like ”sync”, otherwise like ”async”. 
-                               ! If async is choosen, the num_restart_procs must be bigger than 0! 
-                               ! "joint procs multifile" not necessary/useful in default r2b4 setup. 
+ restart_write_mode = "sync"  ! Default: " " =Fallback mode. If num_restart_proc == 0 (parallel_nml), then this behaves like ”sync”, otherwise like ”async”.
+                               ! If async is choosen, the num_restart_procs must be bigger than 0!
+                               ! "joint procs multifile" not necessary/useful in default r2b4 setup.
 /
 EOF
 
@@ -555,10 +584,24 @@ EOF
 EOF
 fi
 
+if [[ ${output_lnd_mon} == yes ]]; then
+  cat >> ${jsbach_namelist} << EOF
+&output_nml
+ output_filename  = "${EXPNAME}_lnd_mon"
+ filename_format  = "<output_filename>_<levtype_l>_<datetime2>"
+ filetype         = 5
+ remap            = 0
+ operation        = 'mean'
+ output_grid      = .FALSE.
+ output_start     = "${start_date}"
+ output_end       = "${end_date}"
+ output_interval  = "${output_interval}"
+ file_interval    = "${file_interval}" ! R: PT1H nur zum debuggen
+ include_last     = .FALSE.
+ ml_varlist       = 'group:jsb_mon'
+/
+
+EOF
+fi
+
 #-----------------------------------------------------------------------------
-
-
-
-
-
-

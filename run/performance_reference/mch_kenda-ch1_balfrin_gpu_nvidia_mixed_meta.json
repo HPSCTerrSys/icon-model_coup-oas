@@ -1,10 +1,10 @@
 {
-  "start_time": "2023-09-27T09:46:30",
-  "finish_time": "2023-09-27T09:54:46",
-  "revision": "037d31592929e39dc6d2a18e0efcec8b09aa9323",
-  "branch": "master",
+  "start_time": "2026-01-09T10:11:55",
+  "finish_time": "2026-01-09T10:19:53",
+  "revision": "icon-2025.04-dwd-4.0-101-g0f2651dde61beafafbd94d333f4dd57a1b1d179e-dirty",
+  "branch": null,
   "n_tables": 1,
   "entries": [
-    59
+    62
   ]
 }

@@ -1,17 +1,16 @@
-! Data structures and subroutines for meteogram output.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
-!
+
+! Data structures and subroutines for meteogram output.
+
 ! The sampling intervals for meteogram data are independent
 ! from global output steps. Values are buffered in memory until
 ! the next field output is invoked.
@@ -122,13 +121,8 @@ MODULE mo_meteogram_output
     &                                 p_send, p_isend, p_irecv, p_pe_work,&
     &                                 p_send_packed, p_irecv_packed,      &
     &                                 p_int_byte, mpi_any_source,         &
-    &                                 p_pack_int,    p_pack_real,         &
-    &                                 p_pack_int_1d, p_pack_real_1d,      &
-    &                                 p_pack_string, p_pack_real_2d,      &
     &                                 p_pack_size_int, p_pack_size_real_dp,&
-    &                                 p_unpack_int,    p_unpack_real,     &
-    &                                 p_unpack_int_1d, p_unpack_real_1d,  &
-    &                                 p_unpack_string, p_unpack_real_2d,  &
+    &                                 p_pack, p_unpack,                   &
     &                                 my_process_is_mpi_workroot,         &
     &                                 my_process_is_io,                   &
     &                                 my_process_is_work,                 &
@@ -142,7 +136,7 @@ MODULE mo_meteogram_output
 #endif
   USE mo_model_domain,          ONLY: t_patch, t_grid_cells
   USE mo_parallel_config,       ONLY: nproma, p_test_run
-  USE mo_impl_constants,        ONLY: inwp, max_dom, SUCCESS, REAL_T
+  USE mo_impl_constants,        ONLY: inwp, max_dom, SUCCESS, REAL_WP_T
   USE mo_math_constants,        ONLY: pi, pi_180
   USE mo_communication,         ONLY: idx_1d, blk_no, idx_no
   USE mo_ext_data_types,        ONLY: t_external_data, t_external_atmos
@@ -164,8 +158,8 @@ MODULE mo_meteogram_output
     &                                 gnat_merge_distributed_queries, gk
   USE mo_dynamics_config,       ONLY: nnow
   USE mo_io_config,             ONLY: inextra_2d, inextra_3d, var_in_output, &
-    &                                 celltracks_interval, gust_interval, echotop_meta
-  USE mo_lnd_nwp_config,        ONLY: tile_list, ntiles_total, ntiles_water, zml_soil
+    &                                 celltracks_interval, gust_interval, echotop_meta,ldiagnose_tke
+  USE mo_lnd_nwp_config,        ONLY: tile_list, ntiles_total, ntiles_water, zml_soil,lsnow_on_seaice
   USE mo_run_config,            ONLY: iqv, iqc, iqi, iqr, iqs,               &
     &                                 iqm_max, iqni,                         &
     &                                 iqns, iqng, iqnh, iqnr, iqnc, ininact, &
@@ -177,11 +171,14 @@ MODULE mo_meteogram_output
   USE mo_name_list_output_types,ONLY: msg_io_meteogram_flush
   USE mo_util_phys,             ONLY: rel_hum, swdir_s
   USE mo_grid_config,           ONLY: grid_sphere_radius, is_plane_torus
+#ifndef __NO_AES__
   USE mo_aes_phy_memory,        ONLY: prm_field
+#endif
   USE mo_fortran_tools,         ONLY: assert_acc_device_only, set_acc_host_or_device
   ! generalized meteogram output
   USE mo_var_list_register,     ONLY: t_vl_register_iter
   USE mo_var,                   ONLY: t_var_ptr, level_type_ml
+  USE mo_slice_array,           ONLY: get_3d_general
   USE mo_var_metadata,          ONLY: get_var_timelevel
   USE mo_var_metadata_types,    ONLY: t_var_metadata
   USE mo_var_groups,            ONLY: var_groups_dyn
@@ -472,6 +469,7 @@ CONTAINS
     !> indices at which to find variables for compute_diagnostics
     TYPE(meteogram_diag_var_indices), INTENT(out) :: diag_var_indices
 
+    CHARACTER(len=*), PARAMETER :: routine = modname//":meteogram_setup_variables"
     CHARACTER(len=max_timedelta_str_len) :: c_time_int
     CHARACTER(len=14) :: c_thresh_int
     INTEGER           :: i
@@ -483,6 +481,10 @@ CONTAINS
     TYPE(t_var_metadata), POINTER :: info
     INTEGER                       :: iv
     CHARACTER(len=128)            :: var_name_mtgrm
+    INTEGER                       :: nindex
+    INTEGER                       :: var_ref_pos
+    REAL(wp), POINTER             :: ptr(:,:,:)
+    LOGICAL                       :: squash_dims(5)
 
     var_list%no_atmo_vars = 0
     var_list%no_sfc_vars = 0
@@ -518,6 +520,7 @@ CONTAINS
       CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
         &               "TKE", "m^2/s^2", "turbulent kinetic energy", &
         &               var_info, prog%tke(:,:,:))
+
 #ifndef __NO_ICON_LES__
       IF ( .NOT. atm_phy_nwp_config%is_les_phy ) THEN
 #endif
@@ -619,6 +622,20 @@ CONTAINS
       &               "PHALF", "Pa", "Pressure on the half levels", &
       &               var_info, diag%pres_ifc(:,:,:))
 
+    IF (iforcing == inwp .and. ldiagnose_tke(jg)) THEN
+      CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
+        &               "GSTKE", "m^2/s^2", "grid-scale TKE", &
+        &               var_info, prm_diag%gs_tke(:,:,:))
+      CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
+        &               "SGSTKE", "m^2/s^2", "subgrid-scale TKE, time average", &
+        &               var_info, prm_diag%sgs_tke(:,:,:))
+      CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
+        &               "AVGEDR", "m^2/s^3", "EDR, time average", &
+        &               var_info, prm_diag%avg_edr(:,:,:))
+      CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
+        &               "TURLENSCALE", "m", "turbulent length scale", &
+        &               var_info, prm_diag%tur_len_scale(:,:,:))
+   ENDIF
 
     ! generalized meteogram output
     idx_group_mtgrm = var_groups_dyn%group_id("METEOGRAM")
@@ -633,30 +650,38 @@ CONTAINS
         ! for time-level dependent variables: output only once
         IF (get_var_timelevel(info%name) > 1)  CYCLE
         IF ( info%in_group(idx_group_mtgrm) ) THEN
-          IF (ASSOCIATED(elem%p%r_ptr))  THEN
-            SELECT CASE(info%data_type)
-            CASE(REAL_T)
-              IF (info%grib2%category /= 18) THEN
-                ! change case of variable name to upper
-                var_name_mtgrm = toupper(info%cf%standard_name)
-              ELSE
-                ! for nuclear variables (parameterCategory = 18) do not change case
-                var_name_mtgrm = info%cf%standard_name
-              END IF
-              IF ( info%vgrid == ZA_REFERENCE .AND. info%ndims == 3 ) THEN
-                CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_ML, &
-                  &               var_name_mtgrm, info%cf%units, &
-                  &               info%cf%long_name, var_info, elem%p%r_ptr(:,:,:,1,1))
-              ELSE IF ( info%vgrid == ZA_REFERENCE_HALF .AND. info%ndims == 3 ) THEN
-                CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
-                  &               var_name_mtgrm, info%cf%units, &
-                  &               info%cf%long_name, var_info, elem%p%r_ptr(:,:,:,1,1))
-              ELSE IF ( ANY((/ZA_SURFACE, ZA_ATMOSPHERE/) == info%vgrid) .AND. info%ndims == 2 ) THEN
-                CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
-                  &              var_name_mtgrm, info%cf%units, &
-                  &              info%cf%long_name, sfc_var_info, elem%p%r_ptr(:,:,1,1,1))
-              END IF
-            END SELECT
+          IF (ASSOCIATED(elem%p%wp_ptr))  THEN
+            IF (info%data_type /= REAL_WP_T ) &
+              CALL finish(routine, "Unexpected datatype")
+
+            IF (info%grib2%category /= 18) THEN
+              ! change case of variable name to upper
+              var_name_mtgrm = toupper(info%cf%standard_name)
+            ELSE
+              ! for nuclear variables (parameterCategory = 18) do not change case
+              var_name_mtgrm = info%cf%standard_name
+            END IF
+            nindex      = MERGE(info%ncontained,  1, info%lcontained)
+            var_ref_pos = MERGE(info%var_ref_pos, 4, info%lcontained)
+
+            squash_dims(:) = (/.FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE./)
+            squash_dims(var_ref_pos) = .TRUE.
+            ptr => get_3d_general(elem%p%wp_ptr, (/nindex,1/), squash_dims)
+
+            IF ( info%vgrid == ZA_REFERENCE .AND. info%ndims == 3 ) THEN
+              CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_ML, &
+                &               var_name_mtgrm, info%cf%units, &
+                &               info%cf%long_name, var_info, ptr)
+            ELSE IF ( info%vgrid == ZA_REFERENCE_HALF .AND. info%ndims == 3 ) THEN
+              CALL add_atmo_var(meteogram_config, var_list, VAR_GROUP_ATMO_HL, &
+                &               var_name_mtgrm, info%cf%units, &
+                &               info%cf%long_name, var_info, ptr)
+            ELSE IF ( ANY((/ZA_SURFACE, ZA_ATMOSPHERE/) == info%vgrid) .AND. info%ndims == 2 ) THEN
+              CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
+                &              var_name_mtgrm, info%cf%units, &
+                &              info%cf%long_name, sfc_var_info, &
+                &              elem%p%wp_ptr(:,:,1,1,1))
+            END IF
           END IF
         END IF
       ENDDO LOOPVAR
@@ -735,10 +760,13 @@ CONTAINS
       CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
         &              "H_SNOW", "m", "snow height", &
         &              sfc_var_info, lnd_diag%h_snow(:,:))
+    ENDIF
+
+    IF ( atm_phy_nwp_config%inwp_surface > 0 ) THEN
       CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
         &              "FR_SEAICE", "-", "fraction of sea ice", &
         &              sfc_var_info, lnd_diag%fr_seaice(:,:))
-    ENDIF
+    END IF
 
     ! -- single level variables
 
@@ -781,7 +809,7 @@ CONTAINS
       CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
         &              "V10M", "m/s", "meridional wind in 10m", &
         &              sfc_var_info, prm_diag%v_10m(:,:))
-      CALL getPTStringFromMS(NINT(1000_wp*gust_interval(jg), i8), c_time_int)
+      CALL getPTStringFromMS(NINT(1000._wp*gust_interval(jg), i8), c_time_int)
       CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
         &              "VBMAX10M", "m/s", "gust in 10m since end of previous full "//&
         &              TRIM(ADJUSTL(c_time_int(3:)))//" since model start", &
@@ -851,6 +879,21 @@ CONTAINS
         &              "H_ICE", "m", "sea ice depth", &
         &              sfc_var_info, prog_wtr%h_ice(:,:))
 
+      IF (var_in_output(jg)%t_snow_si .OR. lsnow_on_seaice) THEN
+        CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
+          &              "T_ICE", "K", "sea ice temperature", &
+          &              sfc_var_info, prog_wtr%t_ice(:,:))
+        CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
+          &              "H_SNOW_SI", "m", "sea ice snow height", &
+          &              sfc_var_info, prog_wtr%h_snow_si(:,:))
+        CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
+          &              "T_SNOW_SI", "K", "sea ice snow temperature", &
+          &              sfc_var_info, prog_wtr%t_snow_si(:,:))
+        CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
+          &              "ALB_SI", "-", "sea ice albedo", &
+          &              sfc_var_info, prog_wtr%alb_si(:,:))
+      END IF
+
       CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
         &              "CLCT", "-", "total cloud cover", &
         &              sfc_var_info, prm_diag%clct(:,:))
@@ -903,6 +946,7 @@ CONTAINS
         &              "SWDIR_S", "W m-2", &
         &              "shortwave direct downward flux at surface", &
         &              sfc_var_info, prm_diag%swflx_dn_sfc_diff(:,:))
+#ifndef __NO_AES__
     ELSE ! ie .NOT. iforcing == inwp
       CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
         &              "RSDS", "W m-2", &
@@ -924,6 +968,7 @@ CONTAINS
         &              "RNDS_DIR", "W m-2", &
         &              "surface downwelling direct near infrared radiation", &
         &              sfc_var_info, prm_field(jg)%rnds_dir(:,:))
+#endif
     ENDIF ! iforcing == inwp
 
     ! -- tiled surface fields
@@ -977,7 +1022,7 @@ CONTAINS
         &              "snow-cover fraction per land-cover class (melting unmodified)", &
         &              sfc_var_info, lnd_diag%snowfrac_lcu_t(:,:,:))
       CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
-       &              "W_I_T", "m H2O", & 
+       &              "W_I_T", "m H2O", &
        &              "water content of interception water", &
        &              sfc_var_info, lnd_prog%w_i_t(:,:,:))
       CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
@@ -1056,7 +1101,7 @@ CONTAINS
           &              sfc_var_info, prm_diag%dbz_cmax(:,:))
       END IF
       IF (var_in_output(jg)%dbzctmax) THEN
-        CALL getPTStringFromMS(NINT(1000_wp*celltracks_interval(jg), i8), c_time_int)
+        CALL getPTStringFromMS(NINT(1000._wp*celltracks_interval(jg), i8), c_time_int)
         CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
           &              "DBZ_CTMAX", "dBZ", &
           &              "column and time max radar reflectivity since end of previous full "// &
@@ -1064,7 +1109,7 @@ CONTAINS
           &              sfc_var_info, prm_diag%dbz_ctmax(:,:))
       END IF
       IF (var_in_output(jg)%lpi_max) THEN
-        CALL getPTStringFromMS(NINT(1000_wp*celltracks_interval(jg), i8), c_time_int)
+        CALL getPTStringFromMS(NINT(1000._wp*celltracks_interval(jg), i8), c_time_int)
         CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
           &              "LPI_MAX", "J/kg", &
           &              "time max lightning potential index since end of previous full "// &
@@ -1079,7 +1124,7 @@ CONTAINS
       END IF
       IF (var_in_output(jg)%echotopinm) THEN
         DO i=1, echotop_meta(jg)%nechotop
-          CALL getPTStringFromMS(NINT(1000_wp*echotop_meta(jg)%time_interval, i8), c_time_int)
+          CALL getPTStringFromMS(NINT(1000._wp*echotop_meta(jg)%time_interval, i8), c_time_int)
           WRITE (c_thresh_int, '(i10," dBZ")') NINT(echotop_meta(jg)%dbzthresh(i))
           CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
             &              "ECHOTOPinM_"//TRIM(ADJUSTL(c_thresh_int(1:10))), "m", &
@@ -1096,7 +1141,7 @@ CONTAINS
           &              sfc_var_info, prm_diag%vis(:,:))
       END IF
       IF (var_in_output(jg)%tot_pr_max) THEN
-        CALL getPTStringFromMS(NINT(1000_wp*celltracks_interval(jg), i8), c_time_int)
+        CALL getPTStringFromMS(NINT(1000._wp*celltracks_interval(jg), i8), c_time_int)
         CALL add_sfc_var(meteogram_config, var_list, VAR_GROUP_SURFACE, &
           &              "TOT_PR_MAX", "kg/m2/s", &
           &              "time max precipitation rate since end of previous full "// &
@@ -1143,25 +1188,25 @@ CONTAINS
     INTEGER :: var_counts(2), ivar
     var_counts(1) = var_list%no_atmo_vars
     var_counts(2) = var_list%no_sfc_vars
-    CALL p_pack_int_1d(var_counts, 2, pack_buf%msg_varlist, pack_buf%pos)
+    CALL p_pack(var_counts, 2, pack_buf%msg_varlist, pack_buf%pos)
 
     IF (dbg_level > 0) &
       CALL message(routine, "collect variable info for pure I/O PEs")
     DO ivar = 1, var_list%no_atmo_vars
 
-      CALL p_pack_string(var_info(ivar)%cf%standard_name, pack_buf%msg_varlist, pack_buf%pos)
-      CALL p_pack_string(var_info(ivar)%cf%long_name,     pack_buf%msg_varlist, pack_buf%pos)
-      CALL p_pack_string(var_info(ivar)%cf%units,         pack_buf%msg_varlist, pack_buf%pos)
-      CALL p_pack_int   (var_info(ivar)%igroup_id,        pack_buf%msg_varlist, pack_buf%pos)
-      CALL p_pack_int   (var_info(ivar)%nlevs,            pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(var_info(ivar)%cf%standard_name, pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(var_info(ivar)%cf%long_name,     pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(var_info(ivar)%cf%units,         pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(var_info(ivar)%igroup_id,        pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(var_info(ivar)%nlevs,            pack_buf%msg_varlist, pack_buf%pos)
     END DO
     IF (dbg_level > 0) &
       CALL message(routine, "collect surface variable info for pure I/O PEs")
     DO ivar = 1, var_list%no_sfc_vars
-      CALL p_pack_string(sfc_var_info(ivar)%cf%standard_name, pack_buf%msg_varlist, pack_buf%pos)
-      CALL p_pack_string(sfc_var_info(ivar)%cf%long_name,     pack_buf%msg_varlist, pack_buf%pos)
-      CALL p_pack_string(sfc_var_info(ivar)%cf%units,         pack_buf%msg_varlist, pack_buf%pos)
-      CALL p_pack_int   (sfc_var_info(ivar)%igroup_id,        pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(sfc_var_info(ivar)%cf%standard_name, pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(sfc_var_info(ivar)%cf%long_name,     pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(sfc_var_info(ivar)%cf%units,         pack_buf%msg_varlist, pack_buf%pos)
+      CALL p_pack(sfc_var_info(ivar)%igroup_id,        pack_buf%msg_varlist, pack_buf%pos)
     END DO
   END SUBROUTINE pack_varlists
 #endif
@@ -1990,18 +2035,6 @@ CONTAINS
             = sfc_var_info(ivar)%p_source(iidx, iblk)
         END DO
         ! convert some units of variables to the desired output units:
-!!! THE FOLLOWING WOULD BE THE CONVENIENT FORTRAN SOLUTION,
-!!! BUT TRIM() IN THIS CONTEXT SEEMS NOT TO BE SUPPORTED ON DAINT_GPU
-!        SELECT CASE (TRIM(sfc_var_info(ivar)%cf%standard_name))
-!        CASE ('DBZLMX_LOW','DBZ_850','DBZ_CMAX','DBZ_CTMAX')
-!          !$ACC LOOP VECTOR PRIVATE(istation_buf)
-!          DO istation = 1, ithis_nlocal_pts
-!            istation_buf = buf_idx(istation)
-!            out_buf%sfc_vars(ivar)%a(istation_buf, i_tstep) &
-!              =  z10olog10 * LOG( MAX(out_buf%sfc_vars(ivar)%a(istation_buf, i_tstep), eps_dbz) )
-!          END DO
-!        END SELECT
-!!! SO WE TRY THIS HACK INSTEAD:
         IF (sfc_var_info(ivar)%cf%standard_name(1:3) == 'DBZ') THEN
           !$ACC LOOP VECTOR PRIVATE(istation_buf)
           DO istation = 1, ithis_nlocal_pts
@@ -2223,13 +2256,13 @@ CONTAINS
     position = 0
 
     !-- unpack global time stamp index
-    CALL p_unpack_int(sttn_buffer, position, icurrent)
+    CALL p_unpack(sttn_buffer, position, icurrent)
     IF (dbg_level > 0) &
       WRITE (*,'(3(a,i0))') "Receiving ", icurrent, &
       & " time slices from station ", istation, "/", nstations
 
     !-- unpack station header information
-    CALL p_unpack_int(sttn_buffer, position, station_idx)
+    CALL p_unpack(sttn_buffer, position, station_idx)
     IF (out_buf%station_idx(istation) /= station_idx) &
       CALL finish(routine, "non-matching global indices")
 
@@ -2237,13 +2270,13 @@ CONTAINS
     nvars = SIZE(var_info)
     DO ivar = 1, nvars
       nvals = var_info(ivar)%nlevs * icurrent
-      CALL p_unpack_real_2d(sttn_buffer, position, &
+      CALL p_unpack(sttn_buffer, position, &
         &   out_buf%atmo_vars(ivar)%a(istation, :, :), nvals)
     END DO
     nvars = SIZE(sfc_var_info)
     nvals = icurrent
     DO ivar = 1, nvars
-      CALL p_unpack_real_1d(sttn_buffer, position, &
+      CALL p_unpack(sttn_buffer, position, &
         &  out_buf%sfc_vars(ivar)%a(istation, :), icurrent)
     END DO
   END SUBROUTINE unpack_station_sample
@@ -2262,21 +2295,21 @@ CONTAINS
     pos = 0
 
     !-- pack global time stamp index
-    CALL p_pack_int(icurrent, sttn_buffer, pos, io_collect_comm)
+    CALL p_pack(icurrent, sttn_buffer, pos, io_collect_comm)
 
     !-- pack meteogram header (information on location, ...)
-    CALL p_pack_int(global_idx, sttn_buffer, pos, io_collect_comm)
+    CALL p_pack(global_idx, sttn_buffer, pos, io_collect_comm)
 
     !-- pack meteogram data:
     nvars = SIZE(out_buf%atmo_vars)
     DO ivar = 1, nvars
       nlevs = var_info(ivar)%nlevs
-      CALL p_pack_real_2d(out_buf%atmo_vars(ivar)%a(istation,:,1:icurrent), &
+      CALL p_pack(out_buf%atmo_vars(ivar)%a(istation,:,1:icurrent), &
         &                 nlevs*icurrent, sttn_buffer, pos, io_collect_comm)
     END DO
     nvars = SIZE(out_buf%sfc_vars)
     DO ivar = 1, nvars
-      CALL p_pack_real_1d(out_buf%sfc_vars(ivar)%a(istation,1:icurrent), &
+      CALL p_pack(out_buf%sfc_vars(ivar)%a(istation,1:icurrent), &
         &                 icurrent, sttn_buffer, pos, io_collect_comm)
     END DO
 
@@ -3215,7 +3248,7 @@ CONTAINS
     IF (PRESENT(iidx)) THEN
       CALL add_sfc_var_2d(meteogram_config, var_list, igroup_id, zname, &
       &                  zunit, zlong_name, sfc_var_info, source(:,:,iidx))
-    ELSE 
+    ELSE
       nidx = SIZE(source, 3) ! get number of 2d var indices (e.g. tile number)
       DO isource_idx=1,nidx
         CALL add_sfc_var_2d(meteogram_config, var_list, igroup_id, &
@@ -3283,7 +3316,7 @@ CONTAINS
     ! wait for messages to arrive:
     CALL p_wait()
 
-    CALL p_unpack_int_1d(pack_buf%msg_varlist, pack_buf%pos, var_counts, 2)
+    CALL p_unpack(pack_buf%msg_varlist, pack_buf%pos, var_counts, 2)
     ALLOCATE(var_info(var_counts(1)), &
       &      sfc_var_info(var_counts(2)), stat=ierror)
     IF (ierror /= SUCCESS) &
@@ -3294,9 +3327,9 @@ CONTAINS
     ! variables one by one:
     DO ivar = 1, var_counts(1)
       CALL unpack_cf(var_info(ivar)%cf, pack_buf)
-      CALL p_unpack_int(pack_buf%msg_varlist, pack_buf%pos, &
+      CALL p_unpack(pack_buf%msg_varlist, pack_buf%pos, &
         &               var_info(ivar)%igroup_id)
-      CALL p_unpack_int(pack_buf%msg_varlist, pack_buf%pos, &
+      CALL p_unpack(pack_buf%msg_varlist, pack_buf%pos, &
         &               var_info(ivar)%nlevs)
       NULLIFY(var_info(ivar)%p_source)
       IF (dbg_level > 0) &
@@ -3304,7 +3337,7 @@ CONTAINS
     END DO
     DO ivar = 1, var_counts(2)
       CALL unpack_cf(sfc_var_info(ivar)%cf, pack_buf)
-      CALL p_unpack_int(pack_buf%msg_varlist, pack_buf%pos, &
+      CALL p_unpack(pack_buf%msg_varlist, pack_buf%pos, &
         &               sfc_var_info(ivar)%igroup_id)
       NULLIFY(sfc_var_info(ivar)%p_source)
       IF (dbg_level > 0) &
@@ -3319,9 +3352,9 @@ CONTAINS
   SUBROUTINE unpack_cf(cf, pack_buf)
     TYPE(t_cf_var), INTENT(out) :: cf
     TYPE(mtgrm_pack_buf), INTENT(inout) :: pack_buf
-    CALL p_unpack_string(pack_buf%msg_varlist, pack_buf%pos, cf%standard_name)
-    CALL p_unpack_string(pack_buf%msg_varlist, pack_buf%pos, cf%long_name)
-    CALL p_unpack_string(pack_buf%msg_varlist, pack_buf%pos, cf%units)
+    CALL p_unpack(pack_buf%msg_varlist, pack_buf%pos, cf%standard_name)
+    CALL p_unpack(pack_buf%msg_varlist, pack_buf%pos, cf%long_name)
+    CALL p_unpack(pack_buf%msg_varlist, pack_buf%pos, cf%units)
   END SUBROUTINE unpack_cf
 
   !> send time invariants in case output happens through a rank dedicated to asynchronous I/O

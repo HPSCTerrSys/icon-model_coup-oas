@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -130,7 +130,7 @@ htop_cloudy=16000.  # [m] top height for clouds in transport and microphysics, a
 #
 ldynamics=.TRUE.    # .TRUE.: on       , .FALSE.: off
 ltransport=.TRUE.   # .TRUE.: on       , .FALSE.: off
-iforcing=3          #     3 : NWP      ,  0     : off
+iforcing=3          #     3 : NWP
 run_jsbach=yes      # yes,true: on, else: off
 
 atmo_namelist=NAMELIST_${EXPNAME}_atm # also used in exec.iconrun
@@ -240,7 +240,7 @@ cat >> ${basedir}/run/${atmo_namelist} << EOF
 &nwp_phy_nml
  inwp_gscp         = 1
  inwp_convection   = 1
- inwp_radiation    = 1 ! 1 - rttov, 4 - ECRad
+ inwp_radiation    = 4 ! 4 - ECRad
  inwp_cldcover     = 1
  inwp_turb         = 6 ! 6: VDIFF
  inwp_satad        = 1
@@ -282,13 +282,18 @@ cat >> ${basedir}/run/${atmo_namelist} << EOF
  direct_albedo_water = 3
  irad_aero           = 6
  irad_o3             = 79
+ ecrad_data_path     = '${basedir}/externals/ecrad/data'
+ ecrad_isolver       = 2
 /
 
 &lnd_nml
  ntiles = 1
  lseaice        = .true.
  lprog_albsi    = .true.
- sstice_mode    = 2
+ sstice_mode    = 6
+ sst_td_filename = 'sst.nc'
+ ci_td_filename = 'sic.nc'
+ sst_file_interval = 'P43Y'
 /
 
 EOF
@@ -298,13 +303,15 @@ EOF
 if [ ${run_jsbach} = yes ]; then
 #
 jsbach_namelist=NAMELIST_${EXPNAME}_lnd # also used in exec.iconrun
+npft=11
 #
 cat > ${basedir}/run/${jsbach_namelist} << EOF
 &jsb_model_nml
   usecase                 = 'jsbach_pfts'
+  npft                    = ${npft}
   use_lakes               = .TRUE.
   fract_filename          = 'bc_land_frac.nc'
-  enforce_water_budget    = .TRUE.      ! True: stop in case of water conservation problem
+  enforce_water_budget    = 'error'     ! Error: stop in case of water conservation problem
 /
 &jsb_seb_nml
   bc_filename             = 'bc_land_phys.nc'
@@ -320,11 +327,8 @@ cat > ${basedir}/run/${jsbach_namelist} << EOF
   ic_filename             = 'ic_land_soil.nc'
 /
 &jsb_sse_nml
-  l_heat_cap_map          = .FALSE.
-  l_heat_cond_map         = .FALSE.
-  l_heat_cap_dyn          = .FALSE.
-  l_heat_cond_dyn         = .FALSE.
-  l_snow                  = .TRUE.
+  l_heat_cap_dyn          = .TRUE.
+  l_heat_cond_dyn         = .TRUE.
   l_dynsnow               = .TRUE.
   l_freeze                = .TRUE.
   l_supercool             = .TRUE.
@@ -332,7 +336,6 @@ cat > ${basedir}/run/${jsbach_namelist} << EOF
   ic_filename             = 'ic_land_soil.nc'
 /
 &jsb_hydro_nml
-  l_organic               = .FALSE.
   bc_filename             = 'bc_land_soil.nc'
   ic_filename             = 'ic_land_soil.nc'
   bc_sso_filename         = 'bc_land_sso.nc'
@@ -377,35 +380,26 @@ fi # ${run_jsbach}
 # daint and levante define HOST to some sensible value containing the machine name. RCL does not.
 case "$HOSTNAME" in
 rc[nb]l*|vh1l*)
-  # Data from ICON Seamless.
-  root_dir=~icon-sml/w/jsbach-vdiff
-  add_link_file $root_dir/extpar/mpim/icon_extpar_0013_R02B04_G_20211005_tiles.nc extpar_icon_grid.nc
-  add_link_file $root_dir/init/mpim/0013/ifs2icon_1979010100.nc ic_atmosphere.nc
-  add_link_file $root_dir/grids/mpim/icon_grid_0013_R02B04_G.nc icon_grid.nc
-
-  jsb_dir=$root_dir/jsb4_ini_files/mpim/0013/r0010
-  add_link_file $jsb_dir/ic_land_soil_1979.nc         ic_land_soil.nc
-  add_link_file $jsb_dir/bc_land_sso_1979.nc          bc_land_sso.nc
-  add_link_file $jsb_dir/bc_land_frac_11pfts_1979.nc  bc_land_frac.nc
-  add_link_file $jsb_dir/bc_land_phys_1979.nc         bc_land_phys.nc
-  add_link_file $jsb_dir/bc_land_soil_1979.nc         bc_land_soil.nc
+  grid_dir=${icon_data_rootFolder}/buildbot_data/nwp/grids/public/mpim/0049
   ;;
 *)
-  # This is the only grid with JSBACH files and an NWP extpar... They don't really fit but whatever.
-  grid_dir=${icon_data_rootFolder}/grids/public/mpim/0013
-
-  add_link_file $grid_dir/nwp/icon_extpar_0013_R02B04_G_20180820_tiles.nc extpar_icon_grid.nc
-  add_link_file $grid_dir/initial_condition/r0001/ifs2icon_1979010100_R02B04_G.nc ic_atmosphere.nc
-  add_link_file $grid_dir/icon_grid_0013_R02B04_G.nc  icon_grid.nc
-
-  jsb_dir="${grid_dir}/land/r0002/"
-  add_link_file $jsb_dir/ic_land_soil_1976.nc         ic_land_soil.nc
-  add_link_file $jsb_dir/bc_land_sso_1976.nc          bc_land_sso.nc
-  add_link_file $jsb_dir/bc_land_frac_11pfts_1976.nc  bc_land_frac.nc
-  add_link_file $jsb_dir/bc_land_phys_1976.nc         bc_land_phys.nc
-  add_link_file $jsb_dir/bc_land_soil_1976.nc         bc_land_soil.nc
+  grid_dir=${icon_data_rootFolder}/grids/public/mpim/0049
   ;;
 esac
+
+add_link_file $grid_dir/icon_grid_0049_R02B04_G.nc  icon_grid.nc
+add_link_file $grid_dir/initial_conditions/r0100/ifs2icon_1979010100_0049_R02B04_G.nc ic_atmosphere.nc
+add_link_file $grid_dir/sst_and_seaice/SeaIce_CMIP_PCMDI-AMIP-1-1-7_197801-202012_daily_0049_R02B04_G.nc sic.nc
+add_link_file $grid_dir/sst_and_seaice/SST_CMIP_PCMDI-AMIP-1-1-7_197801-202012_daily_0049_R02B04_G.nc sst.nc
+
+jsb_dir="${grid_dir}/land/r0101/"
+add_link_file $jsb_dir/ic_land_soil.nc              ic_land_soil.nc
+add_link_file $jsb_dir/bc_land_sso.nc               bc_land_sso.nc
+add_link_file $jsb_dir/bc_land_frac_${npft}pfts_1976.nc  bc_land_frac.nc
+add_link_file $jsb_dir/bc_land_phys.nc              bc_land_phys.nc
+add_link_file $jsb_dir/bc_land_soil.nc              bc_land_soil.nc
+
+add_link_file $jsb_dir/icon_extpar4jsbach_0049_20240827_tiles_jsb.nc  extpar_icon_grid.nc
 
 add_link_file ${basedir}/data/rrtmg_lw.nc ./
 add_link_file ${basedir}/data/ECHAM6_CldOptProps.nc ./
@@ -614,7 +608,7 @@ varlist="'pres_sfc'"
 varlist="${varlist} 't_g'"
 varlist="${varlist} 'cosmu0' 'albdif' "
 varlist="${varlist} 'sp_10m' 'u_10m' 'v_10m' 't_2m' 'td_2m'"
-varlist="${varlist} 'rain_gsp_rate' 'snow_gsp_rate' 'rain_con_rate' 'snow_con_rate' 'clct'"
+varlist="${varlist} 'rain_gsp_rate' 'snow_gsp_rate' 'rain_con_rate' 'snow_con_rate' 'clct' 'pbas_con' 'ptop_con'"
 #
 if [ "x${varlist}" != x ] ; then
 cat >> ${basedir}/run/${atmo_namelist} << EOF

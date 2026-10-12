@@ -1,16 +1,15 @@
-!
-! Subroutines for computing turbulent exchange coefficients.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutines for computing turbulent exchange coefficients.
 
 !------------------
 #include "fsel.inc"
@@ -21,13 +20,14 @@ MODULE mo_turb_vdiff_diag
   USE mo_kind,              ONLY: wp, i1
   USE mo_convect_tables,    ONLY: compute_qsat, cthomi, csecfrl
 
-  ! DA: is it fine??
 #ifndef _OPENACC
   USE mo_convect_tables,    ONLY: prepare_ua_index_spline, lookup_ua_spline
 #else
   USE mo_aes_convect_tables,ONLY: prepare_ua_index_spline_batch, lookup_ua_spline_batch
 #endif
 
+  USE mo_thdyn_functions,   ONLY: spec_humi, sat_pres_water, sat_pres_ice
+  USE mo_sleve_config,      ONLY: top_height
   USE mo_turb_vdiff_config, ONLY: t_vdiff_config
   USE mo_turb_vdiff_params, ONLY: ckap, cb,cc, chneu, da1,                  &
     &                             eps_shear, eps_corio, totte_min, cons5
@@ -39,10 +39,16 @@ MODULE mo_turb_vdiff_diag
 
   USE mo_model_domain      ,ONLY: t_patch
   USE mo_math_constants    ,ONLY: rad2deg
+  USE mo_fortran_tools     ,ONLY: assert_acc_device_only
+  USE mo_run_config        ,ONLY: iforcing
+  USE mo_impl_constants    ,ONLY: iaes
+
 
   IMPLICIT NONE
   PRIVATE
   PUBLIC :: atm_exchange_coeff, sfc_exchange_coeff
+
+  REAL(wp), PARAMETER :: THERMOSPHERE_HEIGHT = 100e3_wp
 
 CONTAINS
   !>
@@ -66,19 +72,20 @@ CONTAINS
                                & jcs, kproma, kbdim,                      &! in
                                & klev, klevm1,                            &! in
                                & pdtime, pcoriol,                         &! in
-                               & pghf, pghh,                              &! in
+                               & pghf, pghh, pgeof,                       &! in
                                & pum1, pvm1, ptm1, ptvm1,                 &! in
                                & pqm1, pxm1,                              &! in
                                & papm1, paphm1, paclc,                    &! in
                                & pustarm, pthvvar,                        &! in
                                & ptottem1,                                &! in
-                               & vdiff_config,                        &! in
+                               & vdiff_config,                            &! in
                                & pcptgz, phdtcbl,                         &! out
                                & pzthvvar, ptottevn,                      &! out
                                & pcfm, pcfh, pcfv, pcftotte, pcfthv,      &! out
                                & pprfac, ptheta_b, pthetav_b, pthetal_b,  &! out
                                & pqsat_b, plh_b,                          &! out
-                               & pri, pmixlen                             )! out
+                               & pri, pmixlen,                            &! out
+                               & lacc)                                     ! in
     ! Arguments
 
     INTEGER, INTENT(IN) :: jb
@@ -88,6 +95,7 @@ CONTAINS
     REAL(wp),INTENT(IN) :: pcoriol(:)   !< (kbdim)
     REAL(wp),INTENT(IN) :: pghf(:,:)    !< (kbdim,klev)
     REAL(wp),INTENT(IN) :: pghh(:,:)    !< (kbdim,klevp1)
+    REAL(wp),INTENT(IN) :: pgeof(:,:)   !< (kbdim,klev) Geopotential above ground (full level) [m2/s2]
     REAL(wp),INTENT(IN) :: pxm1(:,:)    !< (kbdim,klev)
     REAL(wp),INTENT(IN) :: ptvm1(:,:)   !< (kbdim,klev)
     REAL(wp),INTENT(IN) :: pqm1(:,:), pum1(:,:), pvm1(:,:) !< (kbdim,klev)
@@ -101,27 +109,29 @@ CONTAINS
     REAL(wp),INTENT(IN) :: ptottem1 (:,:) ! (kbdim,klev)
     TYPE(t_vdiff_config), INTENT(IN) :: vdiff_config ! tuning parameters for current domain.
 
-    REAL(wp),INTENT(OUT) :: phdtcbl (:)   !< (kbdim) top height of dry convective boundary layer
-    REAL(wp),INTENT(OUT) :: ptottevn(:,:) !< (kbdim,klevm1) TTE at intermediate time step
-    REAL(wp),INTENT(OUT) :: pcftotte(:,:) !< (kbdim,klevm1) exchange coeff. for TTE
-    REAL(wp),INTENT(OUT) :: pcfthv  (:,:) !< (kbdim,klevm1) exchange coeff. for var. of theta_v
-    REAL(wp),INTENT(OUT) :: pcfm    (:,:) !< (kbdim,klevm1) exchange coeff. for u, v
-    REAL(wp),INTENT(OUT) :: pcfh    (:,:) !< (kbdim,klevm1) exchange coeff. for cptgz and tracers
-    REAL(wp),INTENT(OUT) :: pcfv    (:,:) !< (kbdim,klevm1) exchange coeff. for variance of qx
-    REAL(wp),INTENT(OUT) :: pzthvvar(:,:) !< (kbdim,klevm1) variance of theta_v at interm. step
-    REAL(wp),INTENT(OUT) :: pcptgz  (:,:) !< (kbdim,klev) dry static energy
-    REAL(wp),INTENT(OUT) :: pprfac  (:,:) !< (kbdim,klevm1) prefactor for the exchange coeff.
+    REAL(wp),INTENT(INOUT) :: phdtcbl (:)   !< (kbdim) top height of dry convective boundary layer
+    REAL(wp),INTENT(INOUT) :: ptottevn(:,:) !< (kbdim,klevm1) TTE at intermediate time step
+    REAL(wp),INTENT(INOUT) :: pcftotte(:,:) !< (kbdim,klevm1) exchange coeff. for TTE
+    REAL(wp),INTENT(INOUT) :: pcfthv  (:,:) !< (kbdim,klevm1) exchange coeff. for var. of theta_v
+    REAL(wp),INTENT(INOUT) :: pcfm    (:,:) !< (kbdim,klevm1) exchange coeff. for u, v
+    REAL(wp),INTENT(INOUT) :: pcfh    (:,:) !< (kbdim,klevm1) exchange coeff. for cptgz and tracers
+    REAL(wp),INTENT(INOUT) :: pcfv    (:,:) !< (kbdim,klevm1) exchange coeff. for variance of qx
+    REAL(wp),INTENT(INOUT) :: pzthvvar(:,:) !< (kbdim,klevm1) variance of theta_v at interm. step
+    REAL(wp),INTENT(INOUT) :: pcptgz  (:,:) !< (kbdim,klev) dry static energy
+    REAL(wp),INTENT(INOUT) :: pprfac  (:,:) !< (kbdim,klevm1) prefactor for the exchange coeff.
 
     ! _b denotes the values at the bottom level (the klev-th full level)
-    REAL(wp),INTENT(OUT) :: ptheta_b (:)  !< (kbdim) potential temperature
-    REAL(wp),INTENT(OUT) :: pthetav_b(:)  !< (kbdim) virtual potential temperature
-    REAL(wp),INTENT(OUT) :: pthetal_b(:)  !< (kbdim) liquid (and ice?) potential temperature
-    REAL(wp),INTENT(OUT) :: pqsat_b  (:)  !< (kbdim) specific humidity at saturation
-    REAL(wp),INTENT(OUT) :: plh_b    (:)  !< (kbdim) latent heat
+    REAL(wp),INTENT(INOUT) :: ptheta_b (:)  !< (kbdim) potential temperature
+    REAL(wp),INTENT(INOUT) :: pthetav_b(:)  !< (kbdim) virtual potential temperature
+    REAL(wp),INTENT(INOUT) :: pthetal_b(:)  !< (kbdim) liquid (and ice?) potential temperature
+    REAL(wp),INTENT(INOUT) :: pqsat_b  (:)  !< (kbdim) specific humidity at saturation
+    REAL(wp),INTENT(INOUT) :: plh_b    (:)  !< (kbdim) latent heat
 
     ! Just for output
-    REAL(wp),INTENT(OUT) :: pri     (:,:) !< (kbdim,klevm1) moist Richardson number at mid-levels
-    REAL(wp),INTENT(OUT) :: pmixlen (:,:) !< (kbdim,klevm1) mixing length
+    REAL(wp),INTENT(INOUT) :: pri     (:,:) !< (kbdim,klevm1) moist Richardson number at mid-levels
+    REAL(wp),INTENT(INOUT) :: pmixlen (:,:) !< (kbdim,klevm1) mixing length
+
+    LOGICAL, INTENT(IN) :: lacc
 
     ! Local variables
     ! - Variables defined at full levels
@@ -177,12 +187,15 @@ CONTAINS
     REAL(wp) :: f_tau_limit_fraction, f_tau_decay
     REAL(wp) :: f_theta_limit_fraction, f_theta_decay
     REAL(wp) :: ek_ep_ratio_stable, ek_ep_ratio_unstable
+
+    CALL assert_acc_device_only ('atm_exchange_coeff', lacc)
+
     !
     !$ACC DATA &
     !$ACC   CREATE(zlh, ztheta, zthetav, zthetal, zqsat, km, kh, zlhmid, zdgmid) &
     !$ACC   CREATE(zccovermid, zqxmid, zqmid, zqsatmid, zthetamid, zthetavmid, ztmid, ztvmid) &
     !$ACC   CREATE(ihpblc, ihpbld, idx, za, zhdyn, zpapm1i, zua) &
-    !$ACC   CREATE(idx_batch, za_batch, zua_batch)
+    !$ACC   CREATE(idx_batch, za_batch, zua_batch) ASYNC(1)
 
     f_tau0   = vdiff_config%f_tau0
     f_theta0 = vdiff_config%f_theta0
@@ -215,9 +228,12 @@ CONTAINS
 
 #ifndef _OPENACC
     DO 212 jk=1,klev
-      CALL prepare_ua_index_spline('vdiff (1)',jcs,kproma,ptm1(:,jk),idx,za       &
-      &                                       ,klev=jk,kblock=jb,kblock_size=kbdim)
-      CALL lookup_ua_spline(jcs,kproma,idx,za,zua)
+      IF (iforcing == iaes) THEN
+          CALL prepare_ua_index_spline('vdiff (1)',jcs,kproma,ptm1(:,jk),idx,za        &
+          &                                       ,klev=jk,kblock=jb,kblock_size=kbdim,&
+          &                            extend_upper_limit=top_height >= THERMOSPHERE_HEIGHT)
+          CALL lookup_ua_spline(jcs,kproma,idx,za,zua)
+      END IF
 
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR
@@ -234,7 +250,7 @@ CONTAINS
         ! Virtual dry static energy, potential temperature, virtual potential
         ! temperature
 
-        pcptgz (jl,jk) = pghf(jl,jk)*grav+ptm1(jl,jk)*cpd
+        pcptgz (jl,jk) = pgeof(jl,jk)+ptm1(jl,jk)*cpd
         ztheta (jl,jk) = ptm1(jl,jk)*ztheta(jl,jk)
         zthetav(jl,jk) = ztheta(jl,jk)*(1._wp+vtmpc1*pqm1(jl,jk)-pxm1(jl,jk))
 
@@ -243,21 +259,34 @@ CONTAINS
         zlh(jl,jk)     = FSEL(ptm1(jl,jk)-tmelt,alv,als) ! latent heat
         zusus1         = zlh(jl,jk)/cpd*ztheta(jl,jk)/ptm1(jl,jk)*pxm1(jl,jk)
         zthetal(jl,jk) = ztheta(jl,jk)-zusus1
-
-        zes=zua(jl)*zpapm1i(jl)              ! (sat. vapour pressure)*Rd/Rv/ps
-        zes=MIN(zes,0.5_wp)
-        zqsat(jl,jk)=zes/(1._wp-vtmpc1*zes)  ! specific humidity at saturation
+        IF (iforcing == iaes) THEN
+          zes=zua(jl)*zpapm1i(jl)              ! (sat. vapour pressure)*Rd/Rv/ps
+          zes=MIN(zes,0.5_wp)
+          zqsat(jl,jk)=zes/(1._wp-vtmpc1*zes)  ! specific humidity at saturation
+        ELSE
+          IF (ptm1(jl,jk) >= tmelt) THEN
+            zqsat(jl,jk)=spec_humi(sat_pres_water(ptm1(jl,jk)), papm1(jl,jk))
+          ELSE
+            zqsat(jl,jk)=spec_humi(sat_pres_ice(ptm1(jl,jk)), papm1(jl,jk))
+          END IF
+        END IF
 211   END DO
       !$ACC END PARALLEL
 212 END DO
 
 #else
-    ! DA: warning: those are from AES convect tables!!
-    CALL prepare_ua_index_spline_batch('vdiff (1)', jcs, kproma, klev, &
-      &                                ptm1, idx_batch, za_batch,          &
-      &                                kblock=jb,kblock_size=kbdim, &
-                                       csecfrl=csecfrl, cthomi=cthomi)
-    CALL lookup_ua_spline_batch(jcs, kproma, klev, idx_batch, za_batch, zua_batch)
+  IF (iforcing == iaes) THEN
+      ! DA: warning: those are from AES convect tables!!
+        CALL prepare_ua_index_spline_batch(name='vdiff (1)', jcs=jcs, jce=kproma, &
+        &                                batch_size=klev, temp=ptm1, idx=idx_batch, &
+        &                                zalpha=za_batch, lacc=.TRUE., &
+        &                                kblock=jb,kblock_size=kbdim, &
+        &                                csecfrl=csecfrl, cthomi=cthomi, &
+        &                                extend_upper_limit=top_height >= THERMOSPHERE_HEIGHT)
+        CALL lookup_ua_spline_batch(jcs=jcs, jce=kproma, batch_size=klev, &
+        &                         idx=idx_batch, zalpha=za_batch, lacc=.TRUE., &
+        &                         ua=zua_batch)
+    END IF
 
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP GANG VECTOR COLLAPSE(2) PRIVATE(zpapm1i_s, zusus1, zes)
@@ -269,7 +298,7 @@ CONTAINS
         ! Virtual dry static energy, potential temperature, virtual potential
         ! temperature
 
-        pcptgz (jl,jk) = pghf(jl,jk)*grav+ptm1(jl,jk)*cpd
+        pcptgz (jl,jk) = pgeof(jl,jk)+ptm1(jl,jk)*cpd
         ztheta (jl,jk) = ptm1(jl,jk)*ztheta(jl,jk)
         zthetav(jl,jk) = ztheta(jl,jk)*(1._wp+vtmpc1*pqm1(jl,jk)-pxm1(jl,jk))
 
@@ -278,10 +307,17 @@ CONTAINS
         zlh(jl,jk)     = FSEL(ptm1(jl,jk)-tmelt,alv,als) ! latent heat
         zusus1         = zlh(jl,jk)/cpd*ztheta(jl,jk)/ptm1(jl,jk)*pxm1(jl,jk)
         zthetal(jl,jk) = ztheta(jl,jk)-zusus1
-
-        zes=zua_batch(jl,jk)*zpapm1i_s              ! (sat. vapour pressure)*Rd/Rv/ps
-        zes=MIN(zes,0.5_wp)
-        zqsat(jl,jk)=zes/(1._wp-vtmpc1*zes)  ! specific humidity at saturation
+        IF (iforcing == iaes) THEN
+          zes=zua_batch(jl,jk)*zpapm1i_s              ! (sat. vapour pressure)*Rd/Rv/ps
+          zes=MIN(zes,0.5_wp)
+          zqsat(jl,jk)=zes/(1._wp-vtmpc1*zes)  ! specific humidity at saturation
+        ELSE
+          IF (ptm1(jl,jk) >= tmelt) THEN
+            zqsat(jl,jk)=spec_humi(sat_pres_water(ptm1(jl,jk)), papm1(jl,jk))
+          ELSE
+            zqsat(jl,jk)=spec_humi(sat_pres_ice(ptm1(jl,jk)), papm1(jl,jk))
+          END IF
+        END IF
       END DO
     END DO
     !$ACC END PARALLEL
@@ -543,7 +579,6 @@ CONTAINS
 361   END DO
 372 END DO
     !$ACC END PARALLEL
-    !$ACC WAIT
     !$ACC END DATA
   END SUBROUTINE atm_exchange_coeff
   !-------------
@@ -551,10 +586,12 @@ CONTAINS
   !!
   SUBROUTINE sfc_exchange_coeff( jb, jcs, kproma, kbdim, ksfc_type,      &! in
                                & patch,                                  &! in
-                               & idx_wtr, idx_ice, idx_lnd,              &! in
+                               & idx_wtr,idx_ice, idx_lnd,               &! in
                                & pz0m, ptsfc,                            &! in
                                & pfrc, phdtcbl,                          &! in
-                               & pocu, pocv, ppsfc,                      &! in
+                               & pocu, pocv,                             &! in
+                               & piceu, picev,                           &! in
+                               & ppsfc,                                  &! in
                                & pghf_b,                                 &! in
                                & pum1_b, pvm1_b,                         &! in
                                & ptm1_b,                                 &! in
@@ -577,6 +614,7 @@ CONTAINS
                                & pustarm,                                &! out
                                & pch_tile,                               &! out
                                & pbn_tile, pbhn_tile, pbm_tile, pbh_tile,&! out
+                               & lacc,                                   &! in
                                & paz0lh,                                 &! in, optional
                                & pcsat, pcair                            &! in, optional
                                & )
@@ -594,6 +632,8 @@ CONTAINS
     REAL(wp),INTENT(IN) :: phdtcbl  (:)  !< (kbdim) height of the top of the atmospheric dry convective boundary layer
     REAL(wp),INTENT(IN) :: pocu     (:)  !< (kbdim) ocean surface velocity
     REAL(wp),INTENT(IN) :: pocv     (:)  !< (kbdim) ocean surface velocity
+    REAL(wp),INTENT(IN) :: piceu    (:)  !< (kbdim) sea ice velocity (u component)
+    REAL(wp),INTENT(IN) :: picev    (:)  !< (kbdim) sea ice velocity (v component)
     REAL(wp),INTENT(IN) :: ppsfc    (:)  !< (kbdim) surface pressure
 
     ! "_b" denotes value at the bottom level (the klev-th full level)
@@ -621,38 +661,40 @@ CONTAINS
 
     ! "_tile" denotes value at surface
 
-    REAL(wp),INTENT(OUT) :: pqsat_tile (:,:) !< (kbdim,ksfc_type) saturation specific humidity
+    REAL(wp),INTENT(INOUT) :: pqsat_tile (:,:) !< (kbdim,ksfc_type) OUT saturation specific humidity
                                                          !<  at surface
-    REAL(wp),INTENT(OUT) :: pcpt_tile  (:,:) !< (kbdim,ksfc_type) dry static energy
-    REAL(wp),INTENT(OUT) :: pri_gbm    (:)   !< (kbdim) moist Richardson number
-    REAL(wp),INTENT(OUT) :: pri_tile   (:,:) !< (kbdim,ksfc_type) moist Richardson number
+    REAL(wp),INTENT(INOUT) :: pcpt_tile  (:,:) !< (kbdim,ksfc_type) OUT dry static energy
+    REAL(wp),INTENT(INOUT) :: pri_gbm    (:)   !< (kbdim) OUT moist Richardson number
+    REAL(wp),INTENT(INOUT) :: pri_tile   (:,:) !< (kbdim,ksfc_type) OUT moist Richardson number
 
-    REAL(wp),INTENT(OUT) :: pcfm_gbm   (:)   !< (kbdim) exchange coeff. of momentum
-    REAL(wp),INTENT(OUT) :: pcfm_tile  (:,:) !< (kbdim,ksfc_type) exchange coeff. of momentum,
+    REAL(wp),INTENT(INOUT) :: pcfm_gbm   (:)   !< (kbdim) OUT exchange coeff. of momentum
+    REAL(wp),INTENT(INOUT) :: pcfm_tile  (:,:) !< (kbdim,ksfc_type) OUT exchange coeff. of momentum,
                                              !< for each type of surface
-    REAL(wp),INTENT(OUT) :: pcfh_gbm   (:)   !< (kbdim) exchange coeff. of heat and
+    REAL(wp),INTENT(INOUT) :: pcfh_gbm   (:)   !< (kbdim) OUT exchange coeff. of heat and
                                              !<  vapor
-    REAL(wp),INTENT(OUT) :: pcfh_tile  (:,:) !< (kbdim,ksfc_type) exchange coeff. of heat and
+    REAL(wp),INTENT(INOUT) :: pcfh_tile  (:,:) !< (kbdim,ksfc_type) OUT exchange coeff. of heat and
                                              !<  vapor for each surface type
-    REAL(wp),INTENT(OUT) :: pcfv_sfc    (:)  !< (kbdim) exchange coeff. of total water variance
-    REAL(wp),INTENT(OUT) :: pcftotte_sfc(:)  !< (kbdim) exchange coeff. of TTE
-    REAL(wp),INTENT(OUT) :: pcfthv_sfc  (:)  !< (kbdim) exchange coeff. of the variance of
+    REAL(wp),INTENT(INOUT) :: pcfv_sfc    (:)  !< (kbdim) OUT exchange coeff. of total water variance
+    REAL(wp),INTENT(INOUT) :: pcftotte_sfc(:)  !< (kbdim) OUT exchange coeff. of TTE
+    REAL(wp),INTENT(INOUT) :: pcfthv_sfc  (:)  !< (kbdim) OUT exchange coeff. of the variance of
                                              !<  theta_v
-    REAL(wp),INTENT(OUT) :: pprfac_sfc (:)   !< (kbdim) prefactor for exchange coefficients
-    REAL(wp),INTENT(OUT) :: jtottevn_sfc(:)  !< (kbdim) boundary condition (sfc value) of TTE
-    REAL(wp),INTENT(OUT) :: ptottevn_sfc(:)  !< (kbdim) boundary condition (sfc value) of TTE
-    REAL(wp),INTENT(OUT) :: pthvvar_sfc(:)   !< (kbdim) boundary condition (sfc value)
+    REAL(wp),INTENT(INOUT) :: pprfac_sfc (:)   !< (kbdim) OUT prefactor for exchange coefficients
+    REAL(wp),INTENT(INOUT) :: jtottevn_sfc(:)  !< (kbdim) OUT boundary condition (sfc value) of TTE
+    REAL(wp),INTENT(INOUT) :: ptottevn_sfc(:)  !< (kbdim) OUT boundary condition (sfc value) of TTE
+    REAL(wp),INTENT(INOUT) :: pthvvar_sfc(:)   !< (kbdim) OUT boundary condition (sfc value)
                                                  !< of the variance of theta_v
-    REAL(wp),INTENT(OUT) :: pustarm    (:)   !< (kbdim) friction velocity, grid-box mean
-    REAL(wp),INTENT(OUT) :: pwstar     (:)   !< (kbdim) convective velocity scale, grid-box mean
-    REAL(wp),INTENT(INOUT),DIMENSION(:,:) :: & ! DIMENSION(kbdim,ksfc_type)
-                            pwstar_tile  !< convective velocity scale,
-                                         !<  each sfc type
-    REAL(wp),INTENT(OUT) :: pbn_tile  (:,:)  !< (kbdim,ksfc_type) for diagnostics
-    REAL(wp),INTENT(OUT) :: pbhn_tile (:,:)  !< (kbdim,ksfc_type) for diagnostics
-    REAL(wp),INTENT(OUT) :: pbm_tile  (:,:)  !< (kbdim,ksfc_type) for diagnostics
-    REAL(wp),INTENT(OUT) :: pbh_tile  (:,:)  !< (kbdim,ksfc_type) for diagnostics
-    REAL(wp),INTENT(OUT) :: pch_tile  (:,:)  !< (kbdim,ksfc_type) for TTE boundary condition
+    REAL(wp),INTENT(INOUT) :: pustarm    (:)   !< (kbdim) OUT friction velocity, grid-box mean
+    REAL(wp),INTENT(INOUT) :: pwstar     (:)   !< (kbdim) OUT convective velocity scale, grid-box mean
+    REAL(wp),INTENT(INOUT) :: pwstar_tile(:,:) !< (kbdim,ksfc_type) INOUT
+                                               !! convective velocity scale,
+                                               !!  each sfc type
+    REAL(wp),INTENT(INOUT) :: pbn_tile  (:,:)  !< (kbdim,ksfc_type) OUT for diagnostics
+    REAL(wp),INTENT(INOUT) :: pbhn_tile (:,:)  !< (kbdim,ksfc_type) OUT for diagnostics
+    REAL(wp),INTENT(INOUT) :: pbm_tile  (:,:)  !< (kbdim,ksfc_type) OUT for diagnostics
+    REAL(wp),INTENT(INOUT) :: pbh_tile  (:,:)  !< (kbdim,ksfc_type) OUT for diagnostics
+    REAL(wp),INTENT(INOUT) :: pch_tile  (:,:)  !< (kbdim,ksfc_type) OUT for TTE boundary condition
+
+    LOGICAL,INTENT(IN) :: lacc
     !
     ! optional arguments for use with jsbach
     REAL(wp),OPTIONAL,INTENT(IN) :: paz0lh (:)  !< (kbdim) roughness length for heat over land
@@ -702,6 +744,8 @@ CONTAINS
     REAL(wp) :: f_theta_limit_fraction, f_theta_decay
     REAL(wp) :: ek_ep_ratio_stable, ek_ep_ratio_unstable
     !
+    CALL assert_acc_device_only ('sfc_exchange_coeff', lacc)
+    !
     lsfc_mom_flux  = vdiff_config%lsfc_mom_flux
     lsfc_heat_flux = vdiff_config%lsfc_heat_flux
     !
@@ -725,7 +769,7 @@ CONTAINS
 
     !$ACC DATA &
     !$ACC   CREATE(pchn_tile, pcdn_tile, pcfnc_tile, zdu2, zcfnch, zustar, zqts, zthetavmid) &
-    !$ACC   CREATE(zdthetal, lmix, e_kin, e_pot, f_tau, f_theta, z0h, pfrc_test, loidx, is)
+    !$ACC   CREATE(zdthetal, lmix, e_kin, e_pot, f_tau, f_theta, z0h, pfrc_test, loidx, is) ASYNC(1)
     !-------------------
     ! Some constants
     !-------------------
@@ -790,13 +834,12 @@ CONTAINS
     END DO
     !$ACC END PARALLEL LOOP
 
-    CALL generate_index_list_batched(pfrc_test(:,:), loidx, jcs, kproma, is, 1)
-    !$ACC UPDATE HOST(is) ASYNC(1)
-    !$ACC WAIT(1)
-
+    CALL generate_index_list_batched(pfrc_test(:,:), loidx, jcs, kproma, is, &
+      &   lacc=.TRUE., opt_acc_async_queue=1)
     DO jsfc = 1,ksfc_type
-
-      CALL compute_qsat( kproma, is(jsfc), loidx(:,jsfc), ppsfc, ptsfc(:,jsfc), pqsat_tile(:,jsfc), error_reporter=lookup_error_)
+      IF (iforcing == iaes) THEN
+        CALL compute_qsat( kproma, is(jsfc), loidx(:,jsfc), ppsfc, ptsfc(:,jsfc), pqsat_tile(:,jsfc), lacc=.TRUE., error_reporter=lookup_error_)
+      END IF
      ! loop over mask only
      !
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -806,6 +849,15 @@ CONTAINS
       !NEC$ ivdep
       DO jls = 1,is(jsfc)
         js=loidx(jls,jsfc)
+
+        ! saturation specific humidity
+        IF (iforcing /= iaes) THEN
+          IF (ptsfc(js,jsfc) >= tmelt) THEN
+            pqsat_tile(js,jsfc) = spec_humi(sat_pres_water(ptsfc(js,jsfc)), ppsfc(js))
+          ELSE
+            pqsat_tile(js,jsfc) = spec_humi(sat_pres_ice(ptsfc(js,jsfc)), ppsfc(js))
+          END IF
+        END IF
         ! dry static energy pcpt_tile
         !
         IF(jsfc == idx_lnd) THEN
@@ -841,13 +893,19 @@ CONTAINS
 
         zdqt     = zqtl - zqts(js,jsfc)                           ! d qt
         zdthetal(js,jsfc) = pthetal_b(js) - ztheta                ! d theta_l
-        IF (jsfc == idx_lnd) THEN                                 ! over land
-          zdu2(js,jsfc) = MAX(zepdu2,(pum1_b(js)**2+pvm1_b(js)**2 &
-                                    +(wmc*pwstar_tile(js,jsfc))**2))
-        ELSE                                                      ! over water or ice
-          zdu2(js,jsfc) = MAX(zepdu2,(pum1_b(js)-pocu(js))**2 &   ! (d u)^2
-                                    +(pvm1_b(js)-pocv(js))**2 &   ! (d v)^2
-                                    +(wmc*pwstar_tile(js,jsfc))**2 )
+
+ !  Calculate relative wind velocity squared (d u)^2
+        IF (jsfc == idx_lnd) THEN                                ! over land
+          zdu2(js,jsfc) = MAX(zepdu2, (pum1_b(js)**2 + pvm1_b(js)**2) &
+                             + (wmc*pwstar_tile(js,jsfc))**2)
+        ELSEIF (jsfc == idx_wtr) THEN                            ! over open ocean
+          zdu2(js,jsfc) = MAX(zepdu2, (pum1_b(js) - pocu(js))**2 &
+                             + (pvm1_b(js) - pocv(js))**2 &
+                             + (wmc*pwstar_tile(js,jsfc))**2)
+        ELSEIF (jsfc == idx_ice) THEN                            ! over sea ice
+          zdu2(js,jsfc) = MAX(zepdu2, (pum1_b(js) - piceu(js))**2 &
+                             + (pvm1_b(js) - picev(js))**2 &
+                             + (wmc*pwstar_tile(js,jsfc))**2)
         END IF
 
         zbuoy        = zdus1*zdthetal(js,jsfc) + zdus2*zthetamid*zdqt
@@ -1262,7 +1320,6 @@ CONTAINS
       END DO
     END IF
 
-    !$ACC WAIT
     !$ACC END DATA
   CONTAINS
 

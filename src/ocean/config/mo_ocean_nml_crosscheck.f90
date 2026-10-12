@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -21,7 +20,7 @@ MODULE mo_ocean_nml_crosscheck
   USE mo_run_config,        ONLY: nsteps, dtime, nlev
   USE mo_time_config,       ONLY: time_config, dt_restart
   USE mo_io_config,         ONLY: dt_checkpoint, write_initial_state, lnetcdf_flt64_output
-  USE mo_grid_config,       ONLY: grid_rescale_factor, use_duplicated_connectivity
+  USE mo_grid_config,       ONLY: use_duplicated_connectivity
   USE mo_ocean_nml
   USE mo_master_config,     ONLY: isRestart
   USE mo_time_management,   ONLY: compute_timestep_settings,                        &
@@ -35,18 +34,18 @@ MODULE mo_ocean_nml_crosscheck
   PUBLIC :: ocean_crosscheck
 
 CONTAINS
-  
+
 
 !<Optimize:inUse>
   SUBROUTINE check_thicknesses
 
     ! ensure, that all used thicknesses are non-zero in case of non-shallow-water.
-    !For shallow-water this test makes no sense since dzlev==0 
+    !For shallow-water this test makes no sense since dzlev==0
     IF(iswm_oce==0)THEN
       IF (MINVAL(dzlev_m(1:n_zlev)) <= 0.0_wp) THEN
         CALL finish("check_thicknesses","Found zero or negative thicknesses")
       END IF
-    ENDIF  
+    ENDIF
   END SUBROUTINE check_thicknesses
 
 !<Optimize:inUse>
@@ -85,13 +84,13 @@ CONTAINS
     ! set the patch-related nlev variable to the ocean setup n_ zlev
     nlev = n_zlev
 
-    IF (p_test_run .AND. l_fast_sum ) THEN                      
+    IF (p_test_run .AND. l_fast_sum ) THEN
        CALL warning(method_name, "p_test_run sets l_fast_sum=.false.")
-       l_fast_sum = .false.                                     
-    ENDIF                                                       
+       l_fast_sum = .false.
+    ENDIF
 
     SELECT CASE (select_solver)
-      CASE (select_gmres, select_gmres_r, select_gmres_mp_r, select_cg, select_cg_mp, select_cgj, select_bcgs, &
+      CASE (select_gmres, select_gmres_r, select_gmres_mp_r, select_cg, select_cgo, select_cg_mp, select_cgj, select_bcgs, &
         & select_legacy_gmres, select_mres)
       CASE default
         CALL finish(method_name, "Unknown solver type")
@@ -107,7 +106,7 @@ CONTAINS
     IF  (RichardsonDiffusion_threshold < convection_InstabilityThreshold) &
       CALL finish (method_name, "RichardsonDiffusion_threshold < convection_InstabilityThreshold")
 
-     
+
     IF (l_rigid_lid .AND. iswm_oce /= 1) THEN
       CALL finish(method_name, "l_rigid_lid .AND. iswm_oce /= 1")
     ENDIF
@@ -116,7 +115,7 @@ CONTAINS
       use_duplicated_connectivity = .FALSE.
       CALL message(method_name, "Set use_duplicated_connectivity to FALSE")
     ENDIF
-    
+
     IF (isRestart() .AND. write_initial_state) THEN
       CALL warning(method_name, "write_initial_state is disabled for restarts")
       write_initial_state = .false.
@@ -128,10 +127,27 @@ CONTAINS
     IF (vert_mix_type /=1) &
        PPscheme_type = -1
 
-    IF (proc0_shift > 0 .AND. select_solver /= select_cg) THEN
-      CALL finish(method_name, "proc0_shift only works with the CG solver (select_cg=4)")
+    IF (proc0_shift > 0 .AND. select_solver /=  select_cg .AND. select_solver /= select_cgo ) THEN
+      CALL finish(method_name, "proc0_shift only works with the CG/OPT-CG solver (select_solver=4, select_solver=40)")
     END IF
 
+    IF (use_age_tracer) THEN
+      IF (no_tracer < (n_age_tracer + 2)) THEN
+        CALL finish(method_name, "When using the age tracer, no_tracer must be equal to the number of age tracers + number of buoyancy tracers.")
+      END IF
+    END IF
+
+    IF((init_mode_oce .EQ. MODE_IAU_OCE) .AND. ( iau_reference_date .EQ. "" )) THEN
+      CALL warning(method_name, "Ocean IAU is used but no reference time is given. Reference time is set to start date.")
+      iau_reference_time => time_config%tc_exp_startdate
+    ENDIF
+
+    IF (is_ocean_limited_area) THEN
+      IF (solver_FirstGuess /= 2) CALL finish(method_name, &
+        & "LAM: Limited area mode works only with solver_FirstGuess == 2. Please set this in the namelist.")
+      IF (vert_cor_type /= 1) CALL finish(method_name, &
+        & "LAM: Limited area mode works only with z* coordinate system for now. Please set vert_cor_type to 1")
+    END IF
   END SUBROUTINE ocean_crosscheck
 
 

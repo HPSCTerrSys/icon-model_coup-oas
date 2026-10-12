@@ -1,17 +1,16 @@
-!
-! Construction of a data object which is used to store fields used for SPPT
-! (Stochastic Perturbation of Physics Tendencies)
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Construction of a data object which is used to store fields used for SPPT
+! (Stochastic Perturbation of Physics Tendencies)
 
 MODULE mo_sppt_state
 

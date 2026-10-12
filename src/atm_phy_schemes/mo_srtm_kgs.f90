@@ -787,4 +787,3 @@ MODULE mo_yoesrta29
   ! ABSCO2C : REAL     Reduced g-point array for ABSCO2
   !     -----------------------------------------------------------------
 END MODULE mo_yoesrta29
-

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -51,7 +51,7 @@
 #PBS --venode=${NE}          # number VEs requested
 #PBS --venum-lhost=2         # number VEs per logical host (partitioning, 2 OK)
 #PBS -l cpunum_job=2         # number x86 cores per logical host (1ini+#IO)
-#PBS -l coresz_prc=0         
+#PBS -l coresz_prc=0
 #PBS -T necmpi               # parallel job mit NEC-MPI
 #PBS --use-hca=2             # number of HCA per logical host (2)
 #PBS -l elapstim_req=01:00:00
@@ -233,7 +233,6 @@ cat > ${atmo_namelist} << EOF
  l_log_checks    = .true.
  num_io_procs    =  4
  num_restart_procs = 0
- itype_comm      =  1
  iorder_sendrecv =  3
  proc0_shift     = 1
  use_omp_input   = .true.
@@ -288,8 +287,8 @@ cat > ${atmo_namelist} << EOF
  itype_rh                     = 1           ! (1) 2: mixed phase (water and ice)
 !output_nml_dict              = 'map_file.fc'
 !dt_checkpoint                = 2592000.    ! 30 days
- inextra_3d                   = 1           ! 3D extra variables 
- inextra_2d                   = 1           ! 2D extra variables 
+ inextra_3d                   = 1           ! 3D extra variables
+ inextra_2d                   = 1           ! 2D extra variables
 /
 &nwp_phy_nml
  inwp_gscp         = 1
@@ -316,7 +315,7 @@ cat > ${atmo_namelist} << EOF
 &nwp_tuning_nml
  itune_albedo                 = 0       ! somewhat reduced albedo (w.r.t. MODIS data) over Sahara in order to reduce cold bias
  tune_zceff_min               = 0.025    ! ** default value to be used for R3B7; use 0.025 for R2B6 in order to get similar temperature biases in upper troposphere **
- tune_gkdrag                  = 0.075   ! R2B6: 0.075  
+ tune_gkdrag                  = 0.075   ! R2B6: 0.075
  tune_gkwake                  = 1.5     ! R2B6: 1.5
  tune_gfrcrit                 = 0.425   ! R2B6: 0.425
  tune_dust_abs                = 0.
@@ -371,7 +370,7 @@ cat > ${atmo_namelist} << EOF
   itype_snowevap = 2
 /
 &radiation_nml
- irad_o3                      = 79
+ irad_o3                      = 9
  irad_aero                    = 6
  izenith                      = 4           ! 4: NWP default, 3: no annual cycle
  albedo_type                  = 2 ! Modis albedo
@@ -385,7 +384,7 @@ cat > ${atmo_namelist} << EOF
  direct_albedo_water          = 3
  albedo_whitecap              = 1
  llw_cloud_scat               = .true.
- ecRad_data_path              = '${ecRad_data_path}' 
+ ecRad_data_path              = '${ecRad_data_path}'
 /
 &nonhydrostatic_nml
  iadv_rhotheta                = 2
@@ -395,13 +394,11 @@ cat > ${atmo_namelist} << EOF
  vwind_offctr                 = 0.2         ! 0.2 for R2B6 and higher resolution, 0.3 for lower resolution
  damp_height                  = 44000.
  rayleigh_coeff               = 0.5
- lhdiff_rcf                   = .true.
  divdamp_order                = 24          ! 2 ass, 24 fc
  divdamp_type                 = 32          ! optional: 2 assimilation cycle, 32 forecast
  divdamp_fac                  = 0.004       ! 0.004 for R2B6; recommendation for R3B7: 0.003
  divdamp_trans_start          = 12500
  divdamp_trans_end            = 17500
- l_open_ubc                   = .false.
  igradp_method                = 3
  l_zdiffu_t                   = .true.
  thslp_zdiffu                 = 0.02
@@ -421,8 +418,6 @@ cat > ${atmo_namelist} << EOF
  flat_height                  = 16000.
 /
 &dynamics_nml
- iequations                   = 3
- idiv_method                  = 1
  divavg_cntrwgt               = 0.50
  lcoriolis                    = .true.
 /
@@ -498,7 +493,7 @@ support_baryctr_intp=.true.,
  include_last                 = .TRUE.
  output_filename              = '${EXP}_z'                 ! file name base
  ml_varlist                   = 'z_ifc', 'z_mc'
- output_grid                  = .TRUE. 
+ output_grid                  = .TRUE.
  remap                        = 0                          ! 1: latlon,  0: native grid
 /
 ! OUTPUT: lat-lon grid for model diagnostic (not necessary for SCM input file)
@@ -556,16 +551,15 @@ export VE_FPE_ENABLE=DIV,FOF,INV
 export GFORTRAN_UNBUFFERED_PRECONNECTED=y
 export NMPI_EXPORT="GFORTRAN_UNBUFFERED_PRECONNECTED"
 
-# NE=4, CPE=8, venum-lhost=2, cpunum_job=2, use-hca=2 
+# NE=4, CPE=8, venum-lhost=2, cpunum_job=2, use-hca=2
 
 /opt/nec/ve/bin/mpirun -v    -vh     -node 0        -np 1      -env OMP_NUM_THREADS 1 ${MODEL_VH} : \
                           -x -venode -node 0-${NE1} -np ${PPN} -env OMP_NUM_THREADS 1 ${MODEL_VE} : \
-                             -vh     -node 0        -np 4      -env OMP_NUM_THREADS 1 ${MODEL_VH} 
+                             -vh     -node 0        -np 4      -env OMP_NUM_THREADS 1 ${MODEL_VH}
 
 # NE=8,CPE=8, venum-lhost=4, cpunum_job=2, use-hca=2
 # NOT WORKING
 
 #/opt/nec/ve/bin/mpirun -v    -vh     -node 0        -np 1      -env OMP_NUM_THREADS 1 ${MODEL_VH} : \
 #                          -x -venode -node 0-${NE1} -np ${PPN} -env OMP_NUM_THREADS 1 ${MODEL_VE} : \
-#                             -vh     -node 0        -np 3      -env OMP_NUM_THREADS 1 ${MODEL_VH} 
-
+#                             -vh     -node 0        -np 3      -env OMP_NUM_THREADS 1 ${MODEL_VH}

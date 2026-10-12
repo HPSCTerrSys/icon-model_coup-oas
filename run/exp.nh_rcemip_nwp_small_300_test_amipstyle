@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -9,15 +9,15 @@
 # ------------------------------------------
 
 #=============================================================================
-# 
+#
 # Run script for RCEMIP ICON-LEM / NWP experiments. See Wing et al. (2018,
 # Geosci Mod Dev) for details. See also readme_icon-lem-nwp_rcemip.
-# 
+#
 # James Ruppert
 # james.ruppert@mpimet.mpg.de
 # 8 July 2018
 #
-# ... slightly modified by 
+# ... slightly modified by
 # Nicolas Rochetin
 # nicolas.rochetin@mpimet.mpg.de
 # 30 August 2018
@@ -51,7 +51,7 @@ restart_interval="P20D" # stop the simulation at this interval
  file_interval_3d="PT8H"
 #
  output_atm_cgrid="no" # 1 file
- output_atm_2d="yes"   # 1 file 
+ output_atm_2d="yes"   # 1 file
  output_atm_3d="yes"   # 1 file
  output_phy_3d="no"   # 1 file
 #
@@ -97,7 +97,7 @@ cat >> ${atmo_namelist} << EOF
  ltransport     = .TRUE.
  ntracer        = 0            ! the model updates this for the microphysics vars
  iforcing       = 3  ! 3: NWP forcing; 6:inhecham forcing
- ltimer         = .true.       ! 
+ ltimer         = .true.       !
  output         = 'nml'
  msg_level      = 12           ! detailed report during integration
  restart_filename = "${EXPNAME}_restart_atm_<rsttime>.nc"
@@ -140,7 +140,7 @@ cat >> ${atmo_namelist} << EOF
 &nwp_phy_nml
  inwp_gscp       = 4 ! 4:Seifert microphysics
  inwp_convection = 0 ! 1:Tiedtke/Bechtold
- inwp_radiation  = 1 ! 1:RRTM radiation, 3:PSRAD
+ inwp_radiation  = 4 ! 4:ecRad
  inwp_cldcover   = 1 ! 5: all or nothing
  inwp_turb       = 1 ! 5: Smagorinsky diffusion (Dipankar et al.)
  inwp_gwd        = 0 ! gravity wave drag
@@ -175,7 +175,7 @@ cat >> ${atmo_namelist} << EOF
  irad_o3    = 4 ! read in external ozone file
  izenith    = 5 ! 5: prescribed zenith angle; 6: equinox diurnal cycle
  irad_aero  = 0 ! switch off aerosols
- irad_cfc11 = 0 
+ irad_cfc11 = 0
  irad_cfc12 = 0
  irad_co2   = 2
  irad_ch4   = 2
@@ -183,6 +183,7 @@ cat >> ${atmo_namelist} << EOF
  vmr_co2    =  348.e-06 ! RCEMIP values; modern-day values
  vmr_ch4    = 1650.e-09
  vmr_n2o    =  306.e-09
+ ecrad_data_path = '${basedir}/externals/ecrad/data'
 /
 &extpar_nml
  itopo          = 0 ! 0: analytical topo; 1: topography/ext. data read from file
@@ -191,7 +192,7 @@ EOF
 #
 #----------------------------------------------------------------------------------
 # add standard atmo_non-hydrostatic_files
-add_link_file ${basedir}/data/rrtmg_lw.nc                 rrtmg_lw.nc 
+add_link_file ${basedir}/data/rrtmg_lw.nc                 rrtmg_lw.nc
 add_link_file ${basedir}/data/ECHAM6_CldOptProps.nc       ECHAM6_CldOptProps.nc
 add_link_file ${basedir}/data/dmin_wetgrowth_lookup.nc    dmin_wetgrowth_lookup.nc    #for inwp_gscp==4
 
@@ -217,10 +218,10 @@ add_required_file ${basedir}/run/${dict_file}                           ./
 
 #----------------------------------------------------------------------------------
 #
-# 
+#
 # End of namelist settings, automatic settings below.
 # Model output directory is set below.
-# 
+#
 #----------------------------------------------------------------------------------
 #--------------------------------------------------------------------------------------------------
 
@@ -315,4 +316,3 @@ if [[ "$output_atm_2d" == "yes" ]]; then
 /
 EOF
 fi
-

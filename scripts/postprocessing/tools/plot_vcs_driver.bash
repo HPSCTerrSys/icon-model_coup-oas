@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -12,26 +12,26 @@
 
 #
 #==========================================================================
-#      Driver script for postprocessing and visulization of a  
-#                   vertical cross sesction for ICONAM/ICOHDC   
+#      Driver script for postprocessing and visulization of a
+#                   vertical cross sesction for ICONAM/ICOHDC
 #
 #==========================================================================
 #
-# History: 
-# Initial version by Pilar Ripodas (DWD, 2010-11) (driver based on a driver 
+# History:
+# Initial version by Pilar Ripodas (DWD, 2010-11) (driver based on a driver
 # from Hui, ncl script based on a script from Guenther)
 # Software needed:
-# - CDO (Climate Data Operators, www.mpimet.mpg.de/cdo) 
+# - CDO (Climate Data Operators, www.mpimet.mpg.de/cdo)
 #   for interplation and for the spectral transform;
 # - NCL (NCAR Command Language, www.ncl.ucar.edu)
 #   for visualization.
-# CDO is used to interpolate the icon file to a gaussian grid, NCL is used 
+# CDO is used to interpolate the icon file to a gaussian grid, NCL is used
 # to generate and plot the vertical cross section
 #
 #==============================================================================
 #
 #==========================================================================
-#                          USER'S SPECIFICATIONS 
+#                          USER'S SPECIFICATIONS
 #--------------------------------------------------------------------------
 # 0. About the dynamical core ( Hydrostatic or Non-Hydrostatic )
 #--------------------------------------------------------------------------
@@ -67,14 +67,14 @@ export file_name="hat_icoham_ape_iconR2B04-grid_0001.nc"
 #export file_name="JW_R2B5_nh_DOM01_R2B05L60_0008.nc"
 #export file_name="JW_echam_DOM01_R2B05L31_0001.nc"
 
-# 1.3 Shape of control volume (3 = triangle, 6 = hexagon/pentagon) 
+# 1.3 Shape of control volume (3 = triangle, 6 = hexagon/pentagon)
 export cell_type=3
 
 # 1.4 Spatial resolution
 horizontal_resolution="R2B04"
 
-# 1.5 Specify if the file contains the global model domain or a refined area. 
-# In case it is a refined area, then give a name that you asociate to it 
+# 1.5 Specify if the file contains the global model domain or a refined area.
+# In case it is a refined area, then give a name that you asociate to it
 # (it will be appended to the weights file for the interpolation to a gaussian grid)
 
 i_ref=0        # (0 for the global domain, any other value for a refined area domain)
@@ -86,7 +86,7 @@ ref_name=""
 #--------------------------------------------------------------------------
 # 2. Set the desired variable and time step for the vcs
 #    Set also the (lat,lon) values for the transect
-#    If the range of values is already know, the desired contour levels can be 
+#    If the range of values is already know, the desired contour levels can be
 #    set manually, if not, they are set by NCL
 #--------------------------------------------------------------------------
 
@@ -94,9 +94,9 @@ export var="ozone"
 
 timestep="1"
 
-export i_manual_levels=F # (T, the contour levels are set manually 
+export i_manual_levels=F # (T, the contour levels are set manually
                          #  any other value are automatically set by NCL,
-                         
+
 if [ $i_manual_levels == "T" ]; then
  export minlev=170
  export maxlev=330
@@ -104,8 +104,8 @@ if [ $i_manual_levels == "T" ]; then
 fi
 
 #
-# if the transect has no constant longitude or not constant latitud, then 
-# the size of the transect can not be larger than 180. degress (the 
+# if the transect has no constant longitude or not constant latitud, then
+# the size of the transect can not be larger than 180. degress (the
 # NCL function gc_latlon would consider the shortest arc between the 2 points)
 # if leftlat=rightlat  or leftlon=rightlon, there is no restriction
 #
@@ -125,27 +125,27 @@ export rightlon="${rilo}.0"
 #--------------------------------------------------------------------------
 
 
-# To do the vcs, fisrt an interpolation to a gaussian grid is done, 
+# To do the vcs, fisrt an interpolation to a gaussian grid is done,
 # Choose the Gaussian grid by specifying the triangular truncation:
 
 export trunc=85      #106
 
 # For the horizontal interpolation from the ICON grid to Gaussian grid,
-# a large part of the time will be spent on calculating the remapping 
+# a large part of the time will be spent on calculating the remapping
 # weights. This may take very long when the resolution is high.
-# Therefore we suggest calculating the weights only once and store them 
-# for later use. 
+# Therefore we suggest calculating the weights only once and store them
+# for later use.
 
 compute_remap_weights=1   # (1=ON,0=OFF)
 
-# The remapping weights file generated by this script will be named, 
-# e.g., icon_R2B04_spr0.90_tri_cell_to_T159.nc 
+# The remapping weights file generated by this script will be named,
+# e.g., icon_R2B04_spr0.90_tri_cell_to_T159.nc
 # If the weights are already available, specify the location:
 # (Don't forget the trailing "/")
 
 remap_weights_path='/scratch/mpi/CC/mh0287/users/kristina/icon-dev/experiments/weights/'
 
-# For the remapping, we also need to know which optimization was used 
+# For the remapping, we also need to know which optimization was used
 # to generate the ICON grid. For example,
 #   "ori"     : original icosahedral grid without optimization
 #   "hro"     : Heikes-Randall optimization
@@ -171,15 +171,15 @@ export plot_file="${var}_step${timestep}_${horizontal_resolution}_transect${lela
 export plot_file_format="ps"
 
 #--------------------------------------------------------------------------
-# Now specify the directory in which the intermediate files 
-# (excluding the remapping weights) should be placed. 
+# Now specify the directory in which the intermediate files
+# (excluding the remapping weights) should be placed.
 # Don't forget the trailing "/".
 
 # model_data path differs if dir is not own
 #tmp_data_path="${model_data_path}"
 tmp_data_path="${model_data_path2}"
 
-# Remove these files after finishing the diagnoses? 
+# Remove these files after finishing the diagnoses?
 # (1=REMOVE,0=SAVE FOR LATER USE)
 
 rm_tmp_files=0
@@ -192,7 +192,7 @@ rm_tmp_files=0
 cdo_silence=0   #( 1 = silence mode; 0 = detailed report )
 
 #--------------------------------------------------------------------------
-#                    END OF USER'S SPECIFICATIONS 
+#                    END OF USER'S SPECIFICATIONS
 #==========================================================================
 
 # Temporary variables
@@ -212,14 +212,14 @@ else
    silence=''
 fi
 
-# The directories for intermediate data and plots will be created, if 
+# The directories for intermediate data and plots will be created, if
 # not already there
 
 if [ ! -d ${plot_file_path} ]; then
-   mkdir -p ${plot_file_path} 
+   mkdir -p ${plot_file_path}
 fi
 if [ ! -d ${tmp_data_path} ]; then
-   mkdir -p ${tmp_data_path} 
+   mkdir -p ${tmp_data_path}
 fi
 
 #==========================================================================
@@ -228,7 +228,7 @@ fi
 
 if [ ${i_ref} -eq 0 ]; then
   weights=${remap_weights_path}"icon_"${horizontal_resolution}
-else 
+else
   weights=${remap_weights_path}"icon_"${horizontal_resolution}"_"${ref_name}
 fi
 
@@ -246,7 +246,7 @@ fi
 if [ ${compute_remap_weights} -eq 1 ]; then
 
  if [ ! -d ${remap_weights_path} ]; then
-    mkdir -p ${remap_weights_path} 
+    mkdir -p ${remap_weights_path}
  fi
 
  echo
@@ -296,7 +296,7 @@ fi
 
 if [ $rm_tmp_files -eq 1 ]; then
 
-  rm ${ftmp}_${var}_height.nc 
+  rm ${ftmp}_${var}_height.nc
   rm ${ftmp}_${var}_height_T${trunc}.nc
 
 fi

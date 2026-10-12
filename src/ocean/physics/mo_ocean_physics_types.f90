@@ -1,19 +1,18 @@
-! Provide an implementation of the ocean physics.
-!
-! Provide an implementation of the physical parameters and characteristics
-! for the hydrostatic ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of the ocean physics.
+!
+! Provide an implementation of the physical parameters and characteristics
+! for the hydrostatic ocean model.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -55,7 +54,8 @@ MODULE mo_ocean_physics_types
     &  LeithBiharmonicViscosity_background, LeithBiharmonicViscosity_reference,&
     &  LeithBiharmonicViscosity_scaling,                       &
     &  LeithClosure_order,   LeithClosure_form, &
-    &  TracerDiffusion_LeithWeight,l_lc
+    &  TracerDiffusion_LeithWeight,l_lc, &
+    &  l_couple_icon_waves
 
    !, l_convection, l_pp_scheme
   USE mo_parallel_config,     ONLY: nproma
@@ -82,6 +82,7 @@ MODULE mo_ocean_physics_types
   USE mo_grid_subset,         ONLY: t_subset_range, get_index_range
   USE mo_sync,                ONLY: sync_c, sync_e, sync_v, sync_patch_array, global_max, sync_patch_array_mult
   USE mo_io_config,           ONLY: lnetcdf_flt64_output
+  USE mo_coupling_config,     ONLY: is_coupled_to_waves
 
 #include "add_var_acc_macro.inc"
 
@@ -149,8 +150,20 @@ MODULE mo_ocean_physics_types
       & LeithBiharmonicViscosity_BasisCoeff(:,:), & ! coefficient of Leith scaled basis coefficients, use in calculating the HarmonicViscosity_coeff
       & HarmonicViscosity_coeff(:,:,:),       & ! coefficient of total diffusion
       & BiharmonicViscosity_coeff(:,:,:),     & ! coefficient of total diffusion
-      & TracerDiffusion_BasisCoeff(:,:,:),    &  ! coefficient of horizontal tracer diffusion
-      & TracerDiffusion_coeff(:,:,:,:)  ! coefficient of horizontal tracer diffusion
+      & TracerDiffusion_BasisCoeff(:,:,:),    & ! coefficient of horizontal tracer diffusion
+      & TracerDiffusion_coeff(:,:,:,:),       & ! coefficient of horizontal tracer diffusion
+      & u3d_stokes(:,:,:),                    & ! zonal Stokes velocity component from surface waves (m/s)
+      & v3d_stokes(:,:,:),                    & ! meridional Stokes velocity component from surface waves (m/s)
+      & u2d_stokes(:,:),                      & ! zonal surface Stokes velocity component from surface waves (m/s)
+      & v2d_stokes(:,:),                      & ! meridional surface Stokes velocity component from surface waves (m/s)
+      & tau_w(:,:),                           & ! wave stress from surface waves (m^2/s^2)
+      & swh(:,:),                             & ! significant wave height from surface waves (m)
+      & Tm2(:,:),                             & ! m2 wave period from surface waves (s)
+      & kp(:,:),                              & ! total peak wavenumber (1/m)
+      & tauoc_x(:,:),                         & ! zonal wave-to-ocean stress (m^2/s^2)
+      & tauoc_y(:,:),                         & ! meridional wave-to-ocean stress (m^2/s^2)
+      & phioc(:,:)                              ! wave-to-ocean energy flux (kg/s^3)
+
 !       & TracerDiffusion_coeff(:,:,:,:)  ! coefficient of horizontal tracer diffusion
     TYPE(t_onEdges_Pointer_3d_wp),ALLOCATABLE :: tracer_h_ptr(:)
 
@@ -165,7 +178,7 @@ MODULE mo_ocean_physics_types
       & a_veloc_v_back   ! coefficient of vertical velocity diffusion
 
     onCells_HalfLevels :: tracer_windMixing
-    onEdges_HalfLevels :: velocity_windMixing 
+    onEdges_HalfLevels :: velocity_windMixing
 
     REAL(wp),ALLOCATABLE ::         &
       & Tracer_HorizontalDiffusion_Reference(:),    &
@@ -187,7 +200,7 @@ MODULE mo_ocean_physics_types
 
   TYPE(t_ho_params),PUBLIC,TARGET :: v_params
 
-  ! used in only for the winf mixing 
+  ! used in only for the winf mixing
   REAL(wp), POINTER, PUBLIC :: WindMixingDecay(:), WindMixingLevel(:)
 
 CONTAINS
@@ -268,9 +281,10 @@ CONTAINS
         & za_depth_below_sea, &
         & t_cf_var('BiharmonicViscosity_coeff', 'm4 s-1', 'ocean_momentum_xy_biharmonic_diffusivity', datatype_flt),&
         & grib2_var(255, 255, 255, datatype_pack16, GRID_UNSTRUCTURED, grid_edge),&
-        & ldims=(/nproma,n_zlev,nblks_e/),in_group=groups("oce_physics"))
+        & ldims=(/nproma,n_zlev,nblks_e/),in_group=groups("oce_physics"), lopenacc = .TRUE.)
+      __acc_attach(params_oce%BiharmonicViscosity_coeff)
    ENDIF
-   
+
     IF (LeithClosure_order == 1 .or.  LeithClosure_order == 21) THEN
       CALL add_var(ocean_params_list, 'LeithHarmonicViscosity_BasisCoeff', &
         & params_oce%LeithHarmonicViscosity_BasisCoeff , grid_unstructured_edge,&
@@ -299,7 +313,8 @@ CONTAINS
       & za_depth_below_sea_half, &
       & t_cf_var('velocity_windMixing', 'm2 s-1', 'vertical velocity windMixing', datatype_flt),&
       & grib2_var(255, 255, 255, datatype_pack16, GRID_UNSTRUCTURED, grid_edge),&
-      & ldims=(/nproma,n_zlev+1,nblks_e/),in_group=groups("oce_physics","oce_diag"))
+      & ldims=(/nproma,n_zlev+1,nblks_e/),in_group=groups("oce_physics","oce_diag"), lopenacc=.TRUE.)
+    __acc_attach(params_oce%velocity_windMixing)
 
     ! start by_nils
     ! --- vmix dummy variables
@@ -333,11 +348,12 @@ CONTAINS
     CALL add_var(ocean_restart_list, 'tke', params_oce%vmix_params%tke, &
         & grid_unstructured_cell, za_depth_below_sea_half, &
         & t_cf_var('specific_turbulent_kinetic_energy_of_sea_water', 'm2 s-2', 'turbulent kinetic energy', datatype_flt),&
-        & grib2_var(255, 255, 255, datatype_pack16, GRID_UNSTRUCTURED, grid_cell),&
+        & grib2_var(10, 4, 192, datatype_pack16, GRID_UNSTRUCTURED, grid_cell),&
         & ldims=(/nproma,n_zlev+1,alloc_cell_blocks/), &
-        & lrestart_cont=.TRUE., in_group=groups("oce_vmix_tke"), lopenacc=.TRUE.)
+        & lrestart_cont=.TRUE., in_group=groups("oce_vmix_tke", "dwd_fg_oce_vars", &
+        & "mode_dwd_fg_oce_in", "mode_iau_fg_oce_in"), lopenacc=.TRUE.)
     __acc_attach(params_oce%vmix_params%tke)
- 
+
     CALL add_var(ocean_params_list, 'tke_Tbpr', params_oce%vmix_params%tke_Tbpr, &
        & grid_unstructured_cell, za_depth_below_sea_half, &
        & t_cf_var('tke_Tbpr', 'm2 s-3', 'TKE tend bpr', datatype_flt),&
@@ -443,6 +459,7 @@ CONTAINS
          & in_group=groups("oce_vmix_tke"), lopenacc=.TRUE.)
       __acc_attach(params_oce%vmix_params%hlc)
 
+      ! This will need to be amended at a later date to allow for wave coupling to TKE scheme
       CALL add_var(ocean_params_list, 'u_stokes',params_oce%vmix_params%u_stokes, &
          & grid_unstructured_cell, za_surface, &
          & t_cf_var('u_stokes', 'm s-1', 'Stokes drift', datatype_flt),&
@@ -454,6 +471,98 @@ CONTAINS
     ENDIF
 
     ENDIF
+
+    IF ( is_coupled_to_waves() ) THEN
+      CALL add_var(ocean_params_list, 'u3d_stokes',params_oce%u3d_stokes, &
+         & grid_unstructured_cell, za_depth_below_sea, &
+         & t_cf_var('u3d_stokes', 'm s-1', '3d zonal Stokes drift component', datatype_flt),&
+         & grib2_var(255, 255, 255, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,n_zlev,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%u3d_stokes)
+
+      CALL add_var(ocean_params_list, 'v3d_stokes',params_oce%v3d_stokes, &
+         & grid_unstructured_cell, za_depth_below_sea, &
+         & t_cf_var('v3d_stokes', 'm s-1', '3d meridonal Stokes drift component', datatype_flt),&
+         & grib2_var(255, 255, 255, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,n_zlev,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%v3d_stokes)
+
+       CALL add_var(ocean_params_list, 'u2d_stokes',params_oce%u2d_stokes, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('u2d_stokes', 'm s-1', 'surface zonal Stokes drift component', datatype_flt),&
+         & grib2_var(10, 0, 21, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%u2d_stokes)
+
+      CALL add_var(ocean_params_list, 'v2d_stokes',params_oce%v2d_stokes, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('v2d_stokes', 'm s-1', 'surface meridonal Stokes drift component', datatype_flt),&
+         & grib2_var(10, 0, 22, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%v2d_stokes)
+
+      CALL add_var(ocean_params_list, 'tau_w',params_oce%tau_w, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('tau_w', 'm 2 s-2', 'surface wave stress', datatype_flt),&
+         & grib2_var(255, 255, 255, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%tau_w)
+
+      CALL add_var(ocean_params_list, 'swh',params_oce%swh, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('swh', 'm', 'significant wave height', datatype_flt),&
+         & grib2_var(10, 0, 3, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%swh)
+
+      CALL add_var(ocean_params_list, 'Tm2',params_oce%Tm2, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('Tm2', 's', 'm2 wave period', datatype_flt),&
+         & grib2_var(10, 0, 28, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%Tm2)
+
+      CALL add_var(ocean_params_list, 'kp',params_oce%kp, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('kp', 'm-1', 'peak wavenumber', datatype_flt),&
+         & grib2_var(255, 255, 255, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%kp)
+
+      CALL add_var(ocean_params_list, 'tauoc_x',params_oce%tauoc_x, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('tauoc_x', 'm2 s-2', 'zonal wave-to-ocean stress', datatype_flt),&
+         & grib2_var(255, 255, 255, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%tauoc_x)
+
+        CALL add_var(ocean_params_list, 'tauoc_y',params_oce%tauoc_y, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('tauoc_y', 'm2 s-2', 'meridional wave-to-ocean stress', datatype_flt),&
+         & grib2_var(255, 255, 255, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%tauoc_y)
+
+        CALL add_var(ocean_params_list, 'phioc',params_oce%phioc, &
+         & grid_unstructured_cell, za_surface, &
+         & t_cf_var('phioc', 'kg s-3', 'wave-to-ocean energy flux', datatype_flt),&
+         & grib2_var(255, 255, 255, datatype_pack16,GRID_UNSTRUCTURED,grid_cell),&
+         & ldims=(/nproma,alloc_cell_blocks/), &
+         & in_group=groups("oce_waves"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%phioc)
+
+   END IF
+
 
     ! --- IWE variables
     IF (vert_mix_type .EQ. vmix_idemix_tke) THEN
@@ -537,7 +646,8 @@ CONTAINS
         & t_cf_var('TracerDiffusion_coeff', '', '1:temperature 2:salinity', datatype_flt),&
         & grib2_var(255, 255, 255, datatype_pack16, GRID_UNSTRUCTURED, grid_edge),&
         & ldims=(/nproma,n_zlev,nblks_e,no_tracer/), &
-        & lcontainer=.TRUE., loutput=.FALSE., lrestart=.FALSE.)
+        & lcontainer=.TRUE., loutput=.FALSE., lrestart=.FALSE., lopenacc=.TRUE.)
+      __acc_attach(params_oce%TracerDiffusion_coeff)
       CALL add_var(ocean_params_list, 'TracerDiffusion_BasisCoeff', params_oce%TracerDiffusion_BasisCoeff , &
         & grid_unstructured_edge, za_depth_below_sea, &
         & t_cf_var('TracerDiffusion_BasisCoeff', '', '1:temperature 2:salinity', datatype_flt),&
@@ -557,7 +667,8 @@ CONTAINS
         & t_cf_var('tracer_windMixing', '', 'tracer_windMixing', datatype_flt),&
         & grib2_var(255, 255, 255, datatype_pack16, GRID_UNSTRUCTURED, grid_cell),&
         & ldims=(/nproma,n_zlev+1,alloc_cell_blocks/), &
-        & loutput=.TRUE., lrestart=.FALSE.,in_group=groups("oce_physics","oce_diag"))
+        & loutput=.TRUE., lrestart=.FALSE.,in_group=groups("oce_physics","oce_diag"), lopenacc=.TRUE.)
+      __acc_attach(params_oce%tracer_windMixing)
 
       ! Reference to individual tracer, for I/O
       ALLOCATE(params_oce%tracer_h_ptr(no_tracer))
@@ -608,6 +719,7 @@ CONTAINS
     IF (ist/=success) THEN
       CALL finish(TRIM(routine), 'allocation for horizontal background tracer diffusion failed')
     END IF
+    !$ACC ENTER DATA COPYIN(params_oce%a_tracer_v_back)
 
    IF(GMRedi_configuration==GMRedi_combined &
    &.OR.GMRedi_configuration==GM_only.OR.GMRedi_configuration==Redi_only)THEN
@@ -637,7 +749,8 @@ CONTAINS
     ENDIF
 
     ALLOCATE(WindMixingDecay(1:n_zlev+1), WindMixingLevel(1:n_zlev+1))
-    
+    !$ACC ENTER DATA COPYIN(WindMixingDecay, WindMixingLevel)
+
   END SUBROUTINE construct_ho_params
   !-------------------------------------------------------------------------
 
@@ -660,6 +773,7 @@ CONTAINS
 
     CALL vlr_del(ocean_params_list)
 
+    !$ACC EXIT DATA DELETE(params_oce%a_tracer_v_back)
     DEALLOCATE(params_oce%a_tracer_v_back,               &
       & params_oce%Tracer_HorizontalDiffusion_Reference, &
       & params_oce%Tracer_HorizontalDiffusion_Background,&
@@ -667,9 +781,10 @@ CONTAINS
     IF (ist/=success) THEN
       CALL finish(TRIM(routine), 'deallocation for tracer Diffusion Background failed')
     END IF
-    
+
+    !$ACC EXIT DATA DELETE(WindMixingDecay, WindMixingLevel)
     DEALLOCATE(WindMixingDecay, WindMixingLevel)
-    
+
   END SUBROUTINE destruct_ho_params
   !-------------------------------------------------------------------------
 

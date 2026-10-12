@@ -1,16 +1,15 @@
-! Contains the variables for debugging icon model
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the variables for debugging icon model
 
 MODULE mo_dbg_nml
 
@@ -51,7 +50,7 @@ MODULE mo_dbg_nml
   INTEGER  :: idbg_elev =  1000  ! elev=ndim_vert in sbrt dbg_mxmn
 
   INTEGER, PARAMETER         :: dim_mod_tst = 20         ! array dimension of test strings
-  INTEGER, PARAMETER         :: len_mod_tst = 12         ! string length of test strings
+  INTEGER, PARAMETER         :: len_mod_tst = 32         ! string length of test strings
   CHARACTER(len=len_mod_tst) :: str_mod_tst(dim_mod_tst) ! namelist string of source processes to print
 
   NAMELIST/dbg_index_nml/  idbg_mxmn, idbg_val, dbg_lat_in, dbg_lon_in, &
@@ -70,15 +69,15 @@ CONTAINS
   SUBROUTINE read_dbg_namelist( filename )
 
     CHARACTER(LEN=*), INTENT(IN) :: filename
-   
+
     INTEGER :: i_status, i
     INTEGER :: iunit
-   
+
     CHARACTER(len=max_char_length), PARAMETER :: &
            routine = 'mo_dbg_nml/read_dbg_namelist:'
 
     CALL message(TRIM(routine),'read debug namelist dbg_index_nml')
-   
+
     !------------------------------------------------------------
     ! 2.0 Read dbg_index_nml namelist
     !------------------------------------------------------------
@@ -91,7 +90,7 @@ CONTAINS
       str_mod_tst(i) = '            '
     END DO
     str_mod_tst(1) = 'all         '
-   
+
     CALL open_nml(TRIM(filename))
     CALL position_nml ('dbg_index_nml', status=i_status)
     IF (my_process_is_stdio()) THEN

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -14,7 +14,7 @@
 ;------------------------------------
 ;
 ; First version calculating normalized errors.
-; First version for the steady state case. The Icon 
+; First version for the steady state case. The Icon
 ; file contain the true solution as initial data
 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -27,7 +27,7 @@ undef("f_vweight")
  function f_vweight(hyai[*]:double,hybi[*]:double)
  local eta_i,vweight,vdim,p0
  begin
-  p0=100000 ;(Pa)  
+  p0=100000 ;(Pa)
   vdim=dimsizes(hyai)-1
   eta_i=new(vdim+1,double)
   eta_i(0:vdim)=hyai(0:vdim)/p0 + hybi(0:vdim)
@@ -62,7 +62,7 @@ undef("cal_err_3D")
    l1_err=sum(VarDifa*tweight)
    linf_err=max(VarDifa)
    delete(VarDifa)
-   
+
    VarDif2=VarDif*VarDif
    printVarSummary(VarDif2)
    printVarSummary(tweight)
@@ -98,7 +98,7 @@ undef("cal_err_3D")
    m_err(4)=l2_norm_err
    m_err(5)=linf_err
    m_err(6)=linf_norm_err
-  
+
   return(m_err)
  end
 ;------------------
@@ -107,7 +107,7 @@ undef("cal_err_2D")
  function cal_err_2D(VarT[*]:numeric,VarI[*]:numeric,tweight[*],hour)
  local m_err,n_l1,n_l2,n_linf,VarT2,l1_err,l2_err,linf_err, \
        l1_norm_err,l2_norm_err,linf_norm_err, VarDif, VarDifa, VarDif2
-       
+
  begin
   m_err=new(7,"double")
 
@@ -126,7 +126,7 @@ undef("cal_err_2D")
    VarDif=VarI(:)-VarT(:)
    VarDifa=abs(VarDif)
    VarDif2=VarDif*VarDif
- 
+
    l1_err=sum(VarDifa*tweight)
    l2_err=sum(VarDif2*tweight)
    l2_err=sqrt( l2_err)
@@ -159,7 +159,7 @@ undef("cal_err_2D")
    m_err(4)=l2_norm_err
    m_err(5)=linf_err
    m_err(6)=linf_norm_err
- 
+
   return(m_err)
  end
 
@@ -183,7 +183,7 @@ IFile=addfile(IconFileN,"r")
 f_att=getvaratts(IFile)
  if (isatt(IFile, "nroot"))then
   Root=IFile@nroot
- else 
+ else
   if (isatt(IFile, "grid_root")) then
    Root=IFile@grid_root
   else
@@ -192,7 +192,7 @@ f_att=getvaratts(IFile)
  end if
  if (isatt(IFile, "start_lev"))then
   Bis=IFile@start_lev
- else 
+ else
   if (isatt(IFile, "grid_level")) then
    Bis=IFile@grid_level
   else
@@ -262,7 +262,7 @@ ndims=VarD
 if (ndims .eq. 2) then
   VarT=IFile->$VarN$(0,:)   ; (time, cell)
 else
- if (ndims .eq. 3) 
+ if (ndims .eq. 3)
   VarT=IFile->$VarN$(0,:,:)   ; (time, mlev, cell)
  ;Read hybrid parameters from ICON File to get the vertical weights
 
@@ -332,7 +332,7 @@ mat_err=new((/tdim,7/),"double")
 
 ; calculate the errors
 if (ndims .eq. 2) then
-  do it=0,tdim-1 
+  do it=0,tdim-1
    hour=it*dtime_io/3600.
    VarIt=IFile->$VarN$(it,:)
    ; set units of pressure to hPa
@@ -349,7 +349,7 @@ if (ndims .eq. 2) then
 else
  if (ndims .eq. 3) then
   print(ndims)
-  do it=0,tdim-1 
+  do it=0,tdim-1
    hour=it*dtime_io/3600.
    VarIt=IFile->$VarN$(it,:,:)
    ; set units of pressure to hPa

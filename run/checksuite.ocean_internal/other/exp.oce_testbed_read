@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -39,7 +39,7 @@ ocean_vertical_levels=20
 cat > ${ocean_namelist} << EOF
 !
 &parallel_nml
- p_test_run     =  .false.     
+ p_test_run     =  .false.
  nproma         = ${nproma}
  l_fast_sum     = .true.          ! false: results are reproducable, gmres_oce_old is used; true: production run
 /

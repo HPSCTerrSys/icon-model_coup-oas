@@ -1,17 +1,16 @@
-! Type definition for preparation of transport with optional reduced
-! calling frequency.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Type definition for preparation of transport with optional reduced
+! calling frequency.
 
 MODULE mo_prepadv_types
 
@@ -40,7 +39,7 @@ MODULE mo_prepadv_types
                               !< averaged over dynamics substeps
       vn_traj    (:,:,:) ,  & !< horizontal velocity at edges for computation of backward trajectories [m/s]
                               !< averaged over dynamics substeps
-      q_int      (:,:,:) ,  & !< Storage field for vertical nesting: 
+      q_int      (:,:,:) ,  & !< Storage field for vertical nesting:
                               !< q at child nest interface level [kg/kg]
       q_ubc      (:,:,:)      !< Storage field for vertical nesting:
                               !< q at (nest) upper boundary      [kg/kg]
@@ -59,4 +58,3 @@ MODULE mo_prepadv_types
   END TYPE t_step_adv
 
 END MODULE mo_prepadv_types
-

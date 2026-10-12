@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -23,7 +23,7 @@
 #             2011011100                                           # \
 #             2011010112 2011010212 2011010312 2011010412 2011010512 \
 #             2011010612 2011010712 2011010812 2011010912 2011011120 \
-#             2011011112 
+#             2011011112
 #set -A dates 2011010100
 #set -A dates 2011080100
 #set -A dates 2012010100 2012010200 2012010300 2012010400 2012010500 \
@@ -39,10 +39,10 @@
 #             2012061600 2012061700 2012061800 2012061900 2012062000 \
 #             2012062100 2012062200 2012062300 2012062400 2012062500 \
 #             2012062600 2012062700 2012062800 2012062900 2012063000 \
-#             2012063100 
-set -A dates 2012062100 
+#             2012063100
+set -A dates 2012062100
 
-#set -A steps 0 3 6 9 
+#set -A steps 0 3 6 9
 set -A steps 0
 
 for date in ${dates[*]}

@@ -1950,4 +1950,3 @@ contains
   end subroutine cmbgb16
 
 end module mo_lrtm_setup
-

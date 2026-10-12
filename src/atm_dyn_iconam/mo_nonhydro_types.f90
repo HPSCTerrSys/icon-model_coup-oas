@@ -1,17 +1,15 @@
-!
-! Type definition for the dynamical core of ICONAM.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Type definition for the dynamical core of ICONAM.
 
 MODULE mo_nonhydro_types
 
@@ -45,8 +43,8 @@ MODULE mo_nonhydro_types
       tke   (:,:,:)      & !! turbulent kinetic energy                         [m^2/s^2]
         => NULL()          !! (defined on half levels) with 2 time levels
     TYPE(t_ptr_2d3d),ALLOCATABLE :: tracer_ptr(:)  !< pointer array: one pointer for each tracer
-    TYPE(t_ptr_tracer),ALLOCATABLE :: conv_tracer(:,:)  
-    TYPE(t_ptr_tracer),ALLOCATABLE :: turb_tracer(:,:)  
+    TYPE(t_ptr_tracer),ALLOCATABLE :: conv_tracer(:,:)
+    TYPE(t_ptr_tracer),ALLOCATABLE :: turb_tracer(:,:)
   END TYPE t_nh_prog
 
 
@@ -103,16 +101,16 @@ MODULE mo_nonhydro_types
     &  vn_ie_int(:,:,:),        & ! Storage field for vertical nesting: vn plus time tendency at parent interface level
     &  vn_ie_ubc(:,:,:),        & ! Storage field for vertical nesting: vn plus time tendency at child upper boundary
     &  w_int(:,:,:),            & ! Storage field for vertical nesting: w at parent interface level
-    &  w_ubc(:,:,:),            & ! Storage field for vertical nesting: 
+    &  w_ubc(:,:,:),            & ! Storage field for vertical nesting:
                                   ! average w plus time tendency at child upper boundary
     &  theta_v_ic_int(:,:,:),   & ! Storage field for vertical nesting: theta at parent interface level
-    &  theta_v_ic_ubc(:,:,:),   & ! Storage field for vertical nesting: 
+    &  theta_v_ic_ubc(:,:,:),   & ! Storage field for vertical nesting:
                                   ! average theta plus time tendency at child upper boundary
     &  rho_ic_int(:,:,:),       & ! Storage field for vertical nesting: rho at parent interface level
-    &  rho_ic_ubc(:,:,:),       & ! Storage field for vertical nesting: 
+    &  rho_ic_ubc(:,:,:),       & ! Storage field for vertical nesting:
                                   ! average rho plus time tendency at child upper boundary
     &  mflx_ic_int(:,:,:),      & ! Storage field for vertical nesting: mass flux at parent interface level
-    &  mflx_ic_ubc(:,:,:),      & ! Storage field for vertical nesting: 
+    &  mflx_ic_ubc(:,:,:),      & ! Storage field for vertical nesting:
                                   ! average mass flux plus time tendency at child upper boundary
 
     !
@@ -121,6 +119,8 @@ MODULE mo_nonhydro_types
     &  rh_avginc(:,:),       & !! time-averaged/filtered RH increments from DA at lowest model level
     &  t_avginc(:,:),        & !! time-averaged/filtered T increments from DA at lowest model level
     &  t_wgt_avginc(:,:),    & !! time-averaged/filtered T increments from DA at lowest model level, weighted with COS(local time)
+    &  t_daywgt_avginc(:,:), & !! time-averaged/filtered T increments from DA at lowest model level, weighted with peak in afternoon
+    &  rh_daywgt_avginc(:,:),& !! time-averaged/filtered RH increments from DA at lowest model level, weighted with peak in afternoon
     &  p_avginc(:,:),        & !! time-averaged/filtered P increments from DA at lowest model level
     &  vabs_avginc(:,:),     & !! time-averaged/filtered wind speed increments from DA at lowest model level
 
@@ -153,7 +153,7 @@ MODULE mo_nonhydro_types
     !
     ! tendencies, physics increments and derived velocity fields
     &  vt(:,:,:),           & ! tangential wind (nproma,nlev,nblks_e)          [m/s]
-    &  ddt_exner_phy(:,:,:),& ! exner pressure tendency from physical forcing 
+    &  ddt_exner_phy(:,:,:),& ! exner pressure tendency from physical forcing
                               ! (nproma,nlev,nblks_c)                     [1/s]
     &  ddt_vn_phy(:,:,:),   & ! normal wind tendency from forcing
                               ! (nproma,nlev,nblks_e)                          [m/s^2]
@@ -310,31 +310,31 @@ MODULE mo_nonhydro_types
      !
      ! c) Fields for truly horizontal temperature diffusion
      !
-     zd_intcoef(:,:) , & 
-     zd_geofac(:,:)  , & 
-     zd_e2cell(:,:)  , & 
-     zd_diffcoef(:)  , & 
+     zd_intcoef(:,:) , &
+     zd_geofac(:,:)  , &
+     zd_e2cell(:,:)  , &
+     zd_diffcoef(:)  , &
      !
      ! d) Fields for LES Model : Anurag Dipankar, MPIM (2013-04)
      !
      ! Vertical grid related
-     inv_ddqz_z_full_e(:,:,:)  , & 
-     inv_ddqz_z_full_v(:,:,:)  , & 
-     inv_ddqz_z_half(:,:,:)    , & 
-     inv_ddqz_z_half_e(:,:,:)  , & 
-     inv_ddqz_z_half_v(:,:,:)  , & 
-     wgtfac_v(:,:,:)           , & 
+     inv_ddqz_z_full_e(:,:,:)  , &
+     inv_ddqz_z_full_v(:,:,:)  , &
+     inv_ddqz_z_half(:,:,:)    , &
+     inv_ddqz_z_half_e(:,:,:)  , &
+     inv_ddqz_z_half_v(:,:,:)  , &
+     wgtfac_v(:,:,:)           , &
      ! Mixing length for Smagorinsky model
-     mixing_length_sq(:,:,:)   , & 
+     mixing_length_sq(:,:,:)   , &
      !
      ! e) Other stuff
      !
      ! Mask field for mountain or upper slope points
-     mask_mtnpoints(:,:) , & ! 
-     mask_mtnpoints_g(:,:) , & ! 
+     mask_mtnpoints(:,:) , & !
+     mask_mtnpoints_g(:,:) , & !
      ! slope angle and azimuth (used for slope-dependent radiation)
      slope_angle(:,:)  , & ! [rad]
-     slope_azimuth(:,:) & ! [rad]; zero means south-facing slope
+     slope_azimuth(:,:) & ! [rad]; measured clockwise from North
      => NULL()
 
     ! Variables that are in single precision when "__MIXED_PRECISION" is defined
@@ -365,24 +365,24 @@ MODULE mo_nonhydro_types
      wgtfacq1_c(:,:,:)    , & ! weighting factor for quadratic interpolation to model top (nproma,3,nblks_c)
      wgtfacq1_e(:,:,:)    , & ! weighting factor for quadratic interpolation to model top (nproma,3,nblks_e)
      coeff_gradekin(:,:,:), & ! Coefficients for improved discretization of horizontal kinetic energy gradient (nproma,2,nblks_e)
-     coeff1_dwdz(:,:,:)   , & 
+     coeff1_dwdz(:,:,:)   , &
      coeff2_dwdz(:,:,:)   , & ! Coefficients for second-order accurate dw/dz term (nproma,nlev,nblks_c)
      zdiff_gradp(:,:,:,:) , & ! Height differences between local edge point and neighbor cell points used for
                               ! pressure gradient computation (2,nproma,nlev,nblks_e)
      coeff_gradp(:,:,:,:) , & ! Interpolation coefficients for cubic interpolation of Exner pressure (8,nproma,nlev,nblks_e)
-     exner_exfac(:,:,:)   , & ! extrapolation factor for Exner pressure (slope-dependent for stability optimization) 
+     exner_exfac(:,:,:)   , & ! extrapolation factor for Exner pressure (slope-dependent for stability optimization)
      !
      ! c) Fields for reference atmosphere
      !
-     theta_ref_mc(:,:,:) , & 
-     theta_ref_me(:,:,:) , & 
-     theta_ref_ic(:,:,:) , & 
-     tsfc_ref(:,:)       , & 
-     exner_ref_mc(:,:,:) , & 
-     rho_ref_mc  (:,:,:) , &  
-     rho_ref_me  (:,:,:) , & 
-     d_exner_dz_ref_ic(:,:,:), & 
-     d2dexdz2_fac1_mc(:,:,:) , & 
+     theta_ref_mc(:,:,:) , &
+     theta_ref_me(:,:,:) , &
+     theta_ref_ic(:,:,:) , &
+     tsfc_ref(:,:)       , &
+     exner_ref_mc(:,:,:) , &
+     rho_ref_mc  (:,:,:) , &
+     rho_ref_me  (:,:,:) , &
+     d_exner_dz_ref_ic(:,:,:), &
+     d2dexdz2_fac1_mc(:,:,:) , &
      d2dexdz2_fac2_mc(:,:,:) , &
      !
      ! Correction term needed to use perturbation density for lateral boundary nudging
@@ -395,38 +395,38 @@ MODULE mo_nonhydro_types
      => NULL()
 
     INTEGER, POINTER, CONTIGUOUS :: &
-     vertidx_gradp(:,:,:,:) , &  ! Vertical index of neighbor points needed for Taylor-expansion-based 
+     vertidx_gradp(:,:,:,:) , &  ! Vertical index of neighbor points needed for Taylor-expansion-based
                                  ! pressure gradient (2,nproma,nlev,nblks_e)
      !
      ! Fields for truly horizontal temperature diffusion
-     zd_indlist(:,:) , & 
-     zd_blklist(:,:) , & 
-     zd_edgeidx(:,:) , & 
-     zd_edgeblk(:,:) , & 
-     zd_vertidx(:,:) , & 
+     zd_indlist(:,:) , &
+     zd_blklist(:,:) , &
+     zd_edgeidx(:,:) , &
+     zd_edgeblk(:,:) , &
+     zd_vertidx(:,:) , &
      !
      ! Fields for igradp_method = 3
-     pg_edgeidx(:) , & 
-     pg_edgeblk(:) , & 
-     pg_vertidx(:) , & 
+     pg_edgeidx(:) , &
+     pg_edgeblk(:) , &
+     pg_vertidx(:) , &
      !
      ! Index lists for grid points on which lateral boundary nudging is applied
-     nudge_c_idx(:) , & 
-     nudge_e_idx(:) , & 
-     nudge_c_blk(:) , & 
-     nudge_e_blk(:) , & 
+     nudge_c_idx(:) , &
+     nudge_e_idx(:) , &
+     nudge_c_blk(:) , &
+     nudge_e_blk(:) , &
      !
      ! Index lists and mask fields needed to minimize the number of halo communications
      ! a) index lists for halo points belonging to the nest boundary region
-     bdy_halo_c_idx(:) , & 
-     bdy_halo_c_blk(:) , & 
+     bdy_halo_c_idx(:) , &
+     bdy_halo_c_blk(:) , &
      ! b) index lists for halo points belonging to a nest overlap region
      !    the additional dimension is n_childdom
      ovlp_halo_c_dim(:)   , &
-     ovlp_halo_c_idx(:,:) , & 
-     ovlp_halo_c_blk(:,:) , & 
+     ovlp_halo_c_idx(:,:) , &
+     ovlp_halo_c_blk(:,:) , &
      ! c) index lists for mass fluxes at lateral nest boundary (including the required halo points)
-     bdy_mflx_e_idx(:) , & 
+     bdy_mflx_e_idx(:) , &
      bdy_mflx_e_blk(:)   &
      => NULL()
 
@@ -479,7 +479,7 @@ MODULE mo_nonhydro_types
   TYPE t_nh_state_lists
 
     ! array of prognostic state lists at different timelevels
-    ! splitting this out of t_nh_state allows for a deep copy 
+    ! splitting this out of t_nh_state allows for a deep copy
     ! of the p_nh_state variable to accelerator devices with OpenACC
     TYPE(t_var_list_ptr), ALLOCATABLE :: prog_list(:)  !< shape: (timelevels)
     TYPE(t_var_list_ptr)   :: diag_list
@@ -491,7 +491,3 @@ MODULE mo_nonhydro_types
 
 
 END MODULE mo_nonhydro_types
-
-
-
-

@@ -10,7 +10,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, AWI
+! Copyright (C) 2004-2026, AWI
 !
 ! Authors: Sergey Danilov, Qiang Wang
 ! See LICENSES/ for license information
@@ -123,7 +123,7 @@ CONTAINS
   !> Initialization of arrays necessary to implement FCT algorithm
   !!
   subroutine fem_fct_ice_init
-      
+
       implicit none
 
       allocate(m_icel(nod2D), a_icel(nod2D), m_snowl(nod2D))  ! low-order solutions

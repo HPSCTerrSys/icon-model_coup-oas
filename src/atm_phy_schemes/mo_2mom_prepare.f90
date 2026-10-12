@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,9 +11,9 @@
 
 MODULE mo_2mom_prepare
 
-  USE mo_kind,            ONLY: wp
-  USE mo_exception,       ONLY: finish, message, message_text
-  USE mo_2mom_mcrph_main, ONLY: particle, particle_lwf, atmosphere
+  USE mo_kind,             ONLY: wp
+  USE mo_exception,        ONLY: finish, message, message_text
+  USE mo_2mom_mcrph_types, ONLY: particle, atmosphere
 #include "add_var_acc_macro.inc"
 
   IMPLICIT NONE
@@ -30,9 +29,8 @@ CONTAINS
        qv, qc, qnc, qr, qnr, qi, qni, qs, qns, qg, qng, qh, qnh, qgl, qhl, &
        lprogccn, lprogin, lprogmelt, its, ite, kts, kte)
 
-    TYPE(atmosphere), INTENT(inout)   :: atmo
-    CLASS(particle),  INTENT(inout)   :: cloud, rain, ice, snow
-    CLASS(particle),  INTENT(inout)   :: graupel, hail
+    TYPE(atmosphere), INTENT(inout)  :: atmo
+    TYPE(particle),  INTENT(inout)   :: cloud, rain, ice, snow, graupel, hail
     REAL(wp), TARGET, DIMENSION(:, :), INTENT(in) :: &
          rho, rhocorr, rhocld, pres, w, tk, hhl
     REAL(wp), POINTER, DIMENSION(:, :), INTENT(in) :: tke
@@ -138,15 +136,12 @@ CONTAINS
     hail%q    => qh
     hail%n    => qnh
 
-    SELECT TYPE (graupel)
-    CLASS IS (particle_lwf)
-       graupel%l => qgl
-    END SELECT
-
-    SELECT TYPE (hail)
-    CLASS IS (particle_lwf)
-       hail%l    => qhl
-    END SELECT
+#ifndef _OPENACC
+    IF (lprogmelt) THEN
+        graupel%l => qgl
+        hail%l    => qhl
+    END IF
+#endif
 
     __acc_attach(ice%rho_v)
     __acc_attach(graupel%rho_v)
@@ -210,9 +205,8 @@ CONTAINS
        qv, qc, qr, qnr, qi, qni, qs, qns, qg, qng, qh, qnh, qgl, qhl,  &
        lprogccn, lprogin, lprogmelt, its, ite, kts, kte)
 
-    TYPE(atmosphere), INTENT(inout)   :: atmo
-    CLASS(particle), INTENT(inout)    :: cloud, rain, ice, snow
-    CLASS(particle), INTENT(inout)    :: graupel, hail
+    TYPE(atmosphere), INTENT(inout)  :: atmo
+    TYPE(particle), INTENT(inout)    :: cloud, rain, ice, snow, graupel, hail
     REAL(wp), INTENT(in) :: rho_r(:, :)
     REAL(wp), DIMENSION(:,:), INTENT(inout) :: &
          &           qv, qc, qnc, qr, qnr, qi, qni, qs, qns, qg, qng, qh, qnh
@@ -237,14 +231,14 @@ CONTAINS
     atmo%rho => NULL()
     atmo%zh  => NULL()
     atmo%tke => NULL()
-    
+
     cloud%rho_v   => NULL()
     rain%rho_v    => NULL()
     ice%rho_v     => NULL()
     graupel%rho_v => NULL()
     snow%rho_v    => NULL()
     hail%rho_v    => NULL()
-    
+
     cloud%q   => NULL()
     cloud%n   => NULL()
     rain%q    => NULL()
@@ -258,15 +252,12 @@ CONTAINS
     hail%q    => NULL()
     hail%n    => NULL()
 
-    SELECT TYPE (graupel)
-    CLASS IS (particle_lwf) 
+#ifndef _OPENACC
+    IF (lprogmelt) THEN
       graupel%l => NULL()
-    END SELECT
-
-    SELECT TYPE (hail)
-    CLASS IS (particle_lwf) 
       hail%l    => NULL()
-    END SELECT
+    END IF
+#endif
 
     ! ... Transformation of variables back to ICON standard variables
     !$ACC DATA PRESENT(qv, qc, qr, qi, qs, qg, qh, qnc, qnr, qni, qns, qng, qnh) &

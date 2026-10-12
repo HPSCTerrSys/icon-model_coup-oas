@@ -1,15 +1,15 @@
-! Contains the icon_output time keeping and events
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the icon_output time keeping and events
 
 MODULE mo_icon_output_time_events
   !-------------------------------------------------------------------------
@@ -22,7 +22,7 @@ MODULE mo_icon_output_time_events
        &                               ASSIGNMENT(=), OPERATOR(==), OPERATOR(>=), OPERATOR(/=),     &
        &                               event, eventGroup, newEvent,                                 &
        &                               addEventToEventGroup, isCurrentEventActive
-  USE mo_event_manager,          ONLY: initEventManager, addEventGroup, getEventGroup, printEventGroup  
+  USE mo_event_manager,          ONLY: initEventManager, addEventGroup, getEventGroup, printEventGroup
   USE mo_impl_constants,         ONLY: max_char_length
   USE mo_exception,              ONLY: message, message_text, finish
   USE mo_master_config,          ONLY: isRestart
@@ -40,12 +40,12 @@ MODULE mo_icon_output_time_events
   PUBLIC :: isStartdate
   PUBLIC :: newNullDatetime
   PUBLIC :: isEndOfThisRun
-  
-  PUBLIC :: get_icon_outputCurrentTime_Pointer 
+
+  PUBLIC :: get_icon_outputCurrentTime_Pointer
 
 !   PUBLIC :: set_icon_outputCurrentTime
   PUBLIC :: get_icon_outputCurrentTime
-  
+
   CHARACTER(LEN=20)  :: str_module = 'mo_icon_output_time_events'  ! Output of module for 1 line debug
   !-------------------------------------------------------------------------
 
@@ -65,9 +65,9 @@ MODULE mo_icon_output_time_events
 
   TYPE(event), POINTER                :: checkpointEvent => NULL()
   TYPE(event), POINTER                :: restartEvent    => NULL()
-  
+
   INTEGER                             :: checkpointEvents
-    
+
   REAL(wp):: icon_output_dtime           !< [s] length of a time step
 
 CONTAINS
@@ -78,7 +78,7 @@ CONTAINS
   SUBROUTINE init_icon_output_time_events()
 
     CHARACTER(len=*), PARAMETER :: method_name = "init_icon_output_time_events"
-    
+
     INTEGER :: ierr
     LOGICAL :: return_status
     CHARACTER(LEN=MAX_DATETIME_STR_LEN)    :: dstring
@@ -93,14 +93,14 @@ CONTAINS
     eventEndDate        => time_config%tc_exp_stopdate
     icon_output_time_step     => time_config%tc_dt_model
 
-    ! the time varibales for returning 
+    ! the time varibales for returning
     return_current_time => newNullDatetime()
 
 
     ! for debugging purposes the referenece (anchor) date for checkpoint
     ! and restart may be switched to be relative to current jobs start
     ! date instead of the experiments start date.
-    
+
     IF (time_config%is_relative_time) THEN
       checkpointRefDate => time_config%tc_startdate
       restartRefDate    => time_config%tc_startdate
@@ -108,14 +108,14 @@ CONTAINS
       checkpointRefDate => time_config%tc_exp_startdate
       restartRefDate    => time_config%tc_exp_startdate
     ENDIF
-    
+
     ! create an event manager, ie. a collection of different events
     CALL initEventManager(time_config%tc_exp_refdate)
 
     ! --- create an event group for checkpointing and restart
     checkpointEvents =  addEventGroup('checkpointEventGroup')
     checkpointEventGroup => getEventGroup(checkpointEvents)
-    
+
     ! --- --- create checkpointing event
     eventInterval  => time_config%tc_dt_checkpoint
     checkpointEvent => newEvent('checkpoint', checkpointRefDate, eventStartDate, eventEndDate, eventInterval, errno=ierr)
@@ -145,22 +145,22 @@ CONTAINS
     CALL message('','')
 
    CALL printEventGroup(checkpointEvents)
-  
+
   END SUBROUTINE init_icon_output_time_events
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
   FUNCTION newNullDatetime()
-    TYPE(datetime), POINTER:: newNullDatetime 
-    
+    TYPE(datetime), POINTER:: newNullDatetime
+
     newNullDatetime => newDatetime('0001-01-01T00:00:00')
   END FUNCTION newNullDatetime
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------
-  FUNCTION icon_output_time_nextStep() 
-    TYPE(datetime), POINTER:: icon_output_time_nextStep 
-     
+  FUNCTION icon_output_time_nextStep()
+    TYPE(datetime), POINTER:: icon_output_time_nextStep
+
     icon_output_previous_time = icon_output_current_time
     icon_output_current_time = icon_output_current_time + icon_output_time_step
     return_current_time = icon_output_current_time
@@ -181,16 +181,16 @@ CONTAINS
     isEndOfThisRun = icon_output_current_time >= time_config%tc_stopdate
   END FUNCTION isEndOfThisRun
   !-------------------------------------------------------------------------
- 
+
   !-------------------------------------------------------------------------
-  FUNCTION getCurrentDate_to_String() 
+  FUNCTION getCurrentDate_to_String()
     CHARACTER(LEN=MAX_DATETIME_STR_LEN) :: getCurrentDate_to_String
-   
+
     CALL datetimeToString(icon_output_current_time, getCurrentDate_to_String)
 
   END FUNCTION getCurrentDate_to_String
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   ! this will be removed, do not use !
   FUNCTION get_icon_outputCurrentTime_Pointer()
@@ -201,7 +201,7 @@ CONTAINS
 
   END FUNCTION get_icon_outputCurrentTime_Pointer
   !-------------------------------------------------------------------------
-  
+
   !-------------------------------------------------------------------------
   SUBROUTINE set_icon_outputCurrentTime( current_time )
     TYPE(datetime), INTENT(IN) :: current_time
@@ -242,7 +242,7 @@ CONTAINS
 
     CHARACTER(LEN=32)               :: datestring
    ! the current time is advanced in the beginning of the loop, so for forcing we need the previous one
-    isicon_outputPreEventActive = isCurrentEventActive(icon_outputEvent, icon_output_previous_time) 
+    isicon_outputPreEventActive = isCurrentEventActive(icon_outputEvent, icon_output_previous_time)
 !     CALL datetimeToString(icon_output_previous_time, datestring)
 !     write(0,*) "icon_output Event at", datestring, " is ", isicon_outputPreEventActive
 

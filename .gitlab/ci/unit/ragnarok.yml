@@ -1,0 +1,223 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/common/dkrz.yml
+  - local: .gitlab/ci/common/ubuntu.yml
+  - local: .gitlab/ci/utils/pip.yml
+
+.ragnarok:common:
+  stage: unit
+  needs: []
+  variables:
+    CLICOLOR_FORCE: 1
+    VERBOSE: # any given value is ignored, it's just checked for existence
+    MAKEFLAGS: --no-print-directory --output-sync=target
+    CTEST_OUTPUT_ON_FAILURE: 1
+    GTEST_COLOR: 1
+  script:
+    - |
+      # !reference [.ragnarok:common, script]
+      icon_ci_log_section_start 'Configuring Ragnarok' 'collapsed=false'
+      ICON_CI_RAGNAROK_SOURCE_PATH=${ICON_CI_RAGNAROK_SOURCE_PATH:-"${CI_PROJECT_DIR}/ragnarok"}
+      ICON_CI_RAGNAROK_BUILD_PATH=${ICON_CI_RAGNAROK_BUILD_PATH:-"${ICON_CI_RAGNAROK_SOURCE_PATH}/build"}
+      (
+        cmake --version
+        eval "set dummy ${ICON_CI_RAGNAROK_CMAKE_EXTRA_ARGS-}; shift"
+        set -ux
+        cmake \
+          -S "${ICON_CI_RAGNAROK_SOURCE_PATH}" \
+          -B "${ICON_CI_RAGNAROK_BUILD_PATH}" \
+          -G 'Unix Makefiles' \
+          "$@"
+      ) 2>&1
+      icon_ci_log_section_end
+      icon_ci_log_section_start 'Building Ragnarok' 'collapsed=false'
+      (
+        set -ux
+        cmake --build "${ICON_CI_RAGNAROK_BUILD_PATH}"
+      ) 2>&1
+      icon_ci_log_section_end
+      icon_ci_log_section_start 'Testing Ragnarok' 'collapsed=false'
+      (
+        set -ux
+        ctest --test-dir "${ICON_CI_RAGNAROK_BUILD_PATH}"
+      ) 2>&1
+      icon_ci_log_section_end
+
+.ragnarok:docker:
+  extends:
+    - .common:ubuntu
+    - .ragnarok:common
+  variables:
+    ICON_CI_UTILS_APT_PACKAGES: clang-tidy-20
+    CMAKE_BUILD_PARALLEL_LEVEL: 8
+    CTEST_PARALLEL_LEVEL: 8
+  image: registry.gitlab.dkrz.de/icon/containers/icon-ci-build:f6633645
+  cache:
+    - key: apt-ragnarok-${CI_JOB_IMAGE}
+      paths:
+        - ${ICON_CI_UTILS_APT_CACHE_PATH}
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+.ragnarok:levante:
+  extends:
+    - .common:dkrz:levante
+    - .ragnarok:common
+  variables:
+    GIT_SUBMODULE_STRATEGY: none
+    ICON_CI_COMMON_DKRZ_SLURM_NTASKS: 64
+    ICON_CI_UTILS_GIT_CLONE_PATH: ${ICON_CI_COMMON_DKRZ_SHMEM_PATH}
+    ICON_CI_UTILS_GIT_SPARSE_PATTERNS: /ragnarok/
+    ICON_CI_RAGNAROK_SOURCE_PATH: ${ICON_CI_UTILS_GIT_CLONE_PATH}/ragnarok
+    ICON_CI_RAGNAROK_CMAKE_EXTRA_ARGS: >-
+      -C "${ICON_CI_RAGNAROK_SOURCE_PATH}/${ICON_CI_RAGNAROK_CACHE_FILE_REL_PATH}"
+    CMAKE_BUILD_PARALLEL_LEVEL: ${ICON_CI_COMMON_DKRZ_SLURM_NTASKS}
+    CTEST_PARALLEL_LEVEL: ${ICON_CI_COMMON_DKRZ_SLURM_NTASKS}
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+    - !reference [.common:dkrz:levante, rules]
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+ragnarok:cpu:serial:
+  extends:
+    - .ragnarok:docker
+    - .utils:pip
+  variables:
+    ICON_CI_UTILS_APT_PACKAGES: >-
+      clang-tidy-20
+      libnetcdf-c++4-dev
+      python3-dev
+      python3-pip
+    ICON_CI_UTILS_PIP_REQUIREMENT: >-
+      ${CI_PROJECT_DIR}/ragnarok/aes_microphysics/bindings/python/requirements.txt
+    # A subset from https://github.com/yoctoyotta1024/microphysics_testcases/blob/v0.12.2/requirements.txt:
+    ICON_CI_UTILS_PIP_PACKAGES: PyMPDATA-examples matplotlib metpy numpy pytest scipy
+    ICON_CI_RAGNAROK_CMAKE_EXTRA_ARGS: >-
+      -DCMAKE_CXX_CLANG_TIDY='clang-tidy-20;--use-color'
+      -DKokkos_ENABLE_OPENMP=OFF
+      -DKokkos_ENABLE_SERIAL=ON
+      -DRGK_ENABLE_STANDALONE=ON
+      -DRGK_ENABLE_PYTHON_BINDINGS=ON
+      -Dpybind11_DIR=$(pybind11-config --cmakedir)
+    ICON_CI_RAGNAROK_MUPHYS_TESTCASES_PATH: ${CI_PROJECT_DIR}/microphysics_testcases
+    ICON_CI_RAGNAROK_MUPHYS_TESTCASES_URL: https://github.com/yoctoyotta1024/microphysics_testcases.git
+    ICON_CI_RAGNAROK_MUPHYS_TESTCASES_TAG: v0.12.2
+  before_script:
+    - !reference [.ragnarok:docker, before_script]
+    - !reference [.utils:pip, before_script]
+  script:
+    - !reference [.ragnarok:docker, script]
+    - |
+      # !reference [ragnarok:cpu:serial, script]
+      icon_ci_log_section_start 'Fetching muphys testcases' 'collapsed=false'
+      (
+        set -ux
+        git -c advice.detachedHEAD=false clone \
+          --branch "${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_TAG}" --depth 1 \
+          "${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_URL}" \
+          "${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_PATH}"
+      ) 2>&1
+      icon_ci_log_section_end
+
+      icon_ci_log_section_start 'Running muphys testcases' 'collapsed=false'
+      (
+        set -ux
+        pytest --verbose \
+          --aes_muphys_py_dir="${ICON_CI_RAGNAROK_BUILD_PATH}/aes_microphysics" \
+          "${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_PATH}/tests/test_case_0dparcel/test_icon_muphys.py" \
+          "${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_PATH}/tests/test_case_0dparcel/test_icon_satadj.py" \
+          "${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_PATH}/tests/test_case_1dkid/test_icon_muphys.py" \
+          "${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_PATH}/tests/test_case_1dkid/test_icon_satadj.py"
+      ) 2>&1
+      icon_ci_log_section_end
+
+      icon_ci_log_info_msg 'Preparing the artifacts...'
+      (
+        set -ux
+
+        images=$(find "${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_PATH}" -type f -name '*.png' \
+          -exec realpath --relative-to="${CI_PROJECT_DIR}" '{}' ';' | sort)
+
+        cat <<_EOF >"${CI_PROJECT_DIR}/index.html"
+      <style>
+        img { max-width:80vw; margin-bottom:2em; }
+        small { font-size:3em; }
+        h1 { font-size:4em; text-align:center; }
+        div { text-align:center; }
+      </style>
+      <h1>muphys testcases (CI job ID: ${CI_JOB_ID})</h1>
+      $(for i in ${images}; do
+          echo '<div><small>'${i}'</small><a href="'${i}'"><img src="'${i}'"></a></div>'
+        done 2>/dev/null)
+      _EOF
+
+      cat <<_EOF >"${CI_PROJECT_DIR}/annotation.json"
+      {
+        "section": [{
+          "external_link": {
+              "label": "muphys plots",
+              "url": "https://${CI_PAGES_HOSTNAME}/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts/index.html"
+          }
+        }]
+      }
+      _EOF
+      )
+  cache:
+    - key: apt-pip-ragnarok-${CI_JOB_IMAGE}
+      paths:
+        - ${ICON_CI_UTILS_APT_CACHE_PATH}
+        - ${ICON_CI_UTILS_PIP_CACHE_PATH}
+  artifacts:
+    name: muphys-plots
+    paths:
+      - ${ICON_CI_RAGNAROK_MUPHYS_TESTCASES_PATH}/**/*.png
+      - index.html
+    reports:
+      annotations: annotation.json
+    when: on_success
+    expire_in: 1 day
+
+ragnarok:icon-bridge:
+  extends: .ragnarok:docker
+  variables:
+    ICON_CI_RAGNAROK_CMAKE_EXTRA_ARGS: >-
+      -DCMAKE_CXX_CLANG_TIDY='clang-tidy-20;--use-color'
+      -DBUILD_SHARED_LIBS=OFF
+      -DRGK_ENABLE_STANDALONE=OFF
+  script:
+    - !reference [.ragnarok:docker, script]
+    - |
+      # !reference [ragnarok:icon-bridge, script]
+      icon_ci_log_info_msg 'Checking for expected build artifacts...'
+      (
+        set -ux
+        test -e "${ICON_CI_RAGNAROK_BUILD_PATH}/libragnarok.a"
+      )
+
+ragnarok:cpu:openmp:
+  extends: .ragnarok:levante
+  variables:
+    OMP_PROC_BIND: close
+    OMP_PLACES: cores
+    OMP_NUM_THREADS: ${ICON_CI_COMMON_DKRZ_SLURM_NTASKS}
+    ICON_CI_RAGNAROK_CACHE_FILE_REL_PATH: cmake/caches/levante_cpu_intel.cmake
+
+ragnarok:gpu:
+  extends: .ragnarok:levante
+  variables:
+    ICON_CI_COMMON_DKRZ_SLURM_PARTITION: gpu
+    ICON_CI_COMMON_DKRZ_SLURM_GPUS_PER_NODE: 1
+    ICON_CI_RAGNAROK_CACHE_FILE_REL_PATH: cmake/caches/levante_gpu_nvhpc.cmake

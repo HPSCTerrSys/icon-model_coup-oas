@@ -1,16 +1,15 @@
-
-! @brief set start values for bgc variables
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @brief set start values for bgc variables
 
 MODULE mo_ini_bgc
 
@@ -25,22 +24,19 @@ MODULE mo_ini_bgc
        &                     phytomi, grami, remido, dyphy, zinges,        &
        &                     epsher,  spemor, gammap, gammaz, ecan, &
        &                     pi_alpha, fpar, bkphy, bkzoo, bkopal,         &
-       &                     dremn2o, sulfate_reduction,         &
        &                     n2_fixation, ro2ut, rcar, rnit,     &
        &                     rnoi, nitdem, n2prod, ropal,   &
-       &                     perc_diron, riron, fesoly, relaxfe,     &
-       &                     rn2,             &
-       &                     thresh_o2,   &
-       &                     pi_alpha_cya,          &
+       &                     fesoly, relaxfe,     &
+       &                     rn2, thresh_o2,pi_alpha_cya,            &
        &                     Topt_cya,T1_cya,T2_cya,bkcya_N, &
        &                     buoyancyspeed_cya, bkh2sox, rh2sox, &
        &                     doccya_fac, thresh_aerob, thresh_sred, &
-       &                     wcya, p2gtc, ro2bal, dmsp,prodn2o,docmin, &
-       &                     no2denit, anamoxra, nitriox, nitrira, ro2ammo, &
-       &                     bknh4_cya, bkno3_cya, bkno3, bknh4, rmm, kg_denom, bkpo4, &
-       &                     bkno2, bkrad, bkfe, rno3nh4, rno3no2, rno2no3, rnh4no2, &
+       &                     wcya, p2gtc, ro2bal, dmsp,docmin, &
+       &                     ro2ammo, &
+       &                     rmm, kg_denom,  &
+       &                     bkrad, rno3nh4, rno3no2, rno2no3, rnh4no2, &
        &                     alk_nrn2, rno2n2, o2thresh, o2den_lim, rrrcl,  &
-       &                     sinkspeed_dust
+       &                     sinkspeed_dust,bkno3_cya, bknh4_cya,bkfe
 
   USE mo_memory_agg, ONLY  : agg_org_dens, det_mol2mass, rho_tep, &
        &                     AJ1, AJ2, AJ3, BJ1, BJ2, BJ3, &
@@ -58,11 +54,14 @@ MODULE mo_ini_bgc
        &                     mc_fac, sinkspeed_martin_ez, mc_depth, denit_sed, disso_po, &
        &                     atm_co2, atm_o2, atm_n2, deltacalc, deltaorg, deltasil, &
        &                     drempoc, dremopal, dremcalc,  denitrification, &
-       &                     l_N_cycle, no3nh4red, no3no2red
+       &                     bkpo4, riron , &
+       &                     l_N_cycle, no3nh4red, no3no2red, bkno3, bknh4,  &
+       &                     no2denit,anamoxra,nitriox, nitrira, sulfate_reduction,dremn2o
+
 
 
   USE mo_control_bgc, ONLY : ldtbgc, dtb, dtbgc, rmasko, rmasks, &
-       &                     bgc_gin,  & 
+       &                     bgc_gin,  &
        &                     bgc_tatl, &
        &                     bgc_land,  &
        &                     bgc_soce, bgc_npac,  &
@@ -79,7 +78,7 @@ MODULE mo_ini_bgc
        &                     iammo, iano2, ipownh4, ipowno2
 
   USE mo_bgc_constants
-     
+
 !  USE mo_planetary_constants, ONLY: g, rhoref_water
   IMPLICIT NONE
 
@@ -90,7 +89,7 @@ MODULE mo_ini_bgc
        &    ini_atmospheric_concentrations, &
        &    ini_wpoc, bgc_param_conv_unit,  &
        &    ini_continental_carbon_input,   &
-       &    set_parameters_bgc,             & 
+       &    set_parameters_bgc,             &
        &    ini_aggregate_parameters !,             &
 !       &    level_ini
 
@@ -133,13 +132,12 @@ CONTAINS
     thresh_aerob = 5.e-8_wp      ! kmol m-3,  O2 threshold for aerob remineralization
     thresh_o2 = 10.e-6_wp      ! kmol m-3,  O2 threshold for aerob remineralization
     thresh_sred = 3.e-6_wp      ! kmol m-3,  O2 threshold for sulfate reduction
-    prodn2o = 1.e-4_wp
 
 
 
-    bkphy  = 1.e-8_wp 
+    bkphy  = 1.e-8_wp
     bkzoo  = 4.e-8_wp
-    bkopal = 1.e-6_wp 
+    bkopal = 1.e-6_wp
     bkh2sox = 5.e-7_wp ! i.e. 0.5 mmol O2 m-3 for H2S oxidation
 
 
@@ -149,19 +147,16 @@ CONTAINS
     rh2sox  = 0.93_wp ! 1/d  H2S oxidation rate
 
 ! ------ cyanobacteria
-    buoyancyspeed_cya = 1._wp   ! daily buoyancy speed of cya  
+    buoyancyspeed_cya = 1._wp   ! daily buoyancy speed of cya
     pi_alpha_cya      = 0.03_wp      ! m2 W-1 d-1
     Topt_cya          = 28._wp       ! deg C
     T1_cya            = 5.5_wp       ! deg C
     T2_cya            = 1._wp        ! deg C
-    bkcya_N           = 1.e-9_wp     ! kmol/m3  
+    bkcya_N           = 1.e-9_wp     ! kmol/m3
     doccya_fac        = 0.1_wp
 ! ------
 
-    dremn2o  = 0.01_wp      ! 1/d
-    sulfate_reduction = 0.005_wp
-
-    ! nitrogen fixation 
+    ! nitrogen fixation
     n2_fixation = 0.005_wp
 
     ! extended redfield ratio declaration
@@ -177,12 +172,12 @@ CONTAINS
     ro2bal = ro2ut-rcar-2._wp-1.5_wp*rnit ! OM conversion for O2 mass balance
                                           ! OM { rcar C: rnit N : P }
                                           ! C -> CO2, N-> NO3, P -> PO4
-                                          ! C[O2] = 1, N[O2] =1.5, P[O2]=2 
-                                          ! total O2   = [O2]+[CO2]+2[PO4]+1.5[NO3] - ro2bal[OM]   
+                                          ! C[O2] = 1, N[O2] =1.5, P[O2]=2
+                                          ! total O2   = [O2]+[CO2]+2[PO4]+1.5[NO3] - ro2bal[OM]
     ralk = rnit + 1._wp                   ! for alkalinity updates during OM prod/loss
-                                          ! 16 H+ for NO3, 1 for P assim/release 
+                                          ! 16 H+ for NO3, 1 for P assim/release
     p2gtc = rcar*12._wp*1.e-12_wp ! kmolP to GtC
-    
+
 
     ! N consumption of denitrification corrected after Paulmier etal, 2009)
     nitdem = 137.6_wp          ! NO3 demand of denitrification
@@ -195,25 +190,17 @@ CONTAINS
     rno3 = 16._wp
 
     ! Sediment
-    denit_sed = 0.01_wp      ! 1/d  sediment denitrification rate 
+    denit_sed = 0.01_wp      ! 1/d  sediment denitrification rate
     sred_sed  = 0.0001_wp    ! sediment sulfate reduction rate
-    disso_op  = 0.002592_wp  ! [m3/(kmol Si(OH)4)*1/d ]dissolution rate of opal 
+    disso_op  = 0.002592_wp  ! [m3/(kmol Si(OH)4)*1/d ]dissolution rate of opal
     disso_cal = 0.00864_wp   ! [m3/(kmol CO3) 1/d] dissolution rate of CaCO3
     disso_po  = 0.01_wp      ! [m3/(kmol O2) 1/d] degradation rate organic C in sediment
-    silsat    = 0.001_wp     ! [mol/m3] Silicate saturation constant  
+    silsat    = 0.001_wp     ! [mol/m3] Silicate saturation constant
     o2thresh  = 10.E-6_wp    ! set to 10 umol/l O2 threshold in sediment
     o2den_lim = 0.5E-6_wp
 
 
-    ! weight percent iron in dust deposition (0.035) times Fe solubility (0.01) /55.85 g--> mol
-    perc_diron = 0.035_wp * 0.01_wp / 55.85_wp
-
-    ! the three values below are from Johnson et al., 1997 Mar. Chemistry 57, 137-161
-    ! riron   = 5.*rcar*1.e-6       ! 'Q'=5.*122.*1.e-6 = 6.1e-4   (iron to phosphate stoichiometric ratio * umol->mol)
-    ! riron   = 2.*rcar*1.e-6       ! 14.2.06: 5.->2. (2.5umol P/nmol Fe) emr: 3.*rcar*1.e-6
-    riron   = 3._wp * rcar*1.e-6_wp ! 06.3.06: 2.->3. coex90=12.2GTC/a before change
-
-    fesoly  = 0.6_wp *1.e-9_wp      ! global mean/max (?) dissolved iron concentration in deep water (for relaxation) [mol/m3]
+      fesoly  = 0.6_wp *1.e-9_wp      ! global mean/max (?) dissolved iron concentration in deep water (for relaxation) [mol/m3]
     ! 'fesoly' stands for 'apparent solubility value' of iron
 
     relaxfe = 0.05_wp/365._wp       ! relaxation time for iron to fesoly corresponds to 20 yrs
@@ -225,7 +212,7 @@ CONTAINS
      dmsp(1) = 10._wp     ! temperature dependent release by phytoplankton
      dmsp(2) = 0.0075_wp  ! photolysis (uv-decay)
      dmsp(3) = 0.0096_wp  ! microbial consumption
-     dmsp(4) = 1.25_wp * 0.107638502e0_wp  ! production with delcar(coccolithoporides) 
+     dmsp(4) = 1.25_wp * 0.107638502e0_wp  ! production with delcar(coccolithoporides)
      dmsp(5) = 1.25_wp * 0.109784522e-1_wp  ! production with delsil(diatoms)
      dmsp(6) = 0.1e-07_wp            ! half saturation rate const. bacterial decomp
      !$ACC ENTER DATA COPYIN(dmsp)
@@ -233,24 +220,21 @@ CONTAINS
     !
     ! extended N-cycle
     !
-    bkno3 = 0.16_wp*1.e-6_wp
-    bknh4 = 0.1_wp *1.e-6_wp
     ro2ammo = ro2ut - 2._wp*rnit
    !       oxygen demand to nitrify nh4 to no2
-    rnh4no2 =  24._wp /rnit 
+    rnh4no2 =  24._wp /rnit
     alk_nrn2 = (560._wp + 48._wp)/3._wp ! alkalinity is increased acc
 !      oxygen  demand to nitrify no2 to no3
-    rno2no3 = 8._wp /rnit ! oxygen demand during nitrification in P-units 2*rnit, 
+    rno2no3 = 8._wp /rnit ! oxygen demand during nitrification in P-units 2*rnit,
     bkno3_cya = bkno3*1.e-1_wp
     bknh4_cya = bknh4*1e-1_wp
-    bkpo4 = 0.01_wp*1.E-6_wp   ! in kmolP/m3 half satur. const. for PO4 
     bkfe = bkpo4*riron
-    rno2n2 = 560._wp/3._wp 
+    rno2n2 = 560._wp/3._wp
     rmm = 17.03_wp
     kg_denom = 770._wp + 45._wp*rmm**(1._wp/3._wp)  ! denominator of gas-phase tranfser velocity
 !                                               for ammonia with 17.03 relative mol. mass of NH3
 !   Chemical ratios for constituents  during remineralization,
-!   denitrification and so on (after beckmann&hense ,2012, adapted 
+!   denitrification and so on (after beckmann&hense ,2012, adapted
 ! to our Redfield ratios
 
     ! DNRN : NO3 reduction to NO2
@@ -259,20 +243,7 @@ CONTAINS
     ! DNRA : NO3 reduction to NH4
       rno3nh4  = 70._wp   ! nitrate used per P-unit org
 
-    ! NRN2   :  NO2 to N2
-      no2denit = 0.008_wp ! 1/day 
-   
-    !ANAMMOX
-      anamoxra = 0.05_wp         ! anammox rate  1/day 
-      bkno2 = 0.5_wp*1.E-6_wp    ! Half saturation constant for Nitrite in kmolN/m3
-    !NITOX : oxidation of NO2 to NO3 ; light dependent	   
-      nitriox = 0.25_wp          !   nitrite oxidation rate 1/day 
-      bkrad = 10._wp               ! light constant  
-
-! AMMOX : oxidation of NH4 to NO2 ; light dependend
-      nitrira= 0.1_wp    ! nitrification rate per day, after Yool about 0.162 per day
-!             light dependency (coupled to abs_bgc, max at no light, in surface layer 0.
-
+      bkrad = 10._wp               ! light constant
 
   !     -----------------------------------------------------------------
   !*            SET MEAN TOTAL [CA++] IN SEAWATER (MOLES/KG)
@@ -323,29 +294,29 @@ CONTAINS
 
   SUBROUTINE BGC_PARAM_CONV_UNIT
 
-   
-    remido   = remido * dtb    ! 
+
+    remido   = remido * dtb    !
     dyphy    = dyphy * dtb    ! 1/d -mortality rate of phytoplankton
-    grazra   = grazra * dtb      ! 1/d -grazing rate 
+    grazra   = grazra * dtb      ! 1/d -grazing rate
     spemor   = spemor * dtb     ! 1/d -mortality rate of zooplankton
     gammap   = gammap * dtb     ! 1/d -exudation rate
     gammaz   = gammaz * dtb     ! 1/d -excretion rate
-    sinkspeed_opal = sinkspeed_opal * dtb 
-    sinkspeed_calc = sinkspeed_calc * dtb  
+    sinkspeed_opal = sinkspeed_opal * dtb
+    sinkspeed_calc = sinkspeed_calc * dtb
     sinkspeed_dust = sinkspeed_dust * dtb
-    wcya = buoyancyspeed_cya *dtb  !  buoyancy speed of cya  
+    wcya = buoyancyspeed_cya *dtb  !  buoyancy speed of cya
     sinkspeed_martin_ez = sinkspeed_martin_ez * dtb
     sinkspeed_poc = sinkspeed_poc * dtb
     sulfate_reduction = sulfate_reduction * dtb
-    drempoc  = drempoc  *dtb    ! 1/d      
-    dremopal = dremopal * dtb  ! 1/d      
+    drempoc  = drempoc  *dtb    ! 1/d
+    dremopal = dremopal * dtb  ! 1/d
     dremn2o  = dremn2o * dtb      ! 1/d
-    dremcalc = dremcalc *dtb    ! 
+    dremcalc = dremcalc *dtb    !
     !$ACC UPDATE DEVICE(dremcalc) ASYNC(1)
-    denitrification = denitrification *dtb 
+    denitrification = denitrification *dtb
     denit_sed = denit_sed *dtb    ! sediment denitrification rate
     sred_sed = sred_sed *dtb    ! sediment sulfate reduction rate
-    relaxfe = relaxfe *dtb       ! relaxation time for iron to fesoly 
+    relaxfe = relaxfe *dtb       ! relaxation time for iron to fesoly
     disso_op = disso_op * dtb
     disso_po = disso_po * dtb
     disso_cal = disso_cal * dtb
@@ -370,9 +341,9 @@ CONTAINS
    TYPE(t_bgc_memory), POINTER :: local_bgc_memory
    REAL(wp),INTENT(in):: ptiestw(bgc_zlevs+1)
 
-   INTEGER :: k 
+   INTEGER :: k
    REAL(wp) :: at_mc_depth
-   
+
    ! default case: constant sinking speed
    local_bgc_memory%wpoc(:,:)  = sinkspeed_poc
    local_bgc_memory%wopal(:,:) = sinkspeed_opal
@@ -385,22 +356,22 @@ CONTAINS
       at_mc_depth=merge(0._wp,1._wp,ptiestw(k+1)<=mc_depth)
       ! w=w0 + a*(z-z0)
       ! z0= mc_depth
-      ! a=remin_rate/b  with F(z)=F(z0)(z/zo)**(-b) 
+      ! a=remin_rate/b  with F(z)=F(z0)(z/zo)**(-b)
       local_bgc_memory%wpoc(:,k) = sinkspeed_martin_ez + at_mc_depth * drempoc/mc_fac * (ptiestw(k+1) - mc_depth)
    ENDDO
    ENDIF
   END SUBROUTINE ini_wpoc
-  
+
   SUBROUTINE ini_aquatic_tracers (local_bgc_mem, start_idx, end_idx , klevs, ibek )
 
     TYPE(t_bgc_memory), POINTER :: local_bgc_mem
- 
+
     INTEGER, INTENT(in)  :: start_idx                  !< 1st REAL of model grid.
     INTEGER, INTENT(in)  :: end_idx                  !< 2nd REAL of model grid.
     INTEGER :: klevs(bgc_nproma)                  !< 3rd (vertical) REAL of model grid.
     INTEGER, INTENT(in)  :: ibek(bgc_nproma)                  !< 3rd (vertical) REAL of model grid.
 
-    INTEGER :: j,k, m, kpke 
+    INTEGER :: j,k, m, kpke
 
     REAL(wp) :: phosat, phosmed, phospac
     REAL(wp) :: oxyat, oxymed, oxypac
@@ -418,7 +389,7 @@ CONTAINS
     oxyat   = 2.5e-4_wp
     oxymed  = 2.e-4_wp
 
- 
+
    DO j = start_idx, end_idx
     kpke=klevs(j)
     m=ibek(j)
@@ -496,8 +467,8 @@ CONTAINS
 
        ENDDO
     ENDDO
- 
- 
+
+
 
   END SUBROUTINE ini_aquatic_tracers
 
@@ -507,13 +478,13 @@ CONTAINS
 
     TYPE(t_bgc_memory), POINTER :: local_bgc_mem
     TYPE(t_sediment_memory), POINTER :: local_sediment_mem
-    
+
     INTEGER, INTENT(in) :: start_idx
     INTEGER, INTENT(in) :: end_idx
 
-    INTEGER,  POINTER  :: kbo(:)   !< k-index of bottom layer (2d)    
+    INTEGER,  POINTER  :: kbo(:)   !< k-index of bottom layer (2d)
     INTEGER :: j, k
-    
+
     !  Initial values for sediment pore water tracers. (solid components?)
     kbo => local_bgc_mem%kbo
 
@@ -529,7 +500,7 @@ CONTAINS
                 local_sediment_mem%powtra(j,k,ipowno3) = local_bgc_mem%bgctra(j,kbo(j),iano3)
                 local_sediment_mem%powtra(j,k,ipowasi) = local_bgc_mem%bgctra(j,kbo(j),isilica)
                 local_sediment_mem%powtra(j,k,ipowafe) = local_bgc_mem%bgctra(j,kbo(j),iiron)
-                                
+
                 IF (l_N_cycle) THEN
                    local_sediment_mem%powtra(j,k,ipownh4) = local_bgc_mem%bgctra(j,kbo(j),iammo)
                    local_sediment_mem%powtra(j,k,ipowno2) = local_bgc_mem%bgctra(j,kbo(j),iano2)
@@ -562,8 +533,8 @@ CONTAINS
 
        ENDDO
     ENDDO
- 
- 
+
+
 
   END SUBROUTINE ini_pore_water_tracers
 
@@ -589,4 +560,4 @@ CONTAINS
 
   END SUBROUTINE ini_atmospheric_concentrations
 
-END MODULE 
+END MODULE

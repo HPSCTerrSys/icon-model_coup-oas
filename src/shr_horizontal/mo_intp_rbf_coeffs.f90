@@ -1,25 +1,21 @@
-! Contains the implementation of interpolation and reconstruction
-! routines used by the shallow water model, including the RBF
-! reconstruction routines.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------  
+! ---------------------------------------------------------------
+
+! Contains the implementation of interpolation and reconstruction
+! routines used by the shallow water model, including the RBF
+! reconstruction routines.
 
 #ifdef __xlC__
 @PROCESS smp=noopt
 @PROCESS noopt
-#endif
-#ifdef __PGI
-!pgi$g opt=1
 #endif
 
 !----------------------------
@@ -39,8 +35,8 @@ MODULE mo_intp_rbf_coeffs
 USE mo_kind,                ONLY: wp
 USE mo_exception,           ONLY: message, message_text, finish
 USE mo_impl_constants,      ONLY: SUCCESS, min_rlcell_int
-USE mo_model_domain,        ONLY: t_patch, t_tangent_vectors
-USE mo_math_types,          ONLY: t_cartesian_coordinates
+USE mo_model_domain,        ONLY: t_patch
+USE mo_math_types,          ONLY: t_cartesian_coordinates, t_tangent_vectors
 USE mo_math_utilities,      ONLY: gvec2cvec, arc_length_v
 USE mo_math_utility_solvers, ONLY: solve_chol_v, choldec_v
 USE mo_parallel_config,     ONLY: nproma
@@ -51,7 +47,7 @@ USE mo_interpol_config,     ONLY: rbf_vec_dim_c, rbf_vec_dim_e, rbf_vec_dim_v,  
   &                               rbf_vec_kern_v, rbf_vec_scale_c, rbf_vec_scale_e,&
   &                               rbf_vec_scale_v
 USE mo_sync,                ONLY: SYNC_C, SYNC_E, SYNC_V, sync_patch_array, sync_idx
-USE mo_grid_geometry_info,  ONLY: sphere_geometry
+USE mo_lib_grid_geometry_info,  ONLY: sphere_geometry
 USE mo_physical_constants,  ONLY: earth_radius
 USE mo_math_constants,      ONLY: deg2rad  ! = pi/180
 USE mo_mpi,                 ONLY: get_my_mpi_work_id  ! only for debugging
@@ -164,7 +160,7 @@ REAL(wp) :: z_stencil(UBOUND(ptr_int%rbf_vec_stencil_c,1),UBOUND(ptr_int%rbf_vec
       ptr_int%rbf_vec_idx_c(9,jc,jb) = ptr_patch%cells%edge_idx(ilc,ibc,3)
       ptr_int%rbf_vec_blk_c(9,jc,jb) = ptr_patch%cells%edge_blk(ilc,ibc,3)
 
-      ! take care of cells at patch boundaries, then the value of 
+      ! take care of cells at patch boundaries, then the value of
       ! ptr_int%rbf_vec_stencil_c might be smaller than rbf_vec_dim_c:
 !$NEC unroll(9)
       ptr_int%rbf_vec_stencil_c(jc,jb) = COUNT(ptr_int%rbf_vec_idx_c(1:9,jc,jb) /= 0)
@@ -172,13 +168,13 @@ REAL(wp) :: z_stencil(UBOUND(ptr_int%rbf_vec_stencil_c,1),UBOUND(ptr_int%rbf_vec
     END DO
 
   END DO
-  
+
   DO jb = 1, rbf_vec_dim_c
     CALL sync_idx(SYNC_C, SYNC_E, ptr_patch, ptr_int%rbf_vec_idx_c(jb,:,:), &
-      &           ptr_int%rbf_vec_blk_c(jb,:,:))
+      &           ptr_int%rbf_vec_blk_c(jb,:,:), lacc=.FALSE.)
   ENDDO
   z_stencil(:,:) = REAL(ptr_int%rbf_vec_stencil_c(:,:),wp)
-  CALL sync_patch_array(SYNC_C,ptr_patch,z_stencil)
+  CALL sync_patch_array(SYNC_C,ptr_patch,z_stencil, lacc=.FALSE.)
   ptr_int%rbf_vec_stencil_c(:,:) = NINT(z_stencil(:,:))
 
 END SUBROUTINE rbf_vec_index_cell
@@ -210,16 +206,16 @@ INTEGER :: rl_start, rl_end, i_nchdom, i_endblk
 
 !--------------------------------------------------------------------
 
-  inidx => ptr_patch%cells%neighbor_idx 
+  inidx => ptr_patch%cells%neighbor_idx
   inblk => ptr_patch%cells%neighbor_blk
 
   ! values for the blocking
   rl_start = 2
   rl_end = min_rlcell_int
-  
+
   i_nchdom   = MAX(1,ptr_patch%n_childdom)
   i_startblk = ptr_patch%cells%start_blk(rl_start,1)
-  i_endblk   = ptr_patch%cells%end_blk(rl_end,i_nchdom)    
+  i_endblk   = ptr_patch%cells%end_blk(rl_end,i_nchdom)
 
   !
   ! The stencil has a total of 10 cells, namely the local cell,
@@ -304,13 +300,13 @@ INTEGER :: rl_start, rl_end, i_nchdom, i_endblk
 
   DO jb = 1, rbf_c2grad_dim
     CALL sync_idx(SYNC_C, SYNC_C, ptr_patch, ptr_int%rbf_c2grad_idx(jb,:,:), &
-      &           ptr_int%rbf_c2grad_blk(jb,:,:))
+      &           ptr_int%rbf_c2grad_blk(jb,:,:), lacc=.FALSE.)
   ENDDO
 
 END SUBROUTINE rbf_c2grad_index
 
 
-  !! Description: 
+  !! Description:
   !!   For a given search_radius (in m)
   !!   find all triangles with indices (jc, jb), whose circumcenter lies
   !!   in a distance smaller than the search_radius to the circumcenter of
@@ -324,7 +320,7 @@ END SUBROUTINE rbf_c2grad_index
   !!      cell_environ%area_norm (ic, ib, l)
   !!      cell_environ%radius          ! only for later control checks
   !!      cell_environ%max_nmbr_iter   ! only for later control checks
-  !!   The purpose of such a set of indices usually is averaging for postprocessing 
+  !!   The purpose of such a set of indices usually is averaging for postprocessing
   !!   (currently for SDI and LPI)
   !!
   !! Method:
@@ -360,7 +356,7 @@ END SUBROUTINE rbf_c2grad_index
     REAL(wp) :: dx, dy
     REAL(wp) :: cos_phi
     REAL(wp) :: sum
-  
+
     INTEGER, ALLOCATABLE :: idx_new(:)
     INTEGER, ALLOCATABLE :: blk_new(:)
 
@@ -438,13 +434,13 @@ END SUBROUTINE rbf_c2grad_index
                   jb2 = ptr_patch%verts%cell_blk( idx_v, blk_v, k)
 
                   ! dist2 = distance (squared!) between the cell centers of (jc2,jb2) and (ic,ib)
-                  !    (the following is only a quasi-cartesian *approximation* and only applicable over 
+                  !    (the following is only a quasi-cartesian *approximation* and only applicable over
                   !     short distances and for not too coarse grids)
                   dx = ( ptr_patch%cells%center(jc2,jb2)%lon - ptr_patch%cells%center(ic,ib)%lon )   &
-                    &        * deg2rad * earth_radius * cos_phi 
+                    &        * deg2rad * earth_radius * cos_phi
                   dy = ( ptr_patch%cells%center(jc2,jb2)%lat - ptr_patch%cells%center(ic,ib)%lat )   &
                     &        * deg2rad * earth_radius
-                  dist2 = dx*dx + dy*dy 
+                  dist2 = dx*dx + dy*dy
 
                   IF ( dist2 <= radius2 ) THEN
                     il=il+1
@@ -520,7 +516,7 @@ END SUBROUTINE rbf_c2grad_index
         sum = 0.0_wp
         DO l=1, ptr_int%cell_environ%nmbr_nghbr_cells(ic,ib)
           jc2 = ptr_int%cell_environ%idx( ic, ib, l )
-          jb2 = ptr_int%cell_environ%blk( ic, ib, l ) 
+          jb2 = ptr_int%cell_environ%blk( ic, ib, l )
           ptr_int%cell_environ%area_norm( ic, ib, l) = ptr_patch%cells%area( jc2, jb2 )
           sum = sum + ptr_int%cell_environ%area_norm( ic, ib, l)
         END DO
@@ -593,7 +589,7 @@ END SUBROUTINE rbf_c2grad_index
 
     DO l=1, ptr_int%cell_environ%nmbr_nghbr_cells_alloc
       CALL sync_idx(SYNC_C, SYNC_C, ptr_patch, ptr_int%cell_environ%idx(:,:,l),  &
-        &                                      ptr_int%cell_environ%blk(:,:,l) )
+        &                                      ptr_int%cell_environ%blk(:,:,l), lacc=.FALSE.)
     END DO
 
 
@@ -725,10 +721,10 @@ REAL(wp) :: z_stencil(UBOUND(ptr_int%rbf_vec_stencil_v,1),UBOUND(ptr_int%rbf_vec
 
   DO jb = 1, rbf_vec_dim_v
     CALL sync_idx(SYNC_V, SYNC_E, ptr_patch, ptr_int%rbf_vec_idx_v(jb,:,:), &
-      &           ptr_int%rbf_vec_blk_v(jb,:,:))
+      &           ptr_int%rbf_vec_blk_v(jb,:,:), lacc=.FALSE.)
   ENDDO
   z_stencil(:,:) = REAL(ptr_int%rbf_vec_stencil_v(:,:),wp)
-  CALL sync_patch_array(SYNC_V,ptr_patch,z_stencil)
+  CALL sync_patch_array(SYNC_V,ptr_patch,z_stencil, lacc=.FALSE.)
   ptr_int%rbf_vec_stencil_v(:,:) = NINT(z_stencil(:,:))
 
 END SUBROUTINE rbf_vec_index_vertex
@@ -799,11 +795,11 @@ REAL(wp) :: z_stencil(UBOUND(ptr_int%rbf_vec_stencil_e,1),UBOUND(ptr_int%rbf_vec
 
   DO jb = 1, rbf_vec_dim_e
     CALL sync_idx(SYNC_E, SYNC_E, ptr_patch, ptr_int%rbf_vec_idx_e(jb,:,:), &
-      &           ptr_int%rbf_vec_blk_e(jb,:,:))
+      &           ptr_int%rbf_vec_blk_e(jb,:,:), lacc=.FALSE.)
   ENDDO
   ! Not really necessary, only for the case that rbf_vec_stencil_e should be changed:
   z_stencil(:,:) = REAL(ptr_int%rbf_vec_stencil_e(:,:),wp)
-  CALL sync_patch_array(SYNC_E,ptr_patch,z_stencil)
+  CALL sync_patch_array(SYNC_E,ptr_patch,z_stencil, lacc=.FALSE.)
   ptr_int%rbf_vec_stencil_e(:,:) = NINT(z_stencil(:,:))
 
 END SUBROUTINE rbf_vec_index_edge
@@ -949,7 +945,7 @@ REAL(wp) ::  checksum_u,checksum_v ! to check if sum of interpolation coefficien
             ELSE IF (rbf_vec_kern_c == 3) THEN
               z_rbfmat(jc,je1,je2) = z_nxprod * inv_multiq(z_dist,rbf_vec_scale_c(MAX(jg,1)))
             ENDIF
-  
+
             IF (je1 > je2) z_rbfmat(jc,je2,je1) = z_rbfmat(jc,je1,je2)
           END DO
         ELSE ! use generic, unvectorizable version of arc_length_v
@@ -993,7 +989,7 @@ REAL(wp) ::  checksum_u,checksum_v ! to check if sum of interpolation coefficien
             ELSE IF (rbf_vec_kern_c == 3) THEN
               z_rbfmat(jc,je1,je2) = z_nxprod * inv_multiq(z_dist,rbf_vec_scale_c(MAX(jg,1)))
             ENDIF
-  
+
             IF (je1 > je2) z_rbfmat(jc,je2,je1) = z_rbfmat(jc,je1,je2)
           END DO
         ENDIF
@@ -1172,8 +1168,8 @@ REAL(wp) ::  checksum_u,checksum_v ! to check if sum of interpolation coefficien
 !$OMP END PARALLEL
 
   DO jb = 1, rbf_vec_dim_c
-    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int%rbf_vec_coeff_c(jb,1,:,:))
-    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int%rbf_vec_coeff_c(jb,2,:,:))
+    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int%rbf_vec_coeff_c(jb,1,:,:), lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int%rbf_vec_coeff_c(jb,2,:,:), lacc=.FALSE.)
   ENDDO
 
 ! Optional debug output for RBF coefficients
@@ -1297,8 +1293,8 @@ REAL(wp), DIMENSION(nproma,rbf_c2grad_dim,2) :: aux_coeff
 !$OMP END PARALLEL
 
   DO jcc = 1, rbf_c2grad_dim
-    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int%rbf_c2grad_coeff(jcc,1,:,:))
-    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int%rbf_c2grad_coeff(jcc,2,:,:))
+    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int%rbf_c2grad_coeff(jcc,1,:,:), lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_C, ptr_patch, ptr_int%rbf_c2grad_coeff(jcc,2,:,:), lacc=.FALSE.)
   ENDDO
 
 END SUBROUTINE rbf_compute_coeff_c2grad
@@ -1687,8 +1683,8 @@ REAL(wp), DIMENSION(:,:,:,:), POINTER :: ptr_coeff  ! pointer to output coeffici
 !$OMP END PARALLEL
 
   DO jb = 1, rbf_vec_dim_v
-    CALL sync_patch_array(SYNC_V, ptr_patch, ptr_int%rbf_vec_coeff_v(jb,1,:,:))
-    CALL sync_patch_array(SYNC_V, ptr_patch, ptr_int%rbf_vec_coeff_v(jb,2,:,:))
+    CALL sync_patch_array(SYNC_V, ptr_patch, ptr_int%rbf_vec_coeff_v(jb,1,:,:), lacc=.FALSE.)
+    CALL sync_patch_array(SYNC_V, ptr_patch, ptr_int%rbf_vec_coeff_v(jb,2,:,:), lacc=.FALSE.)
   ENDDO
 
 ! Optional debug output for RBF coefficients
@@ -2074,7 +2070,7 @@ TYPE(t_tangent_vectors), DIMENSION(:,:), POINTER :: ptr_orient_out
 !$OMP END PARALLEL
 
   DO jb = 1, rbf_vec_dim_e
-    CALL sync_patch_array(SYNC_E, ptr_patch, ptr_int%rbf_vec_coeff_e(jb,:,:))
+    CALL sync_patch_array(SYNC_E, ptr_patch, ptr_int%rbf_vec_coeff_e(jb,:,:), lacc=.FALSE.)
   ENDDO
 
 ! Optional debug output for RBF coefficients

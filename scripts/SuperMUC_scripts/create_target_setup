@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -20,21 +20,21 @@
 #-------------------------------------------------------------------------------------=
 
 set -x
-  
+
 #-------------------------------------------------------------------------------------
 create_build_command()
 {
   build_command_file="build_command"
-  
-  echo "#!$use_shell" > $build_command_file  
+
+  echo "#!$use_shell" > $build_command_file
   if [ x$use_load_modules_script != x ] ; then
     echo ". $use_load_modules_script" >> $build_command_file
   fi
-  
+
   if [[ "x${use_target}" == "xblizzard" ]]; then
     echo "export LDR_CNTRL=MAXDATA=0xD0000000@DSA"  >> $build_command_file
   fi
-  
+
   echo "$use_make_command" >> $build_command_file
   chmod +x $build_command_file
 }
@@ -159,7 +159,7 @@ all:
 	      echo "Exit status from make was \$\$status" ; exit \$\$status ; \\
 	    fi ; \\
 	    cd \$\$back ; \\
-	  done 
+	  done
 control:
 	@for DIR in \$(OBJDIRS) ;\\
 	  do LASTDIR=\$\$DIR ;\\
@@ -214,12 +214,12 @@ EOF
 
 #-------------------------------------------------------------------------------------
 create_std_modules_script()
-{ 
+{
   modules_list=$use_load_modules
   if [[ "$use_mpi" == "yes" ]]; then
     modules_list="$modules_list $use_mpi_modules"
   fi
-  
+
   if [ "x$modules_list" == "x" ] ; then
     use_load_modules_script=""
   else
@@ -231,7 +231,7 @@ create_std_modules_script()
         echo ". $profile_filename" >> $use_load_modules_script
       fi
     done
-    
+
     cat >> $use_load_modules_script << EOF
 module purge
 module load $modules_list
@@ -266,7 +266,7 @@ create_enivoriment()
   F77FLAGS=$F77_FLAGS
   CFLAGS="$C_FLAGS ${DEF_COPT}__ICON__"
   LDFLAGS="$LD_FLAGS"
-  
+
   # create FFLAGS, CFLAGS
   FFLAGS="$BASIC_FLAGS $INFO_FLAGS ${DEF_FOPT}__ICON__"
 
@@ -277,7 +277,7 @@ create_enivoriment()
   elif [[ $trace_mode == "yes" ]]; then
     FFLAGS="$FFLAGS $TRACE_FLAGS"
   fi
-  
+
   #---------------
   # add opt flags
   # echo "optimize_level = $optimize_level"
@@ -312,7 +312,7 @@ create_enivoriment()
     CFLAGS="$CFLAGS ${DEF_COPT}NOMPI"
     F77LAGS="$F77LAGS ${DEF_FOPT}NOMPI"
     MPI_LIB=""
-    MPI_INC=""  
+    MPI_INC=""
   fi
 }
 
@@ -322,7 +322,7 @@ find_target()
 {
   name=`hostname`
   use_host=$name
-  
+
   case "$name" in
   mpipc*)
     use_target="mpipc"
@@ -365,17 +365,17 @@ create_target_setup_machine_compiler()
   fi
 
   include_targets "$use_target compiler"
-  
+
   #call the target machine
   if [[ $include_targets != "OK" ]]; then
     finish -1 "no such file set_target_${use_target} can be used"
   else
     set_target_machine_${use_target}
   fi
-  
+
   under_buildfolder="$use_target"_"$use_fortran"_"$use_mpi"_mpi_"$use_openmp"_openmp
   use_builddir="build/$under_buildfolder"
-  
+
   #call the setup routines for the machine_compiler
   case "$use_target" in
   "squall" ) # the same as mpipc
@@ -390,7 +390,7 @@ create_target_setup_machine_compiler()
 
 #-------------------------------------------------------------------------------------
 create_target_model_icon_testbed()
-{  
+{
   source_folders="blas lapack support src"
 }
 
@@ -423,8 +423,3 @@ echo "  config/createMakefiles.pl --target=$under_buildfolder --srcdirs=\"${sour
 echo "  create_build_command ... finished"
 }
 #-------------------------------------------------------------------------------------
-
-
-
-
-

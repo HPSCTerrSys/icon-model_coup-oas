@@ -30,57 +30,57 @@
 !
 
 MODULE mo_gwd_wms
-  
+
   USE mo_kind,               ONLY: jprb=>wp, vp, jpim =>i4
   !------------------------------------------------------------------------------
   USE mo_math_constants , ONLY : rpi => pi
-  
+
   USE mo_physical_constants , ONLY :   &
     & rd           , & ! gas constant for dry air
     & rcpd => cpd  , & ! specific heat capacity at constant pressure
     & rg   => grav     ! acceleration due to gravity
-  
+
   USE data_gwd,    ONLY : gcstar, gptwo, nslope, gfluxlaun, & ! nlaunch, &
     & ggaussa, ggaussb, ngauss, gcoeff, lozpr
-  
+
   IMPLICIT NONE
-  
+
   PRIVATE
-  
+
 
 
   PUBLIC :: gwdrag_wms
-  
- 
+
+
 CONTAINS
-  
+
   SUBROUTINE gwdrag_wms(kidia,  kfdia,   klon,  klev, klaunch, ptstep, &
     & ptm1 ,  pum1,    pvm1,  papm1,  paphm1, pgeo1, &
     & pgelat, pprecip, &
     & ptenu, ptenv,   pfluxu, pfluxv, &
     & lacc)
-    
+
    !<**** *GWDRAG_WMS*
    !!
    !!     Original Fortran Code by   J. SCINOCCIA
    !!     Rewritten in IFS format by A. ORR          E.C.M.W.F.     August 2008
-   !! 
+   !!
    !!     MODIFICATIONS
    !!     -------------
    !!           October 2008 : Cleaning and full adaptation   P. Bechtold/JJMorcrette
    !!                          Optimisation+bug corrections   P. Bechtold
    !! ---------------------------------------------------------------------------------
-    
-    
+
+
     !USE PARKIND1,    ONLY : JPIM, JPRB
     !USE YOEGWWMS,    ONLY : GCSTAR, GPTWO, NSLOPE, GFLUXLAUN, klaunch, &
     !                      & GGAUSSA, GGAUSSB, NGAUSS, GCOEFF, LOZPR
     !USE YOMCST,      ONLY : RG, RD, RCPD, RPI
     !USE YOMHOOK,     ONLY : LHOOK,   DR_HOOK
     !USE YOEGWD,      ONLY : GSSEC
-    
+
     IMPLICIT NONE
-    
+
     !in
     INTEGER(KIND=jpim),INTENT(in) :: kidia, kfdia
     INTEGER(KIND=jpim),INTENT(in) :: klon         ! horizontal dimension
@@ -101,7 +101,7 @@ CONTAINS
     REAL(KIND=vp),  INTENT(out):: ptenv(:,:)  ! (klon,klev)   full-model level meridional momentum tendency
     REAL(KIND=jprb),INTENT(out):: pfluxu(:,:) ! (klon,klev+1) zonal component of vertical momentum flux (Pa)
     REAL(KIND=jprb),INTENT(out):: pfluxv(:,:) ! (klon,klev+1) meridional component of vertical momentum flux (Pa)
-    
+
     LOGICAL, INTENT(in) :: lacc               ! If .TRUE. use openACC. (.FALSE. is used during initialization)
 
     !work
@@ -129,9 +129,9 @@ CONTAINS
     REAL(KIND=jprb) :: zact(klon,incdim,iazidim)    !if =1 then critical level encountered
     REAL(KIND=jprb) :: zacc(klon,incdim,iazidim)
     REAL(KIND=jprb) :: zcrt(klon,klev,iazidim)
-    
+
     REAL(KIND=jprb) :: gssec=1.e-12_JPRB
-    
+
     INTEGER(KIND=jpim) :: inc, jk, jl, iazi
     REAL(KIND=jprb) :: zradtodeg, zgelatdeg
     REAL(KIND=jprb) :: zcimin, zcimax
@@ -143,15 +143,15 @@ CONTAINS
     REAL(KIND=jprb) :: zms_l,zms, z0p5, z0p0, z50s
     REAL(KIND=jprb) :: zgauss(klon), zfluxlaun(klon), zcngl(klon)
     REAL(KIND=jprb) :: zcons1,zcons2,zdelp,zrgpts
-    
+
 !     REAL(KIND=jprb) :: zhook_handle
-    
+
     !--------------------------------------------------------------------------
-    
+
     !IF (LHOOK) CALL DR_HOOK('GWDRAG_WMS',0,ZHOOK_HANDLE)
-    
+
     !--------------------------------------------------------------------------
-    
+
     !$ACC DATA PRESENT(pum1, pvm1, ptm1, papm1, paphm1, pgeo1, pgelat, pprecip, ptenu, ptenv, pfluxu, pfluxv) &
     !$ACC   CREATE(zfnorm, zfct, zacc, zui, zcngl, zrhohm1, zsinang, zthm1, zul, zgauss, zcosang, zdci, zci, zcrt) &
     !$ACC   CREATE(zbvfl, zx, zvhm1, zact, zbvfhm1, zuhm1, zdfl, zpu, zflux, zfluxlaun, zci_min) &
@@ -161,17 +161,17 @@ CONTAINS
 
     !*       INPUT PARAMETERS
     !*       ----------------
-    
+
     zradtodeg=57.29577951_JPRB
-    
+
     !m_star
     zms_l=2000.0_JPRB
     zms=2._jprb*rpi/zms_l
-    
-    
+
+
     !*       INITIALIZE FIELDS TO ZERO
     !*       -------------------------
-    
+
     !$ACC LOOP SEQ
     DO jk=1,klev
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -180,7 +180,7 @@ CONTAINS
         ptenv(jl,jk)=0.0_JPRB
       ENDDO
     ENDDO
-    
+
     !$ACC LOOP SEQ
     DO iazi=1,iazidim
       !$ACC LOOP SEQ
@@ -193,7 +193,7 @@ CONTAINS
         ENDDO
       ENDDO
     ENDDO
-    
+
     !$ACC LOOP SEQ
     DO jk=1,klev+1
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -202,22 +202,22 @@ CONTAINS
         pfluxv(jl,jk)=0.0_JPRB
       ENDDO
     ENDDO
-    
-    
+
+
     !*       INITIALIZE PARAMETERS FOR COORDINATE TRANSFORM
     !*       ----------------------------------------------
-    
+
     ! ZCIMIN,ZCIMAX - min,max intrinsic launch-level phase speed (c-U_o) (m/s)
     ! ZGAM - half=width of coordinate stretch
-    
+
     zcimin=0.25_JPRB
     zcimax=100.0_JPRB
     zgam=0.25_JPRB
-    
+
     zpexp=gptwo/2.0_JPRB
-    
+
     ! set initial min ci in each column and azimuth (used for critical levels)
-    
+
     !$ACC LOOP SEQ
     DO iazi=1,iazidim
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -225,11 +225,11 @@ CONTAINS
         zci_min(jl,iazi)=zcimin
       ENDDO
     ENDDO
-    
-    
+
+
     !*       DEFINE HALF MODEL LEVEL WINDS AND TEMPERATURE
     !*       -----------------------------------
-    
+
     !$ACC LOOP SEQ
     DO jk=2,klev
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -246,11 +246,11 @@ CONTAINS
       zuhm1(jl,jk)=pum1(jl,jk)
       zvhm1(jl,jk)=pvm1(jl,jk)
     ENDDO
-    
-    
+
+
     !*       DEFINE STATIC STABILITY AND AIR DENSITY ON HALF MODEL LEVELS
     !*       ------------------------------------------------------------
-    
+
     zcons1=1.0_JPRB/rd
     zcons2=rg**2/rcpd
     !$ACC LOOP SEQ
@@ -264,18 +264,18 @@ CONTAINS
         zbvfhm1(jl,jk)=SQRT(zbvfhm1(jl,jk))
       ENDDO
     ENDDO
-    
+
     !*       SET UP AZIMUTH DIRECTIONS AND SOME TRIG FACTORS
     !*       -----------------------------------------------
-    
+
     zang=2.0_JPRB*rpi/REAL(iazidim,jprb)
     zaz_fct=1.0_JPRB
-    
+
     ! get normalization factor to ensure that the same amount of momentum
     ! flux is directed (n,s,e,w) no mater how many azimuths are selected.
     ! note, however, the code below assumes a symmetric distribution of
     ! of azimuthal directions (ie 4,8,16,32,...)
-    
+
     znorm=0.0_JPRB
     !$ACC LOOP SEQ
     DO iazi=1,iazidim
@@ -285,24 +285,24 @@ CONTAINS
       znorm=znorm+ABS(zcosang(iazi))
     ENDDO
     zaz_fct=2._jprb*zaz_fct/znorm
-    
-    
+
+
     !*       DEFINE COORDINATE TRANSFORM
     !*       -----------------------------------------------
-    
+
     ! note that this is expresed in terms of the intrinsic phase speed
     ! at launch ci=c-u_o so that the transformation is identical at every
     ! launch site.
     ! See Eq. 28-30 of Scinocca 2003.
-    
+
     zxmax=1.0_JPRB/zcimin
     zxmin=1.0_JPRB/zcimax
-    
+
     zxran=zxmax-zxmin
     zdx=zxran/REAL((incdim-1),KIND(zdx))
     zx1=zxran/(EXP(zxran/zgam)-1.0_JPRB)
     zx2=zxmin-zx1
-    
+
     !$ACC LOOP SEQ
     DO inc=1,incdim
      !ZTX=REAL(INC-1)*ZDX+ZXMIN
@@ -311,11 +311,11 @@ CONTAINS
       zci(inc)=1.0_JPRB/zx(inc)                                        !Eq. 28 of Scinocca 2003
       zdci(inc)=zci(inc)**2*(zx1/zgam)*EXP((ztx-zxmin)/zgam)*zdx       !Eq. 30 of Scinocca 2003
     ENDDO
-    
-    
+
+
     !*       DEFINE INTRINSIC VELOCITY (RELATIVE TO LAUNCH LEVEL VELOCITY) U(Z)-U(Zo), AND COEFFICINETS
     !*       ------------------------------------------------------------------------------------------
-    
+
     !$ACC LOOP SEQ
     DO iazi=1,iazidim
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -327,7 +327,7 @@ CONTAINS
     DO jl=kidia,kfdia
       zbvfl(jl)=zbvfhm1(jl,klaunch)
     ENDDO
-    
+
     !$ACC LOOP SEQ
     DO jk=2,klaunch
       !$ACC LOOP SEQ
@@ -339,10 +339,10 @@ CONTAINS
         ENDDO
       ENDDO
     ENDDO
-    
+
     !*       DEFINE RHO(Zo)/N(Zo)
     !*       -------------------
-    
+
     !$ACC LOOP SEQ
     DO jk=2,klaunch
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -350,13 +350,13 @@ CONTAINS
         zfct(jl,jk)=zrhohm1(jl,jk)/zbvfhm1(jl,jk)
       ENDDO
     ENDDO
-    
+
     !*       SET LAUNCH MOMENTUM FLUX SPECTRAL DENSITY
     !*       -----------------------------------------
-    
+
     ! Eq. (25) of Scinocca 2003 (not including the 'A' component), and with U-Uo=0
     ! do this for only one azimuth since it is identical to all azimuths, and it will be renormalized
-    
+
     IF(nslope==1) THEN
       ! s=1 case
       !$ACC LOOP SEQ
@@ -398,12 +398,12 @@ CONTAINS
         ENDDO
       ENDDO
     ENDIF
-    
+
     !*       NORMALIZE LAUNCH MOMENTUM FLUX
     !*       ------------------------------
-    
+
     ! (rho x F^H = rho_o x F_p^total)
-    
+
     ! integrate (ZFLUX x dX)
     !$ACC LOOP SEQ
     DO inc=1,incdim
@@ -413,19 +413,19 @@ CONTAINS
         zpu(jl,klaunch,1)=zpu(jl,klaunch,1)+zflux(jl,inc,1)*zcinc
       ENDDO
     ENDDO
-    
+
     !*       NORMALIZE GFLUXLAUN TO INCLUDE SENSITIVITY TO PRECIPITATION
     !*       -----------------------------------------------------------
-    
+
     ! Also other options to alter tropical values
-    
+
     ! A=ZFNORM in Scinocca 2003.  A is independent of height.
     !$ACC LOOP GANG(STATIC: 1) VECTOR
     DO jl=kidia,kfdia
       zfluxlaun(jl)=gfluxlaun
       zfnorm(jl)=zfluxlaun(jl)/zpu(jl,klaunch,1)
     ENDDO
-    
+
     ! If LOZPR=TRUR then increase EPLAUNCH over tropics
     IF (lozpr) THEN
       IF (ngauss==1) THEN
@@ -455,7 +455,7 @@ CONTAINS
         ENDDO
       ENDIF
     ENDIF
-    
+
     !$ACC LOOP SEQ
     DO iazi=1,iazidim
       !$ACC LOOP GANG(STATIC: 1) VECTOR
@@ -463,7 +463,7 @@ CONTAINS
         zpu(jl,klaunch,iazi)=zfluxlaun(jl)
       ENDDO
     ENDDO
-    
+
     !*       ADJUST CONSTANT ZFCT
     !*       --------------------
     !$ACC LOOP SEQ
@@ -473,7 +473,7 @@ CONTAINS
         zfct(jl,jk)=zfnorm(jl)*zfct(jl,jk)
       ENDDO
     ENDDO
-    
+
     !*       RENORMALIZE EACH SPECTRAL ELEMENT IN FIRST AZIMUTH
     !*       --------------------------------------------------
     !$ACC LOOP SEQ
@@ -483,13 +483,13 @@ CONTAINS
         zflux(jl,inc,1)=zfnorm(jl)*zflux(jl,inc,1)
       ENDDO
     ENDDO
-    
+
     !*       COPY ZFLUX INTO ALL OTHER AZIMUTHS
     !*       --------------------------------
-    
+
     ! ZACT=1 then no critical level
     ! ZACT=0 then critical level
-    
+
     !$ACC LOOP SEQ
     DO iazi=2,iazidim
       !$ACC LOOP SEQ
@@ -502,35 +502,35 @@ CONTAINS
         ENDDO
       ENDDO
     ENDDO
-    
+
     ! -----------------------------------------------------------------------------
-    
+
     !*       BEGIN MAIN LOOP OVER LEVELS
     !*       ---------------------------
-    
+
     !* begin IAZIDIM do-loop
     !* --------------------
-    
+
     !$ACC LOOP SEQ
     DO iazi=1,iazidim
-      
+
       !* begin JK do-loop
       !* ----------------
       !$ACC LOOP SEQ
       DO jk=klaunch-1,2,-1
-        
-        
+
+
         !* first do critical levels
         !* ------------------------
-        
+
         !$ACC LOOP GANG(STATIC: 1) VECTOR
         DO jl=kidia,kfdia
           zci_min(jl,iazi)=MAX(zci_min(jl,iazi),zui(jl,jk,iazi))
         ENDDO
-        
+
         !* set ZACT to zero if critical level encountered
         !* ----------------------------------------------
-        
+
         z0p5=0.5_JPRB
         !$ACC LOOP SEQ
         DO inc=1,incdim
@@ -542,10 +542,10 @@ CONTAINS
             zact(jl,inc,iazi)=zatmp
           ENDDO
         ENDDO
-        
+
         !* integrate to get critical-level contribution to mom deposition on this level, i.e. ZACC=1
         !* ----------------------------------------------------------------------------------------
-        
+
         !$ACC LOOP SEQ
         DO inc=1,incdim
           zcinc=zdci(inc)
@@ -555,10 +555,10 @@ CONTAINS
               & zacc(jl,inc,iazi)*zflux(jl,inc,iazi)*zcinc
           ENDDO
         ENDDO
-        
+
         !* get weighted average of phase speed in layer
         !* --------------------------------------------
-        
+
         !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(zatmp)
         DO jl=kidia,kfdia
           IF(zdfl(jl,jk,iazi)>0.0_JPRB) THEN
@@ -574,10 +574,10 @@ CONTAINS
             zcrt(jl,jk,iazi)=zcrt(jl,jk+1,iazi)
           ENDIF
         ENDDO
-        
+
         !* do saturation (Eq. (26) and (27) of Scinocca 2003)
         !* -------------------------------------------------
-        
+
         IF(gptwo==3.0_JPRB) THEN
           !$ACC LOOP SEQ
           DO inc=1,incdim
@@ -612,10 +612,10 @@ CONTAINS
             ENDDO
           ENDDO
         ENDIF
-        
+
         !* integrate spectrum
         !* ------------------
-        
+
         !$ACC LOOP SEQ
         DO inc=1,incdim
           zcinc=zdci(inc)
@@ -625,22 +625,22 @@ CONTAINS
               & zact(jl,inc,iazi)*zflux(jl,inc,iazi)*zcinc
           ENDDO
         ENDDO
-        
+
         !* end JK do-loop
         !* --------------
-        
+
       ENDDO
-      
+
       !* end IAZIDIM do-loop
       !* ---------------
-      
+
     ENDDO
-    
+
     ! -----------------------------------------------------------------------------
-    
+
     !*       MAKE CORRECTION FOR CRITICAL-LEVEL MOMENTUM DEPOSITION
     !*       ------------------------------------------------------
-    
+
     z0p0=0._jprb
     zrgpts=1.0_JPRB/(rg*ptstep)
     !$ACC LOOP SEQ
@@ -663,11 +663,11 @@ CONTAINS
         ENDDO
       ENDDO
     ENDDO
-    
-    
+
+
     !*       SUM CONTRIBUTION FOR TOTAL ZONAL AND MERIDIONAL FLUX
     !*       ---------------------------------------------------
-    
+
     !$ACC LOOP SEQ
     DO iazi=1,iazidim
       !$ACC LOOP SEQ
@@ -679,11 +679,11 @@ CONTAINS
         ENDDO
       ENDDO
     ENDDO
-    
-    
+
+
     !*    UPDATE U AND V TENDENCIES
     !*    ----------------------------
-    
+
     zcons1=1.0_JPRB/rcpd
     !$ACC LOOP SEQ
     DO jk=1,klaunch
@@ -696,16 +696,15 @@ CONTAINS
         ptenv(jl,jk)=ze2
       ENDDO
     ENDDO
-    
+
     !---------------------------------------------------------------------------
     !$ACC END PARALLEL
-    
+
     !$ACC WAIT IF(lacc)
     !$ACC END DATA
     !IF (LHOOK) CALL DR_HOOK('GWDRAG_WMS',1,ZHOOK_HANDLE)
-    
-  END SUBROUTINE gwdrag_wms
-  
-  
-END MODULE mo_gwd_wms
 
+  END SUBROUTINE gwdrag_wms
+
+
+END MODULE mo_gwd_wms

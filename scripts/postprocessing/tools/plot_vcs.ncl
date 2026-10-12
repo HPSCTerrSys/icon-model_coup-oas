@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -22,19 +22,19 @@ load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 
 ;*************************************************
 ; Main code
-;************************************************* 
+;*************************************************
 
 begin
 
 
-  
- ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+
+ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
   rad2deg = 45./atan(1.)   ; radians to degrees
   extra_level = 0      ;it is 1 only for var="W" and Model="ICONAM"
   vlev=31 ;"mlev"          ; it is ilev in case var="W"
   iu=1    ; if +1, then lon between 0,360  ; if  -1, then  lon between -180 and 180
- ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+ ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
  ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
  ; get the variables from the driver
@@ -63,14 +63,14 @@ begin
 
 
 
-  
+
   if (IMan .eq. "T") then
    minlev    = stringtofloat(getenv("minlev"))
    maxlev    = stringtofloat(getenv("maxlev"))
    interval  = stringtofloat(getenv("interval"))
   end if
 
-  
+
   leftlat    = stringtofloat(Leftlat)
   rightlat   = stringtofloat(Rightlat)
   leftlon    = stringtofloat(Leftlon)
@@ -88,7 +88,7 @@ begin
     extra_level=0
    end if
   end if
- 
+
   File = addfile(File_Int, "r")
 
   varnames = getfilevarnames(File)
@@ -113,16 +113,16 @@ begin
   nlat=dimsizes(var3dll&lat)
 
   if (Model .eq. "ICONAM") then
-   z3dll   = File->$height_var$(0,:,:,:) ; lev,lat,lon 
+   z3dll   = File->$height_var$(0,:,:,:) ; lev,lat,lon
    topoll  = File->ZH3(0,num_levels,:,:)
   end if
-  
+
   if (Model .eq. "ICOHDC") then
    z3dll   = File->ZF3(0,:,:,:)
    topoll  = File->PHIS(0,:,:)
    topoll  = topoll /9.80665
 ;   z3dll   = z3dll/9.80665
-  end if 
+  end if
 
 
 
@@ -130,7 +130,7 @@ begin
 ; printVarSummary(z3dll)
 ; printVarSummary(topoll)
 
- 
+
  ;File_Int has the variable and the height field in a gaussian grid, lon from 0 to 360
 
 
@@ -149,11 +149,11 @@ begin
    end if
    if (rightlon .lt. 0.) then
     rightlon = rightlon + 360.
-   end if                             ; File_Int hat lon in the range 0 to 360, 
-                                      ; because it comes from the interpolation to a 
+   end if                             ; File_Int hat lon in the range 0 to 360,
+                                      ; because it comes from the interpolation to a
                                       ; gaussian grid with cdo
    dist     = gc_latlon(leftlat,leftlon,rightlat,rightlon,npts,2*iu)
-   points   = ispan(0,npts-1,1)*1.0 
+   points   = ispan(0,npts-1,1)*1.0
 
    xlon = dist@gclon
    ylat = dist@gclat
@@ -167,7 +167,7 @@ begin
      ylat=new(npts,"float")
      ylat(:)=leftlat
 
-     ; if (leftlon .gt. rightlon), better use the (180.,180.)range to 
+     ; if (leftlon .gt. rightlon), better use the (180.,180.)range to
      ;  calculate the longitudinal values of the points in the transect
 
      if(leftlon .gt. rightlon) then
@@ -179,7 +179,7 @@ begin
           rightlon = rightlon -360.
          end if
       end if
-        
+
      end if
 
      minlon=min((/leftlon,rightlon/))
@@ -197,7 +197,7 @@ begin
       xlon(:)=leftlon
       iu=-1
       minlat=min((/leftlat,rightlat/))
-      maxlat=max((/leftlat,rightlat/))    
+      maxlat=max((/leftlat,rightlat/))
 
       ylat=fspan(minlat,maxlat,npts)
       dx=(maxlat-minlat)/(npts-1.)
@@ -215,7 +215,7 @@ begin
 ;********************************
 ; interpolate data to great circle
 ;********************************
-  
+
   xlon=where(xlon.lt.0.,xlon+360.,xlon)  ; transform again to (0.,360)
 
   var2dcs = linint2_points_Wrap(var3dll&lon,var3dll&lat(nlat-1:0),\
@@ -269,15 +269,15 @@ begin
   ; Ressourcen-Variable :
   ; ---------------------
 
-  res   = True   
+  res   = True
 
   res@trGridType            = "TriangularMesh"
   res@sfXArray              = xcoord(:,:)
   res@sfYArray              = zcoord(:,:)
 
-  ;res@trXMinF               =     ; in km  
-  ;res@trXMaxF               =     ; in km  
-  res@trYMinF               =   -0.3     ; in km  
+  ;res@trXMinF               =     ; in km
+  ;res@trXMaxF               =     ; in km
+  res@trYMinF               =   -0.3     ; in km
   res@trYMaxF               = 50.     ; in km
 
   resT  = res
@@ -297,7 +297,7 @@ begin
    res@cnLevelSelectionMode = "ManualLevels"
    res@cnMinLevelValF        = minlev
    res@cnMaxLevelValF        = maxlev
-   res@cnLevelSpacingF       = interval 
+   res@cnLevelSpacingF       = interval
   else
    res@cnLevelSelectionMode = "AutomaticLevels"
   end if
@@ -323,15 +323,15 @@ begin
   res@tiYAxisFontThicknessF = 1.0
   res@tmYLLabelFontHeightF  = 0.02
 
-  
+
 ;;;;;;;;;;;;;;;;;;;;;
 ; contour plot of var
 ;;;;;;;;;;;;;;;;;;;;;
 
-  plot = gsn_csm_contour( wks, var2dcs, res )    ; 
+  plot = gsn_csm_contour( wks, var2dcs, res )    ;
 
 
-  
+
 ; add the topography (taken from Guehnter)
 ; Stipple the terrain area and add a line at the surface
 ; ;;;;;;;;;;;;;;;;;;;;
@@ -363,7 +363,7 @@ begin
 ;  gsn_text_ndc(wks,Radiation,0.3,0.1,txres)
 
   draw (plot)
-  frame(wks) 
+  frame(wks)
 
 ; system("gv "+PlotDir+PlotFileN+"."+PlotFormat+" &")
 

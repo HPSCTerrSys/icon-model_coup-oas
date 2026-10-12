@@ -1,19 +1,17 @@
-!
-! Contains surface type (tile) indices used by the turbulent mixing parameterization.
-!
-! Contains subroutines for initializing the AES physics package
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains surface type (tile) indices used by the turbulent mixing parameterization.
+!
+! Contains subroutines for initializing the AES physics package
 
 MODULE mo_aes_sfc_indices
 
@@ -44,7 +42,8 @@ CONTAINS
     CHARACTER(len=*),INTENT(IN) :: ctest_name
 
     SELECT CASE(TRIM(ctest_name))
-    CASE('APE','APE_aes','RCE','RCE_glb','RCE_Tconst','RCE_Tprescr','aes_bubble','RCEhydro','CBL_flxconst','RCEMIP_analytical')
+    CASE('APE','APE_aes','RCE','RCE_glb','RCE_Tconst','RCE_Tprescr','aes_bubble','aes_cbl','RCEhydro','CBL_flxconst','RCEMIP_analytical', &
+      &  'dcmip_tc_52')
       ! Aqua-planet simulation, no land, no ice;
       ! No needed to distinguish the aggregated grid-box mean
       ! and the value on different types of surface

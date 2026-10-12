@@ -1,0 +1,76 @@
+#!/bin/ksh
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+#--------------------------------------------------------------------------------
+#
+# Marco Giorgetta, MPI-M
+# Check if the original qubicc experiment still works after modifications.
+# Here the jsbach use case is switched from 'lite' to 'pfts'.
+#
+exp_original=atm_qubicc_test
+modification=pfts
+#
+check_script=checksuite.icon-dev/check.${exp_original%_test}
+#
+#--------------------------------------------------------------------------------
+#
+# 1. Define the experiment and the files to be checked
+
+# EXPERIMENT contains the name of the modified experiment
+#
+export EXPERIMENT=${exp_original}_${modification}
+
+# TYPES AND DATES are needed if the CUDA graph check is performed
+#
+# TYPES is a list of names identifying the files <EXPERIMENT>_<TYPE>_<DATE>.<FORMAT> to be checked.
+# Get TYPES from the main check script
+grep 'TYPES=' $check_script > ${check_script}_${modification}_TYPES
+. ./${check_script}_${modification}_TYPES
+rm  ${check_script}_${modification}_TYPES
+
+# DATES is a list of dates identifying the files <EXPERIMENT>_<TYPE>_<DATE>.<FORMAT> to be checked.
+# Get DATES from main check script
+grep 'DATES=' $check_script > ${check_script}_${modification}_DATES
+. ./${check_script}_${modification}_DATES
+rm  ${check_script}_${modification}_DATES
+
+# construct the experiment
+#
+# switch jsbach use case from 'lite' to 'pfts'
+sed s/jsb_case=\"\'jsbach_lite\'\"/jsb_case=\"\'jsbach_pfts\'\"/ exp.$exp_original > exp.$EXPERIMENT
+#--------------------------------------------------------------------------------
+#
+# 2. Define the checksuite mode
+
+builder="unknown"
+[[ $BB_NAME ]] && builder=$(echo ${BB_NAME} | tr '[:upper:]' '[:lower:]')
+
+# base check only
+case $builder in
+    levante_gpu*) export MD='bg' ;;
+    *)            export MD='b' ;;
+esac
+
+#--------------------------------------------------------------------------------
+#
+# 3. Launch the checksuite
+
+rundir=`pwd`
+cd checksuite.icon-dev
+
+./icon-dev.checksuite
+STATUS=$?
+
+check_final_status $STATUS "$EXPERIMENT"
+
+#--------------------------------------------------------------------------------
+exit

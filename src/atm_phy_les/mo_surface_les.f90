@@ -1,18 +1,15 @@
-!
-! Surface calculations for les physics using Businger Dyer relationship
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Surface calculations for les physics using Businger Dyer relationship
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -30,13 +27,12 @@ MODULE mo_surface_les
   USE mo_impl_constants    ,  ONLY: min_rlcell_int, success
   USE mo_sync,                ONLY: sync_c, sync_patch_array_mult, global_sum_array
   USE mo_physical_constants,  ONLY: cpd, p0ref, grav, alv, rd, rgrav, rd_o_cpd, vtmpc1
-  USE mo_nwp_lnd_types,       ONLY: t_lnd_prog, t_lnd_diag 
-  USE mo_satad,               ONLY: spec_humi, sat_pres_water
+  USE mo_nwp_lnd_types,       ONLY: t_lnd_prog, t_lnd_diag
+  USE mo_thdyn_functions,     ONLY: spec_humi, sat_pres_water
   USE mo_nwp_phy_types,       ONLY: t_nwp_phy_diag
   USE mo_les_config,          ONLY: les_config
   USE mo_math_constants,      ONLY: pi_2, ln2
   USE mo_impl_constants_grf,  ONLY: grf_bdywidth_c
-  USE turb_data,              ONLY: akt, alpha0
   USE mo_turbdiff_config,     ONLY: turbdiff_config
   USE mo_fortran_tools,       ONLY: insert_dimension, set_acc_host_or_device
   USE mo_io_units,            ONLY: find_next_free_unit
@@ -59,7 +55,7 @@ MODULE mo_surface_les
   REAL(wp), PARAMETER :: zh_max  = 0.1_wp
 
   !Parameters for RICO case
-  REAL(wp), PARAMETER :: c_m = 0.001229_wp  
+  REAL(wp), PARAMETER :: c_m = 0.001229_wp
   REAL(wp), PARAMETER :: c_h = 0.001094_wp
   REAL(wp), PARAMETER :: c_q = 0.001133_wp
   REAL(wp), PARAMETER :: th0_rico = 298.5_wp
@@ -67,6 +63,8 @@ MODULE mo_surface_les
 
   REAL(wp), SAVE, ALLOCATABLE ::  ts(:), qvs(:)
   REAL(wp), SAVE :: dt_interval = 0._wp
+
+  REAL(wp), POINTER :: akt, alpha0
 
   CONTAINS
 
@@ -76,21 +74,21 @@ MODULE mo_surface_les
   !!------------------------------------------------------------------------
   !! Calculate surface temperature and moisture given the fluxes using Businger
   !! Dyer relationships .OR. vice versa. All calculations are done at cell center
-  !!  
+  !!
   !!------------------------------------------------------------------------
 
   SUBROUTINE  surface_conditions(p_nh_metrics, p_patch, p_nh_diag, p_prog_lnd_now, &
                                  p_prog_lnd_new, p_diag_lnd, prm_diag, theta, qv, p_sim_time, lacc)
-                                  
+
 
     TYPE(t_nh_metrics),INTENT(in),TARGET :: p_nh_metrics !< single nh metric state
     TYPE(t_patch),  INTENT(inout),TARGET :: p_patch    !< single patch
     TYPE(t_nh_diag),   INTENT(in)        :: p_nh_diag  !< single nh diagnostic state
-    TYPE(t_lnd_prog),  INTENT(in)        :: p_prog_lnd_now!<land prog state 
-    TYPE(t_lnd_prog),  INTENT(inout)     :: p_prog_lnd_new!<land prog state 
-    TYPE(t_lnd_diag),  INTENT(inout)     :: p_diag_lnd    !<land diag state 
+    TYPE(t_lnd_prog),  INTENT(in)        :: p_prog_lnd_now!<land prog state
+    TYPE(t_lnd_prog),  INTENT(inout)     :: p_prog_lnd_new!<land prog state
+    TYPE(t_lnd_diag),  INTENT(inout)     :: p_diag_lnd    !<land diag state
     TYPE(t_nwp_phy_diag),   INTENT(inout):: prm_diag      !< atm phys vars
-    REAL(wp),          INTENT(in)        :: theta(:,:,:)  !pot temp  
+    REAL(wp),          INTENT(in)        :: theta(:,:,:)  !pot temp
     REAL(wp),          INTENT(in)        :: qv(:,:,:)     !spec humidity
     REAL(wp),          INTENT(in)        :: p_sim_time    !current sim time
 
@@ -105,7 +103,7 @@ MODULE mo_surface_les
     INTEGER :: jk, jb, jc, isidx, isblk, rl
     INTEGER :: nlev, jg, itr, jkp1, n_curr, n_next
     INTEGER :: iunit, ist, nt, n
-     
+
     CHARACTER(len=*), PARAMETER :: routine = 'mo_surface_les:surface_conditions'
 
     LOGICAL, OPTIONAL, INTENT(in)   :: lacc  !< GPU flag
@@ -117,6 +115,9 @@ MODULE mo_surface_les
          CALL message(TRIM(routine), '')
 
     jg = p_patch%id
+
+    akt    => turbdiff_config(jg)%akt
+    alpha0 => turbdiff_config(jg)%alpha0
 
     IF(les_config(jg)%isrfc_type > 1) THEN
       IF(les_config(jg)%psfc < 0._wp)THEN
@@ -132,20 +133,20 @@ MODULE mo_surface_les
     nlev = p_patch%nlev
     jk   = nlev
     jkp1 = jk+1
- 
-    !loop indices: exclude halo 
-    rl_start   = grf_bdywidth_c+1 
+
+    !loop indices: exclude halo
+    rl_start   = grf_bdywidth_c+1
     rl_end     = min_rlcell_int
     i_startblk = p_patch%cells%start_block(rl_start)
-    i_endblk   = p_patch%cells%end_block(rl_end)         
+    i_endblk   = p_patch%cells%end_block(rl_end)
 
 
     SELECT CASE(les_config(jg)%isrfc_type)
 
-    !Default case with TERRA
-    !Most of what follows has been taken from mo_nwp_turbtrans_interface 
-    !for COSMO turbulence
 
+    !Default case with TERRA
+    !Most of what follows has been taken from mo_nwp_turbtrans_interface
+    !for COSMO turbulence
     CASE(1)
 
       !For now the LES scheme uses the surface fluxes from land directly. Exchange coefficients
@@ -165,16 +166,17 @@ MODULE mo_surface_les
       END DO
       !$ACC END PARALLEL
 
-      !Prescribed latent/sensible heat fluxes: get ustar and surface temperature / moisture
-      !Ideally, one should do an iteration to get ustar corresponding to given fluxes
 
-    !Fixed surface pressure to be comparable to incompressible LES models. Pseudo density
-    !(constant in time) that is used here is fixed to the initial value so that the flux 
-    !is fixed in density units. 
+    !Prescribed latent/sensible heat fluxes: get ustar and surface temperature / moisture
+    !Ideally, one should do an iteration to get ustar corresponding to given fluxes
     CASE(2)
 #ifdef _OPENACC
       CALL finish ('mo_surface_les:', 'isrfc_type=2: OpenACC version currently not implemented')
 #endif
+
+      !Fixed surface pressure to be comparable to incompressible LES models. Pseudo density
+      !(constant in time) that is used here is fixed to the initial value so that the flux
+      !is fixed in density units.
 
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jc,jb,i_startidx,i_endidx,exner,zrough,mwind,z_mc,RIB,rhos, &
@@ -191,12 +193,12 @@ MODULE mo_surface_les
             zrough = prm_diag%gz0(jc,jb) * rgrav
 
             !Get reference surface pot. temperature
-            !First time step t_g takes value assigned in nwp_phy_init          
+            !First time step t_g takes value assigned in nwp_phy_init
             theta_sfc = p_prog_lnd_now%t_g(jc,jb) / exner
 
             !Mean wind at nlev
             mwind  = MAX( les_config(jg)%min_sfc_wind,SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) )
-           
+
             !Z height
             z_mc   = p_nh_metrics%z_mc(jc,jk,jb) - p_nh_metrics%z_ifc(jc,jkp1,jb)
 
@@ -209,7 +211,7 @@ MODULE mo_surface_les
               DO itr = 1 , 5
                 !"-" sign in the begining because ustar*thstar = -shflx
                 obukhov_length = - theta_sfc*ustar**3/(akt*grav*les_config(jg)%shflx)
-                ustar = mwind / businger_mom(zrough,z_mc,obukhov_length)  
+                ustar = mwind / businger_mom(zrough,z_mc,obukhov_length)
               END DO
 
             ELSE
@@ -219,17 +221,17 @@ MODULE mo_surface_les
 
             !New temperature
             theta_sfc   = theta(jc,jk,jb) + les_config(jg)%shflx / ustar * &
-                          businger_heat(zrough,z_mc,obukhov_length) 
+                          businger_heat(zrough,z_mc,obukhov_length)
 
             p_prog_lnd_new%t_g(jc,jb) = theta_sfc * exner
 
             !Get surface qv
             p_diag_lnd%qv_s(jc,jb) = qv(jc,jk,jb) + les_config(jg)%lhflx / ustar * &
-                                     businger_heat(zrough,z_mc,obukhov_length) 
+                                     businger_heat(zrough,z_mc,obukhov_length)
 
             !rho at surface: no qc at surface
             rhos   =  pres_sfc(jc,jb)/( rd * &
-                     p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )  
+                     p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )
 
             !Get surface fluxes
             prm_diag%shfl_s(jc,jb)  = les_config(jg)%shflx * rhos * cpd
@@ -237,16 +239,17 @@ MODULE mo_surface_les
             prm_diag%umfl_s(jc,jb)  = ustar**2 * rhos * p_nh_diag%u(jc,jk,jb) / mwind
             prm_diag%vmfl_s(jc,jb)  = ustar**2 * rhos * p_nh_diag%v(jc,jk,jb) / mwind
 
-         END DO  
+         END DO
       END DO
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
+
     !Prescribed buoyancy flux and transfer coefficient at surface to get a uniform SST (Stevens 2007 JAS)
     !It uses fixed transfer coefficient and assumes that q_s is saturated
     !Fixed surface pressure to be comparable to incompressible LES models. Pseudo density
-    !(constant in time) that is used here is fixed to the initial value so that the flux 
-    !is fixed in density units. 
+    !(constant in time) that is used here is fixed to the initial value so that the flux
+    !is fixed in density units.
     CASE(3)
 #ifdef _OPENACC
       CALL finish ('mo_surface_les:', 'isrfc_type=3: OpenACC version currently not implemented')
@@ -268,39 +271,39 @@ MODULE mo_surface_les
       rl    = grf_bdywidth_c+1
       isblk = p_patch%cells%start_blk(rl,1)
       isidx = p_patch%cells%start_idx(rl,1)
-       
+
       ex_sfc  = 1._wp !EXP( rd_o_cpd*LOG(pres_sfc(isidx,isblk)/p0ref) )
-      t_sfc     = p_prog_lnd_now%t_g(isidx,isblk) 
-      theta_sfc = t_sfc / ex_sfc       
-      
+      t_sfc     = p_prog_lnd_now%t_g(isidx,isblk)
+      theta_sfc = t_sfc / ex_sfc
+
       diff = 1._wp
-      itr = 0 
+      itr = 0
       DO WHILE (diff > 1.e-6_wp .AND. itr < 10)
          bflx1 = les_config(jg)%tran_coeff*( (theta_sfc-theta_nlev)+vtmpc1* &
                  theta_nlev*(spec_humi(sat_pres_water(t_sfc),pres_sfc(isidx,isblk))- &
                  qv_nlev) )*grav/theta_nlev
 
-         theta_sfc1 = theta_sfc + 0.1_wp 
+         theta_sfc1 = theta_sfc + 0.1_wp
          t_sfc      = theta_sfc1 * ex_sfc
 
          bflx2 = les_config(jg)%tran_coeff*( (theta_sfc1-theta_nlev)+vtmpc1* &
                  theta_nlev*(spec_humi(sat_pres_water(t_sfc),pres_sfc(isidx,isblk))- &
                  qv_nlev) )*grav/theta_nlev
 
-         theta_sfc = theta_sfc1 + 0.1_wp*(les_config(jg)%bflux-bflx1)/(bflx2-bflx1) 
+         theta_sfc = theta_sfc1 + 0.1_wp*(les_config(jg)%bflux-bflx1)/(bflx2-bflx1)
          t_sfc     = theta_sfc * ex_sfc
-         
+
          diff = ABS(1._wp - theta_sfc/theta_sfc1)
-         itr = itr + 1         
-      END DO               
-       
+         itr = itr + 1
+      END DO
+
 
       !WRITE(message_text,'(i4,f14.6,f14.7)')itr,diff,bflx2
       !CALL message('FINAL ITR, RESID, AND BFLX:',message_text )
 
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jc,jb,i_startidx,i_endidx,zrough,z_mc,mwind,RIB,ustar, &
-!$OMP            obukhov_length,rhos),ICON_OMP_RUNTIME_SCHEDULE 
+!$OMP            obukhov_length,rhos),ICON_OMP_RUNTIME_SCHEDULE
       DO jb = i_startblk,i_endblk
          CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
                             i_startidx, i_endidx, rl_start, rl_end)
@@ -308,7 +311,7 @@ MODULE mo_surface_les
 
             !Mean wind at nlev
             mwind  = MAX( les_config(jg)%min_sfc_wind, SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) )
-           
+
             z_mc   = p_nh_metrics%z_mc(jc,jk,jb) - p_nh_metrics%z_ifc(jc,jkp1,jb)
 
             !Now diagnose friction velocity (ustar)
@@ -322,7 +325,7 @@ MODULE mo_surface_les
               DO itr = 1 , 5
                 obukhov_length = - theta_sfc*ustar**3/(akt*grav* les_config(jg)%tran_coeff*&
                                    (theta_sfc-theta(jc,jk,jb)))
-                ustar = mwind / businger_mom(zrough,z_mc,obukhov_length)  
+                ustar = mwind / businger_mom(zrough,z_mc,obukhov_length)
               END DO
 
             ELSE
@@ -332,12 +335,12 @@ MODULE mo_surface_les
             !Surface temperature
             p_prog_lnd_new%t_g(jc,jb) = t_sfc
 
-            !Get surface qv 
+            !Get surface qv
             p_diag_lnd%qv_s(jc,jb) = spec_humi(sat_pres_water(p_prog_lnd_new%t_g(jc,jb)),pres_sfc(jc,jb))
 
             !rho at surface: no qc at surface
             rhos   =  pres_sfc(jc,jb)/( rd * &
-                     p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )  
+                     p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )
 
             prm_diag%shfl_s(jc,jb) = rhos*cpd*les_config(jg)%tran_coeff* &
                                      (theta_sfc-theta(jc,jk,jb))
@@ -346,12 +349,13 @@ MODULE mo_surface_les
             prm_diag%umfl_s(jc,jb)  = ustar**2 * rhos * p_nh_diag%u(jc,jk,jb) / mwind
             prm_diag%vmfl_s(jc,jb)  = ustar**2 * rhos * p_nh_diag%v(jc,jk,jb) / mwind
 
-         END DO  
+         END DO
       END DO
-!$OMP END DO 
+!$OMP END DO
 !$OMP END PARALLEL
 
-   !Rico case
+
+    !Rico case
     CASE(4)
 #ifdef _OPENACC
       CALL finish ('mo_surface_les:', 'isrfc_type=4: OpenACC version currently not implemented')
@@ -362,54 +366,55 @@ MODULE mo_surface_les
         CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
                             i_startidx, i_endidx, rl_start, rl_end)
         DO jc = i_startidx, i_endidx
-                              
+
             !Get surface qv and temperature
             p_diag_lnd%qv_s(jc,jb) = spec_humi(sat_pres_water(les_config(jg)%sst),psfc)
             p_prog_lnd_new%t_g(jc,jb) = les_config(jg)%sst
-            
+
             !Mean wind at nlev
-            mwind  = SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) 
- 
+            mwind  = SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2)
+
             shfl  =   c_h * mwind * (th0_rico-theta(jc,jk,jb))
             lhfl  =   c_q * mwind * (p_diag_lnd%qv_s(jc,jb)-qv(jc,jk,jb))
             umfl  =   c_m * mwind * p_nh_diag%u(jc,jk,jb)
             vmfl  =   c_m * mwind * p_nh_diag%v(jc,jk,jb)
-                                 
-            !Surface density 
+
+            !Surface density
             rhos   =  psfc/( rd * &
-                      p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )  
-                      
-            !Get surface fluxes                       
+                      p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )
+
+            !Get surface fluxes
             prm_diag%shfl_s(jc,jb)  = shfl * rhos * cpd
             prm_diag%lhfl_s(jc,jb)  = lhfl * rhos * alv
             prm_diag%umfl_s(jc,jb)  = umfl * rhos
             prm_diag%vmfl_s(jc,jb)  = vmfl * rhos
 
-        END DO  
+        END DO
       END DO
- 
+
+
     !Fix SST case
     CASE(5)
 #ifdef _OPENACC
       CALL finish ('mo_surface_les:', 'isrfc_type=5: OpenACC version currently not implemented')
 #endif
 
-!   Get roughness length * grav           
-    IF(turbdiff_config(jg)%lconst_z0 .AND. turbdiff_config(jg)%const_z0 <= 0._wp)THEN
-      DO jb = i_startblk,i_endblk
-        CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
-                           i_startidx, i_endidx, rl_start, rl_end)
-        DO jc = i_startidx, i_endidx           
-           mwind = MAX( les_config(jg)%min_sfc_wind, SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) )
-           var(jc,jb) = SQRT( MAX(0._wp,prm_diag%tcm(jc,jb)) ) * mwind
-        END DO         
-      END DO
+!     Get roughness length * grav
+      IF(turbdiff_config(jg)%lconst_z0 .AND. turbdiff_config(jg)%const_z0 <= 0._wp)THEN
+        DO jb = i_startblk,i_endblk
+          CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
+                             i_startidx, i_endidx, rl_start, rl_end)
+          DO jc = i_startidx, i_endidx
+             mwind = MAX( les_config(jg)%min_sfc_wind, SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) )
+             var(jc,jb) = SQRT( MAX(0._wp,prm_diag%tcm(jc,jb)) ) * mwind
+          END DO
+        END DO
 
-      WHERE(.NOT.p_patch%cells%decomp_info%owner_mask(:,:)) var(:,:) = 0._wp
-      ustar_mean =  global_sum_array(var)/REAL(p_patch%n_patch_cells_g,wp)
-      
-      prm_diag%gz0(:,:) = MAX(0.001_wp,0.016_wp*ustar_mean**2)   
-    END IF
+        WHERE(.NOT.p_patch%cells%decomp_info%owner_mask(:,:)) var(:,:) = 0._wp
+        ustar_mean =  global_sum_array(var)/REAL(p_patch%n_patch_cells_g,wp)
+
+        prm_diag%gz0(:,:) = MAX(0.001_wp,0.016_wp*ustar_mean**2)
+      END IF
 
 
 !$OMP PARALLEL
@@ -432,9 +437,9 @@ MODULE mo_surface_les
 
            !rho at surface: no qc at surface
            rhos   =  pres_sfc(jc,jb)/( rd * &
-                     p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )  
+                     p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )
 
-           mwind = MAX( les_config(jg)%min_sfc_wind, SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) ) 
+           mwind = MAX( les_config(jg)%min_sfc_wind, SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) )
 
            !Z height to be used as a reference height in surface layer
            z_mc   = p_nh_metrics%z_mc(jc,jk,jb) - p_nh_metrics%z_ifc(jc,jkp1,jb)
@@ -454,7 +459,7 @@ MODULE mo_surface_les
               lhfl = prm_diag%tch(jc,jb)*mwind*(p_diag_lnd%qv_s(jc,jb)-qv(jc,jk,jb))
               bflx1= shfl + vtmpc1 * theta_sfc * lhfl
               ustar= SQRT(prm_diag%tcm(jc,jb))*mwind
-             
+
               obukhov_length = -ustar**3 * theta_sfc * rgrav / (akt * bflx1)
 
               inv_bus_mom = 1._wp / businger_mom(zrough,z_mc,obukhov_length)
@@ -466,13 +471,14 @@ MODULE mo_surface_les
            !Get surface fluxes
            prm_diag%shfl_s(jc,jb) = rhos*cpd*prm_diag%tch(jc,jb)*mwind*(theta_sfc-theta(jc,jk,jb))
            prm_diag%lhfl_s(jc,jb) = rhos*alv*prm_diag%tch(jc,jb)*mwind*(p_diag_lnd%qv_s(jc,jb)-qv(jc,jk,jb))
-           prm_diag%umfl_s(jc,jb) = rhos*prm_diag%tcm(jc,jb)*mwind*p_nh_diag%u(jc,jk,jb) 
-           prm_diag%vmfl_s(jc,jb) = rhos*prm_diag%tcm(jc,jb)*mwind*p_nh_diag%v(jc,jk,jb) 
-           
+           prm_diag%umfl_s(jc,jb) = rhos*prm_diag%tcm(jc,jb)*mwind*p_nh_diag%u(jc,jk,jb)
+           prm_diag%vmfl_s(jc,jb) = rhos*prm_diag%tcm(jc,jb)*mwind*p_nh_diag%v(jc,jk,jb)
+
          END DO
-      END DO   
+      END DO
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
+
 
     ! Added by Christopher Moseley:
     ! Time varying SST and qv_s case with prescribed roughness length: semi-idealized setups
@@ -481,59 +487,59 @@ MODULE mo_surface_les
       CALL finish ('mo_surface_les:', 'isrfc_type=6: OpenACC version currently not implemented')
 #endif
 
-    IF(dt_interval==0._wp)THEN
+      IF(dt_interval==0._wp)THEN
 
-      prm_diag%tcm(:,:) = 0._wp
+        prm_diag%tcm(:,:) = 0._wp
 
-      !Open formatted file to read BC data
-      iunit = find_next_free_unit(10,20)
-      OPEN (unit=iunit,file='sfc_forcing.dat',access='SEQUENTIAL', &
-            form='FORMATTED', action='READ', status='OLD', IOSTAT=ist)
-  
-      IF(ist/=success)THEN
-        CALL finish (TRIM(routine), 'open sfc_forcing.dat failed')
-      ENDIF  
-  
-      !Read the input file til end. The order of file assumed is:
-      !Ts(K) - qvs(kg/kg)
-      
-      !Skip the first line
-      READ(iunit,*,IOSTAT=ist)            !skip
- 
-      !Read the second line with information about time levels 
-      READ(iunit,*,IOSTAT=ist)stime,dt_interval,etime
-      
-      IF(ist/=success)CALL finish (TRIM(routine), 'Must provide time level info in the bc file')
+        !Open formatted file to read BC data
+        iunit = find_next_free_unit(10,20)
+        OPEN (unit=iunit,file='sfc_forcing.dat',access='SEQUENTIAL', &
+              form='FORMATTED', action='READ', status='OLD', IOSTAT=ist)
 
-      nt = INT(etime/dt_interval)+1
+        IF(ist/=success)THEN
+          CALL finish (TRIM(routine), 'open sfc_forcing.dat failed')
+        ENDIF
 
-      ALLOCATE( ts(nt), qvs(nt) )
-      DO n = 1 , nt
-        READ(iunit,*,IOSTAT=ist)ts(n),qvs(n)
-        IF(ist/=success) CALL finish (TRIM(routine), 'something wrong in sfc_forcing.dat')
-      END DO
+        !Read the input file til end. The order of file assumed is:
+        !Ts(K) - qvs(kg/kg)
 
-      CLOSE(iunit)
-      
-      WRITE(message_text,*)dt_interval
-      CALL message('Time varying surface forcing read in:',message_text)
+        !Skip the first line
+        READ(iunit,*,IOSTAT=ist)            !skip
 
-    END IF
+        !Read the second line with information about time levels
+        READ(iunit,*,IOSTAT=ist)stime,dt_interval,etime
 
-    !Find where in the array of sfc bc current time stands
-    !and do linear interpolation in time
-    n_curr = FLOOR(p_sim_time/dt_interval)+1
-    n_next = n_curr+1
-    int_weight = p_sim_time/dt_interval-n_curr+1
-    
-    ! Christopher: temporary catch
-    IF (int_weight.LT.0 .OR.int_weight.GT.1) THEN
-      WRITE(message_text,*)n_curr,n_next,int_weight,dt_interval,p_sim_time
-      CALL message('INTERPOLATION ERROR in surface:',message_text)
-    END IF
+        IF(ist/=success)CALL finish (TRIM(routine), 'Must provide time level info in the bc file')
 
-    p_prog_lnd_new%t_g(:,:) = ts(n_curr)*(1.-int_weight)+ts(n_next)*int_weight
-    p_diag_lnd%qv_s(:,:)    = qvs(n_curr)*(1.-int_weight)+qvs(n_next)*int_weight
+        nt = INT(etime/dt_interval)+1
+
+        ALLOCATE( ts(nt), qvs(nt) )
+        DO n = 1 , nt
+          READ(iunit,*,IOSTAT=ist)ts(n),qvs(n)
+          IF(ist/=success) CALL finish (TRIM(routine), 'something wrong in sfc_forcing.dat')
+        END DO
+
+        CLOSE(iunit)
+
+        WRITE(message_text,*)dt_interval
+        CALL message('Time varying surface forcing read in:',message_text)
+
+      END IF
+
+      !Find where in the array of sfc bc current time stands
+      !and do linear interpolation in time
+      n_curr = FLOOR(p_sim_time/dt_interval)+1
+      n_next = n_curr+1
+      int_weight = p_sim_time/dt_interval-n_curr+1
+
+      ! Christopher: temporary catch
+      IF (int_weight.LT.0 .OR.int_weight.GT.1) THEN
+        WRITE(message_text,*)n_curr,n_next,int_weight,dt_interval,p_sim_time
+        CALL message('INTERPOLATION ERROR in surface:',message_text)
+      END IF
+
+      p_prog_lnd_new%t_g(:,:) = ts(n_curr)*(1.-int_weight)+ts(n_next)*int_weight
+      p_diag_lnd%qv_s(:,:)    = qvs(n_curr)*(1.-int_weight)+qvs(n_next)*int_weight
 
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jc,jb,i_startidx,i_endidx,zrough,theta_sfc,mwind,z_mc,       &
@@ -551,9 +557,9 @@ MODULE mo_surface_les
 
            !rho at surface: no qc at surface
            rhos   =  pres_sfc(jc,jb)/( rd * &
-                     p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )  
+                     p_prog_lnd_new%t_g(jc,jb)*(1._wp+vtmpc1*p_diag_lnd%qv_s(jc,jb)) )
 
-           mwind = MAX( les_config(jg)%min_sfc_wind, SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) ) 
+           mwind = MAX( les_config(jg)%min_sfc_wind, SQRT(p_nh_diag%u(jc,jk,jb)**2+p_nh_diag%v(jc,jk,jb)**2) )
 
            !Z height to be used as a reference height in surface layer
            z_mc   = p_nh_metrics%z_mc(jc,jk,jb) - p_nh_metrics%z_ifc(jc,jkp1,jb)
@@ -575,7 +581,7 @@ MODULE mo_surface_les
               lhfl = prm_diag%tch(jc,jb)*mwind*(p_diag_lnd%qv_s(jc,jb)-qv(jc,jk,jb))
               bflx1= shfl + vtmpc1 * theta_sfc * lhfl
               ustar= SQRT(prm_diag%tcm(jc,jb))*mwind
-             
+
               obukhov_length = -ustar**3 * theta_sfc * rgrav / (akt * bflx1)
 
               inv_bus_mom = 1._wp / businger_mom(zrough,z_mc,obukhov_length)
@@ -587,11 +593,11 @@ MODULE mo_surface_les
            !Get surface fluxes
            prm_diag%shfl_s(jc,jb) = rhos*cpd*prm_diag%tch(jc,jb)*mwind*(theta_sfc-theta(jc,jk,jb))
            prm_diag%lhfl_s(jc,jb) = rhos*alv*prm_diag%tch(jc,jb)*mwind*(p_diag_lnd%qv_s(jc,jb)-qv(jc,jk,jb))
-           prm_diag%umfl_s(jc,jb) = rhos*prm_diag%tcm(jc,jb)*mwind*p_nh_diag%u(jc,jk,jb) 
-           prm_diag%vmfl_s(jc,jb) = rhos*prm_diag%tcm(jc,jb)*mwind*p_nh_diag%v(jc,jk,jb) 
-           
+           prm_diag%umfl_s(jc,jb) = rhos*prm_diag%tcm(jc,jb)*mwind*p_nh_diag%u(jc,jk,jb)
+           prm_diag%vmfl_s(jc,jb) = rhos*prm_diag%tcm(jc,jb)*mwind*p_nh_diag%v(jc,jk,jb)
+
          END DO
-      END DO   
+      END DO
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
@@ -653,22 +659,22 @@ MODULE mo_surface_les
               prm_diag%tcm(jc,jb) = inv_bus_mom * inv_bus_mom
            END DO
 
-            !Now diagnose friction velocity (ustar)
-            IF(les_config(jg)%ufric<0._wp)THEN
-              !Bulk Richardson no at first model level
-              RIB = grav * (theta(jc,jk,jb)-theta_sfc)*(z_mc-zrough)/(theta_sfc*mwind**2)
-              !first guess
-              ustar = SQRT( diag_ustar_sq(z_mc,zrough,RIB,mwind) )
-              DO itr = 1 , 5
-                !"-" sign in the begining because ustar*thstar = -shflx
-                obukhov_length = - theta_sfc*ustar**3/(akt*grav*les_config(jg)%shflx)
-                ustar = mwind / businger_mom(zrough,z_mc,obukhov_length)
-              END DO
+           !Now diagnose friction velocity (ustar)
+           IF(les_config(jg)%ufric<0._wp)THEN
+             !Bulk Richardson no at first model level
+             RIB = grav * (theta(jc,jk,jb)-theta_sfc)*(z_mc-zrough)/(theta_sfc*mwind**2)
+             !first guess
+             ustar = SQRT( diag_ustar_sq(z_mc,zrough,RIB,mwind) )
+             DO itr = 1 , 5
+               !"-" sign in the begining because ustar*thstar = -shflx
+               obukhov_length = - theta_sfc*ustar**3/(akt*grav*les_config(jg)%shflx)
+               ustar = mwind / businger_mom(zrough,z_mc,obukhov_length)
+             END DO
 
-            ELSE
-              ustar = les_config(jg)%ufric
-              obukhov_length = -theta_sfc*ustar**3/(akt*grav*les_config(jg)%shflx)
-            END IF
+           ELSE
+             ustar = les_config(jg)%ufric
+             obukhov_length = -theta_sfc*ustar**3/(akt*grav*les_config(jg)%shflx)
+           END IF
 
            !Get surface fluxes
            IF( les_config(jg)%isrfc_type == 7 ) THEN
@@ -695,41 +701,42 @@ MODULE mo_surface_les
 !$OMP END DO NOWAIT
 !$OMP END PARALLEL
 
-    !prescribed fluxes aka SCM
+
+    !prescribed fluxes as for SCM - if necessary calculated after Louis (1979)
     CASE(10)
 #ifdef _OPENACC
       CALL finish ('mo_surface_les:', 'isrfc_type=10: OpenACC version currently not implemented')
 #endif
-    !Fluxes are already setup in mo_sgs_turbulence.f90
-     !change sign of surface fluxes
-     prm_diag%shfl_s  = - prm_diag%shfl_s
-     prm_diag%lhfl_s  = - prm_diag%lhfl_s
-     prm_diag%umfl_s  = - prm_diag%umfl_s
-     prm_diag%vmfl_s  = - prm_diag%vmfl_s
+      !Change sign of surface fluxes (fluxes set in mo_sgs_turbulence.f90: CALL set_scm_bnd)
+      prm_diag%shfl_s  = - prm_diag%shfl_s
+      prm_diag%lhfl_s  = - prm_diag%lhfl_s
+      prm_diag%umfl_s  = - prm_diag%umfl_s
+      prm_diag%vmfl_s  = - prm_diag%vmfl_s
+
 
     !No fluxes
     CASE(0)
 #ifdef _OPENACC
       CALL finish ('mo_surface_les:', 'isrfc_type=0: OpenACC version currently not implemented')
 #endif
-
       prm_diag%shfl_s  = 0._wp
-      prm_diag%lhfl_s  = 0._wp 
-      prm_diag%umfl_s  = 0._wp 
-      prm_diag%vmfl_s  = 0._wp 
+      prm_diag%lhfl_s  = 0._wp
+      prm_diag%umfl_s  = 0._wp
+      prm_diag%vmfl_s  = 0._wp
 
-  END SELECT 
+  END SELECT
 
-  
+
   !Sync is required for mom fluxes
-  CALL sync_uvml_s(prm_diag%umfl_s, prm_diag%vmfl_s)
+  CALL sync_uvml_s(prm_diag%umfl_s, prm_diag%vmfl_s, lacc=lzacc)
   CONTAINS
-    SUBROUTINE sync_uvml_s(u, v)
+    SUBROUTINE sync_uvml_s(u, v, lacc)
       REAL(wp), TARGET, INTENT(inout) :: u(:,:), v(:,:)
+      LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
       REAL(wp), POINTER :: pu(:,:,:), pv(:,:,:)
       CALL insert_dimension(pu, u, 2)
       CALL insert_dimension(pv, v, 2)
-      CALL sync_patch_array_mult(sync_c, p_patch, 2, pu, pv)
+      CALL sync_patch_array_mult(sync_c, p_patch, 2, lacc=lacc, f3din1=pu, f3din2=pv)
     END SUBROUTINE sync_uvml_s
   END SUBROUTINE surface_conditions
 
@@ -737,7 +744,7 @@ MODULE mo_surface_les
   !! factor_heat
   !!------------------------------------------------------------------------
   !! Businger Dyer similarity profile:
-  !! Louis (1979) A Parametirc model of vertical eddy fluxes in the atmosphere 
+  !! Louis (1979) A Parametirc model of vertical eddy fluxes in the atmosphere
   !! and R. B. Stull's book
   !!------------------------------------------------------------------------
 
@@ -747,8 +754,8 @@ MODULE mo_surface_les
      REAL(wp) :: zeta0, lamda0, psi0
 
      IF(L > 0._wp)THEN !Stable
-       zeta   = z1/L 
-       zeta0  = z0/L 
+       zeta   = z1/L
+       zeta0  = z0/L
        IF(zeta > 1._wp)THEN !Zeng etal 1997 J. Clim
          psi    = -bsh*LOG(zeta) - zeta + 1
          psi0   = -bsh*LOG(zeta0) - zeta0 + 1
@@ -759,47 +766,48 @@ MODULE mo_surface_les
          factor = (LOG(z1/z0) - psi + psi0) / akt
        END IF
      ELSEIF(L < 0._wp)THEN !unstable
-       zeta   = z1/L 
-       zeta0  = z0/L 
-       lamda  = SQRT(1._wp - buh*zeta)  
-       lamda0 = SQRT(1._wp - buh*zeta0)  
+       zeta   = z1/L
+       zeta0  = z0/L
+       lamda  = SQRT(1._wp - buh*zeta)
+       lamda0 = SQRT(1._wp - buh*zeta0)
        psi    = 2._wp * ( LOG(1._wp+lamda) - ln2 )
        psi0   = 2._wp * ( LOG(1._wp+lamda0) - ln2 )
        factor = (LOG(z1/z0) - psi + psi0) / akt
      ELSE !Neutral
        factor = LOG(z1/z0) / akt
-     END IF 
+     END IF
 
-  END FUNCTION businger_heat 
-  !-----------------------------------------------------------------------------
+  END FUNCTION businger_heat
+
+
   !-----------------------------------------------------------------------------
   FUNCTION phi_heat(z1, L) RESULT(factor)
      REAL(wp), INTENT(IN) :: z1, L
      REAL(wp) :: factor, zeta, lamda
 
      IF(L > 0._wp)THEN !Stable
-       zeta   = z1/L 
+       zeta   = z1/L
        IF(zeta > 1._wp)THEN
          factor = bsh + zeta
-       ELSE     
+       ELSE
          lamda = bsh*zeta
          factor = 1._wp + lamda
        END IF
      ELSEIF(L < 0._wp)THEN !unstable
-       zeta   = z1/L 
-       lamda  = SQRT(1._wp - buh*zeta)  
+       zeta   = z1/L
+       lamda  = SQRT(1._wp - buh*zeta)
        factor = 1._wp / lamda
      ELSE !neutral
        factor = 1._wp
-     END IF 
+     END IF
 
-  END FUNCTION phi_heat 
+  END FUNCTION phi_heat
 
   !>
   !! factor_mom
   !!------------------------------------------------------------------------
-  !! Businger Dyer similarity profile: 
-  !! Louis (1979) A Parametirc model of vertical eddy fluxes in the atmosphere 
+  !! Businger Dyer similarity profile:
+  !! Louis (1979) A Parametirc model of vertical eddy fluxes in the atmosphere
   !! and R. B. Stull's book
   !!------------------------------------------------------------------------
   FUNCTION businger_mom(z0, z1, L) RESULT(factor)
@@ -808,8 +816,8 @@ MODULE mo_surface_les
      REAL(wp) :: zeta0, psi0, lamda0
 
      IF(L > 0._wp)THEN !Stable
-       zeta  = z1/L 
-       zeta0 = z0/L 
+       zeta  = z1/L
+       zeta0 = z0/L
        IF(zeta > 1._wp)THEN !Zeng etal 1997 J. Clim
          psi    = -bsm*LOG(zeta) - zeta + 1
          psi0   = -bsm*LOG(zeta0) - zeta0 + 1
@@ -820,10 +828,10 @@ MODULE mo_surface_les
          factor = ( LOG(z1/z0) - psi + psi0 ) / akt
        END IF
      ELSEIF(L < 0._wp)THEN !unstable
-       zeta   = z1/L 
-       zeta0  = z0/L 
-       lamda  = SQRT(SQRT(1._wp - bum*zeta))  
-       lamda0 = SQRT(SQRT(1._wp - bum*zeta0))  
+       zeta   = z1/L
+       zeta0  = z0/L
+       lamda  = SQRT(SQRT(1._wp - bum*zeta))
+       lamda0 = SQRT(SQRT(1._wp - bum*zeta0))
 
        psi    = 2._wp * LOG(1._wp+lamda) + LOG(1._wp+lamda*lamda) - &
                 2._wp * ATAN(lamda) + pi_2 - 3._wp*ln2
@@ -836,29 +844,29 @@ MODULE mo_surface_les
        factor = LOG(z1/z0) / akt
      END IF
 
-  END FUNCTION businger_mom 
-  !-----------------------------------------------------------------------------
+  END FUNCTION businger_mom
+
   !-----------------------------------------------------------------------------
   FUNCTION phi_mom(z1, L) RESULT(factor)
      REAL(wp), INTENT(IN) :: z1, L
      REAL(wp) :: factor, zeta, lamda
 
      IF(L > 0._wp)THEN !Stable
-       zeta   = z1/L 
+       zeta   = z1/L
        IF(zeta > 1._wp)THEN
          factor = bsm + zeta
        ELSE
          factor = 1._wp + bsm * zeta
        END IF
-     ELSEIF(L < 0._wp)THEN !unstable 
-       zeta   = z1/L 
-       lamda  = SQRT(SQRT(1._wp - bum*zeta))  
+     ELSEIF(L < 0._wp)THEN !unstable
+       zeta   = z1/L
+       lamda  = SQRT(SQRT(1._wp - bum*zeta))
        factor = 1._wp / lamda
      ELSE !neutral
        factor  = 1._wp
      END IF
 
-  END FUNCTION phi_mom 
+  END FUNCTION phi_mom
 
   !>
   !! diagnose ustar
@@ -870,9 +878,9 @@ MODULE mo_surface_les
 
      tcn_mom  = (akt/LOG(h/z0))**2
      ustar_sq = tcn_mom*wind**2*stability_function_mom(RIB,h/z0,tcn_mom)
-        
+
   END FUNCTION diag_ustar_sq
- 
+
   !>
   !! diagnose wstar
   !!------------------------------------------------------------------------
@@ -880,7 +888,7 @@ MODULE mo_surface_les
      REAL(wp), INTENT(IN) :: h, z0, RIB, wind
 
      REAL(wp) :: wstar_sq, tcn_heat, zh
-  
+
      zh = MIN(z0, zh_max)
 
      IF(RIB < 0._wp)THEN
@@ -889,10 +897,10 @@ MODULE mo_surface_les
                     stability_function_heat(RIB,h/zh,tcn_heat) )**(2._wp/3._wp)
      ELSE
        wstar_sq = 0._wp
-     END IF      
-        
+     END IF
+
   END FUNCTION diag_wstar_sq
- 
+
   !>
   !! init_zrough
   !!------------------------------------------------------------------------
@@ -900,40 +908,41 @@ MODULE mo_surface_les
      REAL(wp), INTENT(IN) :: h, wind
 
      REAL(wp) :: z01, z02, gz
- 
+
 
      z01 = alpha0 * wind**2 / ( (1._wp/beta_10) + LOG(h/h_10)/akt )**2
      !z02 = ( alpha0 * wind**2 * ABS(RIB) )**1.5_wp / (5 * SQRT(grav*h))
 
-     !gz = MAX(z01, z02) 
+     !gz = MAX(z01, z02)
      gz = z01
-        
+
   END FUNCTION init_gz
 
   !>
   !! stability_function_mom
-  !! Taken from COSMO docs and Holstag & Boville 1992 
+  !! Taken from COSMO docs and Holstag & Boville 1992
   !!------------------------------------------------------------------------
   FUNCTION stability_function_mom(RIB, hz0, tc) RESULT(stab_fun)
      REAL(wp), INTENT(IN) :: RIB, hz0, tc
 
      REAL(wp) :: stab_fun, hz0_fac
- 
+
      IF(RIB.GE.0._wp)THEN
        !Cosmo
-       !stab_fun = 1._wp / ( 1._wp + 10._wp*RIB/SQRT(1._wp+5*RIB) ) 
+       !stab_fun = 1._wp / ( 1._wp + 10._wp*RIB/SQRT(1._wp+5*RIB) )
 
        !H&B
-       stab_fun = 1._wp / ( 1._wp + 10._wp*RIB*(1._wp+8._wp*RIB) ) 
+       stab_fun = 1._wp / ( 1._wp + 10._wp*RIB*(1._wp+8._wp*RIB) )
      ELSE
        hz0_fac = ( hz0**(1._wp/3._wp) - 1._wp )**1.5_wp
        !for water surface (z0/h)**(1/3)<<1 giving hz0_fac=SQRT(h/z0)
        !Generally it is explicitly written for water surface but i don't
        !see any reason to do that.
        stab_fun = 1._wp + 10._wp*ABS(RIB)/(1._wp + 75._wp*tc*hz0_fac*SQRT(ABS(RIB)))
-     END IF 
-        
+     END IF
+
   END FUNCTION stability_function_mom
+
   !>
   !! stability_function_heat
   !!------------------------------------------------------------------------
@@ -941,27 +950,23 @@ MODULE mo_surface_les
      REAL(wp), INTENT(IN) :: RIB, hzh, tc
 
      REAL(wp) :: stab_fun, hzh_fac
- 
+
      IF(RIB.GE.0._wp)THEN
        !Cosmo
-       !stab_fun = 1._wp / ( 1._wp + 15._wp*RIB*SQRT(1._wp+5*RIB) ) 
-      
+       !stab_fun = 1._wp / ( 1._wp + 15._wp*RIB*SQRT(1._wp+5*RIB) )
+
        !H&B
-       stab_fun = 1._wp / ( 1._wp + 10._wp*RIB*(1._wp+8._wp*RIB) ) 
+       stab_fun = 1._wp / ( 1._wp + 10._wp*RIB*(1._wp+8._wp*RIB) )
      ELSE
        hzh_fac = ( hzh**(1._wp/3._wp) - 1._wp )**1.5_wp
        !for water surface (zh/h)**(1/3)<<1 giving hzh_fac=SQRT(h/zh)
        !Generally it is explicitly written for water surface but i don't
        !see any reason to do that.
        stab_fun = 1._wp + 15._wp*ABS(RIB)/(1._wp + 75._wp*tc*hzh_fac*SQRT(ABS(RIB)))
-     END IF 
+     END IF
   END FUNCTION stability_function_heat
 
 !-------------------------------------------------------------------------------
 
-    
+
 END MODULE mo_surface_les
-
-
-
-

@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -9,21 +9,21 @@
 # ------------------------------------------
 
 # ===========================================================================
-# 
+#
 # Name: exp.dwd_art_dustrad_R2B4N5
 #
-# Purpose: Runscript for ICON on a low resolution global grid and EU nest 
+# Purpose: Runscript for ICON on a low resolution global grid and EU nest
 #          (157km/79km) with ICON-ART mineral dust.
 #
 # Created by: Michael Krayer (DWD)
 #
-# =========================================================================== 
+# ===========================================================================
 
 #--------------------------------------------------------------------------------------------------
 #
 # This experiment describes an ICON-GLO run with a code path similar to DWD's operational
-# mineral dust deterministic forecast. It is computed on a coarse grid with nest (global/EU). 
-# The input data is based on exp.dwd_run_ICON_09_R2B4N5_EPS with some extensions regarding ART. 
+# mineral dust deterministic forecast. It is computed on a coarse grid with nest (global/EU).
+# The input data is based on exp.dwd_run_ICON_09_R2B4N5_EPS with some extensions regarding ART.
 # The initial dust concentration in the atmosphere is close to zero.
 #
 #--------------------------------------------------------------------------------------------------
@@ -37,7 +37,7 @@ num_prefetch_proc=${num_prefetch_proc:-0}
 num_io_procs_radar=${num_io_procs_radar:-0}
 
 # Machine-specific settings
-case ${builder} in 
+case ${builder} in
     bull_milan*)
         # ECCODES_DEFINITION_PATH needs to be set explicitly on levante
         ECCODES_ROOT="$(dirname $(dirname $(ldd ${MODEL} | grep libeccodes.so | awk '{print $3;}')))"
@@ -61,7 +61,7 @@ case ${builder} in
 esac
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -79,6 +79,7 @@ DISABLE_COMPUTE_TOTALDUST=0 # Disables computation of total dust content with cd
 ICONDIR="${basedir}" # basedir can be set with create_target_header
 DATAROOT="${icon_data_poolFolder}/Checksuite_data_small/art_dustrad_R2B4N5"
 ECRADDIR="${ICONDIR}/externals/ecrad/data"
+ARTDIR="${ICONDIR}/externals/art"
 XMLROOT="${ICONDIR}/run/xml_art/art_dustrad_R2B4N5"
 
 # Link input files from ICON source
@@ -100,13 +101,13 @@ ln -sf ${DATAROOT}/fc_R02B05_N02.20220228223000_with_dust fg_R2B05_DOM02.grb
 ln -sf ${DATAROOT}/hwsd_icon_art_grid_0012b_R02B04_G.nc   ART_STY_iconR2B04-grid_TCNR.nc
 ln -sf ${DATAROOT}/hwsd_icon_art_grid_0099_R02B05_N02.nc  ART_STY_iconR2B05-grid_TCNR.nc
 
-# Link ART XML configuration
+# Link ART XML/NetCDF configuration
 ln -sf ${XMLROOT}/tracers_dust.xml      tracers.xml
 ln -sf ${XMLROOT}/modes_dust.xml        modes.xml
 ln -sf ${XMLROOT}/diagnostics_dust.xml  diagnostics.xml
 ln -sf ${XMLROOT}/coagulate.xml         coagulate.xml
 ln -sf ${XMLROOT}/aero_emiss.xml        aero_emiss.xml
-ln -sf ${XMLROOT}/Meng_ICON_CMD_USE.xml Meng_ICON_CMD_USE.xml 
+ln -sf ${ARTDIR}/runctrl_examples/init_ctrl/PrescribedOpticalProperties_CMD_USE.nc prescribed_opt_props.nc
 
 # Cleanup out
 [[ -d out ]]       && rm -Rf out
@@ -196,7 +197,7 @@ cat > ${atmo_namelist} << EOF
 &run_nml
  num_lev        = 90,60
  lvert_nest     = .true.       ! use vertical nesting if a nest is active
- modelTimeStep  = "${modelTimeStep}" 
+ modelTimeStep  = "${modelTimeStep}"
  ldynamics      = .true.       ! dynamics
  ltransport     = .true.
  iforcing       = 3            ! NWP forcing
@@ -434,6 +435,7 @@ cat > ${atmo_namelist} << EOF
  cart_coag_xml        = './coagulate.xml'
  cart_aero_emiss_xml  = './aero_emiss.xml'
  cart_diagnostics_xml = './diagnostics.xml'
+ cart_opt_props_nc    = './prescribed_opt_props.nc'
 /
 EOF
 
@@ -469,11 +471,11 @@ fi
 # 1) Extract cell grid
 $cdo selname,cell_area iconR2B04_DOM01.nc gridcell_R2B04_DOM01.nc
 $cdo selname,cell_area iconR2B05_DOM02.nc gridcell_R2B05_DOM02.nc
-# 2) Compute total mass/number inside domain 
-$cdo -s -infov -vertint -fldint -setgrid,gridcell_R2B04_DOM01.nc \
+# 2) Compute total mass/number inside domain
+$cdo -s -infon -vertint -fldint -setgrid,gridcell_R2B04_DOM01.nc \
      -mul -selvar,rho ${EXP}_DOM01_ML_00030000.nc \
      -selvar,dusta,dustb,dustc,dusta0,dustb0,dustc0 ${EXP}_DOM01_ML_00030000.nc
-$cdo -s -infov -vertint -fldint -setgrid,gridcell_R2B05_DOM02.nc \
+$cdo -s -infon -vertint -fldint -setgrid,gridcell_R2B05_DOM02.nc \
      -mul -selvar,rho ${EXP}_DOM02_ML_00030000.nc \
      -selvar,dusta,dustb,dustc,dusta0,dustb0,dustc0 ${EXP}_DOM02_ML_00030000.nc
 

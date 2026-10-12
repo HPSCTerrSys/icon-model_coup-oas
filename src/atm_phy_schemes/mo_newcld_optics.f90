@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Prepares and provides cloud optical properties
 !
 ! Remarks
@@ -6,18 +16,7 @@
 !   prepared by Stefan Kinne.
 !
 ! Origin
-!   Rewrite and synthesis of ECHAM5 code, particularly rad_int.f90 
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
+!   Rewrite and synthesis of ECHAM5 code, particularly rad_int.f90
 
 MODULE mo_newcld_optics
 
@@ -264,7 +263,7 @@ CONTAINS
       ELSE IF ( icpl_reff==0 ) THEN
         DO jl=1,jce
           IF (icldlyr(jl,jk)==1 .AND. (zlwp(jl,jk)+ziwp(jl,jk))>ccwmin) THEN
-            ! see ECHAM5 documentation (Roeckner et al, MPI report 349)            
+            ! see ECHAM5 documentation (Roeckner et al, MPI report 349)
             re_crystals(jl) = MAX(reimin ,MIN(reimax  ,83.8_wp*ziwc(jl,jk)**0.216_wp))
 !mk:opt   re_crystals = MAX(20.0_wp,MIN(150.0_wp,83.8_wp*ziwc(jl,jk)**0.216_wp))
             re_droplets(jl) = MAX(relmin,MIN(relmax,zfact*zkap(jl)*(zlwc(jl,jk) &
@@ -275,7 +274,7 @@ CONTAINS
         CALL finish('Invalid option for icpl_reff in newcld_optics')
       ENDIF
 
-!$NEC ivdep 
+!$NEC ivdep
       DO jl=1,jce
         IF (icldlyr(jl,jk)==1 .AND. (zlwp(jl,jk)+ziwp(jl,jk))>ccwmin) THEN
 

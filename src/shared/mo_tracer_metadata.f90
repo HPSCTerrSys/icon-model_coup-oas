@@ -1,18 +1,17 @@
-! This module contains the constructors for polymorphic tracer metadata.
-! For each extended object, a constructor for the base type is called
-! via a type bound procedure.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains the constructors for polymorphic tracer metadata.
+! For each extended object, a constructor for the base type is called
+! via a type bound procedure.
 
 MODULE mo_tracer_metadata
 
@@ -174,4 +173,3 @@ CONTAINS
   END FUNCTION create_tracer_metadata_hydro
 
 END MODULE mo_tracer_metadata
-

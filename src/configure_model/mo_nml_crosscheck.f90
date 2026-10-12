@@ -1,16 +1,16 @@
-! This module checks the read-in namelist parameters and, in case of
-! inconsistencies, it tries to correct these.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module checks the read-in namelist parameters and, in case of
+! inconsistencies, it tries to correct these.
 
 MODULE mo_nml_crosscheck
 
@@ -19,14 +19,14 @@ MODULE mo_nml_crosscheck
   USE mo_kind,                     ONLY: wp
   USE mo_exception,                ONLY: message, message_text, finish
   USE mo_impl_constants,           ONLY: inwp, tracer_only,                                &
-    &                                    iaes, RAYLEIGH_CLASSIC, INOFORCING,               &
-    &                                    icosmo, MODE_IAU, MODE_IAU_OLD,                   &
-    &                                    max_echotop, max_wshear, max_srh,                 &
-    &                                    LSS_JSBACH, ivdiff, IHELDSUAREZ, ILDF_DRY
+    &                                    iaes, ildf_echam, RAYLEIGH_CLASSIC, INOFORCING,   &
+    &                                    ismag, icosmo, MODE_IAU, max_echotop, max_wshear, &
+    &                                    max_srh, LSS_JSBACH, ivdiff, IHELDSUAREZ, ILDF_DRY
   USE mo_time_config,              ONLY: time_config, dt_restart
   USE mo_extpar_config,            ONLY: itopo
   USE mo_io_config,                ONLY: dt_checkpoint, lnetcdf_flt64_output, echotop_meta,&
-    &                                    wshear_uv_heights, n_wshear, srh_heights, n_srh
+    &                                    wshear_uv_heights, n_wshear, srh_heights, n_srh,  &
+    &                                    ldiagnose_tke
   USE mo_parallel_config,          ONLY: check_parallel_configuration,                     &
     &                                    ignore_nproma_use_nblocks_c,                      &
     &                                    ignore_nproma_use_nblocks_e,                      &
@@ -35,34 +35,41 @@ MODULE mo_nml_crosscheck
   USE mo_limarea_config,           ONLY: latbc_config, LATBC_TYPE_CONST, LATBC_TYPE_EXT
   USE mo_master_config,            ONLY: isRestart
   USE mo_run_config,               ONLY: nsteps, dtime, iforcing, output_mode,             &
-    &                                    ltransport, ltestcase, ltimer,                    &
+    &                                    ltransport, ltestcase, ltimer, ldynamics,         &
     &                                    activate_sync_timers, timers_level, lart,         &
-    &                                    msg_level, luse_radarfwo
-  USE mo_dynamics_config,          ONLY: ldeepatmo, lmoist_thdyn
+    &                                    msg_level, luse_radarfwo, lmemman
+  USE mo_dynamics_config,          ONLY: ldeepatmo, lmoist_thdyn, lcoriolis
   USE mo_advection_config,         ONLY: advection_config
   USE mo_nonhydrostatic_config,    ONLY: itime_scheme_nh => itime_scheme,                  &
     &                                    rayleigh_type, ivctype, iadv_rhotheta
-  USE mo_atm_phy_nwp_config,       ONLY: atm_phy_nwp_config, icpl_aero_conv, iprog_aero,   &
-    &                                    icpl_aero_ice
-  USE mo_lnd_nwp_config,           ONLY: ntiles_lnd, lsnowtile, sstice_mode, llake
+  USE mo_atm_phy_nwp_config,       ONLY: atm_phy_nwp_config, icpl_aero_conv, i2daero_dust, &
+    &                                    i2daero_seas, i2daero_anthro, i2daero_fire,       &
+    &                                    icpl_aero_ice, itype_dissip_heat,                 &
+    &                                    itype_stoch_phys, spg_num, itype_icecloud_diag
+  USE mo_lnd_nwp_config,           ONLY: ntiles_lnd, sstice_mode, llake
+#ifndef __NO_AES__
   USE mo_aes_phy_config,           ONLY: aes_phy_config
   USE mo_aes_vdf_config,           ONLY: aes_vdf_config
+  USE mo_aes_rad_config,           ONLY: aes_rad_config
+#endif
   USE mo_radiation_config,         ONLY: irad_aero, iRadAeroNone, iRadAeroConst,           &
     &                                    iRadAeroTegen, iRadAeroART, iRadAeroConstKinne,   &
     &                                    iRadAeroCAMSclim, iRadAeroCAMStd,                 &
     &                                    iRadAeroKinne, iRadAeroVolc, iRadAeroKinneVolc,   &
     &                                    iRadAeroKinneVolcSP, iRadAeroKinneSP,             &
+    &                                    iRadAeroExternal,                                 &
+    &                                    islope_rad,                                       &
     &                                    irad_o3, irad_h2o, irad_co2, irad_ch4,            &
     &                                    irad_n2o, irad_o2, irad_cfc11, irad_cfc12,        &
     &                                    icld_overlap, ecrad_llw_cloud_scat, isolrad,      &
     &                                    ecrad_iliquid_scat, ecrad_iice_scat,              &
     &                                    ecrad_isnow_scat, ecrad_irain_scat,               &
-    &                                    ecrad_igraupel_scat,                              & 
+    &                                    ecrad_igraupel_scat,                              &
     &                                    ecrad_isolver, ecrad_igas_model,                  &
     &                                    ecrad_use_general_cloud_optics
   USE mo_turbdiff_config,          ONLY: turbdiff_config
-  USE mo_initicon_config,          ONLY: init_mode, dt_iau, ltile_coldstart, timeshift,    &
-    &                                    itype_vert_expol, iterate_iau
+  USE mo_diffusion_config,         ONLY: diffusion_config
+  USE mo_initicon_config,          ONLY: init_mode, dt_iau, iterate_iau, itype_vert_expol
   USE mo_nh_testcases_nml,         ONLY: nh_test_name, layer_thickness
   USE mo_meteogram_config,         ONLY: meteogram_output_config, check_meteogram_configuration
   USE mo_grid_config,              ONLY: lplane, n_dom, l_limited_area, start_time,        &
@@ -77,26 +84,31 @@ MODULE mo_nml_crosscheck
     &                                    newDatetime, deallocateDatetime
   USE mo_sleve_config,             ONLY: itype_laydistr, flat_height, top_height
   USE mo_nudging_config,           ONLY: nudging_config, indg_type
-  USE mo_nwp_tuning_config,        ONLY: itune_gust_diag
+  USE mo_nwp_tuning_config,        ONLY: itune_gust_diag, tune_cu_alfa
   USE mo_nudging_nml,              ONLY: check_nudging
   USE mo_upatmo_config,            ONLY: check_upatmo
   USE mo_name_list_output_config,  ONLY: is_variable_in_output_dom
-  USE mo_coupling_config,          ONLY: is_coupled_to_ocean, is_coupled_to_waves, is_coupled_to_hydrodisc
+  USE mo_coupling_config,          ONLY: is_coupled_to_ocean, is_coupled_to_waves,         &
+    &                                    is_coupled_to_hydrodisc, is_coupled_to_aero,      &
+    &                                    is_coupled_to_o3
 
   USE mo_assimilation_config,      ONLY: assimilation_config
   USE mo_scm_nml,                  ONLY: i_scm_netcdf, scm_sfc_temp, scm_sfc_qv, scm_sfc_mom
+  USE mo_les_config,               ONLY: les_config
 #ifndef __NO_ICON_LES__
-  USE mo_ls_forcing_nml,           ONLY: is_ls_forcing
+  USE mo_ls_forcing_nml,           ONLY: is_ls_forcing, is_ls_coriolis
 #endif
 #ifdef __ICON_ART
   USE mo_grid_config,              ONLY: lredgrid_phys
 #endif
 
 #ifdef HAVE_RADARFWO
-  USE radar_data,            ONLY: ndoms_max_radar => ndoms_max
+  USE radar_data,                  ONLY: ndoms_max_radar => ndoms_max
 #endif
 
   USE mo_sppt_config,              ONLY: sppt_config, crosscheck_sppt
+  USE mo_gribout_config,           ONLY: gribout_crosscheck
+  USE mo_ccycle_config,            ONLY: ccycle_config
 
 
   IMPLICIT NONE
@@ -233,7 +245,7 @@ CONTAINS
 
     IF ( lmoist_thdyn ) THEN
       SELECT CASE (iforcing)
-      CASE(IHELDSUAREZ,INOFORCING,ILDF_DRY)     
+      CASE(IHELDSUAREZ,INOFORCING,ILDF_DRY)
         CALL message(routine, &
            'lmoist_thdyn is reset to false .FALSE. because a dry model configuration is used')
         lmoist_thdyn = .FALSE.
@@ -244,14 +256,15 @@ CONTAINS
     ! SCM single column model
     !--------------------------------------------------------------------
     IF (l_scm_mode) THEN
-      ! data read from 0: ASCII, 1: normal netcdf file, 2: DEPHY unified format
+
+      ! data read from 0: ASCII, 1: normal netcdf file, 2: DEPHY unified SCM format
       IF ( (i_scm_netcdf /= 1) .AND. (i_scm_netcdf /= 2) ) &
         CALL finish(routine, 'i_scm_netcdf not valid for SCM, only 1 or 2 allowed')
       ltestcase      = .TRUE.
       is_plane_torus = .TRUE.
       CALL message( routine, 'l_scm_mode: ltestcase and is_plane_torus has been set to TRUE')
 
-      !if time dependent surface BD conditions then use ls_forcing
+      !if time dependent surface boundary conditions then use ls_forcing
       !routines for interpolation in time
       IF ( (scm_sfc_temp .GE. 1) .OR. (scm_sfc_qv .GE. 1) .OR. (scm_sfc_mom .GE. 1) ) THEN
 #ifndef __NO_ICON_LES__
@@ -261,6 +274,66 @@ CONTAINS
         CALL finish( routine, 'scm_sfc_... requires is_ls_forcing=TRUE, but --disable-les has been set')
 #endif
       END IF
+
+      ! LES run on idealistic case (such as RICO)
+      ! fluxes are required to be calculated external (in set_scm_bnd)
+      IF (atm_phy_nwp_config(1)%inwp_turb == ismag) THEN
+        IF (atm_phy_nwp_config(1)%inwp_surface == 0 .AND. (les_config(1)%isrfc_type /= 10)) THEN
+          CALL finish(routine, 'idealized LES runs with inwp_surface = 0 require isrfc_type = 10')
+        END IF
+
+        SELECT CASE (scm_sfc_temp)
+          CASE (0)
+            IF (atm_phy_nwp_config(1)%inwp_surface == 0) THEN
+              CALL finish(routine, 'scm_sfc_temp=0 not possible when no surface scheme')
+            END IF
+          CASE (1)                       ! 1: prescribed Ts
+            scm_sfc_temp = 5             ! 5: prescribed Ts and fluxes from Louis (1979)
+            CALL message( routine, 'switch scm_sfc_temp from 1 to 5 for LES with Louis fluxes')
+          CASE default
+        END SELECT
+
+        SELECT CASE (scm_sfc_qv)
+          CASE (0)
+            IF (atm_phy_nwp_config(1)%inwp_surface == 0) THEN
+              CALL finish(routine, 'scm_sfc_qv=0 not possible when no surface scheme')
+            END IF
+          CASE (1)                       ! 1: prescribed qv_s
+            scm_sfc_qv = 5               ! 5: prescribed qv_s and fluxes from Louis (1979)
+            CALL message( routine, 'switch scm_sfc_qv from 1 to 5 for LES with Louis fluxes')
+          CASE (3)                       ! 3: qv_s based on saturation
+            scm_sfc_qv = 6               ! 6: qv_s based on saturation and fluxes from Louis (1979)
+            CALL message( routine, 'switch scm_sfc_qv from 3 to 6 for LES with Louis fluxes')
+          CASE default
+        END SELECT
+
+        SELECT CASE (scm_sfc_mom)
+          CASE (0)                       ! 0: prescribed Ts
+            IF (atm_phy_nwp_config(1)%inwp_surface == 0) THEN
+              scm_sfc_mom = 5            ! 5: prescribed Ts and fluxes from Louis (1979)
+              CALL message( routine, 'switch scm_sfc_mom from 0 to 5 for LES with Louis fluxes')
+            END IF
+          CASE default
+        END SELECT
+      ENDIF
+
+      ! SHS production terms in turbdiff cannot be calculated in SCM mode.
+      ! However, if LES is run in "idealised" mode with l_scm_mode and ldynamics=T,
+      ! the shear terms could be optional
+      IF (.NOT. ldynamics) THEN
+        turbdiff_config(1:n_dom)%loutshs = .FALSE.
+        turbdiff_config(1:n_dom)%ltkeshs = .FALSE.
+        turbdiff_config(1:n_dom)%a_hshr  = 0
+        turbdiff_config(1:n_dom)%itype_sher = 0
+      ENDIF
+
+#ifndef __NO_ICON_LES__
+      IF (lcoriolis .and. is_ls_coriolis) THEN
+        is_ls_coriolis=.false.
+        CALL message( routine, 'is_ls_coriolis has been set to .false. to avoid double counting when lcoriolis=T')
+      ENDIF
+#endif
+
     ELSE
       i_scm_netcdf   = 0
     END IF
@@ -287,8 +360,14 @@ CONTAINS
     !--------------------------------------------------------------------
 
 #ifdef __NO_AES__
-    IF ( iforcing==iaes ) &
+    IF ( iforcing==iaes .OR. iforcing==ildf_echam) &
       CALL finish( routine, 'AES physics desired, but compilation with --disable-aes' )
+#else
+    ! Use memory manager, currently only if TMX is used with AES
+    IF (ANY(aes_vdf_config(:)%use_tmx)) THEN
+      lmemman = .TRUE.
+      CALL message(routine, ' TMX selected: Using memory manager')
+    END IF
 #endif
 
 #ifdef __NO_NWP__
@@ -302,12 +381,28 @@ CONTAINS
     IF (iforcing==inwp) THEN
 
       DO jg =1,n_dom
-
-        IF (atm_phy_nwp_config(jg)%inwp_gscp /= 8) THEN
+        IF (.NOT. ANY( atm_phy_nwp_config(jg)%inwp_gscp == (/-1, 8/) ) ) THEN
           IF( atm_phy_nwp_config(jg)%inwp_satad == 0       .AND. &
           & ((atm_phy_nwp_config(jg)%inwp_convection >0 ) .OR. &
           &  (atm_phy_nwp_config(jg)%inwp_gscp > 0 )   ) ) &
           &  CALL finish( routine,'satad has to be switched on')
+        ENDIF
+
+        IF (atm_phy_nwp_config(jg)%inwp_gscp == 8) THEN
+          IF (.NOT. atm_phy_nwp_config(jg)%lmicrophysicsFirst) THEN
+            CALL finish( routine,'lmicrophysicsFirst=TRUE is recommended for SBM')
+          END IF
+          IF (atm_phy_nwp_config(jg)%inwp_satad == 1) THEN
+            CALL finish( routine,'inwp_satad=0 is recommended for SBM')
+          END IF
+#ifdef _OPENACC
+          CALL finish(routine,'SBM is not supported on GPU')
+#endif
+        END IF
+
+        IF (atm_phy_nwp_config(jg)%inwp_gscp == -1 .AND. &
+          & atm_phy_nwp_config(jg)%icalc_reff /= 0) THEN
+          CALL finish( routine,'Only standard reff calculation for external microphysics')
         ENDIF
 
         IF( (atm_phy_nwp_config(jg)%inwp_gscp==0) .AND. &
@@ -332,26 +427,52 @@ CONTAINS
                       'length z0 selected!')
         ENDIF
 
+        IF (turbdiff_config(jg)%ltkeshs .NEQV. (turbdiff_config(jg)%a_hshr>0)) &
+          &  CALL finish( routine,'Wrong combination of ltkeshs and a_hshr. ltkeshs=.true. must '//  &
+                               'coincide with a_hshr>0, and ltkeshs=.false. must coincide with a_hshr=0.')
+
+        IF ((turbdiff_config(jg)%itype_sher>=1 .OR. (turbdiff_config(jg)%a_hshr>0)) .AND. &
+          & diffusion_config(jg)%hdiff_order/=5) &
+          & CALL finish( routine,'hdiff_order=5 must be selected for horizontal shear term calculations '// &
+                        'requested with a_hshr>0 or itype_sher>=1')
+
         IF (.NOT. ltestcase .AND. atm_phy_nwp_config(jg)%inwp_surface == 0) THEN
           CALL finish( routine,'Real-data applications require using a surface scheme!')
         ENDIF
 
-        IF ( (atm_phy_nwp_config(jg)%icpl_rad_reff == 2)  .AND.  & 
+        IF ( (atm_phy_nwp_config(jg)%icpl_rad_reff == 2)  .AND.  &
               (atm_phy_nwp_config(jg)%inwp_radiation/= 4) ) THEN
-          CALL finish( routine, 'Wrong value for: icpl_rad_reff. Coupling effective radius for all '//  &  
+          CALL finish( routine, 'Wrong value for: icpl_rad_reff. Coupling effective radius for all '//  &
                                  'hydrometeors only works with ECRAD!')
         ENDIF
-
 
         ! check radiation scheme in relation to chosen ozone and irad_aero=iRadAeroTegen to itopo
 
         IF ( (atm_phy_nwp_config(jg)%inwp_radiation > 0) )  THEN
 
+          IF ( atm_phy_nwp_config(jg)%inwp_radiation == 1) THEN
+#ifdef __DEPRECATED
+            CALL message(routine,'Warning: RRTM radiation (inwp_radiation=1) is deprecated!')
+#else
+            CALL finish(routine,'RRTM radiation (inwp_radiation=1) is deprecated! &
+              &                  Activate --D__DEPRECATED to use it anyways.')
+#endif
+          ENDIF
+
           SELECT CASE (irad_o3)
+          CASE (-1) ! ok
+            CALL message(routine,'Externally specified ozone')
           CASE (0) ! ok
             CALL message(routine,'radiation is used without ozone')
-          CASE (2,4,5,6,7,9,11,79,97) ! ok
+          CASE (2,4,5,7,9,11,79,97) ! ok
             CALL message(routine,'radiation is used with ozone')
+          CASE (6)
+#ifdef __DEPRECATED
+            CALL message(routine,'Warning: GME ozone (irad_o3=6) is deprecated!')
+#else
+            CALL finish(routine,'GME ozone (irad_o3=6) is deprecated! &
+              &                  Activate --D__DEPRECATED to use it anyways.')
+#endif
           CASE (10) ! ok
             CALL message(routine,'radiation is used with ozone calculated from ART')
             IF ( .NOT. lart ) THEN
@@ -373,18 +494,50 @@ CONTAINS
             CALL finish(routine,'aerosol-precipitation coupling requires irad_aero=6,7,8,9,12,13,14,15,18 or 19')
           ENDIF
 
-          ! reset lscale_cdnc to .false. if the SP scheme or icpl_aero_gscp = 3 (or both) are not set
-          IF ( atm_phy_nwp_config(jg)%lscale_cdnc .AND. atm_phy_nwp_config(jg)%icpl_aero_gscp /= 3 ) THEN
-            IF ( .NOT. ANY ( irad_aero ==  (/iRadAeroKinneVolcSP, iRadAeroKinneSP/) ) ) THEN
-              atm_phy_nwp_config(jg)%lscale_cdnc = .false.
-              CALL message(routine,'cdnc scaling is only effective in combination with the simple plumes &
-                                   &(irad_aero=18,19) and icpl_aero_gscp = 3; reset lscale_cdnc to .false.')
-            ENDIF
+          ! The coupling aerosol-convection requires cloud_num, which Kinne aerosol does not have. Therefore, aerosol-convection
+          ! coupling can only be used if external cdnc is provided:
+          IF ( ANY ( irad_aero ==  (/iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc,          &
+                         &  iRadAeroKinneVolc, iRadAeroKinneVolcSP, iRadAeroKinneSP/) ) .AND.  &
+            &  ( icpl_aero_conv > 0 ) .AND. ( atm_phy_nwp_config(jg)%icpl_aero_gscp /= 3 ) ) THEN
+            CALL finish(routine,'aerosol-precipitation coupling with Kinne aerosol requires external cdnc')
           ENDIF
+
+          ! cdnc scaling factor must be used with external cdnc
+          IF ( atm_phy_nwp_config(jg)%scale_cdnc_mode /= 0 .AND. atm_phy_nwp_config(jg)%icpl_aero_gscp /= 3 ) THEN
+            CALL finish(routine,'cdnc scaling is only effective in combination with and icpl_aero_gscp = 3')
+          ENDIF
+
+          ! CDNC-based interpolation in convection scheme only useful with MODIS CDNC
+          IF ( atm_phy_nwp_config(jg)%lconv_cdnc_interp .AND. atm_phy_nwp_config(jg)%icpl_aero_gscp /= 3 ) THEN
+            CALL message(routine,'CDNC-based interpolation in convection scheme can only be combined with icpl_aero_gscp = 3')
+          END IF
 
           ! check if CAMS/Tegen aerosols are available for DeMott ice nucleation scheme
           IF (icpl_aero_ice == 1 .AND. .NOT. ANY(irad_aero == (/iRadAeroTegen, iRadAeroCAMSclim, iRadAeroCAMStd/) ) ) &
             & CALL finish(routine,'icpl_aero_ice = 1 requires irad_aero= 6,7 or 8')
+
+          ! check if CAMS aerosols are available for CAMS + Segal & Khain CDNC parametrization
+          IF (atm_phy_nwp_config(jg)%icpl_aero_gscp == 2 .AND. .NOT. ANY(irad_aero == (/iRadAeroCAMSclim, iRadAeroCAMStd/) ) ) &
+            & CALL finish(routine,'icpl_aero_gscp = 2 requires irad_aero= 7 or 8')
+
+          ! check if CAMS aerosols are available for CAMS + Segal & Khain CDNC parametrization
+          IF (atm_phy_nwp_config(jg)%icpl_aero_gscp == 2 .AND. atm_phy_nwp_config(jg)%inwp_gscp /= 2 ) &
+            & CALL finish(routine,'icpl_aero_gscp = 2 requires inwp_gscp = 2')
+
+          ! check ice nucleation settings for two-moment cloud ice scheme (gscp=3)
+          IF ( (icpl_aero_ice == 2 .OR. icpl_aero_ice == 3 .OR. icpl_aero_ice == 4) .AND. atm_phy_nwp_config(jg)%inwp_gscp /= 3 ) &
+             & CALL finish(routine,'icpl_aero_ice = 2, 3 or 4 requires inwp_gscp = 3')
+
+          ! check ice nucleation settings for two-moment cloud ice scheme (gscp=3)
+          IF ( (icpl_aero_ice == 3 .OR. icpl_aero_ice == 4) .AND. .not.lart ) &
+               & CALL finish(routine,'icpl_aero_ice = 3 or 4 requires lart=.true.')
+
+          IF ( icpl_aero_ice == 1 .AND. atm_phy_nwp_config(jg)%inwp_gscp == 3 ) &
+               & CALL finish(routine,'icpl_aero_ice = 1 not supported for inwp_gscp = 3')
+
+          ! check if revised ice cloud cover is only used for two-moment microphysics
+          IF (itype_icecloud_diag == 2 .AND. .NOT. ANY(atm_phy_nwp_config(jg)%inwp_gscp == (/3,4,5,6,7,8/) ) ) &
+            & CALL finish(routine,'itype_icecloud_diag = 2 requires inwp_gscp= 3,4,5,6,7 or 8')
 
 #ifdef _OPENACC
           IF ( icpl_aero_ice == 1 ) THEN
@@ -403,6 +556,10 @@ CONTAINS
             CALL finish(routine,'irad_aero=5 (Tanre climatology) has been removed')
           ENDIF
 
+          IF ( (islope_rad(jg) == 2) ) THEN
+            CALL finish (routine,'islope_rad = 2 was removed, use islope_rad = 3 instead')
+          ENDIF
+
           ! Transient solar radiation only works with ecRad
           IF ( ANY( isolrad == (/2/) ) .AND. atm_phy_nwp_config(jg)%inwp_radiation /= 4 ) THEN
             CALL finish(routine,'isolrad = 2 requires inwp_radiation = 4')
@@ -410,25 +567,26 @@ CONTAINS
 
           ! ecRad specific checks
           IF ( (atm_phy_nwp_config(jg)%inwp_radiation == 4) )  THEN
-            IF (.NOT. ANY( irad_h2o     == (/0,1/)         ) ) &
-              &  CALL finish(routine,'For inwp_radiation = 4, irad_h2o has to be 0 or 1')
-            IF (.NOT. ANY( irad_co2     == (/0,2,4/)       ) ) &
-              &  CALL finish(routine,'For inwp_radiation = 4, irad_co2 has to be 0, 2 or 4')
-            IF (.NOT. ANY( irad_ch4     == (/0,2,3,4/)     ) ) &
-              &  CALL finish(routine,'For inwp_radiation = 4, irad_ch4 has to be 0, 2, 3 or 4')
-            IF (.NOT. ANY( irad_n2o     == (/0,2,3,4/)     ) ) &
-              &  CALL finish(routine,'For inwp_radiation = 4, irad_n2o has to be 0, 2, 3 or 4')
-            IF (.NOT. ANY( irad_o3      == (/0,5,7,9,10,11,79,97/) ) ) &
-              &  CALL finish(routine,'For inwp_radiation = 4, irad_o3 has to be 0, 5, 7, 9, 10, 11, 79 or 97')
-            IF (.NOT. ANY( irad_o2      == (/0,2/)         ) ) &
-              &  CALL finish(routine,'For inwp_radiation = 4, irad_o2 has to be 0 or 2')
-            IF (.NOT. ANY( irad_cfc11   == (/0,2,4/)       ) ) &
-              &  CALL finish(routine,'For inwp_radiation = 4, irad_cfc11 has to be 0, 2 or 4')
-            IF (.NOT. ANY( irad_cfc12   == (/0,2,4/)       ) ) &
-              &  CALL finish(routine,'For inwp_radiation = 4, irad_cfc12 has to be 0, 2 or 4')
+            IF (.NOT. ANY( irad_h2o     == (/-1,0,1/)         ) ) &
+              &  CALL finish(routine,'For inwp_radiation = 4, irad_h2o has to be -1, 0 or 1')
+            IF (.NOT. ANY( irad_co2     == (/-1,0,2,4/)       ) ) &
+              &  CALL finish(routine,'For inwp_radiation = 4, irad_co2 has to be -1, 0, 2 or 4')
+            IF (.NOT. ANY( irad_ch4     == (/-1,0,2,3,4/)     ) ) &
+              &  CALL finish(routine,'For inwp_radiation = 4, irad_ch4 has to be -1, 0, 2, 3 or 4')
+            IF (.NOT. ANY( irad_n2o     == (/-1,0,2,3,4/)     ) ) &
+              &  CALL finish(routine,'For inwp_radiation = 4, irad_n2o has to be -1, 0, 2, 3 or 4')
+            IF (.NOT. ANY( irad_o3      == (/-1,0,5,7,9,10,11,79,97/) ) ) &
+              &  CALL finish(routine,'For inwp_radiation = 4, irad_o3 has to be -1, 0, 5, 7, 9, 10, 11, 79 or 97')
+            IF (.NOT. ANY( irad_o2      == (/-1,0,2/)         ) ) &
+              &  CALL finish(routine,'For inwp_radiation = 4, irad_o2 has to be -1, 0 or 2')
+            IF (.NOT. ANY( irad_cfc11   == (/-1,0,2,4/)       ) ) &
+              &  CALL finish(routine,'For inwp_radiation = 4, irad_cfc11 has to be -1, 0, 2 or 4')
+            IF (.NOT. ANY( irad_cfc12   == (/-1,0,2,4/)       ) ) &
+              &  CALL finish(routine,'For inwp_radiation = 4, irad_cfc12 has to be -1, 0, 2 or 4')
             IF (.NOT. ANY( irad_aero    == (/iRadAeroNone, iRadAeroConst, iRadAeroTegen, iRadAeroART, &
               &             iRadAeroConstKinne, iRadAeroKinne, iRadAeroVolc, iRadAeroCAMSclim,        &
-              &             iRadAeroCAMStd, iRadAeroKinneVolc, iRadAeroKinneVolcSP, iRadAeroKinneSP/) ) ) THEN
+              &             iRadAeroCAMStd, iRadAeroKinneVolc, iRadAeroKinneVolcSP, iRadAeroKinneSP,  &
+              &             iRadAeroExternal/) ) ) THEN
               WRITE(message_text,'(a,i2,a)') 'irad_aero = ', irad_aero,' is invalid for inwp_radiation=4'
               CALL finish(routine,message_text)
             ENDIF
@@ -451,7 +609,7 @@ CONTAINS
                 &  CALL finish(routine,'For inwp_radiation = 4 ecrad_use_general_cloud_optics = F, &
                                        &ecrad_iliquid_scat has to be 0 or 1')
               IF (.NOT. ANY( ecrad_iice_scat    == (/0,1,2/) ) ) &
-                &  CALL finish(routine,'For inwp_radiation = 4 ecrad_use_general_cloud_optics = F, & 
+                &  CALL finish(routine,'For inwp_radiation = 4 ecrad_use_general_cloud_optics = F, &
                                        &ecrad_iice_scat has to be 0, 1 or 2')
             ENDIF
             IF (.NOT. ANY( ecrad_isnow_scat    == (/-1,0,10/) ) ) &
@@ -475,7 +633,7 @@ CONTAINS
             IF ( .NOT. ecrad_use_general_cloud_optics .AND. &
               & (ecrad_isnow_scat > -1 .OR. ecrad_igraupel_scat > -1 .OR. ecrad_irain_scat > -1 )) &
               &  CALL finish(routine,'Ecrad with qr/qs/qg can only be used with ecrad_use_general_cloud_optics = T')
-            IF ( ecrad_use_general_cloud_optics .AND. & 
+            IF ( ecrad_use_general_cloud_optics .AND. &
               & (ecrad_isnow_scat > -1 .OR. ecrad_igraupel_scat > -1 .OR. ecrad_irain_scat > -1 ) .AND. &
               &  atm_phy_nwp_config(jg)%icpl_rad_reff /= 2 ) &
               &  CALL finish(routine,'Ecrad with qr/qs/qg can only be used with icpl_rad_reff= 2')
@@ -483,7 +641,7 @@ CONTAINS
               ecrad_igraupel_scat = -1
               CALL message(routine,'Warning: Reset ecrad_igraupel_scat = -1 because of no graupel in microphysics')
             ENDIF
-          ELSE
+          ELSE ! Not ecRad
             IF ( ecrad_llw_cloud_scat ) &
               &  CALL message(routine,'Warning: ecrad_llw_cloud_scat is set to .true., but ecRad is not used')
             IF ( ecrad_iliquid_scat /= 0 ) &
@@ -496,7 +654,11 @@ CONTAINS
               &  CALL message(routine,'Warning: ecrad_igas_model is explicitly set, but ecRad is not used')
             IF ( ecrad_use_general_cloud_optics ) &
               &  CALL message(routine,'Warning: ecrad_use_general_cloud_optics is explicitly set, but ecRad is not used')
-          ENDIF
+
+            IF ( ANY( (/irad_h2o, irad_co2, irad_ch4, irad_n2o, irad_o3, irad_o2, irad_cfc11, irad_cfc12/) == -1 ) ) &
+              &  CALL finish(routine, &
+                   &         'External gas specification (irad_* == 1) only implemented for ecrad (inwp_radiation==4)')
+          ENDIF ! inwp_radiation == 4
 
         ELSE
 
@@ -510,19 +672,47 @@ CONTAINS
         ENDIF !inwp_radiation
 
         !! Checks for simple prognostic aerosol scheme
-        IF (iprog_aero > 0) THEN
+        IF ( ANY( (/i2daero_dust, i2daero_seas, i2daero_anthro, i2daero_fire/) > 0 ) ) THEN
 #ifndef __NO_ICON_LES__
           IF (atm_phy_nwp_config(jg)%is_les_phy) &
-            & CALL finish(routine,'iprog_aero > 0 can not be combined with LES physics')
+            & CALL finish(routine, &
+              & 'i2daero_dust, i2daero_seas, i2daero_anthro, i2daero_fire > 0 can not be combined with LES physics')
 #endif
-          IF (irad_aero /= iRadAeroTegen) &
-            & CALL finish(routine,'iprog_aero > 0 currently only available for irad_aero=6 (Tegen)')
+          IF ( ALL( (/iRadAeroTegen, iRadAeroART/) /= irad_aero) ) &
+            & CALL finish(routine, &
+              & 'i2daero_dust, i2daero_seas, i2daero_anthro, i2daero_fire > 0 only available for irad_aero=6,9')
         ENDIF
+        IF ( i2daero_fire > 0 .AND. i2daero_anthro == 0 ) THEN
+          CALL finish(routine,'i2daero_fire > 0 can only be used in combination with i2daero_anthro > 0')
+        ENDIF
+
+        !! check options for cloud scheme
+        IF ( tune_cu_alfa > 0 .AND. ANY(atm_phy_nwp_config(1:n_dom)%icpl_aero_gscp == 0) ) THEN
+          CALL finish(routine,'cloud scheme with tune_cu_alfa > 0 requires icpl_aero_gscp > 0')
+        END IF
 
         !! check microphysics scheme
         IF (   ANY(atm_phy_nwp_config(1:n_dom)%inwp_gscp == 2) .AND. &
              & ANY(atm_phy_nwp_config(1:n_dom)%inwp_gscp == 1) ) THEN
           CALL finish(routine,'combining inwp_gscp=1 and inwp_gscp=2 in nested runs is not allowed')
+        END IF
+
+        IF (   ANY(atm_phy_nwp_config(1:n_dom)%inwp_gscp == 2) .AND. &
+             & ANY(atm_phy_nwp_config(1:n_dom)%inwp_gscp == 3) ) THEN
+          CALL finish(routine,'combining inwp_gscp=2 and inwp_gscp=3 in nested runs is not allowed')
+        END IF
+
+        IF (   ANY(atm_phy_nwp_config(1:n_dom)%inwp_gscp == 1) .AND. &
+             & ANY(atm_phy_nwp_config(1:n_dom)%inwp_gscp == 3) ) THEN
+          CALL finish(routine,'combining inwp_gscp=1 and inwp_gscp=3 in nested runs is not allowed')
+        END IF
+
+        !! SB two-moment not supported with deep convection parameterization
+        IF ( ANY( atm_phy_nwp_config(jg)%inwp_gscp == (/4,5,6,7/) )  .AND.  &
+             &  ( atm_phy_nwp_config(jg)%inwp_convection == 1        .AND.  &
+             &     .NOT. ( atm_phy_nwp_config(jg)%lshallowconv_only   .OR.  &
+             &             atm_phy_nwp_config(jg)%lgrayzone_deepconv ) ) ) THEN
+          CALL finish(routine,'SB two-moment microphysics inwp_gscp=4/5/6/7 with parameterized deep convection is not supported')
         END IF
 
         IF (  atm_phy_nwp_config(jg)%mu_rain < 0.0   .OR. &
@@ -547,6 +737,16 @@ CONTAINS
                       'in two-moment scheme (lturb_enhc) not applicable for aes physics.')
         ENDIF
 
+        ! ltmpcor activates the calculation of dissipative heating in turbdiff;
+        ! to prevent double-counting, the respective calculations in the NWP interface need to be skipped
+        IF (turbdiff_config(1)%ltmpcor) THEN
+          itype_dissip_heat = 0
+          WRITE(message_text,'(a)') 'itype_dissip_heat is reset to 0 because dissipative heating is&
+            & calculated within the turbulence scheme'
+          CALL message(routine, message_text)
+        ENDIF
+
+        !! check land surface schemes
         SELECT CASE (atm_phy_nwp_config(jg)%inwp_surface)
         CASE (0)
           IF (ntiles_lnd > 1) THEN
@@ -574,12 +774,62 @@ CONTAINS
     IF ( irad_aero == iRadAeroCAMStd) THEN
         CALL finish(routine,'CAMS forecast irad_aero=8 is currently not supported on GPU.')
     END IF
-    IF ( atm_phy_nwp_config(jg)%icpl_aero_gscp == 3 ) THEN
-        CALL finish(routine,'Using cloud-droplet number climatology icpl_aero_gscp = 3 is currently not supported on GPU.')
+    IF ( atm_phy_nwp_config(jg)%lmicrophysicsFirst .AND. atm_phy_nwp_config(jg)%icpl_aero_gscp == 2 ) THEN
+        CALL finish(routine,'Using lmicrophysicsFirst and icpl_aero_gscp = 2 is currently not supported')
     END IF
 #endif
 
     END IF
+
+    IF (iforcing==iaes .and. ANY(ldiagnose_tke)) THEN
+      CALL finish(routine, 'TKE diagnostics (ldiagnose_tke=T) do not work with aes physics.')
+    ENDIF
+
+    !--------------------------------------------------------------------
+    ! YAC for reading Kinne aerosol data
+    !--------------------------------------------------------------------
+
+    ! General for iforcing=inwp,iaes
+    IF (is_coupled_to_aero()) THEN
+      IF (iforcing == inwp .AND. ALL([iRadAeroKinne,  iRadAeroKinneSP] /= irad_aero)) THEN
+        CALL finish(routine, 'Aerosol read-in via YAC is only supported for iRadAeroKinne (irad_aero=13) and iRadAeroKinneSP (irad_aero=19)')
+      END IF
+
+      IF (iforcing == iaes) THEN
+#ifndef __NO_AES__
+        DO jg = 1, n_dom
+          IF (ALL([iRadAeroKinne, iRadAeroKinneSP] /= aes_rad_config(jg)%irad_aero)) &
+            CALL finish(routine, 'Aerosol read-in via YAC is only supported for iRadAeroKinne (irad_aero=13) and iRadAeroKinneSP (irad_aero=19)')
+        END DO
+#else
+        CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
+#endif
+      END IF
+    END IF
+
+    !--------------------------------------------------------------------
+    ! YAC for reading ozone data
+    !--------------------------------------------------------------------
+
+    ! General supported for iforcing=inwp,iaes
+    IF (is_coupled_to_o3()) THEN
+      IF (iforcing == inwp .AND. irad_o3 /= 5) THEN
+        CALL finish(routine, 'Ozone read-in via YAC is only supported for irad_o3=5')
+      END IF
+
+      IF (iforcing == iaes) THEN
+#ifndef __NO_AES__
+        DO jg = 1, n_dom
+          IF (ALL([5, 6] /= aes_rad_config(jg)%irad_o3 )) THEN
+            CALL finish(routine, 'Ozone read-in via YAC is only supported for irad_o3=5')
+          END IF
+        END DO
+#else
+        CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
+#endif
+      END IF
+    END IF
+
 
     !--------------------------------------------------------------------
     ! Tracers and diabatic forcing
@@ -593,7 +843,17 @@ CONTAINS
       CALL finish( routine,message_text)
     END IF
 
-
+    IF (ccycle_config(1)% C4MIP_FLAG /= 'none') THEN
+      CALL message(routine,'Warning: C4MIP experiment, replacing user specified irad_co2')
+      SELECT CASE(ccycle_config(1)% C4MIP_FLAG)
+      CASE ('COU','RAD')
+        irad_co2   = -1
+      CASE ('BGC','cBGC')
+        irad_co2   = 2
+      CASE ('cCOU','cRAD')
+        irad_co2   = 4
+      END SELECT
+    END IF
 
 #ifdef _OPENACC
     IF (ltransport) THEN
@@ -702,12 +962,15 @@ CONTAINS
       END IF
     END DO
 
+    ! Output in file format GRIB2
+    CALL gribout_crosscheck(n_dom=n_dom, verbose=(msg_level >= 15))
+
 
     !--------------------------------------------------------------------
     ! Realcase runs
     !--------------------------------------------------------------------
 
-    IF ( ANY((/MODE_IAU,MODE_IAU_OLD/) == init_mode) ) THEN  ! start from dwd analysis with incremental update
+    IF ( init_mode == MODE_IAU ) THEN  ! start from dwd analysis with incremental update
 
       ! check if the appropriate physics package has been selected
       IF (iforcing /= inwp) THEN
@@ -730,12 +993,12 @@ CONTAINS
         msecs_restart   = getTotalMilliSecondsTimeDelta(time_config%tc_dt_restart, reference_dt)
         secs_restart    = 0.001_wp * REAL(msecs_restart,wp)
         secs_checkpoint = dt_checkpoint
-        secs_iau_end    = dt_iau+timeshift%dt_shift
+        secs_iau_end    = dt_iau+time_config%timeshift%dt_shift
         ! ignore restart and/or checkpoint intervals if zero:
         IF (secs_restart    <= 0._wp)  secs_restart    = secs_iau_end
         IF (secs_checkpoint <= 0._wp)  secs_checkpoint = secs_restart
         IF (MIN(secs_checkpoint, secs_restart) < secs_iau_end) THEN
-          CALL finish('atm_crosscheck:', "Restarting is not allowed within the IAU phase")
+          CALL finish(routine, "Restarting is not allowed within the IAU phase")
         ENDIF
 
         CALL deallocateDatetime(reference_dt)
@@ -743,29 +1006,21 @@ CONTAINS
         IF (l_limited_area) THEN
           ! For a negative IAU shift, no extra boundary file can be read. So it has to be taken
           ! from the first guess file.
-          IF (timeshift%dt_shift < 0._wp .AND. .NOT. latbc_config%init_latbc_from_fg) THEN
-            CALL finish('atm_crosscheck:', "For dt_shift<0, latbc has &
+          IF (time_config%timeshift%dt_shift < 0._wp .AND. .NOT. latbc_config%init_latbc_from_fg) THEN
+            CALL finish(routine, "For dt_shift<0, latbc has &
               &to be taken from first guess (init_latbc_from_fg)")
           ENDIF
         ENDIF
       ENDIF
 
       DO jg = 2, n_dom
-        IF (start_time(jg) > timeshift%dt_shift .AND. start_time(jg) < dt_iau+timeshift%dt_shift) THEN
-          CALL finish('atm_crosscheck:', "Starting a nest is not allowed within the IAU phase")
+        IF (start_time(jg) > time_config%timeshift%dt_shift .AND. &
+          & start_time(jg) < dt_iau+time_config%timeshift%dt_shift) THEN
+          CALL finish(routine, "Starting a nest is not allowed within the IAU phase")
         ENDIF
       ENDDO
 
-      ! IAU modes MODE_IAU_OLD cannot be combined with snowtiles
-      ! when performing snowtile warmstart.
-      IF ((ntiles_lnd > 1) .AND. (.NOT. ltile_coldstart) .AND. (lsnowtile)) THEN
-        IF ( init_mode == MODE_IAU_OLD ) THEN
-          WRITE (message_text,'(a,i2)') "lsnowtile=.TRUE. not allowed for IAU-Mode ", init_mode
-          CALL finish(routine, message_text)
-        ENDIF
-      ENDIF
-
-    ENDIF
+    ENDIF ! IF ( init_mode == MODE_IAU )
 
     IF (itune_gust_diag == 3 .AND. ntiles_lnd == 1) THEN
       WRITE (message_text,'(a)') "itune_gust_diag = 3 requires ntiles > 1"
@@ -798,7 +1053,7 @@ CONTAINS
     ! assimiliation
     !--------------------------------------------------------------------
     IF ( MODE_IAU == init_mode ) THEN
-      IF( ANY(assimilation_config(:)%dace_coupling) .AND. .NOT. iterate_iau ) THEN 
+      IF( ANY(assimilation_config(:)%dace_coupling) .AND. .NOT. iterate_iau ) THEN
         ! The MEC in dace_coupling needs the fully initialized state to compute the
         ! model equivalents for vv=0.
         CALL finish(routine,                                        &
@@ -840,13 +1095,21 @@ CONTAINS
     INTEGER  :: jg
     CHARACTER(len=*), PARAMETER :: routine =  modname//'::land_crosscheck'
 
+    SELECT CASE (iforcing)
+    CASE (inwp)
+
+#ifdef __NO_JSBACH__
+    IF (ANY(atm_phy_nwp_config(1:n_dom)%inwp_surface == LSS_JSBACH)) &
+        & CALL finish(routine, "This version was compiled without jsbach. Compile with __JSBACH__, or set inwp_surface to a different value.")
+#endif
+
+    CASE (iaes)
+
+#ifndef __NO_AES__
 #ifdef __NO_JSBACH__
     IF (ANY(aes_phy_config(:)%ljsb)) THEN
       CALL finish(routine, "This version was compiled without jsbach. Compile with __JSBACH__, or set ljsb=.FALSE.")
     ENDIF
-
-    IF (ANY(atm_phy_nwp_config(1:n_dom)%inwp_surface == LSS_JSBACH)) &
-        & CALL finish(routine, "This version was compiled without jsbach. Compile with __JSBACH__, or set inwp_surface to a different value.")
 #else
     DO jg=1,n_dom
       IF (.NOT.aes_phy_config(jg)%ljsb) THEN
@@ -862,6 +1125,11 @@ CONTAINS
       END IF
     END DO
 #endif
+#else
+    CALL finish (routine, 'Error: remove --disable-aes and reconfigure')
+#endif
+
+    END SELECT
 
   END SUBROUTINE land_crosscheck
   !---------------------------------------------------------------------------------------
@@ -897,9 +1165,6 @@ CONTAINS
       CALL finish(routine, "Coupled atm/wave runs are not available on GPU")
     END IF
 
-    IF ( is_coupled_to_ocean() ) THEN
-      CALL finish(routine, "Coupled atm/ocean runs are not available on GPU")
-    END IF
 #endif
 
   END SUBROUTINE coupled_crosscheck
@@ -924,10 +1189,6 @@ CONTAINS
       CALL finish(routine,'irad_aero=9 (ART) needs lart = .TRUE.')
     END IF
 
-    IF ( ( irad_aero == iRadAeroART ) .AND. ( iprog_aero /= 0 ) ) THEN
-      CALL finish(routine,'irad_aero=9 (ART) requires iprog_aero=0')
-    ENDIF
-
 #ifdef __ICON_ART
     IF ( ( irad_aero == iRadAeroART ) .AND. ( itopo /=1 ) ) THEN
       CALL finish(routine,'irad_aero=9 (ART) requires itopo=1')
@@ -949,7 +1210,7 @@ CONTAINS
     DO jg = 1, n_dom
       IF (    art_config(jg)%iart_aci_cold  >  0  .OR.  &
           &   art_config(jg)%iart_aci_warm  >  0  .OR.  &
-          &   art_config(jg)%iart_ari       >  0  .OR.  &      
+          &   art_config(jg)%iart_ari       >  0  .OR.  &
           &   art_config(jg)%iart_dust      >  0  .OR.  &
           &   art_config(jg)%iart_init_aero >  0  .OR.  &
           &   art_config(jg)%iart_radioact  >  0  .OR.  &
@@ -958,8 +1219,8 @@ CONTAINS
         CALL finish(routine,  &
           &  'mo_nml_crosscheck: art_crosscheck: some activated art switches are currently not supported on GPU.')
       ELSEIF (    art_config(jg)%lart_chem            .OR.  &
-              &   art_config(jg)%lart_chemtracer            ) THEN 
-        CALL message(routine, 'WARNING: The switches lartchem and lart_chemtracer are not supported on GPU. Use them at your own risk. However, using this with OEM-specific cases is safe at the moment.') 
+              &   art_config(jg)%lart_chemtracer            ) THEN
+        CALL message(routine, 'WARNING: The switches lartchem and lart_chemtracer are not supported on GPU. Use them at your own risk. However, using this with OEM-specific cases is safe at the moment.')
       END IF
     ENDDO
 #endif

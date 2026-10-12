@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -17,7 +17,7 @@ MODULE mo_input_container
     USE mo_exception, ONLY: message, finish, message_text
     USE mo_hash_table, ONLY: t_HashTable, hashTable_make
     USE mo_impl_constants, ONLY: SUCCESS
-    USE mo_kind, ONLY: wp, dp
+    USE mo_kind, ONLY: wp, dp, sp, i8
     USE mo_math_types, ONLY: t_Statistics
     USE mo_mpi, ONLY: p_bcast, p_comm_work, p_mpi_wtime, process_mpi_root_id
     USE mo_parallel_config, ONLY: blk_no, nproma
@@ -72,6 +72,9 @@ PUBLIC :: t_InputContainer, InputContainer_make
         PROCEDURE :: readField => InputContainer_readField
         !NEC: new routine only for this one communication loop
         PROCEDURE :: readField_omp => InputContainer_readField_omp
+        ! Conceptual copy of InputContainer_readField, modified in a way
+        ! that allows for all Work PEs being data distributers
+        PROCEDURE :: distributeField_grib => InputContainer_distributeField_grib
         PROCEDURE, PRIVATE :: dataAvailable => InputContainer_dataAvailable
     END TYPE
 
@@ -442,7 +445,7 @@ CONTAINS
         CASE(1)  ! First record: only read
 
            CALL read_data(firstcall = .TRUE.)
-   
+
            ! prepare reading the rest of the data
            jg_prev = jg
            level_prev = level
@@ -481,19 +484,19 @@ CONTAINS
               DEALLOCATE(bufferD_prev)
               NULLIFY(bufferD_prev)
             END IF
-            IF (ASSOCIATED(bufferD)) THEN 
+            IF (ASSOCIATED(bufferD)) THEN
               DEALLOCATE(bufferD)
               NULLIFY(bufferD)
-            END IF  
+            END IF
             IF (ASSOCIATED(bufferS_prev)) THEN
                DEALLOCATE(bufferS_prev)
                NULLIFY(bufferS_prev)
             END IF
-            IF (ASSOCIATED(bufferS)) THEN 
+            IF (ASSOCIATED(bufferS)) THEN
               DEALLOCATE(bufferS)
               NULLIFY(bufferS)
-            END IF  
-            
+            END IF
+
         CASE DEFAULT
            !NEC_RP: Read data, distribute them, and compute statistics
 !$OMP PARALLEL SECTIONS NUM_THREADS(3)
@@ -564,7 +567,7 @@ CONTAINS
                packedMessage(1) = gridSize
                packedMessage(2) = datatype
            END IF
-   
+
            SELECT CASE(datatype)
            CASE(CDI_DATATYPE_PACK23:CDI_DATATYPE_PACK32, CDI_DATATYPE_FLT64, CDI_DATATYPE_INT32)
                !ALLOCATE the global buffer
@@ -587,7 +590,7 @@ CONTAINS
                    END IF
                END IF
                IF(error /= SUCCESS) CALL finish(routine, "memory allocation error")
-   
+
                !READ the DATA
                IF(C_ASSOCIATED(iterator%ptr)) THEN
                    savetime = p_mpi_wtime()
@@ -619,7 +622,7 @@ CONTAINS
                    END IF
                END IF
                IF(error /= SUCCESS) CALL finish(routine, "memory allocation error")
-   
+
                !READ the DATA
                IF(C_ASSOCIATED(iterator%ptr)) THEN
                    savetime = p_mpi_wtime()
@@ -680,7 +683,7 @@ CONTAINS
              CLASS DEFAULT
                 CALL finish(routine, "assertion failed")
            END SELECT
-           
+
            !store the DATA IN our hash table
            CALL me%fields%setEntry(key_prev, val) !this will DEALLOCATE both the val AND the key eventually
            me%fieldCount = me%fieldCount + 1
@@ -827,6 +830,145 @@ CONTAINS
         CALL me%tiles%addValue(REAL(tile, dp))
         CALL me%levels%addValue(level)
     END SUBROUTINE InputContainer_readField
+
+    !>
+    !! @brief Distribute a field on the global patch to local patches:
+    !! Each Work PE may hold a field on the global patch
+    !! and can use this subroutine to distribute it
+    !! to the local patches of all other Work PEs.
+    !!
+    SUBROUTINE InputContainer_distributeField_grib(me, jg, gridSize, mpi_work_id_sender, variableName, level, tileId, &
+      &                                            isUniform, uniformValue, field)
+
+      !-----------
+      ! Arguments
+      !-----------
+
+      CLASS(t_InputContainer), INTENT(INOUT) :: me
+
+      !> Value of p_patch%id
+      INTEGER, INTENT(IN) :: jg
+
+      !> Number of grid points of global patch
+      INTEGER(KIND=i8), INTENT(IN) :: gridSize
+
+      !> Identifier of Work PE who distributes the field
+      INTEGER, INTENT(IN) :: mpi_work_id_sender
+
+      !> Name of variable contained in field
+      !> to be distributed
+      CHARACTER(LEN=*), INTENT(IN) :: variableName
+
+      !> Level where the horizontal slice of the field
+      !> to be distributed is located
+      REAL(dp), INTENT(IN) :: level
+
+      !> ICON-specific tile identifier
+      INTEGER, INTENT(IN) :: tileId
+
+      !> Flag to indicate whether field is uniform within level/layer
+      LOGICAL, INTENT(IN) :: isUniform
+
+      !> Uniform field value
+      REAL(dp), INTENT(IN) :: uniformValue
+
+      !> Field to be distributed
+      !> (either a 2d field or a horizontal slice of a 3d field)
+      REAL(sp), INTENT(IN) :: field(:)
+
+      !-----------------
+      ! Local variables
+      !-----------------
+
+      !> Status identifier
+      INTEGER :: status
+
+      !> (???)
+      CLASS(*), POINTER :: key, val
+
+      !> (???)
+      CLASS(t_ScatterPattern), POINTER :: distribution
+
+      !> Procedure name
+      CHARACTER(LEN=*), PARAMETER :: routine = modname//":InputContainer_distributeField_grib"
+
+      !----------------------------
+
+      !
+      ! Notes:
+      !
+      ! - The overarching (infra)structure of this subroutine is inherited from InputContainer_readField.
+      !   With "(???)" we mark data structures and procedures whose purpose/functionality/etc.
+      !   we could not decrypt from the uncommented source code alone.
+      !
+
+      ! Sanity check: fail if this field has already been read(???)
+      ALLOCATE(t_LevelKey :: key, STAT=status)
+      IF (status /= SUCCESS) CALL finish(routine, "Allocation of key as instance of t_LevelKey failed")
+
+      SELECT TYPE(key)
+      TYPE IS(t_LevelKey)
+
+        key%levelValue = level
+        key%tileId     = tileId
+
+      CLASS DEFAULT
+        CALL finish(routine, "key is of unknown type")
+      END SELECT
+
+      IF (ASSOCIATED(me%fields%getEntry(key))) THEN
+        WRITE(message_text, '(a,g24.15e3,a,i2,3a)') "Double definition of level-tile tuple (", &
+          & level,",",tileId,") in variable '",variableName,"' in an input file"
+        CALL finish(routine, message_text)
+      ENDIF
+
+      ! Get the corresponding ScatterPattern and initialize hash table entry(???)
+      distribution => lookupScatterPattern(jg, INT(gridSize))
+
+      IF (.NOT. ASSOCIATED(distribution)) CALL finish(routine, "Could not find scatter pattern to distribute input field")
+
+      ! (???)
+      ALLOCATE(t_LevelPointer :: val, STAT=status)
+      IF (status /= SUCCESS) CALL finish(routine, "Allocation of val as instance of t_LevelPointer failed")
+
+      SELECT TYPE(val)
+      TYPE IS(t_LevelPointer)
+
+        ! Allocate buffer for local patch data
+        ALLOCATE(val%ptr(nproma, blk_no(distribution%localSize())), STAT=status)
+        IF (status /= SUCCESS) CALL finish(routine, "Allocation of val%ptr failed")
+
+        IF (.NOT. isUniform) THEN
+
+          !Avoid nondeterministic values in the unused points for checksumming
+          val%ptr(:,:) = 0.0_wp
+
+          ! Distribute field on global patch to the local patches
+          CALL distribution%distribute(field(:), val%ptr(:, :), .FALSE., nsender=mpi_work_id_sender)
+
+        ELSE
+
+          ! If the field is uniform within a level/layer,
+          ! we can spare ourselves the expensive distribution
+          val%ptr(:,:) = REAL(uniformValue, KIND=wp)
+
+        ENDIF ! IF (.NOT. isUniform)
+
+      CLASS DEFAULT
+        CALL finish(routine, "val is of unknown type")
+      END SELECT
+
+      ! Store local data in hash table
+      ! (key and val will be deallocated within the following subroutine)
+      CALL me%fields%setEntry(key, val)
+
+      me%fieldCount = me%fieldCount + 1
+
+      CALL me%tiles%addValue(REAL(tileId, dp))
+
+      CALL me%levels%addValue(level)
+
+    END SUBROUTINE InputContainer_distributeField_grib
 
     SUBROUTINE ValueList_init(me)
         CLASS(t_ValueList), INTENT(INOUT) :: me

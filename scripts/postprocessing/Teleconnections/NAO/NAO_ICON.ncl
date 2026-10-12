@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ---------------------------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -11,7 +11,7 @@
 ;*************************************************
 ; NAO.ncl
 ;
-; cdo -f nc -r -selyear,1979/2008 -selvar,tas,psl -setpartabc,/mnt/lustre01/pf/zmaw/m214091/ClimVarDiaGit/echam6cmip5 
+; cdo -f nc -r -selyear,1979/2008 -selvar,tas,psl -setpartabc,/mnt/lustre01/pf/zmaw/m214091/ClimVarDiaGit/echam6cmip5
 ;          /pool/data/MOP/AMIP/ECHAM6.3.02/T63L47/DATA/BOT_mbe0711_1976-2008  /work/mh0081/m214091/GitTest/NAO/BOT_mbe0711_1979-2008
 ;
 ;*************************************************
@@ -34,20 +34,20 @@ begin
     res@cnFillOn        = True
     res@cnLinesOn       = False
     res@lbLabelBarOn    = True
-    res@gsnPolar = "NH"     
+    res@gsnPolar = "NH"
     res@mpMinLatF    = 20.
     res@mpCenterLonF = 0.
 
 
     res@cnInfoLabelOn  = False
 
-    res@mpGeophysicalLineColor = "gray42"  
-    res@mpGridLonSpacingF = 45.   
+    res@mpGeophysicalLineColor = "gray42"
+    res@mpGridLonSpacingF = 45.
     res@mpGridLatSpacingF = 45.
-    res@mpGeophysicalLineThicknessF = 2.     
+    res@mpGeophysicalLineThicknessF = 2.
     res@mpGridAndLimbOn = True    ; Grid line
     res@mpFillOn = False
-    res@mpOutlineOn = True  
+    res@mpOutlineOn = True
     res@mpDataSetName = "Earth..4"
 
     res@gsnSpreadColors      = True     ; use full range of colors
@@ -87,8 +87,8 @@ begin
      res@cnLineLabelsOn = False
      res@cnInfoLabelOn = True
      res@gsnContourZeroLineThicknessF = 2.       ; thickness of zero contour
-     res@tiMainOn = False      
-     res@gsnContourNegLineDashPattern  = 1   
+     res@tiMainOn = False
+     res@gsnContourNegLineDashPattern  = 1
      res@cnLineDashSegLenF = 0.08
  ;   res@mpCenterLonF         = 0         ; center of map
     res@gsnSpreadColors      = True     ; use full range of colors
@@ -134,7 +134,7 @@ end
 
   GridDir="/pool/data/ICON/post/"+atm_RES+"_amip"
   GridInfoFileName=GridDir+"/"+atm_RES+"_amip.nc"
- 
+
   print(GridInfoFileName)
 
   GridInfoFile= addfile( GridInfoFileName, "r" )
@@ -146,7 +146,7 @@ end
   cArea = GridInfoFile->cell_area   ; area of grid cell
 
 ; note: clon and clat are longitude and latitude of triangle centers.
-;       Locations of the cell corners are given by 
+;       Locations of the cell corners are given by
 ;       clon_vertices and clat_vertices in the nc file.
 
 
@@ -161,11 +161,11 @@ end
 
 ;***define plot
 
-  pltType  = "png" 
+  pltType  = "png"
 
 
-  seas  = (/"JJA","DJF","SON","MAM"/)  
- 
+  seas  = (/"JJA","DJF","SON","MAM"/)
+
   do i=0,dimsizes(seas)-1
 
    pltName  = diri+"/NAO_"+seas(i)+"_"+run
@@ -174,45 +174,45 @@ end
 ;************************************************
 ; Read from netCDF File: psl
 ;************************************************
-   Unit = "[hPa]" 
+   Unit = "[hPa]"
    fili   = "/psl_"+run+"_"+seas(i)+".nc"
-   f      = addfile(diri+fili,"r")   
-   psl      = f->psl(:,:)                        
+   f      = addfile(diri+fili,"r")
+   psl      = f->psl(:,:)
 
    x_psl_new=psl(ncells|:,time|:)
    printVarSummary(psl)
    printMinMax(psl, True)
-                            
+
    printVarSummary(x_psl_new)
    fili   = "/eof1_psl_"+run+"_"+seas(i)+"_fullgrid.nc"
-   f      = addfile(diri+fili,"r")   
-   eof_new      = f->psl(0,:) 
+   f      = addfile(diri+fili,"r")
+   eof_new      = f->psl(0,:)
    printVarSummary (eof_new )
 
    fili   = "/eof1_ts_psl_"+run+"_"+seas(i)+".nc"
-   f      = addfile(diri+fili,"r")   
-   eof_ts      = f->psl(:,0,0)   
+   f      = addfile(diri+fili,"r")
+   eof_ts      = f->psl(:,0,0)
   printVarSummary (eof_ts )
-        
+
 ;exit
-  yyyy = (cd_calendar(eof_ts&time,-1) /100)    
+  yyyy = (cd_calendar(eof_ts&time,-1) /100)
 
   nyrs  = dimsizes(yyyy)
   print ("nyrs: "+nyrs)  ;no of years
 
   values    = asciiread("var_"+run+"_"+seas(i)+".txt",1,"string")
-  pc_eof1 = stringtofloat(values(0))  
+  pc_eof1 = stringtofloat(values(0))
 
-   
+
 
 ;************************************************
-; Calculate the regression coefficients psl   
+; Calculate the regression coefficients psl
 ;************************************************
 
-   rc_psl           = regCoef(eof_ts(time|:),x_psl_new(ncells|:,time|:))            
-   
+   rc_psl           = regCoef(eof_ts(time|:),x_psl_new(ncells|:,time|:))
+
    rc_psl!0   = "ncells"    ; name dimensions
- 
+
 
    printVarSummary(rc_psl)
    printMinMax (rc_psl, True)
@@ -222,15 +222,15 @@ end
 ;*************************************************
 
    wksts  = gsn_open_wks(pltType,pltName_eof_ts)       ; specifies a plot
-   rts           = True 
-   rts@gsnYRefLine           = 0.              ; reference line   
-   rts@gsnXYBarChart         = True            ; create bar chart 
+   rts           = True
+   rts@gsnYRefLine           = 0.              ; reference line
+   rts@gsnXYBarChart         = True            ; create bar chart
    rts@gsnAboveYRefLineColor = "red"           ; above ref line fill red
    rts@gsnBelowYRefLineColor = "blue"          ; below ref line fill blue
-   
- 
+
+
    rts@tmYROn = False            ; Turn off right tickmarks.
-   rts@tmXTOn = False            ; Turn off top tickmarks.   
+   rts@tmXTOn = False            ; Turn off top tickmarks.
    rts@trYMinF = -3			; set minimum Y-axis value
    rts@trYMaxF = 3			; set maximum Y-axis value
    rts@tiMainString          = run +" - NAO index: psl "
@@ -246,7 +246,7 @@ end
 
    wkseof  = gsn_open_wks(pltType,pltName_eof)       ; specifies a plot
    gsn_define_colormap(wkseof,"amwg_blueyellowred") ; Define color map
- 
+
    reseof = True
    reseof@gsnFrame     = False
 
@@ -264,20 +264,20 @@ end
 ;*** add test at the bottom of the frame
     txres = True
     txres@txFontHeightF = 0.012
-    txres@txFontColor   = "black" 
+    txres@txFontColor   = "black"
     gsn_text_ndc(wkseof,Unit,0.85,0.093,txres)
     frame(wkseof)
 ;exit
 ;************************************************
 ; Read from netCDF File: tas
 ;************************************************
-  
+
    fili   = "/tas_"+run+"_"+seas(i)+".nc"
-   f      = addfile(diri+fili,"r") 
+   f      = addfile(diri+fili,"r")
 
    x_tas      = f->tas(time|:,ncells|:)
    x_tas_new  = x_tas(ncells|:,time|:)
-   
+
    printVarSummary(x_tas_new)                            ; [time| 720]x[lat| 91]x[lon| 180]
 
 ;exit
@@ -285,34 +285,34 @@ end
 
 
 ;************************************************
-; Calculate the regression coefficients tas   
+; Calculate the regression coefficients tas
 ;************************************************
-   rc_tas           = regCoef(eof_ts(time|:),x_tas_new(ncells|:,time|:))             
-     
+   rc_tas           = regCoef(eof_ts(time|:),x_tas_new(ncells|:,time|:))
+
    rc_tas!0   = "ncells"    ; name dimensions
 
    printVarSummary(rc_tas)
 ;exit
-  
+
 ;************************************************
-; plotting parameters 
+; plotting parameters
 ;************************************************
 
 
    wks  = gsn_open_wks(pltType,pltName)       ; specifies a plot
    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
-    
-   res                       = True     
+
+   res                       = True
    res@gsnMaximize           = False           ; make large
    res@gsnDraw      = False
    res@gsnFrame     = False
    res@mpGeophysicalLineColor = "gray42"
-   res@mpGridAndLimbOn   = True           ; turn on lat/lon lines  
+   res@mpGridAndLimbOn   = True           ; turn on lat/lon lines
    res@mpFillOn = False                ; turn off default background gray
    res@mpCenterLonF = 0.
-   res@mpOutlineOn = True  
-   res@gsnPolar = "NH"     
-   res@mpMinLatF    = 20.    
+   res@mpOutlineOn = True
+   res@gsnPolar = "NH"
+   res@mpMinLatF    = 20.
    res@mpDataSetName = "Earth..4"
 
    res@mpGridLatSpacingF =  45.            ; change latitude  line spacing
@@ -325,7 +325,7 @@ end
    res@cnLevels = fspan(-1.05,1.05,15)
 
    res@gsnCenterString       = seas(i)+"("+yyyy(0)+"-"+yyyy(nyrs-1)+")"
-   
+
    res@tiMainString          = run+" - NAO tas(color), psl"
 
 
@@ -335,8 +335,8 @@ end
      res3@cnLineLabelsOn = True
      res3@cnInfoLabelOn = True
      res3@gsnContourZeroLineThicknessF = 2.       ; thickness of zero contour
-     res3@tiMainOn = False      
-     res3@gsnContourNegLineDashPattern  = 1   
+     res3@tiMainOn = False
+     res3@gsnContourNegLineDashPattern  = 1
      res3@cnLineDashSegLenF = 0.08
 
      res3@cnLevelSelectionMode = "ExplicitLevels"
@@ -345,7 +345,7 @@ end
      plot_tas =     plot_cont ( wks,rc_tas,x,y,cArea,res )
 
      rc_psl=rc_psl/100
-     plot_psl =     overlay_plot_cont ( wks,rc_psl,x,y,cArea,res3) 
+     plot_psl =     overlay_plot_cont ( wks,rc_psl,x,y,cArea,res3)
 
      overlay(plot_tas,plot_psl)
      draw(plot_tas)

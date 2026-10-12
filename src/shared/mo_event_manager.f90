@@ -1,10 +1,7 @@
-! Module provides a grouping structure for mtime events.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,20 +9,26 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Module provides a grouping structure for mtime events.
+
 MODULE mo_event_manager
 
   USE mo_exception, ONLY: finish, message, message_text
-  USE mtime
+  USE mtime, ONLY: MAX_EVENTNAME_STR_LEN, MAX_GROUPNAME_STR_LEN, &
+    & MAX_REPETITION_STR_LEN, datetime, event, eventToString, eventgroup, &
+    & getEventGroupName, getFirstEventFromEventGroup, &
+    & getNextEventFromEventGroup, getRepetitions, newDatetime, newEventGroup, &
+    & newTimedelta, splitRepetitionString, timedelta
 
   IMPLICIT NONE
 
   PRIVATE
 
-  PUBLIC :: initEventManager 
+  PUBLIC :: initEventManager
   PUBLIC :: getModelReferenceDate
   PUBLIC :: addEventGroup
-  PUBLIC :: getEventGroup 
-  PUBLIC :: printEventGroup 
+  PUBLIC :: getEventGroup
+  PUBLIC :: printEventGroup
   PUBLIC :: getEventComponents
 
   TYPE event_group_list
@@ -48,7 +51,7 @@ CONTAINS
 
     model_reference_date => newDatetime(referenceDate)
 
-    ALLOCATE(model_event_groups(model_event_groups_list_size)) 
+    ALLOCATE(model_event_groups(model_event_groups_list_size))
     model_event_groups_list_member = 0
 
     linitialized = .TRUE.
@@ -73,11 +76,11 @@ CONTAINS
     INTEGER :: new_size
 
     IF (.NOT. linitialized) THEN
-      CALL finish('', 'event manager not initialized.') 
+      CALL finish('', 'event manager not initialized.')
     ENDIF
 
     IF (model_event_groups_list_member == model_event_groups_list_size) THEN
-      CALL message('', 'reallocating event group list.') 
+      CALL message('', 'reallocating event group list.')
       new_size = 2*model_event_groups_list_size
       ALLOCATE(tmp(new_size))
       tmp(1:model_event_groups_list_size) = model_event_groups(:)
@@ -135,31 +138,31 @@ CONTAINS
   END SUBROUTINE printEventGroup
 
   SUBROUTINE getEventComponents(eventString, referenceDate, timeInterval, startDate, endDate)
-    CHARACTER(len=max_repetition_str_len), INTENT(in) :: eventString 
+    CHARACTER(len=max_repetition_str_len), INTENT(in) :: eventString
     TYPE(datetime),  POINTER :: referenceDate
     TYPE(timedelta), POINTER :: timeInterval
     TYPE(datetime),  POINTER :: startDate
     TYPE(datetime),  POINTER :: endDate
-    
-    CHARACTER(len=max_repetition_str_len) :: r, s, e, d    
-    LOGICAL :: lr, ls, le, ld    
-    
+
+    CHARACTER(len=max_repetition_str_len) :: r, s, e, d
+    LOGICAL :: lr, ls, le, ld
+
     CALL splitRepetitionString(eventString, r, s, e, d, lr, ls, le, ld)
-    
+
     IF (lr) THEN
       IF (getRepetitions(r) /= -1) THEN
         CALL message('', 'event setup should not have explicit repeat count.')
       ENDIF
     ENDIF
-    
+
     IF (ls) THEN
       startDate => newDatetime(TRIM(s))
     ENDIF
-    
+
     IF (le) THEN
       endDate => newDatetime(TRIM(e))
     ENDIF
-    
+
     IF (ld) THEN
       timeInterval => newTimeDelta(TRIM(d))
     ELSE

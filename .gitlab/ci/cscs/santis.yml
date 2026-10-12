@@ -1,0 +1,227 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/common/any-image.yml
+  - local: .gitlab/ci/common/warning.yml
+
+.cscs:common:trigger:
+  stage: external
+  needs: []
+  extends: .common:any-image
+  tags:
+    - docker-any-image-long-small
+  variables:
+    GIT_STRATEGY: none
+    CSCS_CI_COMMIT_SHA: ${CI_COMMIT_SHA}
+    CSCS_CI_TAG: merge2rc
+  image: registry.gitlab.dkrz.de/icon/containers/icon-ci-trigger:b4dfdf53
+  # Manual that is allowed to fail by default:
+  when: manual
+  # There is no mechanism to interrupt the jobs fully:
+  interruptible: false
+  # Wait for the external pipeline to finish:
+  timeout: 6h
+  script:
+    - |
+      # !reference [.cscs:common:trigger, script]
+      python3 - <<\_EOF
+      import http
+      import os
+      import re
+
+      import ratelim
+      import requests
+      import retry
+      import yaml
+
+      def get_status_description(status):
+          return f"{status}: {http.client.responses.get(status, 'Unknown status')}"
+
+      def trigger_ci(builder, ci_sha, ci_tag, ci_token, experiments=None):
+          url = "https://cicd-ext-mw.cscs.ch/ci/pipeline/trigger"
+          headers = {"Content-Type": "application/x-yaml"}
+          data = {
+              "ref": f"sha:{ci_sha}",
+              "pipeline": builder,
+              "variables": {
+                  "TAG": ci_tag,
+                  # Do not report back the status (we will fetch it ourselves):
+                  "CSCS_NOTIFICATION_CONTEXT": "__discard-notification",
+              },
+          }
+          if experiments:
+              data["variables"]["CSCS_CI_EXPERIMENTS"] = experiments
+          data = yaml.dump(data)
+          print(f"Triggering CSCS CI with\n---\n{data}\n---", flush=True)
+          auth = tuple(ci_token.split(":"))
+
+          response = requests.post(url, headers=headers, data=data, auth=auth)
+
+          if response.status_code == http.HTTPStatus.OK:
+              match = re.search(
+                  r"https://cicd-ext-mw\.cscs\.ch/ci/pipeline/trigger\?reqId=[\w\d]+",
+                  response.text,
+              )
+              if match:
+                  status_url = match.group(0)
+                  return status_url
+              else:
+                  raise AssertionError(
+                      f"Failed to extract status url from\n---\n{response.text}\n---"
+                  )
+          else:
+              raise AssertionError(
+                  f"Failed to trigger CSCS CI"
+                  f" ({get_status_description(response.status_code)})"
+              )
+
+      def wait_for_ci(status_url, poll_timeout=30, max_failed_requests=3):
+          trigger_success = {"triggered_successfully"}
+          trigger_failure = {"failed", "failure"}
+          trigger_finished = False
+
+          pipeline_success = {"success"}
+          pipeline_failure = {"failed", "canceled", "skipped"}
+
+          @retry.retry(tries=max_failed_requests)
+          @ratelim.greedy(1, poll_timeout)
+          def get_response():
+              response = requests.get(status_url)
+              if response.status_code != http.HTTPStatus.OK:
+                  raise AssertionError(
+                      f"Failed to request pipeline status from {status_url}"
+                      f" ({get_status_description(response.status_code)})"
+                  )
+              return response
+
+          while True:
+              response_json = get_response().json()
+
+              trigger_status = response_json["status"]
+
+              if not trigger_finished:
+                  print(
+                      f"Waiting for the trigger: {trigger_status}"
+                      f" ({response_json['full_log_url']})",
+                      flush=True,
+                  )
+                  if trigger_status in trigger_success:
+                      trigger_finished = True
+                  elif trigger_status in trigger_failure:
+                      return False
+                  else:
+                      continue
+
+              pipeline_status = response_json["pipeline_status"]
+
+              print(
+                  f"Waiting for the pipeline: {pipeline_status}"
+                  f" ({response_json['url']})",
+                  flush=True,
+              )
+
+              if pipeline_status in pipeline_success:
+                  return True
+              elif pipeline_status in pipeline_failure:
+                  return False
+
+      builder = os.environ.get("CSCS_CI_BUILDER")
+      ci_sha = os.environ.get("CSCS_CI_COMMIT_SHA")
+      ci_tag = os.environ.get("CSCS_CI_TAG")
+      ci_token = os.environ.get("CSCS_CI_TOKEN")
+      experiments = os.environ.get("CSCS_CI_EXPERIMENTS")
+      print(
+          f"Triggering {builder} for {ci_sha} ({ci_tag})",
+          flush=True,
+      )
+      if experiments:
+          print(f"Experiments: {experiments}", flush=True)
+      status_url = trigger_ci(builder, ci_sha, ci_tag, ci_token, experiments=experiments)
+      pipeline_succeeded = wait_for_ci(status_url)
+      exit(0 if pipeline_succeeded else 1)
+      _EOF
+
+.cscs:common:warning:
+  stage: external
+  needs: []
+  extends: .common:warning
+  variables:
+    ICON_CI_COMMON_WARNING_MESSAGE: >
+      ${CI_JOB_NAME}, see https://icon.gitlab-pages.dkrz.de/ci-tooling/icon-builders-status
+
+.cscs:common:trigger:cpu:
+  extends: .cscs:common:trigger
+  variables:
+    CSCS_CI_BUILDER: santis-cpu
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $ICON_INACTIVE_BUILDERS =~ "/(^|,)santis_cpu(,|$)/"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+"'santis_cpu' is inactive":
+  extends: .cscs:common:warning
+  rules:
+    - if: $ICON_INACTIVE_BUILDERS !~ "/(^|,)santis_cpu(,|$)/"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $ICON_CI_TEST_SCHEDULE == "nightly"
+
+.cscs:common:trigger:gpu:
+  extends: .cscs:common:trigger
+  variables:
+    CSCS_CI_BUILDER: santis-gpu
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $ICON_INACTIVE_BUILDERS =~ "/(^|,)santis_gpu(,|$)/"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+"'santis_gpu' is inactive":
+  extends: .cscs:common:warning
+  rules:
+    - if: $ICON_INACTIVE_BUILDERS !~ "/(^|,)santis_gpu(,|$)/"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $ICON_CI_TEST_SCHEDULE == "nightly"
+
+cscs/santis_cpu:
+  extends: .cscs:common:trigger:cpu
+  rules:
+    - !reference [.cscs:common:trigger:cpu, rules]
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $ICON_CI_TEST_SCHEDULE == "nightly"
+      when: on_success
+  allow_failure: false
+
+cscs/santis_gpu:
+  extends: .cscs:common:trigger:gpu
+  rules:
+    - !reference [.cscs:common:trigger:gpu, rules]
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $ICON_CI_TEST_SCHEDULE == "nightly"
+      when: on_success
+  allow_failure: false
+
+cscs/santis_cpu:tolerance:
+  stage: optional
+  extends: .cscs:common:trigger:cpu
+  variables:
+    CSCS_CI_TAG: tolerance
+  manual_confirmation: Confirm that you are runnning the tolerance generation for the relevant experiments only. To restrict this job to the relevant experiments, edit the pipeline job and add the key CSCS_CI_EXPERIMENTS, followed by a list of comma-separated experiments as the value.
+
+cscs/santis_cpu:select-members:
+  stage: optional
+  extends: .cscs:common:trigger:cpu
+  variables:
+    CSCS_CI_TAG: select-members
+  manual_confirmation: Confirm that you are runnning the member selection for the relevant experiments only. To restrict this job to the relevant experiments, edit the pipeline job and add the key CSCS_CI_EXPERIMENTS, followed by a list of comma-separated experiments as the value.

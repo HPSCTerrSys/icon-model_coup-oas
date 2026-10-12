@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -25,9 +25,9 @@
 ;---------------------------------------------------------------
  begin
   wcStrt     = systemfunc("date")
-  Model      = "ICOHAM" 
-  Resolution1 = "R2B04L31" 
-  Resolution2 = "R2B06L31" 
+  Model      = "ICOHAM"
+  Resolution1 = "R2B04L31"
+  Resolution2 = "R2B06L31"
 
   colormap1  = "testcmap"
   colormap2  = "StepSeq25"
@@ -54,7 +54,7 @@
   File2 = addfile(Diri+Filename2, "r" )
 
   GraphicFile  = "vector_plots"
-  
+
   VarName1    = "U"
   VarName2    = "V"
   VarName3    = "OMEGA"
@@ -75,26 +75,26 @@
 
   var3_rf = File2->$VarName3_rf$(time,level,:)   ; dims: (time,lev,cell)
   var3_rf = var3_rf*scaleOMEGA
-  
+
   var4 = File->$VarName4$(time,level,:)   ; dims: (time,lev,cell)
   var4 = var4*scale
 
   ;+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-; Labeling  
+; Labeling
   LeftString   = "U"
-  RightString  = Resolution1 
+  RightString  = Resolution1
   CenterString = ""
   TitleString  = Model+ " at level "+level+" and day "+time
 
   print("max="+max(var4))
   print("min="+min(var4))
 
-; old coordinates  
+; old coordinates
   x = File->clon *rad2deg   ; cell center, lon
   y = File->clat *rad2deg   ; cell center, lat
 
-; old coordinates rf  
+; old coordinates rf
   x_rf = File2->clon *rad2deg   ; cell center, lon
   y_rf = File2->clat *rad2deg   ; cell center, lat
 
@@ -106,7 +106,7 @@
 
 
 ; new coordinates
-  
+
   lat= fspan(-90,90,90)
   lon= fspan(-180,180,180)
 
@@ -114,7 +114,7 @@
   lon@units="degrees_east"
 
 ; new coordinates rf
-  
+
   lat_rf= fspan(-89,89,181)
   lon_rf= fspan(-180,180,720)
 
@@ -127,7 +127,7 @@
 ; regridding mesh refinement
   newOMEGA_rf =  triple2grid(x_rf,y_rf,  var3_rf ,lon_rf, lat_rf, False)
 
-; copy the attributes of the original variable  
+; copy the attributes of the original variable
   copy_VarAtts(var3_rf,newOMEGA_rf)
 
   newOMEGA_rf!0="lat"
@@ -144,12 +144,12 @@
   newU!1="lon"
   newU&lat=lat
   newU&lon=lon
-; copy the attributes of the original variable  
+; copy the attributes of the original variable
   copy_VarAtts(var1,newU)
-  
+
   printVarSummary(newU)
 ;  printVarSummary(lon)
-  
+
   newV =  triple2grid(x,y,  var2 ,lon, lat, False)
   copy_VarMeta( newU, newV)
   copy_VarAtts(var2,newV)
@@ -157,24 +157,24 @@
   newOMEGA =  triple2grid(x,y,  var3 ,lon, lat, False)
   print("max newomega="+max(newOMEGA))
   copy_VarMeta( newU, newOMEGA)
-  
-; copy the attributes of the original variable  
+
+; copy the attributes of the original variable
   copy_VarAtts(var3,newOMEGA)
   newOMEGA@units="mPa/s"
-  
+
   newT =  triple2grid(x,y,  var4 ,lon, lat, False)
   print("max newT="+max(newT))
   copy_VarMeta( newU, newT)
-; copy the attributes of the original variable  
+; copy the attributes of the original variable
   copy_VarAtts(var4,newT)
 
-; something magic to get rid of the missing values  
+; something magic to get rid of the missing values
   guess =1
   is_cyclic = True             ; cyclic [global]
   nscan     = 1500             ; usually much less than this
   eps       = 1.e-2            ; variable dependent
   relc      = 0.6              ; relaxation coefficient
-  opt       = 0 
+  opt       = 0
   poisson_grid_fill( newU, is_cyclic, guess, nscan, eps, relc, opt)
   poisson_grid_fill( newV, is_cyclic, guess, nscan, eps, relc, opt)
   poisson_grid_fill( newT, is_cyclic, guess, nscan, eps, relc, opt)
@@ -190,22 +190,22 @@
 ;
 ; Merge two pre-defined colormaps;
 ;
-  
+
 ; Set up resources for contour/map plot.
   ResC                      = True
-  FontHeight = 0.018  
+  FontHeight = 0.018
   ResC@gsnFrame             = False
   ResC@gsnMaximize          = True
   ResC@gsnSpreadColors      = True
-  ResC@gsnLeftString        = LeftString 
+  ResC@gsnLeftString        = LeftString
   ResC@gsnCenterString      = CenterString
   ResC@gsnRightString       = RightString
   ResC@tiMainFont           = 4
-  ResC@tiMainFontHeightF    =  FontHeight   
+  ResC@tiMainFontHeightF    =  FontHeight
   ResC@tiMainFontThicknessF = 4
   ResC@tiMainOffsetYF       = 0.02
   ResC@tiMainString         = TitleString
-  
+
   ResC@cnFillOn             = True
   ResC@cnLinesOn            = False
   ResC@cnInfoLabelOn        = False
@@ -219,11 +219,11 @@
   ResC@tiYAxisFontHeightF   = FontHeight
   ResC@tmXBLabelFontHeightF = FontHeight
   ResC@tmYLLabelFontHeightF = FontHeight
-  
+
   ResC@gsnStringFontHeightF = FontHeight - 0.002
   ResC@gsnAddCyclic         = False        ; add cyclic point
   ResC@gsnPolar             = "NH"         ; specify the hemisphere
-  
+
   ResC@tmXBLabelJust  = "CenterCenter"
 
   ResC@mpPerimOn         = False             ; turn off box around plot
@@ -232,13 +232,13 @@
   ResC@mpCenterLonF      =   0.
   ResC@mpMinLatF         =  0.
   ResC@mpMaxLatF         =  90.
-  
-  ResC@lbLabelBarOn       = True 
+
+  ResC@lbLabelBarOn       = True
   ResC@lbLabelAutoStride  = True
   ResC@lbLabelFontHeightF = FontHeight
   ResC@lbTitleFontHeightF = 0.015
   ResC@lbTitlePosition    = "Bottom"
-    
+
   ResC@pmLabelBarHeightF        = 0.07
   ResC@pmLabelBarWidthF         = 0.7
   ResC@pmLabelBarOrthogonalPosF = 0.06
@@ -266,10 +266,10 @@
 
 ; vertical component
   delete(ResC@cnMinLevelValF  )
-  delete(ResC@cnMaxLevelValF )     
-  delete(ResC@cnLevelSpacingF )    
+  delete(ResC@cnMaxLevelValF )
+  delete(ResC@cnLevelSpacingF )
 
- 
+
 ; automatically create nice min/max/ci values for blue/red colortable
 ;  res= True
   symMinMaxPlt (newOMEGA,20,False,ResC)
@@ -280,24 +280,24 @@
 
   plotOMEGA = gsn_csm_contour_map_polar(wks,newOMEGA,ResC)
   frame(wks)
-  
+
   ResC@gsnLeftString = ""
   ResC@gsnRightString = ""
   ResC@lbTitleString       = newOMEGA@long_name+" in "+newOMEGA@units
-  
+
   ; plot high resolution field without Poisson-Fill
 
-  delete(ResC@gsnPolar) 
+  delete(ResC@gsnPolar)
   delete(ResC@mpLimitMode)
   delete(ResC@mpMinLatF)
   delete(ResC@mpMaxLatF)
   delete(ResC@mpCenterLonF)
   delete(ResC@mpFillOn)
   delete(ResC@mpPerimOn)
-  
+
   ResC2               = ResC
-  ResC2@cnFillMode    = "cellfill" 
-  ResC2@gsnDraw       = False 
+  ResC2@cnFillMode    = "cellfill"
+  ResC2@gsnDraw       = False
 ;  print(newOMEGA_rf@_FillValue)
 ;  print(dimsizes(ind(ndtooned(ismissing(newOMEGA_rf)))))
   ResC2@cnMissingValFillColor = -1
@@ -321,10 +321,10 @@
   frame(wks)
 
   print("now plot different hemispheres")
-  
-  
+
+
 ; Vector Plots of SH and NH
-  
+
   vcres                     = True      ; plot mods desired
   vcres@gsnFrame            = False
   vcres@gsnDraw             = False
@@ -346,9 +346,9 @@
   vcres@gsnLeftString           = "wind vectors"
   vcres@gsnRightString          = " "
 
- ; show vertical velocity field and overlay velocity vectors 
+ ; show vertical velocity field and overlay velocity vectors
  ; vcres@gsnLeftString        = "vector plot"
-  
+
   vplot=gsn_csm_vector(wks,newU,newV,vcres)  ; create plot
 
   overlay(plotOMEGAP,vplot)
@@ -358,10 +358,10 @@
   vcres@gsnPolar       = "NH"                          ; specify the hemisphere
   vcres@tiMainString   = "NH"
   plot=gsn_csm_vector_map_polar(wks,newU,newV,vcres)  ; create plot
- 
+
   draw(plot)
   frame(wks)
- 
+
   t= newT
 
   ; merge colormap 1 and 2
@@ -371,18 +371,18 @@
   vcres@gsnSpreadColorStart = 30      ; last color to use
   vcres@gsnSpreadColorEnd   = 235     ; first color to use
 
-  vcres@lbLabelBarOn        = True 
+  vcres@lbLabelBarOn        = True
   vcres@lbLabelAutoStride   = True
   vcres@lbLabelFontHeightF  = FontHeight
   vcres@lbTitleFontHeightF  = FontHeight  ;0.016
   vcres@lbTitlePosition     = "Bottom"
   vcres@lbTitleString       = newT@long_name+" in "+newT@units
 
-  vcres@pmLabelBarHeightF        = 0.08 
+  vcres@pmLabelBarHeightF        = 0.08
   vcres@pmLabelBarWidthF         = 0.7
   vcres@pmLabelBarOrthogonalPosF = 0.06
   plot=gsn_csm_vector_scalar_map_polar(wks,newU,newV,t,vcres)  ; create plot
- 
+
   wallClockElapseTime(wcStrt, "triangle plot", 0)
 
   draw(plot)

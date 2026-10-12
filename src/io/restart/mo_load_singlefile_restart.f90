@@ -1,18 +1,19 @@
-! Module for reading single file restart files
-!
-! Note: The asynchronous implementation of the restart output can be
-!       found in the module "mo_async_restart"
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module for reading single file restart files
+!
+! Note: The asynchronous implementation of the restart output can be
+!       found in the module "mo_async_restart"
+
 #include "omp_definitions.inc"
 MODULE mo_load_singlefile_restart
   USE mo_exception,          ONLY: message, warning, finish
@@ -21,7 +22,7 @@ MODULE mo_load_singlefile_restart
   USE mo_kind,               ONLY: dp, sp
   USE mo_model_domain,       ONLY: t_patch
   USE mo_mpi,                ONLY: my_process_is_mpi_workroot, p_bcast, p_comm_work
-  USE mo_restart_nml_and_att,ONLY: getAttributesForRestarting, ocean_initFromRestart_OVERRIDE
+  USE mo_restart_nml_and_att,ONLY: getAttributesForRestarting
   USE mo_key_value_store,    ONLY: t_key_value_store
   USE mo_restart_util,       ONLY: restartSymlinkName
   USE mo_restart_var_data,   ONLY: get_var_3d_ptr, has_valid_time_level
@@ -32,8 +33,9 @@ MODULE mo_load_singlefile_restart
     & distrib_read, distrib_nf_close, idx_lvl_blk
   USE mo_netcdf_errhandler,  ONLY: nf
   USE mo_netcdf
+  USE mo_master_config,      ONLY: isInitFromRestart
   USE mo_dynamics_config,    ONLY: nnow, nnow_rcf
-  USE mo_fortran_tools,      ONLY: t_ptr_3d, t_ptr_3d_int, t_ptr_3d_sp
+  USE fortran_support,       ONLY: t_ptr_3d_dp, t_ptr_3d_int, t_ptr_3d_sp
 
   IMPLICIT NONE
   PRIVATE
@@ -84,7 +86,7 @@ CONTAINS
     TYPE(t_patch), TARGET, INTENT(IN) :: ptc
     INTEGER, INTENT(IN) :: ndom
     LOGICAL :: int_is_int
-    TYPE(t_ptr_3d) :: r(1)
+    TYPE(t_ptr_3d_dp) :: r(1)
     TYPE(t_ptr_3d_sp) :: s(1)
     TYPE(t_ptr_3d_int) :: i(1)
     CHARACTER(:), ALLOCATABLE :: restart_filename
@@ -105,7 +107,7 @@ CONTAINS
         skip(iV) = .NOT.has_valid_time_level(vDat(iV)%p%info, ptc%id, nnow(ptc%id), nnow_rcf(ptc%id))
         IF (.NOT.skip(iV)) THEN
           skip(iV) = nf90_inq_varid(fID, TRIM(vDat(iV)%p%info%name), dummy) .NE. NF90_NOERR
-          IF ((ocean_initFromRestart_OVERRIDE .OR. vDat(iV)%p%info%lrestart_cont) .AND. skip(iV)) THEN
+          IF ((isInitFromRestart() .OR. vDat(iV)%p%info%lrestart_cont) .AND. skip(iV)) THEN
             CALL warning(routine, "variable not found: '"//TRIM(vDat(iV)%p%info%name))
           ELSE IF (skip(iV)) THEN
             CALL finish(routine, "variable not found: "//TRIM(vDat(iV)%p%info%name))
@@ -115,7 +117,7 @@ CONTAINS
       CALL nf(nf90_close(fID), routine)
     END IF
     CALL p_bcast(skip, 0, comm=p_comm_work)
-    fID = distrib_nf_open(restart_filename) 
+    fID = distrib_nf_open(restart_filename)
     nread = 0
     DO iV = 1, SIZE(vDat)
       IF (skip(iV)) CYCLE
@@ -133,17 +135,17 @@ CONTAINS
       IF (timers_level >= 7) CALL timer_start(timer_load_restart_io)
       SELECT CASE(dt)
       CASE(REAL_T)
-        CALL get_var_3d_ptr(vDat(iV)%p, r(1)%p)
+        CALL get_var_3d_ptr(vDat(iV)%p, r(1)%p, lacc=.TRUE.)
         IF (SIZE(r(1)%p, 3) .GT. 0) r(1)%p(:,:,SIZE(r(1)%p, 3)) = 0._dp
         CALL distrib_read(fID, vDat(iV)%p%info%name, r, (/dio/), &
           & edim=(/SIZE(r(1)%p, 2)/), dimo=idx_lvl_blk)
       CASE(SINGLE_T)
-        CALL get_var_3d_ptr(vDat(iV)%p, s(1)%p)
+        CALL get_var_3d_ptr(vDat(iV)%p, s(1)%p, lacc=.TRUE.)
         IF (SIZE(s(1)%p, 3) .GT. 0) s(1)%p(:,:,SIZE(s(1)%p, 3)) = 0._sp
         CALL distrib_read(fID, vDat(iV)%p%info%name, s, (/dio/), &
           & edim=(/SIZE(s(1)%p, 2)/), dimo=idx_lvl_blk)
       CASE(INT_T)
-        CALL get_var_3d_ptr(vDat(iV)%p, i(1)%p)
+        CALL get_var_3d_ptr(vDat(iV)%p, i(1)%p, lacc=.TRUE.)
         IF (int_is_int) THEN
           IF (SIZE(i(1)%p, 3) .GT. 0) i(1)%p(:,:,SIZE(i(1)%p, 3)) = 0
           CALL distrib_read(fID, vDat(iV)%p%info%name, i, (/dio/), &

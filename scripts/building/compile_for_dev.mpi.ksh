@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,7 +24,7 @@
 #   - without arguments only the linker is invoked
 #   - the current directory must be below the ICON main directory (e.g. run or src)
 
-#  - caution: new module binaries are written to src/module.o, i.e. not to modules/module.mod 
+#  - caution: new module binaries are written to src/module.o, i.e. not to modules/module.mod
 #  - caution: compile as much as necessary since no dependicies as in make are known
 
 # Revisions:
@@ -64,7 +64,7 @@ objects="-o ../bin/control_model control_model.o $OBS"
 if [ $COMP == "gfortran" ] ; then
 
   # compiler and options gfortran:
-  compopt="gfortran -I../include -I/sw/lenny-x64/netcdf-4.1.1-static-gcc45/include -I/sw/lenny-x64/hdf5-1.8.5-p1-static/include -I/sw/lenny-x64/szip-2.1-static/include -I/usr/include -I/sw/lenny-x64/mpi/mpich2-1.3.1-static-gcc45/include   -J../module -I../module -march=native -O0 -ffast-math -D__LOOP_EXCHANGE -xf95-cpp-input -std=f2003 -fmodule-private -fimplicit-none -fmax-identifier-length=31 -ffree-line-length-99 -Wall -Wcharacter-truncation -Wconversion -Wunderflow -Wunused-parameter -g -fbacktrace -fbounds-check -D__ICON__ -c ../../../src/" 
+  compopt="gfortran -I../include -I/sw/lenny-x64/netcdf-4.1.1-static-gcc45/include -I/sw/lenny-x64/hdf5-1.8.5-p1-static/include -I/sw/lenny-x64/szip-2.1-static/include -I/usr/include -I/sw/lenny-x64/mpi/mpich2-1.3.1-static-gcc45/include   -J../module -I../module -march=native -O0 -ffast-math -D__LOOP_EXCHANGE -xf95-cpp-input -std=f2003 -fmodule-private -fimplicit-none -fmax-identifier-length=31 -ffree-line-length-99 -Wall -Wcharacter-truncation -Wconversion -Wunderflow -Wunused-parameter -g -fbacktrace -fbounds-check -D__ICON__ -c ../../../src/"
 
   # loader with objects and options gfortran:
   loadobj="gfortran -march=native -O3 -ffast-math -D__LOOP_EXCHANGE $objects \
@@ -84,7 +84,7 @@ elif [ $COMP == "nagfor" ] ; then
 #elif [ $COMP == "ifort" ] ; then
 
   # compiler and options intel:
-  # compopt="ifort -I../include -I/sw/etch-ia32/netcdf-3.6.3/include    -I/sw/etch-ia32/mpich2-1.2.1-intel11/include   -module ../module -I../module -O3 -msse2 -mieee-fp -fpe0 -pc64 -fpp -traceback -DNOMPI -c ../../../src" 
+  # compopt="ifort -I../include -I/sw/etch-ia32/netcdf-3.6.3/include    -I/sw/etch-ia32/mpich2-1.2.1-intel11/include   -module ../module -I../module -O3 -msse2 -mieee-fp -fpe0 -pc64 -fpp -traceback -DNOMPI -c ../../../src"
   # loader with objects and options intel:
   # loadobj="ifort -I../module -O3 -msse2 -mieee-fp -fpe0 -pc64 -fpp -traceback $objects -L/sw/etch-ia32/mpich2-1.2.1-intel11/lib -lmpichf90 -lmpich -lpthread -lrt"
 
@@ -114,4 +114,3 @@ done
 
 echo " *** *** *** linking objects to control_model"
 $loadobj
-

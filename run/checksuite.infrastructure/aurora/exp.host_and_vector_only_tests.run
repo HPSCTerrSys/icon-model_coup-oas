@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -24,8 +24,18 @@ VH_DIR="${ICON_DIR}/build/vh"
 
 for build_dir in ${VE_DIR} ${VH_DIR}; do
   echo "Run binary from ${build_dir} ..."
+  echo "Hadley test"
   cd ${build_dir};
   ./make_runscripts atm_tracer_Hadley
   cd ./run
   ./exp.atm_tracer_Hadley.run
+
+  echo "###########################################################################"
+  echo "SYNC testbed"
+  cd ${build_dir}/run
+  ln -s checksuite.infrastructure/testbed/exp.icon-testbed_sync
+  cd ${build_dir}
+  ./make_runscripts icon-testbed_sync
+  cd ./run
+  ./exp.icon-testbed_sync.run
 done

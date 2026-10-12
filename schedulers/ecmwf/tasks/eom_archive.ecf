@@ -1,0 +1,173 @@
+#!/bin/ksh
+
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+
+%manual
+  -------------------------------------------------
+  EOM_ARCHIVE
+  -------------------------------------------------
+
+  This script is part of the ICON SMS suite
+  Initial implementation: F. Prill,   DWD (2012-05-07)
+  Conversion to ecFlow:   M. Koehler, DWD (2022-11)
+
+  Corresponding author:
+    Martin Koehler, DWD, mailto:martin.koehler@dwd.de
+
+  Task objectives:
+  - copy output and/or
+  - store in database and/or
+  - trigger transfer to DWD
+%end
+
+# include the standard header file
+%include <head_hpc.h>
+
+# -------------------------------------------------
+
+echo "EOM_ARCHIVE"
+export PS4='[${0##*/}:${LINENO}<$?> (${SECONDS})] '
+SECONDS=0            # Reset BASH time counter
+
+### module load idl
+##module load gdl
+module load gdl/1.0.2
+module load ecaccess
+
+ldeldata=0
+
+#rm -rf /scratch/ms/de/deia/icon/dei2/316/*/grb_data
+
+#-----------------------------------------------------------------------------
+# directories
+
+YYYYMM=`echo %YMD% | cut -c 1-6`
+DD=`echo %YMD% | cut -c 7-8`
+mondir=%SCTEMP%/%SUITE%/%EXPNUM%/post/$YYYYMM
+cd ${mondir}
+ecfsdir=ec:icon/experiments/%SUITE%/%EXPNUM%/$YYYYMM
+emkdir -p $ecfsdir
+#METDIR=%SCCODEDIR%/scripts/postprocessing/tools/metview
+METDIR=%SCBASEDIR%/../../scripts/postprocessing/tools/metview
+
+
+#-----------------------------------------------------------------------------
+# scores: plot comparison between this experiment and a reference experiment
+
+cp ${METDIR}/scores.pro ${METDIR}/batch_scores.pro ${METDIR}/paperopenl.pro ${METDIR}/paperclose.pro .
+cp ${METDIR}/readcol.pro ${METDIR}/cgerrormsg.pro ${METDIR}/remchar.pro ${METDIR}/gettok.pro ${METDIR}/strnumber.pro .
+gdl batch_scores.pro -args                       \
+  %SCTEMP%/%SUITE%/%EXPNUM%/post/$YYYYMM/metplots \
+  %SCTEMP%/%SUITE%/%EXPNUM2%/post/$YYYYMM/metplots \
+  %USER%_%EXPNUM% %USER%_%EXPNUM2% ${YYYYMM}01 24 ${DD}
+gdl batch_scores.pro -args                       \
+  %SCTEMP%/%SUITE%/%EXPNUM%/post/$YYYYMM/metplots \
+  %SCTEMP%/%SUITE%/%EXPNUM2%/post/$YYYYMM/metplots \
+  %USER%_%EXPNUM% %USER%_%EXPNUM2% ${YYYYMM}01 240 ${DD}
+
+# help: offline
+# cd /scratch/ms/de/deia/icon_data/dei2/042/201201
+# cp scores.pro paperopenl.pro paperclose.pro batch_scores.pro ${SCRATCH}/temp/scores
+# cd ${SCRATCH}/temp/scores
+# batch_scores.pro: modify plotfile1
+# module load idl
+# idl batch_scores -args /scratch/ms/de/deia/icon/dei2/042/201201/metplots /scratch/ms/de/deia/icon/dei2/033/201201/metplots dei2_042 dei2_033 20120101 24 31
+
+t_gdl=$SECONDS
+SECONDS=0
+
+
+#-----------------------------------------------------------------------------
+# convert scores plot from ps to png
+
+cd ${mondir}/metplots
+for metfile in `ls scores*.ps` ; do
+  metfile2=`echo $metfile | sed 's/\.ps//'`
+%nopp
+  convert -rotate 270 -density 250 -resize 45% ${metfile2}.ps ${metfile2}.png || true
+%end
+  rm -f ${metfile2}.ps
+done
+
+t_png=$SECONDS
+SECONDS=0
+
+
+#-----------------------------------------------------------------------------
+# change metview plot names from *.1.png to *.png
+
+cd ${mondir}
+chmod a+rx metplots
+#chmod a+r  metplots/*   # SLOW: takes 10min
+cd metplots
+find . -type f -print0 | xargs -0 chmod a+r
+for metfile in `ls map*.1.png zon*.1.png` ; do
+  metfile2=`echo $metfile | sed 's/\.1\.png/\.png/'`
+  mv ${metfile} ${metfile2}
+done
+
+t_mv=$SECONDS
+SECONDS=0
+
+
+#-----------------------------------------------------------------------------
+# ectrans plots to mkoehler@DWD
+
+cd %SCTEMP%/%SUITE%
+ln -sf %EXPNUM%/post %USER%_%EXPNUM%
+#tarfile=%SCPERM%/temp/metplots_%USER%_%EXPNUM%_${YYYYMM}.tar
+tarfile=%USER%_%EXPNUM%/${YYYYMM}/metplots_%USER%_%EXPNUM%_${YYYYMM}.tar
+tar cf  ${tarfile} %USER%_%EXPNUM%/${YYYYMM}/metplots
+#gzip -f ${tarfile}
+# send to DWD: rcl:/hpc/uwork/mkoehler/icon-plots/plots
+/home/dfr/Perl/ectrans.pl -r ECtoRCL_%USER% -O plots ${tarfile}
+#/home/dfr/Perl/ectrans.pl -r ECtoFE04 -O plots ${tarfile}
+
+t_ectrans=$SECONDS
+SECONDS=0
+
+ecp -o  ${tarfile} $ecfsdir                                    # archive to ecfs
+rm -f   ${tarfile} %USER%_%EXPNUM%
+
+
+
+#-----------------------------------------------------------------------------
+# archive plots to ecfs
+
+# cd ${gatedir}
+# tar cvf  metplots_%USER%_%EXPNUM%_$YYYYMM.tar metplots
+# gzip -f  metplots_%USER%_%EXPNUM%_$YYYYMM.tar
+# ecp -o   metplots_%USER%_%EXPNUM%_$YYYYMM.tar.gz $ecfsdir
+# \rm -rf  metplots_%USER%_%EXPNUM%_$YYYYMM.tar.gz
+
+t_ecp=$SECONDS
+SECONDS=0
+
+
+#-----------------------------------------------------------------------------
+# delete grib data
+
+if [[ $ldeldata = 1 ]] ; then
+  \rm -rf met.job.*
+  \rm -rf grb_data
+fi
+
+
+# -------------------------------------------------
+
+echo "process | time spend [seconds]"
+echo "_______________________________"
+echo "gdl     | ", $t_gdl
+echo "png     | ", $t_png
+echo "mv      | ", $t_mv
+echo "ectrans | ", $t_ectrans
+echo "ecp     | ", $t_ecp
+
+
+# include the standard "tail" file
+%include <tail.h>

@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2024, MPI-M
+# Copyright (c) 2018-2026, MPI-M
 #
 # Author: Sergey Kosukhin <sergey.kosukhin@mpimet.mpg.de>
 #
@@ -47,7 +47,6 @@ AC_DEFUN([ACX_BUILD_ENVIRONMENT],
      [initialization code to set up the building environment (must be a ]dnl
 [single line ending with a semicolon), e.g. ]dnl
 ['LICENSE=file.lic; export LICENSE;'])dnl
-   AC_SUBST([BUILD_ENV_MAKE])
    AS_IF([test -n "$BUILD_ENV"],
      [AS_IF([AS_ECHO(["$BUILD_ENV"]) | grep ';@<:@ @:>@*$' >/dev/null 2>&1],
         [],
@@ -55,7 +54,8 @@ AC_DEFUN([ACX_BUILD_ENVIRONMENT],
            [\$BUILD_ENV does not end with a semicolon: '$BUILD_ENV'])])
       AS_CASE([$BUILD_ENV], [*${as_nl}*],
         [AC_MSG_ERROR([\$BUILD_ENV contains a newline: '$BUILD_ENV'])])
-      BUILD_ENV_MAKE=`echo "$BUILD_ENV" | sed 's/\\$/$$/g'`
+      AC_SUBST([BUILD_ENV_MAKE], [$BUILD_ENV])dnl
+      ASX_ESCAPE_MAKE_SYNTAX([BUILD_ENV_MAKE])
       AC_MSG_CHECKING([whether \$BUILD_ENV is accepted by '$SHELL -c'])
       acx_build_env_quoted=$BUILD_ENV
       ASX_ESCAPE_SINGLE_QUOTE([acx_build_env_quoted])
@@ -67,7 +67,8 @@ dnl Check that $BUILD_ENV does not change variables that have been set on the
 dnl command line:
          acx_build_env_vars_to_check=
          eval "set dummy $ac_configure_args"; shift
-         for acx_arg; do
+         while test $[]# != 0; do
+           acx_arg=$[]1
            AS_CASE([$acx_arg],
              [-*], [],
              [*=*], [dnl
@@ -84,6 +85,7 @@ dnl script developers):
               [AS_VAR_APPEND([acx_build_env_vars_to_check],
                  [" $acx_arg_name"])],
               [AS_UNSET([acx_arg_${acx_arg_name}])])])
+           shift
          done
          AC_MSG_CHECKING(
            [whether \$BUILD_ENV is accepted by the current shell])

@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -16,7 +16,7 @@
 #    Note that the _gmean output is not working properly in combination with
 #    operation = 'none' (i.e., one of the available time operations has to be
 #    chosen in at least one of the output_nml's).
-#    Moreover, the setting lmask_boundary=.TRUE. (io_nml) must not be changed 
+#    Moreover, the setting lmask_boundary=.TRUE. (io_nml) must not be changed
 #    for a correct functioning of the test (this is necessary to mask out the
 #    points in the boundary interpolation zone before calculating the area
 #    average via cdo).
@@ -29,7 +29,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -66,7 +66,7 @@ mkdir ${OUTDIR}
 
 ln -sf ${INPUTDIR}/inidata/caf1979010100_ini.nc .
 ln -sf ${INPUTDIR}/latbc .
-       
+
 ln -sf ${GRIDDIR}/greenhouse_gases/bc_greenhouse_rcp45_1765-2500.nc .
 
 ln -sf ${GRIDDIR}/dict.latbc .
@@ -133,7 +133,7 @@ cat > NAMELIST_${EXPNAME} << EOF
           p_test_run        = .false.
           l_test_openmp     = .false.
           l_log_checks      = .true.
-          num_io_procs      = ${num_io_procs} 
+          num_io_procs      = ${num_io_procs}
           num_restart_procs = ${num_restart_procs}
           num_prefetch_proc = ${num_prefetch_proc}
           num_io_procs_radar = ${num_io_procs_radar}
@@ -254,7 +254,7 @@ cat > NAMELIST_${EXPNAME} << EOF
                                                              ! radtop = sob_t + thb_t
           output_grid            =  .TRUE.
           remap                  =  0
-        / 
+        /
 	&run_nml
 	  num_lev        = 60
 	  lvert_nest     = .false.
@@ -292,7 +292,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 	  icpl_aero_conv   = 1
 	  icpl_aero_gscp   = 1
 	  icpl_o3_tp       = 1
-          iprog_aero       = 0
           dt_rad    = 2400
           dt_conv   = 800
           dt_sso    = 1600
@@ -467,7 +466,7 @@ runthis(){
     ## print the command
     echo "$@"
     ## run the command
-    eval "$@" 
+    eval "$@"
 }
 
 cd ${OUTDIR}

@@ -1,0 +1,774 @@
+#! %{JOB.ksh} #%# -*- mode: sh -*- vi: set ft=sh :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# %{EXP_ID}.%{JOB.id}
+#
+# %{mkexp_input}
+#
+# $Id: run/mkexp/defaults/DEFAULT.run.tmpl 28 2026-01-14 13:34:00Z k202123 $
+#
+# %{VERSIONS_|join('\n# ')}
+#
+#%from 'mkexp/defaults/format.tmpl' import format_files
+#%import 'mkexp/defaults/launcher.tmpl' as launcher
+#%if JOB.hybrid is defined:
+#%import 'mkexp/environments/run_'+ENVIRONMENT+'.tmpl' as run_hybrid with context
+#%endif
+#=============================================================================
+#% set calling_from_run = true
+#%include ['mkexp/environments/'+ENVIRONMENT+'.tmpl', 'mkexp/environments/DEFAULT.tmpl'] ignore missing with context
+
+#=============================================================================
+set -euo pipefail
+#%  if JOB.debug_level|d(0)|int > 1:
+set -x
+#%  endif
+
+# Utilities
+UTILS_DIR=%{MODEL_DIR}/utils
+PATH=$UTILS_DIR:$PATH
+
+#%  if JOB.log_timestamps is set:
+# Support log style output
+pipe=%{EXP_ID}_%{JOB.id}_$$.pipe
+mkfifo $pipe
+trap "cd $PWD && rm -f $pipe" EXIT
+%{JOB.python3} $UTILS_DIR/timewarp $pipe &
+exec > $pipe 2>&1
+
+#%  endif
+#% do VARIABLES_.add('MODEL_DIR')
+#% do VARIABLES_.add('SCRIPT_DIR')
+#% do VARIABLES_.add('PREFIX')
+#% for var in VARIABLES_|sort:
+#%   if context(var):
+%{var}=%{context(var)}
+#%   endif
+#% endfor
+#%#
+
+# Convenience link to log file
+ln -snvf %{LOG_DIR}/%{JOB.log_file|d or EXP_ID+'.run.$(printf %08d ${'+JOB.id_environ+'}).log'} $SCRIPT_DIR/%{EXP_ID}.run.log
+
+# how to submit the next job
+# --------------------------
+job_name="%{EXP_ID}.run"
+
+# Load traditional error handling
+. $MODEL_DIR/run/add_run_routines
+# Reset files and file names for check_error and check_final_status
+final_status_file=${SCRIPT_DIR}/${job_name}.final_status
+current_status_file=${SCRIPT_DIR}/${job_name}.status
+rm -f ${final_status_file} ${current_status_file}
+
+#=============================================================================
+#% if JOB.hybrid is not defined:
+#
+# OpenMP environment variables
+# ----------------------------
+#%  set threads_per_task = JOB.threads_per_task|d(JOB.default_threads_per_task)|d(1)|int
+#%  if openmp_enabled is not set and threads_per_task > 1:
+#%    do die("{} threads requested, but multithreading (OpenMP) support was not enabled during build".format(threads_per_task))
+#%  endif
+
+export OMP_NUM_THREADS=%{threads_per_task}
+export ICON_THREADS=$OMP_NUM_THREADS
+#% endif
+#
+# MPI variables
+# -------------
+#% if JOB.hybrid is defined:
+%{run_hybrid.set_mpi_variables(JOB, namelists)}
+#% else
+no_of_nodes=${SLURM_JOB_NUM_NODES:=%{JOB.nodes|d(1)}}
+#%  if IO_DISTRIBUTION_OVER_GPUS is defined:
+num_io_tasks=%{JOB.num_io_tasks|d(0)}
+
+# Calculate the total number of I/O processors
+# Ensure num_io_tasks is divisible by no_of_nodes, otherwise round up to the next multiple of no_of_nodes
+num_io_procs=$(( (num_io_tasks + no_of_nodes - 1) / no_of_nodes * no_of_nodes ))
+export io_procs_pernode=$(( num_io_procs / no_of_nodes ))
+
+# Calculate the number of MPI processes per node
+gpus_per_node=%{JOB.gpus_per_node|d("$SLURM_GPUS_PER_NODE")}
+mpi_procs_pernode=$(( gpus_per_node + io_procs_pernode))
+
+#%  else
+cpus_per_task=%{threads_per_task if JOB.hardware_threads is set else 2*threads_per_task}
+#%    if JOB.cpus_per_node is defined:
+cpus_per_node=%{JOB.cpus_per_node}
+#%    else:
+slurm_cpus_per_node=${SLURM_JOB_CPUS_PER_NODE:-%{JOB.default_cpus_per_node|d(1)}}
+cpus_per_node=${slurm_cpus_per_node%%\(*}
+#%    endif
+mpi_procs_pernode=$((cpus_per_node/cpus_per_task))
+#%  endif
+
+#%  if JOB.use_openmp_hack is not set:
+#%    if JOB.use_mpmd is set:
+mpi_atm_io_procs=%{namelists.NAMELIST_atm.parallel_nml.num_io_procs}
+mpi_oce_io_procs=%{namelists.NAMELIST_oce.parallel_nml.num_io_procs}
+#%    endif
+#%  endif
+
+#%  if JOB.hybrid is defined:
+mpi_total_procs=$((atm_compute_tasks + oce_compute_tasks))
+mpi_procs_pernode=$((mpi_total_procs / no_of_nodes))
+echo "tot_tasks: ${mpi_total_procs}"
+echo "tasks_per_node: ${mpi_procs_pernode}"
+#%  else
+mpi_total_procs=$((no_of_nodes * mpi_procs_pernode))
+
+#%   if IO_DISTRIBUTION_OVER_GPUS is defined:
+# Compute tasks are the remaining MPI processes after allocating for I/O
+compute_tasks=$(( mpi_total_procs - num_io_procs ))
+#%   endif
+
+#%   if JOB.use_openmp_hack is set:
+
+no_of_nodes_comp=$(( no_of_nodes ))
+
+#FIXME: this is gonna break for any number of output ranks different from the case we run.
+#aka WORKS FOR ME
+mpi_atm_io_procs=1
+mpi_oce_io_procs=$(($mpi_procs_pernode - $mpi_atm_io_procs))
+#mpi_atm_io_procs=0
+#mpi_oce_io_procs=0
+#%   endif
+#%  endif
+#% endif
+
+# ----------------------------------------------------------------------------
+nr_of_hiopy_workers=%{hiopy.nr_of_workers if hiopy is defined else 0}
+#
+#=============================================================================
+
+# load local setting, if existing
+# -------------------------------
+if [ -a ../setting ]
+then
+  echo "Load Setting"
+  . ../setting
+fi
+
+# environment variables for the experiment
+# ----------------------------------------
+export EXPNAME=%{EXP_ID}
+
+# how to start the icon model
+# ---------------------------
+#%#
+#%  if JOB.use_openmp_hack is not set:
+#%  set mpi_command = MPI.command
+#%#
+#%  if JOB.use_cpu_mask is set:
+#%#   TODO: add regexp replace to mkexp and use here
+#%-   if mpi_command|match('\s+--cpu-bind=\S*'):
+#%      set mpi_command_1 = mpi_command|match('^(.*?)\s+--cpu-bind=\S*.*$')
+#%      set mpi_command_2 = mpi_command|match('^.*?\s+--cpu-bind=\S*(.*)$')
+#%      set mpi_command = mpi_command_1 + mpi_command_2
+#%    endif
+#%    set mpi_command = mpi_command + ' --cpu-bind=mask_cpu=$(' + JOB.python3 + ' $UTILS_DIR/slurm/ccpumask -t $OMP_NUM_THREADS)'
+#%  endif
+#%#
+#%  if JOB.use_hostfile is set:
+#%#   TODO: add regexp replace to mkexp and use here
+#%    if mpi_command|match('\s+--distribution=\S*'):
+#%      set mpi_command_1 = mpi_command|match('^(.*?)\s+--distribution=\S*.*$')
+#%      set mpi_command_2 = mpi_command|match('^.*?\s+--distribution=\S*(.*)$')
+#%      set mpi_command = mpi_command_1 + mpi_command_2
+#%    endif
+#%    set mpi_command = mpi_command + ' --distribution=arbitrary'
+#%  endif
+#%#
+#%  if JOB.use_gpus is not set and MPI.use_cpus_per_task is set:
+#%#   TODO: add regexp replace to mkexp and use here
+#%    if mpi_command|match('\s+--cpus-per-task=\S*'):
+#%      set mpi_command_1 = mpi_command|match('^(.*?)\s+--cpus-per-task=\S*.*$')
+#%      set mpi_command_2 = mpi_command|match('^.*?\s+--cpus-per-task=\S*(.*)$')
+#%      set mpi_command = mpi_command_1 + mpi_command_2
+#%    endif
+#%    set mpi_command = mpi_command + ' --cpus-per-task=$cpus_per_task'
+#%  endif
+export START="%{mpi_command} -n $mpi_total_procs"
+#%  else:
+#%#     use_openmp_hack is set
+export START="srun -l --kill-on-bad-exit=1 --propagate=STACK,CORE --cpu-bind=none --distribution=arbitrary --ntasks=$mpi_total_procs --cpus-per-task=$cpus_per_task ./set_mask"
+#%  endif
+
+%{launcher.define_MODEL_executable(JOB, BIN_DIR, MODEL_EXE)}
+
+
+# Redefine cdo for input file methods
+cdo () { env %{JOB.cdo} "$@"; }
+
+#=============================================================================
+
+#%  if JOB.stack_size is defined:
+ulimit -s %{JOB.stack_size}
+#%  endif
+ulimit -c 0
+
+# ----------------------------------------------------------------------------
+# %{EXP_DESCRIPTION|split("\n")|join("\n# ")|replace("# \n", "#\n")}
+# ----------------------------------------------------------------------------
+
+# (0) Basic model configuration
+# -----------------------------
+
+#% if JOB.hybrid is defined:
+%{run_hybrid.set_mpi_variables_2()}
+#% else
+#%  if JOB.use_openmp_hack is not set:
+#%   if JOB.share_nodes is set:
+oce_per_node=%{JOB.ocean_tasks_per_node|d(0)}
+atm_per_node=$((mpi_procs_pernode - oce_per_node))
+mpi_oce_procs=$((no_of_nodes * oce_per_node))
+mpi_atm_procs=$((no_of_nodes * atm_per_node))
+#%   else:
+mpi_oce_nodes=%{JOB.ocean_nodes|d(0)}
+mpi_atm_nodes=$((no_of_nodes - mpi_oce_nodes))
+mpi_oce_procs=$((mpi_oce_nodes * mpi_procs_pernode - nr_of_hiopy_workers))
+mpi_atm_procs=$((mpi_total_procs - mpi_oce_procs))
+atm_per_node=$(((mpi_atm_procs + mpi_atm_nodes - 1)/mpi_atm_nodes))
+#%   endif
+#%  else:
+#%#     use_openmp_hack is set
+oce_per_node=16
+atm_per_node=$((mpi_procs_pernode - oce_per_node))
+mpi_oce_procs=$((no_of_nodes_comp * oce_per_node))
+mpi_atm_procs=$((no_of_nodes_comp * atm_per_node))
+#%  endif
+#% endif
+#
+#--------------------------------------------------------------------------------------------------
+
+# (4) Set variables to configure the experiment:
+# ----------------------------------------------
+
+#%  set atmo_time_step = JOB.atmo_time_step|d(ATMO_TIME_STEP)
+#%  set ocean_time_step = JOB.ocean_time_step|d(OCEAN_TIME_STEP)
+#%# 'interval' should read 'INTERVAL'' as default; for now allow legacy use
+#%  set interval = JOB.interval|d(namelists['icon_master.namelist'].master_time_control_nml.restarttimeintval)
+
+# start and end date+time of experiment
+# -------------------------------------
+initial_date="%{INITIAL_DATE}"
+final_date="%{FINAL_DATE}"
+
+# Read and compute time control information
+
+start_date_file=$SCRIPT_DIR/$EXPNAME.date
+exp_log_file=$SCRIPT_DIR/$EXPNAME.log
+
+#%  if JOB.entry_point is set:
+if [[ -f $start_date_file ]]
+then
+    exec >&2
+    echo "Oops: you have tried to begin an experiment that had already been started."
+    echo "      Remove '$start_date_file' if you want to continue"
+    exit 1
+fi
+start_date=$initial_date
+#%  else:
+read start_date < $start_date_file
+#%  endif
+#%#
+code=$(%{JOB.python3} -c "
+#% include 'mkexp/defaults/mtime.tmpl'
+#% do JOB.update({'log_timestamps': 'false'})
+#% include 'mkexp/defaults/logging.tmpl'
+
+atmo_time_step = '%{atmo_time_step}'
+ocean_time_step = '%{ocean_time_step}'
+
+class namespace: pass
+
+sh = namespace()
+
+sh.initial_date = mtime.DateTime('$initial_date')
+sh.final_date = mtime.DateTime('$final_date')
+sh.start_date = mtime.DateTime('$start_date')
+sh.reference_date = sh.initial_date + mtime.TimeDelta('-%{interval}')
+sh.next_date = sh.start_date + mtime.TimeDelta('%{interval}')
+if sh.next_date > sh.final_date:
+    logging.warning('next date after final date; setting next date to final date')
+    sh.next_date_orig = sh.next_date
+    sh.next_date = sh.final_date
+sh.end_date = sh.next_date + mtime.TimeDelta('-' +
+    (atmo_time_step or ocean_time_step or 'PT0.001S'))
+sh.atmo_reference_jstep = (
+    (sh.initial_date, sh.reference_date)//mtime.TimeDelta(atmo_time_step)
+    if atmo_time_step else None
+)
+sh.ocean_reference_jstep = (
+    (sh.initial_date, sh.reference_date)//mtime.TimeDelta(ocean_time_step)
+    if ocean_time_step else None
+)
+#%  set disturbance_settings = DISTURBANCE_SETTINGS|list
+#%  set is_legacy_disturbance = disturbance_settings|length == 1 and disturbance_settings|first|split|length < 5
+disturbance_commands = []
+#%  if is_legacy_disturbance:
+#%      set (file, group, var, delta) = disturbance_settings|first|split
+#%      set value = namelists[file][group][var]|float + delta|float
+if sh.start_date in [mtime.DateTime(date) for date in %{DISTURBANCE_DATES|d(DISTURBANCE_YEARS|join(' ')|split)|list}]:
+    disturbance_commands.append('patch_namelist %{group} %{var} %{value} %{file}')
+#%  else:
+#%      for setting in disturbance_settings:
+#%          set (file, group, var, delta, dates) = setting|split(none, 4)
+#%          set value = namelists[file][group][var]|float + delta|float
+if sh.start_date in [mtime.DateTime(date) for date in %{dates|split}]:
+    disturbance_commands.append('patch_namelist %{group} %{var} %{value} %{file}')
+#%      endfor
+#%  endif
+sh.disturbance_command = '; '.join(disturbance_commands)
+
+for k, v in vars(sh).items():
+    print(f'{k}=\'{v}\'')
+")
+eval "$code"
+
+# Dates used as timestamps
+start_stamp=${start_date%.*}
+start_stamp=${start_stamp//[-:]/}
+end_stamp=${end_date%.*}
+end_stamp=${end_stamp//[-:]/}
+next_stamp=${next_date%.*}
+next_stamp=${next_stamp//[-:]/}
+y0=${start_date%%-*}
+yN=${end_date%%-*}
+
+# Mark current run as started in log
+echo $(date -u +'%Y-%m-%dT%H:%M:%SZ') ${start_date%:*} ${end_date%:*} ${%{JOB.id_environ}-} start >> $exp_log_file
+
+# Show current start date in job configuration
+%{JOB.progress_command} $start_date
+
+#------------------------------------------------------------------------------
+
+# (5) Define the model configuration
+#-----------------------------------
+
+# Write namelist files directly to working directory, create this if missing
+
+EXPDIR=%{WORK_DIR}/%{JOB.subdir}
+
+#%  if JOB.subdir|d(''):
+if [[ -d $EXPDIR ]]
+then
+    echo "$(date +'%Y-%m-%dT%H:%M:%S'): removing run dir '$EXPDIR'"
+    rm -fvr $EXPDIR
+fi
+
+#%    endif
+mkdir -vp $EXPDIR
+cd $EXPDIR
+
+#------------------------------------------------------------------------------
+# I. coupling section
+#------------------------------------------------------------------------------
+
+# I.1 Split the number of total procs and assign to each component
+# ----------------------------------------------------------------
+#% if JOB.hybrid is defined:
+%{run_hybrid.split_tasks()}
+#% else
+#%  if JOB.use_openmp_hack is not set:
+#%   if JOB.share_nodes is set and JOB.use_hostfile is not set:
+oce_min_rank=$atm_per_node
+oce_max_rank=$((mpi_total_procs - 1))
+oce_group_size=$oce_per_node
+oce_inc_rank=$((atm_per_node + 1))
+atm_min_rank=0
+atm_max_rank=$((mpi_total_procs - 1))
+atm_group_size=$atm_per_node
+atm_inc_rank=$((oce_per_node + 1))
+#%   else:
+oce_min_rank=$((mpi_total_procs - mpi_oce_procs))
+oce_max_rank=$((oce_min_rank + mpi_oce_procs - 1))
+atm_max_rank=$((oce_min_rank - 1))
+oce_group_size=1
+oce_inc_rank=1
+atm_min_rank=0
+atm_group_size=1
+atm_inc_rank=1
+#%   endif
+#%  else:
+#%#     use_openmp_hack is set
+oce_min_rank=$((mpi_atm_procs + mpi_atm_io_procs))
+oce_max_rank=$((mpi_atm_procs + mpi_atm_io_procs + mpi_oce_procs + mpi_oce_io_procs - 1))
+oce_group_size=1
+oce_inc_rank=1
+atm_min_rank=0
+atm_max_rank=$((oce_min_rank - 1))
+atm_group_size=1
+atm_inc_rank=1
+#%  endif
+#% endif
+
+#% if WITH_LAND is set and WITH_ATMO is not set:
+lnd_min_rank=0
+lnd_max_rank=$((oce_min_rank - 1))
+lnd_inc_rank=1
+#% endif
+#%#
+#
+# create ICON master, coupling and model namelists
+# ------------------------------------------------
+# For a complete list see Namelist_overview and Namelist_overview.pdf
+#
+
+cat > icon_master.namelist << EOF
+%{format_namelist(namelists['icon_master.namelist'])}
+EOF
+
+#%  if WITH_ATMO is set and WITH_OCEAN is set:
+# I.3 YAC coupling library configuration
+#-----------------------------------------------------------------------------
+# component names in coupling.yaml must (!) match with modelname_list[*]
+cat > coupling.yaml << EOF
+%{COUPLING_YAML}
+EOF
+
+#%  endif
+
+#%  if WITH_ATMO is set or WITH_LAND is set:
+#-----------------------------------------------------------------------------
+# II. ATMOSPHERE and LAND
+#-----------------------------------------------------------------------------
+#
+#%  endif
+#%  if WITH_ATMO is set:
+# atmosphere namelist
+# -------------------
+cat > NAMELIST_atm << EOF
+%{format_namelist(namelists.NAMELIST_atm)}
+EOF
+
+#%  endif
+#%  if WITH_LAND is set:
+# jsbach namelist
+# ---------------
+
+#%  for namelist in namelists.sections:
+#%    if namelist.startswith('NAMELIST_lnd'):
+cat > %{namelist} << EOF
+%{format_namelist(namelists[namelist])}
+EOF
+#%    endif
+#%  endfor
+
+#%  endif
+#%  if WITH_OCEAN is set:
+#-----------------------------------------------------------------------------
+# III. OCEAN and SEA-ICE (and HAMOCC)
+#-----------------------------------------------------------------------------
+#
+# ocean namelist
+# --------------
+
+cat > NAMELIST_oce << EOF
+%{format_namelist(namelists.NAMELIST_oce)}
+EOF
+
+#%  endif
+# Selectively add disturbance to overcome model failure
+# ------------------------------------------------
+
+if [[ "$disturbance_command" ]]
+then
+    echo "disturbing model for start date ${start_date}, using '$disturbance_command'"
+    eval "$disturbance_command"
+fi
+
+#-----------------------------------------------------------------------------
+
+if [ $mpi_total_procs -lt $((mpi_oce_procs + 1)) ] ; then
+   echo "Total task count ($mpi_total_procs) does not fit ocean task count ($mpi_oce_procs)"
+   echo "-> check mpi_total_procs and mpi_oce_procs. Exiting"
+   check_error 1
+   exit 1
+fi
+
+#=============================================================================
+#
+# This section of the run script prepares and starts the model integration.
+#
+#-----------------------------------------------------------------------------
+
+#-----------------------------------------------------------------------------
+# Provide input files
+%{format_files(files, 'yr', 'y0', 'yN')}
+
+#-----------------------------------------------------------------------------
+#  get model
+#
+%{launcher.check_MODEL_executable(JOB)}
+#
+#
+#
+# start experiment
+#
+#% if JOB.hybrid is defined:
+%{run_hybrid.write_host_file(JOB.use_hostfile|d(None))}
+#% else:
+#%  if JOB.use_openmp_hack is not set:
+#%      if JOB.use_mpmd is set:
+mpi_atm_io_procs=%{namelists.NAMELIST_atm.parallel_nml.num_io_procs}
+mpi_oce_io_procs=%{namelists.NAMELIST_oce.parallel_nml.num_io_procs}
+#%      endif
+
+#%      if JOB.use_hostfile is set:
+#%         if IO_DISTRIBUTION_OVER_GPUS is set and JOB.use_gpus is set:
+#%            include "mkexp/environments/hostfiles/hostfile_distrib_io_on_gpus.tmpl"
+#%         else:
+#%            include "mkexp/environments/hostfiles/hostfile.tmpl"
+#%         endif
+#%      endif
+#%  else:
+#%#     # use_openmp_hack is set
+#%      include "mkexp/environments/hostfiles/hostfile_openmp_hack.tmpl"
+#%  endif
+#% endif
+
+#% if JOB.hybrid is defined:
+%{run_hybrid.write_run_wrapper_gpu()}
+%{run_hybrid.write_run_wrapper_cpu()}
+#% if hiopy is defined:
+%{run_hybrid.write_run_wrapper_hiopy()}
+#% endif
+#% else
+#%  if JOB.use_gpus is set:
+#%            include "mkexp/environments/run_wrapper_"+ ENVIRONMENT +".tmpl"
+# run_model.sh should be created in run_wrapper_<environment>.tmpl
+if [ ! -f run_model.sh ]; then
+	echo "ERROR: cannot find $(pwd)/run_model.sh" >&2
+    exit 1
+fi
+#%  endif
+#% endif
+
+#%#
+
+rm -f finish.status
+
+#
+#  Generate MPMD config file
+#
+#% if JOB.hybrid is defined:
+%{run_hybrid.write_mpmd_file(JOB.use_mpmd|d(None))}
+#% else
+#%  if JOB.use_mpmd is set:
+# Define MPMD lines for atmosphere and ocean components
+if [ $mpi_atm_io_procs -eq 0 ] ; then
+  atm_io_line="0 numactl --interleave=0-3 -- ${MODEL}"
+else
+  if [ $((atm_per_node*2)) -lt  $mpi_procs_pernode ] ; then
+    atm_io_line="$((mpi_atm_procs - mpi_atm_io_procs))-$((mpi_atm_procs -1)) numactl --interleave=0-3 -- ${MODEL}"
+  else
+    atm_io_line="$((mpi_atm_procs - mpi_atm_io_procs))-$((mpi_atm_procs -1)) numactl --interleave=4-7 -- ${MODEL}"
+  fi
+fi
+oce_io_line=
+if [ $mpi_oce_io_procs -eq 0 ] ; then
+  if [ $mpi_oce_procs -gt 0 ] ; then
+    if [ $((atm_per_node*2)) -lt  $mpi_procs_pernode ] ; then
+      oce_io_line="$mpi_atm_procs numactl --interleave=0-3 -- ${MODEL}"
+    else
+      oce_io_line="$mpi_atm_procs numactl --interleave=4-7 -- ${MODEL}"
+    fi
+  fi
+else
+  oce_io_line="$((mpi_atm_procs + mpi_oce_procs - mpi_oce_io_procs))-$((mpi_atm_procs + mpi_oce_procs -1)) numactl --interleave=4-7 -- ${MODEL}"
+fi
+#%  endif
+
+#%  if JOB.use_mpmd is set and hiopy is not defined:
+# creating mpmd file
+# Create MPMD config file
+exec 3>&1 # save stdout
+exec > icon_mpmd.conf
+echo "$atm_io_line"
+echo "$oce_io_line"
+echo "* numactl --localalloc -- ${MODEL}"
+exec 1>&3 # restore stdout
+#%  endif
+#%  endif
+
+# ---------------------------------------------------------------------
+#%  if hiopy is defined and JOB.hybrid is not defined:
+#%    include 'mkexp/defaults/hiopy/run.tmpl'
+#%  endif
+
+#% if JOB.debug_level|d(0)|int > 0:
+thisscript=$(realpath $0)
+echo "#################################################"
+echo "###################  script  ####################"
+echo "#################################################"
+cat $thisscript
+cp -p $thisscript .
+echo "#################################################"
+echo "#################################################"
+echo "####################  env  ######################"
+echo "#################################################"
+rm -f env.txt
+env 2>&1 | tee env.txt
+echo "#################################################"
+echo "#################################################"
+echo "####################  ldd  ######################"
+echo "#################################################"
+rm -f ldd.txt
+echo $(realpath ${MODEL}) 2>&1 | tee ldd.txt
+srun -n1 -- %{JOB.ldd} -v $(realpath ${MODEL}) 2>&1 | tee ldd.txt
+echo "#################################################"
+
+#% endif
+
+#% for trigger in JOB['.control']|d([])|list:
+#%   set job = (trigger|split|list)[0]
+#%   set type = jobs[job]['.type']
+#%   if loop.first:
+#%#
+# Start control jobs in background
+
+#%   endif
+echo "starting '%{EXP_ID}.%{trigger}'"
+$SCRIPT_DIR/%{EXP_ID}.%{trigger} $start_date $EXPDIR &
+#%   if loop.last:
+#%#
+#%   endif
+#% endfor
+
+date
+#%  if JOB.use_openmp_hack is not set and JOB.use_mpmd is set:
+echo ${START} " --multi-prog icon_mpmd.conf"
+${START} --multi-prog icon_mpmd.conf
+#%  elif JOB.use_gpus is set:
+echo ${START} " ./run_model.sh || exit 1"
+${START} ./run_model.sh || exit 1
+#%  else:
+echo ${START} ${MODEL}
+${START} ${MODEL}
+#%  endif
+date
+#
+#-----------------------------------------------------------------------------
+#
+#% set IS_COUPLED_OUTPUT = namelists.NAMELIST_atm.coupling_mode_nml.coupled_to_output is set or namelists.NAMELIST_oce.coupling_mode_nml.coupled_to_output is set
+
+%{launcher.check_MODEL_status(JOB, WITH_ATMO, WITH_OCEAN, IS_COUPLED_OUTPUT)}
+
+#% set atmo_restart = namelists.NAMELIST_atm.run_nml.restart_filename
+#% set ocean_restart = namelists.NAMELIST_oce.run_nml.restart_filename
+#% if WITH_LAND is set and WITH_ATMO is not set:
+#%   set land_restart = namelists.NAMELIST_lnd.run_nml.restart_filename
+#% endif
+
+#% set atmo_restart_write = namelists.NAMELIST_atm.io_nml.write_last_restart is set
+#% set ocean_restart_write = namelists.NAMELIST_oce.io_nml.write_last_restart is set
+#% if WITH_LAND is set and WITH_ATMO is not set:
+#%   set land_restart_write = namelists.NAMELIST_lnd.io_nml.write_last_restart is set
+#% endif
+
+#%  if JOB.subdir|d(''):
+# Handle restart hand-over
+#%    if WITH_ATMO is set:
+if [ -z "${next_date_orig:-}" ] || %{atmo_restart_write|lower}
+then
+    cp -lrfv %{atmo_restart|replace('<rsttime>', '${next_stamp}Z')} %{WORK_DIR}
+fi
+#%    endif
+#%    if WITH_OCEAN is set:
+if [ -z "${next_date_orig:-}" ] || %{ocean_restart_write|lower}
+then
+    cp -lrfv %{ocean_restart|replace('<rsttime>', '${next_stamp}Z')} %{WORK_DIR}
+fi
+#%    endif
+#%    if WITH_LAND is set and WITH_ATMO is not set:
+if [ -z "${next_date_orig:-}" ] || %{land_restart_write|lower}
+then
+    cp -lrfv %{land_restart|replace('<rsttime>', '${next_stamp}Z')} %{WORK_DIR}
+fi
+#%    endif
+#%  endif
+
+#%  if JOB.subdir|d(''):
+#%#
+# Clean up our restart
+#%    if WITH_ATMO is set:
+rm -rfv %{atmo_restart|replace('<rsttime>', '${start_stamp}Z')}
+#%    endif
+#%    if WITH_OCEAN is set:
+rm -rfv %{ocean_restart|replace('<rsttime>', '${start_stamp}Z')}
+#%    endif
+#%    if WITH_LAND is set and WITH_ATMO is not set:
+rm -rfv %{land_restart|replace('<rsttime>', '${start_stamp}Z')}
+#%    endif
+#%  endif
+
+%{launcher.write_finish_status(JOB, WITH_ATMO, WITH_OCEAN, IS_COUPLED_OUTPUT, finish_status)}
+
+#%  if WITH_OBGC is set:
+#-----------------------------------------------------------------------------
+# store HAMOCC log file
+mv bgcout bgcout_${start_date}
+#%  endif
+
+#-----------------------------------------------------------------------------
+
+# Mark current run as successful in log
+echo $(date -u +'%Y-%m-%dT%H:%M:%SZ') ${start_date%:*} ${end_date%:*} ${%{JOB.id_environ}-}  end >> $exp_log_file
+
+cd $SCRIPT_DIR
+set +e
+status=0
+
+#% for trigger in JOB['.trigger']|list:
+#%   set job = (trigger|split|list)[0]
+#%   set info = jobs[job]|d
+#%   set type = info['.type']|d('serial')
+#%   if type == 'restart':
+
+# Update date info for next run
+echo $next_date > $start_date_file
+
+if [ $finish_status = "RESTART" ]
+then
+  (
+#%     if JOB.use_openmp_hack is set or JOB.use_hostfile is set:
+    # Clean SLURM_HOSTFILE
+    unset SLURM_HOSTFILE
+#%     endif
+    echo "restart: submitting '%{EXP_ID}.%{trigger}'"
+    %{JOB.batch_command} %{EXP_ID}.%{trigger}
+  ) || status=$?
+fi
+#%   elif type == 'serial':
+echo "running '%{EXP_ID}.%{trigger}'"
+./%{EXP_ID}.%{trigger} $start_date || status=$?
+#%   else:
+echo "submitting '%{EXP_ID}.%{trigger}'"
+(
+  # Clean SLURM environment
+  eval $(%{JOB.python3} -c 'import os
+for key in os.environ:
+    if key.startswith("SLURM_"): print("unset "+key)')
+  %{JOB.batch_command} %{EXP_ID}.%{trigger} $start_date
+) || status=$?
+#%   endif
+#% endfor
+
+exit $status
+
+#-----------------------------------------------------------------------------
+# vim:ft=sh
+#-----------------------------------------------------------------------------

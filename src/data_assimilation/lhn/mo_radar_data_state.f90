@@ -1,20 +1,17 @@
-!
-! Allocation/deallocation and reading of radar datasets for LHN
-!
-! This module contains routines for setting up the radar data state.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Allocation/deallocation and reading of radar datasets for LHN
+!
+! This module contains routines for setting up the radar data state.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -66,7 +63,7 @@ MODULE mo_radar_data_state
   PRIVATE
 
   ! Number of landcover classes provided by radar parameter data
-  ! Needs to be changed into a variable if landcover classifications 
+  ! Needs to be changed into a variable if landcover classifications
   ! with a different number of classes become available
   PUBLIC :: radar_data
   PUBLIC :: init_radar_data
@@ -94,7 +91,7 @@ CONTAINS
   !>
   !! Init radar data for atmosphere
   !!
-  !! 1. Build data structure, including field lists and 
+  !! 1. Build data structure, including field lists and
   !!    memory allocation.
   !! 2. External data are read in from netCDF file or set analytically
   !!
@@ -291,7 +288,7 @@ CONTAINS
   !>
   !! Allocation of atmospheric radar data structure
   !!
-  !! Allocation of atmospheric radar data structure (constant in time 
+  !! Allocation of atmospheric radar data structure (constant in time
   !! elements).
   !!
   !! Initialization of elements with zero.
@@ -303,7 +300,7 @@ CONTAINS
       &  p_patch
 
     TYPE(t_radar_ct_fields), INTENT(INOUT) :: & !< current radar data structure
-      &  p_radar_ct 
+      &  p_radar_ct
 
     TYPE(t_var_list_ptr), INTENT(INOUT) :: &  !< current radar data list
       &  p_radar_ct_list
@@ -361,7 +358,7 @@ CONTAINS
   !>
   !! Allocation of atmospheric radar data structure (time dependent)
   !!
-  !! Allocation of atmospheric radar data structure (time dependent  
+  !! Allocation of atmospheric radar data structure (time dependent
   !! elements).
   !!
   !! Initialization of elements with zero.
@@ -373,7 +370,7 @@ CONTAINS
       &  p_patch
 
     TYPE(t_radar_td_fields), INTENT(INOUT) :: & !< current radar data structure
-      &  p_radar_td 
+      &  p_radar_td
 
     TYPE(t_var_list_ptr), INTENT(INOUT) :: &   !< current radar data list
       &  p_radar_td_list
@@ -557,7 +554,7 @@ CONTAINS
         ELSE
           CALL finish(routine, TRIM(message_text))
         END IF
-      ENDIF      
+      ENDIF
 
     ENDIF ! lread_process
 
@@ -673,7 +670,7 @@ CONTAINS
         ELSE
           CALL finish(routine, TRIM(message_text))
         END IF
-      ENDIF      
+      ENDIF
 
     ENDIF ! lread_process
 
@@ -760,7 +757,7 @@ CONTAINS
         ELSE
           CALL finish(routine, TRIM(message_text))
         END IF
-      ENDIF      
+      ENDIF
 
     ENDIF ! lread_process
 
@@ -772,7 +769,7 @@ CONTAINS
 
     !-------------------------------------------------------
     !
-    ! open netcdf files and investigate the data structure  
+    ! open netcdf files and investigate the data structure
     ! of the radar observations
     !
     !-------------------------------------------------------
@@ -862,14 +859,14 @@ CONTAINS
             radar_data(jg)%radar_ct%blacklist = 0.0_wp
 !            radar_data(jg)%radar_ct%radheight = 0.0_wp
             radar_data(jg)%radar_td%radheight = 0.0_wp
-          
+            radar_data(jg)%radar_td%spqual = 1.0_wp
 
           !--------------------------------------------------------------------
           !
           ! Read radar data for triangle centers (triangular grid)
           !
           !--------------------------------------------------------------------
-         
+
             parameters = makeInputParameters(cdi_radar_id(jg), p_patch(jg)%n_patch_cells_g, p_patch(jg)%comm_pat_scatter_c) ! &
 !          &                                opt_dict=radar_varnames_dict)
 
@@ -879,7 +876,7 @@ CONTAINS
             IF (assimilation_config(jg)%lhn_spqual) THEN
               CALL read_cdi_2d(parameters, assimilation_config(jg)%nobs_times, 'RAD_QUAL', radar_data(jg)%radar_td%spqual)
             END IF
-            
+
             CALL deleteInputParameters(parameters)
 
           ! time indipendent
@@ -899,7 +896,7 @@ CONTAINS
 !print *,"RAD_HEIGHT: ", MAXVAL(radar_data(jg)%radar_td%radheight)
               CALL deleteInputParameters(parameters)
             ENDIF
- 
+
          ENDIF
         END DO ! jg
 
@@ -1017,7 +1014,7 @@ CONTAINS
     nlev   = p_patch%nlev
 
     ibits        = DATATYPE_PACK16   ! "entropy" of horizontal slice
-    datatype_flt = DATATYPE_FLT32 
+    datatype_flt = DATATYPE_FLT32
 
     shape3d_c = (/nproma, nlev, nblks_c /)
     shape2d_c = (/nproma,       nblks_c /)
@@ -1030,7 +1027,7 @@ CONTAINS
       &     lhn_fields%brightband,  &
       &     lhn_fields%pr_obs_sum,  &
       &     lhn_fields%pr_mod_sum,  &
-      &     lhn_fields%pr_ref_sum ) 
+      &     lhn_fields%pr_ref_sum )
 
     !
     ! Register a field list and apply default settings
@@ -1120,4 +1117,3 @@ CONTAINS
   END SUBROUTINE new_lhn_fields_list
 
 END MODULE mo_radar_data_state
-

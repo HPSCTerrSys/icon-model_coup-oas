@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! @brief Shifting of solid components
 !
 ! By this routine solid components are shifted (upward and) downward
@@ -6,17 +17,6 @@
 ! over the full time of integration.
 !
 ! Upward shift is currently disabled.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_sedshi
 
@@ -28,10 +28,10 @@ MODULE mo_sedshi
        &                    issso12, isssc12, issssil, issster
     USE mo_control_bgc, ONLY: bgc_nproma
     USE mo_hamocc_nml, ONLY: l_up_sedshi,ks
-    
+
     USE mo_bgc_memory_types, ONLY: t_bgc_memory, t_sediment_memory
     USE mo_fortran_tools, ONLY: set_acc_host_or_device
-    
+
 
     IMPLICIT NONE
 
@@ -43,8 +43,8 @@ CONTAINS
 
 SUBROUTINE sedshi(local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
 
-  
- 
+
+
   IMPLICIT NONE
 
   !! Arguments
@@ -87,7 +87,7 @@ SUBROUTINE sedshi(local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
   DO k = 1, ks-1
      !$ACC LOOP GANG VECTOR
      DO j = start_idx, end_idx
-        
+
            IF (local_bgc_mem%bolay(j) > 0._wp) THEN
               sedlo  = orgfa*rcar*local_sediment_mem%sedlay(j,k,issso12)    &
                    & +      calfa*local_sediment_mem%sedlay(j,k,isssc12)    &
@@ -117,8 +117,8 @@ SUBROUTINE sedshi(local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
 
   ENDDO !end k-loop
   !$ACC END PARALLEL
- 
- 
+
+
 
   ! store amount lost from bottom sediment layer - this is a kind of
   ! permanent local_sediment_mem%burial in deep consolidated layer, and this stuff is
@@ -157,10 +157,10 @@ SUBROUTINE sedshi(local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
      ENDDO !end j-loop
   ENDDO !end iv-loop
   !$ACC END PARALLEL
- 
- 
 
- IF(l_up_sedshi)THEN 
+
+
+ IF(l_up_sedshi)THEN
 
   ! UPWARD SHIFTING
   ! shift solid sediment upwards, if total sediment volume is less
@@ -169,13 +169,13 @@ SUBROUTINE sedshi(local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
   ! is less than porsol*seddw (integrated over the total sediment column)
   ! first, the deepest box is filled from below with total required volume;
   ! then, successively, the following layers are filled upwards.
-  ! if there is not enough solid matter to fill the column, add clay. 
+  ! if there is not enough solid matter to fill the column, add clay.
 
   !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
   fulsed(:) = 0._wp
   !$ACC END KERNELS
 
- 
+
   ! determine how the total sediment column is filled
   !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
   !$ACC LOOP SEQ
@@ -192,7 +192,7 @@ SUBROUTINE sedshi(local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
      ENDDO !end j-loop
   ENDDO !end k-loop
   !$ACC END PARALLEL
- 
+
 
   ! shift the sediment deficiency from the deepest (local_sediment_mem%burial)
   ! layer into layer ks
@@ -252,8 +252,8 @@ SUBROUTINE sedshi(local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
 
   ENDDO !end j-loop
   !$ACC END PARALLEL
- 
- 
+
+
   !     redistribute overload of deepest layer ks to layers 2 to ks
   !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
   !$ACC LOOP SEQ
@@ -285,11 +285,11 @@ SUBROUTINE sedshi(local_bgc_mem, local_sediment_mem, start_idx, end_idx, lacc)
      ENDDO !end iv-loop
   ENDDO !end k-loop
   !$ACC END PARALLEL
- 
- 
+
+
  ENDIF ! l_up_sedshi
  !$ACC WAIT(1)
  !$ACC END DATA
 
-END SUBROUTINE 
+END SUBROUTINE
 END MODULE

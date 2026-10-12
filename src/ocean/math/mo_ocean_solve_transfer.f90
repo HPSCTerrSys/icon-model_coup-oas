@@ -1,11 +1,7 @@
-! provides abstract communication / transfer infrastructure object to
-! be used by solvers
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,8 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! provides abstract communication / transfer infrastructure object to
+! be used by solvers
+
 #if (defined(_OPENMP) && defined(OCE_SOLVE_OMP))
 #include "omp_definitions.inc"
+#define PURE_OR_OMP
+#elif (defined(_OPENACC))
 #define PURE_OR_OMP
 #else
 #define PURE_OR_OMP PURE
@@ -23,12 +24,13 @@
 MODULE mo_ocean_solve_transfer
 
   USE mo_kind, ONLY: sp, dp, i8
-  USE mo_fortran_tools, ONLY: t_ptr_2d, t_ptr_2d_sp
+  USE fortran_support,  ONLY: t_ptr_2d_dp, t_ptr_2d_sp
   USE mo_parallel_config, ONLY: l_fast_sum
   USE mo_timer, ONLY: timer_start, timer_stop
   USE mo_mpi, ONLY: p_sum, p_max
   USE mo_exception, ONLY: finish
   USE mo_run_config, ONLY: ltimer
+  USE mo_fortran_tools, ONLY: set_acc_host_or_device
 
   IMPLICIT NONE
   PRIVATE
@@ -94,7 +96,7 @@ MODULE mo_ocean_solve_transfer
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
       REAL(KIND=wp), INTENT(IN), DIMENSION(:,:) :: data_in
-      REAL(KIND=wp), INTENT(OUT), DIMENSION(:,:), ALLOCATABLE :: data_out
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:), ALLOCATABLE :: data_out
       INTEGER, INTENT(IN) :: tt
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_into_once_2d_wp
@@ -103,7 +105,11 @@ MODULE mo_ocean_solve_transfer
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
       REAL(KIND=wp), INTENT(IN), DIMENSION(:,:) :: di1, di2
-      REAL(KIND=wp), INTENT(OUT), DIMENSION(:,:), CONTIGUOUS :: do1, do2
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:) :: do1, do2
+#else
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:), CONTIGUOUS :: do1, do2
+#endif
       INTEGER, INTENT(IN) :: tt
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_into_2d_wp_2
@@ -111,8 +117,12 @@ MODULE mo_ocean_solve_transfer
       USE mo_kind, ONLY: wp
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      REAL(KIND=wp), INTENT(IN), DIMENSION(:,:,:) :: data_in
+#else
       REAL(KIND=wp), INTENT(IN), DIMENSION(:,:,:), CONTIGUOUS :: data_in
-      REAL(KIND=wp), INTENT(OUT), DIMENSION(:,:,:), ALLOCATABLE :: data_out
+#endif
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:,:), ALLOCATABLE :: data_out
       INTEGER, INTENT(IN) :: tt
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_into_once_3d_wp
@@ -120,8 +130,12 @@ MODULE mo_ocean_solve_transfer
       & data_out_idx, data_out_blk, tt, lacc)
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      INTEGER, INTENT(IN), DIMENSION(:,:,:) :: data_in_idx, data_in_blk
+#else
       INTEGER, INTENT(IN), DIMENSION(:,:,:), CONTIGUOUS :: data_in_idx, data_in_blk
-      INTEGER, INTENT(OUT), DIMENSION(:,:,:), ALLOCATABLE :: &
+#endif
+      INTEGER, INTENT(INOUT), DIMENSION(:,:,:), ALLOCATABLE :: &
         & data_out_idx, data_out_blk
       INTEGER, INTENT(IN) :: tt
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
@@ -131,7 +145,11 @@ MODULE mo_ocean_solve_transfer
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
       REAL(KIND=wp), INTENT(IN), DIMENSION(:,:) :: data_in
-      REAL(KIND=wp), INTENT(OUT), DIMENSION(:,:), CONTIGUOUS :: data_out
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:) :: data_out
+#else
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:), CONTIGUOUS :: data_out
+#endif
       INTEGER, INTENT(IN) :: tt
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_into_2d_wp
@@ -139,8 +157,13 @@ MODULE mo_ocean_solve_transfer
       USE mo_kind, ONLY: wp
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      REAL(KIND=wp), INTENT(IN), DIMENSION(:,:,:) :: data_in
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:,:) :: data_out
+#else
       REAL(KIND=wp), INTENT(IN), DIMENSION(:,:,:), CONTIGUOUS :: data_in
-      REAL(KIND=wp), INTENT(OUT), DIMENSION(:,:,:), CONTIGUOUS :: data_out
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:,:), CONTIGUOUS :: data_out
+#endif
       INTEGER, INTENT(IN) :: tt
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_into_3d_wp
@@ -148,8 +171,13 @@ MODULE mo_ocean_solve_transfer
       & data_out_idx, data_out_blk, tt, lacc)
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      INTEGER, INTENT(IN), DIMENSION(:,:,:) :: data_in_blk, data_in_idx
+      INTEGER, INTENT(INOUT), DIMENSION(:,:,:) :: data_out_blk, data_out_idx
+#else
       INTEGER, INTENT(IN), DIMENSION(:,:,:), CONTIGUOUS :: data_in_blk, data_in_idx
-      INTEGER, INTENT(OUT), DIMENSION(:,:,:), CONTIGUOUS :: data_out_blk, data_out_idx
+      INTEGER, INTENT(INOUT), DIMENSION(:,:,:), CONTIGUOUS :: data_out_blk, data_out_idx
+#endif
       INTEGER, INTENT(IN) :: tt
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_into_idx
@@ -157,40 +185,66 @@ MODULE mo_ocean_solve_transfer
       USE mo_kind, ONLY: wp
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      REAL(KIND=wp), INTENT(IN), DIMENSION(:,:) :: data_in
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:) :: data_out
+#else
       REAL(KIND=wp), INTENT(IN), DIMENSION(:,:), CONTIGUOUS :: data_in
-      REAL(KIND=wp), INTENT(OUT), DIMENSION(:,:), CONTIGUOUS :: data_out
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:), CONTIGUOUS :: data_out
+#endif
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_out_2d_wp
     SUBROUTINE a_trans_bcst_1d_wp(this, data_in, data_out, lacc)
       USE mo_kind, ONLY: wp
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      REAL(KIND=wp), INTENT(IN), DIMENSION(:) :: data_in
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:) :: data_out
+#else
       REAL(KIND=wp), INTENT(IN), DIMENSION(:), CONTIGUOUS :: data_in
-      REAL(KIND=wp), INTENT(OUT), DIMENSION(:), CONTIGUOUS :: data_out
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:), CONTIGUOUS :: data_out
+#endif
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_bcst_1d_wp
     SUBROUTINE a_trans_bcst_1d_i(this, data_in, data_out, lacc)
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(IN) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      INTEGER, INTENT(IN), DIMENSION(:) :: data_in
+      INTEGER, INTENT(INOUT), DIMENSION(:) :: data_out
+#else
       INTEGER, INTENT(IN), DIMENSION(:), CONTIGUOUS :: data_in
-      INTEGER, INTENT(OUT), DIMENSION(:), CONTIGUOUS :: data_out
+      INTEGER, INTENT(INOUT), DIMENSION(:), CONTIGUOUS :: data_out
+#endif
       LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_bcst_1d_i
-    SUBROUTINE a_trans_sync_2d_wp(this, data_inout)
+    SUBROUTINE a_trans_sync_2d_wp(this, data_inout, lacc)
       USE mo_kind, ONLY: wp
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(INOUT) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:) :: data_inout
+#else
       REAL(KIND=wp), INTENT(INOUT), DIMENSION(:,:), CONTIGUOUS :: data_inout
+#endif
+      LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_sync_2d_wp
-    SUBROUTINE a_trans_sync_2d_sp(this, data_inout)
+    SUBROUTINE a_trans_sync_2d_sp(this, data_inout, lacc)
       USE mo_kind, ONLY: sp
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(INOUT) :: this
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+      REAL(KIND=sp), INTENT(INOUT), DIMENSION(:,:) :: data_inout
+#else
       REAL(KIND=sp), INTENT(INOUT), DIMENSION(:,:), CONTIGUOUS :: data_inout
+#endif
+      LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_sync_2d_sp
-    SUBROUTINE a_trans_destruct(this)
+    SUBROUTINE a_trans_destruct(this, lacc)
       IMPORT t_transfer
       CLASS(t_transfer), INTENT(INOUT) :: this
+      LOGICAL, INTENT(IN), OPTIONAL :: lacc
     END SUBROUTINE a_trans_destruct
   END INTERFACE
 
@@ -241,33 +295,42 @@ CONTAINS
 
 ! explicite interface for 1 global sum of double precision
   SUBROUTINE ocean_solve_transfer_global_sum_2d_dp_1(this, &
-    & data_in1, summa1)
+    & data_in1, summa1, lacc)
     CLASS(t_transfer), INTENT(IN) :: this
     REAL(KIND=dp), INTENT(IN), TARGET :: data_in1(:,:)
     REAL(KIND=dp), INTENT(OUT) :: summa1
-    TYPE(t_ptr_2d) :: data_in_ptr(1)
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+    TYPE(t_ptr_2d_dp) :: data_in_ptr(1)
     REAL(KIND=dp) :: sums(1)
+    LOGICAL :: lzacc
 #ifdef __INTEL_COMPILER
     !DIR$ ATTRIBUTES ALIGN : 64 :: sums
 #endif
+    CALL set_acc_host_or_device(lzacc, lacc)
 
     data_in_ptr(1)%p => data_in1
-    CALL this%global_sum_internal(1, data_in_ptr, sums)
+    CALL this%global_sum_internal(1, data_in_ptr, sums, lacc=lzacc)
     summa1 = sums(1)
   END SUBROUTINE ocean_solve_transfer_global_sum_2d_dp_1
 
 ! explicite interface for 2 global sums of double precision
   SUBROUTINE ocean_solve_transfer_global_sum_2d_dp_2(this, &
-    & data_in1, summa1, data_in2, summa2)
+    & data_in1, summa1, data_in2, summa2, lacc)
     CLASS(t_transfer), INTENT(IN) :: this
     REAL(KIND=dp), INTENT(IN), TARGET :: &
       & data_in1(:,:), data_in2(:,:)
     REAL(KIND=dp), INTENT(OUT) :: summa1, summa2
-    TYPE(t_ptr_2d) :: data_in_ptr(2)
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+    TYPE(t_ptr_2d_dp) :: data_in_ptr(2)
     REAL(KIND=dp) :: sums(2)
+    LOGICAL :: lzacc
 #ifdef __INTEL_COMPILER
     !DIR$ ATTRIBUTES ALIGN : 64 :: sums
 #endif
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    !$ACC UPDATE SELF(data_in1, data_in2) ASYNC(1) IF(lzacc)
+    !$ACC WAIT(1)
 
     data_in_ptr(1)%p => data_in1
     data_in_ptr(2)%p => data_in2
@@ -278,16 +341,22 @@ CONTAINS
 
 ! explicite interface for 3 global sums of double precision
   SUBROUTINE ocean_solve_transfer_global_sum_2d_dp_3(this, &
-    & data_in1, summa1, data_in2, summa2, data_in3, summa3)
+    & data_in1, summa1, data_in2, summa2, data_in3, summa3, lacc)
     CLASS(t_transfer), INTENT(IN) :: this
     REAL(KIND=dp), INTENT(IN), TARGET :: &
       & data_in1(:,:), data_in2(:,:), data_in3(:,:)
     REAL(KIND=dp), INTENT(OUT) :: summa1, summa2, summa3
-    TYPE(t_ptr_2d) :: data_in_ptr(3)
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+    TYPE(t_ptr_2d_dp) :: data_in_ptr(3)
     REAL(KIND=dp) :: sums(3)
+    LOGICAL :: lzacc
 #ifdef __INTEL_COMPILER
     !DIR$ ATTRIBUTES ALIGN : 64 :: sums
 #endif
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    !$ACC UPDATE SELF(data_in1, data_in2, data_in3) ASYNC(1) IF(lzacc)
+    !$ACC WAIT(1)
 
     data_in_ptr(1)%p => data_in1
     data_in_ptr(2)%p => data_in2
@@ -359,11 +428,12 @@ CONTAINS
 
 ! explicite internal interface for N global sums of double precision
 ! uses order insensitive or 'fast' implementation depending on l_fast_sum
-  SUBROUTINE ocean_solve_transfer_global_sum_2d_dp(this, n, xp, gbl_sum)
+  SUBROUTINE ocean_solve_transfer_global_sum_2d_dp(this, n, xp, gbl_sum, lacc)
     CLASS(t_transfer), INTENT(IN) :: this
     INTEGER, INTENT(IN) :: n
-    TYPE(t_ptr_2d), INTENT(IN) :: xp(n)
+    TYPE(t_ptr_2d_dp), INTENT(IN) :: xp(n)
     REAL(dp), INTENT(OUT) :: gbl_sum(n)
+    LOGICAL, OPTIONAL, INTENT(IN) :: lacc
     REAL(dp) :: loc_sum(n), abs_max_l(n), abs_max(n)
     INTEGER(KIND=i8) :: isum_loc(2*n), isum(2*n), tisum(2)
     INTEGER :: i
@@ -380,17 +450,19 @@ CONTAINS
 #ifdef _CRAYFTN
 !DIR$ NOINLINE
 #endif
-        loc_sum(i) = simple_sum_local(xp(i)%p)
+        loc_sum(i) = simple_sum_local(xp(i)%p, lacc=lacc)
       END DO
       gbl_sum(:) = p_sum(loc_sum(:), comm=this%comm)
     ELSE
+
       DO i = 1, n
-        abs_max_l(i) = abs_max_loc(xp(i)%p)
+        abs_max_l(i) = abs_max_loc(xp(i)%p, lacc=lacc)
       END DO
       abs_max(:) = p_max(abs_max_l(:), comm=this%comm)
+
       DO i = 1, n
         tisum(:) = order_insensit_ieee64_sum_frst( &
-          & xp(i)%p, abs_max(i))
+          & xp(i)%p, abs_max(i), lacc=lacc)
         isum_loc((i-1)*2+1:i*2) = tisum(:)
       END DO
       isum(:) = p_sum(isum_loc(:), comm=this%comm)
@@ -450,24 +522,46 @@ CONTAINS
   END SUBROUTINE ocean_solve_transfer_global_sum_2d_sp
 
 ! performs local sum -- 'fast' implementation - dp variant
-  PURE_OR_OMP FUNCTION simple_sum_loc_dp_2d(vals) RESULT(local_sum)
+  PURE_OR_OMP FUNCTION simple_sum_loc_dp_2d(vals, lacc) RESULT(local_sum)
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(dp), INTENT(IN) :: vals(:,:)
+#else
     REAL(dp), INTENT(IN), CONTIGUOUS :: vals(:,:)
+#endif
+    LOGICAL,OPTIONAL, INTENT(IN) :: lacc
+    REAL(dp) :: cpt
     REAL(dp) :: local_sum, aux_sum(SIZE(vals, 2))
-    INTEGER :: j
+    INTEGER :: j, i
 #ifdef __INTEL_COMPILER
 !DIR$ ATTRIBUTES ALIGN : 64 :: aux_sum
 #endif
 
+#ifndef _OPENACC
 !ICON_OMP PARALLEL DO SCHEDULE(STATIC)
     DO j = 1, SIZE(vals, 2)
       aux_sum(j) = SUM(vals(:,j))
     END DO
+#else
+    DO j = 1, SIZE(vals, 2)
+      cpt=0.
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: cpt) IF(lacc) ASYNC(1)
+      DO i = LBOUND(vals,1), UBOUND(vals,1)
+        cpt = cpt + vals(i,j)
+      END DO
+      !$ACC WAIT(1)
+      aux_sum(j) = cpt
+    END DO
+#endif
     local_sum = SUM(aux_sum(:))
   END FUNCTION simple_sum_loc_dp_2d
 
 ! performs local sum -- 'fast' implementation - sp variant
   PURE_OR_OMP FUNCTION simple_sum_loc_sp_2d(vals) RESULT(local_sum)
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(sp), INTENT(IN) :: vals(:,:)
+#else
     REAL(sp), INTENT(IN), CONTIGUOUS :: vals(:,:)
+#endif
     REAL(sp) :: local_sum, aux_sum(SIZE(vals, 2))
     INTEGER :: j
 #ifdef __INTEL_COMPILER
@@ -482,24 +576,50 @@ CONTAINS
   END FUNCTION simple_sum_loc_sp_2d
 
 ! finds local MAXVAL(ABS(x(:,:)) implementation - dp variant
-  PURE_OR_OMP FUNCTION abs_max_loc_dp_2d(vals) RESULT(abs_max)
+  PURE_OR_OMP FUNCTION abs_max_loc_dp_2d(vals, lacc) RESULT(abs_max)
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(dp), INTENT(IN) :: vals(:,:)
+#else
     REAL(dp), INTENT(IN), CONTIGUOUS :: vals(:,:)
+#endif
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+    REAL(dp) :: cpt
     REAL(dp) :: abs_max, aux_max(SIZE(vals, 2))
-    INTEGER :: j
+    INTEGER :: j, i
 #ifdef __INTEL_COMPILER
 !DIR$ ATTRIBUTES ALIGN : 64 :: aux_max
 #endif
 
+#ifndef _OPENACC
 !ICON_OMP PARALLEL DO SCHEDULE(STATIC)
     DO j = 1, SIZE(vals, 2)
       aux_max(j) = MAXVAL(ABS(vals(:,j)))
     END DO
     abs_max = MAXVAL(aux_max(:))
+#else
+    DO j = 1, SIZE(vals, 2)
+       cpt=-1.
+       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(MAX: cpt) IF(lacc) ASYNC(1)
+       DO i = LBOUND(vals,1), UBOUND(vals,1)
+          cpt = MAX(cpt, ABS(vals(i,j)))
+       END DO
+       !$ACC WAIT(1)
+       aux_max(j) = cpt
+    END DO
+
+    DO j = 1, SIZE(vals, 2)
+       abs_max = MAX(abs_max, aux_max(j))
+    END DO
+#endif
   END FUNCTION abs_max_loc_dp_2d
 
 ! finds local MAXVAL(ABS(x(:,:)) implementation - dp variant
   PURE_OR_OMP FUNCTION abs_max_loc_sp_2d(vals) RESULT(abs_max)
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(sp), INTENT(IN) :: vals(:,:)
+#else
     REAL(sp), INTENT(IN), CONTIGUOUS :: vals(:,:)
+#endif
     REAL(sp) :: abs_max, aux_max(SIZE(vals, 2))
     INTEGER :: j
 #ifdef __INTEL_COMPILER
@@ -510,22 +630,45 @@ CONTAINS
     DO j = 1, SIZE(vals, 2)
       aux_max(j) = MAXVAL(ABS(vals(:,j)))
     END DO
-    abs_max = MAXVAL(aux_max(:))  
+    abs_max = MAXVAL(aux_max(:))
 END FUNCTION abs_max_loc_sp_2d
 
 ! first local part of order insensitive summation -- dp-variant
 ! convert to scaled integers and locally sum those
-  PURE_OR_OMP FUNCTION order_insensit_ieee64_sum_frst_dp_2d(vals, abs_max) &
+  PURE_OR_OMP FUNCTION order_insensit_ieee64_sum_frst_dp_2d(vals, abs_max, lacc) &
     & RESULT(isum)
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(dp), INTENT(IN) :: vals(:,:)
+#else
     REAL(dp), INTENT(IN), CONTIGUOUS :: vals(:,:)
+#endif
     REAL(dp), INTENT(IN) :: abs_max
     INTEGER(KIND=i8) :: isum(2), isum1(SIZE(vals, 2)), &
-      & isum2(SIZE(vals, 2)), ival(SIZE(vals, 1))
-    INTEGER :: j, iexp
-    REAL(KIND=dp) :: fact, rval(SIZE(vals, 1))
+      & isum2(SIZE(vals, 2))
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
+#ifdef _OPENACC
+    INTEGER(KIND=i8), ALLOCATABLE, SAVE :: ival(:)
+    REAL(KIND=dp), ALLOCATABLE, SAVE :: rval(:)
+    LOGICAL, SAVE :: first = .true.
+#else
+    INTEGER(KIND=i8) :: ival(SIZE(vals, 1))
+    REAL(KIND=dp) :: rval(SIZE(vals, 1))
+#endif
+    REAL(KIND=dp) :: cpt1, cpt2
+    INTEGER :: j, i, iexp
+    REAL(KIND=dp) :: fact
     REAL(dp), PARAMETER :: two_30 = 1073741824._dp
 #ifdef __INTEL_COMPILER
 !DIR$ ATTRIBUTES ALIGN : 64 :: rval, ival, isum1, isum2
+#endif
+
+#ifdef _OPENACC
+    IF (first) then
+       first = .false.
+       allocate(ival(SIZE(vals, 1)))
+       allocate(rval(SIZE(vals, 1)))
+       !$ACC ENTER DATA CREATE(ival, rval) IF(lacc)
+    END IF
 #endif
 
     iexp = EXPONENT(abs_max)
@@ -536,6 +679,7 @@ END FUNCTION abs_max_loc_sp_2d
     fact = SCALE(1._dp,30-iexp)
     isum1(:) = 0_i8
     isum2(:) = 0_i8
+#ifndef _OPENACC
 !ICON_OMP PARALLEL DO SCHEDULE(STATIC) PRIVATE(ival, rval)
     DO j = 1, SIZE(vals, 2)
       rval(:) = vals(:,j) * fact
@@ -543,6 +687,22 @@ END FUNCTION abs_max_loc_sp_2d
       isum1(j) = isum1(j) + SUM(ival(:))
       isum2(j) = isum2(j) + SUM(INT((rval(:) - REAL(ival(:),dp))*two_30,i8))
     END DO
+#else
+    DO j = 1, SIZE(vals, 2)
+      cpt1 = 0.
+      cpt2 = 0.
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) REDUCTION(+: cpt1, cpt2) IF(lacc) ASYNC(1)
+      DO i = LBOUND(vals,1), UBOUND(vals,1)
+         rval(i) = vals(i,j) * fact
+         ival(i) = INT(rval(i), i8)
+         cpt1 = cpt1 + ival(i)
+         cpt2 = cpt2 + INT((rval(i) - REAL(ival(i),dp))*two_30,i8)
+      END DO
+      !$ACC WAIT(1)
+      isum1(j) = isum1(j) + cpt1
+      isum2(j) = isum2(j) + cpt2
+    END DO
+#endif
     isum(1) = SUM(isum1(:))
     isum(2) = SUM(isum2(:))
   END FUNCTION order_insensit_ieee64_sum_frst_dp_2d
@@ -551,10 +711,14 @@ END FUNCTION abs_max_loc_sp_2d
 ! convert to scaled integers and locally sum those
   FUNCTION order_insensit_ieee64_sum_frst_sp_2d(vals, abs_max) &
     & RESULT(isum)
+#if defined(_OPENACC) || defined(__NO_CONT_SOLV_OCE__)
+    REAL(sp), INTENT(IN) :: vals(:,:)
+#else
     REAL(sp), INTENT(IN), CONTIGUOUS :: vals(:,:)
+#endif
     REAL(sp), INTENT(IN) :: abs_max
     INTEGER(KIND=i8) :: isum(2), isum1(SIZE(vals, 2)), &
-      & isum2(SIZE(vals, 2)), ival(SIZE(vals, 1)) 
+      & isum2(SIZE(vals, 2)), ival(SIZE(vals, 1))
     INTEGER :: j, iexp
     REAL(KIND=dp) :: fact, rval(SIZE(vals, 1))
     REAL(dp), PARAMETER :: two_30 = 1073741824._dp
@@ -581,7 +745,7 @@ END FUNCTION abs_max_loc_sp_2d
     isum(2) = SUM(isum2(:))
   END FUNCTION order_insensit_ieee64_sum_frst_sp_2d
 
-! second local part of order insensitive summation - dp-variant 
+! second local part of order insensitive summation - dp-variant
 ! (sp summation uses this, too; cast is done on invocator side)
 ! convert back to float-type from scaled integers
   FUNCTION order_insensit_ieee64_sum_scnd_2d(isum, abs_max) &

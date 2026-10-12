@@ -1,15 +1,7 @@
-!
-! Tasks for internal post-processing.
-!
-! The subroutines in this module can be inserted into a dynamic "job queue".
-! See module "mo_pp_scheduler" for detailed info.
-!
-! -----------------------------------------------------------------------------------
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -17,9 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Tasks for internal post-processing.
+!
+! The subroutines in this module can be inserted into a dynamic "job queue".
+! See module "mo_pp_scheduler" for detailed info.
+
 MODULE mo_pp_tasks
 
-  USE mo_kind,                    ONLY: wp
+  USE mo_kind,                    ONLY: wp, xwp, dp, sp
   USE mo_exception,               ONLY: message, finish, warning
   USE mo_impl_constants,          ONLY: SUCCESS,                      &
     & VINTP_METHOD_VN, VINTP_METHOD_LIN, VINTP_METHOD_QV,             &
@@ -35,6 +32,7 @@ MODULE mo_pp_tasks
     & TASK_COMPUTE_DBZCMAX, TASK_COMPUTE_DBZ850,                      &
     & TASK_COMPUTE_DBZLMX_LOW, TASK_COMPUTE_SRH, TASK_COMPUTE_VIS,    &
     & TASK_COMPUTE_WSHEAR_U, TASK_COMPUTE_WSHEAR_V,                   &
+    & TASK_COMPUTE_DMH,                                               &
     & TASK_COMPUTE_LAPSERATE, TASK_COMPUTE_MCONV,                     &
     & TASK_INTP_VER_ZLEV,                                             &
     & TASK_INTP_VER_ILEV,                                             &
@@ -45,6 +43,7 @@ MODULE mo_pp_tasks
     & TLEV_NNOW, TLEV_NNOW_RCF, HINTP_TYPE_LONLAT_RBF
   USE mo_model_domain,            ONLY: t_patch, p_patch_local_parent
   USE mo_var,                     ONLY: t_var
+  USE mo_slice_array,             ONLY: get_2d_general, get_3d_general
   USE mo_var_metadata_types,      ONLY: t_var_metadata, t_vert_interp_meta
   USE mo_intp,                    ONLY: cell_avg, cells2edges_scalar
   USE mo_intp_data_strc,          ONLY: t_int_state, p_int_state,     &
@@ -91,17 +90,16 @@ MODULE mo_pp_tasks
     &                                   compute_field_lapserate,                 &
     &                                   compute_field_mconv,                     &
     &                                   compute_field_srh,                       &
-    &                                   compute_field_wshear
+    &                                   compute_field_wshear,                    &
+    &                                   compute_field_dmean_2mom
   USE mo_io_config,               ONLY: itype_pres_msl, itype_rh,                &
     &                                   n_wshear, wshear_uv_heights, n_srh, srh_heights
   USE mo_grid_config,             ONLY: l_limited_area, n_dom_start
   USE mo_interpol_config,         ONLY: support_baryctr_intp
   USE mo_advection_config,        ONLY: advection_config
-  USE mo_fortran_tools,           ONLY: init, copy, assert_acc_device_only, assert_acc_host_only, &
-    & assert_lacc_equals_i_am_accel_node
-  USE mo_mpi,                     ONLY: i_am_accel_node
+  USE mo_fortran_tools,           ONLY: init, copy, assert_acc_device_only, assert_acc_host_only
 
-  ! Workaround for SMI computation. Not nice, however by making 
+  ! Workaround for SMI computation. Not nice, however by making
   ! direct use of the states below, we avoid enhancing the type t_data_input.
   USE mo_nwp_lnd_state,           ONLY: p_lnd_state
   USE mo_ext_data_state,          ONLY: ext_data
@@ -118,13 +116,13 @@ MODULE mo_pp_tasks
   INTEGER, PARAMETER, PUBLIC :: MAX_NAME_LENGTH   =   256
 
   ! priority levels for tasks (smaller is earlier):
-  INTEGER, PARAMETER, PUBLIC  :: HIGH_PRIORITY     =    0  
-  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY0 =    8  
-  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY1 =    9   
-  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY2 =   10  
-  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY3 =   11  
-  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY4 =   12  
-  INTEGER, PARAMETER, PUBLIC  :: LOW_PRIORITY      =  100  
+  INTEGER, PARAMETER, PUBLIC  :: HIGH_PRIORITY     =    0
+  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY0 =    8
+  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY1 =    9
+  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY2 =   10
+  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY3 =   11
+  INTEGER, PARAMETER, PUBLIC  :: DEFAULT_PRIORITY4 =   12
+  INTEGER, PARAMETER, PUBLIC  :: LOW_PRIORITY      =  100
 
   ! level of output verbosity
   INTEGER, PUBLIC :: dbg_level = 0
@@ -164,12 +162,12 @@ MODULE mo_pp_tasks
     ! pointer for model variable (array)
     TYPE (t_var),            POINTER :: var
     INTEGER                          :: jg ! domain ID
-    TYPE(t_patch),           POINTER :: p_patch         
-    TYPE(t_int_state),       POINTER :: p_int_state     
-    TYPE(t_nh_state),        POINTER :: p_nh_state      
-    TYPE(t_nwp_phy_diag),    POINTER :: prm_diag        
-    TYPE(t_nh_opt_diag),     POINTER :: p_nh_opt_diag   
-    TYPE(t_nh_pzlev_config), POINTER :: nh_pzlev_config 
+    TYPE(t_patch),           POINTER :: p_patch
+    TYPE(t_int_state),       POINTER :: p_int_state
+    TYPE(t_nh_state),        POINTER :: p_nh_state
+    TYPE(t_nwp_phy_diag),    POINTER :: prm_diag
+    TYPE(t_nh_opt_diag),     POINTER :: p_nh_opt_diag
+    TYPE(t_nh_pzlev_config), POINTER :: nh_pzlev_config
   END TYPE t_data_input
 
 
@@ -216,7 +214,7 @@ MODULE mo_pp_tasks
   !
   !  Jobs with smaller priority values are processed first.
   TYPE t_job_queue
-    
+
     INTEGER                         :: job_priority   !< Task priority.
     CHARACTER(len=MAX_NAME_LENGTH)  :: job_name       !< job name string (for status output)
     INTEGER                         :: job_type       !< task type (quasi function pointer)
@@ -242,8 +240,9 @@ CONTAINS
   !
   !  This is only a wrapper for the corresponding routines from the
   !  interpolation module.
-  SUBROUTINE pp_task_lonlat(ptr_task)
+  SUBROUTINE pp_task_lonlat(ptr_task, lacc)
     TYPE(t_job_queue), TARGET :: ptr_task
+    LOGICAL, INTENT(IN) :: lacc
     ! local variables
     CHARACTER(*), PARAMETER :: routine = modname//"::pp_task_lonlat"
     INTEGER                            ::        &
@@ -260,6 +259,10 @@ CONTAINS
     TYPE(t_patch),             POINTER :: p_patch
     INTEGER                            :: var_ref_pos
 
+    ! Useful arrays for get_3d_general to slice arrays
+    INTEGER :: tmp_shape(3), dim_shape(5)
+    LOGICAL :: squash_dims(5)
+
     p_patch        => ptr_task%data_input%p_patch      ! patch
     p_info         => ptr_task%data_input%var%info
     in_var         => ptr_task%data_input%var
@@ -269,8 +272,9 @@ CONTAINS
     ptr_int_lonlat => lonlat_grids%list(lonlat_id)%intp(jg)
     hintp_type     = p_info%hor_interp%hor_intp_type
 
+
 #ifdef _OPENACC
-      IF(i_am_accel_node .AND. .NOT. p_info%lopenacc) THEN
+      IF(lacc .AND. .NOT. p_info%lopenacc) THEN
         CALL message(routine, "WARNING: " // TRIM(p_info%name) // " is temporarily copied onto accelerator. If " // &
           "this warning appears at every output step, consider making the variable present permanently. However " // &
           "as this variable is not present on the device it is unlikely that it changes over time as it is not " // &
@@ -326,141 +330,79 @@ CONTAINS
         ! --------------------------------------
 
         IF (zaxisTypeList%is_2d(p_info%vgrid)) THEN
-          ! A 2D variable (nproma, nblks) is copied a to 1-level 3D variable 
+          ! A 2D variable (nproma, nblks) is copied a to 1-level 3D variable
           ! (nproma, nlevs=1, nblks). This requires a temporary variable:
 
           var_ref_pos = 3
           IF (in_var%info%lcontained)  var_ref_pos = in_var%info%var_ref_pos
 
-          IF (var_ref_pos /= 2 .OR. ASSOCIATED(in_var%s_ptr)) THEN
-            dim1 = p_info%used_dimensions(1)
-            dim2 = p_info%used_dimensions(2)
-            ALLOCATE(tmp_var(dim1, 1, dim2), STAT=ierrstat)
-            IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-            !$ACC ENTER DATA CREATE(tmp_var) IF(i_am_accel_node)
-          ENDIF
+          ! Error catching for valid indexes of var_ref_pos
+          IF ( .NOT. ANY(var_ref_pos==(/1,2,3/)) ) THEN
+            CALL finish(routine, "internal error!")
+          END IF
 
+          dim1 = p_info%used_dimensions(1)
+          dim2 = p_info%used_dimensions(2)
+          ALLOCATE(tmp_var(dim1, 1, dim2), STAT=ierrstat)
+          IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
+          !$ACC ENTER DATA CREATE(tmp_var) IF(lacc)
+
+          squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.TRUE.,.TRUE. /)
+          squash_dims(var_ref_pos) = .TRUE.
           IF (ASSOCIATED(in_var%r_ptr)) THEN
+              CALL copy(get_2d_general(in_var%r_ptr, (/ in_var_idx,1,1 /), squash_dims), &
+                &       tmp_var(:,1,:), lacc=lacc)
 
-            SELECT CASE(var_ref_pos)
-            CASE (1)
-              !$OMP PARALLEL
-              CALL copy(in_var%r_ptr(in_var_idx,:,:,1,1), tmp_var(:,1,:), lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-              tmp_ptr => tmp_var(:,:,:)
-            CASE (2)
-              ! no need to copy in this particular case (the second dim has already length 1)
-              tmp_ptr => in_var%r_ptr(:,in_var_idx:in_var_idx,:,1,1)
-            CASE (3)
-              !$OMP PARALLEL
-              CALL copy(in_var%r_ptr(:,:,in_var_idx,1,1), tmp_var(:,1,:), lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-              tmp_ptr => tmp_var(:,:,:)
-            CASE default
-              CALL finish(routine, "internal error!")
-            END SELECT
+          ELSE  IF (ASSOCIATED(in_var%s_ptr)) THEN
+              CALL copy(get_2d_general(in_var%s_ptr, (/in_var_idx,1,1/), squash_dims), &
+                &       tmp_var(:,1,:), lacc=lacc)
 
-          ELSE IF (ASSOCIATED(in_var%s_ptr)) THEN
-
-            ! A SP variable has to be copied to a temporary DP array.
-
-            SELECT CASE(var_ref_pos)
-            CASE (1)
-              !$OMP PARALLEL
-              CALL copy(in_var%s_ptr(in_var_idx,:,:,1,1), tmp_var(:,1,:), lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-            CASE (2)
-              !$OMP PARALLEL
-              CALL copy(in_var%s_ptr(:,in_var_idx,:,1,1), tmp_var(:,1,:), lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-            CASE (3)
-              !$OMP PARALLEL
-              CALL copy(in_var%s_ptr(:,:,in_var_idx,1,1), tmp_var(:,1,:), lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-            CASE default
-              CALL finish(routine, "internal error!")
-            END SELECT
-            tmp_ptr => tmp_var(:,:,:)
           ELSE
             CALL finish(routine, "internal error!")
           ENDIF
+          tmp_ptr => tmp_var(:,:,:)
 
         ELSE
 
           var_ref_pos = 4
           IF (in_var%info%lcontained)  var_ref_pos = in_var%info%var_ref_pos
 
-          IF (ASSOCIATED(in_var%r_ptr)) THEN
-            SELECT CASE(var_ref_pos)
-            CASE (1)
-              tmp_ptr => in_var%r_ptr(in_var_idx,:,:,:,1)
-            CASE (2)
-              tmp_ptr => in_var%r_ptr(:,in_var_idx,:,:,1)
-            CASE (3)
-              tmp_ptr => in_var%r_ptr(:,:,in_var_idx,:,1)
-            CASE (4)
-              tmp_ptr => in_var%r_ptr(:,:,:,in_var_idx,1)
-            CASE default
-              CALL finish(routine, "internal error!")
-            END SELECT
-          ELSE  IF (ASSOCIATED(in_var%s_ptr)) THEN
-            ! A SP variable has to be copied to a temporary DP array.
-            SELECT CASE(var_ref_pos)
-            CASE (1)
-              dim1 = SIZE(in_var%s_ptr,2)
-              dim2 = SIZE(in_var%s_ptr,3)
-              dim3 = SIZE(in_var%s_ptr,4)
-              ALLOCATE(tmp_var(dim1, dim2, dim3), STAT=ierrstat)
-              IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-              !$ACC ENTER DATA CREATE(tmp_var) IF(i_am_accel_node)
-              !$OMP PARALLEL
-              CALL copy(in_var%s_ptr(in_var_idx,:,:,:,1), tmp_var, lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-            CASE (2)
-              dim1 = SIZE(in_var%s_ptr,1)
-              dim2 = SIZE(in_var%s_ptr,3)
-              dim3 = SIZE(in_var%s_ptr,4)
-              ALLOCATE(tmp_var(dim1, dim2, dim3), STAT=ierrstat)
-              IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-              !$ACC ENTER DATA CREATE(tmp_var) IF(i_am_accel_node)
-              !$OMP PARALLEL
-              CALL copy(in_var%s_ptr(:,in_var_idx,:,:,1), tmp_var, lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-            CASE (3)
-              dim1 = SIZE(in_var%s_ptr,1)
-              dim2 = SIZE(in_var%s_ptr,2)
-              dim3 = SIZE(in_var%s_ptr,4)
-              ALLOCATE(tmp_var(dim1, dim2, dim3), STAT=ierrstat)
-              IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-              !$ACC ENTER DATA CREATE(tmp_var) IF(i_am_accel_node)
-              !$OMP PARALLEL
-              CALL copy(in_var%s_ptr(:,:,in_var_idx,:,1), tmp_var, lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-            CASE (4)
-              dim1 = SIZE(in_var%s_ptr,1)
-              dim2 = SIZE(in_var%s_ptr,2)
-              dim3 = SIZE(in_var%s_ptr,3)
-              ALLOCATE(tmp_var(dim1, dim2, dim3), STAT=ierrstat)
-              IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-              !$ACC ENTER DATA CREATE(tmp_var) IF(i_am_accel_node)
-              !$OMP PARALLEL
-              CALL copy(in_var%s_ptr(:,:,:,in_var_idx,1), tmp_var, lacc=i_am_accel_node)
-              !$OMP END PARALLEL
-            CASE default
-              CALL finish(routine, "internal error!")
-            END SELECT
+          ! Error catching for valid indexes of var_ref_pos
+          IF ( .NOT. ANY(var_ref_pos==(/1,2,3,4/)) ) THEN
+            CALL finish(routine, "internal error!")
+          END IF
+
+          squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE. /)
+          squash_dims(var_ref_pos) = .TRUE.
+
+          ! More complex case for real type /=wp, need to allocate device memory
+          IF (ASSOCIATED(in_var%wp_ptr)) THEN
+            tmp_ptr => get_3d_general(in_var%wp_ptr, (/in_var_idx,1/), squash_dims)
+
+          ELSE  IF (ASSOCIATED(in_var%xwp_ptr)) THEN
+            ! Datatype of data does not match wp, thus need a temporary variable tmp_var to copy from
+            tmp_shape = PACK(SHAPE(in_var%xwp_ptr), mask=(.NOT. squash_dims)) ! Get shape of 3d subarray of ptr
+            ALLOCATE(tmp_var(tmp_shape(1), tmp_shape(2), tmp_shape(3)), STAT=ierrstat)
+            IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
+            !$ACC ENTER DATA CREATE(tmp_var) IF(lacc)
+
+            !$OMP PARALLEL
+            CALL copy(get_3d_general(in_var%xwp_ptr, (/in_var_idx,1/), squash_dims), &
+              &       tmp_var, lacc=lacc)
+            !$OMP END PARALLEL
+
             tmp_ptr => tmp_var(:,:,:)
           ELSE
+
             CALL finish(routine, "internal error!")
           ENDIF
         END IF ! 2D
 
         ! for cell-based variables: interpolate gradients (finite
         ! differences) and reconstruct
-        CALL ptr_int_lonlat%interpolate(          &
-          &   TRIM(p_info%name), tmp_ptr, nproma, &
-          &   out_var%r_ptr(:,:,:,out_var_idx,1), &
-          &   hintp_type)
+        CALL ptr_int_lonlat%interpolate( TRIM(p_info%name), tmp_ptr, nproma,  &
+          &                              out_var%wp_ptr(:,:,:,out_var_idx,1), &
+          &                              hintp_type, lacc=lacc)
 
       ELSE IF (ASSOCIATED(in_var%i_ptr)) THEN
 
@@ -469,63 +411,57 @@ CONTAINS
         ! --------------
 
         IF (zaxisTypeList%is_2d(p_info%vgrid)) THEN
-          ! A 2D variable (nproma, nblks) is copied a to 1-level 3D variable 
+          ! A 2D variable (nproma, nblks) is copied a to 1-level 3D variable
           ! (nproma, nlevs=1, nblks). This requires a temporary variable:
           var_ref_pos = 3
           IF (in_var%info%lcontained)  var_ref_pos = in_var%info%var_ref_pos
+
+          ! Error catching for valid indexes of var_ref_pos
+          IF ( .NOT. ANY(var_ref_pos==(/1,2,3/)) ) THEN
+            CALL finish(routine, "internal error!")
+          END IF
 
           IF (var_ref_pos /= 2) THEN
             dim1 = p_info%used_dimensions(1)
             dim2 = p_info%used_dimensions(2)
             ALLOCATE(tmp_int_var(dim1, 1, dim2), STAT=ierrstat)
             IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_int_var failed')
-            !$ACC ENTER DATA CREATE(tmp_int_var) IF(i_am_accel_node)
+            !$ACC ENTER DATA CREATE(tmp_int_var) IF(lacc)
           ENDIF
 
-          SELECT CASE(var_ref_pos)
-          CASE (1)
-            CALL copy(in_var%i_ptr(in_var_idx,:,:,1,1), tmp_int_var(:,1,:), lacc=i_am_accel_node)
-            tmp_int_ptr => tmp_int_var
-          CASE (2)
-            ! no need to copy in this particular case (the second dim has already length 1)
-            tmp_int_ptr => in_var%i_ptr(:,in_var_idx:in_var_idx,:,1,1)
-          CASE (3)
-            CALL copy(in_var%i_ptr(:,:,in_var_idx,1,1), tmp_int_var(:,1,:), lacc=i_am_accel_node)
-            tmp_int_ptr => tmp_int_var
-          CASE default
-            CALL finish(routine, "internal error!")
-          END SELECT
+          squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.TRUE.,.TRUE. /)
+          squash_dims(var_ref_pos) = .TRUE.
+
+          CALL copy(get_2d_general(in_var%i_ptr, (/ in_var_idx,1,1 /), squash_dims), &
+            &       tmp_int_var(:,1,:), lacc=lacc)
+          tmp_int_ptr => tmp_int_var
 
         ELSE
 
           var_ref_pos = 4
           IF (in_var%info%lcontained)  var_ref_pos = in_var%info%var_ref_pos
-          SELECT CASE(var_ref_pos)
-          CASE (1)
-            tmp_int_ptr => in_var%i_ptr(in_var_idx,:,:,:,1)
-          CASE (2)
-            tmp_int_ptr => in_var%i_ptr(:,in_var_idx,:,:,1)
-          CASE (3)
-            tmp_int_ptr => in_var%i_ptr(:,:,in_var_idx,:,1)
-          CASE (4)
-            tmp_int_ptr => in_var%i_ptr(:,:,:,in_var_idx,1)
-          CASE default
+
+          ! Error catching for valid indexes of var_ref_pos
+          IF ( .NOT. ANY(var_ref_pos==(/1,2,3,4/)) ) THEN
             CALL finish(routine, "internal error!")
-          END SELECT
+          END IF
+
+          squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE. /)
+          squash_dims(var_ref_pos) = .TRUE.
+          tmp_int_ptr => get_3d_general(in_var%i_ptr,(/ in_var_idx,1 /), squash_dims)
 
         END IF ! 2D
 
         ! for cell-based variables: interpolate gradients (finite
         ! differences) and reconstruct
-        CALL ptr_int_lonlat%interpolate(               &
-          &   TRIM(p_info%name), tmp_int_ptr, nproma,  &
-          &   out_var%i_ptr(:,:,:,out_var_idx,1),      &
-          &   hintp_type)
+        CALL ptr_int_lonlat%interpolate( TRIM(p_info%name), tmp_int_ptr, nproma,  &
+          &                              out_var%i_ptr(:,:,:,out_var_idx,1),      &
+          &                              hintp_type, lacc=lacc)
 
         IF (ALLOCATED(tmp_int_var)) THEN
           ! clean up:
-          !$ACC WAIT IF(i_am_accel_node)
-          !$ACC EXIT DATA DELETE(tmp_int_var) IF(i_am_accel_node)
+          !$ACC WAIT IF(lacc)
+          !$ACC EXIT DATA DELETE(tmp_int_var) IF(lacc)
           DEALLOCATE(tmp_int_var, STAT=ierrstat)
           IF (ierrstat /= SUCCESS)  CALL finish (routine, 'deallocation failed')
         END IF
@@ -535,8 +471,8 @@ CONTAINS
       ! --------------------------------------------------------------
       !
     CASE (GRID_UNSTRUCTURED_EDGE)
-      ! throw error message, if this variable is not a REAL field:
-      IF (.NOT. ASSOCIATED(in_var%r_ptr)) THEN
+      ! throw error message, if this variable is not a wp REAL field:
+      IF (.NOT. ASSOCIATED(in_var%wp_ptr)) THEN
         CALL finish(routine, TRIM(p_info%name)//": Interpolation not implemented.")
       END IF
 
@@ -546,69 +482,61 @@ CONTAINS
         var_ref_pos = 3
         IF (in_var%info%lcontained)  var_ref_pos = in_var%info%var_ref_pos
 
+        ! Error catching for valid indexes of var_ref_pos
+        IF ( .NOT. ANY(var_ref_pos==(/1,2,3/)) ) THEN
+          CALL finish(routine, "internal error!")
+        END IF
+
         IF (var_ref_pos /= 2) THEN
           dim1 = p_info%used_dimensions(1)
           dim2 = p_info%used_dimensions(2)
           ALLOCATE(tmp_var(dim1, 1, dim2), STAT=ierrstat)
           IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-          !$ACC ENTER DATA CREATE(tmp_var) IF(i_am_accel_node)
+          !$ACC ENTER DATA CREATE(tmp_var) IF(lacc)
         ENDIF
 
-        SELECT CASE(var_ref_pos)
-        CASE (1)
-          !$OMP PARALLEL
-          CALL copy(in_var%r_ptr(in_var_idx,:,:,1,1), tmp_var(:,1,:), lacc=i_am_accel_node)
-          !$OMP END PARALLEL
-          tmp_ptr => tmp_var(:,:,:)
-        CASE (2)
-          ! no need to copy in this particular case (the second dim has already length 1)
-          tmp_ptr => in_var%r_ptr(:,in_var_idx:in_var_idx,:,1,1)
-        CASE (3)
-          !$OMP PARALLEL
-          CALL copy(in_var%r_ptr(:,:,in_var_idx,1,1), tmp_var(:,1,:), lacc=i_am_accel_node)
-          !$OMP END PARALLEL
-          tmp_ptr => tmp_var(:,:,:)
-        CASE default
-          CALL finish(routine, "internal error!")
-        END SELECT
+        squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.TRUE.,.TRUE. /)
+        squash_dims(var_ref_pos) = .TRUE.
+
+        CALL copy(get_2d_general(in_var%wp_ptr, (/ in_var_idx,1,1 /), squash_dims), &
+          &       tmp_var(:,1,:), lacc=lacc)
+        tmp_ptr => tmp_var(:,:,:)
 
       ELSE
 
         var_ref_pos = 4
         IF (in_var%info%lcontained)  var_ref_pos = in_var%info%var_ref_pos
-        SELECT CASE(var_ref_pos)
-        CASE (1)
-          tmp_ptr => in_var%r_ptr(in_var_idx,:,:,:,1)
-        CASE (2)
-          tmp_ptr => in_var%r_ptr(:,in_var_idx,:,:,1)
-        CASE (3)
-          tmp_ptr => in_var%r_ptr(:,:,in_var_idx,:,1)
-        CASE (4)
-          tmp_ptr => in_var%r_ptr(:,:,:,in_var_idx,1)
-        CASE default
+
+        ! Error catching for valid indexes of var_ref_pos
+        IF ( .NOT. ANY(var_ref_pos==(/1,2,3,4/)) ) THEN
           CALL finish(routine, "internal error!")
-        END SELECT
+        END IF
+
+        squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE. /)
+        squash_dims(var_ref_pos) = .TRUE.
+        tmp_ptr => get_3d_general(in_var%wp_ptr, (/ in_var_idx,1 /), squash_dims)
+
       END IF ! 2D
 
       ! for edge-based variables: simple interpolation
-      CALL ptr_int_lonlat%interpolate( tmp_ptr, nproma,                            &
-        &                              out_var%r_ptr(:,:,:,out_var_idx,1),         &
-        &                              out_var_2%r_ptr(:,:,:,out_var_idx_2,1),     &
-        &                              HINTP_TYPE_LONLAT_RBF )
+      CALL ptr_int_lonlat%interpolate(tmp_ptr, nproma,                            &
+      &                               out_var%wp_ptr(:,:,:,out_var_idx,1),        &
+      &                               out_var_2%wp_ptr(:,:,:,out_var_idx_2,1),    &
+      &                               HINTP_TYPE_LONLAT_RBF, lacc=lacc)
 
     CASE DEFAULT
       CALL finish(routine, 'Unknown grid type.')
     END SELECT
 
-    !$ACC WAIT IF(i_am_accel_node)
+    !$ACC WAIT IF(lacc)
 
     ! clean up
     IF (ALLOCATED(tmp_var)) THEN
-      !$ACC EXIT DATA DELETE(tmp_var) IF(i_am_accel_node)
+      !$ACC EXIT DATA DELETE(tmp_var) IF(lacc)
       DEALLOCATE(tmp_var, STAT=ierrstat)
       IF (ierrstat /= SUCCESS)  CALL finish (routine, 'deallocation of tmp_var failed')
     ENDIF
-    IF(i_am_accel_node .AND. .NOT. p_info%lopenacc) THEN
+    IF(lacc .AND. .NOT. p_info%lopenacc) THEN
       IF(ASSOCIATED(in_var%r_ptr)) THEN
         !$ACC EXIT DATA DELETE(in_var%r_ptr)
       ELSEIF(ASSOCIATED(in_var%s_ptr)) THEN
@@ -638,8 +566,9 @@ CONTAINS
   !     therefore the corresponding variable lists can be marked as
   !     "skip_sync".
   !
-  SUBROUTINE pp_task_sync(sim_status)
+  SUBROUTINE pp_task_sync(sim_status,lacc)
     TYPE(t_simulation_status),  INTENT(IN) :: sim_status
+    LOGICAL, INTENT(IN) :: lacc
     ! local variables
     CHARACTER(*), PARAMETER :: routine = modname//"::pp_task_sync"
     TYPE(t_job_queue),         POINTER :: ptr_task
@@ -669,7 +598,7 @@ CONTAINS
           IF (in_var%info%lcontained) in_var_idx = in_var%info%ncontained
           IF (zaxisTypeList%is_2d(p_info%vgrid) .AND. (p_info%ndims /= 2)) &
             &  CALL finish(routine, "Inconsistent dimension info!")
-          IF (dbg_level >= 10) & 
+          IF (dbg_level >= 10) &
                CALL message(routine, "synchronize variable "//TRIM(p_info%name))
           SELECT CASE (p_info%hgrid)
           CASE (GRID_UNSTRUCTURED_CELL)
@@ -685,11 +614,23 @@ CONTAINS
             IF (ASSOCIATED(in_var%r_ptr)) THEN
               SELECT CASE(var_ref_pos)
               CASE (1)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%r_ptr(in_var_idx,:,:,1,1) )
+                CALL sync_patch_array(sync_mode, p_patch, in_var%r_ptr(in_var_idx,:,:,1,1), lacc=lacc)
               CASE (2)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,in_var_idx,:,1,1) )
+                CALL sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,in_var_idx,:,1,1), lacc=lacc)
               CASE (3)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,:,in_var_idx,1,1) )
+                CALL sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,:,in_var_idx,1,1), lacc=lacc)
+              CASE default
+                CALL finish(routine, "internal error!")
+              END SELECT
+            END IF
+            IF (ASSOCIATED(in_var%s_ptr)) THEN
+              SELECT CASE(var_ref_pos)
+              CASE (1)
+                CALL sync_patch_array(sync_mode, p_patch, in_var%s_ptr(in_var_idx,:,:,1,1), lacc=lacc)
+              CASE (2)
+                CALL sync_patch_array(sync_mode, p_patch, in_var%s_ptr(:,in_var_idx,:,1,1), lacc=lacc)
+              CASE (3)
+                CALL sync_patch_array(sync_mode, p_patch, in_var%s_ptr(:,:,in_var_idx,1,1), lacc=lacc)
               CASE default
                 CALL finish(routine, "internal error!")
               END SELECT
@@ -697,11 +638,11 @@ CONTAINS
             IF (ASSOCIATED(in_var%i_ptr)) THEN
               SELECT CASE(var_ref_pos)
               CASE (1)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(in_var_idx,:,:,1,1) )
+                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(in_var_idx,:,:,1,1), lacc=lacc)
               CASE (2)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,in_var_idx,:,1,1) )
+                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,in_var_idx,:,1,1), lacc=lacc)
               CASE (3)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,:,in_var_idx,1,1) )
+                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,:,in_var_idx,1,1), lacc=lacc)
               CASE default
                 CALL finish(routine, "internal error!")
               END SELECT
@@ -712,13 +653,28 @@ CONTAINS
             IF (ASSOCIATED(in_var%r_ptr)) THEN
               SELECT CASE(var_ref_pos)
               CASE (1)
-                CALL cumulative_sync_patch_array(sync_mode, p_patch, in_var%r_ptr(in_var_idx,:,:,:,1))
+                CALL cumulative_sync_patch_array(sync_mode, p_patch, in_var%r_ptr(in_var_idx,:,:,:,1), lacc=lacc)
               CASE (2)
-                CALL cumulative_sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,in_var_idx,:,:,1))
+                CALL cumulative_sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,in_var_idx,:,:,1), lacc=lacc)
               CASE (3)
-                CALL cumulative_sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,:,in_var_idx,:,1))
+                CALL cumulative_sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,:,in_var_idx,:,1), lacc=lacc)
               CASE (4)
-                CALL cumulative_sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,:,:,in_var_idx,1))
+                CALL cumulative_sync_patch_array(sync_mode, p_patch, in_var%r_ptr(:,:,:,in_var_idx,1), lacc=lacc)
+              CASE default
+                CALL finish(routine, "internal error!")
+              END SELECT
+            END IF
+            ! TODO: Change to cumulative_sync once sp version added to mo_sync
+            IF (ASSOCIATED(in_var%s_ptr)) THEN
+              SELECT CASE(var_ref_pos)
+              CASE (1)
+                CALL sync_patch_array(sync_mode, p_patch, in_var%s_ptr(in_var_idx,:,:,:,1), lacc=lacc)
+              CASE (2)
+                CALL sync_patch_array(sync_mode, p_patch, in_var%s_ptr(:,in_var_idx,:,:,1), lacc=lacc)
+              CASE (3)
+                CALL sync_patch_array(sync_mode, p_patch, in_var%s_ptr(:,:,in_var_idx,:,1), lacc=lacc)
+              CASE (4)
+                CALL sync_patch_array(sync_mode, p_patch, in_var%s_ptr(:,:,:,in_var_idx,1), lacc=lacc)
               CASE default
                 CALL finish(routine, "internal error!")
               END SELECT
@@ -726,13 +682,13 @@ CONTAINS
             IF (ASSOCIATED(in_var%i_ptr)) THEN
               SELECT CASE(var_ref_pos)
               CASE (1)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(in_var_idx,:,:,:,1))
+                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(in_var_idx,:,:,:,1), lacc=lacc)
               CASE (2)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,in_var_idx,:,:,1))
+                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,in_var_idx,:,:,1), lacc=lacc)
               CASE (3)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,:,in_var_idx,:,1))
+                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,:,in_var_idx,:,1), lacc=lacc)
               CASE (4)
-                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,:,:,in_var_idx,1))
+                CALL sync_patch_array(sync_mode, p_patch, in_var%i_ptr(:,:,:,in_var_idx,1), lacc=lacc)
               CASE default
                 CALL finish(routine, "internal error!")
               END SELECT
@@ -743,7 +699,7 @@ CONTAINS
       ptr_task => ptr_task%next
     END DO LOOP_JOB
     ! complete pending syncs:
-    CALL complete_cumulative_sync()
+    CALL complete_cumulative_sync(lacc=lacc)
   END SUBROUTINE pp_task_sync
 
   !---------------------------------------------------------------
@@ -759,7 +715,7 @@ CONTAINS
     CHARACTER(*), PARAMETER :: routine = modname//"::pp_task_ipzlev_setup"
     INTEGER                            :: jg, nzlev, nplev, nilev
     TYPE(t_patch),             POINTER :: p_patch
-    TYPE(t_nh_metrics),        POINTER :: p_metrics    
+    TYPE(t_nh_metrics),        POINTER :: p_metrics
 
     ! prognostic state: note that we only use p_prog(nnow(jg))
     TYPE(t_nh_prog),           POINTER :: p_prog
@@ -788,7 +744,7 @@ CONTAINS
     nplev          =  nh_pzlev_config%plevels%nvalues
     nilev          =  nh_pzlev_config%ilevels%nvalues
 
-    ! build data structure "vcoeff" containing coefficient tables                      
+    ! build data structure "vcoeff" containing coefficient tables
     SELECT CASE ( ptr_task%job_type )
     CASE ( TASK_INIT_VER_Z )
       IF (dbg_level >= 10)  CALL message(routine, "TASK_INIT_VER_Z")
@@ -839,7 +795,7 @@ CONTAINS
       &  in_var_ref_pos, out_var_ref_pos,         &
       &  dim1, dim2, dim3
     TYPE(t_patch),             POINTER :: p_patch
-    TYPE(t_nh_metrics),        POINTER :: p_metrics    
+    TYPE(t_nh_metrics),        POINTER :: p_metrics
     TYPE(t_nh_diag),           POINTER :: p_diag
     TYPE(t_nh_diag_pz),        POINTER :: p_diag_pz
     TYPE(t_nwp_phy_diag),      POINTER :: prm_diag
@@ -864,9 +820,10 @@ CONTAINS
     TYPE (t_vcoeff_cub), POINTER       :: vcoeff_cub
 
     REAL(wp), POINTER :: in_ptr(:,:,:), out_ptr(:,:,:)
+    LOGICAL :: squash_dims(5)
+    INTEGER :: tmp_shape(3)
 
     CALL assert_acc_device_only(routine, lacc)
-    CALL assert_lacc_equals_i_am_accel_node(routine, lacc, i_am_accel_node)
 
     ! input/output field for this task
     p_info            => ptr_task%data_input%var%info
@@ -884,6 +841,15 @@ CONTAINS
     IF (ptr_task%data_output%var%info%lcontained) THEN
       out_var_idx     = ptr_task%data_output%var%info%ncontained
       out_var_ref_pos = ptr_task%data_output%var%info%var_ref_pos
+    END IF
+
+
+    ! Error catching for valid indexes of var_ref_pos
+    IF ( .NOT. ANY(in_var_ref_pos==(/1,2,3,4/)) ) THEN
+      CALL finish(routine, "internal error!")
+    END IF
+    IF ( .NOT. ANY(out_var_ref_pos==(/1,2,3,4/)) ) THEN
+      CALL finish(routine, "internal error!")
     END IF
 
     !--- load some items from input/output data structures
@@ -930,17 +896,17 @@ CONTAINS
     CASE DEFAULT
       CALL finish(routine, "Unknown post-processing job.")
     END SELECT
-                     
+
     ! interpolation flags + parameters
     pzlev_flags => in_var%info%vert_interp
-    l_hires_intp      = pzlev_flags%l_hires_intp      
-    l_restore_fricred = pzlev_flags%l_restore_fricred 
-    l_loglin          = pzlev_flags%l_loglin          
-    l_extrapol        = pzlev_flags%l_extrapol        
-    l_satlimit        = pzlev_flags%l_satlimit        
-    l_restore_pbldev  = pzlev_flags%l_restore_pbldev  
+    l_hires_intp      = pzlev_flags%l_hires_intp
+    l_restore_fricred = pzlev_flags%l_restore_fricred
+    l_loglin          = pzlev_flags%l_loglin
+    l_extrapol        = pzlev_flags%l_extrapol
+    l_satlimit        = pzlev_flags%l_satlimit
+    l_restore_pbldev  = pzlev_flags%l_restore_pbldev
     l_pd_limit        = pzlev_flags%l_pd_limit
-    lower_limit       = pzlev_flags%lower_limit       
+    lower_limit       = pzlev_flags%lower_limit
 
     !-- perform some consistency checks
     IF (p_info%ndims /= 3) &
@@ -949,17 +915,17 @@ CONTAINS
       CALL finish(routine, "Interpolation coefficients not yet initialized!")
 
     SELECT CASE ( p_info%hgrid )
-    CASE (GRID_UNSTRUCTURED_CELL) 
+    CASE (GRID_UNSTRUCTURED_CELL)
       nblks  = p_patch%nblks_c
       npromz = p_patch%npromz_c
-      ! 
+      !
       vcoeff_lin        => vcoeff%lin_cell
       vcoeff_lin_nlevp1 => vcoeff%lin_cell_nlevp1
       vcoeff_cub        => vcoeff%cub_cell
       in_z3d            => p_z3d
       in_z_mc           => p_metrics%z_mc
 
-    CASE (GRID_UNSTRUCTURED_EDGE) 
+    CASE (GRID_UNSTRUCTURED_EDGE)
       nblks  = p_patch%nblks_e
       npromz = p_patch%npromz_e
       !
@@ -973,92 +939,44 @@ CONTAINS
       !$ACC ENTER DATA CREATE(p_z3d_edge, z_me)
 
       CALL cells2edges_scalar(p_metrics%z_mc, p_patch, intp_hrz%c_lin_e,    &
-        &                     z_me, opt_fill_latbc=.TRUE., lacc=.TRUE.)
+        &                     z_me, lacc=.TRUE., opt_fill_latbc=.TRUE.)
       CALL cells2edges_scalar(p_z3d, p_patch, intp_hrz%c_lin_e, p_z3d_edge, &
-        &                     opt_fill_latbc=.TRUE., lacc=.TRUE.)
+        &                     lacc=.TRUE., opt_fill_latbc=.TRUE.)
 
       in_z3d            => p_z3d_edge
       in_z_mc           => z_me
     END SELECT
 
-    IF (ASSOCIATED(in_var%r_ptr)) THEN
-      SELECT CASE(in_var_ref_pos)
-      CASE (1)
-        in_ptr => in_var%r_ptr(in_var_idx,:,:,:,1)
-      CASE (2)
-        in_ptr => in_var%r_ptr(:,in_var_idx,:,:,1)
-      CASE (3)
-        in_ptr => in_var%r_ptr(:,:,in_var_idx,:,1)
-      CASE (4)
-        in_ptr => in_var%r_ptr(:,:,:,in_var_idx,1)
-      CASE default
-        CALL finish(routine, "internal error!")
-      END SELECT
-    ELSE IF (ASSOCIATED(in_var%s_ptr)) THEN
-      SELECT CASE(in_var_ref_pos)
-      CASE (1)
-        dim1 = SIZE(in_var%s_ptr,2)
-        dim2 = SIZE(in_var%s_ptr,3)
-        dim3 = SIZE(in_var%s_ptr,4)
-        ALLOCATE(tmp_var(dim1, dim2, dim3), STAT=ierrstat)
-        IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-        !$ACC ENTER DATA CREATE(tmp_var)
-!$OMP PARALLEL
-        CALL copy(in_var%s_ptr(in_var_idx,:,:,:,1), tmp_var(:,:,:), lacc=.TRUE.)
-!$OMP END PARALLEL
-      CASE (2)
-        dim1 = SIZE(in_var%s_ptr,1)
-        dim2 = SIZE(in_var%s_ptr,3)
-        dim3 = SIZE(in_var%s_ptr,4)
-        ALLOCATE(tmp_var(dim1, dim2, dim3), STAT=ierrstat)
-        IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-        !$ACC ENTER DATA CREATE(tmp_var)
-!$OMP PARALLEL
-        CALL copy(in_var%s_ptr(:,in_var_idx,:,:,1), tmp_var(:,:,:), lacc=.TRUE.)
-!$OMP END PARALLEL
-      CASE (3)
-        dim1 = SIZE(in_var%s_ptr,1)
-        dim2 = SIZE(in_var%s_ptr,2)
-        dim3 = SIZE(in_var%s_ptr,4)
-        ALLOCATE(tmp_var(dim1, dim2, dim3), STAT=ierrstat)
-        IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-        !$ACC ENTER DATA CREATE(tmp_var)
-!$OMP PARALLEL
-        CALL copy(in_var%s_ptr(:,:,in_var_idx,:,1), tmp_var(:,:,:), lacc=.TRUE.)
-!$OMP END PARALLEL
-      CASE (4)
-        dim1 = SIZE(in_var%s_ptr,1)
-        dim2 = SIZE(in_var%s_ptr,2)
-        dim3 = SIZE(in_var%s_ptr,3)
-        ALLOCATE(tmp_var(dim1, dim2, dim3), STAT=ierrstat)
-        IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
-        !$ACC ENTER DATA CREATE(tmp_var)
-!$OMP PARALLEL
-        CALL copy(in_var%s_ptr(:,:,:,in_var_idx,1), tmp_var(:,:,:), lacc=.TRUE.)
-!$OMP END PARALLEL
-      CASE default
-        CALL finish(routine, "internal error!")
-      END SELECT
-      in_ptr => tmp_var(:,:,:) 
+    squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE. /)
+    squash_dims(in_var_ref_pos) = .TRUE.
+
+    ! More complex case for real type /=wp, need to allocate device memory
+    IF (ASSOCIATED(in_var%wp_ptr)) THEN
+      in_ptr => get_3d_general(in_var%wp_ptr, (/in_var_idx,1/), squash_dims)
+
+    ELSE IF (ASSOCIATED(in_var%xwp_ptr)) THEN
+      ! Datatype of data does not match wp, thus need a temporary variable tmp_var to copy from
+      tmp_shape = PACK(SHAPE(in_var%xwp_ptr), mask=(.NOT. squash_dims)) ! Get shape of 3d subarray of ptr
+      ALLOCATE(tmp_var(tmp_shape(1), tmp_shape(2), tmp_shape(3)), STAT=ierrstat)
+      IF (ierrstat /= SUCCESS)  CALL finish (routine, 'allocation of tmp_var failed')
+      !$ACC ENTER DATA CREATE(tmp_var) IF(lacc)
+
+      !$OMP PARALLEL
+      CALL copy(get_3d_general(in_var%xwp_ptr, (/in_var_idx,1/), squash_dims), &
+        &       tmp_var, lacc=lacc)
+      !$OMP END PARALLEL
+
+      in_ptr => tmp_var(:,:,:)
     ELSE
       CALL finish (routine, 'internal error!')
     ENDIF
 
-    SELECT CASE(out_var_ref_pos)
-    CASE (1)
-      out_ptr => out_var%r_ptr(out_var_idx,:,:,:,1)
-    CASE (2)
-      out_ptr => out_var%r_ptr(:,out_var_idx,:,:,1)
-    CASE (3)
-      out_ptr => out_var%r_ptr(:,:,out_var_idx,:,1)
-    CASE (4)
-      out_ptr => out_var%r_ptr(:,:,:,out_var_idx,1)
-    CASE default
-      CALL finish(routine, "internal error!")
-    END SELECT
+    squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE. /)
+    squash_dims(out_var_ref_pos) = .TRUE.
+    out_ptr => get_3d_general(out_var%wp_ptr, (/out_var_idx,1/), squash_dims)
 
     SELECT CASE ( p_info%hgrid )
-    CASE (GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_EDGE) 
+    CASE (GRID_UNSTRUCTURED_CELL, GRID_UNSTRUCTURED_EDGE)
       ! consistency check:
       IF ((UBOUND(in_ptr,1) > nproma)              .OR.  &
         & (UBOUND(in_ptr,2) > UBOUND(in_ptr, 2))   .OR.  &
@@ -1073,7 +991,7 @@ CONTAINS
     IF (.NOT. ((nblks == 0) .OR. ((nblks == 1) .AND. (npromz == 0)))) THEN
 
       !$ACC DATA PRESENT(in_ptr, out_ptr)
-    
+
       SELECT CASE ( vert_intp_method )
       CASE ( VINTP_METHOD_VN )
         IF (dbg_level > 15)  CALL message(routine, "VINTP_METHOD_VN")
@@ -1092,7 +1010,7 @@ CONTAINS
           &          l_hires_intp=l_hires_intp,                                     & !in
           &          l_restore_fricred=l_restore_fricred, lacc=.TRUE. )               !in
         !
-      CASE ( VINTP_METHOD_LIN )        
+      CASE ( VINTP_METHOD_LIN )
         IF (dbg_level > 15)  CALL message(routine, "VINTP_METHOD_LIN")
         IF (.NOT. ASSOCIATED(vcoeff_lin)) CALL finish(routine, "Internal error!")
         CALL lin_intp(in_ptr,                                                       & !in
@@ -1106,7 +1024,7 @@ CONTAINS
           &           l_extrapol=l_extrapol, l_pd_limit=l_pd_limit,                 & !in
           &           lower_limit=lower_limit, lacc=.TRUE. )                          !in
         !
-      CASE ( VINTP_METHOD_LIN_NLEVP1 )        
+      CASE ( VINTP_METHOD_LIN_NLEVP1 )
         IF (dbg_level > 15)  CALL message(routine, "VINTP_METHOD_LIN_NLEVP1")
         IF (.NOT. ASSOCIATED(vcoeff_lin_nlevp1)) CALL finish(routine, "Internal error!")
         CALL lin_intp(in_ptr,                                                       & !in
@@ -1171,9 +1089,9 @@ CONTAINS
   SUBROUTINE pp_task_intp_msl(ptr_task, lacc)
     TYPE(t_job_queue), POINTER, INTENT(INOUT) :: ptr_task
     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
-    ! local variables    
+    ! local variables
     CHARACTER(*), PARAMETER :: routine = modname//"::pp_task_intp_msl"
-    INTEGER,  PARAMETER :: nzlev         =        1     ! just a single z-level... 
+    INTEGER,  PARAMETER :: nzlev         =        1     ! just a single z-level...
     REAL(wp), PARAMETER :: ZERO_HEIGHT   =    0._wp, &
       &                    EXTRAPOL_DIST = -500._wp
 
@@ -1182,7 +1100,7 @@ CONTAINS
     TYPE (t_var), POINTER :: in_var, out_var
     TYPE(t_var_metadata),      POINTER :: p_info
     TYPE(t_patch),             POINTER :: p_patch
-    TYPE(t_nh_metrics),        POINTER :: p_metrics    
+    TYPE(t_nh_metrics),        POINTER :: p_metrics
     TYPE(t_nh_diag),           POINTER :: p_diag
 
     REAL(wp) :: pmsl_aux(nproma,1,ptr_task%data_input%p_patch%nblks_c), &
@@ -1194,7 +1112,6 @@ CONTAINS
       &  zextrap, wfacpbl1, wfacpbl2
 
     CALL assert_acc_device_only(routine, lacc)
-    CALL assert_lacc_equals_i_am_accel_node(routine, lacc, i_am_accel_node)
 
     ! patch, state, and metrics
     jg             =  ptr_task%data_input%jg
@@ -1219,15 +1136,15 @@ CONTAINS
     !$ACC DATA CREATE(pmsl_aux, pmsl_avg)
 
     SELECT CASE (itype_pres_msl)
-    CASE (PRES_MSL_METHOD_SAI) ! stepwise analytical integration 
+    CASE (PRES_MSL_METHOD_SAI) ! stepwise analytical integration
 
       IF (dbg_level >= 10)  CALL message(routine, "PRES_MSL_METHOD_SAI: stepwise analytical integration")
 
       !$ACC DATA CREATE(kpbl1, wfacpbl1, kpbl2, wfacpbl2)
-      CALL init(kpbl1, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(wfacpbl1, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(kpbl2, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(wfacpbl2, lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init(kpbl1, lacc=.TRUE.)
+      CALL init(wfacpbl1, lacc=.TRUE.)
+      CALL init(kpbl2, lacc=.TRUE.)
+      CALL init(wfacpbl2, lacc=.TRUE.)
 
       ! compute extrapolation coefficients:
       CALL prepare_extrap(p_metrics%z_mc,                                     & !in
@@ -1236,7 +1153,7 @@ CONTAINS
         &                 lacc=.TRUE.                                         & !in
         & )
 
-      ! Interpolate pressure on z-level "0": 
+      ! Interpolate pressure on z-level "0":
       CALL diagnose_pmsl(p_diag%pres, p_diag%tempv, p_metrics%z_mc,           &
         &                pmsl_aux(:,1,:),                                     &
         &                nblks_c, npromz_c, p_patch%nlev,                     &
@@ -1268,9 +1185,9 @@ CONTAINS
         ENDIF
       ENDIF
       !$ACC DATA CREATE(kpbl1, wfacpbl1, zextrap)
-      CALL init(kpbl1, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(wfacpbl1, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init(zextrap, lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init(kpbl1, lacc=.TRUE.)
+      CALL init(wfacpbl1, lacc=.TRUE.)
+      CALL init(zextrap, lacc=.TRUE.)
       ! compute extrapolation coefficients:
       CALL prepare_extrap_ifspp(p_metrics%z_ifc, p_metrics%z_mc,              & !in
         &                 nblks_c, npromz_c, nlev,                            & !in
@@ -1293,14 +1210,16 @@ CONTAINS
     IF (l_limited_area .OR. jg > 1) THEN ! copy outermost nest boundary row in order to avoid missing values
       i_endblk = p_patch%cells%end_blk(1,1)
       !$OMP PARALLEL
-      CALL copy(pmsl_aux(:,1,1:i_endblk), pmsl_avg(:,1,1:i_endblk), lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL copy(pmsl_aux(:,1,1:i_endblk), pmsl_avg(:,1,1:i_endblk), lacc=.TRUE.)
       !$OMP END PARALLEL
     ENDIF
 
     CALL cell_avg(pmsl_aux, p_patch, p_int_state(jg)%c_bln_avg, pmsl_avg, lacc=.TRUE.)
     i_endblk = ptr_task%data_input%p_patch%nblks_c
+
     !$OMP PARALLEL
-    CALL copy(pmsl_avg(:,1,1:i_endblk), out_var%r_ptr(:,1:i_endblk,out_var_idx,1,1), lacc=.TRUE., opt_acc_async=.TRUE.)
+    CALL copy(pmsl_avg(:,1,1:i_endblk), out_var%wp_ptr(:,1:i_endblk,out_var_idx,1,1), &
+      &       lacc=.TRUE.)
     !$OMP END PARALLEL
     !$ACC WAIT
     !$ACC END DATA
@@ -1320,9 +1239,10 @@ CONTAINS
   !  @todo Change order of processing: First, interpolate input fields
   !        onto z-levels, then compute rel_hum.
   !
-  SUBROUTINE pp_task_compute_field(ptr_task)
+  SUBROUTINE pp_task_compute_field(ptr_task, lacc)
 
     TYPE(t_job_queue), POINTER :: ptr_task
+    LOGICAL, INTENT(IN) :: lacc
     ! local variables
     INTEGER                            :: jg, out_var_idx
     TYPE (t_var), POINTER :: out_var
@@ -1334,10 +1254,10 @@ CONTAINS
     TYPE(t_nwp_phy_diag),      POINTER :: prm_diag
     CHARACTER(*), PARAMETER :: routine = modname//"::pp_task_compute_field"
     LOGICAL :: lclip                   ! limit rh to MAX(rh,100._wp)
-    
+
     ! output field for this task
     out_var   => ptr_task%data_output%var
-    p_info    => out_var%info    
+    p_info    => out_var%info
     out_var_idx = 1
     IF (out_var%info%lcontained)  out_var_idx = out_var%info%ncontained
 
@@ -1350,13 +1270,18 @@ CONTAINS
     p_diag      => ptr_task%data_input%p_nh_state%diag
     prm_diag    => ptr_task%data_input%prm_diag
 
+    ! throw error message, if this variable is not a wp REAL field:
+    IF (.NOT. ASSOCIATED(out_var%wp_ptr)) THEN
+      CALL finish(routine, TRIM(p_info%name)//": Implemented for wp REAL fields only.")
+    END IF
+
     SELECT CASE(ptr_task%job_type)
     CASE (TASK_COMPUTE_RH)
 
       SELECT CASE (itype_rh)
       CASE (RH_METHOD_WMO)
         CALL compute_field_rel_hum_wmo(p_patch, p_prog, p_diag, &
-          &                        out_var%r_ptr(:,:,:,out_var_idx,1), lacc=i_am_accel_node)
+          &                        out_var%wp_ptr(:,:,:,out_var_idx,1), lacc=lacc)
       CASE (RH_METHOD_IFS, RH_METHOD_IFS_CLIP)
         IF (itype_rh == RH_METHOD_IFS_CLIP) THEN
           lclip = .TRUE.
@@ -1366,9 +1291,9 @@ CONTAINS
 #ifdef _OPENACC
         CALL finish(routine, 'not yet ported postproc RH_METHOD_IFS, RH_METHOD_IFS_CLIP for variable '//TRIM(p_info%name) )
 #endif
-        CALL compute_field_rel_hum_ifs(p_patch, p_prog, p_diag,        &
-          &                        out_var%r_ptr(:,:,:,out_var_idx,1), &
-          &                        opt_lclip=lclip)
+        CALL compute_field_rel_hum_ifs(p_patch, p_prog, p_diag,             &
+          &                            out_var%wp_ptr(:,:,:,out_var_idx,1), &
+          &                            opt_lclip=lclip)
 
       CASE DEFAULT
         CALL finish(routine, 'Internal error!')
@@ -1376,19 +1301,19 @@ CONTAINS
 
     CASE (TASK_COMPUTE_OMEGA)
       CALL compute_field_omega(p_patch, p_prog, &
-        &                      out_var%r_ptr(:,:,:,out_var_idx,1), lacc=i_am_accel_node)
-    
+        &                      out_var%wp_ptr(:,:,:,out_var_idx,1), lacc=lacc)
+
     CASE (TASK_COMPUTE_PV)
       CALL compute_field_pv(p_patch, p_int_state(jg),                  &
-        &   ptr_task%data_input%p_nh_state%metrics, p_prog, p_diag,    &  
-        &   out_var%r_ptr(:,:,:,out_var_idx,1), lacc=i_am_accel_node)
+        &   ptr_task%data_input%p_nh_state%metrics, p_prog, p_diag,    &
+        &   out_var%wp_ptr(:,:,:,out_var_idx,1), lacc=lacc)
 
     CASE (TASK_COMPUTE_SDI2)
       IF ( jg >= n_dom_start+1 ) THEN
         ! p_patch_local_parent(jg) seems to exist
         CALL compute_field_sdi( p_patch, jg, p_patch_local_parent(jg), p_int_state_local_parent(jg),     &
           &   ptr_task%data_input%p_nh_state%metrics, p_prog, p_diag,    &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
       ELSE
         CALL message( routine, "WARNING: SDI2 cannot be computed since no reduced grid is available" )
       END IF
@@ -1398,7 +1323,7 @@ CONTAINS
         ! p_patch_local_parent(jg) seems to exist
         CALL compute_field_lpi( p_patch, jg, p_patch_local_parent(jg), p_int_state_local_parent(jg),     &
           &   ptr_task%data_input%p_nh_state%metrics, p_prog, p_prog_rcf, p_diag,    &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
       ELSE
         CALL message( routine, "WARNING: LPI cannot be computed since no reduced grid is available" )
       END IF
@@ -1406,39 +1331,39 @@ CONTAINS
     CASE (TASK_COMPUTE_CEILING)
       CALL compute_field_ceiling( p_patch, jg,                                       &
           &   ptr_task%data_input%p_nh_state%metrics, prm_diag,                      &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
 
     CASE (TASK_COMPUTE_VIS)
-      CALL compute_field_visibility( p_patch, p_prog, p_diag, prm_diag, jg,          &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+      CALL compute_field_visibility( p_patch, p_prog, p_prog_rcf, p_diag, prm_diag, jg,          &
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
 
     CASE (TASK_COMPUTE_INVERSION)
       CALL compute_field_inversion_height( p_patch, jg, ptr_task%data_input%p_nh_state%metrics, p_prog, p_diag,prm_diag,   &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1))   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1))   ! unused dimensions are filled up with 1
 
     CASE (TASK_COMPUTE_HBAS_SC)
       CALL compute_field_hbas_sc( p_patch,                                           &
           &   ptr_task%data_input%p_nh_state%metrics, prm_diag,                      &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
 
     CASE (TASK_COMPUTE_HTOP_SC)
       CALL compute_field_htop_sc( p_patch,                                           &
           &   ptr_task%data_input%p_nh_state%metrics, prm_diag,                      &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
 
     CASE (TASK_COMPUTE_TWATER)
       CALL compute_field_twater( p_patch, ptr_task%data_input%p_nh_state%metrics%ddqz_z_full, &
           &                      p_prog%rho, p_prog_rcf%tracer,                               &
           &                      advection_config(jg)%trHydroMass%list,                       &
-          &                      out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)
+          &                      out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)
 
     CASE (TASK_COMPUTE_Q_SEDIM)
       CALL compute_field_q_sedim( p_patch, jg, p_prog,                               &
-          &   out_var%r_ptr(:,:,:,out_var_idx,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,:,out_var_idx,1), lacc=lacc)   ! unused dimensions are filled up with 1
 
     CASE (TASK_COMPUTE_DBZ850)
       CALL compute_field_dbz850( p_patch, prm_diag%k850(:,:), prm_diag%dbz3d_lin(:,:,:), &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
 
     CASE (TASK_COMPUTE_DBZLMX_LOW)
       ! NOTE: The layer bounds 1000 m and 2000 m were found more appropriate than the fixed bounds
@@ -1448,42 +1373,46 @@ CONTAINS
       !       changing the fixed bounds in the eccodes definitions.
       CALL compute_field_dbzlmx( p_patch, jg, 1000.0_wp, 2000.0_wp, &
           &   ptr_task%data_input%p_nh_state%metrics, prm_diag%dbz3d_lin(:,:,:), &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
 
     CASE (TASK_COMPUTE_DBZCMAX)
       CALL compute_field_dbzcmax( p_patch, jg, prm_diag%dbz3d_lin(:,:,:),            &
-          &   out_var%r_ptr(:,:,out_var_idx,1,1), lacc=i_am_accel_node)   ! unused dimensions are filled up with 1
+          &   out_var%wp_ptr(:,:,out_var_idx,1,1), lacc=lacc)   ! unused dimensions are filled up with 1
+
+    CASE (TASK_COMPUTE_DMH)
+      CALL compute_field_dmean_2mom( 'hail', p_patch, p_prog_rcf, &
+           out_var%wp_ptr(:,:,:,out_var_idx,1), lacc=lacc)
 
     CASE (TASK_COMPUTE_SMI)
       CALL compute_field_smi(p_patch, p_lnd_state(jg)%diag_lnd, &
-           &                 ext_data(jg), out_var%r_ptr(:,:,:,out_var_idx,1), lacc=i_am_accel_node)
+           &                 ext_data(jg), out_var%wp_ptr(:,:,:,out_var_idx,1), lacc=lacc)
 
     CASE (TASK_COMPUTE_WSHEAR_U)
 #ifdef _OPENACC
       CALL finish(routine, 'not yet ported postproc TASK_COMPUTE_WSHEAR_U for variable '//TRIM(p_info%name) )
 #endif
       CALL compute_field_wshear( p_patch, ptr_task%data_input%p_nh_state%metrics, &
-           &                     p_diag%u, wshear_uv_heights(1:n_wshear), out_var%r_ptr(:,:,:,out_var_idx,1) )
-      
+           &                     p_diag%u, wshear_uv_heights(1:n_wshear), out_var%wp_ptr(:,:,:,out_var_idx,1) )
+
     CASE (TASK_COMPUTE_WSHEAR_V)
 #ifdef _OPENACC
       CALL finish(routine, 'not yet ported postproc TASK_COMPUTE_WSHEAR_V for variable '//TRIM(p_info%name) )
 #endif
       CALL compute_field_wshear( p_patch, ptr_task%data_input%p_nh_state%metrics, &
-           &                     p_diag%v, wshear_uv_heights(1:n_wshear), out_var%r_ptr(:,:,:,out_var_idx,1) )
+           &                     p_diag%v, wshear_uv_heights(1:n_wshear), out_var%wp_ptr(:,:,:,out_var_idx,1) )
 
     CASE (TASK_COMPUTE_LAPSERATE)
 #ifdef _OPENACC
       CALL finish(routine, 'not yet ported postproc TASK_COMPUTE_LAPSERATE for variable '//TRIM(p_info%name) )
 #endif
       CALL compute_field_lapserate( p_patch, ptr_task%data_input%p_nh_state%metrics, &
-           &                        p_diag, 500e2_wp, 850e2_wp, out_var%r_ptr(:,:,out_var_idx,1,1) )
+           &                        p_diag, 500e2_wp, 850e2_wp, out_var%wp_ptr(:,:,out_var_idx,1,1) )
     CASE (TASK_COMPUTE_MCONV)
 #ifdef _OPENACC
       CALL finish(routine, 'not yet ported postproc TASK_COMPUTE_MCONV for variable '//TRIM(p_info%name) )
 #endif
       CALL compute_field_mconv( p_patch, p_int_state(jg), ptr_task%data_input%p_nh_state%metrics, &
-           &                    p_prog, p_prog_rcf, 0.0_wp, 1000.0_wp, out_var%r_ptr(:,:,out_var_idx,1,1) )
+           &                    p_prog, p_prog_rcf, 0.0_wp, 1000.0_wp, out_var%wp_ptr(:,:,out_var_idx,1,1) )
 
     CASE (TASK_COMPUTE_SRH)
 #ifdef _OPENACC
@@ -1497,8 +1426,8 @@ CONTAINS
            &                  z_low_shear   = 250.0_wp,  &
            &                  z_up_shear    = 5750.0_wp, &
            &                  dz_shear      = 500.0_wp,  &
-           &                  srh           = out_var%r_ptr(:,:,:,out_var_idx,1) )
-     
+           &                  srh           = out_var%wp_ptr(:,:,:,out_var_idx,1) )
+
     CASE DEFAULT
       CALL finish(routine, 'Internal error!')
     END SELECT
@@ -1513,8 +1442,9 @@ CONTAINS
   !  interpolation module.
   !  This routine should be GPU-capable as rbf_vec_interpol_cell
   !  has been ported with OpenACC
-  SUBROUTINE pp_task_edge2cell(ptr_task)
+  SUBROUTINE pp_task_edge2cell(ptr_task, lacc)
     TYPE(t_job_queue), POINTER :: ptr_task
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
     ! local variables
     CHARACTER(*), PARAMETER :: routine = modname//"::pp_task_edge2cell"
     INTEGER :: &
@@ -1527,6 +1457,7 @@ CONTAINS
     TYPE(t_int_state),         POINTER :: intp_hrz
     REAL(wp),                  POINTER :: in_ptr(:,:,:), out_ptr_1(:,:,:), &
       &                                   out_ptr_2(:,:,:)
+    LOGICAL :: squash_dims(5)
 
     p_patch        => ptr_task%data_input%p_patch      ! patch
     intp_hrz       => ptr_task%data_input%p_int_state
@@ -1564,51 +1495,38 @@ CONTAINS
       out_var_ref_pos_2 = out_var_2%info%var_ref_pos
     END IF
 
-    ! throw error message, if this variable is not a REAL field:
-    IF (.NOT. ASSOCIATED(in_var%r_ptr)) THEN
-      CALL finish(routine, TRIM(p_info%name)//": Implemented for REAL fields only.")
+    ! Error catching for valid indexes of var_ref_pos
+    IF ( .NOT. ANY(in_var_ref_pos==(/1,2,3,4/)) ) THEN
+      CALL finish(routine, "internal error!")
+    END IF
+    IF ( .NOT. ANY(out_var_ref_pos_1==(/1,2,3,4/)) ) THEN
+      CALL finish(routine, "internal error!")
+    END IF
+    IF ( .NOT. ANY(out_var_ref_pos_2==(/1,2,3,4/)) ) THEN
+      CALL finish(routine, "internal error!")
     END IF
 
-    SELECT CASE(in_var_ref_pos)
-    CASE (1)
-      in_ptr => in_var%r_ptr(in_var_idx,:,:,:,1)
-    CASE (2)
-      in_ptr => in_var%r_ptr(:,in_var_idx,:,:,1)
-    CASE (3)
-      in_ptr => in_var%r_ptr(:,:,in_var_idx,:,1)
-    CASE (4)
-      in_ptr => in_var%r_ptr(:,:,:,in_var_idx,1)
-    CASE default
-      CALL finish(routine, "internal error!")
-    END SELECT
-    SELECT CASE(out_var_ref_pos_1)
-    CASE (1)
-      out_ptr_1 => out_var_1%r_ptr(out_var_idx_1,:,:,:,1)
-    CASE (2)
-      out_ptr_1 => out_var_1%r_ptr(:,out_var_idx_1,:,:,1)
-    CASE (3)
-      out_ptr_1 => out_var_1%r_ptr(:,:,out_var_idx_1,:,1)
-    CASE (4)
-      out_ptr_1 => out_var_1%r_ptr(:,:,:,out_var_idx_1,1)
-    CASE default
-      CALL finish(routine, "internal error!")
-    END SELECT
-    SELECT CASE(out_var_ref_pos_2)
-    CASE (1)
-      out_ptr_2 => out_var_2%r_ptr(out_var_idx_2,:,:,:,1)
-    CASE (2)
-      out_ptr_2 => out_var_2%r_ptr(:,out_var_idx_2,:,:,1)
-    CASE (3)
-      out_ptr_2 => out_var_2%r_ptr(:,:,out_var_idx_2,:,1)
-    CASE (4)
-      out_ptr_2 => out_var_2%r_ptr(:,:,:,out_var_idx_2,1)
-    CASE default
-      CALL finish(routine, "internal error!")
-    END SELECT
+    ! throw error message, if this variable is not a wp REAL field:
+    IF (.NOT. ASSOCIATED(in_var%wp_ptr)) THEN
+      CALL finish(routine, TRIM(p_info%name)//": Implemented for wp REAL fields only.")
+    END IF
+
+    squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE. /)
+    squash_dims(in_var_ref_pos) = .TRUE.
+    in_ptr => get_3d_general(in_var%wp_ptr, (/in_var_idx,1/), squash_dims)
+
+    squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE. /)
+    squash_dims(out_var_ref_pos_1) = .TRUE.
+    out_ptr_1 => get_3d_general(out_var_1%wp_ptr, (/out_var_idx_1,1/), squash_dims)
+
+    squash_dims(:) = (/ .FALSE.,.FALSE.,.FALSE.,.FALSE.,.TRUE. /)
+    squash_dims(out_var_ref_pos_2) = .TRUE.
+    out_ptr_2 => get_3d_general(out_var_2%wp_ptr, (/out_var_idx_2,1/), squash_dims)
 
     CALL rbf_vec_interpol_cell(in_ptr,                                  &   !< normal wind comp.
       &                        p_patch, intp_hrz,                       &   !< patch, interpolation state
-      &                        out_ptr_1, out_ptr_2 )                       !< reconstr. u,v wind
+      &                        out_ptr_1, out_ptr_2,                    &   !< reconstr. u,v wind
+      &                        lacc=lacc                                )   !< use OpenACC
 
   END SUBROUTINE pp_task_edge2cell
 

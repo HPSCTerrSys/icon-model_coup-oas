@@ -196,7 +196,7 @@ MODULE mo_adjust
            ENDIF
            zqs  = zew/paprsf(jl,jk)
            zqs  = MIN(zqmax,zqs)
-           ! Modification, GZ (2014-07-23): define qv_sat as qv/RH, implying that the qv_sat in the 
+           ! Modification, GZ (2014-07-23): define qv_sat as qv/RH, implying that the qv_sat in the
            ! denominator needs to be replaced with qv
            zcor = 1.0_JPRB/(1.0_JPRB-retv*pqv(jl,jk))
            pqsat(jl,jk)=zqs*zcor
@@ -445,7 +445,7 @@ MODULE mo_adjust
        ENDIF  ! kcall == 0
 
        IF(kcall == 4 )THEN
-        
+
 !DIR$ IVDEP
 !OCL NOVREC
          !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(zqp, zqsat, zcor, zcond, zcond1)
@@ -469,9 +469,9 @@ MODULE mo_adjust
            ENDIF
          ENDDO
        ENDIF  ! kcall == 4
-      
+
        IF(kcall == 5) THEN  ! Same as 4 but with LDFLAG all true
-        
+
 !DIR$ IVDEP
 !OCL NOVREC
          !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(zqp, zqsat, zcor, zcond, zcond1)
@@ -494,7 +494,7 @@ MODULE mo_adjust
          ENDDO
 
        ENDIF     ! kcall == 5
-      
+
        IF(kcall == 3) THEN
 
 !DIR$ IVDEP
@@ -517,19 +517,19 @@ MODULE mo_adjust
            pt(jl,kk)=pt1+foeldcpmcu(pt1)*zcond1
            pq(jl,kk)=pq1-zcond1
          ENDDO
-        
+
        ENDIF     ! kcall == 3
 
      !*********************************************
      ELSE   ! lphylin
      !*********************************************
-     ! US not ported to GPUs, because lphylin is set to .FALSE. 
+     ! US not ported to GPUs, because lphylin is set to .FALSE.
 
       !     2.           CALCULATE CONDENSATION AND ADJUST T AND Q ACCORDINGLY
       !                  -----------------------------------------------------
-      
+
       IF (kcall == 1 ) THEN
-        
+
 !DIR$ IVDEP
 !OCL NOVREC
         DO jl=kidia,kfdia
@@ -543,21 +543,21 @@ MODULE mo_adjust
             !       ZQSAT=ZQP    *(ZOEALFA*ZFOEEWL+(1.0_JPRB-ZOEALFA)*ZFOEEWI)
             zqsat=zqp    *(zoealfa*foeewl(ztarg)+(1.0_JPRB-zoealfa)*foeewi(ztarg))
             !<KF
-            
+
             z1s=TANH(rlpal2*(zqsat-zqmax))
             zqsat=0.5_JPRB*((1.0_JPRB-z1s)*zqsat+(1.0_JPRB+z1s)*zqmax)
-            
+
             zcor=1.0_JPRB/(1.0_JPRB-retv  *zqsat)
             zqsat=zqsat*zcor
-            
+
             z2s=    zoealfa *r5alvcp*(1.0_JPRB/(ztarg-r4les)**2)+&
               & (1.0_JPRB-zoealfa)*r5alscp*(1.0_JPRB/(ztarg-r4ies)**2)
             zcond=(pq(jl,kk)-zqsat)/(1.0_JPRB+zqsat*zcor*z2s)
-            
+
             zcond=MAX(zcond,0.0_JPRB)
-            
+
             IF(zcond /= 0.0_JPRB) THEN
-              
+
               pt(jl,kk)=pt(jl,kk)+&
                 & (zoealfa*ralvdcp+(1.0_JPRB-zoealfa)*ralsdcp)*zcond
               pq(jl,kk)=pq(jl,kk)-zcond
@@ -571,31 +571,31 @@ MODULE mo_adjust
               !<KF
               z1s=TANH(rlpal2*(zqsat-zqmax))
               zqsat=0.5_JPRB*((1.0_JPRB-z1s)*zqsat+(1.0_JPRB+z1s)*zqmax)
-              
+
               zcor=1.0_JPRB/(1.0_JPRB-retv  *zqsat)
               zqsat=zqsat*zcor
-              
+
               z2s=    zoealfa *r5alvcp*(1.0_JPRB/(ztarg-r4les)**2)+&
                 & (1.0_JPRB-zoealfa)*r5alscp*(1.0_JPRB/(ztarg-r4ies)**2)
               zcond1=(pq(jl,kk)-zqsat)/(1.0_JPRB+zqsat*zcor*z2s)
-              
+
               pt(jl,kk)=pt(jl,kk)+(zoealfa*ralvdcp+(1.0_JPRB-zoealfa)*ralsdcp)*zcond1
-              
+
               pq(jl,kk)=pq(jl,kk)-zcond1
             ENDIF
           ENDIF
         ENDDO
-        
+
       ENDIF
-      
+
       IF(kcall == 2) THEN
-        
+
 !DIR$ IVDEP
 !OCL NOVREC
         DO jl=kidia,kfdia
           IF(ldflag(jl)) THEN
             zqp    =1.0_JPRB/psp(jl)
-            
+
             ztarg=pt(jl,kk)
             zoealfa=0.5_JPRB*(TANH(rlpal1*(ztarg-rlptrc))+1.0_JPRB)
             !>KF
@@ -606,18 +606,18 @@ MODULE mo_adjust
             !<KF
             z1s=TANH(rlpal2*(zqsat-zqmax))
             zqsat=0.5_JPRB*((1.0_JPRB-z1s)*zqsat+(1.0_JPRB+z1s)*zqmax)
-            
+
             zcor=1.0_JPRB/(1.0_JPRB-retv  *zqsat)
             zqsat=zqsat*zcor
-            
+
             z2s=    zoealfa *r5alvcp*(1.0_JPRB/(ztarg-r4les)**2)+&
               & (1.0_JPRB-zoealfa)*r5alscp*(1.0_JPRB/(ztarg-r4ies)**2)
             zcond=(pq(jl,kk)-zqsat)/(1.0_JPRB+zqsat*zcor*z2s)
-            
+
             zcond=MIN(zcond,0.0_JPRB)
-            
+
             IF(zcond /= 0.0_JPRB) THEN
-              
+
               pt(jl,kk)=pt(jl,kk)+&
                 & (zoealfa*ralvdcp+(1.0_JPRB-zoealfa)*ralsdcp)*zcond
               pq(jl,kk)=pq(jl,kk)-zcond
@@ -631,30 +631,30 @@ MODULE mo_adjust
               !<KF
               z1s=TANH(rlpal2*(zqsat-zqmax))
               zqsat=0.5_JPRB*((1.0_JPRB-z1s)*zqsat+(1.0_JPRB+z1s)*zqmax)
-              
+
               zcor=1.0_JPRB/(1.0_JPRB-retv  *zqsat)
               zqsat=zqsat*zcor
-              
+
               z2s=    zoealfa *r5alvcp*(1.0_JPRB/(ztarg-r4les)**2)+&
                 & (1.0_JPRB-zoealfa)*r5alscp*(1.0_JPRB/(ztarg-r4ies)**2)
               zcond1=(pq(jl,kk)-zqsat)/(1.0_JPRB+zqsat*zcor*z2s)
-              
+
               pt(jl,kk)=pt(jl,kk)+(zoealfa*ralvdcp+(1.0_JPRB-zoealfa)*ralsdcp)*zcond1
-              
+
               pq(jl,kk)=pq(jl,kk)-zcond1
             ENDIF
           ENDIF
         ENDDO
-        
+
       ENDIF
-      
+
       IF(kcall == 0) THEN
-        
+
 !DIR$ IVDEP
 !OCL NOVREC
         DO jl=kidia,kfdia
           zqp    =1.0_JPRB/psp(jl)
-          
+
           ztarg=pt(jl,kk)
           zoealfa=0.5_JPRB*(TANH(rlpal1*(ztarg-rlptrc))+1.0_JPRB)
           !>KF
@@ -665,18 +665,18 @@ MODULE mo_adjust
           !>KF
           z1s=TANH(rlpal2*(zqsat-zqmax))
           zqsat=0.5_JPRB*((1.0_JPRB-z1s)*zqsat+(1.0_JPRB+z1s)*zqmax)
-          
+
           zcor=1.0_JPRB/(1.0_JPRB-retv  *zqsat)
           zqsat=zqsat*zcor
-          
+
           z2s=    zoealfa *r5alvcp*(1.0_JPRB/(ztarg-r4les)**2)+&
             & (1.0_JPRB-zoealfa)*r5alscp*(1.0_JPRB/(ztarg-r4ies)**2)
           zcond1=(pq(jl,kk)-zqsat)/(1.0_JPRB+zqsat*zcor*z2s)
-          
+
           pt(jl,kk)=pt(jl,kk)+(zoealfa*ralvdcp+(1.0_JPRB-zoealfa)*ralsdcp)*zcond1
-          
+
           pq(jl,kk)=pq(jl,kk)-zcond1
-          
+
           ztarg=pt(jl,kk)
           zoealfa=0.5_JPRB*(TANH(rlpal1*(ztarg-rlptrc))+1.0_JPRB)
           !>KF
@@ -687,29 +687,29 @@ MODULE mo_adjust
           !KF
           z1s=TANH(rlpal2*(zqsat-zqmax))
           zqsat=0.5_JPRB*((1.0_JPRB-z1s)*zqsat+(1.0_JPRB+z1s)*zqmax)
-          
+
           zcor=1.0_JPRB/(1.0_JPRB-retv  *zqsat)
           zqsat=zqsat*zcor
-          
+
           z2s=    zoealfa *r5alvcp*(1.0_JPRB/(ztarg-r4les)**2)+&
             & (1.0_JPRB-zoealfa)*r5alscp*(1.0_JPRB/(ztarg-r4ies)**2)
           zcond1=(pq(jl,kk)-zqsat)/(1.0_JPRB+zqsat*zcor*z2s)
-          
+
           pt(jl,kk)=pt(jl,kk)+(zoealfa*ralvdcp+(1.0_JPRB-zoealfa)*ralsdcp)*zcond1
-          
+
           pq(jl,kk)=pq(jl,kk)-zcond1
         ENDDO
-        
+
       ENDIF
-      
+
       IF(kcall == 4) THEN
-        
+
 !DIR$ IVDEP
 !OCL NOVREC
         DO jl=kidia,kfdia
           IF(ldflag(jl)) THEN
             zqp    =1.0_JPRB/psp(jl)
-            
+
             ztarg=pt(jl,kk)
             zoealfa=0.5_JPRB*(TANH(rlpal1*(ztarg-rlptrc))+1.0_JPRB)
             !>KF
@@ -720,18 +720,18 @@ MODULE mo_adjust
             !KF
             z1s=TANH(rlpal2*(zqsat-zqmax))
             zqsat=0.5_JPRB*((1.0_JPRB-z1s)*zqsat+(1.0_JPRB+z1s)*zqmax)
-            
+
             zcor=1.0_JPRB/(1.0_JPRB-retv  *zqsat)
             zqsat=zqsat*zcor
-            
+
             z2s=    zoealfa *r5alvcp*(1.0_JPRB/(ztarg-r4les)**2)+&
               & (1.0_JPRB-zoealfa)*r5alscp*(1.0_JPRB/(ztarg-r4ies)**2)
             zcond=(pq(jl,kk)-zqsat)/(1.0_JPRB+zqsat*zcor*z2s)
-            
+
             pt(jl,kk)=pt(jl,kk)+(zoealfa*ralvdcp+(1.0_JPRB-zoealfa)*ralsdcp)*zcond
-            
+
             pq(jl,kk)=pq(jl,kk)-zcond
-            
+
             ztarg=pt(jl,kk)
             zoealfa=0.5_JPRB*(TANH(rlpal1*(ztarg-rlptrc))+1.0_JPRB)
             !>KF
@@ -742,37 +742,37 @@ MODULE mo_adjust
             !KF
             z1s=TANH(rlpal2*(zqsat-zqmax))
             zqsat=0.5_JPRB*((1.0_JPRB-z1s)*zqsat+(1.0_JPRB+z1s)*zqmax)
-            
+
             zqsat=MIN(zqmax,zqsat)
             zcor=1.0_JPRB/(1.0_JPRB-retv  *zqsat)
             zqsat=zqsat*zcor
-            
+
             z2s=    zoealfa *r5alvcp*(1.0_JPRB/(ztarg-r4les)**2)+&
               & (1.0_JPRB-zoealfa)*r5alscp*(1.0_JPRB/(ztarg-r4ies)**2)
             zcond1=(pq(jl,kk)-zqsat)/(1.0_JPRB+zqsat*zcor*z2s)
-            
+
             pt(jl,kk)=pt(jl,kk)+(zoealfa*ralvdcp+(1.0_JPRB-zoealfa)*ralsdcp)*zcond1
-            
+
             pq(jl,kk)=pq(jl,kk)-zcond1
           ENDIF
         ENDDO
-        
+
       ENDIF
-      
+
      !*********************************************
      ENDIF  ! lphylin
      !*********************************************
-    
+
 #ifndef _OPENACC
      IF (lhook) CALL dr_hook('CUADJTQ',1,zhook_handle)
 #endif
 
   END SUBROUTINE cuadjtq
-  
+
   !!KF  NOTE: The following routine is only called in case of linearized Physics.
   !! Therefore no modifications for DWD purposes are made there
   !! And also no GPU port
-  
+
   !
   SUBROUTINE cuadjtqs &
     & (kidia,    kfdia,    klon,    klev,&
@@ -786,20 +786,20 @@ MODULE mo_adjust
     !!     PURPOSE.
     !!     --------
     !!     TO PRODUCE T,Q AND L VALUES FOR CLOUD ASCENT
-    
+
     !! History:
     !!          MODIFICATIONS
     !!          -------------
     !!         D.SALMOND & M.HAMRUD ECMWF       99-06-04   Optimisation
     !!        M.Hamrud      01-Oct-2003 CY28 Cleaning
-    
+
     !!     INPUT ARE UNADJUSTED T AND Q VALUES,
     !!     IT RETURNS ADJUSTED VALUES OF T AND Q
-    
+
     !!     PARAMETER     DESCRIPTION                                   UNITS
     !!     ---------     -----------                                   -----
     !!     INPUT PARAMETERS (INTEGER):
-    
+
     !!    *KIDIA*        START POINT
     !!    *KFDIA*        END POINT
     !!    *KLON*         NUMBER OF GRID POINTS PER PACKET
@@ -809,38 +809,38 @@ MODULE mo_adjust
     !!                      KCALL=0  ENV. T AND QS IN*CUINI*
     !!                      KCALL=1  CONDENSATION IN UPDRAFTS  (E.G. CUBASE, CUASC)
     !!                      KCALL=2  EVAPORATION IN DOWNDRAFTS (E.G. CUDLFS,CUDDRAF)
-    
+
     !!     INPUT PARAMETERS (LOGICAL):
-    
+
     !!    *LDLAND*       LAND-SEA MASK (.TRUE. FOR LAND POINTS)
-    
+
     !!     INPUT PARAMETERS (REAL):
-    
+
     !!    *PSP*          PRESSURE                                        PA
-    
+
     !!     UPDATED PARAMETERS (REAL):
-    
+
     !!    *PT*           TEMPERATURE                                     K
     !!    *PQ*           SPECIFIC HUMIDITY                             KG/KG
-    
+
     !!          MODIFICATIONS
     !!          -------------
     !!         D.SALMOND & M.HAMRUD ECMWF       99-06-04   Optimisation
     !!        M.Hamrud      01-Oct-2003 CY28 Cleaning
-    
+
     !----------------------------------------------------------------------
-    
+
     !USE PARKIND1  ,ONLY : JPIM     ,JPRB
     !USE YOMHOOK   ,ONLY : LHOOK,   DR_HOOK
-    
+
     !USE YOMCST   , ONLY : RETV     ,RLVTT    ,RLSTT    ,RTT
     !USE YOETHF   , ONLY : R2ES     ,R3LES    ,R3IES    ,R4LES    ,&
     ! & R4IES    ,R5LES    ,R5IES    ,R5ALVCP  ,R5ALSCP  ,&
     ! & RALVDCP  ,RALSDCP  ,RTWAT    ,RTICE    ,RTICECU  ,&
     ! & RTWAT_RTICE_R      ,RTWAT_RTICECU_R
-    
+
     IMPLICIT NONE
-    
+
     INTEGER(KIND=jpim),INTENT(in)    :: klon
     INTEGER(KIND=jpim),INTENT(in)    :: klev
     INTEGER(KIND=jpim),INTENT(in)    :: kidia
@@ -853,27 +853,27 @@ MODULE mo_adjust
     INTEGER(KIND=jpim),INTENT(in)    :: kcall
     REAL(KIND=jprb) ::     z3es(klon),             z4es(klon),&
       & z5alcp(klon),           zaldcp(klon)
-    
+
     INTEGER(KIND=jpim) :: jl
-    
+
     REAL(KIND=jprb) :: zfoeew
     REAL(KIND=jprb) :: zqmax, zqp, zcond, zcond1, ztarg, zcor, zqsat,  z2s
     REAL(KIND=jprb) :: zhook_handle
-    
+
     !#include "fcttre.h"
     !----------------------------------------------------------------------
-    
+
     !     1.           DEFINE CONSTANTS
     !                  ----------------
-    
+
     IF (lhook) CALL dr_hook('CUADJTQS',0,zhook_handle)
     zqmax=0.5_JPRB
-    
+
     !     2.           CALCULATE CONDENSATION AND ADJUST T AND Q ACCORDINGLY
     !                  -----------------------------------------------------
-    
+
     !*    ICE-WATER THERMODYNAMICAL FUNCTIONS
-    
+
     DO jl=kidia,kfdia
       IF (pt(jl,kk) > rtt) THEN
         z3es(jl)=r3les
@@ -887,9 +887,9 @@ MODULE mo_adjust
         zaldcp(jl)=ralsdcp
       ENDIF
     ENDDO
-    
+
     IF (kcall == 1 ) THEN
-      
+
 !DIR$ IVDEP
 !OCL NOVREC
       DO jl=kidia,kfdia
@@ -925,11 +925,11 @@ MODULE mo_adjust
           !     ENDIF
         ENDIF
       ENDDO
-      
+
     ENDIF
-    
+
     IF(kcall == 2) THEN
-      
+
 !DIR$ IVDEP
 !OCL NOVREC
       DO jl=kidia,kfdia
@@ -965,11 +965,11 @@ MODULE mo_adjust
           !     ENDIF
         ENDIF
       ENDDO
-      
+
     ENDIF
-    
+
     IF(kcall == 0) THEN
-      
+
 !DIR$ IVDEP
 !OCL NOVREC
       DO jl=kidia,kfdia
@@ -999,11 +999,11 @@ MODULE mo_adjust
         pt(jl,kk)=pt(jl,kk)+zaldcp(jl)*zcond1
         pq(jl,kk)=pq(jl,kk)-zcond1
       ENDDO
-      
+
     ENDIF
-    
+
     IF(kcall == 4) THEN
-      
+
 !DIR$ IVDEP
 !OCL NOVREC
       DO jl=kidia,kfdia
@@ -1032,12 +1032,11 @@ MODULE mo_adjust
         pt(jl,kk)=pt(jl,kk)+zaldcp(jl)*zcond1
         pq(jl,kk)=pq(jl,kk)-zcond1
       ENDDO
-      
+
     ENDIF
-    
+
     IF (lhook) CALL dr_hook('CUADJTQS',1,zhook_handle)
   END SUBROUTINE cuadjtqs
-  
-  
-END MODULE mo_adjust
 
+
+END MODULE mo_adjust

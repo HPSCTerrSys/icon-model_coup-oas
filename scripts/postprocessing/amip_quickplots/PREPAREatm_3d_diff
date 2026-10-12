@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -32,7 +32,7 @@ LEVELS="100000,92500,85000,77500,70000,60000,50000,40000,30000,25000,20000,15000
 #
 #
 ###########################################################################
-# 
+#
 
 #
 which cdo
@@ -40,7 +40,7 @@ which cdo
 #---interpolate r2b4 to t63 and modellevel to presure level
 #
 cdo -setpartabn,partab -ap2pl,${LEVELS}   $AinDat Uatm_dyn_plA
-REMAP_AREA_MIN=0.5 
+REMAP_AREA_MIN=0.5
 cdo -r remapycon,t63grid   Uatm_dyn_plA Uatm_dyn_t63A
 cdo sinfon   $AinDat
 cdo sinfon  Uatm_dyn_plA
@@ -64,7 +64,7 @@ more var.txt
 #-----code223---Cloud cover-----CMOR: cl --
 #
 Cvar=cl
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
      cdo  sub -mulc,100 -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A  \
@@ -75,7 +75,7 @@ fi
 #----code130---Temperature--850 hPa---CMOR: ta ----
 #
 Cvar=ta
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_plA  > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_plA  > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_plB > /dev/null ;then
      cdo sub -sellevel,85000 -selvar,${Cvar}  Uatm_dyn_plA \
@@ -88,7 +88,7 @@ fi
 #
 
 Cvar=zg
-if cdo -s showvar -selvar,${Cvar}  Uatm_dyn_plA > /dev/null 
+if cdo -s showvar -selvar,${Cvar}  Uatm_dyn_plA > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_plB > /dev/null ;then
      cdo sub -mulc,0.1  -selvar,${Cvar} -sellevel,50000 Uatm_dyn_plA \
@@ -101,7 +101,7 @@ fi
 #----code130--TA- Temperature---ZONAL--CMOR: ta ---
 #
 Cvar=ta
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -zonmean -subc,273.15 -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -114,7 +114,7 @@ fi
 #-----code131--------zonal----CMOR: ua ----
 #
 Cvar=ua
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -127,7 +127,7 @@ fi
 #-----code132---VA-----zonal----CMOR: va ----
 #
 Cvar=va
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -140,7 +140,7 @@ fi
 #----code133-- -Specific humidity---CMOR: hus ---
 #
 Cvar=hus
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -zonmean -mulc,1000 -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -154,7 +154,7 @@ fi
 #-----code153---Cloud water---ZONAL--CMOR: clw --
 #
 Cvar=clw
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -167,7 +167,7 @@ fi
 #-----code154---Cloud ice---ZONAL-CMOR: cli ---
 #
 Cvar=cli
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \
@@ -179,19 +179,19 @@ fi
 #-----code153 + code154---Cloud ice + Cloud water --ZONAL--CMOR:clw+cli --
 #
 Cvar=clw_cli
-if cdo -s showvar -selvar,clw Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,clw Uatm_dyn_t63A > /dev/null
 then
   cdo -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,clw  Uatm_dyn_t63A busy1A.nc
-  if cdo -s showvar -selvar,cli Uatm_dyn_t63A > /dev/null 
+  if cdo -s showvar -selvar,cli Uatm_dyn_t63A > /dev/null
   then
     cdo -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,cli  Uatm_dyn_t63A busy2A.nc
     cdo add busy1A.nc busy2A.nc busy_addA.nc
   fi
 fi
-if cdo -s showvar -selvar,clw Uatm_dyn_t63B > /dev/null 
+if cdo -s showvar -selvar,clw Uatm_dyn_t63B > /dev/null
 then
   cdo -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,clw  Uatm_dyn_t63B busy1B.nc
-  if cdo -s showvar -selvar,cli Uatm_dyn_t63B > /dev/null 
+  if cdo -s showvar -selvar,cli Uatm_dyn_t63B > /dev/null
   then
     cdo -mulc,1000000 -zonmean -sellevel,${LEVELS} -selvar,cli  Uatm_dyn_t63B busy2B.nc
     cdo add busy1B.nc busy2B.nc busy_addB.nc
@@ -201,13 +201,13 @@ if [ -f busy_addA.nc -a -f busy_addB.nc ]
 then
    cdo sub busy_addA.nc busy_addB.nc Ubusy_d${Cvar}.nc
 fi
-rm -f  busy* 
+rm -f  busy*
 
 #
 #-----code157--Relative humidity-------zonal----CMOR: hur ----
 #
 Cvar=hur
-if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null 
+if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63A > /dev/null
 then
    if cdo -s showvar -selvar,${Cvar} Uatm_dyn_t63B > /dev/null ;then
       cdo sub -mulc,100 -zonmean -sellevel,${LEVELS} -selvar,${Cvar} Uatm_dyn_t63A \

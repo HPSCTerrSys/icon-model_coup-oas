@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -11,33 +11,33 @@
 # ------------------------------------------
 
 # =======================================================================================
-# 
+#
 # Name: exp.art_oem.run
 #
-# Purpose: Runscript for ICON-ART to conduct a LAM simulation over Europe, 
-#          featuring methane tracers emitted by the online emissions module. 
+# Purpose: Runscript for ICON-ART to conduct a LAM simulation over Europe,
+#          featuring methane tracers emitted by the online emissions module.
 #          This example includes one emission tracer with two categories &
-#          10 ensemble members. 
+#          10 ensemble members.
 #
-#          - For long test runs (i.e. higher than 1 hour of physical time), activate 
+#          - For long test runs (i.e. higher than 1 hour of physical time), activate
 #            the time-dependent boundaries (i.e. itype_latbc=1).
 #
 #          - At least 3 & 4 GPU nodes (Piz Daint) are required to run this specific
-#            test case with itype_latbc=0 & itype_latbc=1, respectively.  
+#            test case with itype_latbc=0 & itype_latbc=1, respectively.
 #
-#          - For GPU runs, use one block for each MPI (i.e. nblocks_c=1) & let 
+#          - For GPU runs, use one block for each MPI (i.e. nblocks_c=1) & let
 #            the code evaluate nproma for maximum performance. For CPU runs, use
-#            nproma=16 (on Piz Daint). 
+#            nproma=16 (on Piz Daint).
 #
-#          - Radiation is off here (inwp_radiation=0). Switch it on and use ecRad by 
-#            setting inwp_radiation=4. Do not specify nproma_sub (for radiation) for CPU runs. 
-#            For GPU runs, its value should be evaluated based on nproma & code performance 
-#            (through trial & error). 
+#          - Radiation is off here (inwp_radiation=0). Switch it on and use ecRad by
+#            setting inwp_radiation=4. Do not specify nproma_sub (for radiation) for CPU runs.
+#            For GPU runs, its value should be evaluated based on nproma & code performance
+#            (through trial & error).
 #
 # Author: Arash Hamzehloo (Empa, 2024)
 #
 #
-# ======================================================================================= 
+# =======================================================================================
 
 set -x
 
@@ -100,9 +100,9 @@ then
 else
   output_art_oem=no
   output_atm_3d=no
-  
+
 fi
-  
+
 if [[ "$structured_output" == "yes" ]]
 then
   output_art_oem_structured=yes
@@ -262,7 +262,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  hdiff_order                 =                          5         ! order of nabla operator for diffusion
  itype_vn_diffu              =                          1         ! reconstruction method used for Smagorinsky diffusion
  itype_t_diffu               =                          2         ! discretization of temperature diffusion
- hdiff_efdt_ratio            =                         24.0       ! ratio of e-folding time to time step 
+ hdiff_efdt_ratio            =                         24.0       ! ratio of e-folding time to time step
  hdiff_smag_fac              =                          0.025     ! scaling factor for Smagorinsky diffusion
 /
 
@@ -373,7 +373,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  vwind_offctr                =                          0.2       ! off-centering in vertical wind solver
  damp_height                 =                      12500.0       ! height at which Rayleigh damping of vertical wind starts
  rayleigh_coeff              =                          1.5       ! Rayleigh damping coefficient
- divdamp_order               =                         24         ! order of divergence damping 
+ divdamp_order               =                         24         ! order of divergence damping
  divdamp_type                =                         3          ! type of divergence damping
  divdamp_fac                 =                          0.004     ! scaling factor for divergence damping
  igradp_method               =                          3         ! discretization of horizontal pressure gradient
@@ -405,8 +405,6 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  icapdcycl                   =                          3         ! apply CAPE modification to improve diurnalcycle over tropical land
  icpl_aero_conv              =                          1         ! coupling between autoconversion and Tegen aerosol climatology
  icpl_aero_gscp              =                          1         ! coupling between autoconversion and Tegen aerosol climatology
- lrtm_filename               =                'rrtmg_lw.nc'       ! longwave absorption coefficients for RRTM_LW
- cldopt_filename             =             'rrtm_cldopt.nc'       ! RRTM cloud optical properties
  dt_rad                      =                        360.       ! time step for radiation in s
  dt_conv                     =                        30.       ! time step for convection in s (domain specific)
  dt_sso                      =                        30.       ! time step for SSO parameterization
@@ -546,8 +544,8 @@ if [[ "$output_art_oem_structured" == "yes" ]]; then
  steps_per_file_inclfirst    =                    .FALSE.
  output_grid                 =                      .TRUE.
  remap                       =                          1         ! 1: remap to lat-lon grid
- reg_lon_def                 =              -16.0,0.16,36.0 
- reg_lat_def                 =               32.0,0.12,74.0 
+ reg_lon_def                 =              -16.0,0.16,36.0
+ reg_lat_def                 =               32.0,0.12,74.0
  ml_varlist                  =  'group:ART_CHEMISTRY',
                                 'group:nh_prog_vars',
                                 'group:ATMO_ML_VARS',

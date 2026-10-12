@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Module generating a PostScript file visualizing the asynchronous I/O.
 !
 ! The output write intervals are visualized as bars on a timeline,
@@ -13,17 +24,6 @@
 ! Note that this Fortran module is restricted to high level calls
 ! while the actual drawing and scaling is automatically handled by
 ! the generated PostScript code.
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_name_list_output_stats
 
@@ -221,7 +221,7 @@ CONTAINS
     INTEGER,          INTENT(IN) :: psfile     !< PostScript file handle
     CHARACTER(LEN=*), INTENT(IN) :: title_str  !< title string
 
-    WRITE (psfile, '(a)') "% constants                                        " 
+    WRITE (psfile, '(a)') "% constants                                        "
     WRITE (psfile, '(a)') "/boxhgt     3 def % interval box height            "
     WRITE (psfile, '(a)') "/linehgt   13 def % total row height               "
     WRITE (psfile, '(a)') "/fontsize   5 def % annotation font size           "
@@ -296,7 +296,7 @@ CONTAINS
       max_entries = SIZE(list%intvl)
     ELSE
       max_entries      =  0
-      list%current_idx = -1 
+      list%current_idx = -1
     ENDIF
     IF (max_entries > 0) THEN
       ALLOCATE(tmp(max_entries), STAT=ierrstat)
@@ -343,7 +343,7 @@ CONTAINS
 
     ! The Fortran routine "date_and_time" returns the following 8 values:
     !
-    ! year ; month of the year ; day of the month ; time diff. wrt. UTC ; hour of day ; 
+    ! year ; month of the year ; day of the month ; time diff. wrt. UTC ; hour of day ;
     !  [1]           [2]                [3]               [4]                [5]
     !
     ! minute of hour ; seconds of minute ; milliseconds of second
@@ -354,7 +354,7 @@ CONTAINS
     a = FLOOR((14._wp - ivalues(2))/12._wp)
     y = ivalues(1) + 4800 - a
     m = ivalues(2) + 12*a - 3
-    
+
     get_timestamp%julian_day =  &
       &       (ivalues(3) + FLOOR((53._wp*m + 2._wp)/5._wp) + 365._wp*y + FLOOR(y/4.)      &
       &         - FLOOR(y/100._wp) + FLOOR(y/400._wp) - 32045._wp) * 24._wp*3600._wp       &
@@ -503,7 +503,7 @@ CONTAINS
         tot_list%start_idx(pe+1) = istart
         IF (nentries(pe+1) == 0) CYCLE
         IF (pe == this_pe) THEN
-          ! local copy 
+          ! local copy
           tot_list%list%intvl(istart:iend) = list%intvl(1:list%nentries)
         ELSE
           ! WRITE (0,*) "Receive ", nentries(pe+1), " entries from PE ", pe
@@ -542,7 +542,7 @@ CONTAINS
     CHARACTER(LEN=*),               INTENT(IN) :: this_pe_name  !< local PE name (row title)
     INTEGER,                        INTENT(IN) :: mpi_comm      !< MPI process communicator
     !> PE rank that collects and writes the output:
-    INTEGER, PARAMETER :: iroot = 0 
+    INTEGER, PARAMETER :: iroot = 0
     ! local variables
     CHARACTER(LEN=*), PARAMETER :: routine = modname//'::interval_write_psfile'
     INTEGER                        :: psfile, i, j, start_idx, end_idx, ierrstat
@@ -557,7 +557,7 @@ CONTAINS
     IF (ALLOCATED(global_list%pe_names)) THEN
       psfile = find_next_free_unit(10,100)
       OPEN(psfile, file=TRIM(filename))
-      
+
       CALL ps_define_header(psfile)
       CALL ps_define_routines(psfile)
       CALL ps_define_constants(psfile, title_str)
@@ -576,7 +576,7 @@ CONTAINS
         END DO
       END DO
       CALL ps_define_epilogue(psfile)
-      
+
       CLOSE(psfile)
     END IF
 
@@ -593,4 +593,3 @@ CONTAINS
   END SUBROUTINE interval_write_psfile
 
 END MODULE mo_name_list_output_stats
-

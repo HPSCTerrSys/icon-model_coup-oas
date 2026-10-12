@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -23,7 +23,8 @@ fi
 
 machine=mpimac
 ./addmachine $machine --list $list
-./addbuilder MPIMAC_gcc             --machine $machine       --build_script="./config/buildbot/mpimac_gcc"                   --configureflags="--with-mpi --with-openmp"         --builderflags="build_only"  --list $list
+./addbuilder mpimac_gcc    --machine $machine --build_script="./config/buildbot/mpimac_gcc"    --configureflags="--with-mpi --with-openmp" --builderflags="Active"     --list $list
+./addbuilder mpimac_gcc_sp --machine $machine --build_script="./config/buildbot/mpimac_gcc_sp" --configureflags="--with-mpi --with-openmp" --builderflags="Active" --list $list
 
 # breeze builders
 machine=breeze
@@ -34,14 +35,6 @@ machine=breeze
 ./addbuilder breeze_intel_openmp  --machine $machine --build_script="./config/buildbot/breeze_intel_openmp" --configureflags="--with-openmp"  --builderflags="Active"  --list $list
 ./addbuilder breeze_nag           --machine $machine --build_script="./config/buildbot/breeze_nag"                                               --builderflags="Active"  --list $list
 
-#CSCS builders
-machine=daint
-./addmachine $machine --list $list
-./addbuilder DAINT_CPU_cce          --machine $machine --build_script="./config/buildbot/daint_cpu_cray" --builderflags="Active"  --list $list
-./addbuilder DAINT_CPU_nvidia       --machine $machine --build_script="./config/buildbot/daint_cpu_nvidia"  --builderflags="Active"  --list $list
-./addbuilder DAINT_GPU_nvidia       --machine $machine --build_script="./config/buildbot/daint_gpu_nvidia"  --builderflags="Active"  --list $list
-./addbuilder DAINT_CPU_nvidia_mixed --machine $machine --build_script="./config/buildbot/daint_cpu_nvidia_mixed" --configureflags="--enable-mixed" --builderflags="Active"  --list $list
-./addbuilder DAINT_GPU_nvidia_mixed --machine $machine --build_script="./config/buildbot/daint_gpu_nvidia_mixed" --configureflags="--enable-mixed" --builderflags="Active"  --list $list
 machine=balfrin
 ./addmachine $machine --list $list
 ./addbuilder balfrin_cpu_nvidia       --machine $machine --build_script="./config/buildbot/balfrin_cpu_nvidia"  --builderflags="Active"  --list $list
@@ -55,9 +48,10 @@ machine=balfrin
 #DWD machines
 machine=dwd_nec
 ./addmachine $machine --list $list
-./addbuilder DWD_nec             --machine $machine  --build_script="./config/buildbot/dwd_nec"        --builderflags="Active"  --list $list
-./addbuilder DWD_nec_hybrid      --machine $machine  --build_script="./config/buildbot/dwd_nec_hybrid" --builderflags="Active"  --list $list
-./addbuilder DWD_nec_yac2        --machine $machine  --build_script="./config/buildbot/dwd_nec_yac2"   --builderflags="Active"  --list $list
+./addbuilder dwd_nec_oper       --machine $machine  --build_script="./config/buildbot/dwd_nec_oper"       --builderflags="Active"  --list $list
+./addbuilder dwd_nec_hybrid     --machine $machine  --build_script="./config/buildbot/dwd_nec_hybrid"     --builderflags="Active"  --list $list
+./addbuilder dwd_nec_coupling   --machine $machine  --build_script="./config/buildbot/dwd_nec_coupling"   --builderflags="Active"  --list $list
+./addbuilder dwd_nec_sp         --machine $machine  --build_script="./config/buildbot/dwd_nec_sp"         --builderflags="Active"  --list $list
 
 machine=levante
 ./addmachine $machine --list $list
@@ -65,28 +59,40 @@ machine=levante
   --configureflags="--with-mpi --without-openmp"    --builderflags="Active" --list $list
 ./addbuilder levante_gcc_hybrid         --machine $machine  --build_script="config/buildbot/levante_gcc_hybrid" \
   --configureflags="--with-mpi --with-openmp"    --builderflags="Active" --list $list
+./addbuilder levante_gcc_sp             --machine $machine  --build_script="config/buildbot/levante_gcc_sp" \
+  --configureflags="--with-mpi --without-openmp"    --builderflags="Active" --list $list
 ./addbuilder levante_intel              --machine $machine  --build_script="config/buildbot/levante_intel" \
   --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
 ./addbuilder levante_intel_hybrid       --machine $machine  --build_script="config/buildbot/levante_intel_hybrid" \
   --configureflags="--with-mpi --with-openmp"  --builderflags="Active" --list $list
 ./addbuilder levante_intel_hybrid_mixed --machine $machine  --build_script="config/buildbot/levante_intel_hybrid_mixed" \
   --configureflags="--with-mpi --with-openmp --enable-mixed"  --builderflags="Active" --list $list
+./addbuilder levante_intel_hybrid_sp    --machine $machine  --build_script="config/buildbot/levante_intel_hybrid_sp" \
+  --configureflags="--with-mpi --with-openmp"    --builderflags="Active" --list $list
 ./addbuilder levante_intel_pio          --machine $machine  --build_script="config/buildbot/levante_intel_pio" \
-  --configureflags="--with-mpi --without-openmp"  --builderflags="Inactive" --list $list
+  --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
 ./addbuilder levante_nag                --machine $machine  --build_script="config/buildbot/levante_nag" \
   --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
 ./addbuilder levante_nag_serial         --machine $machine  --build_script="config/buildbot/levante_nag_serial" \
   --configureflags="--without-mpi --without-openmp"  --builderflags="Active" --list $list
+./addbuilder levante_nag_sp             --machine $machine  --build_script="config/buildbot/levante_nag_sp" \
+  --configureflags="--with-mpi --without-openmp"    --builderflags="Active" --list $list
 ./addbuilder levante_gpu_nvhpc              --machine $machine  --build_script="config/buildbot/levante_gpu_nvhpc" \
   --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
+./addbuilder levante_gpu_nvhpc_sp           --machine $machine  --build_script="config/buildbot/levante_gpu_nvhpc_sp" \
+  --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
 ./addbuilder levante_cpu_nvhpc              --machine $machine  --build_script="config/buildbot/levante_cpu_nvhpc" \
+  --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
+./addbuilder levante_gpu_nvhpc_dev          --machine $machine  --build_script="config/buildbot/levante_gpu_nvhpc_dev" \
+  --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
+./addbuilder levante_cpu_nvhpc_dev          --machine $machine  --build_script="config/buildbot/levante_cpu_nvhpc_dev" \
   --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
 ./addbuilder levante_gpu_validation         --machine $machine --build_script="config/buildbot/levante_gpu_validation" \
   --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
 ./addbuilder levante_aurora             --machine $machine  --build_script="config/buildbot/levante_aurora" \
-  --configureflags="--with-mpi --without-openmp"  --builderflags="Inactive" --list $list
+  --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
 ./addbuilder levante_coverage           --machine $machine  --build_script="config/buildbot/levante_coverage" \
-  --configureflags="--with-mpi --without-openmp"  --builderflags="Inactive" --list $list
+  --configureflags="--with-mpi --without-openmp"  --builderflags="Active" --list $list
 
 machine=jsc
 ./addmachine $machine --list $list
@@ -99,8 +105,8 @@ machine=jsc
 # KIT builders
 machine=horeka
 ./addmachine $machine --list $list
-./addbuilder horeka_gcc       --machine $machine --build_script="config/buildbot/horeka_gcc"       --builderflags="build_only" --list $list
-./addbuilder horeka_intel     --machine $machine --build_script="config/buildbot/horeka_intel"     --builderflags="build_only" --list $list
+./addbuilder horeka_gcc       --machine $machine --build_script="config/buildbot/horeka_gcc"       --builderflags="Active" --list $list
+./addbuilder horeka_intel     --machine $machine --build_script="config/buildbot/horeka_intel"     --builderflags="Active" --list $list
 ./addbuilder horeka_gpu_nvhpc --machine $machine --build_script="config/buildbot/horeka_gpu_nvhpc" --builderflags="Active" --list $list
 ./addbuilder horeka_cpu_nvhpc --machine $machine --build_script="config/buildbot/horeka_cpu_nvhpc" --builderflags="Active" --list $list
 
@@ -110,3 +116,4 @@ machine=lumi
 ./addbuilder lumi_cpu  --machine $machine  --build_script="config/buildbot/lumi_cpu"   --builderflags="Active" --list $list
 ./addbuilder lumi_gpu_mixed  --machine $machine  --build_script="config/buildbot/lumi_gpu_mixed"   --builderflags="build_only" --list $list
 ./addbuilder lumi_cpu_mixed  --machine $machine  --build_script="config/buildbot/lumi_cpu_mixed"   --builderflags="build_only" --list $list
+./addbuilder lumi_cpu_sp  --machine $machine  --build_script="config/buildbot/lumi_cpu_sp"   --builderflags="Active" --list $list

@@ -1,13 +1,7 @@
-!
-! This module is the interface between nwp_nh_interface to the radiation schemes
-! (ecRad and RRTM).
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -15,21 +9,21 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! This module is the interface between nwp_nh_interface to the radiation schemes
+! (ecRad and RRTM).
+
 !----------------------------
 #include "omp_definitions.inc"
 !----------------------------
 
 MODULE mo_nwp_rad_interface
 
-  USE mo_exception,            ONLY: finish, message_text
-#ifdef _OPENACC
-  USE mo_exception,            ONLY: message
-#endif
+  USE mo_exception,            ONLY: finish, message, message_text
   USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config
   USE mo_ext_data_types,       ONLY: t_external_data
   USE mo_parallel_config,      ONLY: nproma
   USE mo_impl_constants,       ONLY: MODIS
-  USE mo_kind,                 ONLY: wp
+  USE mo_kind,                 ONLY: wp, rp
   USE mo_nwp_lnd_types,        ONLY: t_lnd_prog, t_wtr_prog, t_lnd_diag
   USE mo_model_domain,         ONLY: t_patch
   USE mo_nonhydro_types,       ONLY: t_nh_prog, t_nh_diag
@@ -50,19 +44,15 @@ MODULE mo_nwp_rad_interface
     &                                operator(+), operator(-), newTimedelta, deallocateTimedelta, &
     &                                getPTStringFromSeconds, newDatetime, deallocateDatetime
   USE mo_timer,                ONLY: timer_start, timer_stop, timers_level, timer_preradiaton
-  USE mo_nwp_gpu_util,         ONLY: gpu_d2h_nh_nwp
   USE mo_bc_greenhouse_gases,  ONLY: bc_greenhouse_gases_time_interpolation
-#ifdef _OPENACC
-  USE mo_mpi,                  ONLY: i_am_accel_node, my_process_is_work
-  USE mo_nwp_gpu_util,         ONLY: gpu_h2d_nh_nwp
-#endif
+  USE mo_nwp_gpu_util,         ONLY: gpu_h2d_nh_nwp, gpu_d2h_nh_nwp
   USE mo_bc_solar_irradiance,  ONLY: read_bc_solar_irradiance, ssi_time_interpolation
   USE mo_bcs_time_interpolation,ONLY: t_time_interpolation_weights,   &
     &                                 calculate_time_interpolation_weights
   USE mo_o3_util,              ONLY: o3_interface
   USE mo_nwp_aerosol,          ONLY: nwp_aerosol_interface, nwp_aerosol_cleanup
   USE mo_fortran_tools,        ONLY: set_acc_host_or_device
-  USE mo_run_config,           ONLY: msg_level
+  USE mo_run_config,           ONLY: msg_level, ico2
 #ifdef COUP_OAS_ECLM
   USE mo_oasis_define,         ONLY: oas_rcv_field_icon, loas_clm_c, oas_rcv_nvar, loas_rcv_valid
   USE mo_impl_constants_grf,   ONLY: grf_bdywidth_c
@@ -77,10 +67,10 @@ MODULE mo_nwp_rad_interface
 
 
   PUBLIC :: nwp_radiation
-  
+
 
  CONTAINS
-  
+
   !---------------------------------------------------------------------------------------
   !>
   !! This subroutine is the interface between nwp_nh_interface to the radiation schemes.
@@ -93,7 +83,7 @@ MODULE mo_nwp_rad_interface
       &  routine = 'mo_nwp_rad_interface:nwp_radiation'
 
     LOGICAL,                 INTENT(in)    :: lredgrid        !< use reduced grid for radiation
-    LOGICAL, OPTIONAL,       INTENT(in)    :: lacc ! If true, use openacc
+    LOGICAL,                 INTENT(in)    :: lacc ! If true, use openacc
 
     REAL(wp),                INTENT(in)    :: p_sim_time   !< simulation time
     REAL(wp),                INTENT(in)    :: zf(:,:,:)    !< model full layer height
@@ -118,24 +108,22 @@ MODULE mo_nwp_rad_interface
     TYPE(datetime), POINTER :: prev_radtime
     TYPE(timedelta), POINTER :: td_dt_rad
 
-    REAL(wp) :: &
-      & zaeq1(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq2(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq3(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq4(nproma,pt_patch%nlev,pt_patch%nblks_c), &
-      & zaeq5(nproma,pt_patch%nlev,pt_patch%nblks_c)
-
-    REAL(wp), ALLOCATABLE :: & ! These fields are currently only used for Kinne-Aerosol
-      & od_lw(:,:,:,:)  , & !< LW optical thickness of aerosols
-      & od_sw(:,:,:,:)  , & !< SW aerosol optical thickness
-      & g_sw (:,:,:,:)  , & !< SW aerosol asymmetry factor
-      & ssa_sw(:,:,:,:)     !< SW aerosol single scattering albedo
+    REAL(wp), TARGET, ALLOCATABLE :: &
+      &  zaeq1(:,:,:),   & !< Tegen optical thicknesses       1: continental
+      &  zaeq2(:,:,:),   & !< relative to 550 nm, including   2: maritime
+      &  zaeq3(:,:,:),   & !< a vertical profile              3: desert
+      &  zaeq4(:,:,:),   & !< for 5 different                 4: urban
+      &  zaeq5(:,:,:)      !< aerosol species.                5: stratospheric background
+    REAL(wp), POINTER :: &
+      &  od_lw(:,:,:,:), & !< LW optical thickness of aerosols
+      &  od_sw(:,:,:,:), & !< SW aerosol optical thickness
+      &  g_sw (:,:,:,:), & !< SW aerosol asymmetry factor
+      &  ssa_sw(:,:,:,:)   !< SW aerosol single scattering albedo
 
     CHARACTER(len=max_timedelta_str_len) :: dstring
     INTEGER :: jg
     INTEGER :: nbands_lw, nbands_sw    !< Number of short and long wave bands
-    REAL(wp), POINTER :: wavenum1_sw(:), wavenum2_sw(:)
-    LOGICAL :: lzacc
+    REAL(rp), POINTER :: wavenum1_sw(:), wavenum2_sw(:)
 
     REAL(wp):: zsct                    ! solar constant (at time of year)
     REAL(wp):: dsec                    ! [s] time increment of radiative transfer wrt. datetime
@@ -155,12 +143,16 @@ MODULE mo_nwp_rad_interface
 
     wavenum1_sw => NULL()
     wavenum2_sw => NULL()
+
+    od_lw   => NULL()
+    od_sw   => NULL()
+    g_sw    => NULL()
+    ssa_sw  => NULL()
+
     ! patch ID
     jg = pt_patch%id
 
     IF (timers_level > 6) CALL timer_start(timer_preradiaton)
-
-    CALL set_acc_host_or_device(lzacc, lacc)
 
     !-------------------------------------------------------------------------
     !  Update irradiance
@@ -193,22 +185,23 @@ MODULE mo_nwp_rad_interface
         nbands_sw   = ecrad_conf%n_bands_sw ! With ecckd, this might actually be g-points if ecrad_conf%do_cloud_aerosol_per_sw_g_point
         wavenum1_sw => ecrad_conf%gas_optics_sw%spectral_def%wavenumber1_band
         wavenum2_sw => ecrad_conf%gas_optics_sw%spectral_def%wavenumber2_band
+        !$ACC ENTER DATA CREATE(wavenum1_sw, wavenum2_sw) IF(lacc)
+        !$ACC UPDATE DEVICE(wavenum1_sw, wavenum2_sw) IF(lacc)
     END SELECT
 #endif
 
     ! Aerosol
-    !$ACC DATA CREATE(zaeq1, zaeq2, zaeq3, zaeq4, zaeq5) IF(lzacc)
     CALL nwp_aerosol_interface(mtime_datetime, pt_patch, ext_data, pt_diag, prm_diag,     &
       &                        zf(:,:,:), zh(:,:,:), dz(:,:,:),                           &
       &                        atm_phy_nwp_config(jg)%dt_rad,                             &
       &                        atm_phy_nwp_config(jg)%inwp_radiation,                     &
       &                        nbands_lw, nbands_sw, wavenum1_sw, wavenum2_sw,            &
       &                        zaeq1, zaeq2, zaeq3, zaeq4, zaeq5,                         &
-      &                        od_lw, od_sw, ssa_sw, g_sw, lacc=lzacc)
+      &                        od_lw, od_sw, ssa_sw, g_sw, lacc=lacc)
 
     ! Ozone
     CALL o3_interface(mtime_datetime, p_sim_time, pt_patch, pt_diag, &
-      &               ext_data%atm%o3, prm_diag, atm_phy_nwp_config(jg)%dt_rad, lacc=lzacc)
+      &               ext_data%atm%o3, prm_diag, atm_phy_nwp_config(jg)%dt_rad, lacc=lacc)
 
     IF(ANY((/irad_co2,irad_cfc11,irad_cfc12,irad_n2o,irad_ch4/) == 4)) THEN
       ! Interpolate greenhouse gas concentrations to the current date and time,
@@ -223,7 +216,11 @@ MODULE mo_nwp_rad_interface
           &     (msg_level >= 5 .AND. is_new_month)) &
         )
     END IF
-
+    ! FIXME: This is a hack to make interactive CO2 work with the radiation scheme.
+    ! Should be replaced by a proper implementation of an `irad_co2 = 1` case.
+    IF (ico2 > 0 .AND. irad_co2 == -1) THEN
+      prm_diag%co2rad_ext(:,:,:) = pt_prog%tracer(:,:,:,ico2)
+    ENDIF
 
 #ifdef __ECRAD
     IF (isolrad == 2 .AND. atm_phy_nwp_config(jg)%inwp_radiation == 4) THEN
@@ -260,20 +257,20 @@ MODULE mo_nwp_rad_interface
       & pt_patch     = pt_patch,                          & !in
       & zsmu0        = prm_diag%cosmu0(:,:),              & !out
       & zsct         = zsct,                              & !out, optional
-      & lacc         = lzacc                               ) !in
+      & lacc         = lacc                               ) !in
 
 
     ! Compute tile-based and aggregated surface-albedo
     !
     IF ( albedo_type == MODIS ) THEN
       ! MODIS albedo
-      CALL sfc_albedo_modis(pt_patch, ext_data, lnd_prog, wtr_prog, lnd_diag, prm_diag, lzacc)
+      CALL sfc_albedo_modis(pt_patch, ext_data, lnd_prog, wtr_prog, lnd_diag, prm_diag, lacc)
     ELSE IF ( albedo_type == 3 ) THEN
       ! globally fixed albedo value for SCM and RCEMIP applications
-      CALL sfc_albedo_scm(pt_patch, albedo_fixed, prm_diag, lzacc)
+      CALL sfc_albedo_scm(pt_patch, albedo_fixed, prm_diag, lacc)
     ELSE
       ! albedo based on tabulated bare soil values
-      CALL sfc_albedo(pt_patch, ext_data, lnd_prog, wtr_prog, lnd_diag, prm_diag, lzacc)
+      CALL sfc_albedo(pt_patch, ext_data, lnd_prog, wtr_prog, lnd_diag, prm_diag, lacc)
     ENDIF
 #ifdef COUP_OAS_ECLM
     ! for masked points run full albedo calculation; should be revised in future
@@ -300,7 +297,7 @@ MODULE mo_nwp_rad_interface
 #endif
 
     IF (timers_level > 6) CALL timer_stop(timer_preradiaton)
-    
+
     !-------------------------------------------------------------------------
     !> Radiation
     !-------------------------------------------------------------------------
@@ -309,55 +306,48 @@ MODULE mo_nwp_rad_interface
     SELECT CASE (atm_phy_nwp_config(jg)%inwp_radiation)
     CASE (1) ! RRTM
 
-#ifdef _OPENACC
-    IF(lzacc) THEN
+    IF(lacc) THEN
       CALL message('mo_nh_interface_nwp', &
         &  'Device to host copy before nwp_rrtm_radiation. This needs to be removed once port is finished!')
-      CALL gpu_d2h_nh_nwp(jg, ext_data=ext_data, lacc=lzacc)
-      !$ACC UPDATE HOST(zaeq1, zaeq2, zaeq3, zaeq4, zaeq5) ASYNC(1) IF(lzacc)
+      CALL gpu_d2h_nh_nwp(jg, ext_data=ext_data, lacc=lacc)
+      !$ACC UPDATE HOST(zaeq1, zaeq2, zaeq3, zaeq4, zaeq5) ASYNC(1) IF(lacc)
       !$ACC WAIT(1)
-      i_am_accel_node = .FALSE. ! still needed for communication
     ENDIF
-#endif
-    
+
       IF ( .NOT. lredgrid ) THEN
-          
+
         CALL nwp_rrtm_radiation ( mtime_datetime, pt_patch, ext_data, &
           & zaeq1, zaeq2, zaeq3, zaeq4, zaeq5,        &
           & pt_diag, prm_diag, lnd_prog, lacc=.FALSE. )
-       
-      ELSE 
+
+      ELSE
 
         CALL nwp_rrtm_radiation_reduced ( mtime_datetime, pt_patch,pt_par_patch, ext_data, &
           & zaeq1, zaeq2, zaeq3, zaeq4, zaeq5,                             &
           & pt_diag, prm_diag, lnd_prog, lacc=.FALSE. )
-          
+
       ENDIF
 
-#ifdef _OPENACC
-      IF(lzacc) THEN
+      IF(lacc) THEN
         CALL message('mo_nh_interface_nwp', &
           &  'Host to device copy after nwp_rrtm_radiation. This needs to be removed once port is finished!')
-        CALL gpu_h2d_nh_nwp(jg, ext_data=ext_data, lacc=lzacc)
-        i_am_accel_node = my_process_is_work()
+        CALL gpu_h2d_nh_nwp(jg, ext_data=ext_data, lacc=lacc)
       ENDIF
-#endif
 
     CASE (4) ! ecRad
 #ifdef __ECRAD
       IF (.NOT. lredgrid) THEN
-        !$ACC WAIT
-        CALL nwp_ecRad_radiation ( mtime_datetime, pt_patch, ext_data,      &
+        CALL nwp_ecrad_radiation ( mtime_datetime, pt_patch, ext_data,      &
           & zaeq1, zaeq2, zaeq3, zaeq4, zaeq5,                              &
           & od_lw, od_sw, ssa_sw, g_sw,                                     &
-          & pt_diag, prm_diag, pt_prog, lnd_prog, zsct, ecrad_conf, lzacc )
+          & pt_diag, prm_diag, pt_prog, lnd_prog, zsct, ecrad_conf, lacc )
       ELSE
-        !$ACC WAIT
-        CALL nwp_ecRad_radiation_reduced ( mtime_datetime, pt_patch,pt_par_patch, &
+        CALL nwp_ecrad_radiation_reduced ( mtime_datetime, pt_patch,pt_par_patch, &
           & ext_data, zaeq1, zaeq2, zaeq3, zaeq4, zaeq5,                          &
           & od_lw, od_sw, ssa_sw, g_sw,                                           &
-          & pt_diag, prm_diag, pt_prog, lnd_prog, zsct, ecrad_conf, lacc=lzacc )
+          & pt_diag, prm_diag, pt_prog, lnd_prog, zsct, ecrad_conf, lacc=lacc )
       ENDIF
+      !$ACC EXIT DATA DELETE(wavenum1_sw, wavenum2_sw) IF(lacc)
 #else
       CALL finish(routine,  &
         &      'atm_phy_nwp_config(jg)%inwp_radiation = 4 needs -D__ECRAD.')
@@ -369,13 +359,9 @@ MODULE mo_nwp_rad_interface
       CALL finish(routine,message_text)
     END SELECT ! inwp_radiation
 
-    !$ACC END DATA
-
-
-    CALL nwp_aerosol_cleanup(od_lw, od_sw, ssa_sw, g_sw)
+    CALL nwp_aerosol_cleanup(zaeq1, zaeq2, zaeq3, zaeq4, zaeq5, od_lw, od_sw, ssa_sw, g_sw, lacc=lacc)
 
   END SUBROUTINE nwp_radiation
 
 
 END MODULE mo_nwp_rad_interface
-

@@ -1,19 +1,18 @@
-! Contains the interpolation routines needed for grid refinement.
-!
-! These had originally been included in mo_grf_interpolation but then were
-! packed into a separate module to clean up the code
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the interpolation routines needed for grid refinement.
+!
+! These had originally been included in mo_grf_interpolation but then were
+! packed into a separate module to clean up the code
 
 MODULE mo_grf_intp_data_strc
 
@@ -86,7 +85,7 @@ TYPE t_gridref_state
   REAL(wp), ALLOCATABLE :: fbk_wgt_e(:,:,:)     ! Feedback weights for edge-based variables
 
   ! Mask fields defined at parent level for feedback overlap regions with a nested domain:
-  ! dim1=nproma, dim2=nblks, dim3=n_childdom 
+  ! dim1=nproma, dim2=nblks, dim3=n_childdom
   LOGICAL, ALLOCATABLE :: mask_ovlp_c(:,:,:), mask_ovlp_ch(:,:,:), mask_ovlp_e(:,:,:), mask_ovlp_v(:,:,:)
 
   ! Number of grid points for which tendencies for lateral boundary interpolation need to be computed

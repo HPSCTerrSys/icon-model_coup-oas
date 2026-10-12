@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -51,7 +51,7 @@ cat > ${ocean_namelist} << EOF
  nproma         = $nproma
  p_test_run     = .false.
  l_fast_sum     = .true.
- num_prefetch_proc = 0 
+ num_prefetch_proc = 0
  pio_type       = 0
  num_io_procs   = 0
 /
@@ -84,7 +84,35 @@ cat > ${ocean_namelist} << EOF
   include_last     = .false.
   output_grid      = .TRUE.
   filename_format  = "<output_filename>_<datetime2>"
-  ml_varlist       = 'group:oce_default','group:oce_essentials', 'group:ice_default'
+  ml_varlist       = 'group:oce_default','group:oce_essentials', 'group:ice_default', 'group:ice_diag'
+/
+&output_nml
+  filetype         = 5
+  output_filename  = "${EXPNAME}_layers"
+  output_start     = "${start_date}"
+  output_end       = "${end_date}"
+  output_interval  = "${daily}"
+  operation        = "mean"
+  file_interval    = "${file_interval}"
+  mode             = 1
+  include_last     = .FALSE.
+  output_grid      = .TRUE.
+  filename_format  = "<output_filename>_<datetime2>"
+  ml_varlist       = 'group:oce_layers'
+/
+&output_nml
+  filetype         = 5
+  output_filename  = "${EXPNAME}_ts_budget"
+  output_start     = "${start_date}"
+  output_end       = "${end_date}"
+  output_interval  = "${daily}"
+  operation        = "mean"
+  file_interval    = "${file_interval}"
+  mode             = 1
+  include_last     = .FALSE.
+  output_grid      = .TRUE.
+  filename_format  = "<output_filename>_<datetime2>"
+  ml_varlist       = 'group:oce_ts_budget'
 /
 &output_nml
   filetype         =  5 ! output format: 2=GRIB2, 4=NETCDFv2
@@ -98,6 +126,19 @@ cat > ${ocean_namelist} << EOF
   output_grid      = .TRUE.
   filename_format  = "<output_filename>_<datetime2>"
   ml_varlist       = 'group:oce_default','group:oce_essentials', 'group:ice_default'
+/
+&output_nml
+  filetype         =  5 ! output format: 2=GRIB2, 4=NETCDFv2
+  output_filename  = "${EXPNAME}_age"
+  output_start     = "${start_date}"                  ! start in ISO-format
+  output_end       = "${end_date}"                    ! end in ISO-format
+  output_interval  = "${daily}"
+  file_interval    = "${file_interval}"
+  mode             =  1                               ! 1: forecast mode (relative t-axis), 2: climate mode (absolute t-axis)
+  include_last     = .false.
+  output_grid      = .TRUE.
+  filename_format  = "<output_filename>_<datetime2>"
+  ml_varlist       = 'age_tracer','green_tracer'
 /
 &output_nml
   filetype         =  5 ! output format: 2=GRIB2, 4=NETCDFv2
@@ -170,14 +211,14 @@ cat > ${ocean_namelist} << EOF
   l_edge_based                    = .FALSE.   ! edge- or cell-based mimetic discretization
   l_partial_cells                 = .FALSE.   ! partial bottom cells=true: local varying bottom depth
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-13 ! this may further be reduced
 
   select_lhs                      = 1       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
 
   fast_performance_level          = 200       ! performance level 12: for cell-based; 5: default
   use_continuity_correction       = .TRUE.    ! height adjustment according to vertical velocity in dynamics
@@ -195,6 +236,7 @@ cat > ${ocean_namelist} << EOF
   fct_high_order_flux   = 5      ! horizontal high order method: 1=upwind, 2=central, 3=lax_friedrichs, 4=miura_order1
   fct_limiter_horz      = 100    ! zalesak
   threshold_min_T       = -2.0   ! to avoid abort
+  no_tracer             = 4      ! 2 normal setup; 3 with age tracer; 4 with age tracer squared
 /
 &ocean_horizontal_diffusion_nml
   laplacian_form = 1                   ! 1=curlcurl-graddiv
@@ -202,7 +244,7 @@ cat > ${ocean_namelist} << EOF
 
   HarmonicViscosity_scaling     =  1
   HarmonicViscosity_reference   =  3.0E+4  !  [m2/s] constant horizontal viscosity coefficient for velocity
-  HarmonicViscosity_background  =  0.0  
+  HarmonicViscosity_background  =  0.0
 
   TracerHorizontalDiffusion_scaling          = 1
   Temperature_HorizontalDiffusion_Background = 0.0
@@ -246,7 +288,7 @@ cat > ${ocean_namelist} << EOF
   GMRedi_configuration           =   1       ! 0=cartesian diffusion 1=GM-Redi: bolus advection + isopycnal diffusion
   tapering_scheme=1
   GMRedi_usesRelativeMaxSlopes = .false.
-  S_max=1.0e-3                               
+  S_max=1.0e-3
   S_d=0.0001                                 ! 1e-3 to 1e-4
   k_tracer_GM_kappa_parameter     = 1000.0     !
   k_tracer_isoneutral_parameter   = 1000.0     ! value for cell-based cartesian diffusion - mpiom: 1000/400km = 400/160km
@@ -263,10 +305,10 @@ cat > ${ocean_namelist} << EOF
 /
 &ocean_physics_nml
   i_sea_ice                       =   1       ! 0 = no sea ice; 1 = sea ice model on; default=1
-/                                           
+/
 &sea_ice_nml
   i_ice_therm                     =   1       ! 1=zero-layer (default), 2=Winton, 0/2: not allowed
-  i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics , 2=C-grid ice dynamics 
+  i_ice_dyn                       =   1       ! 1/0=switch on/off AWI ice dynamics , 2=C-grid ice dynamics
 ! i_Qio_type                      =   3       ! 3 (default): energy of whole grid-area used for melting (MPIOM-type)
 ! use_constant_tfreez             = .TRUE.    ! default: true
 ! use_no_flux_gradients           = .FALSE.   ! default: true
@@ -278,6 +320,7 @@ cat > ${ocean_namelist} << EOF
  albi         = 0.75         ! Albedo of ice (not melting)
  albim        = 0.70         ! Albedo of ice (melting)
  Pstar        = 40000
+ seaice_stress_diag               = .TRUE.
 /
 &ocean_forcing_nml
   iforc_oce                       = ${iforc}            ! ocean forcing
@@ -296,7 +339,7 @@ cat > ${ocean_namelist} << EOF
   bulk_wind_stress_type           =   0       ! 0: from file, 1: ocean at rest, 2: with ocean currents
 ! forcing_enable_freshwater       = .TRUE.    ! apply freshwater forcing boundary condition (OMIP only)
 ! forcing_set_runoff_to_zero      = .FALSE.   ! set runoff to zero for comparison to MPIOM; default: false
-! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false 
+! zero_freshwater_flux            = .FALSE.   ! set external freshwater flux to zero; default: false
                                               ! salt-change due to internal fluxes only
   limit_seaice                    = .TRUE.    ! default: true
   seaice_limit                    =   0.6     ! hard limit set to 80% of upper layer for sea ice
@@ -304,7 +347,7 @@ cat > ${ocean_namelist} << EOF
   atm_pressure_included_in_ocedyn = .TRUE.   ! use atm. pressure in the ocean dynamics
   atm_pressure_included_in_icedyn = .TRUE.   ! use atm. pressure in the ice dynamics
   use_tides                       = .TRUE.
-  tides_mod                       =  1        ! 1 Default 2 MPIOM 
+  tides_mod                       =  1        ! 1 Default 2 MPIOM
   lswr_jerlov                     = .TRUE.    ! use jerlov water types for sw absorption
   jerlov_atten                    = 0.08      ! jerlov water type IB
   jerlov_bluefrac                 = 0.36      ! jerlov water type IB
@@ -312,7 +355,7 @@ cat > ${ocean_namelist} << EOF
 &ocean_initialConditions_nml
   initial_salinity_type           = 1         ! read from file
   initial_temperature_type        = 1         ! read from file
-/                                    
+/
 &ocean_diagnostics_nml
    diagnostics_level            = 1
    gibraltar(1:10)              = 1367,1369
@@ -327,6 +370,26 @@ cat > ${ocean_namelist} << EOF
    agulhas(1:10)                = 8024,8022
    agulhas_long(1:10)           = 8024,8022,6036
    agulhas_longer(1:10)         = 8024,8022,6036,6025
+   diagnose_for_heat_content       = .TRUE.
+   do_ts_budget = .true.
+   diagnose_age = .true.
+   diagnose_green = .true.
+   greenStartDate = '2001-01-01'
+   greenStopDate = '2001-01-10'
+   use_layers = .true.
+   n_dlev = 84
+   mode_layers = 2
+   rho_lev_in = 0.   , 30.   , 31.   , 32.   , 33.   , 33.2  , 33.4  , 33.6  ,
+               33.8  , 34.   , 34.2  , 34.4  , 34.6  , 34.8  , 35.   , 35.2  ,
+               35.4  , 35.6  , 35.8  , 36.   , 36.05 , 36.1  , 36.15 , 36.2  ,
+               36.25 , 36.3  , 36.35 , 36.4  , 36.45 , 36.5  , 36.55 , 36.6  ,
+               36.65 , 36.7  , 36.75 , 36.76 , 36.78 , 36.8  , 36.82 , 36.84 ,
+               36.86 , 36.88 , 36.9  , 36.92 , 36.94 , 36.96 , 36.98 ,
+               37.   , 37.01 , 37.02 , 37.03 , 37.04 , 37.045, 37.05 , 37.055,
+               37.06 , 37.065, 37.07 , 37.075, 37.08 , 37.085, 37.09 , 37.095,
+               37.1  , 37.105, 37.11 , 37.115, 37.12 , 37.125, 37.13 , 37.135,
+               37.14 , 37.145, 37.15 , 37.155, 37.16 , 37.165, 37.17 , 37.175,
+               37.18 , 37.185, 37.19 , 37.195, 37.2  , 42.
 /
 &io_nml
   restart_file_type = 5

@@ -1,17 +1,16 @@
-!
-!  This module contains the interface routines for calling the RTTOV library
-!  for generating synthetic satellite images
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module contains the interface routines for calling the RTTOV library
+! for generating synthetic satellite images
 
 MODULE mo_rttov_interface
   !
@@ -38,7 +37,7 @@ MODULE mo_rttov_interface
   USE mo_communication,       ONLY: exchange_data, exchange_data_mult
   USE mo_nh_vert_interp,      ONLY: prepare_lin_intp, prepare_extrap, lin_intp
   USE mo_nh_vert_interp_ipz,  ONLY: z_at_plevels
-  USE mo_satad,               ONLY: qsat_rho
+  USE mo_thdyn_functions,     ONLY: qsat_rho
   USE mo_physical_constants,  ONLY: rd, vtmpc1, earth_radius, grav
   USE mo_cufunctions,         ONLY: foealfa
   USE mo_math_constants,      ONLY: rad2deg
@@ -50,7 +49,7 @@ MODULE mo_rttov_interface
   USE mo_name_list_output_config, ONLY: is_variable_in_output
   USE mo_atm_phy_nwp_config,  ONLY: atm_phy_nwp_config
   USE mo_mpi,                 ONLY: p_pe, p_comm_work, p_io, num_work_procs, p_barrier, &
-    &                               get_my_mpi_all_id, i_am_accel_node
+    &                               get_my_mpi_all_id
   USE mo_fortran_tools,       ONLY: assert_acc_device_only
 #ifdef __USE_RTTOV
   USE mo_rtifc,               ONLY: rtifc_set_opts, rtifc_init, rtifc_fill_input, &
@@ -168,7 +167,7 @@ CONTAINS
     ALLOCATE(chan_idx(mchans,num_sensors), chan_rtidx(mchans,num_sensors), STAT=ierrstat)
     IF (ierrstat /= SUCCESS) CALL finish (routine, 'ALLOCATE failed.')
 
-    chan_idx(:,:) = 0    
+    chan_idx(:,:) = 0
     numchans(:)   = 0
     DO isens = 1, num_sensors
       channels(:,isens) = 0
@@ -192,7 +191,7 @@ CONTAINS
     ! --- initialize RTTOV
 
 #ifdef __USE_RTTOV
-    IF (ANY(n_chans(1:num_sensors) > 0)) THEN    
+    IF (ANY(n_chans(1:num_sensors) > 0)) THEN
       IF (dbg_level > 2) THEN
         CALL p_barrier(p_comm_work)
         WRITE (0,*) routine, ": CALL to rttov_init"
@@ -470,15 +469,15 @@ SUBROUTINE rttov_driver (prm_diag, p_lnd_state, ext_data, jg, jgp, nnow, lacc)
 
       ! Set/compute some sensor dependent quantities
 
-      DO jc = is, ie 
-        ! Since the emissitivy is intent(inout) in RTTOV, we have to 
+      DO jc = is, ie
+        ! Since the emissitivy is intent(inout) in RTTOV, we have to
         ! reinitialize it
         emiss(:, jc-is+1) = 0.
         DO k = 1,  numchans(isens)
           emiss(k, jc-is+1) = sat_compute(isens)%emissivity(chan_idx(k,isens))
         ENDDO
         lon = p_gcp%center(jc,jb)%lat - sat_compute(isens)%longitude
-        ! Calculate the satellite zenith angle 
+        ! Calculate the satellite zenith angle
         alpha_e  = ACOS(COS(p_gcp%center(jc,jb)%lat) * COS(lon))
         r_atm    = SQRT(r_sat**2 + earth_radius**2 -2*r_sat*earth_radius*COS(alpha_e))
         sat_z(jc) = ASIN(SIN(alpha_e)*r_sat/r_atm) * rad2deg
@@ -519,7 +518,7 @@ SUBROUTINE rttov_driver (prm_diag, p_lnd_state, ext_data, jg, jgp, nnow, lacc)
           isynsat = (chan_idx(k,isens)-1)*4+RTTOV_BT_CL
           IF (lsynsat_product(isynsat)) THEN
             IF (dbg_level > 2)  WRITE (0,*) "copy synsat product ", isynsat, " into place."
-            rg_synsat(is:ie, isynsat, jb) = T_b(k, 1:n_profs) 
+            rg_synsat(is:ie, isynsat, jb) = T_b(k, 1:n_profs)
           ELSE
             rg_synsat(is:ie, isynsat, jb) = 0._wp
           END IF
@@ -530,7 +529,7 @@ SUBROUTINE rttov_driver (prm_diag, p_lnd_state, ext_data, jg, jgp, nnow, lacc)
           isynsat = (chan_idx(k,isens)-1)*4+RTTOV_BT_CS
           IF (lsynsat_product(isynsat)) THEN
             IF (dbg_level > 2)  WRITE (0,*) "copy synsat product ", isynsat, " into place."
-            rg_synsat(is:ie, isynsat, jb) = T_b_clear(k, 1:n_profs) 
+            rg_synsat(is:ie, isynsat, jb) = T_b_clear(k, 1:n_profs)
           ELSE
             rg_synsat(is:ie, isynsat, jb) = 0._wp
           END IF
@@ -541,7 +540,7 @@ SUBROUTINE rttov_driver (prm_diag, p_lnd_state, ext_data, jg, jgp, nnow, lacc)
           isynsat = (chan_idx(k,isens)-1)*4+RTTOV_RAD_CL
           IF (lsynsat_product(isynsat)) THEN
             IF (dbg_level > 2)  WRITE (0,*) "copy synsat product ", isynsat, " into place."
-            rg_synsat(is:ie, isynsat, jb) = Rad(k, 1:n_profs) 
+            rg_synsat(is:ie, isynsat, jb) = Rad(k, 1:n_profs)
           ELSE
             rg_synsat(is:ie, isynsat, jb) = 0._wp
           END IF
@@ -552,7 +551,7 @@ SUBROUTINE rttov_driver (prm_diag, p_lnd_state, ext_data, jg, jgp, nnow, lacc)
           isynsat = (chan_idx(k,isens)-1)*4+RTTOV_RAD_CS
           IF (lsynsat_product(isynsat)) THEN
             IF (dbg_level > 2)  WRITE (0,*) "copy synsat product ", isynsat, " into place."
-            rg_synsat(is:ie, isynsat, jb) = Rad_clear(k, 1:n_profs) 
+            rg_synsat(is:ie, isynsat, jb) = Rad_clear(k, 1:n_profs)
           ELSE
             rg_synsat(is:ie, isynsat, jb) = 0._wp
           END IF
@@ -905,7 +904,7 @@ SUBROUTINE prepare_rttov_input(jg, jgp, nlev_rg, z_ifc, pres, dpres, temp, tot_c
       ELSE IF (zfr_si > 0.5_wp) THEN
         rg_stype(jc,jb) = 2
         rg_wtype(jc,jb) = 1
-      ELSE 
+      ELSE
         rg_stype(jc,jb) = 1
         IF (zfr_lake > 0.5_wp) THEN
           rg_wtype(jc,jb) = 0
@@ -913,7 +912,7 @@ SUBROUTINE prepare_rttov_input(jg, jgp, nlev_rg, z_ifc, pres, dpres, temp, tot_c
           rg_wtype(jc,jb) = 1
         ENDIF
       ENDIF
-      
+
       rg_cosmu0(jc,jb) =                                        &
         cosmu0(iidx(jc,jb,1),iblk(jc,jb,1))*p_fbkwgt(jc,jb,1) + &
         cosmu0(iidx(jc,jb,2),iblk(jc,jb,2))*p_fbkwgt(jc,jb,2) + &
@@ -1089,7 +1088,7 @@ SUBROUTINE prepare_rttov_input(jg, jgp, nlev_rg, z_ifc, pres, dpres, temp, tot_c
           qcc_rttov(jc,jk,jb) = 0._wp
           qi_rttov(jc,jk,jb)  = 0._wp
           qs_rttov(jc,jk,jb)  = 0._wp
-          clc_rttov(jc,jk,jb) = 0._wp  
+          clc_rttov(jc,jk,jb) = 0._wp
         ENDIF
       ENDDO
     ENDDO
@@ -1164,8 +1163,10 @@ SUBROUTINE downscale_rttov_output(jg, nimg, rg_satimg, satimg, l_enabled)
     CALL p_barrier(p_comm_work)
     WRITE (0,*) "Execute interpolation from reduced grid to full grid"
   END IF
-  CALL interpol_scal_nudging (p_pp, p_int, p_grf%p_dom(i_chidx), 0, 1, 1, &
-    &                         rg_satimg, satimg, overshoot_fac=1.0_wp,opt_l_enabled=l_enabled)
+  CALL interpol_scal_nudging (p_pp, p_int, p_grf%p_dom(i_chidx), nshift=0, nfields=1,        &
+    &                         nlev_ex=nimg, istart_blk=1, lacc=.TRUE.,                       &
+    &                         f3din1=rg_satimg, f3dout1=satimg,                              &
+    &                         overshoot_fac=1.0_wp,opt_l_enabled=l_enabled                   )
   IF (dbg_level > 2) THEN
     CALL p_barrier(p_comm_work)
     WRITE (0,*) "CALL to interpol_scal_nudging done."
@@ -1321,6 +1322,3 @@ END SUBROUTINE copy_rttov_ubc
 
 
 END MODULE mo_rttov_interface
-
-
-

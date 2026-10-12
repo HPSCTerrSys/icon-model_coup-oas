@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -86,7 +86,7 @@ ocean_grids="iconR${R}B0${B}-ocean_${grid_ext}.nc"
 ocean_grids="AtlanticAquaBox_0079km.nc"
 #=============================================================================
 #-----------------------------------------------------------------------------
-# ocean forcing (iforc=12) needs an additional flux file 
+# ocean forcing (iforc=12) needs an additional flux file
 # NO_FORCING                 = 10
 # ANALYT_FORC                = 11  - dependent on testcase
 # FORCING_FROM_FILE_FLUX     = 12  - OMIP or NCEP type forcing
@@ -117,7 +117,7 @@ start_date="2001-01-01T00:00:00Z"  #  do not change - restart/output problems!
 # model parameters
 ocean_model_equations=-1     # equation system: -1=hydrost. ocean
 #
-# 
+#
 #-----------------------------------------------------------------------------
 #
 # write namelist parameters

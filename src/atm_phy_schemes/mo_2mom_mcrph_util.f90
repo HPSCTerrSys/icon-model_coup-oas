@@ -1,14 +1,7 @@
-!NEC$ options "-finline-max-depth=3 -finline-max-function-size=1000"
-!
-! Two-moment bulk microphysics after Seifert, Beheng and Blahak
-!
-! Description:
-! Provides various subroutines and functions for the two-moment microphysics
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -16,9 +9,18 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+!NEC$ options "-finline-max-depth=3 -finline-max-function-size=1000"
+
+!
+! Two-moment bulk microphysics after Seifert, Beheng and Blahak
+!
+! Description:
+! Provides various subroutines and functions for the two-moment microphysics
+!
+
 MODULE mo_2mom_mcrph_util
 
-  USE mo_kind,               ONLY: wp,sp,dp
+  USE mo_kind,               ONLY: wp
   USE mo_exception,          ONLY: finish, message, txt => message_text
   USE mo_physical_constants, ONLY: &
        & rhoh2o,           & ! density of liquid water
@@ -31,7 +33,7 @@ MODULE mo_2mom_mcrph_util
   USE mo_2mom_mcrph_types,   ONLY: particle, lookupt_1D, lookupt_4D
   USE mo_2mom_mcrph_dmin_wetgrowth, ONLY: dmin_wetgrowth_lookupcreate, &
        &                           write_dmin_wetgrowth_table, get_filebase_dmin_lut_file
-  
+
   IMPLICIT NONE
 
   PRIVATE
@@ -64,9 +66,10 @@ MODULE mo_2mom_mcrph_util
        & set_qng,                    &
        & set_qnh_Dmean,              &
        & set_qnh_expPSD_N0const,     &
-       & e_stick,                     &
+       & e_stick,                    &
        & init_estick_ltab_equi,      &
-       & estick_ltab_equi
+       & estick_ltab_equi,           &
+       & get_otab, equi_table, otab, tab
 
 
   CHARACTER(len=*), PARAMETER :: modname = 'mo_2mom_mcrph_util'
@@ -93,6 +96,9 @@ MODULE mo_2mom_mcrph_util
 
   ! dummy of internal number of bins (high res part) in case the high resolution part is not really needed:
   INTEGER, PARAMETER                     :: nlookuphr_dummy = 10
+
+  !..Tables for 4D Segal-Khain activation
+  TYPE(lookupt_4D) :: otab, tab
 
   ! Type to hold the lookup table for the incomplete gamma functions.
   ! The table is divided into a low resolution part, which spans the
@@ -137,36 +143,36 @@ CONTAINS
 
   SUBROUTINE gamma_help_cf(gammcf,a,x,gln)
 
-    REAL(dp), INTENT(in)  :: a, x
-    REAL(dp), INTENT(out) :: gammcf, gln
+    REAL(wp), INTENT(in)  :: a, x
+    REAL(wp), INTENT(out) :: gammcf, gln
 
     INTEGER,  PARAMETER   :: maxiter = 100
-    REAL(dp), PARAMETER   :: eps = 3.d-7, fpmin = 1.d-30
+    REAL(wp), PARAMETER   :: eps = 3.e-7_wp, fpmin = 1.e-30_wp
     INTEGER               :: i
-    REAL(dp)              :: an, b, c, d, del, h
+    REAL(wp)              :: an, b, c, d, del, h
 
     gln = LOG(GAMMA(a))
-    b   = x + 1.0_dp - a
-    c   = 1.0_dp / fpmin
-    d   = 1.0_dp / b
+    b   = x + 1.0_wp - a
+    c   = 1.0_wp / fpmin
+    d   = 1.0_wp / b
     h   = d
     DO i = 1, maxiter
       an = -i*(i-a)
-      b  = b + 2.0_dp
+      b  = b + 2.0_wp
       d  = an*d + b
       IF (ABS(d) < fpmin) d = fpmin
       c  = b + an/c
       IF (ABS(c) < fpmin) c = fpmin
-      d  = 1.0_dp / d
+      d  = 1.0_wp / d
       del= d * c
       h  = h * del
-      IF (ABS(del-1.0_dp) < EPS) EXIT
+      IF (ABS(del-1.0_wp) < EPS) EXIT
     END DO
 
-    IF (ABS(del-1.0_dp) >= eps) THEN
+    IF (ABS(del-1.0_wp) >= eps) THEN
       WRITE (txt,*) 'ERROR in GAMMA_HELP_CF: a too large, maxiter too small'
       CALL message(modname,TRIM(txt))
-      gammcf = 0.0_dp
+      gammcf = 0.0_wp
       CALL finish(TRIM(modname),'Error in gamma_help_cf')
     END IF
 
@@ -177,31 +183,31 @@ CONTAINS
 
   SUBROUTINE gamma_help_ser(gamser,a,x,gln)
 
-    REAL(dp), INTENT(in)  :: a, x
-    REAL(dp), INTENT(out) :: gamser, gln
+    REAL(wp), INTENT(in)  :: a, x
+    REAL(wp), INTENT(out) :: gamser, gln
 
     INTEGER,  PARAMETER   :: maxiter = 100
-    REAL(dp), PARAMETER   :: eps = 3.d-7
+    REAL(wp), PARAMETER   :: eps = 3.e-7_wp
     INTEGER               :: n
-    REAL(dp)              :: ap,del,sum
+    REAL(wp)              :: ap,del,sum
 
     gln = LOG(GAMMA(a))
-    IF (x <= 0.0_dp) THEN
-      IF (x < 0.0_dp) THEN
+    IF (x <= 0.0_wp) THEN
+      IF (x < 0.0_wp) THEN
         WRITE (txt,*) 'ERROR in GAMMA_HELP_SER: x < 0'
         CALL message(modname,TRIM(txt))
         CALL finish(TRIM(modname),'Error in gamma_help_ser')
       END IF
-      
-      gamser = 0.0_dp
-    
+
+      gamser = 0.0_wp
+
     ELSE
 
       ap  = a
-      sum = 1.0_dp/a
+      sum = 1.0_wp/a
       del = sum
       DO n = 1, maxiter
-        ap  = ap + 1.0_dp
+        ap  = ap + 1.0_wp
         del = del*x/ap
         sum = sum + del
         IF (ABS(del) < ABS(sum)*eps) EXIT
@@ -210,7 +216,7 @@ CONTAINS
       IF (ABS(del) >= ABS(sum)*eps) THEN
         WRITE (txt,*) 'ERROR in GAMMA_HELP_SER: a too large, maxiter too small' ;
         CALL message(modname,TRIM(txt))
-        gamser = 0.0_dp
+        gamser = 0.0_wp
         CALL finish(TRIM(modname),'Error in gamma_help_ser')
       END IF
 
@@ -221,51 +227,51 @@ CONTAINS
     RETURN
   END SUBROUTINE gamma_help_ser
 
-  REAL(dp) FUNCTION gamma_p(a,x,gln)
+  REAL(wp) FUNCTION gamma_p(a,x,gln)
 
-    REAL(dp), INTENT(in)  :: a, x
-    REAL(dp), INTENT(out) :: gln
-    REAL(dp)              :: gammcf, gamser
+    REAL(wp), INTENT(in)  :: a, x
+    REAL(wp), INTENT(out) :: gln
+    REAL(wp)              :: gammcf, gamser
 
-    IF (x < 0.0_dp .OR. a <= 0.0_dp) THEN
+    IF (x < 0.0_wp .OR. a <= 0.0_wp) THEN
       WRITE (txt,*) 'ERROR in GAMMA_P: bad arguments'
       CALL message(modname,TRIM(txt))
-      gamma_p = 0.0d0
+      gamma_p = 0.0e0_wp
       CALL finish(TRIM(modname),'Error in gamma_p')
     END IF
-    
-    IF (x < a+1.0_dp) THEN
+
+    IF (x < a+1.0_wp) THEN
       CALL gamma_help_ser(gamser,a,x,gln)
       gamma_p = gamser
     ELSE
       CALL gamma_help_cf(gammcf,a,x,gln)
-      gamma_p = 1.0_dp - gammcf
+      gamma_p = 1.0_wp - gammcf
     ENDIF
-    
+
     RETURN
   END FUNCTION gamma_p
 
-  REAL(dp) FUNCTION gamma_q(a,x,gln)
+  REAL(wp) FUNCTION gamma_q(a,x,gln)
 
-    REAL(dp), INTENT(in)  :: a, x
-    REAL(dp), INTENT(out) :: gln
-    REAL(dp)              :: gammcf, gamser
+    REAL(wp), INTENT(in)  :: a, x
+    REAL(wp), INTENT(out) :: gln
+    REAL(wp)              :: gammcf, gamser
 
-    IF (x < 0.0_dp .OR. a <= 0.0_dp) THEN
+    IF (x < 0.0_wp .OR. a <= 0.0_wp) THEN
       WRITE (txt,*) 'ERROR in GAMMA_Q: bad arguments'
       CALL message(modname,TRIM(txt))
-      gamma_q = 0.0_dp
+      gamma_q = 0.0_wp
       CALL finish(TRIM(modname),'Error in gamma_q')
     END IF
 
-    IF (x < a+1.0_dp) THEN
+    IF (x < a+1.0_wp) THEN
       CALL gamma_help_ser(gamser,a,x,gln)
-      gamma_q = 1.0_dp - gamser
+      gamma_q = 1.0_wp - gamser
     ELSE
       CALL gamma_help_cf(gammcf,a,x,gln)
       gamma_q = gammcf
     ENDIF
-    
+
     RETURN
   END FUNCTION gamma_q
 
@@ -277,10 +283,10 @@ CONTAINS
   !              int(x)(oo) exp(-t) t^(a-1) dt
   !*******************************************************************************
 
-  REAL(dp) FUNCTION incgfct_upper(a,x)
+  REAL(wp) FUNCTION incgfct_upper(a,x)
 
-    REAL(dp), INTENT(in) :: a, x
-    REAL(dp) :: gam, gln
+    REAL(wp), INTENT(in) :: a, x
+    REAL(wp) :: gam, gln
 
     gam = gamma_q(a,x,gln)
     incgfct_upper = EXP(gln) * gam
@@ -292,10 +298,10 @@ CONTAINS
   !              int(0)(x) exp(-t) t^(a-1) dt
   !*******************************************************************************
 
-  REAL(dp) FUNCTION incgfct_lower(a,x)
-    
-    REAL(dp), INTENT(in) :: a, x
-    REAL(dp) :: gam, gln
+  REAL(wp) FUNCTION incgfct_lower(a,x)
+
+    REAL(wp), INTENT(in) :: a, x
+    REAL(wp) :: gam, gln
 
     gam = gamma_p(a,x,gln)
     incgfct_lower = EXP(gln) * gam
@@ -307,9 +313,9 @@ CONTAINS
   !              int(x1)(x2) exp(-t) t^(a-1) dt
   !*******************************************************************************
 
-  REAL(dp) FUNCTION incgfct(a,x1,x2)
+  REAL(wp) FUNCTION incgfct(a,x1,x2)
 
-    REAL(dp), INTENT(in) :: a, x1, x2
+    REAL(wp), INTENT(in) :: a, x1, x2
 
     incgfct = incgfct_lower(a,x2) - incgfct_lower(a,x1)
 
@@ -332,15 +338,15 @@ CONTAINS
   !*******************************************************************************
 
   SUBROUTINE incgfct_lower_lookupcreate(a,ltable,nl,nlhr)
-    REAL(dp), INTENT(in) :: a  ! value of a
+    REAL(wp), INTENT(in) :: a  ! value of a
     TYPE(gamlookuptable), INTENT(inout) :: ltable
     INTEGER, INTENT(in) :: nl, nlhr
     INTEGER :: i, err
-    REAL(dp), PARAMETER ::   &
-         c1 =  36.629433904824623d0, &
-         c2 = -0.119475603955226d0,  &
-         c3 =  0.339332937820052d0,  &
-         c4 =  1.156369000458310d0
+    REAL(wp), PARAMETER ::   &
+         c1 =  36.629433904824623e0_wp, &
+         c2 = -0.119475603955226e0_wp,  &
+         c3 =  0.339332937820052e0_wp,  &
+         c4 =  1.156369000458310e0_wp
 
     IF (.NOT. ltable%is_initialized) THEN
 
@@ -381,11 +387,11 @@ CONTAINS
       !==================================================================
 
       ! maximum x-value of the lookup table (99.5-%-value):
-      ltable%x(ltable%n-1) = c1 * ( 1.0d0 - EXP(c2*a**c3) ) + c4*a
+      ltable%x(ltable%n-1) = c1 * ( 1.0e0_wp - EXP(c2*a**c3) ) + c4*a
 
       ! create lookup table vectors:
-      ltable%dx = ltable%x(ltable%n-1) / (ltable%n-2.0d0)
-      ltable%odx = 1.0d0 / ltable%dx
+      ltable%dx = ltable%x(ltable%n-1) / (ltable%n-2.0e0_wp)
+      ltable%odx = 1.0e0_wp / ltable%dx
       ! Diese Schleife vektorisiert nicht wg. incgfct_lower():
       DO i = 1, ltable%n - 1
         ltable%x(i) = (i-1) * ltable%dx
@@ -402,8 +408,8 @@ CONTAINS
       !==================================================================
 
       ! create lookup table vectors:
-      ltable%dxhr = ltable%x(NINT(0.01*(ltable%n-1))) / (ltable%nhr-1.0d0)
-      ltable%odxhr = 1.0d0 / ltable%dxhr
+      ltable%dxhr = ltable%x(NINT(0.01*(ltable%n-1))) / (ltable%nhr-1.0e0_wp)
+      ltable%odxhr = 1.0e0_wp / ltable%dxhr
       ! Diese Schleife vektorisiert nicht wg. incgfct_lower():
       DO i = 1, ltable%nhr
         ltable%xhr(i) = (i-1) * ltable%dxhr
@@ -446,17 +452,17 @@ CONTAINS
   ! This function only uses the low resolution part of the table!
   !*******************************************************************************
 
-  REAL(dp) FUNCTION incgfct_lower_lookup(x, ltable)
+  REAL(wp) FUNCTION incgfct_lower_lookup(x, ltable)
 
     !$ACC ROUTINE SEQ
 
-    REAL(dp), INTENT(in) :: x  ! value of x for table lookup
+    REAL(wp), INTENT(in) :: x  ! value of x for table lookup
     TYPE(gamlookuptable), INTENT(in) :: ltable
     INTEGER :: iu, io
-    REAL(dp) :: xt
+    REAL(wp) :: xt
 
     ! Trunkcate x to the range of the table:
-    xt = MAX(MIN(x, ltable%x(ltable%n)), 0.0d0)
+    xt = MAX(MIN(x, ltable%x(ltable%n)), 0.0e0_wp)
 
     ! calculate indices of the neighbouring regular x-values
     ! in the table:
@@ -476,18 +482,18 @@ CONTAINS
   ! (an benachbarte 3 Punkte eine Parabel interpolieren und interpolierten Wert von der Parabel nehmen --
   !  weil es jeweils 2 moegliche 3-Punkte-Nachbarschaften gibt, wird aus Stetigkeitsgruenden der Mittelwert
   ! von beiden genommen):
-  REAL(dp) FUNCTION incgfct_lower_lookup_parabolic(x, ltable)
-    REAL(dp), INTENT(in)     :: x       ! value of x for table lookup
+  REAL(wp) FUNCTION incgfct_lower_lookup_parabolic(x, ltable)
+    REAL(wp), INTENT(in)     :: x       ! value of x for table lookup
     TYPE(gamlookuptable), INTENT(in) :: ltable
 
     INTEGER :: iu, im, io
-    REAL(dp) :: xt, f12, f23, f123, yn1, yn2
+    REAL(wp) :: xt, f12, f23, f123, yn1, yn2
 
     ! If x is within the high-resolution part of the table:
     IF (x <= ltable%xhr(ltable%nhr)) THEN
 
       ! Truncate x to the range of the table:
-      xt = MAX(x, 0.0d0)
+      xt = MAX(x, 0.0e0_wp)
 
       ! Neighbourhood 1:
       ! calculate indices of the neighbouring regular x-values
@@ -501,7 +507,7 @@ CONTAINS
       ! with Newton's tableau ("divided differences"):
       f12  = (ltable%igfhr(im) - ltable%igfhr(iu)) * ltable%odxhr
       f23  = (ltable%igfhr(io) - ltable%igfhr(im)) * ltable%odxhr
-      f123 = 0.5d0 * (f23 - f12) * ltable%odxhr
+      f123 = 0.5e0_wp * (f23 - f12) * ltable%odxhr
       ! Horner's scheme to calculate the interpolated value from the interpolating parabola:
       yn1 = f123 * (xt - ltable%xhr(im)) + f12
       yn1 = yn1  * (xt - ltable%xhr(iu)) + ltable%igfhr(iu)
@@ -520,12 +526,12 @@ CONTAINS
         ! with Newton's tableau ("divided differences"):
         f12  = (ltable%igfhr(im) - ltable%igfhr(iu)) * ltable%odxhr
         f23  = (ltable%igfhr(io) - ltable%igfhr(im)) * ltable%odxhr
-        f123 = 0.5d0 * (f23 - f12) * ltable%odxhr
+        f123 = 0.5e0_wp * (f23 - f12) * ltable%odxhr
         ! Horner's scheme to calculate the interpolated value from the interpolating parabola:
         yn2 = f123 * (xt - ltable%xhr(im)) + f12
         yn2 = yn2  * (xt - ltable%xhr(iu)) + ltable%igfhr(iu)
 
-        incgfct_lower_lookup_parabolic = 0.5d0 * ( yn1 + yn2 )
+        incgfct_lower_lookup_parabolic = 0.5e0_wp * ( yn1 + yn2 )
 
       ELSE
         incgfct_lower_lookup_parabolic = yn1
@@ -534,7 +540,7 @@ CONTAINS
     ELSE
 
       ! Truncate x to the range of the table:
-      xt = MAX(MIN(x, ltable%x(ltable%n)), 0.0d0)
+      xt = MAX(MIN(x, ltable%x(ltable%n)), 0.0e0_wp)
 
       ! Neighbourhood 1:
       ! calculate indices of the neighbouring regular x-values
@@ -548,7 +554,7 @@ CONTAINS
       ! with Newton's tableau ("divided differences"):
       f12  = (ltable%igf(im) - ltable%igf(iu)) * ltable%odx
       f23  = (ltable%igf(io) - ltable%igf(im)) * ltable%odx
-      f123 = 0.5d0 * (f23 - f12) * ltable%odx
+      f123 = 0.5e0_wp * (f23 - f12) * ltable%odx
       ! Horner's scheme to calculate the interpolated value from the interpolating parabola:
       yn1 = f123 * (xt - ltable%x(im)) + f12
       yn1 = yn1  * (xt - ltable%x(iu)) + ltable%igf(iu)
@@ -567,12 +573,12 @@ CONTAINS
         ! with Newton's tableau ("divided differences"):
         f12  = (ltable%igf(im) - ltable%igf(iu)) * ltable%odx
         f23  = (ltable%igf(io) - ltable%igf(im)) * ltable%odx
-        f123 = 0.5d0 * (f23 - f12) * ltable%odx
+        f123 = 0.5e0_wp * (f23 - f12) * ltable%odx
         ! Horner's scheme to calculate the interpolated value from the interpolating parabola:
         yn2 = f123 * (xt - ltable%x(im)) + f12
         yn2 = yn2  * (xt - ltable%x(iu)) + ltable%igf(iu)
 
-        incgfct_lower_lookup_parabolic = 0.5d0 * ( yn1 + yn2 )
+        incgfct_lower_lookup_parabolic = 0.5e0_wp * ( yn1 + yn2 )
 
       ELSE
         incgfct_lower_lookup_parabolic = yn1
@@ -580,7 +586,7 @@ CONTAINS
 
     END IF
 
-    incgfct_lower_lookup_parabolic = MAX(incgfct_lower_lookup_parabolic, 0.0d0)
+    incgfct_lower_lookup_parabolic = MAX(incgfct_lower_lookup_parabolic, 0.0e0_wp)
 
   END FUNCTION incgfct_lower_lookup_parabolic
 
@@ -602,18 +608,18 @@ CONTAINS
   !
   !*******************************************************************************
 
-  REAL(dp) FUNCTION incgfct_upper_lookup(x, ltable)
+  REAL(wp) FUNCTION incgfct_upper_lookup(x, ltable)
 
     !$ACC ROUTINE SEQ
 
-    REAL(dp), INTENT(in)     :: x    ! value of x for table lookup
+    REAL(wp), INTENT(in)     :: x    ! value of x for table lookup
     TYPE(gamlookuptable), INTENT(in) :: ltable
 
     INTEGER :: iu, io
-    REAL(dp) :: xt
+    REAL(wp) :: xt
 
     ! Trunkcate x to the range of the table:
-    xt = MAX(MIN(x, ltable%x(ltable%n)), 0.0d0)
+    xt = MAX(MIN(x, ltable%x(ltable%n)), 0.0e0_wp)
 
     ! calculate indices of the neighbouring regular x-values
     ! in the table:
@@ -631,7 +637,7 @@ CONTAINS
     ! Dies kommt vor allem dann vor, wenn x sehr gross ist.
     ! Deswegen Begrenzung:
 
-    incgfct_upper_lookup = MAX(incgfct_upper_lookup, 0.0d0)
+    incgfct_upper_lookup = MAX(incgfct_upper_lookup, 0.0e0_wp)
 
     RETURN
   END FUNCTION incgfct_upper_lookup
@@ -642,18 +648,18 @@ CONTAINS
   ! (an benachbarte 3 Punkte eine Parabel interpolieren und interpolierten Wert von der Parabel nehmen --
   !  weil es jeweils 2 moegliche 3-Punkte-Nachbarschaften gibt, wird aus Stetigkeitsgruenden der Mittelwert
   ! von beiden genommen):
-  REAL(dp) FUNCTION incgfct_upper_lookup_parabolic(x, ltable)
-    REAL(dp), INTENT(in)     :: x  ! value of x for table lookup
+  REAL(wp) FUNCTION incgfct_upper_lookup_parabolic(x, ltable)
+    REAL(wp), INTENT(in)     :: x  ! value of x for table lookup
     TYPE(gamlookuptable), INTENT(in) :: ltable
 
     INTEGER :: iu, im, io
-    REAL(dp) :: xt, f12, f23, f123, yn1, yn2
+    REAL(wp) :: xt, f12, f23, f123, yn1, yn2
 
     ! If x is within the high-resolution part of the table:
     IF (x <= ltable%xhr(ltable%nhr)) THEN
 
       ! Truncate x to the range of the table:
-      xt = MAX(x, 0.0d0)
+      xt = MAX(x, 0.0e0_wp)
 
       ! Neighbourhood 1:
       ! calculate indices of the neighbouring regular x-values
@@ -668,7 +674,7 @@ CONTAINS
       ! with Newton's tableau ("divided differences"):
       f12  = (ltable%igfhr(im) - ltable%igfhr(iu)) * ltable%odxhr
       f23  = (ltable%igfhr(io) - ltable%igfhr(im)) * ltable%odxhr
-      f123 = 0.5d0 * (f23 - f12) * ltable%odxhr
+      f123 = 0.5e0_wp * (f23 - f12) * ltable%odxhr
       ! Horner's scheme to calculate the interpolated value from the interpolating parabola:
       yn1 = f123 * (xt - ltable%xhr(im)) + f12
       yn1 = yn1  * (xt - ltable%xhr(iu)) + ltable%igfhr(iu)
@@ -687,12 +693,12 @@ CONTAINS
         ! with Newton's tableau ("divided differences"):
         f12  = (ltable%igfhr(im) - ltable%igfhr(iu)) * ltable%odxhr
         f23  = (ltable%igfhr(io) - ltable%igfhr(im)) * ltable%odxhr
-        f123 = 0.5d0 * (f23 - f12) * ltable%odxhr
+        f123 = 0.5e0_wp * (f23 - f12) * ltable%odxhr
         ! Horner's scheme to calculate the interpolated value from the interpolating parabola:
         yn2 = f123 * (xt - ltable%xhr(im)) + f12
         yn2 = yn2  * (xt - ltable%xhr(iu)) + ltable%igfhr(iu)
 
-        incgfct_upper_lookup_parabolic = 0.5d0 * ( yn1 + yn2 )
+        incgfct_upper_lookup_parabolic = 0.5e0_wp * ( yn1 + yn2 )
 
       ELSE
 
@@ -703,7 +709,7 @@ CONTAINS
     ELSE
 
       ! Truncate x to the range of the table:
-      xt = MAX(MIN(x, ltable%x(ltable%n)), 0.0d0)
+      xt = MAX(MIN(x, ltable%x(ltable%n)), 0.0e0_wp)
 
       ! Neighbourhood 1:
       ! calculate indices of the neighbouring regular x-values
@@ -718,7 +724,7 @@ CONTAINS
       ! with Newton's tableau ("divided differences"):
       f12  = (ltable%igf(im) - ltable%igf(iu)) * ltable%odx
       f23  = (ltable%igf(io) - ltable%igf(im)) * ltable%odx
-      f123 = 0.5d0 * (f23 - f12) * ltable%odx
+      f123 = 0.5e0_wp * (f23 - f12) * ltable%odx
       ! Horner's scheme to calculate the interpolated value from the interpolating parabola:
       yn1 = f123 * (xt - ltable%x(im)) + f12
       yn1 = yn1  * (xt - ltable%x(iu)) + ltable%igf(iu)
@@ -737,12 +743,12 @@ CONTAINS
         ! with Newton's tableau ("divided differences"):
         f12  = (ltable%igf(im) - ltable%igf(iu)) * ltable%odx
         f23  = (ltable%igf(io) - ltable%igf(im)) * ltable%odx
-        f123 = 0.5d0 * (f23 - f12) * ltable%odx
+        f123 = 0.5e0_wp * (f23 - f12) * ltable%odx
         ! Horner's scheme to calculate the interpolated value from the interpolating parabola:
         yn2 = f123 * (xt - ltable%x(im)) + f12
         yn2 = yn2  * (xt - ltable%x(iu)) + ltable%igf(iu)
 
-        incgfct_upper_lookup_parabolic = 0.5d0 * ( yn1 + yn2 )
+        incgfct_upper_lookup_parabolic = 0.5e0_wp * ( yn1 + yn2 )
 
       ELSE
 
@@ -754,7 +760,7 @@ CONTAINS
     ! Convert to upper incomplete gamma function:
     incgfct_upper_lookup_parabolic = ltable%igf(ltable%n) - incgfct_upper_lookup_parabolic
 
-    incgfct_upper_lookup_parabolic = MAX(incgfct_upper_lookup_parabolic, 0.0d0)
+    incgfct_upper_lookup_parabolic = MAX(incgfct_upper_lookup_parabolic, 0.0e0_wp)
 
     RETURN
   END FUNCTION incgfct_upper_lookup_parabolic
@@ -778,7 +784,7 @@ CONTAINS
 
     IF (my_process_is_stdio()) THEN
 
-      CALL message (TRIM(routine), " Trying to read "//TRIM(dateiname))      
+      CALL message (TRIM(routine), " Trying to read "//TRIM(dateiname))
       OPEN(unitnr, file=TRIM(dateiname), status='old', form='formatted', iostat=error)
       IF (error /= 0) THEN
         WRITE (txt,*) 'init_dmin_wetgrowth: lookup-table ' // TRIM(dateiname) // ' not found'
@@ -1030,7 +1036,7 @@ CONTAINS
 
     CHARACTER(len=*),       INTENT(in)    :: filebasename
     ! To cross-check that the table matches the desired hydrometeor type:
-    CLASS(particle),        INTENT(in)    :: parti
+    TYPE(particle),        INTENT(in)     :: parti
     ! File unit number for ASCII file reading:
     INTEGER,                INTENT(in)    :: unitnr
     ! Desired number of elements for the fine equidistant grid vector for T:
@@ -1039,7 +1045,7 @@ CONTAINS
     INTEGER,                INTENT (IN)   :: msg_level
 
     CHARACTER(len=300)  :: alt_filebasename
-    
+
     ! grid spacings of the desired fine grid vectors:
     REAL(wp)            :: minT, maxT
     INTEGER             :: i, j, k, l, error, ii
@@ -1063,7 +1069,7 @@ CONTAINS
     !    generate the table on the fly and write it to a netcdf file whose
     !    name has the specific parameters in its filename.
 
-    IF (.NOT. ltab%is_initialized) THEN 
+    IF (.NOT. ltab%is_initialized) THEN
 
       CALL message(TRIM(routine),'Initializing equidistant lookup table for graupel wet growth diameter (2mom)')
 
@@ -1094,7 +1100,7 @@ CONTAINS
           IF (error /= 0) THEN
 
             CALL message(TRIM(routine),'Failed reading Dmin table, generating table on the fly')
-            
+
             ! .. If the other file is also not present, we create the LUT on the fly:
             CALL dmin_wetgrowth_lookupcreate (parti, dmin_wg_g_loc, ltab%n1, anzT_wg_loc, ltab%n3, ltab%n4, &
                  pvec_wg_g_loc, Tvec_wg_g_loc, qwvec_wg_g_loc, qivec_wg_g_loc)
@@ -1109,7 +1115,7 @@ CONTAINS
             IF (error /= 0) THEN
               CALL finish(TRIM(routine),'Error writing Dmin table to file! Stop!')
             END IF
-            
+
             ! .. re-read the newly produced file in order to avoid nonreproducible results because of rounding error
             !    differences of table values which have been observed between the netcdf-file and the on-the-fly LUT:
             CALL message(TRIM(routine),'Re-reading table from file'//TRIM(alt_filebasename)//'.nc to achieve reproducible results')
@@ -1128,10 +1134,10 @@ CONTAINS
           CALL message(TRIM(routine),'Reading of file '//TRIM(filebasename)//'.nc was successful')
         END IF
       END IF    ! my_process_is_stdio()
-      
+
       !------------------------------------------------------------------------------------
       ! .. 2) Distribute the table to the other workers:
-      
+
       CALL p_bcast(ltab%n1      , p_io, p_comm_work)
       CALL p_bcast(anzT_wg_loc  , p_io, p_comm_work)
       CALL p_bcast(ltab%n3      , p_io, p_comm_work)
@@ -1145,7 +1151,7 @@ CONTAINS
         ALLOCATE(ltab%x4(ltab%n4))
         ALLOCATE(dmin_wg_g_loc(ltab%n1,anzT_wg_loc,ltab%n3,ltab%n4))
       END IF
-      
+
       CALL p_bcast(ltab%x1      , p_io, p_comm_work)
       CALL p_bcast(Tvec_wg_g_loc, p_io, p_comm_work)
       CALL p_bcast(ltab%x3      , p_io, p_comm_work)
@@ -1156,7 +1162,7 @@ CONTAINS
       ! 2) Generate equidistant table vector T and construct the
       !    equidistant Dmin-lookuptable by linear oversampling:
       !    (all in SI units!)
-      
+
       ltab%n2 = ndT
 
       NULLIFY ( ltab%x2 )
@@ -1169,13 +1175,13 @@ CONTAINS
       maxT  = Tvec_wg_g_loc (anzT_wg_loc)
 
       ltab%dx1      = ltab%x1(2) - ltab%x1(1)
-      ltab%odx1     = 1.0d0 / ltab%dx1
-      ltab%dx2      = (maxT - minT) / (ndT - 1.0d0)
-      ltab%odx2     = 1.0d0 / ltab%dx2
+      ltab%odx1     = 1.0e0_wp / ltab%dx1
+      ltab%dx2      = (maxT - minT) / (ndT - 1.0e0_wp)
+      ltab%odx2     = 1.0e0_wp / ltab%dx2
       ltab%dx3      = ltab%x3(2) - ltab%x3(1)
-      ltab%odx3     = 1.0d0 / ltab%dx3
+      ltab%odx3     = 1.0e0_wp / ltab%dx3
       ltab%dx4      = ltab%x4(2) - ltab%x4(1)
-      ltab%odx4     = 1.0d0 / ltab%dx4
+      ltab%odx4     = 1.0e0_wp / ltab%dx4
 
       ! Equidistant grid vectors for T:
       DO j=1, ltab%n2
@@ -1224,7 +1230,7 @@ CONTAINS
 
     CHARACTER(len=*), INTENT(in)       :: filebasename
     ! To cross-check that the table matches the desired hydrometeor type:
-    CLASS(particle),  INTENT(in)       :: parti
+    TYPE(particle),  INTENT(in)        :: parti
     ! File unit number for ASCII file reading:
     INTEGER,          INTENT(in)       :: unitnr
     TYPE(lookupt_4D), INTENT(inout)    :: ltab
@@ -1253,7 +1259,7 @@ CONTAINS
     status_netcdf = check_nc( nf90_open(TRIM(ADJUSTL(filename)), NF90_NOWRITE, id_netcdf), &
          'opening '//TRIM(filebasename)//'.nc')
 
-    IF (status_netcdf == nf90_noerr) THEN 
+    IF (status_netcdf == nf90_noerr) THEN
 
       ! Check hydrometeor type:
       nc_hydrotype(:) = ' '
@@ -1304,10 +1310,10 @@ CONTAINS
       END DO
       l_netcdf_format = .true.
 
-      ! Try ascii format if no netcdf is available  
+      ! Try ascii format if no netcdf is available
     ELSE
 
-      CALL message(routine,'Table file '//TRIM(ADJUSTL(filename))// ' not found. Trying ascii file.')   
+      CALL message(routine,'Table file '//TRIM(ADJUSTL(filename))// ' not found. Trying ascii file.')
       OPEN(unitnr, file=TRIM(filebasename)//'.dat', status='old', form='formatted', iostat=error)
       IF (error /= 0) THEN
         WRITE (txt,*) 'Error: table file ' // TRIM(filebasename)//'.dat' // ' not found.'
@@ -1334,7 +1340,7 @@ CONTAINS
       IF (ALLOCATED(dmin_wg_g_loc)) DEALLOCATE(dmin_wg_g_loc)
 
       NULLIFY (ltab%x1, ltab%x3, ltab%x4)
-      
+
       ALLOCATE( Tvec_wg_g_loc(anzT_wg_loc) )
       ALLOCATE( ltab%x1(ltab%n1) )
       ALLOCATE( ltab%x3(ltab%n3) )
@@ -1463,9 +1469,9 @@ CONTAINS
     REAL(wp) :: hilf4_1, hilf4_2
 
     IF (T_a >= ltab%x2(ltab%n2)) THEN
-      dmin_loc = 0.0d0
+      dmin_loc = 0.0e0_wp
     ELSE IF (T_a < ltab%x2(1)) THEN
-      dmin_loc = 999.99d0
+      dmin_loc = 999.99e0_wp
     ELSE
 
       p_lok = MIN(MAX(p_a,ltab%x1(1)),ltab%x1(ltab%n1))
@@ -1519,7 +1525,7 @@ CONTAINS
       hilf3_12  = hilf2_112  + (hilf2_212  - hilf2_112 ) * ltab%odx2 * (T_lok-ltab%x2(ju) )
       hilf3_21  = hilf2_121  + (hilf2_221  - hilf2_121 ) * ltab%odx2 * (T_lok-ltab%x2(ju) )
       hilf3_22  = hilf2_122  + (hilf2_222  - hilf2_122 ) * ltab%odx2 * (T_lok-ltab%x2(ju) )
-      
+
       hilf4_1   = hilf3_11   + (hilf3_21   - hilf3_11  ) * ltab%odx3 * (qw_lok-ltab%x3(ku))
       hilf4_2   = hilf3_12   + (hilf3_22   - hilf3_12  ) * ltab%odx3 * (qw_lok-ltab%x3(ku))
 
@@ -1529,6 +1535,253 @@ CONTAINS
     RETURN
   END FUNCTION dmin_wg_gr_ltab_equi
 
+  SUBROUTINE get_otab(n_r2,n_lsigs,n_ncn,n_wcb)
+
+    INTEGER, INTENT(IN) :: n_r2,n_lsigs,n_ncn,n_wcb
+
+    otab%n1 = n_r2
+    otab%n2 = n_lsigs
+    otab%n3 = n_ncn + 1
+    otab%n4 = n_wcb + 1
+
+    IF (.NOT. ASSOCIATED(otab%x1) ) THEN
+      ALLOCATE( otab%x1(otab%n1) )
+      ALLOCATE( otab%x2(otab%n2) )
+      ALLOCATE( otab%x3(otab%n3) )
+      ALLOCATE( otab%x4(otab%n4) )
+      ALLOCATE( otab%ltable(otab%n1,otab%n2,otab%n3,otab%n4) )
+    END IF
+
+    ! original (non-)equidistant table vectors:
+    ! r2:
+    otab%x1  = (/0.02e0_wp, 0.03e0_wp, 0.04e0_wp/)     ! in 10^(-6) m
+    ! lsigs:
+    otab%x2  = (/0.1e0_wp, 0.2e0_wp, 0.3e0_wp, 0.4e0_wp, 0.5e0_wp/)
+    ! n_cn: (UB: um 0.0 m**-3 ergaenzt zur linearen Interpolation zw. 0.0 und 50e6 m**-3)
+    otab%x3  = (/0.0e6_wp, 50.e6_wp, 100.e6_wp, 200.e6_wp, 400.e6_wp, 800.e6_wp, 1600.e6_wp, 3200.e6_wp, 6400.e6_wp/) ! in m**-3
+    ! wcb: (UB: um 0.0 m/s ergaenzt zur linearen Interpolation zw. 0.0 und 0.5 m/s)
+    otab%x4  = (/0.0e0_wp, 0.5e0_wp, 1.0e0_wp, 2.5e0_wp, 5.0e0_wp/)
+
+    ! look up table for NCCN activated at given R2, lsigs, Ncn and wcb:
+
+    ! Ncn              50       100       200       400       800       1600      3200      6400
+    ! table4a (R2=0.02mum, wcb=0.5m/s) (for Ncn=3200  and Ncn=6400 "extrapolated")
+    otab%ltable(1,1,2:otab%n3,2) =  (/  42.2e6_wp,  70.2e6_wp, 112.2e6_wp, 173.1e6_wp, 263.7e6_wp, 397.5e6_wp, 397.5e6_wp, 397.5e6_wp/)
+    otab%ltable(1,2,2:otab%n3,2) =  (/  35.5e6_wp,  60.1e6_wp, 100.0e6_wp, 163.9e6_wp, 264.5e6_wp, 418.4e6_wp, 418.4e6_wp, 418.4e6_wp/)
+    otab%ltable(1,3,2:otab%n3,2) =  (/  32.6e6_wp,  56.3e6_wp,  96.7e6_wp, 163.9e6_wp, 272.0e6_wp, 438.5e6_wp, 438.5e6_wp, 438.5e6_wp/)
+    otab%ltable(1,4,2:otab%n3,2) =  (/  30.9e6_wp,  54.4e6_wp,  94.6e6_wp, 162.4e6_wp, 271.9e6_wp, 433.5e6_wp, 433.5e6_wp, 433.5e6_wp/)
+    otab%ltable(1,5,2:otab%n3,2) =  (/  29.4e6_wp,  51.9e6_wp,  89.9e6_wp, 150.6e6_wp, 236.5e6_wp, 364.4e6_wp, 364.4e6_wp, 364.4e6_wp/)
+    ! table4b (R2=0.02mum, wcb=1.0m/s) (for Ncn=50 "interpolted" and Ncn=6400 extrapolated)
+    otab%ltable(1,1,2:otab%n3,3) =  (/  45.3e6_wp,  91.5e6_wp, 158.7e6_wp, 264.4e6_wp, 423.1e6_wp, 672.5e6_wp, 397.5e6_wp, 397.5e6_wp/)
+    otab%ltable(1,2,2:otab%n3,3) =  (/  38.5e6_wp,  77.1e6_wp, 133.0e6_wp, 224.9e6_wp, 376.5e6_wp, 615.7e6_wp, 418.4e6_wp, 418.4e6_wp/)
+    otab%ltable(1,3,2:otab%n3,3) =  (/  35.0e6_wp,  70.0e6_wp, 122.5e6_wp, 212.0e6_wp, 362.1e6_wp, 605.3e6_wp, 438.5e6_wp, 438.5e6_wp/)
+    otab%ltable(1,4,2:otab%n3,3) =  (/  32.4e6_wp,  65.8e6_wp, 116.4e6_wp, 204.0e6_wp, 350.6e6_wp, 584.4e6_wp, 433.5e6_wp, 433.5e6_wp/)
+    otab%ltable(1,5,2:otab%n3,3) =  (/  31.2e6_wp,  62.3e6_wp, 110.1e6_wp, 191.3e6_wp, 320.6e6_wp, 501.3e6_wp, 364.4e6_wp, 364.4e6_wp/)
+    ! table4c (R2=0.02mum, wcb=2.5m/s) (for Ncn=50 and Ncn=100 "interpolated")
+    otab%ltable(1,1,2:otab%n3,4) =  (/  50.3e6_wp, 100.5e6_wp, 201.1e6_wp, 373.1e6_wp, 664.7e6_wp,1132.8e6_wp,1876.8e6_wp,2973.7e6_wp/)
+    otab%ltable(1,2,2:otab%n3,4) =  (/  44.1e6_wp,  88.1e6_wp, 176.2e6_wp, 314.0e6_wp, 546.9e6_wp, 941.4e6_wp,1579.2e6_wp,2542.2e6_wp/)
+    otab%ltable(1,3,2:otab%n3,4) =  (/  39.7e6_wp,  79.5e6_wp, 158.9e6_wp, 283.4e6_wp, 498.9e6_wp, 865.9e6_wp,1462.6e6_wp,2355.8e6_wp/)
+    otab%ltable(1,4,2:otab%n3,4) =  (/  37.0e6_wp,  74.0e6_wp, 148.0e6_wp, 264.6e6_wp, 468.3e6_wp, 813.3e6_wp,1371.3e6_wp,2137.2e6_wp/)
+    otab%ltable(1,5,2:otab%n3,4) =  (/  34.7e6_wp,  69.4e6_wp, 138.8e6_wp, 246.9e6_wp, 432.9e6_wp, 737.8e6_wp,1176.7e6_wp,1733.0e6_wp/)
+    ! table4d (R2=0.02mum, wcb=5.0m/s) (for Ncn=50,100,200 "interpolated")
+    otab%ltable(1,1,2:otab%n3,5) =  (/  51.5e6_wp, 103.1e6_wp, 206.1e6_wp, 412.2e6_wp, 788.1e6_wp,1453.1e6_wp,2585.1e6_wp,4382.5e6_wp/)
+    otab%ltable(1,2,2:otab%n3,5) =  (/  46.6e6_wp,  93.2e6_wp, 186.3e6_wp, 372.6e6_wp, 657.2e6_wp,1202.8e6_wp,2098.0e6_wp,3556.9e6_wp/)
+    otab%ltable(1,3,2:otab%n3,5) =  (/  70.0e6_wp,  70.0e6_wp, 168.8e6_wp, 337.6e6_wp, 606.7e6_wp,1078.5e6_wp,1889.0e6_wp,3206.9e6_wp/)
+    otab%ltable(1,4,2:otab%n3,5) =  (/  42.2e6_wp,  84.4e6_wp, 166.4e6_wp, 312.7e6_wp, 562.2e6_wp,1000.3e6_wp,1741.1e6_wp,2910.1e6_wp/)
+    otab%ltable(1,5,2:otab%n3,5) =  (/  36.5e6_wp,  72.9e6_wp, 145.8e6_wp, 291.6e6_wp, 521.0e6_wp, 961.1e6_wp,1551.1e6_wp,2444.6e6_wp/)
+    ! table5a (R2=0.03mum, wcb=0.5m/s)  (for Ncn=3200  and Ncn=6400 "extrapolated")
+    otab%ltable(2,1,2:otab%n3,2) =  (/  50.0e6_wp,  95.8e6_wp, 176.2e6_wp, 321.6e6_wp, 562.3e6_wp, 835.5e6_wp, 835.5e6_wp, 835.5e6_wp/)
+    otab%ltable(2,2,2:otab%n3,2) =  (/  44.7e6_wp,  81.4e6_wp, 144.5e6_wp, 251.5e6_wp, 422.7e6_wp, 677.8e6_wp, 677.8e6_wp, 677.8e6_wp/)
+    otab%ltable(2,3,2:otab%n3,2) =  (/  40.2e6_wp,  72.8e6_wp, 129.3e6_wp, 225.9e6_wp, 379.9e6_wp, 606.5e6_wp, 606.5e6_wp, 606.5e6_wp/)
+    otab%ltable(2,4,2:otab%n3,2) =  (/  37.2e6_wp,  67.1e6_wp, 119.5e6_wp, 206.7e6_wp, 340.5e6_wp, 549.4e6_wp, 549.4e6_wp, 549.4e6_wp/)
+    otab%ltable(2,5,2:otab%n3,2) =  (/  33.6e6_wp,  59.0e6_wp,  99.4e6_wp, 150.3e6_wp, 251.8e6_wp, 466.0e6_wp, 466.0e6_wp, 466.0e6_wp/)
+    ! table5b (R2=0.03mum, wcb=1.0m/s) (Ncn=50 "interpolated", Ncn=6400 "extrapolated)
+    otab%ltable(2,1,2:otab%n3,3) =  (/  50.7e6_wp, 101.4e6_wp, 197.6e6_wp, 357.2e6_wp, 686.6e6_wp,1186.4e6_wp,1892.2e6_wp,1892.2e6_wp/)
+    otab%ltable(2,2,2:otab%n3,3) =  (/  46.6e6_wp,  93.3e6_wp, 172.2e6_wp, 312.1e6_wp, 550.7e6_wp, 931.6e6_wp,1476.6e6_wp,1476.6e6_wp/)
+    otab%ltable(2,3,2:otab%n3,3) =  (/  42.2e6_wp,  84.4e6_wp, 154.0e6_wp, 276.3e6_wp, 485.6e6_wp, 811.2e6_wp,1271.7e6_wp,1271.7e6_wp/)
+    otab%ltable(2,4,2:otab%n3,3) =  (/  39.0e6_wp,  77.9e6_wp, 141.2e6_wp, 251.8e6_wp, 436.7e6_wp, 708.7e6_wp,1117.7e6_wp,1117.7e6_wp/)
+    otab%ltable(2,5,2:otab%n3,3) =  (/  35.0e6_wp,  70.1e6_wp, 123.9e6_wp, 210.2e6_wp, 329.9e6_wp, 511.9e6_wp, 933.4e6_wp, 933.4e6_wp/)
+    ! table5c (R2=0.03mum, wcb=2.5m/s) (for Ncn=50 and Ncn=100 "interpolated")
+    otab%ltable(2,1,2:otab%n3,4) =  (/  51.5e6_wp, 103.0e6_wp, 205.9e6_wp, 406.3e6_wp, 796.4e6_wp,1524.0e6_wp,2781.4e6_wp,4609.3e6_wp/)
+    otab%ltable(2,2,2:otab%n3,4) =  (/  49.6e6_wp,  99.1e6_wp, 198.2e6_wp, 375.5e6_wp, 698.3e6_wp,1264.1e6_wp,2202.8e6_wp,3503.6e6_wp/)
+    otab%ltable(2,3,2:otab%n3,4) =  (/  45.8e6_wp,  91.6e6_wp, 183.2e6_wp, 339.5e6_wp, 618.9e6_wp,1105.2e6_wp,1881.8e6_wp,2930.9e6_wp/)
+    otab%ltable(2,4,2:otab%n3,4) =  (/  42.3e6_wp,  84.7e6_wp, 169.3e6_wp, 310.3e6_wp, 559.5e6_wp, 981.7e6_wp,1611.6e6_wp,2455.6e6_wp/)
+    otab%ltable(2,5,2:otab%n3,4) =  (/  38.2e6_wp,  76.4e6_wp, 152.8e6_wp, 237.3e6_wp, 473.3e6_wp, 773.1e6_wp,1167.9e6_wp,1935.0e6_wp/)
+    ! table5d (R2=0.03mum, wcb=5.0m/s) (for Ncn=50,100,200 "interpolated")
+    otab%ltable(2,1,2:otab%n3,5) =  (/  51.9e6_wp, 103.8e6_wp, 207.6e6_wp, 415.1e6_wp, 819.6e6_wp,1616.4e6_wp,3148.2e6_wp,5787.9e6_wp/)
+    otab%ltable(2,2,2:otab%n3,5) =  (/  50.7e6_wp, 101.5e6_wp, 203.0e6_wp, 405.9e6_wp, 777.0e6_wp,1463.8e6_wp,2682.6e6_wp,4683.0e6_wp/)
+    otab%ltable(2,3,2:otab%n3,5) =  (/  47.4e6_wp,  94.9e6_wp, 189.7e6_wp, 379.4e6_wp, 708.7e6_wp,1301.3e6_wp,2334.3e6_wp,3951.8e6_wp/)
+    otab%ltable(2,4,2:otab%n3,5) =  (/  44.0e6_wp,  88.1e6_wp, 176.2e6_wp, 352.3e6_wp, 647.8e6_wp,1173.0e6_wp,2049.7e6_wp,3315.6e6_wp/)
+    otab%ltable(2,5,2:otab%n3,5) =  (/  39.7e6_wp,  79.4e6_wp, 158.8e6_wp, 317.6e6_wp, 569.5e6_wp, 988.5e6_wp,1615.6e6_wp,2430.3e6_wp/)
+    ! table6a (R2=0.04mum, wcb=0.5m/s) (for Ncn=3200  and Ncn=6400 "extrapolated")
+    otab%ltable(3,1,2:otab%n3,2) =  (/  50.6e6_wp, 100.3e6_wp, 196.5e6_wp, 374.7e6_wp, 677.3e6_wp,1138.9e6_wp,1138.9e6_wp,1138.9e6_wp/)
+    otab%ltable(3,2,2:otab%n3,2) =  (/  48.4e6_wp,  91.9e6_wp, 170.6e6_wp, 306.9e6_wp, 529.2e6_wp, 862.4e6_wp, 862.4e6_wp, 862.4e6_wp/)
+    otab%ltable(3,3,2:otab%n3,2) =  (/  44.4e6_wp,  82.5e6_wp, 150.3e6_wp, 266.4e6_wp, 448.0e6_wp, 740.7e6_wp, 740.7e6_wp, 740.7e6_wp/)
+    otab%ltable(3,4,2:otab%n3,2) =  (/  40.9e6_wp,  75.0e6_wp, 134.7e6_wp, 231.9e6_wp, 382.1e6_wp, 657.6e6_wp, 657.6e6_wp, 657.6e6_wp/)
+    otab%ltable(3,5,2:otab%n3,2) =  (/  34.7e6_wp,  59.3e6_wp,  93.5e6_wp, 156.8e6_wp, 301.9e6_wp, 603.8e6_wp, 603.8e6_wp, 603.8e6_wp/)
+    ! table6b (R2=0.04mum, wcb=1.0m/s) (Ncn=50 "interpolated", Ncn=6400 "extrapolated)
+    otab%ltable(3,1,2:otab%n3,3) =  (/  50.9e6_wp, 101.7e6_wp, 201.8e6_wp, 398.8e6_wp, 773.7e6_wp,1420.8e6_wp,2411.8e6_wp,2411.8e6_wp/)
+    otab%ltable(3,2,2:otab%n3,3) =  (/  49.4e6_wp,  98.9e6_wp, 189.7e6_wp, 356.2e6_wp, 649.5e6_wp,1117.9e6_wp,1805.2e6_wp,1805.2e6_wp/)
+    otab%ltable(3,3,2:otab%n3,3) =  (/  45.6e6_wp,  91.8e6_wp, 171.5e6_wp, 314.9e6_wp, 559.0e6_wp, 932.8e6_wp,1501.6e6_wp,1501.6e6_wp/)
+    otab%ltable(3,4,2:otab%n3,3) =  (/  42.4e6_wp,  84.7e6_wp, 155.8e6_wp, 280.5e6_wp, 481.9e6_wp, 779.0e6_wp,1321.9e6_wp,1321.9e6_wp/)
+    otab%ltable(3,5,2:otab%n3,3) =  (/  36.1e6_wp,  72.1e6_wp, 124.4e6_wp, 198.4e6_wp, 319.1e6_wp, 603.8e6_wp,1207.6e6_wp,1207.6e6_wp/)
+    ! table6c (R2=0.04mum, wcb=2.5m/s) (for Ncn=50 and Ncn=100 "interpolated")
+    otab%ltable(3,1,2:otab%n3,4) =  (/  51.4e6_wp, 102.8e6_wp, 205.7e6_wp, 406.9e6_wp, 807.6e6_wp,1597.5e6_wp,3072.2e6_wp,5393.9e6_wp/)
+    otab%ltable(3,2,2:otab%n3,4) =  (/  50.8e6_wp, 101.8e6_wp, 203.6e6_wp, 396.0e6_wp, 760.4e6_wp,1422.1e6_wp,2517.4e6_wp,4062.8e6_wp/)
+    otab%ltable(3,3,2:otab%n3,4) =  (/  48.2e6_wp,  96.4e6_wp, 193.8e6_wp, 367.3e6_wp, 684.0e6_wp,1238.3e6_wp,2087.3e6_wp,3287.1e6_wp/)
+    otab%ltable(3,4,2:otab%n3,4) =  (/  45.2e6_wp,  90.4e6_wp, 180.8e6_wp, 335.7e6_wp, 611.2e6_wp,1066.3e6_wp,1713.4e6_wp,2780.3e6_wp/)
+    otab%ltable(3,5,2:otab%n3,4) =  (/  38.9e6_wp,  77.8e6_wp, 155.5e6_wp, 273.7e6_wp, 455.2e6_wp, 702.2e6_wp,1230.7e6_wp,2453.7e6_wp/)
+    ! table6d (R2=0.04mum, wcb=5.0m/s) (for Ncn=50,100,200 "interpolated")
+    otab%ltable(3,1,2:otab%n3,5) =  (/  53.1e6_wp, 106.2e6_wp, 212.3e6_wp, 414.6e6_wp, 818.3e6_wp,1622.2e6_wp,3216.8e6_wp,6243.9e6_wp/)
+    otab%ltable(3,2,2:otab%n3,5) =  (/  51.6e6_wp, 103.2e6_wp, 206.3e6_wp, 412.5e6_wp, 805.3e6_wp,1557.4e6_wp,2940.4e6_wp,5210.1e6_wp/)
+    otab%ltable(3,3,2:otab%n3,5) =  (/  49.6e6_wp,  99.2e6_wp, 198.4e6_wp, 396.7e6_wp, 755.5e6_wp,1414.5e6_wp,2565.3e6_wp,4288.1e6_wp/)
+    otab%ltable(3,4,2:otab%n3,5) =  (/  46.5e6_wp,  93.0e6_wp, 186.0e6_wp, 371.9e6_wp, 692.9e6_wp,1262.0e6_wp,2188.3e6_wp,3461.2e6_wp/)
+    otab%ltable(3,5,2:otab%n3,5) =  (/  39.9e6_wp,  79.9e6_wp, 159.7e6_wp, 319.4e6_wp, 561.7e6_wp, 953.9e6_wp,1493.9e6_wp,2464.7e6_wp/)
+
+    ! Additional values for wcb = 0.0 m/s, which are used for linear interpolation between
+    ! wcb = 0.0 and 0.5 m/s. Values of 0.0 are reasonable here, because if no
+    ! updraft is present, no new nucleation will take place:
+    otab%ltable(:,:,:,1) = 0.0e0_wp
+    ! Additional values for n_cn = 0.0 m**-3, which are used for linear interpolation between
+    ! n_cn = 0.0 and 50 m**-3. Values of 0.0 are reasonable, because if no aerosol
+    ! particles are present, no nucleation will take place:
+    otab%ltable(:,:,1,:) = 0.0e0_wp
+
+    !!! otab%dx1 ... otab%odx4 remain empty because this is a non-equidistant table.
+
+  END SUBROUTINE get_otab
+
+  SUBROUTINE equi_table(nr2,nlsigs,nncn,nwcb)
+
+    INTEGER, INTENT(IN) :: nr2,nlsigs,nncn,nwcb
+
+    INTEGER :: i, j, k, l, ii, iu, ju,ku, lu
+    INTEGER, ALLOCATABLE, DIMENSION(:) :: iuv, juv, kuv, luv
+    DOUBLE PRECISION :: odx1, odx2, odx3, odx4
+    DOUBLE PRECISION :: hilf1(2,2,2,2), hilf2(2,2,2), hilf3(2,2), hilf4(2)
+
+    tab%n1 = nr2
+    tab%n2 = nlsigs
+    tab%n3 = nncn
+    tab%n4 = nwcb
+
+    IF (.NOT. ASSOCIATED(tab%x1)) THEN
+      ALLOCATE( tab%x1(tab%n1) )
+      ALLOCATE( tab%x2(tab%n2) )
+      ALLOCATE( tab%x3(tab%n3) )
+      ALLOCATE( tab%x4(tab%n4) )
+      ALLOCATE( tab%ltable(tab%n1,tab%n2,tab%n3,tab%n4) )
+    END IF
+
+    !===========================================================
+    ! construct equidistant table:
+    !===========================================================
+
+    ! grid distances (also inverse):
+    tab%dx1  = (otab%x1(otab%n1) - otab%x1(1)) / (tab%n1 - 1.0e0_wp)  ! dr2
+    tab%odx1 = 1.0e0_wp / tab%dx1
+    tab%dx2  = (otab%x2(otab%n2) - otab%x2(1)) / (tab%n2 - 1.0e0_wp)  ! dlsigs
+    tab%odx2 = 1.0e0_wp / tab%dx2
+    tab%dx3  = (otab%x3(otab%n3) - otab%x3(1)) / (tab%n3 - 1.0e0_wp)  ! dncn
+    tab%odx3 = 1.0e0_wp / tab%dx3
+    tab%dx4  = (otab%x4(otab%n4) - otab%x4(1)) / (tab%n4 - 1.0e0_wp)  ! dwcb
+    tab%odx4 = 1.0e0_wp / tab%dx4
+
+    ! grid vectors:
+    DO i=1, tab%n1
+      tab%x1(i) = otab%x1(1) + (i-1) * tab%dx1
+    END DO
+    DO i=1, tab%n2
+      tab%x2(i) = otab%x2(1) + (i-1) * tab%dx2
+    END DO
+    DO i=1, tab%n3
+      tab%x3(i) = otab%x3(1) + (i-1) * tab%dx3
+    END DO
+    DO i=1, tab%n4
+      tab%x4(i) = otab%x4(1) + (i-1) * tab%dx4
+    END DO
+
+    ! Tetra-linear interpolation of the new equidistant lookuptable from
+    ! the original non-equidistant table:
+
+    ALLOCATE(iuv(tab%n1))
+    ALLOCATE(juv(tab%n2))
+    ALLOCATE(kuv(tab%n3))
+    ALLOCATE(luv(tab%n4))
+
+    DO l=1, tab%n1
+      iuv(l) = 1
+      DO ii=1, otab%n1 - 1
+        IF (tab%x1(l) >= otab%x1(ii) .AND. tab%x1(l) <= otab%x1(ii+1)) THEN
+          iuv(l) = ii
+          EXIT
+        END IF
+      END DO
+    END DO
+
+    DO l=1, tab%n2
+      juv(l) = 1
+      DO ii=1, otab%n2 - 1
+        IF (tab%x2(l) >= otab%x2(ii) .AND. tab%x2(l) <= otab%x2(ii+1)) THEN
+          juv(l) = ii
+          EXIT
+        END IF
+      END DO
+    END DO
+
+    DO l=1, tab%n3
+      kuv(l) = 1
+      DO ii=1, otab%n3 - 1
+        IF (tab%x3(l) >= otab%x3(ii) .AND. tab%x3(l) <= otab%x3(ii+1)) THEN
+          kuv(l) = ii
+          EXIT
+        END IF
+      END DO
+    END DO
+
+    DO l=1, tab%n4
+      luv(l) = 1
+      DO ii=1, otab%n4 - 1
+        IF (tab%x4(l) >= otab%x4(ii) .AND. tab%x4(l) <= otab%x4(ii+1)) THEN
+          luv(l) = ii
+          EXIT
+        END IF
+      END DO
+    END DO
+
+    ! Tetra-linear interpolation:
+
+    DO l=1, tab%n4
+      lu = luv(l)
+      odx4 = 1.0e0_wp / ( otab%x4(lu+1) - otab%x4(lu) )
+!NEC$ ivdep
+      DO k=1, tab%n3
+        ku = kuv(k)
+        odx3 = 1.0e0_wp / ( otab%x3(ku+1) - otab%x3(ku) )
+!NEC$ unroll_completely
+        DO j=1, nlsigs ! It should be equal to tab%n2, but the variable is needed by the Vector compiler
+          ju = juv(j)
+          odx2 = 1.0e0_wp / ( otab%x2(ju+1) - otab%x2(ju) )
+!NEC$ unroll_completely
+          DO i=1, nr2 !  It should be equal to tab%n1, but the variable is needed by the Vector compiler
+            iu = iuv(i)
+            odx1 = 1.0e0_wp / ( otab%x1(iu+1) - otab%x1(iu) )
+            hilf1 = otab%ltable( iu:iu+1, ju:ju+1, ku:ku+1, lu:lu+1)
+            hilf2 = hilf1(1,1:2,1:2,1:2) + (hilf1(2,1:2,1:2,1:2) - hilf1(1,1:2,1:2,1:2)) * odx1 * ( tab%x1(i) - otab%x1(iu) )
+            hilf3 = hilf2(1,1:2,1:2)     + (hilf2(2,1:2,1:2)     - hilf2(1,1:2,1:2)  )   * odx2 * ( tab%x2(j) - otab%x2(ju) )
+            hilf4 = hilf3(1,1:2)         + (hilf3(2,1:2)         - hilf3(1,1:2)    )     * odx3 * ( tab%x3(k) - otab%x3(ku) )
+            tab%ltable(i,j,k,l) = hilf4(1) +  ( hilf4(2) - hilf4(1) ) * odx4 * ( tab%x4(l) - otab%x4(lu) )
+          END DO
+        END DO
+      END DO
+    END DO
+
+    ! clean up memory:
+    DEALLOCATE(iuv,juv,kuv,luv)
+
+    RETURN
+  END SUBROUTINE equi_table
+
   !*******************************************************************************
   ! 4D rational function to approximate the dmin_wetgrowth_table                 *
   ! for dmin_graupelhail2test4_wetgrowth_lookup.dat                              *
@@ -1536,7 +1789,7 @@ CONTAINS
 
   REAL(wp) ELEMENTAL FUNCTION dmin_wetgrowth_fun(pres,Tk,lwc,iwc) result(dmin)
     IMPLICIT NONE
-    
+
     REAL(wp), INTENT(IN)               :: lwc,iwc,Tk,pres
 
     REAL(wp), PARAMETER, DIMENSION(0:12) :: &
@@ -1558,15 +1811,15 @@ CONTAINS
     T  = Tk - T_3     ! Celsius temperature
     qw = lwc * 1e3    ! liquid water in g/m3
     qi = iwc * 1e3    ! ice water in g/m3
-    
+
     p1 = a(0)+a(1)*qw+a(2)*qi+a(3)*T+a(4)*qw*qw+a(5)*qw*qi+a(6)*qi*qi+a(7)*qi*T+a(8)*T*T+a(9)*qw*T &
          &   +a(10)*qw*qw*qw+a(11)*qi*qi*qi+a(12)*T*T*T
     q1 = 1.00+b(0)*qw+b(1)*qi+b(2)*T+b(3)*qw*qw+b(4)*qw*qi+b(5)*qi*qi+b(6)*qi*T+b(7)*T*T+b(8)*qw*T
 
     pp  = p - 700.0  ! change to pressure deviation from reference pressure of 700 hPa
 
-    p2 = 1.0 + c(0)*pp + c(1)*pp*T + c(2)*pp*pp 
-    q2 = 1.0 + c(3)*pp + c(4)*pp*T + c(5)*pp*pp  
+    p2 = 1.0 + c(0)*pp + c(1)*pp*T + c(2)*pp*pp
+    q2 = 1.0 + c(3)*pp + c(4)*pp*T + c(5)*pp*pp
 
     dmin = p1/q1 * p2/q2 * 1e-3    ! Dmin in m
 
@@ -1588,7 +1841,7 @@ CONTAINS
 
   SUBROUTINE dmin_wetgrowth_fun_check(parti, ltab)
     implicit none
-    CLASS(particle) :: parti
+    TYPE(particle) :: parti
     TYPE(lookupt_4D), INTENT(in) :: ltab
 
     integer  :: i,j,k,m
@@ -1598,7 +1851,7 @@ CONTAINS
     real(wp) :: pp(3) = (/300e2,700e2,1000e2/)
     real(wp) :: tt(3) = (/-30.,-20.,-10./)
 
-    WRITE(*,*)    
+    WRITE(*,*)
     WRITE(*,*) 'Dmin_wetgrowth comparison of table and 4d-fit:'
     WRITE(*,'(A,L6)') ' dmin_wetgrowth_fit_check = ',dmin_wetgrowth_fit_check(parti)
     WRITE(*,'(9a20)') 'Tc [Celsius]','Tk [K]','p [hPa]','qw','qi','dmin_table','dmin_fit'
@@ -1618,16 +1871,16 @@ CONTAINS
         END DO
       END DO
     END DO
-    
+
   END SUBROUTINE dmin_wetgrowth_fun_check
 
   LOGICAL FUNCTION dmin_wetgrowth_fit_check(p)
-    CLASS(particle) :: p
-    REAL(wp), PARAMETER :: dmin_fit_a_geo = 1.42d-01
-    REAL(wp), PARAMETER :: dmin_fit_b_geo = 0.314
-    REAL(wp), PARAMETER :: dmin_fit_a_vel = 86.89371
-    REAL(wp), PARAMETER :: dmin_fit_b_vel = 0.268325
-    
+    TYPE(particle) :: p
+    REAL(wp), PARAMETER :: dmin_fit_a_geo = 1.42e-01_wp
+    REAL(wp), PARAMETER :: dmin_fit_b_geo = 0.314_wp
+    REAL(wp), PARAMETER :: dmin_fit_a_vel = 86.89371_wp
+    REAL(wp), PARAMETER :: dmin_fit_b_vel = 0.268325_wp
+
     IF (p%a_geo.NE.dmin_fit_a_geo .OR. p%b_geo.NE.dmin_fit_b_geo &
          & .OR. p%a_vel.NE.dmin_fit_a_vel .OR. p%b_vel.NE.dmin_fit_b_vel) THEN
       dmin_wetgrowth_fit_check = .FALSE.
@@ -1660,11 +1913,11 @@ CONTAINS
       ! even higher sticking efficiency also suggested by Lin et al. (1983) and there used for unrimed particles.
       ! Also used by Spichtinger and Gierens, e.g., doi:10.5194/acp-13-9021-2013
       ! (similar to the values given in Pruppacher and Klett, Ch. 16.2, page 601, as used by Mitchell 1988, JAS)
-      e_i = MIN(EXP(0.025_wp*T_c),1.0_wp) 
+      e_i = MIN(EXP(0.025_wp*T_c),1.0_wp)
     CASE (3)
-      ! as previous setting, but reduced sticking eff. below -40 C 
+      ! as previous setting, but reduced sticking eff. below -40 C
       IF ( (T_a-T_3) > -40_wp) THEN
-        e_i = MIN(EXP(0.025_wp*T_c),1.0_wp) 
+        e_i = MIN(EXP(0.025_wp*T_c),1.0_wp)
       ELSE
         e_i = 0.01_wp
       END IF
@@ -1785,7 +2038,7 @@ CONTAINS
     INTEGER, PARAMETER  :: ndT  = 801      ! Number of table nodes
     REAL(wp), PARAMETER :: Tmin = -70.0_wp ! Start T of table [deg C]
     REAL(wp), PARAMETER :: Tmax = 10.0_wp  ! End T of table [deg C]
-    
+
     IF (.NOT. ltab%is_initialized) THEN
 
       ltab%name(:) = ' '
@@ -1797,7 +2050,7 @@ CONTAINS
       ltab%odx1 = 1.0_wp / ltab%dx1
 
       NULLIFY (ltab%x1, ltab%ltable)
-      
+
       ALLOCATE (ltab%x1(ltab%n1))
       ALLOCATE (ltab%ltable(ltab%n1))
 
@@ -1806,7 +2059,7 @@ CONTAINS
         ltab%x1(i) = T_a                     ! equidistant table vector [K]
         ltab%ltable(i) = e_stick(T_a, istick)
       END DO
-      
+
       ltab%is_initialized = .TRUE.
 
     ELSE
@@ -1832,7 +2085,7 @@ CONTAINS
 
     INTEGER  :: iu, io
     REAL(wp) :: T_loc
-    
+
     T_loc = MIN( MAX( T_a, ltab%x1(1)), ltab%x1(ltab%n1) )
     iu = MIN(FLOOR((T_loc - ltab%x1(1)) * ltab%odx1 ) + 1, ltab%n1-1)
     io = iu + 1
@@ -1840,7 +2093,7 @@ CONTAINS
     e_stick = ltab%ltable(iu) + (ltab%ltable(io)-ltab%ltable(iu)) * ltab%odx1 * (T_loc-ltab%x1(iu))
 
   END FUNCTION estick_ltab_equi
-  
+
   !*******************************************************************************
   ! 2D rational functions to evaluate bulk approximations                        *
   ! following Frick et al. (2013; cf. Eq. (31)), for n=2 and n=3                 *
@@ -1856,9 +2109,9 @@ CONTAINS
     REAL(wp)            :: p1,p2
 
     p1 = a(1)+a(2)*x+a(3)*y+a(4)*x*x+a(5)*x*y+a(6)*y*y &
-         &   +a(7)*x*x*x+a(8)*x*x*y+a(9)*x*y*y+a(10)*y*y*y 
+         &   +a(7)*x*x*x+a(8)*x*x*y+a(9)*x*y*y+a(10)*y*y*y
     p2 = eins+b(1)*x+b(2)*y+b(3)*x*x+b(4)*x*y+b(5)*y*y &
-         &  + b(6)*x*x*x+b(7)*x*x*y+b(8)*x*y*y+b(9)*y*y*y 
+         &  + b(6)*x*x*x+b(7)*x*x*y+b(8)*x*y*y+b(9)*y*y*y
 
     rat2do3 = p1/p2
 
@@ -1877,14 +2130,14 @@ CONTAINS
     IMPLICIT NONE
     REAL(wp), INTENT(in) :: Ta   ! ambient temp. [K]
     REAL(wp), PARAMETER :: &
-         C = 120.d0      , &     ! Sutherland's constant (for air) [K]
-         T0 = 291.15d0   , &     ! Reference temp. [K]
-         eta0 = 1.827d-5         ! Reference dyn. visc. [kg m-1 s-1]
+         C = 120._wp      , &     ! Sutherland's constant (for air) [K]
+         T0 = 291.15_wp   , &     ! Reference temp. [K]
+         eta0 = 1.827e-5_wp         ! Reference dyn. visc. [kg m-1 s-1]
     REAL(wp) :: a, b
 
     a = T0 + C
     b = Ta + C
-    dyn_visc_sutherland = eta0 * a/b * (Ta/T0)**(3.d0/2.d0)
+    dyn_visc_sutherland = eta0 * a/b * (Ta/T0)**(3._wp/2._wp)
 
     RETURN
   END FUNCTION dyn_visc_sutherland
@@ -1899,7 +2152,7 @@ CONTAINS
     REAL(wp), INTENT(in) :: Ta, pa  ! Temp. and pressure in [K] and [Pa]
     REAL(wp), PARAMETER  :: p_0 = 1013.25e2_wp
 
-    Dv_Rasmussen = 0.211d-4*(p_0/pa)*(Ta/T_3)**1.94
+    Dv_Rasmussen = 0.211e-4_wp*(p_0/pa)*(Ta/T_3)**1.94_wp
     RETURN
   END FUNCTION Dv_Rasmussen
   ! ---------------------------------------------------------------------
@@ -1911,10 +2164,10 @@ CONTAINS
     IMPLICIT NONE
     REAL(wp), INTENT(in)  :: Ta  ! ambient temp. [K]
     REAL(wp), PARAMETER :: &
-         c_unit = 4.1840d2      ! for transforming units
+         c_unit = 4.1840e2_wp      ! for transforming units
 
     ! transform [cal cm-1 s-1 C-1] into [W m-1 K-1]
-    ka_rasmussen = c_unit * (5.69 + 0.017*(Ta-T_3))*1.d-5
+    ka_rasmussen = c_unit * (5.69 + 0.017*(Ta-T_3))*1.e-5_wp
     RETURN
   END FUNCTION ka_Rasmussen
   ! ---------------------------------------------------------------------
@@ -1928,9 +2181,9 @@ CONTAINS
     REAL(wp) :: lh_e0, gam
 
     !.latent heat of evap. at T_3
-    lh_e0 = 2.5008d6
+    lh_e0 = 2.5008e6_wp
     !.exponent for calculation
-    gam = 0.167d0 + 3.67d-4 * T
+    gam = 0.167e0_wp + 3.67e-4_wp * T
     !.latent heat of evap. as a fct. of temp.
     lh_evap_RH87 = lh_e0 * (T_3 / T)**gam
     RETURN
@@ -1944,10 +2197,10 @@ CONTAINS
     IMPLICIT NONE
     REAL(wp), INTENT(in) :: T    ! ambient temp.
     REAL(wp), PARAMETER :: &
-         c_unit = 4.1840d3       ! constant to transform [cal g-1] to [J kg-1]
+         c_unit = 4.1840e3_wp       ! constant to transform [cal g-1] to [J kg-1]
 
     !.latent heat of melt. as a fct. of temp.
-    lh_melt_RH87 = c_unit * ( 79.7d0 + 0.485d0*(T-T_3) - 2.5d-3*(T-T_3)**2)
+    lh_melt_RH87 = c_unit * ( 79.7e0_wp + 0.485e0_wp*(T-T_3) - 2.5e-3_wp*(T-T_3)**2)
     RETURN
   END FUNCTION lh_melt_RH87
 
@@ -1974,7 +2227,7 @@ CONTAINS
 !    set_qni  = qi / 1e-10   !  qiin / ( ( Dmean / ageo) ** (1.0_wp / bgeo) )
     set_qni  = qi / 1e-10   !  qiin / ( exp(log(( Dmean / ageo)) * (1.0_wp / bgeo)) )
 !     set_qni =  5.0E+0_wp * EXP(0.304_wp *  (T_3 - T))   ! FR: Cooper (1986) used by Greg Thompson(2008)
-      
+
   END FUNCTION set_qni
 
   REAL(wp) Function set_qnr(qr)
@@ -2008,7 +2261,7 @@ CONTAINS
     ELSE
       set_qns = 0.0_wp
     END IF
-    
+
   END FUNCTION set_qns
 
   REAL(wp) Function set_qng(qg)
@@ -2041,7 +2294,7 @@ CONTAINS
 
 !    qnh = qh * 6.0_wp / (pi * rhobulk_hail * Dmean**3.0_wp)
     qnh = qh * 6.0_wp / (pi * rhobulk_hail * EXP(LOG(Dmean)*3.0_wp) )
-    
+
   END FUNCTION set_qnh_Dmean
 
   FUNCTION set_qnh_expPSD_N0const(qh, rhobulk_hail, N0_h) RESULT (qnh)
@@ -2049,21 +2302,21 @@ CONTAINS
     !$ACC ROUTINE SEQ
 
     ! .. Sets qnh based on assumption of an exponential PSD w.r.t. diameter D
-    
+
     REAL(wp), INTENT(in) :: qh           ! has to be [kg/m^3] because of N0 held constant
     REAL(wp), INTENT(in) :: rhobulk_hail ! assumed bulk density of hail [kg/m^3]
     REAL(wp), INTENT(in) :: N0_h         ! assumed constant N0-parameter of expon. size distrib. [1/m^4]
 
     REAL(wp) :: qnh
- 
+
 !    set_qnh = N0_h * ( qh / ( pi * rhobulk_hail * N0_h) )**(0.25)
     IF (qh >= 1e-20_wp) THEN
       qnh = N0_h * EXP( LOG ( qh / ( pi * rhobulk_hail * N0_h) ) * ( 0.25_wp ) )
     ELSE
       qnh = 0.0_wp
     END IF
-    
+
   END FUNCTION set_qnh_expPSD_N0const
 
- 
+
 END MODULE mo_2mom_mcrph_util

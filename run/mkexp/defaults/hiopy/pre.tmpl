@@ -1,0 +1,113 @@
+#! %{JOB.python3} #%# -*- mode: python -*- vi: set ft=python :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#
+# Configure hierarchical data request for hiopy
+# Generate data request configuration using parse_data_request module
+
+import json
+import sys
+import os
+import zarr
+
+#% include 'mkexp/defaults/logging.tmpl'
+
+#% if "proleptic gregorian" not in CALENDAR:
+#% do die("Hiopy supports only the proleptic gregorian calendar. Reconfigure with this calendar to use hiopy.")
+#% endif
+
+# Add the necessary scripts for python
+module_path = os.path.join('%{MODEL_DIR}', 'run', 'mkexp', 'defaults', 'hiopy')
+sys.path.insert(0, module_path)
+
+#%  if hiopy.grid.type == "healpix":
+from init_hierarchy import init_data_request as init_hierarchial_dataset
+#%  else:
+from init_model_grid import init_data_request as init_model_grid_dataset
+#%  endif
+from create_datarequest_config import parse_data_request
+
+user_config = %{namelists.hiopy}
+
+from datetime import datetime, timedelta
+import isodate as isodate
+
+try:
+    time_agg_allowed = []
+    for time_agg_required in %{hiopy.time_agg}:
+        duration = isodate.parse_duration(time_agg_required)
+        if not isinstance(duration, timedelta):
+            raise ValueError(f"Time aggregations required {time_agg_required} contains months or years. Hiopy currently supports only non-ambiguous time durations on proleptic gregorian calendar.")
+        start_date = datetime.fromisoformat('%{INITIAL_DATE}')
+        end_date = datetime.fromisoformat('%{FINAL_DATE}')
+        if (end_date - start_date) < duration:
+            logging.warning(f"Required time-agg {time_agg_required} is beyond the simulation date. It will be skipped...")
+        else:
+            time_agg_allowed.append(time_agg_required)
+
+    logging.info(f"Allowed time aggregations for this experiment: {time_agg_allowed}")
+
+    data_request = parse_data_request(user_config, time_agg_allowed, %{hiopy.grid})
+
+    data_request_config_file = os.path.join('%{DATA_DIR}', 'hiopy_data_request.json')
+    with open(data_request_config_file, 'w') as f:
+        json.dump(data_request, f, indent=2)
+
+    logging.info(f"Successfully created data request config: {data_request_config_file}")
+    logging.info(f"Data request contains {len(data_request)} data groups")
+
+
+    zarr_store_path = ""
+#% if hiopy.storage_backend == 's3':
+    import fsspec
+    zarr_store_path = "%{hiopy.storage.s3.bucket}/%{hiopy.relative_path_to_dataset}"
+    fs = fsspec.filesystem("s3",
+                            key=os.environ["S3_KEY"],
+                            secret=os.environ["S3_SECRET"],
+                            endpoint_url="%{hiopy.storage.s3.endpoint_url}",
+                            asynchronous=True)
+    store = zarr.storage.FsspecStore(fs=fs, path=zarr_store_path)
+    dataset = zarr.open_group(store=store, zarr_format=%{hiopy.zarr_format | default(3)}, mode="w")
+#% else:
+    zarr_store_path = "%{DATA_DIR}/%{hiopy.relative_path_to_dataset}"
+    dataset = zarr.open_group(zarr_store_path, zarr_format=%{hiopy.zarr_format | default(3)}, mode="a")
+#% endif
+    logging.info(f"Initialized zarr store at {zarr_store_path}")
+
+    simulation_params = {
+        "start_date": '%{INITIAL_DATE}',
+        "end_date": '%{FINAL_DATE}',
+        "simulated_hours_per_chunk": %{hiopy.simulated_hours_per_chunk|d(24)|int},
+        "chunks_per_shard": %{hiopy.chunks_per_shard|d(1)|int},
+    }
+
+    # Load or create variable names dictionary
+    #%  if JOB.var_names_dict_file is defined:
+    var_names_dict_file = '%{JOB.var_names_dict_file}'
+    with open(var_names_dict_file, 'r') as f:
+        var_names_dict = json.load(f)
+    #%  else:
+    # Use default empty dictionary if no var_names mapping provided
+    var_names_dict = {}
+    #%  endif
+
+    logging.info(f"Simulation period: {simulation_params['start_date']} to {simulation_params['end_date']}")
+    #%  if hiopy.grid.type == "healpix":
+    init_hierarchial_dataset(dataset, data_request, simulation_params, var_names_dict)
+    #%  else:
+    init_model_grid_dataset(dataset, data_request, simulation_params, var_names_dict)
+    #%  endif
+    logging.info(f"Successfully initialized zarr dataset")
+    sys.exit(0)
+
+except Exception as e:
+    logging.error(f"Error initializing zarr dataset for the experiment: {e}")
+    sys.exit(1)

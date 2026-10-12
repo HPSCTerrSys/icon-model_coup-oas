@@ -1,0 +1,122 @@
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#%#
+#%# Collection of macros to launche the run
+#%#
+#
+# $Id: run/mkexp/defaults/launcher.tmpl 0 2026-01-14 13:35:33Z k202123 $
+
+#% macro define_MODEL_executable(JOB, BIN_DIR, model_exe):
+#% if JOB.hybrid is defined
+export MODEL_oce="%{JOB.hybrid.oce.exec}"
+export MODEL_atm="%{JOB.hybrid.atm.exec}"
+#% else
+export MODEL="%{BIN_DIR}/%{model_exe}"
+#% endif
+#%- endmacro
+
+
+#% macro check_MODEL_executable(JOB):
+#% if JOB.hybrid is defined
+ls -l ${MODEL_oce}
+check_error $? "${MODEL_oce} does not exist?"
+%{JOB.ldd} ${MODEL_oce}
+
+ls -l ${MODEL_atm}
+check_error $? "${MODEL_atm} does not exist?"
+%{JOB.ldd} ${MODEL_atm}
+#% else
+ls -l ${MODEL}
+check_error $? "${MODEL} does not exist?"
+%{JOB.ldd} ${MODEL}
+#%endif
+#%- endmacro
+
+
+#% macro check_MODEL_status(JOB, WITH_ATMO, WITH_OCEAN, IS_COUPLED_OUTPUT):
+# Check the finish status
+#% if JOB.hybrid is defined
+if [ -r finish_atmo.status -a -r finish_ocean.status ] ; then
+  check_final_status 0 "${START} ${MODEL_atm}"
+else
+  check_final_status -1 "${START} ${MODEL_oce}"
+fi
+#% else
+#%  if WITH_ATMO is set and WITH_OCEAN is set:
+if [ -r finish_atmo.status -a -r finish_ocean.status ] ; then
+  check_final_status 0 "${START} ${MODEL}"
+else
+  check_final_status -1 "${START} ${MODEL}"
+fi
+#%  else
+#%  if IS_COUPLED_OUTPUT:
+if [ -r finish_atmo.status -o -r finish_ocean.status ] ; then
+  check_final_status 0 "${START} ${MODEL}"
+else
+  check_final_status -1 "${START} ${MODEL}"
+fi
+#%  else
+if [ -r finish.status ] ; then
+  check_final_status 0 "${START} ${MODEL}"
+else
+  check_final_status -1 "${START} ${MODEL}"
+fi
+#%  endif
+#%  endif
+#% endif
+#%- endmacro
+
+#% macro write_finish_status(JOB, WITH_ATMO, WITH_OCEAN, IS_COUPLED_OUTPUT, finish_status):
+#%#
+# Write finish status to log file
+#% if (WITH_ATMO is set and WITH_OCEAN is set) or IS_COUPLED_OUTPUT:
+#%   if WITH_ATMO is set:
+finish_status_atm=`cat finish_atmo.status`
+finish_status_atm="${finish_status_atm# }"
+echo "${finish_status_atm}"
+echo "============================"
+echo "Script run (atmo) successfully: $finish_status_atm"
+echo "============================"
+#%   endif
+
+#%   if WITH_OCEAN is set:
+finish_status_oce=`cat finish_ocean.status`
+finish_status_oce="${finish_status_oce# }"
+echo "${finish_status_oce}"
+echo "============================"
+echo "Script run (oce) successfully: $finish_status_oce"
+echo "============================"
+#%   endif
+
+#%   if WITH_ATMO is not set:
+finish_status_atm=${finish_status_oce}
+#%   endif
+#%   if WITH_OCEAN is not set:
+finish_status_oce=${finish_status_atm}
+#%   endif
+
+s="${finish_status_atm}|${finish_status_oce}"
+if [[ "$s" == "RESTART|RESTART" ]]; then
+  finish_status=RESTART
+elif [[ "$s" == "OK|OK" ]]; then
+  finish_status=OK
+else
+  finish_status=1
+fi
+#% else
+finish_status=`cat finish.status`
+finish_status="${finish_status# }"
+echo $finish_status
+echo "============================"
+echo "Script run successfully: $finish_status"
+echo "============================"
+#% endif
+#%- endmacro

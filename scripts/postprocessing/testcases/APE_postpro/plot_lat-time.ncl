@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -33,12 +33,12 @@ begin
  ifs         = stringtoint(getenv("evol_istart"))
  ife         = stringtoint(getenv("evol_iend"))
 
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 ; Open data files, inquire dimension sizes and starting time
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 
   cmd      = "ls "+DataFNameP1+"????"+DataFNameP2
-  filelist = systemfunc(cmd)  
+  filelist = systemfunc(cmd)
   nfile    = dimsizes(filelist)
 
   if (nfile.ne.(ife-ifs+1)) then
@@ -53,7 +53,7 @@ begin
   Files = addfiles(filelist,"r")
 
   lat   = Files[0]->lat
-  nlat  = dimsizes(lat) 
+  nlat  = dimsizes(lat)
 
   ntime = dimsizes(Files[:]->time)
   print("Found "+ntime+" time steps in "+nfile+" files")
@@ -65,9 +65,9 @@ begin
   timeunit = "days since "+refdate
   delete(tmpunit)
 
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 ; Read data
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 
   var  = new( (/ntime,nlat/),typeof(Files[0]->$varName$) )
   time = new( ntime,typeof(Files[0]->time) )
@@ -86,7 +86,7 @@ begin
      ;Read variable
      var(its:ite,:) = (/Files[ifile]->$varName$(:,0,:,0)/) ;(time,lev,lat,lon)
 
-     ;Get relative time 
+     ;Get relative time
      time(its:ite) = ut_convert(ttmp,timeunit)
 
      print("Read file "+sprinti("%0.4i", ifile+ifs) \
@@ -94,7 +94,7 @@ begin
 
      its = ite + 1
      delete(ttmp)
-  end do 
+  end do
 
   time@units = "days since "+refdate
 
@@ -102,70 +102,70 @@ begin
   var!0    =  "time"
   var&time =   time
   var!1    =  "lat"
-  var&lat  =   lat  
+  var&lat  =   lat
 
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 ; Make plot
-;--------------------------------------------------------------- 
+;---------------------------------------------------------------
 
   FontHeight = 0.014
 
   ResC = True
 
-  ; Contour plot with fixed lat:time aspect ratio 
-  ResC@vpHeightF   = 0.3 
-  ResC@vpWidthF    = ResC@vpHeightF*1.618*time(ntime-1)/200. 
+  ; Contour plot with fixed lat:time aspect ratio
+  ResC@vpHeightF   = 0.3
+  ResC@vpWidthF    = ResC@vpHeightF*1.618*time(ntime-1)/200.
   if (ResC@vpWidthF.gt.0.8) then
     ResC@vpHeightF = ResC@vpHeightF*0.8/ResC@vpWidthF
     ResC@vpWidthF  = 0.8
   end if
- 
+
   ResC@tiYAxisString        = "Latitude"
   ResC@tiYAxisFontHeightF   = FontHeight
-  ResC@tmYLLabelFontHeightF = FontHeight 
+  ResC@tmYLLabelFontHeightF = FontHeight
   ResC@tmYLMajorLengthF     = 0.01
   ResC@tmYLMinorLengthF     = 0.005
   ResC@tmYRMajorLengthF     = 0.01
   ResC@tmYRMinorLengthF     = 0.005
-  ResC@tmYLMajorThicknessF  = 3. 
+  ResC@tmYLMajorThicknessF  = 3.
   ResC@tmYRMajorThicknessF  = 3.
- 
-  ResC@tmXBLabelFontHeightF = FontHeight 
+
+  ResC@tmXBLabelFontHeightF = FontHeight
   ResC@tmXBMajorLengthF     = 0.01
   ResC@tmXBMinorLengthF     = 0.005
-  ResC@tmXBMajorThicknessF  = 3. 
-  ResC@tmXTMajorThicknessF  = 3. 
- 
+  ResC@tmXBMajorThicknessF  = 3.
+  ResC@tmXTMajorThicknessF  = 3.
+
   ResC@cnFillOn      = True
   ResC@cnLinesOn     = False
   ResC@cnInfoLabelOn = False
- 
+
   ResC@lbLabelBarOn        = True
   ResC@lbOrientation       = "vertical"
   ResC@pmLabelBarWidthF    = 0.07
-  ResC@lbLabelFontHeightF  = FontHeight 
+  ResC@lbLabelFontHeightF  = FontHeight
   ResC@lbLabelAutoStride   = True
   ResC@gsnSpreadColors     = True
   ResC@gsnSpreadColorStart = 3
   ResC@gsnSpreadColorEnd   = 101
 
-  ResC@tiMainString        = getenv("exp_config") 
+  ResC@tiMainString        = getenv("exp_config")
   ResC@tiMainFontHeightF   = FontHeight + 0.01
   ResC@gsnLeftString       = LongName +", scale = "+Scale+", mean = "+avg(var)
   ResC@gsnCenterString     = ""
-  ResC@gsnRightString      = getenv("resolution") 
+  ResC@gsnRightString      = getenv("resolution")
   ResC@gsnStringFontHeightF= FontHeight + 0.001
   ResC@tiXAxisJust         = "CenterCenter"
   ResC@tiXAxisString       = "Time (day)"
   ResC@tiXAxisFontHeightF  = FontHeight + 0.001
 
-  ; Set the workstation orientation to "landscape" if the user wants so 
+  ; Set the workstation orientation to "landscape" if the user wants so
   if ( (.not.ismissing(wkOrientation)) .and. (wkOrientation.eq."landscape") ) then
-    PlotFormat@wkOrientation  = "landscape"   ;NCL default is "portrait" 
+    PlotFormat@wkOrientation  = "landscape"   ;NCL default is "portrait"
   end if
   wks = gsn_open_wks(PlotFormat,PlotFile)
   gsn_define_colormap(wks,"WhBlGrYeRe")
- 
+
   contour = gsn_csm_lat_time( wks, add90LatY(var(lat|:,time|:)), ResC )
 
 end

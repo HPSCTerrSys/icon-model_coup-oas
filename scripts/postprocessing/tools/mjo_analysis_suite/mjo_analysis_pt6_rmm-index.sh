@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #########################################################
 # Part 6 in MJO-Analysis Suite
@@ -20,7 +21,7 @@
 #     and provides required information on
 #     dimensions etc.
 #   * NCL Script
-#     - Reads PC1/2 as created by  
+#     - Reads PC1/2 as created by
 #       mjo_analysis_clivar_correlations.ncl
 #     - Creates RMM-Diagram for each Season
 #
@@ -28,7 +29,7 @@
 # DWD, FE 13, Julia Keller, 02/2016
 ########################################################
 
-# Extract year from Strt-/LastDate    
+# Extract year from Strt-/LastDate
 yrstrt=${StrtDate:0:4}
 yrlast=${LastDate:0:4}
 yr=$yrstrt
@@ -37,14 +38,14 @@ echo $yrlast
 
 while [ $yr -lt ${yrlast} ]
 do
-  for seas in summer winter 
+  for seas in summer winter
   do
     case ${seas} in
-      "summer") 
+      "summer")
              rmmStrt=${yr}0401
              rmmLast=${yr}0930
        ;;
-      "winter") 
+      "winter")
              rmmStrt=${yr}1001
              yr=`expr $yr + 1 `
              rmmLast=${yr}0331
@@ -60,10 +61,7 @@ do
         ymdLast=$rmmLast  \
         'datainfo="'${dataset}'"' \
         mjo_analysis_clivar_rmm-index.ncl
-        
+
   done
 
 done
-
-
-

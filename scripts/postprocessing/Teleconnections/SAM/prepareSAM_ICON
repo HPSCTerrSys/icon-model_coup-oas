@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -13,7 +13,7 @@ set -ex
 name=$1
 echo $name
 exp=$2
-yStrt=$3 
+yStrt=$3
 yLast=$4
 atm_RES=$5
 datdir=$6
@@ -42,8 +42,8 @@ $lonL
 $lonR
 eof00
 
-YY1=`expr $yStrt + 1` 
-YY2=`expr $yLast - 1` 
+YY1=`expr $yStrt + 1`
+YY2=`expr $yLast - 1`
 cdo -r mergetime -selmon,3/12 -selyear,${yStrt} ${datdir}/${name}  -selyear,${YY1}/${YY2} ${datdir}/${name}  -selmon,1/11 -selyear,${yLast} ${datdir}/${name} monmean.nc
 
 seaslist="DJF JJA MAM SON"
@@ -71,7 +71,7 @@ for seas in $seaslist; do
     IFILE=${workDir}/${var}_${exp}_${seas}.nc
     cdo sellonlatbox,${lonR},${lonL},${latS},${latN} $IFILE data.nc
     ${Qpath}/cdo_eof1_ICON data.nc
-    
+
     cp eof1var.txt  var_${exp}_${seas}.txt
 more var_${exp}_${seas}.txt
 
@@ -94,6 +94,6 @@ cdo copy -remapycon,psl_${exp}_${seas}.nc eof1_psl_${exp}_${seas}.nc eof1_psl_${
 #rm sign.nc
 #exit
 done
-rm  -f eof_1.nc  eof_1_ts.nc  monmean.nc 
+rm  -f eof_1.nc  eof_1_ts.nc  monmean.nc
 ls $workdir
 exit

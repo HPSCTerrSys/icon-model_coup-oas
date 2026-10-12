@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -34,7 +34,7 @@ _EOF
 sw_root=${ICON_SW_PREFIX-'/appl/local/climatedt/sw'}
 echo "Using software stack from ${sw_root}"
 
-modules='PrgEnv-cray cce/16.0.1.1 craype-x86-milan craype-accel-amd-gfx90a rocm cray-mpich cray-hdf5 cray-netcdf cray-libsci !libfabric'
+modules='PrgEnv-cray cce/16.0.1.1 craype-x86-milan craype-accel-amd-gfx90a rocm cray-mpich cray-hdf5 cray-netcdf cray-libsci cray-python !libfabric'
 
 LIBFABRIC_ROOT='/opt/cray/libfabric/1.15.2.0'
 
@@ -69,7 +69,7 @@ HIPFLAGS='--offload-arch=gfx90a -g -O3'
 ICON_O0_PATH='externals/jsbach/src/base/mo_jsb_process_factory_core.f90'
 ICON_O0_FCFLAGS='-O0'
 
-# Due to compiler bug (in 16.0.1, HPE issue number 5376225297) the following file 
+# Due to compiler bug (in 16.0.1, HPE issue number 5376225297) the following file
 # fails to compile with the default optimization level:
 ICON_O1_PATH='src/atm_phy_schemes/mo_cuascn.f90'
 ICON_O1_FCFLAGS='-O1'
@@ -105,7 +105,7 @@ CMAKE="${sw_root}/gcc-12.2.0-zen2/cmake-3.21.4/bin/cmake"
 # LD_LIBRARY_PATH variable for the configure scripts and test suites of the
 # bundled libraries to work. Therefore, we configure ICON with --disable-rpaths
 # to avoid duplicate RPATH entries in the ICON executable:
-EXTRA_CONFIG_ARGS='--disable-rpaths --disable-mpi-checks --enable-mpi-gpu --enable-gpu=openacc+hip --enable-grib2 --enable-dim-swap --enable-fcgroup-O0 --enable-fcgroup-O1 --enable-fcgroup-DIAG'
+EXTRA_CONFIG_ARGS='--disable-rpaths --disable-mpi-checks --enable-mpi-gpu --enable-gpu=openacc+hip --enable-grib2 --enable-dim-swap --enable-fcgroup-O0 --enable-fcgroup-O1 --enable-fcgroup-DIAG --enable-bundled-python=mtime'
 
 ################################################################################
 
@@ -143,11 +143,17 @@ done
 if test $(pwd) != $(cd "${icon_dir}"; pwd); then
   export PATH="${sw_root}/gcc-12.2.0-zen2/rsync-3.2.3/bin:${PATH-}"
   echo "Copying runscript input files from the source directory..."
-  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*'
-  ln -sf -t run/ ${icon_dir}/run/standard_*
-  rsync -uavz ${icon_dir}/externals . --exclude='.git' --exclude='*.f90' --exclude='*.F90' --exclude='*.c' --exclude='*.h' --exclude='*.Po' --exclude='tests' --exclude='*.mod' --exclude='*.o'
+  rsync -uavz ${icon_dir}/run . --exclude='*.in' --exclude='.*' --exclude='standard_*' --exclude=mkexp
+  ln -sf -t run/ ${icon_dir}/run/{standard_*,mkexp}
+  for dir in \
+    'externals/art/runctrl_examples' \
+    'externals/ecrad/data' \
+    'externals/jsbach/data'
+  do
+    src="${icon_dir}/${dir}"
+    test -d "${src}" && mkdir -p "${dir}" && rsync -uavz "${src}/" "${dir}"
+  done
   rsync -uavz ${icon_dir}/make_runscripts .
   ln -sf ${icon_dir}/data
   ln -sf ${icon_dir}/vertical_coord_tables
 fi
-

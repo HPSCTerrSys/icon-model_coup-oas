@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -19,7 +18,7 @@ MODULE mo_io_util
   USE mo_util_string,           ONLY: tolower
   USE mo_netcdf_errhandler,     ONLY: nf
   USE mo_netcdf
-  USE mo_name_list_output_types, ONLY: FILETYPE_YAC
+  USE mo_name_list_output_types, ONLY: FILETYPE_NONE
 
   IMPLICIT NONE
   PRIVATE
@@ -58,7 +57,7 @@ CONTAINS
     ! local variables
     CHARACTER(len=*), PARAMETER :: routine = modname//'::get_filetype'
     INTEGER :: idx
-    
+
     idx = INDEX(tolower(filename),'.nc')
     IF (idx==0) THEN
       idx = INDEX(tolower(filename),'.grb')
@@ -91,12 +90,8 @@ CONTAINS
       CALL finish(routine,'GRIB1 not supported')
     CASE (FILETYPE_GRB2)
       extn = '.grb'
-    CASE (FILETYPE_YAC)
-#ifdef YAC_coupling
+    CASE (FILETYPE_NONE)
       extn = ''
-#else
-      CALL finish(routine,'using yac-coupled output but yac coupling is disabled')
-#endif
     CASE default
       CALL finish(routine,'unknown output_type')
     END SELECT
@@ -108,7 +103,7 @@ CONTAINS
   !
   !  Note: opens and closes file and allocates output variables.
   !----------------------------------------------------------------
-  SUBROUTINE read_netcdf_int_1d(filename, varname1, var1, opt_varname2, opt_var2, opt_att) 
+  SUBROUTINE read_netcdf_int_1d(filename, varname1, var1, opt_varname2, opt_var2, opt_att)
 
     CHARACTER(len=*),                 INTENT(IN)    :: filename     ! NetCDF file name
     CHARACTER(len=*),                 INTENT(IN)    :: varname1     ! variable name string
@@ -162,7 +157,7 @@ CONTAINS
       CALL nf(nf90_inquire_variable(ncfileID, varID, dimids = dimids), routine)
       dim_aux = dimids(1)
       CALL nf(nf90_inquire_dimension(ncfileID, dim_aux, len = dimlen), routine)
-      
+
       ! --- allocate output variable, read data
       ALLOCATE(opt_var2(dimlen))
       CALL nf(nf90_get_var(ncfileID, varID, opt_var2), routine)
@@ -199,4 +194,3 @@ CONTAINS
 
 
 END MODULE mo_io_util
-

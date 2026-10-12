@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -53,7 +53,7 @@ set_fortran_target_linux_gcc()
   F77="gfortran"
   F77_FLAGS=""
 }
-        
+
 #-------------------------------------------------------------------------------------
 set_fortran_target_linux_nag()
 {
@@ -79,7 +79,7 @@ set_fortran_target_linux_nag()
   F77="nagfor"
   F77FLAGS="-w=obs -dcfuns -mismatch_all"
 }
-        
+
 #-------------------------------------------------------------------------------------
 set_fortran_target_linux_sun()
 {
@@ -130,7 +130,7 @@ set_fortran_target_linux_pgi()
   F77="pgf95"
   F77_FLAGS="$BASIC_FLAGS"
 }
-      
+
 #-------------------------------------------------------------------------------------
 set_fortran_target_linux_intel()
 {
@@ -205,12 +205,12 @@ set_fortran_target_linux_intel()
   F77="ifort"
   F77_FLAGS="-O2 -fltconsistency"
 }
-    
+
 
 #-------------------------------------------------------------------------------------
 set_fortran_target_aix_xlf()
 {
-   
+
   if [[ $use_mpi == "yes" ]]; then
     CC="mpcc_r"
     FC="mpxlf2003_r"
@@ -220,11 +220,11 @@ set_fortran_target_aix_xlf()
     FC="xlf2003_r"
     F77="xlf_r"
   fi
-  
+
   # INFOFLAGS= -qlistopt -qphsinfo -qreport=hotlist -bnoquiet -V
   INFOFLAGS="-qlistopt -qphsinfo -bnoquiet -V"
-  C_FLAGS="-O2 -Dextname -DHAVE_LIBNETCDF -DHAVE_CF_INTERFACE -qlanglvl=stdc99 $INFOFLAGS" 
-    
+  C_FLAGS="-O2 -Dextname -DHAVE_LIBNETCDF -DHAVE_CF_INTERFACE -qlanglvl=stdc99 $INFOFLAGS"
+
   # DEBUGFLAGS= -g -qcheck -qstackprotect=all
   DEBUG_FLAGS=""
   TRACE_FLAGS="-gline"
@@ -235,7 +235,7 @@ set_fortran_target_aix_xlf()
   HI_OPT_FLAGS="-O3 -qhot -qstrict -qsimd=auto -qinline -qtune=balanced -qxflag=nvectver -qxflag=nsmine -qessl"
  ## HI_OPT_FLAGS="-O3 -qhot=simd -qsimd=auto -qinline -qtune=balanced -qxflag=nvectver -qxflag=nsmine -qessl"
   F77_FLAGS="$INFOFLAGS $BASIC_FLAGS -qextname"
-    
+
   OMP_FLAGS="-qsmp=omp"
 
   DEF_COPT="-D"

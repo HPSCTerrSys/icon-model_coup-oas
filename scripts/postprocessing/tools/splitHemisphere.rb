@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,7 +15,7 @@ require "numru/netcdf"
 require 'numru/netcdf_miss'
 include NumRu
 
-# 
+#
 # This script splits the glocal cell grid into northern and southern hemisphere.
 # @author: ralf mueller , ralf.mueller@dkrz.de
 #
@@ -38,11 +38,11 @@ def splitHemisphere(iFilename,varname,lon,lat)
     puts "Creating '#{file}' ...."
     indeces = [nhIndeces,shIndeces][i]
     f = NetCDF.create(file)
-    iFile.each_dim {|dim| 
-      next if ['clon','clat','ncells'].include?(dim.name) or 
+    iFile.each_dim {|dim|
+      next if ['clon','clat','ncells'].include?(dim.name) or
       f.def_dim(dim.name,dim.length)
     }
-    ["clon","clat","ncells"].each {|hdim| 
+    ["clon","clat","ncells"].each {|hdim|
       f.def_dim(hdim,indeces.size)
     }
 
@@ -52,9 +52,9 @@ def splitHemisphere(iFilename,varname,lon,lat)
       var.each_att{|att| newvar.put_att( att.name, att.get )}
     }
     f.enddef
-    iFile.each_var{|var| 
+    iFile.each_var{|var|
       #puts var.name
-      case var.name 
+      case var.name
       when varname
 	f.var(var.name).put(var.get[indeces,true,true])
       when 'p_ice_concSum'
@@ -85,4 +85,3 @@ if $0 == __FILE__; then
 
   splitHemisphere(iFilename,varname,lon,lat)
 end
-

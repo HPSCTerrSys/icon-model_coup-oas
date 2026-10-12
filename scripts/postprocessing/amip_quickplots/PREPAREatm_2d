@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -44,14 +44,14 @@ echo $ERATIME >>var.txt
 
 #
 ###########################################################################
-# 
+#
 #
 set +e
 
 #----code164---Total cloud cover----- CMOR: clt--------------
 #
 Cvar=clt
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
   cdo  -mulc,100.  -selvar,${Cvar} $inDat Ubusy_${Cvar}.nc
 fi
@@ -59,7 +59,7 @@ fi
 #----code180 Zonal wind stress-- CMOR: tauu---
 #
 Cvar=tauu
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
 #---only sea
   cdo -setrtoc,-3,-0,1 -setvrange,-3,-0  -selvar,cell_sea_land_mask $GrdInfoFile busy2.nc
@@ -73,16 +73,16 @@ rm -f  busy*
 #----code4--- Total precipitation-- CMOR: pr--
 #
 Cvar=pr
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
-  cdo -mulc,86400 -selvar,${Cvar} $inDat Ubusy_${Cvar}.nc 
+  cdo -mulc,86400 -selvar,${Cvar} $inDat Ubusy_${Cvar}.nc
 fi
 #
 #
 #----code230 -- Column water vapour -CMOR: prw-
 #
 Cvar=prw
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
 cdo -selvar,${Cvar} $inDat Ubusy_${Cvar}.nc
 fi
@@ -90,7 +90,7 @@ fi
 #----code167---2m Temperature---ERAin-CMOR: tas-
 #
 Cvar=tas
-if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null
 then
   cdo -subc,273.15 -selvar,${Cvar}  $ERAinDat Ubusy_${Cvar}_ERAin.nc
 fi
@@ -99,7 +99,7 @@ fi
 #----code167---2m Temperature---CMOR: tas-
 #
 Cvar=tas
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
   cdo -subc,273.15 -selvar,${Cvar}  $inDat Ubusy_${Cvar}.nc
 fi
@@ -108,9 +108,9 @@ fi
 #----code167---2m Temperature---ERAin-CMOR: tas-(model-ERAin)
 #
 Cvar=tas
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
-  if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null
   then
    cdo sub  -selvar,${Cvar} $inDat  -selvar,${Cvar}  $ERAinDat Ubusy_${Cvar}_erain.nc
 fi
@@ -120,7 +120,7 @@ fi
 #----code151---Sea level pressure---CMOR: psl-
 #
 Cvar=psl
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
   cdo -mulc,0.01  -selvar,${Cvar} $inDat Ubusy_${Cvar}.nc
 fi
@@ -131,9 +131,9 @@ fi
 #
 
 Cvar=psl
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
-  if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null
   then
      cdo sub -mulc,0.01  -selvar,${Cvar} $inDat -mulc,0.01 -selvar,${Cvar} $ERAinDat Ubusy_${Cvar}_erain.nc
 fi
@@ -143,14 +143,14 @@ fi
 #----code180---Zonal wind stress---(model-ERAin)---CMOR: tauu-
 #
 Cvar=tauu
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
 #---only sea
   cdo -setrtoc,-3,-0,1 -setvrange,-3,-0  -selvar,cell_sea_land_mask $GrdInfoFile sea.nc
 
   cdo -mulc,1000. -mul -selvar,${Cvar} $inDat sea.nc   busy.nc
 
-  if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null
   then
 
     cdo -mulc,1000. -mul -selvar,${Cvar} $ERAinDat sea.nc busy_erain.nc
@@ -164,10 +164,10 @@ rm -f  busy*
 #
 
 Cvar=prw
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
   cdo -selvar,${Cvar} $inDat busy1
-  if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $ERAinDat > /dev/null
   then
     cdo -selvar,${Cvar} $ERAinDat busy2
     cdo sub busy1 busy2 Ubusy_d${Cvar}.nc
@@ -182,10 +182,10 @@ rm -f  busy*
 Cvar=clivi
 Cvar2=cllvi
 CvarNew=clwvi
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
   cdo  -selvar,${Cvar} $inDat busy1.nc
-  if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+  if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
   then
     cdo  -selvar,${Cvar2} $inDat busy2.nc
     cdo  -chname,${Cvar},${CvarNew} -smooth9 -mulc,1000. -add busy1.nc busy2.nc Ubusy_${CvarNew}.nc
@@ -196,14 +196,10 @@ rm -f  busy*
 #----code169---Sea surface temperature---
 #
 Cvar=ts
-if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null 
+if cdo -s showvar -selvar,${Cvar} $inDat > /dev/null
 then
   cdo -subc,273.15  -selvar,${Cvar}   $inDat Ubusy_${Cvar}.nc
 fi
 
 
 exit
-
-
-
-

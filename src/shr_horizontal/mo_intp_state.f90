@@ -1,12 +1,7 @@
-! Contains the implementation of interpolation and reconstruction
-! routines used by the shallow water model, including the RBF
-! reconstruction routines.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -14,12 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the implementation of interpolation and reconstruction
+! routines used by the shallow water model, including the RBF
+! reconstruction routines.
+
 ! #ifdef __xlC__
 ! @PROCESS HOT
 ! #endif
-#ifdef __PGI
-!pgi$g opt=0
-#endif
 
 MODULE mo_intp_state
 !-------------------------------------------------------------------------
@@ -40,7 +36,7 @@ USE mo_parallel_config,     ONLY: nproma
 USE mo_run_config,          ONLY: ldynamics
 USE mo_interpol_config,     ONLY: rbf_vec_dim_c, rbf_c2grad_dim,                &
   &                               rbf_vec_dim_v, rbf_vec_dim_e, lsq_lin_set,    &
-  &                               lsq_high_set
+  &                               lsq_high_set, lrbf_read, lrbf_write
 USE mo_initicon_config,     ONLY: icpl_da_seaice, icpl_da_snowalb
 USE mo_lnd_nwp_config,      ONLY: lterra_urb
 USE mo_intp_data_strc,      ONLY: t_int_state
@@ -70,6 +66,7 @@ USE mo_master_control,      ONLY: my_process_is_waves
 USE mo_ser_rbf_coefficients, ONLY: ser_rbf_coefficients
 USE mo_ser_nml,             ONLY: ser_rbf
 #endif
+USE mo_rbf_coefficients_io, ONLY: rbf_coefficients_write, rbf_coefficients_read
 
 IMPLICIT NONE
 
@@ -96,6 +93,8 @@ CLASS(t_comm_pattern), POINTER :: comm_pat_glb_to_loc_c, &
   &                               comm_pat_glb_to_loc_e, &
   &                               comm_pat_glb_to_loc_v
 
+
+CHARACTER(LEN=*), PARAMETER :: modname = "mo_intp_state"
 
 CONTAINS
 
@@ -347,10 +346,10 @@ SUBROUTINE allocate_int_state( ptr_patch, ptr_int)
     IF (.NOT.lsdi)  llpi         = is_variable_in_output(var_name="lpi")
     IF (.NOT.llpi)  llpim        = is_variable_in_output(var_name="lpi_max")
     IF (.NOT.llpim) lmconv       = is_variable_in_output(var_name="mconv")
-    llsc         = atm_phy_nwp_config(MAX(1,ptr_patch%id))%lstoch_expl 
+    llsc         = atm_phy_nwp_config(MAX(1,ptr_patch%id))%lstoch_expl
     llsd         = atm_phy_nwp_config(MAX(1,ptr_patch%id))%lstoch_sde
     llde         = atm_phy_nwp_config(MAX(1,ptr_patch%id))%lstoch_deep
-    
+
     ptr_int%cell_environ%is_used = lsdi .OR. llpi .OR. llpim .OR. lmconv .OR. llsc .OR. llsd .OR. llde .OR. &
                                    icpl_da_seaice >= 2 .OR. icpl_da_snowalb >= 2 .OR. lterra_urb
 
@@ -380,7 +379,7 @@ SUBROUTINE allocate_int_state( ptr_patch, ptr_int)
         &            'allocation for cell_environ%area_norm failed')
       ENDIF
 
-      ptr_int%cell_environ%nmbr_nghbr_cells(:,:) = 0 
+      ptr_int%cell_environ%nmbr_nghbr_cells(:,:) = 0
       ptr_int%cell_environ%idx(:,:,:) = 0
       ptr_int%cell_environ%blk(:,:,:) = 0
       ptr_int%cell_environ%area_norm(:,:,:) = 0.0_wp
@@ -797,19 +796,20 @@ TYPE(t_patch), INTENT(INOUT) :: ptr_patch(n_dom_start:)
 
 TYPE(t_int_state),     INTENT(INOUT) :: ptr_int_state(n_dom_start:)
 
-INTEGER  :: jg
+INTEGER  :: jg, rbf_read_status
 REAL(wp) :: search_radius
 
 CHARACTER(len=MAX_CHAR_LENGTH) :: text
+CHARACTER(len=*), PARAMETER :: method_name = modname//":construct_2d_interpol_state"
 
   !-----------------------------------------------------------------------
 
-CALL message('mo_intp_state:construct_2d_interpol_state','start to construct int_state')
+CALL message(method_name,'start to construct int_state')
 
 DO jg = n_dom_start, n_dom
 
   WRITE(text,'(a,i0)') 'constructing int_state for patch ',jg
-  CALL message('mo_intp_state:construct_2d_interpol_state',text)
+  CALL message(method_name,text)
 
   CALL allocate_int_state( ptr_patch(jg), ptr_int_state(jg))
 
@@ -850,25 +850,43 @@ DO jg = n_dom_start, n_dom
   !
   IF (ptr_patch(jg)%geometry_info%cell_type == 3) THEN
 
+    ! Indices
     ! ... at cell centers
     CALL rbf_vec_index_cell (ptr_patch(jg), ptr_int_state(jg))
-    !
-    CALL rbf_vec_compute_coeff_cell (ptr_patch(jg), ptr_int_state(jg))
-    !
     ! ... at triangle vertices
     CALL rbf_vec_index_vertex (ptr_patch(jg), ptr_int_state(jg))
-    !
-    CALL rbf_vec_compute_coeff_vertex (ptr_patch(jg), ptr_int_state(jg))
-    !
     ! ... at edge midpoints
     CALL rbf_vec_index_edge (ptr_patch(jg), ptr_int_state(jg))
-    !
-    CALL rbf_vec_compute_coeff_edge (ptr_patch(jg), ptr_int_state(jg))
-    !
-    ! Compute coefficients needed for gradient reconstruction at cell midpoints
+    ! Compute indices needed for gradient reconstruction at cell midpoints
     CALL rbf_c2grad_index (ptr_patch(jg), ptr_int_state(jg))
-    CALL rbf_compute_coeff_c2grad (ptr_patch(jg), ptr_int_state(jg))
 
+    ! Read rbf coefficients from file if specified, else calculate them
+    rbf_read_status = -1
+    IF (lrbf_read) THEN
+      CALL message(method_name, 'Reading RBF coefficients')
+      CALL rbf_coefficients_read(ptr_int_state(jg), ptr_patch(jg), jg, rbf_read_status)
+
+      IF (rbf_read_status /= 0) THEN
+        CALL finish(method_name, "Reading RBF coefficients was unsuccessful")
+      ENDIF
+    ELSE
+      CALL message(method_name, 'Computing RBF coefficients')
+      ! Coefficients
+      ! ... at cell centers
+      CALL rbf_vec_compute_coeff_cell (ptr_patch(jg), ptr_int_state(jg))
+      ! ... at triangle vertices
+      CALL rbf_vec_compute_coeff_vertex (ptr_patch(jg), ptr_int_state(jg))
+      ! ... at edge midpoints
+      CALL rbf_vec_compute_coeff_edge (ptr_patch(jg), ptr_int_state(jg))
+      ! Compute coefficients needed for gradient reconstruction at cell midpoints
+      CALL rbf_compute_coeff_c2grad (ptr_patch(jg), ptr_int_state(jg))
+
+    ENDIF
+
+    ! Write rbf coefficients to file if specified
+    IF (lrbf_write) THEN
+      CALL rbf_coefficients_write(ptr_int_state(jg), ptr_patch(jg), jg)
+    ENDIF
 
     IF ( ptr_int_state(jg)%cell_environ%is_used ) THEN
       ! Determine ptr_int_state(..)%cell_environ
@@ -925,8 +943,8 @@ IF (ser_rbf) THEN
 ENDIF
 #endif
 
-CALL message('mo_intp_state:construct_2d_interpol_state', &
-  & 'construction of interpolation state finished')
+
+CALL message(method_name, 'construction of interpolation state finished')
 
 END SUBROUTINE construct_2d_interpol_state
 

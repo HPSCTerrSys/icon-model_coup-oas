@@ -26,7 +26,7 @@ MODULE mo_cumaster
     & ruvper    ,rmfsoltq,rmfsolct,rmfcmin  ,lmfsmooth,lmfwstar ,&
     & lmftrac   ,   LMFUVDIS                                    ,&
     & rg       ,rd, rv      ,rcpd  ,retv , rlvtt, rlstt, rvtmp2 ,&
-    & lhook,   dr_hook, icapdcycl
+    & lhook,   dr_hook, icapdcycl, rlmlt
 
   USE mo_adjust,      ONLY: satur
   USE mo_cufunctions, ONLY: foelhmcu, foealfcu
@@ -34,6 +34,9 @@ MODULE mo_cumaster
   USE mo_cuascn,      ONLY: cuascn
   USE mo_cudescn,     ONLY: cudlfsn, cuddrafn
   USE mo_cuflxtends,  ONLY: cuflxn, cudtdqn,cududv,cuctracer
+#ifdef __MSGWAM
+  USE mo_cuflxtends,  ONLY: compute_msgwam_heating
+#endif
   USE mo_cucalclpi,   ONLY: cucalclpi, cucalcmlpi
   USE mo_cucalclfd,   ONLY: cucalclfd
   USE mo_nwp_parameters,  ONLY: t_phy_params
@@ -44,14 +47,22 @@ MODULE mo_cumaster
   USE mo_stoch_sde,            ONLY: shallow_stoch_sde, shallow_stoch_sde_passive
   USE mo_stoch_explicit,       ONLY: shallow_stoch_explicit
   USE mo_stoch_deep,           ONLY: deep_stoch_sde
-  USE mo_nwp_phy_types, ONLY: t_ptr_cloud_ensemble
-  
+  USE mo_nwp_phy_types,        ONLY: t_ptr_cloud_ensemble
+
   IMPLICIT NONE
 
   PRIVATE
 
 
   PUBLIC :: cumastrn
+
+#ifdef __MSGWAM
+  PUBLIC :: t_msgwam_fields
+  TYPE t_msgwam_fields
+    INTEGER, POINTER, CONTIGUOUS    :: ktype_cgw(:), kcbot_cgw(:), kctop_cgw(:)
+    REAL(JPRB), POINTER, CONTIGUOUS :: heat_cgw(:,:),tupd_cgw(:,:), test_cgw(:,:)
+  END TYPE t_msgwam_fields
+#endif
 
 CONTAINS
 
@@ -77,11 +88,14 @@ SUBROUTINE cumastrn &
  & pcape,    pvddraf,                            &
  & pcen, ptenrhoc,                               &
  & l_lpi, l_lfd, lpi, mlpi, koi, lfd, peis,      &
-! stochastic, extra diagnostics and logical switches
+#ifdef __MSGWAM
+ & nsrc_cgw, msgwam_fields, lmsgwam,             &
+#endif
+ & pertb,                                        &
  & lspinup, k650,k700, temp_s,                   &
  & cell_area,iseed,                              &
  & mf_bulk,mf_perturb,mf_num,p_cloud_ensemble,   &
- & pclnum_a, pclmf_a, pclnum_p, pclmf_p,         &                  
+ & pclnum_a, pclmf_a, pclnum_p, pclmf_p,         &
  & pclnum_d, pclmf_d, lacc                       )
 
 
@@ -140,7 +154,9 @@ SUBROUTINE cumastrn &
 !    *PTENQA*       MOISTURE    TENDENCY DYNAMICS=TOT ADVECTION    1/S
 
 !    *temp_s*       TEMPERATURE IN LOWEST MODEL LEVEL                K
-!    *cell_area*    GRID CELL AREA                                  M2? 
+!    *cell_area*    GRID CELL AREA                                  M2?
+!!!  FOR SPP
+!    *pertb*        STOCHASTIC PATTERN FOR PERTURBATION
 !!!  ALLOCATED ONLY IF lstoch_sde=.TRUE. !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !    *pclnum_a*     ACTIVE CLOUD NUMBER (T)               M-2
 !    *pclmf_a*      ACTIVE MASS FLUX (T)                KG/(M2*S)
@@ -212,7 +228,7 @@ SUBROUTINE cumastrn &
 !    *mf_bulk*      CLOUD BASE MASS FLUX FROM T-B SCHEME          KG/(M2*S)
 !    *mf_perturb*   CLOUD BASE MASS FLUX FROM STOCHASTIC SCHEME   KG/(M2*S)
 !    *mf_num*       NUMBER OF SHALLOW CLOUDS STOCHASTIC SCHEME    1
-  
+
 
 !     EXTERNALS.
 !     ----------
@@ -250,7 +266,7 @@ SUBROUTINE cumastrn &
 
 !          PAPER ON MASSFLUX SCHEME (TIEDTKE,1989)
 !          DRAFT PAPER ON MASSFLUX SCHEME (NORDENG, 1995)
-!          Bechtold et al. (2008 QJRMS 134,1337-1351), Rooy et al. (2012 QJRMS)  
+!          Bechtold et al. (2008 QJRMS 134,1337-1351), Rooy et al. (2012 QJRMS)
 !          Bechtold et al. (2013 JAS)
 
 !     AUTHOR.
@@ -264,7 +280,7 @@ SUBROUTINE cumastrn &
 !      05-02-11 : Positive scaling of total Mflux  P.Bechtold
 !      M.Hamrud      01-Oct-2003 CY28 Cleaning
 !      04-12-03 : Turn off shallow convection over stratocu. M.Ko"hler
-!      05-06-27 : Switch off ddraught if idtop<kctop  
+!      05-06-27 : Switch off ddraught if idtop<kctop
 !                 correction for detrainment rates P.Bechtold
 !      05-11-22 : Mods for coarser/finer physics D.Salmond + M.Hortal
 !      06-02-11 : Enable TQ implicit               P.Bechtold
@@ -273,11 +289,11 @@ SUBROUTINE cumastrn &
 !                 scale, contain momentum computations in cumastrn
 !      07-10-09 : Added KE dissipation and convective scavenging   P. Bechtold
 !      12-03-02 : remove all entrainment stuff     P. Bechtold
-!      04-10-12 : Add RPLRG/RPLDARE for small planet  N.Semane+P.Bechtold  
+!      04-10-12 : Add RPLRG/RPLDARE for small planet  N.Semane+P.Bechtold
 !      13-02-23 : modif diurnal cycle CAPE closure P. Bechtold
 !      13-10-01 : modified option RCAPDCYCL=1 for diurnal cycle N. Semane
 !      16-01-27 : Introduced SPP scheme (LSPP)     M. Leutbecher & S.-J. Lock
-!      20180303 : Gabor: Just a comment line to force recompilation due to 
+!      20180303 : Gabor: Just a comment line to force recompilation due to
 !                        compiler wrapper optimization exception liat change
 !      19-08-25 : Additional total moisture advection in CAPE closure RCAPQADV=1
 !----------------------------------------------------------------------
@@ -287,11 +303,11 @@ SUBROUTINE cumastrn &
 
 !USE YOMCST   , ONLY : RG       ,RD       ,RCPD     ,RETV     ,&
 ! & RLVTT    ,RLSTT   ,RTT
-!USE YOMDYNCORE, ONLY : RPLRG, RPLDARE 
+!USE YOMDYNCORE, ONLY : RPLRG, RPLDARE
 !USE YOETHF   , ONLY : R2ES     ,R3LES    ,R3IES    ,R4LES    ,&
 ! & R4IES    ,R5LES    ,R5IES    ,R5ALVCP  ,R5ALSCP  ,&
 ! & RALVDCP  ,RALSDCP  ,RTWAT    ,RTICE    ,RTICECU  ,&
-! & RTWAT_RTICECU_R    ,RTWAT_RTICE_R  
+! & RTWAT_RTICECU_R    ,RTWAT_RTICE_R
 !USE YOECUMF  , ONLY : LMFDD    ,LMFDUDV  ,&
 ! & RTAU      ,RTAU0   ,RCAPDCYCL,RDEPTHS ,LMFSCV  ,LMFPEN   ,&
 ! & NJKT3     ,NJKT2    ,&
@@ -308,7 +324,7 @@ INTEGER(KIND=jpim),INTENT(in)    :: kidia
 INTEGER(KIND=jpim),INTENT(in)    :: kfdia
 INTEGER(KIND=jpim),INTENT(in)    :: k950(klon)
 INTEGER(KIND=jpim)               :: ktdia
-LOGICAL           ,INTENT(in)    :: ldland(klon) 
+LOGICAL           ,INTENT(in)    :: ldland(klon)
 LOGICAL           ,INTENT(in)    :: ldlake(klon)
 REAL(KIND=jprb)   ,INTENT(in)    :: ptsphy
 TYPE(t_phy_params),INTENT(in)    :: phy_params
@@ -317,66 +333,67 @@ REAL(KIND=jprb)   ,INTENT(in)    :: mtnmask(klon)
 !KF
 REAL(KIND=jprb)   ,INTENT(in),OPTIONAL :: paer_ss(klon)
 !KF
-REAL(KIND=jprb)   ,INTENT(inout) :: pten(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: pqen(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: puen(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pven(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: plitot(klon,klev) 
+REAL(KIND=jprb)   ,INTENT(inout) :: pten(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: pqen(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: puen(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pven(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: plitot(klon,klev)
 REAL(KIND=jprb)   ,INTENT(in)    :: pvervel(klon,klev)
-REAL(KIND=jprb)   ,INTENT(in)    :: plen(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pien(klon,klev) 
-!REAL(KIND=JPRB)   ,INTENT(INOUT) :: PQSEN(KLON,KLEV) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pqhfl(klon,klev+1) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pahfs(klon,klev+1) 
-REAL(KIND=jprb)   ,INTENT(in)    :: shfl_s(klon) 
+REAL(KIND=jprb)   ,INTENT(in)    :: plen(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pien(klon,klev)
+!REAL(KIND=JPRB)   ,INTENT(INOUT) :: PQSEN(KLON,KLEV)
+REAL(KIND=jprb)   ,INTENT(in)    :: pqhfl(klon,klev+1)
+REAL(KIND=jprb)   ,INTENT(in)    :: pahfs(klon,klev+1)
+REAL(KIND=jprb)   ,INTENT(in)    :: shfl_s(klon)
 REAL(KIND=jprb)   ,INTENT(in)    :: qhfl_s(klon)
 REAL(KIND=jprb)   ,INTENT(in)    :: fac_entrorg(klon), fac_rmfdeps(klon)
-REAL(KIND=jprb)   ,INTENT(in)    :: pap(klon,klev) 
+REAL(KIND=jprb)   ,INTENT(in)    :: pap(klon,klev)
 REAL(KIND=jprb)   ,INTENT(in)    :: paph(klon,klev+1)
 REAL(KIND=jprb)   ,INTENT(in)    :: zdph(klon,klev)
-REAL(KIND=jprb)   ,INTENT(in)    :: pgeo(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(in)    :: pgeoh(klon,klev+1) 
+REAL(KIND=jprb)   ,INTENT(in)    :: pgeo(klon,klev)
+REAL(KIND=jprb)   ,INTENT(in)    :: pgeoh(klon,klev+1)
 REAL(KIND=jprb)   ,INTENT(in)    :: zdgeoh(klon,klev)
 REAL(KIND=jprb)   ,INTENT(in)    :: pcloudnum(klon)
+REAL(KIND=jprb)   ,INTENT(in), POINTER :: pertb(:)
 TYPE(t_ptr_tracer),INTENT(in), POINTER :: pcen(:)
 TYPE(t_ptr_tracer),INTENT(inout), POINTER :: ptenrhoc(:)
-REAL(KIND=jprb)   ,INTENT(inout) :: ptent(klon,klev) 
+REAL(KIND=jprb)   ,INTENT(inout) :: ptent(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: ptenq(klon,klev)
-REAL(KIND=vp)     ,INTENT(in)    :: ptenta(klon,klev) 
+REAL(KIND=vp)     ,INTENT(in)    :: ptenta(klon,klev)
 REAL(KIND=jprb)   ,INTENT(in)    :: ptenqa(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: ptenrhoq(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: ptenrhol(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: ptenrhoi(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: ptenrhor(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: ptenrhos(klon,klev)
-REAL(KIND=jprb)   ,INTENT(inout) :: ptenu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: ptenv(klon,klev) 
+REAL(KIND=jprb)   ,INTENT(inout) :: ptenu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: ptenv(klon,klev)
 LOGICAL           ,INTENT(inout) :: ldcum(klon)
 INTEGER(KIND=jpim),INTENT(inout) :: ktype(klon)
 INTEGER(KIND=jpim),INTENT(inout) :: kcbot(klon)
 INTEGER(KIND=jpim),INTENT(inout) :: kctop(klon)
 !INTEGER(KIND=JPIM),INTENT(OUT)   :: KBOTSC(KLON)
 !LOGICAL           ,INTENT(OUT)   :: LDSC(KLON)
-LOGICAL           ,INTENT(IN)    :: LDSHCV(KLON) 
-REAL(KIND=jprb)   ,INTENT(inout) :: ptu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: pqu(klon,klev) 
-REAL(KIND=jprb)   ,INTENT(inout) :: plu(klon,klev) 
+LOGICAL           ,INTENT(IN)    :: LDSHCV(KLON)
+REAL(KIND=jprb)   ,INTENT(inout) :: ptu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: pqu(klon,klev)
+REAL(KIND=jprb)   ,INTENT(inout) :: plu(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: pcore(klon,klev)
 !REAL(KIND=JPRB)   ,INTENT(INOUT) :: PLUDE(KLON,KLEV)
-!REAL(KIND=JPRB)   ,INTENT(OUT)   :: PENTH(KLON,KLEV) 
-REAL(KIND=jprb)   ,INTENT(inout) :: pmflxr(klon,klev+1) 
-REAL(KIND=jprb)   ,INTENT(inout) :: pmflxs(klon,klev+1) 
+!REAL(KIND=JPRB)   ,INTENT(OUT)   :: PENTH(KLON,KLEV)
+REAL(KIND=jprb)   ,INTENT(inout) :: pmflxr(klon,klev+1)
+REAL(KIND=jprb)   ,INTENT(inout) :: pmflxs(klon,klev+1)
 REAL(KIND=jprb)   ,INTENT(out)   :: pdtke_con(klon,klev+1)
-REAL(KIND=jprb)   ,INTENT(out)   :: prain(klon) 
+REAL(KIND=jprb)   ,INTENT(out)   :: prain(klon)
 REAL(KIND=jprb)   ,INTENT(inout) :: pmfu(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: pmfd(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: pmfude_rate(klon,klev)
 REAL(KIND=jprb)   ,INTENT(inout) :: pmfdde_rate(klon,klev)
-REAL(KIND=jprb)   ,INTENT(out)   :: pcape(klon) 
+REAL(KIND=jprb)   ,INTENT(out)   :: pcape(klon)
 REAL(KIND=jprb)   ,INTENT(out)   :: pvddraf(klon)
 ! Stochastic convection diagnostics
-REAL(KIND=jprb)   ,INTENT(out)   :: mf_bulk(:) 
-REAL(KIND=jprb)   ,INTENT(out)   :: mf_perturb(:) 
+REAL(KIND=jprb)   ,INTENT(out)   :: mf_bulk(:)
+REAL(KIND=jprb)   ,INTENT(out)   :: mf_perturb(:)
 REAL(KIND=jprb)   ,INTENT(out)   :: mf_num(:)
 ! Stochastic convection switches
 LOGICAL           ,INTENT(in)    :: lspinup
@@ -406,6 +423,11 @@ REAL(KIND=jprb)   ,OPTIONAL, INTENT(inout)   :: koi(:)
 REAL(KIND=jprb)   ,OPTIONAL, INTENT(inout)   :: lfd(:)
 REAL(KIND=jprb)            , INTENT(inout)   :: peis(:)
 LOGICAL                    , INTENT(in)      :: lacc
+#ifdef __MSGWAM
+INTEGER(KIND=jpim),INTENT(in)     :: nsrc_cgw
+TYPE(t_msgwam_fields), INTENT(in) :: msgwam_fields
+LOGICAL, INTENT(IN)               :: lmsgwam
+#endif
 
 !*UPG change to operations
 REAL(KIND=jprb) :: pwmean(klon)
@@ -460,7 +482,7 @@ REAL(KIND=jprb) :: zmfs(klon),  zmfuus(klon,klev), zmfdus(klon,klev) ,&
   & zmfuub(klon), zmfuvb(klon),&
   & ZUV2(KLON,KLEV), ZSUM12(KLON), ZSUM22(KLON),&
   & zmf_shal(klon)
-    
+
 !   parameters to calculate near-surface gusts produced by convection
 REAL(KIND=jprb), PARAMETER :: conv_gust_max  = 30.0_jprb ! max. speed of conv. gusts
 
@@ -489,6 +511,11 @@ LOGICAL, PARAMETER :: lpassive = .FALSE. !run stoch schemes in piggy-backing mod
 INTEGER(KIND=jpim) :: ktrac  ! number of chemical tracers
 
 REAL(KIND=jprb) :: msee(klon,klev)
+#ifdef __MSGWAM
+REAL(KIND=jprb) :: plude_expl(klon,klev)
+#endif
+
+LOGICAL :: lspp
 
 !#include "cuascn.intfb.h"
 !#include "cubasen.intfb.h"
@@ -520,7 +547,7 @@ REAL(KIND=jprb) :: msee(klon,klev)
 !$ACC   CREATE(zmfdus, zmfudr, zmfddr, ZTENU, ZTENV, zmfuub, zmfuvb, ZUV2, ZSUM12) &
 !$ACC   CREATE(ZSUM22, zmf_shal, pvervel650, deprof, zdhout, zsatfr, zcape2, msee) &
 !$ACC   IF(lacc)
-    
+
 !$ACC DATA &
 !$ACC   PRESENT(lpi, mlpi, koi) &
 !$ACC   IF(lacc .and. l_lpi)
@@ -557,6 +584,11 @@ ELSE
   ktrac = 0
 ENDIF
 
+IF (ASSOCIATED(pertb)) THEN
+  lspp = .true.
+ELSE
+  lspp = .false.
+ENDIF
 
 !---------------------------------------------------------------------
 !*UPG Change to operations call SATUR routine here
@@ -659,7 +691,7 @@ DO jl=kidia,kfdia
   ! from new stochastic convection
   zdhout  (jl)=0.0_JPRB
 ENDDO
-    
+
 !$ACC END PARALLEL
 
 !----------------------------------------------------------------------
@@ -697,7 +729,7 @@ CALL cubasen &
   & ( kidia,    kfdia,    klon,   ktdia,    klev, &
   & phy_params%kcon1, phy_params%kcon2, phy_params%entrorg,fac_entrorg, &
   & phy_params%entstpc1, phy_params%entstpc2, phy_params%rdepths, &
-  & phy_params%texc, phy_params%qexc, phy_params%lgrayzone_deepconv, mtnmask, ldland, ldlake, &
+  & phy_params%texc, phy_params%qexc, phy_params%lgrayzone_deepconv, phy_params%itype_parcel_ascent, mtnmask, ldland, ldlake, &
   & ztenh,    zqenh,    pgeoh,    paph,&
   & pqhfl,    pahfs,    &
   & pten,     pqen,     pqsen,    pgeo,&
@@ -749,7 +781,7 @@ DO jl=kidia,kfdia
    peis(JL)=MAX(msee(JL,k700(jl))-msee(JL,k950(jl)),msee(JL,k950(jl))-msee(JL,KLEV))/rcpd
    !MAX(S700-S950; S(950)-S(surf))
 ENDDO
- 
+
 !*                 ESTIMATE CLOUD HEIGHT FOR ENTRAINMENT/DETRAINMENT
 !*                 CALCULATIONS IN CUASC AND INITIAL DETERMINATION OF
 !*                 CLOUD TYPE
@@ -759,7 +791,7 @@ ENDDO
 
 !DIR$ IVDEP
 !OCL NOVREC
-    
+
 !*                 SPECIFY INITIAL CLOUD TYPE
 !*
 
@@ -829,7 +861,7 @@ DO jl=kidia,kfdia
     ZMFMAX=(PAPH(JL,IKB)-PAPH(JL,IKB-1))*ZCONS2*RMFLIC+RMFLIA
 
     ! deep convection
-    
+
     IF (ktype(jl) == 1) THEN
       ! first guess mass flux for deep convection based on arbitrary fixed
       ! parameter rmfdef
@@ -883,13 +915,13 @@ ENDDO
 CALL cuascn &
   & ( kidia,    kfdia,    klon,   ktdia,   klev, phy_params%mfcfl, &
   & phy_params%entrorg, fac_entrorg, phy_params%detrpen, phy_params%rprcon, phy_params%lmfmid,      &
-  & phy_params%lgrayzone_deepconv, ptsphy, paer_ss,                &
+  & phy_params%lgrayzone_deepconv, phy_params%lconv_cdnc_interp, ptsphy, paer_ss,                   &
   & ztenh,    zqenh,&
   & ptenq, &
   & pten,     pqen,     pqsen,    plitot,&
   & pgeo,     pgeoh,    pap,      paph,&
   & zdph,     zdgeoh,                  &
-  & pvervel,  zwubase, pcloudnum,deprof,      &
+  & pvervel,  zwubase, pcloudnum, deprof,      &
   & ldland,   ldlake,  ldcum,    ktype,    ilab,&
   & ptu,      pqu,      plu,     zlrain,        &
   & pmfu,     zmfub,    zlglac,&
@@ -980,13 +1012,13 @@ IF(lmfdd) THEN
 
   CALL cudlfsn &
     & ( kidia,    kfdia,    klon,   ktdia,    klev,&
-    & kcbot,    kctop,    ldcum, fac_rmfdeps, &
+    & kcbot,    kctop,    ldcum, phy_params%lconv_cdnc_interp, fac_rmfdeps, &
     & ztenh,    zqenh,         &
     & pten,     pqsen,    pgeo,&
     & pgeoh,    paph,     ptu,      pqu, &
     & zmfub,    zrfl,&
     & ztd,      zqd,&
-    & pmfd,     zmfds,    zmfdq,    zdmfdp,&
+    & pmfd,     zmfds,    zmfdq,    zdmfdp,  pcloudnum, &
     & idtop,    llddraf, ldland,   ldlake, lacc )
 
 !*            (B)  DETERMINE DOWNDRAFT T,Q AND FLUXES IN 'CUDDRAF'
@@ -1010,7 +1042,7 @@ ENDIF
 !*                  RECALCULATE CLOUD BASE MASSFLUX FROM A
 !*                 CAPE CLOSURE FOR DEEP CONVECTION (KTYPE=1)
 !*                 AND BY PBL EQUILIBRUM TAKING DOWNDRAFTS INTO
-!*                 ACCOUNT FOR SHALLOW CONVECTION (KTYPE=2)          
+!*                 ACCOUNT FOR SHALLOW CONVECTION (KTYPE=2)
 !                  --------------------------------------------
 
 !   DEEP CONVECTION
@@ -1081,12 +1113,12 @@ DO jl = kidia, kfdia
     ENDIF
     ! This largely suppresses convective drizzle over mountain ridges in grayzone deep convection mode
     IF (phy_params%lgrayzone_deepconv) zcapdcycl(jl) = MAX(zcapdcycl(jl),                     &
-      MAX(0._jprb,mtnmask(jl)-0.2_jprb)*MERGE(10._jprb,0.1_jprb,llo1)*ztau(jl)*phy_params%tau0)
+      MAX(phy_params%tune_grzdc_offset,mtnmask(jl)-0.2_jprb)*MERGE(10._jprb,0.1_jprb,llo1)*ztau(jl)*phy_params%tau0)
     ! Reduce adjustment time scale for extreme CAPE values
     IF (pcape(jl) > tune_capethresh) ztau(jl) = ztau(jl)*phy_params%tau0
     ! dynamic contribution to cape correction
     zdqcv(jl)=zdqcv(jl)*rlvtt/pgeoh(jl,ik)*ztau(jl)*phy_params%tau0*tune_rcapqadv
-    zsatfr(jl)=zsatfr(jl)/(paph(jl,klev+1)-paph(jl,ik)) 
+    zsatfr(jl)=zsatfr(jl)/(paph(jl,klev+1)-paph(jl,ik))
   ELSE IF (ldcum(jl) .AND. ktype(jl) == 1) THEN
     ikd = idpl(jl)
     ikb = kcbot(jl)
@@ -1098,6 +1130,7 @@ DO jl = kidia, kfdia
        zcapdcycl(jl) = ztau(jl)*MAX(0.0_jprb,zkhvfl(jl))*rcpd/zdz
     ENDIF
     IF (llo1 .AND. icapdcycl==2) THEN
+      ! this is consistent with IFS/Cy41r2
       IF (ldland(jl)) THEN
         zcapdcycl(jl) = zcappbl(jl)*ztau(jl)*phy_params%tau0
       ELSE
@@ -1127,6 +1160,7 @@ DO jl=kidia,kfdia
     ztau(jl)=MAX(720._jprb,ztau(jl))
     zmfub1(jl)=(zcape(jl)*zmfub(jl))/(zheat(jl)*ztau(jl))
     zmfub1(jl)=MAX(zmfub1(jl),0.001_jprb)
+    IF (lspp) zmfub1(jl)=zmfub1(jl)*(1.0_jprb+SIGN(1.0_jprb,pertb(jl))*MIN(0.5_jprb,ABS(pertb(jl))))
     zmfmax=(paph(jl,ikb)-paph(jl,ikb-1))*zcons2*rmflic+rmflia
     zmfub1(jl)=MIN(zmfub1(jl),zmfmax)
   ENDIF
@@ -1185,7 +1219,7 @@ DO jl=kidia,kfdia
      &                    *(1.0_JPRB+zeps)
       zmfub1(jl)=MIN(zmfub1(jl),zmfmax)
    ENDIF
-   
+
   ENDIF
 ENDDO
 !$ACC END PARALLEL
@@ -1220,8 +1254,8 @@ IF (phy_params%lstoch_expl .or. phy_params%lstoch_sde .or. phy_params%lstoch_dee
       ENDIF
     ENDIF
   ENDDO
-   
-  ! Save mass flux calculated by convectional T-B scheme 
+
+  ! Save mass flux calculated by convectional T-B scheme
   ! into mf_bulk diagnostic, and initialise the stochastically
   ! perturbed mass flux diagnostic mf_perturb.
   ! This applies to both versions of the stochastic scheme
@@ -1281,7 +1315,7 @@ IF( phy_params%lstoch_expl ) THEN
 &                             shfl       = shfl_s,                    & !IN
 &                             lhfl       = qhfl_s*rlvtt,              & !IN
 &                             temp_s     = temp_s,                    & !IN
-&                             mf_perturb = mf_perturb,                & !OUT 
+&                             mf_perturb = mf_perturb,                & !OUT
 &                             mfp        = pclmf_p,                   & !OUT
 &                             mfa        = pclmf_a,                   & !OUT
 &                             dh         = zdhout,                    & !IN
@@ -1324,7 +1358,7 @@ IF( phy_params%lstoch_expl ) THEN
       kctop(jl)  = 0
     ENDIF
   ENDDO
-   
+
 ENDIF !lstoch_expl
 
 IF( phy_params%lstoch_sde.and.lpassive ) THEN
@@ -1519,7 +1553,7 @@ IF(lmfit) THEN
   CALL cuascn &
     & ( kidia,    kfdia,    klon,   ktdia,   klev, phy_params%mfcfl, &
     & phy_params%entrorg, fac_entrorg, phy_params%detrpen,phy_params%rprcon, phy_params%lmfmid, &
-    & phy_params%lgrayzone_deepconv, ptsphy, paer_ss,&
+    & phy_params%lgrayzone_deepconv, phy_params%lconv_cdnc_interp, ptsphy, paer_ss,&
     & ztenh,    zqenh,    &
     & ptenq,            &
     & pten,     pqen,     pqsen,    plitot,&
@@ -1540,7 +1574,7 @@ IF(lmfit) THEN
       ikb=kcbot(jl)
       itopm2=kctop(jl)
       zpbmpt=paph(jl,ikb)-paph(jl,itopm2)
-      IF (phy_params%lvv_shallow_deep) THEN 
+      IF (phy_params%lvv_shallow_deep) THEN
          IF(ktype(jl) == 1.AND.pvervel650(jl).ge.0.0) ktype(jl)=2
          IF(ktype(jl) == 2.AND.pvervel650(jl).LT.0.0) ktype(jl)=1
       ELSE
@@ -1599,10 +1633,10 @@ ELSE
         ! Only perform this calculation if the updraft fraction is
         ! not being calculated by the explicit stochastic scheme and
         ! on layers where the updraft kinetic energy exceeds a minimum
-        ! threshold of 0.25 (to avoid excessively large updraft area 
+        ! threshold of 0.25 (to avoid excessively large updraft area
         ! near cloud base/top. The factor 2 is a tuning factor?
         IF (.NOT.(phy_params%lstoch_expl) .AND. &
-             zkineu(jl,jk) > 0.25_JPRB .AND. ktype(jl) == 2) THEN 
+             zkineu(jl,jk) > 0.25_JPRB .AND. ktype(jl) == 2) THEN
            pcore(jl,jk)=pmfu(jl,jk)/(2._jprb*SQRT(zkineu(jl,jk)))
            pcore(jl,jk)=MAX(0._JPRB,pcore(jl,jk))
         ENDIF
@@ -1714,8 +1748,8 @@ CALL cuflxn &
   & ( kidia,    kfdia,    klon,   ktdia,    klev, phy_params%mfcfl, &
   & phy_params%rhebc_land, phy_params%rhebc_ocean, phy_params%rcucov, &
   & phy_params%rhebc_land_trop, phy_params%rhebc_ocean_trop, &
-  & phy_params%rcucov_trop, phy_params%lmfdsnow, trop_mask,   &
-  & ptsphy,  pten,     pqen,     pqsen,    ztenh,    zqenh,&
+  & phy_params%rcucov_trop, phy_params%lmfdsnow, phy_params%lconv_cdnc_interp, trop_mask, &
+  & pcloudnum, ptsphy,  pten,     pqen,     pqsen,    ztenh,    zqenh,&
   & paph,     pap,      pgeoh,    ldland,   ldlake, ldcum,&
   & kcbot,    kctop,    idtop,    itopm2,&
   & ktype,    llddraf,&
@@ -1809,6 +1843,17 @@ DO jl=kidia,kfdia
   ENDIF
 ENDDO
 
+#ifdef __MSGWAM
+! To calculate our heating explicitly even if this cumulus scheme solves
+! it implicitly (rmfsoltq /= 0), 'plude' has to be saved here before it is
+! modified due to rmfsoltq /= 0.
+IF ( lmsgwam ) THEN
+  IF (nsrc_cgw > 0 .AND. rmfsoltq /= 0.0_JPRB) THEN
+    plude_expl(:,:) = plude(:,:)
+  END IF
+END IF
+#endif
+
 ! avoid negative humidities near cloud top because gradient of precip flux
 ! and detrainment / liquid water flux too large
 !$ACC LOOP SEQ
@@ -1891,6 +1936,19 @@ DO jk=ktdia+1,klev
   ENDDO
 ENDDO
 
+#ifdef __MSGWAM
+IF ( lmsgwam ) &
+CALL compute_msgwam_heating( &
+  & nsrc_cgw, rmfsoltq, kidia, kfdia, ktdia, klev, itopm2,  &
+  & msgwam_fields%heat_cgw, msgwam_fields%tupd_cgw, msgwam_fields%test_cgw,                          &
+  & msgwam_fields%ktype_cgw, msgwam_fields%kctop_cgw, msgwam_fields%kcbot_cgw,                       &
+  & plude_expl, plude, zmfdq, llddraf, idtop,              &
+  & ldcum, kctop, kcbot, paph, pten,                       &
+  & ptu, zmful, zdmfup, psnde, zlglac, zdpmel,             &
+  & zmfus, zmfds, zmfuq,                           &
+  & rlmlt, rg, ptsphy,ktype,pqen)
+#endif
+
 !----------------------------------------------------------------------
 
 !*    8.0          UPDATE TENDENCIES FOR T AND Q IN SUBROUTINE CUDTDQ
@@ -1935,7 +1993,7 @@ IF( rmfsoltq>0.0_JPRB) THEN
       ENDIF
     ENDDO
   ENDDO
-  
+
 ENDIF
 
 !$ACC END PARALLEL
@@ -2031,7 +2089,7 @@ IF(lmfdudv) THEN
         IF(ldcum(jl).AND.jk>=kctop(jl)-1) THEN
           zmfmax=(paph(jl,jk)-paph(jl,jk-1))*zcons
           IF(pmfu(jl,jk)>zmfmax.AND.jk>=kctop(jl)) &
-           & zmfs(jl)=MIN(zmfs(jl),zmfmax/pmfu(jl,jk))  
+           & zmfs(jl)=MIN(zmfs(jl),zmfmax/pmfu(jl,jk))
         ENDIF
       ENDDO
     ENDDO
@@ -2105,7 +2163,7 @@ IF(lmfdudv) THEN
 
 !-------------------------------------------------------------------
 ! End
-! Intermediate Solution for stability in EPS: 
+! Intermediate Solution for stability in EPS:
 ! For original code replace line
 !  &, PUEN,     PVEN,     ZMFUUS,   ZMFDUS &
 !by
@@ -2118,7 +2176,7 @@ IF(lmfdudv) THEN
     & paph,     puen,     pven,     zmfuus,   zmfdus,&
     & zuu,      zud,      zvu,      zvd,&
     & ptenu,    ptenv,    lacc     )
-  
+
   IF(LMFUVDIS) THEN
 ! add KE dissipation
 
@@ -2314,7 +2372,7 @@ ENDIF
 
 !----------------------------------------------------------------------
 
-!*   12.           PUT DETRAINMENT RATES FROM MFLX UNITS IN UNITS MFLX/M 
+!*   12.           PUT DETRAINMENT RATES FROM MFLX UNITS IN UNITS MFLX/M
 !                  FOR ERA40
 !                  ---------------------------------------------------
 
@@ -2436,8 +2494,8 @@ ENDIF
 
 !----------------------------------------------------------------------
 
-!*    15.0         COMPUTE LIGHTENING POTENTIAL INDEX AND LIGHTENING 
-!                  FLASH DENSITY BASED ON UPDRAFT PROFILE 
+!*    15.0         COMPUTE LIGHTENING POTENTIAL INDEX AND LIGHTENING
+!                  FLASH DENSITY BASED ON UPDRAFT PROFILE
 !                  --------------------------------------------------
 
   IF (PRESENT(l_lpi)) THEN
@@ -2483,4 +2541,3 @@ IF (lhook) CALL dr_hook('CUMASTRN',1,zhook_handle)
 END SUBROUTINE cumastrn
 
 END MODULE mo_cumaster
-

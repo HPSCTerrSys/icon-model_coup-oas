@@ -1,19 +1,18 @@
-! Provide an implementation of the ocean forcing.
-!
-! Provide an implementation of the parameters used for surface forcing
-! of the hydrostatic ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of the ocean forcing.
+!
+! Provide an implementation of the parameters used for surface forcing
+! of the hydrostatic ocean model.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -54,7 +53,7 @@ MODULE mo_ocean_forcing
   USE mo_ocean_state,         ONLY: ocean_restart_list, ocean_default_list
   USE mo_grid_subset,         ONLY: t_subset_range, get_index_range
   USE mo_var_list,            ONLY: add_var, add_ref
-  USE mo_var_groups,          ONLY: groups
+  USE mo_var_groups,          ONLY: groups, max_groups
   USE mo_fortran_tools,       ONLY: assign_if_present
   USE mo_cf_convention
   USE mo_grib2
@@ -447,31 +446,108 @@ CONTAINS
     TYPE(t_atmos_for_ocean ), INTENT(INOUT) :: p_as
 
     ! Local variables
-    INTEGER :: alloc_cell_blocks, ist
+    INTEGER :: alloc_cell_blocks, ist, datatype_flt
     CHARACTER(LEN=max_char_length), PARAMETER :: routine = 'mo_sea_ice:construct_atmos_for_ocean'
 
-    !-------------------------------------------------------------------------
+    LOGICAL, DIMENSION(MAX_GROUPS) :: groups_oce_era5
+
+    TYPE(t_grib2_var) :: dflt_g2_decl_lonlat, dflt_g2_decl_cell, dflt_g2_decl_edge
+
+!-------------------------------------------------------------------------
+
+    dflt_g2_decl_cell = grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell)
+    datatype_flt = MERGE(DATATYPE_FLT64, DATATYPE_FLT32, lnetcdf_flt64_output)
+
+    groups_oce_era5 = groups("oce_era5")
+
+
+
     CALL message(TRIM(routine), 'start' )
 
     alloc_cell_blocks = p_patch%alloc_cell_blocks
 
-    ALLOCATE(p_as%tafo(nproma,alloc_cell_blocks),                       &
-             p_as%ftdew(nproma,alloc_cell_blocks),                      &
-             p_as%fclou(nproma,alloc_cell_blocks),                      &
-             p_as%fu10(nproma,alloc_cell_blocks),                       &
-             p_as%co2(nproma,alloc_cell_blocks),                        &
+
+    CALL add_var(ocean_default_list, 'era5_t2m', p_as%tafo ,&
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_t2m', 'C', 'era5_t2m', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+    CALL add_var(ocean_default_list, 'era5_tdew', p_as%ftdew , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_tdew', 'K', 'era5_tdew', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+    CALL add_var(ocean_default_list, 'era5_wind10', p_as%fu10 , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_wind10', 'm s-1', 'era5_wind10', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+    CALL add_var(ocean_default_list, 'era5_ustress', p_as%topBoundCond_windStress_u , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_ustress', 'Pa', 'era5_ustress', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+    CALL add_var(ocean_default_list, 'era5_vstress', p_as%topBoundCond_windStress_v , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_vstress', 'Pa', 'era5_vstress', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+     CALL add_var(ocean_default_list, 'era5_u10', p_as%u , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_u10', 'm s-1', 'era5_u10', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+          CALL add_var(ocean_default_list, 'era5_v10', p_as%v , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_v10', 'm s-1', 'era5_v10', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+          CALL add_var(ocean_default_list, 'era5_ldown', p_as%flwr , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_ldown', 'W m-2', 'era5_ldown', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+            CALL add_var(ocean_default_list, 'era5_precip', p_as%frshflux_precipitation , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_precip', 'm s-1', 'era5_precip', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+            CALL add_var(ocean_default_list, 'era5_swdown', p_as%fswr , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_swdown', 'W m-2', 'era5_swdown', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+           CALL add_var(ocean_default_list, 'era5_runoff', p_as%frshflux_runoff , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_runoff', 'm s-1', 'era5_runoff', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+            CALL add_var(ocean_default_list, 'era5_slp', p_as%pao , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_slp', 'Pa', 'era5_slp', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+            CALL add_var(ocean_default_list, 'era5_tcc', p_as%fclou , &
+      &          grid_unstructured_cell,za_surface, &
+      &          t_cf_var('era5_tcc', '1', 'era5_tcc', datatype_flt),&
+      &          dflt_g2_decl_cell,&
+      &          ldims=(/nproma,alloc_cell_blocks/),in_group=groups_oce_era5)
+
+
+    ALLOCATE(p_as%co2(nproma,alloc_cell_blocks),                        &
              p_as%co2flx(nproma,alloc_cell_blocks),                     &
-             p_as%fswr(nproma,alloc_cell_blocks),                       &
-             p_as%pao(nproma,alloc_cell_blocks),                        &
-             p_as%u(nproma,alloc_cell_blocks),                          &
-             p_as%v(nproma,alloc_cell_blocks),                          &
-!             p_as%precip(nproma,alloc_cell_blocks),                     &
-!             p_as%evap(nproma,alloc_cell_blocks),                       &
-!             p_as%runoff(nproma,alloc_cell_blocks),                     &
-             p_as%topBoundCond_windStress_u(nproma,alloc_cell_blocks),  &
-             p_as%topBoundCond_windStress_v(nproma,alloc_cell_blocks),  &
-             p_as%FrshFlux_Precipitation(nproma,alloc_cell_blocks),     &
-             p_as%FrshFlux_Runoff(nproma,alloc_cell_blocks),            &
              p_as%data_surfRelax_Temp(nproma,alloc_cell_blocks),        &
              p_as%data_surfRelax_Salt(nproma,alloc_cell_blocks), STAT=ist)
 
@@ -486,6 +562,7 @@ CONTAINS
     p_as%co2  (:,:)                     = 0.0_wp
     p_as%co2flx  (:,:)                  = 0.0_wp
     p_as%fswr  (:,:)                    = 0.0_wp
+    p_as%flwr  (:,:)                    = 0.0_wp
     p_as%pao   (:,:)                    = sfc_press_pascal  ! initialize with reference pressure
     p_as%u     (:,:)                    = 0.0_wp
     p_as%v     (:,:)                    = 0.0_wp
@@ -502,7 +579,7 @@ CONTAINS
     !$ACC ENTER DATA &
     !$ACC   COPYIN(p_as, p_as%topBoundCond_windStress_u, p_as%topBoundCond_windStress_v) &
     !$ACC   COPYIN(p_as%tafo, p_as%ftdew, p_as%fu10, p_as%fclou, p_as%pao) &
-    !$ACC   COPYIN(p_as%fswr, p_as%u, p_as%v, p_as%FrshFlux_Precipitation) &
+    !$ACC   COPYIN(p_as%fswr, p_as%flwr, p_as%u, p_as%v, p_as%FrshFlux_Precipitation) &
     !$ACC   COPYIN(p_as%FrshFlux_Runoff, p_as%data_surfRelax_Temp, p_as%data_surfRelax_Salt) &
     !$ACC   COPYIN(p_as%co2, p_as%co2flx)
 
@@ -527,24 +604,8 @@ CONTAINS
     !-------------------------------------------------------------------------
     CALL message(TRIM(routine), 'start' )
 
-
-    DEALLOCATE(p_as%tafo, STAT=ist)
-    IF (ist/=SUCCESS) THEN
-      CALL finish(TRIM(routine),'deallocation for tafo failed')
-    END IF
-    DEALLOCATE(p_as%ftdew, STAT=ist)
-    IF (ist/=SUCCESS) THEN
-      CALL finish(TRIM(routine),'deallocation for ftdew failed')
-    END IF
-    DEALLOCATE(p_as%fclou, STAT=ist)
-    IF (ist/=SUCCESS) THEN
-      CALL finish(TRIM(routine),'deallocation for fclou failed')
-    END IF
-
-    DEALLOCATE(p_as%fu10, STAT=ist)
-    IF (ist/=SUCCESS) THEN
-      CALL finish(TRIM(routine),'deallocation for fu10 failed')
-    END IF
+    !$ACC EXIT DATA &
+    !$ACC   DELETE(p_as%co2, p_as%co2flx)
 
     DEALLOCATE(p_as%co2, STAT=ist)
     IF (ist/=SUCCESS) THEN
@@ -556,24 +617,6 @@ CONTAINS
       CALL finish(TRIM(routine),'deallocation for co2flx failed')
     END IF
 
-    DEALLOCATE(p_as%fswr, STAT=ist)
-    IF (ist/=SUCCESS) THEN
-      CALL finish(TRIM(routine),'deallocation for fswr failed')
-    END IF
-
-    DEALLOCATE(p_as%pao, STAT=ist)
-    IF (ist/=SUCCESS) THEN
-      CALL finish(TRIM(routine),'deallocation for pao failed')
-    END IF
-
-    DEALLOCATE(p_as%u, STAT=ist)
-    IF (ist/=SUCCESS) THEN
-      CALL finish(TRIM(routine),'deallocation for u failed')
-    END IF
-    DEALLOCATE(p_as%v, STAT=ist)
-    IF (ist/=SUCCESS) THEN
-      CALL finish(TRIM(routine),'deallocation for v failed')
-    END IF
 
 !    DEALLOCATE(p_as%precip, STAT=ist)
 !    IF (ist/=SUCCESS) THEN
@@ -697,7 +740,7 @@ CONTAINS
         !
         ! check the number of cells
         !
-        WRITE(message_text,'(a,i6)') 'No of cells =', no_cells
+        WRITE(message_text,'(a,i9)') 'No of cells =', no_cells
         CALL message(TRIM(routine),TRIM(message_text))
         IF (patch_2d%n_patch_cells_g /= no_cells) THEN
           CALL finish(TRIM(routine),&

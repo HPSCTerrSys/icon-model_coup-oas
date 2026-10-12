@@ -1,0 +1,107 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+include:
+  - local: .gitlab/ci/utils/log.yml
+  - local: .gitlab/ci/utils/apk.yml
+  - local: .gitlab/ci/utils/pip.yml
+
+# Implements the common template for jobs that generate the ICON documentation
+# HTML pages.
+#
+.common:html:
+  extends:
+    - .utils:log
+    - .utils:apk
+    - .utils:pip
+  variables:
+    # Relative path (with respect to $CI_PROJECT_DIR) to store the output
+    # (uploaded as an artifact):
+    ICON_CI_COMMON_HTML_OUTPUT_REL_PATH: public
+    ICON_CI_COMMON_HTML_MERGE2RC_SCRIPT_REL_PATH: scripts/buildbot_scripts/create_list_merge2rc
+    ICON_CI_COMMON_HTML_MERGE2RC_OUTPUT_REL_PATH: scripts/buildbot_scripts/experiment_lists/merge2rc
+
+    # Internal variables:
+    ICON_CI_COMMON_HTML_ARTIFACT_URL: >-
+      https://${CI_PAGES_HOSTNAME}/-/${CI_PROJECT_NAME}/-/jobs/${CI_JOB_ID}/artifacts/${ICON_CI_COMMON_HTML_OUTPUT_REL_PATH}/index.html
+    ICON_CI_UTILS_APK_PACKAGES: bash graphviz py3-pip python3
+    ICON_CI_UTILS_PIP_REQUIREMENT: ${CI_PROJECT_DIR}/doc/www/requirements.txt
+    ICON_CI_UTILS_PIP_PACKAGES: click numpy pandas pyyaml
+  before_script:
+    - !reference [.utils:log, before_script]
+    - !reference [.utils:apk, before_script]
+    - !reference [.utils:pip, before_script]
+  script:
+    - |
+      # !reference [.common:html, script]
+      icon_ci_log_section_start 'Generating Buildbot experiment list' 'collapsed=false'
+      (
+        set -u
+        cache_path="${CI_PROJECT_DIR}/${ICON_CI_COMMON_HTML_MERGE2RC_OUTPUT_REL_PATH}"
+        test -f "${cache_path}" && {
+          icon_ci_log_info_msg "Using cached '${cache_path}'"
+        } || (
+          set -x
+          BB_NAME=all "${CI_PROJECT_DIR}/${ICON_CI_COMMON_HTML_MERGE2RC_SCRIPT_REL_PATH}"
+        )
+      ) 2>&1
+      icon_ci_log_section_end
+      icon_ci_log_section_start 'Generating HTML pages' 'collapsed=false'
+      (
+        set -ux
+        python3 scripts/ci_scripts/generate_test_list.py
+        # Append release notes to existing docs page
+        python3 scripts/ci_scripts/collect_release_info.py
+        # Generate ICON dependency graph:
+        dot -Gconcentrate=true -Tsvg \
+          -o"${CI_PROJECT_DIR}/doc/www/documentation/buildrun/icon-depgraph.svg" \
+          "${CI_PROJECT_DIR}/doc/www/documentation/buildrun/icon-depgraph.dot"
+        # Generate HTML docs (do not tolerate warnings):
+        #  1) --fail-on-warning ensures a non-zero exit status of the command
+        #     if any warnings are encountered;
+        #  2) --keep-going ensures that all warnings are reported to the job
+        #     log, not only the first one.
+        sphinx-build --fail-on-warning --keep-going --builder html doc/www \
+          "${ICON_CI_COMMON_HTML_OUTPUT_REL_PATH}"
+      ) 2>&1
+      icon_ci_log_section_end
+      icon_ci_log_info_msg "${ICON_CI_COMMON_HTML_ARTIFACT_URL}"
+      cat <<_EOF >"${CI_PROJECT_DIR}/annotation.json"
+      {
+        "section": [{
+          "external_link": {
+              "label": "Documentation preview",
+              "url": "${ICON_CI_COMMON_HTML_ARTIFACT_URL}"
+          }
+        }]
+      }
+      _EOF
+  tags:
+    - sphinx
+  cache:
+    - key: apk-pip-${CI_RUNNER_TAGS}-${CI_JOB_IMAGE}-html
+      paths:
+        - ${ICON_CI_UTILS_APK_CACHE_PATH}
+        - ${ICON_CI_UTILS_PIP_CACHE_PATH}
+  artifacts:
+    paths:
+      - ${ICON_CI_COMMON_HTML_OUTPUT_REL_PATH}
+    reports:
+      annotations: annotation.json
+    expire_in: 1 day
+  rules:
+    changes:
+      - RELEASE_NOTES.md
+      - doc/www/**/*
+      - scripts/buildbot_scripts/**/*
+      - scripts/ci_scripts/collect_release_info.py
+      - scripts/ci_scripts/generate_test_list.py
+      - scripts/experiments/**/*

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -97,7 +97,7 @@ Title for the plot. The default title is C<ICON>.
 
 =item B<-z> zAxis
 
-Use C<zAxis> as vertical coordinate for contour plots. Default is C<ml> 
+Use C<zAxis> as vertical coordinate for contour plots. Default is C<ml>
 for model levels. Possible other values C<h> for height.
 
 =back

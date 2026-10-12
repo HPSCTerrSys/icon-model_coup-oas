@@ -1,17 +1,15 @@
-!
-! Computes total integrals and maxwinds in the nonhydrostatic model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Computes total integrals and maxwinds in the nonhydrostatic model.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -52,6 +50,8 @@ MODULE mo_nh_supervise
   ! Needed by supervise_total_integrals_nh to keep data between steps
   REAL(wp), ALLOCATABLE, SAVE :: z_tracer_mass_0(:)      ! tracer specific total mass at first step
 
+  INTEGER, ALLOCATABLE, SAVE :: water_tracer_list(:)     ! list of all water tracer IDs (including vapor)
+
   INTEGER :: n_file_ti = -1, n_file_tti = -1,  check_total_quant_fileid = -1       ! file identifiers
 
   ! --- Print-out of max winds to an ASCII file.
@@ -77,7 +77,7 @@ CONTAINS
   SUBROUTINE init_supervise_nh( )
     ! local variables
     CHARACTER(*), PARAMETER :: routine = modname//"::init_supervise_nh"
-    INTEGER :: istat
+    INTEGER :: istat, jt
 
     ! --- Print-out of max winds to an ASCII file.
     !     This requires namelist setting 'run_nml::output = "maxwinds"'
@@ -89,6 +89,17 @@ CONTAINS
       IF (istat/=SUCCESS) &
         &  CALL finish(routine, 'could not open '//maxwinds_filename)
     END IF
+
+    IF ( lforcing .AND. iforcing /= iheldsuarez ) THEN
+      ! store IDs of all water tracers in a list, including vapor
+      ALLOCATE( water_tracer_list(iqm_max), STAT=istat)
+      IF (istat/=SUCCESS) &
+        & CALL finish(routine, "Unable to allocate 'water_tracer_list'")
+
+      water_tracer_list = (/(jt, jt=1,iqm_max)/)
+      !$ACC ENTER DATA COPYIN(water_tracer_list)
+    ENDIF
+
   END SUBROUTINE init_supervise_nh
 
 
@@ -108,12 +119,17 @@ CONTAINS
       IF (istat/=SUCCESS) &
         &  CALL finish(routine,'could not close '//maxwinds_filename)
     END IF
+
+    IF (ALLOCATED(water_tracer_list)) THEN
+      !$ACC EXIT DATA DELETE(water_tracer_list)
+      DEALLOCATE(water_tracer_list)
+    ENDIF
   END SUBROUTINE finalize_supervise_nh
-  
+
 
   !-----------------------------------------------------------------------------
   !! supervise_total_integrals_nh
-  
+
   SUBROUTINE supervise_total_integrals_nh( k_step, patch, nh_state, int_state, ntimlev, ntimlev_rcf, l_last_step, lacc)
 
     INTEGER,                  INTENT(IN) :: k_step            ! actual time step
@@ -180,21 +196,15 @@ CONTAINS
 
     REAL(wp) :: max_vn, max_w
     INTEGER  :: max_vn_level, max_vn_process, max_w_level, max_w_process
-    INTEGER  :: water_tracer_list(iqm_max)    ! list of all water tracer IDs (including vapor)
 
     CHARACTER(*), PARAMETER :: routine = modname//"::supervise_total_integrals_nh"
     !-----------------------------------------------------------------------------
 
     CALL assert_acc_device_only(routine, lacc)
 
-    ! store IDs of all water tracers in a list, including vapor
-    IF ( lforcing .AND. iforcing /= iheldsuarez ) THEN
-      water_tracer_list = (/(jt, jt=1,iqm_max)/)
-    ENDIF
-
-    !$ACC DATA CREATE(z_ekin, z_qsum, z_aux_tracer) COPYIN(water_tracer_list)
+    !$ACC DATA CREATE(z_ekin, z_qsum, z_aux_tracer)
 #ifndef NOMPI
-    !$ACC DATA CREATE(z_total_mass_2d, z_dry_mass_2d, z_kin_energy_2d, z_int_energy_2d, z_pot_energy_2d, z_surfp_2d) COPYIN(water_tracer_list)
+    !$ACC DATA CREATE(z_total_mass_2d, z_dry_mass_2d, z_kin_energy_2d, z_int_energy_2d, z_pot_energy_2d, z_surfp_2d)
 #endif
 
     IF (.NOT. ALLOCATED (z_tracer_mass_0)) THEN
@@ -219,12 +229,13 @@ CONTAINS
     nlev = patch%nlev
 
     IF (iforcing <= 1) THEN ! u and v are not diagnosed regularly if physics is turned off
-      CALL rbf_vec_interpol_cell(prog%vn,patch,int_state,diag%u,diag%v, opt_acc_async=.TRUE.)
+      CALL rbf_vec_interpol_cell(prog%vn, patch, int_state, diag%u, diag%v, &
+                                 lacc=.TRUE., opt_acc_async=.TRUE.)
     ENDIF
 
 
 !$OMP PARALLEL
-    CALL init(z_qsum, opt_acc_async=.TRUE.)
+    CALL init(z_qsum, lacc=.TRUE.)
 !$OMP BARRIER
 
 !$OMP DO PRIVATE(jb,jk,jc,nlen)
@@ -255,7 +266,8 @@ CONTAINS
           &             i_endidx    = nlen,                     & !in
           &             slev        = 1,                        & !in
           &             slev_moist  = 1,                        & !in
-          &             nlev        = nlev)                       !in
+          &             nlev        = nlev,                     & !in
+          &             lacc        = .TRUE.)                     !in
       ENDIF
 
     ENDDO
@@ -280,7 +292,7 @@ CONTAINS
       ELSE
         nlen = npromz_c
       ENDIF
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+      !$ACC PARALLEL DEFAULT(PRESENT) COPY(z_total_mass, z_kin_energy, z_int_energy, z_pot_energy, z_dry_mass) ASYNC(1)
       !$ACC LOOP GANG VECTOR COLLAPSE(2) PRIVATE(z_volume) &
       !$ACC   REDUCTION(+, z_total_mass, z_kin_energy, z_int_energy, z_pot_energy, z_dry_mass)
       DO jk = 1, nlev
@@ -301,7 +313,7 @@ CONTAINS
       ENDDO
       !$ACC END PARALLEL
 
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+      !$ACC PARALLEL DEFAULT(PRESENT) COPY(z_mean_surfp) ASYNC(1)
       !$ACC LOOP GANG VECTOR COLLAPSE(2) REDUCTION(+, z_mean_surfp)
       DO jc = 1, nlen
         z_mean_surfp = z_mean_surfp + diag%pres_sfc(jc,jb)*patch%cells%area(jc,jb) /  &
@@ -315,12 +327,12 @@ CONTAINS
 #else
 
 !$OMP PARALLEL
-    CALL init(z_total_mass_2d, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(z_dry_mass_2d, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(z_kin_energy_2d, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(z_int_energy_2d, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(z_pot_energy_2d, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(z_surfp_2d, lacc=.TRUE., opt_acc_async=.TRUE.)
+    CALL init(z_total_mass_2d, lacc=.TRUE.)
+    CALL init(z_dry_mass_2d, lacc=.TRUE.)
+    CALL init(z_kin_energy_2d, lacc=.TRUE.)
+    CALL init(z_int_energy_2d, lacc=.TRUE.)
+    CALL init(z_pot_energy_2d, lacc=.TRUE.)
+    CALL init(z_surfp_2d, lacc=.TRUE.)
 !$OMP BARRIER
 
 !$OMP DO PRIVATE(jb,jk,jc,nlen,z_volume)
@@ -415,7 +427,7 @@ CONTAINS
 
       DO jt=1, ntracer
 !$OMP PARALLEL
-        CALL init(z_aux_tracer(:,:), lacc=.TRUE., opt_acc_async=.TRUE.) ! reinitialize for each jt
+        CALL init(z_aux_tracer(:,:), lacc=.TRUE.) ! reinitialize for each jt
 !$OMP BARRIER
 
 !$OMP DO PRIVATE(jb,jk,jc,nlen,z_volume)
@@ -470,28 +482,28 @@ CONTAINS
         z_tracer_mass_0(:)     = z_tracer_mass(:)
         z_total_tracer_mass_0  = z_total_tracer_mass
         z_water_mass_0         = z_water_mass
-      ELSE
-        ! compute mass change relative to time step 1
-        !
-        IF (z_total_tracer_mass_0 == 0._wp) THEN
-          z_total_tracer_mass_re = 0._wp
-        ELSE
-          z_total_tracer_mass_re = z_total_tracer_mass /z_total_tracer_mass_0 -1._wp
-        ENDIF
-        IF (z_water_mass_0 == 0._wp) THEN
-          z_water_mass_re = 0._wp
-        ELSE
-          z_water_mass_re = z_water_mass /z_water_mass_0 -1._wp
-        ENDIF
-        !
-        DO jt=1,ntracer
-          IF (z_tracer_mass_0(jt) == 0._wp) THEN
-            z_tracer_mass_re(jt) = 0._wp
-          ELSE
-            z_tracer_mass_re(jt) = z_tracer_mass(jt) /z_tracer_mass_0(jt) - 1._wp
-          ENDIF
-        ENDDO
       ENDIF
+
+      ! compute mass change relative to time step 1
+      !
+      IF (z_total_tracer_mass_0 == 0._wp) THEN
+        z_total_tracer_mass_re = 0._wp
+      ELSE
+        z_total_tracer_mass_re = z_total_tracer_mass /z_total_tracer_mass_0 -1._wp
+      ENDIF
+      IF (z_water_mass_0 == 0._wp) THEN
+        z_water_mass_re = 0._wp
+      ELSE
+        z_water_mass_re = z_water_mass /z_water_mass_0 -1._wp
+      ENDIF
+      !
+      DO jt=1,ntracer
+        IF (z_tracer_mass_0(jt) == 0._wp) THEN
+          z_tracer_mass_re(jt) = 0._wp
+        ELSE
+          z_tracer_mass_re(jt) = z_tracer_mass(jt) /z_tracer_mass_0(jt) - 1._wp
+        ENDIF
+      ENDDO
 
       ! write to file
       IF (my_process_is_stdio()) THEN
@@ -659,7 +671,7 @@ CONTAINS
     CALL message('',message_text)
 
     ! --- Print-out of max winds to an ASCII file.
-    ! 
+    !
     !     This requires namelist setting 'run_nml::output = "maxwinds"'
 
     IF (output_mode%l_maxwinds .AND. my_process_is_stdio()) THEN
@@ -669,6 +681,69 @@ CONTAINS
     END IF
 
   END SUBROUTINE print_maxwinds
+
+  !-------------------------------------------------------------------------
+  !>
+  !! Computation of maximum wind speed for each vertical level
+  !!
+  SUBROUTINE calculate_maxwind_per_level(u, max_u, nlev, i_startidx, i_endidx, jb, lacc)
+
+    REAL(wp), INTENT(IN)    :: u(:,:,:)
+    REAL(wp), INTENT(INOUT) :: max_u(:,:)
+    INTEGER,  INTENT(IN)    :: nlev, i_startidx, i_endidx, jb
+    LOGICAL,  INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
+
+    INTEGER :: jk, jec, jec_start, jec_end
+    INTEGER, PARAMETER :: chunk_size = 2048
+    REAL(wp) :: u_aux_tmp
+
+    LOGICAL :: lzacc ! non-optional version of lacc
+
+    !-----------------------------------------------------------------------
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+#ifdef _OPENACC
+
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    !$ACC LOOP GANG COLLAPSE(2) PRIVATE(u_aux_tmp)
+    DO jk = 1, nlev
+      DO jec_start = i_startidx, i_endidx, chunk_size
+        jec_end = MIN(jec_start + chunk_size - 1, nproma)
+#ifndef _CRAYFTN
+        ! Cray doesn't like CACHE directive withing GANG loop
+        !$ACC CACHE(u(jec_start:jec_end,jk,jb))
+#endif
+        u_aux_tmp = 0._wp
+        !$ACC LOOP VECTOR REDUCTION(MAX: u_aux_tmp)
+        DO jec = jec_start, jec_end
+          u_aux_tmp = MAX(u_aux_tmp, ABS(u(jec,jk,jb)))
+        ENDDO
+
+        !$ACC ATOMIC
+        max_u(jb,jk) = MAX(max_u(jb,jk), u_aux_tmp)
+        !$ACC END ATOMIC
+      ENDDO
+    ENDDO
+    !$ACC END PARALLEL
+
+#else
+
+!$NEC novector
+    DO jk = 1, nlev
+#if defined( __INTEL_COMPILER ) || defined (__SX__)
+      u_aux_tmp = 0._wp
+      DO jec = i_startidx,i_endidx
+        u_aux_tmp = MAX(u_aux_tmp, -u(jec,jk,jb), u(jec,jk,jb))
+      ENDDO
+      max_u(jb,jk) = u_aux_tmp
+#else
+      max_u(jb,jk) = MAXVAL(ABS(u(i_startidx:i_endidx,jk,jb)))
+#endif
+    ENDDO
+
+#endif
+
+  END SUBROUTINE calculate_maxwind_per_level
 
   !-------------------------------------------------------------------------
   !>
@@ -686,20 +761,30 @@ CONTAINS
     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
 
     ! local variables
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 20
+    ! ACCWA (Cray Fortran <= 17.0.1) using automatic arrays causes a segmentation fault
+    REAL(wp), ALLOCATABLE :: vn_aux(:,:), w_aux(:,:)
+#else
     REAL(wp) :: vn_aux(patch%edges%end_blk(min_rledge_int,MAX(1,patch%n_childdom)),patch%nlev)
     REAL(wp) :: w_aux (patch%cells%end_blk(min_rlcell_int,MAX(1,patch%n_childdom)),patch%nlevp1)
-    REAL(wp) :: vn_aux_lev(patch%nlev), w_aux_lev(patch%nlevp1), vmax(2), vn_aux_tmp, w_aux_tmp
+#endif
+
+    REAL(wp) :: vn_aux_lev(patch%nlev), w_aux_lev(patch%nlevp1), vmax(2)
 
     INTEGER  :: istartblk_c, istartblk_e, iendblk_c, iendblk_e, i_startidx, i_endidx
     INTEGER  :: jb, jk, jg
-#if defined( __INTEL_COMPILER ) || defined( _OPENACC ) || defined (__SX__)
-    INTEGER  :: jec
-#endif
+
     INTEGER  :: proc_id(2), keyval(2)
     LOGICAL :: lzacc ! non-optional version of lacc
 
     !-----------------------------------------------------------------------
     CALL set_acc_host_or_device(lzacc, lacc)
+
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 20
+    ! ACCWA (Cray Fortran <= 17.0.1) using automatic arrays causes a segmentation fault
+    ALLOCATE(vn_aux(patch%edges%end_blk(min_rledge_int,MAX(1,patch%n_childdom)),patch%nlev))
+    ALLOCATE(w_aux (patch%cells%end_blk(min_rlcell_int,MAX(1,patch%n_childdom)),patch%nlevp1))
+#endif
 
     istartblk_c = patch%cells%start_block(grf_bdywidth_c+1)
     istartblk_e = patch%edges%start_block(grf_bdywidth_e+1)
@@ -716,69 +801,34 @@ CONTAINS
       !$ACC END KERNELS
     ENDIF
 
-!$OMP PARALLEL
-#if defined( __INTEL_COMPILER ) || defined (__SX__)
-!$OMP DO PRIVATE(jb, jk, jec, i_startidx, i_endidx, vn_aux_tmp) ICON_OMP_DEFAULT_SCHEDULE
-#else
-!$OMP DO PRIVATE(jb, jk, i_startidx, i_endidx) ICON_OMP_DEFAULT_SCHEDULE
+#ifdef _OPENACC
+    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+    vn_aux(:,:) = 0._wp
+    w_aux (:,:) = 0._wp
+    !$ACC END KERNELS
 #endif
-    DO jb = istartblk_e, iendblk_e
 
+!$OMP PARALLEL
+!$OMP DO PRIVATE(jb, jk, i_startidx, i_endidx) ICON_OMP_DEFAULT_SCHEDULE
+    DO jb = istartblk_e, iendblk_e
       CALL get_indices_e(patch, jb, istartblk_e, iendblk_e, i_startidx, i_endidx, &
                          grf_bdywidth_e+1, min_rledge_int)
-
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      !$ACC LOOP GANG PRIVATE(vn_aux_tmp)
-!$NEC novector
-      DO jk = 1, patch%nlev
-#if defined( __INTEL_COMPILER ) || defined( _OPENACC ) || defined (__SX__)
-        vn_aux_tmp = 0._wp
-        !$ACC LOOP VECTOR REDUCTION(MAX: vn_aux_tmp)
-        DO jec = i_startidx,i_endidx
-          vn_aux_tmp = MAX(vn_aux_tmp, -vn(jec,jk,jb), vn(jec,jk,jb))
-        ENDDO
-        vn_aux(jb,jk) = vn_aux_tmp
-#else
-        vn_aux(jb,jk) = MAXVAL(ABS(vn(i_startidx:i_endidx,jk,jb)))
-#endif
-      ENDDO
-      !$ACC END PARALLEL
+      CALL calculate_maxwind_per_level(vn, vn_aux, patch%nlev, i_startidx, i_endidx, jb, lacc)
     END DO
 !$OMP END DO
 
-#if defined( __INTEL_COMPILER ) || defined (__SX__)
-!$OMP DO PRIVATE(jb, jk, jec, i_startidx, i_endidx, w_aux_tmp) ICON_OMP_DEFAULT_SCHEDULE
-#else
 !$OMP DO PRIVATE(jb, jk, i_startidx, i_endidx) ICON_OMP_DEFAULT_SCHEDULE
-#endif
     DO jb = istartblk_c, iendblk_c
-
       CALL get_indices_c(patch, jb, istartblk_c, iendblk_c, i_startidx, i_endidx, &
                          grf_bdywidth_c+1, min_rlcell_int)
-
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-      !$ACC LOOP GANG PRIVATE(w_aux_tmp)
-!$NEC novector
-      DO jk = 1, patch%nlevp1
-#if defined( __INTEL_COMPILER ) || defined( _OPENACC ) || defined (__SX__)
-        w_aux_tmp = 0._wp
-        !$ACC LOOP VECTOR REDUCTION(MAX: w_aux_tmp)
-        DO jec = i_startidx,i_endidx
-          w_aux_tmp = MAX(w_aux_tmp, -w(jec,jk,jb), w(jec,jk,jb))
-        ENDDO
-        w_aux(jb,jk) = w_aux_tmp
-#else
-        w_aux(jb,jk) = MAXVAL(ABS(w(i_startidx:i_endidx,jk,jb)))
-#endif
-      ENDDO
-      !$ACC END PARALLEL
+      CALL calculate_maxwind_per_level(w, w_aux, patch%nlevp1, i_startidx, i_endidx, jb, lacc)
     END DO
 !$OMP END DO
 
     !$ACC WAIT
     !$ACC END DATA
 
-! At this point vn_aux and w_aux reside on the host.  
+! At this point vn_aux and w_aux reside on the host.
 ! Avoid doing MAXVAL with OpenACC -- this is not well supported!
 #ifndef __SX__
 !$OMP DO PRIVATE(jk) ICON_OMP_DEFAULT_SCHEDULE
@@ -832,6 +882,10 @@ CONTAINS
     max_w_level    = keyval(2)
     max_w_process  = proc_id(2)
 
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
+    DEALLOCATE(vn_aux, w_aux)
+#endif
+
   END SUBROUTINE calculate_maxwinds
 
 
@@ -864,7 +918,7 @@ CONTAINS
                          grf_bdywidth_e+1, min_rledge_int)
 
       max_hcfl_tmp = 0._wp
-      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+      !$ACC PARALLEL DEFAULT(PRESENT) COPY(max_hcfl_tmp) ASYNC(1)
       !$ACC LOOP GANG VECTOR COLLAPSE(2) REDUCTION(MAX: max_hcfl_tmp)
       DO jk = 1, nlev_hcfl
         DO je = i_startidx, i_endidx
@@ -887,10 +941,10 @@ CONTAINS
   !>
   !! Compute surface pressure time tendency abs(dpsdt)
   !!
-  !! Compute surface pressure time tendency. If desired, 
-  !! a spacial average is computed for the domain given 
-  !! and written to the log file. 
-  !! 
+  !! Compute surface pressure time tendency. If desired,
+  !! a spacial average is computed for the domain given
+  !! and written to the log file.
+  !!
   SUBROUTINE compute_dpsdt (pt_patch, dt, pt_diag, lacc)
 
     TYPE(t_patch),       INTENT(IN)    :: pt_patch     !< grid/patch info
@@ -949,7 +1003,8 @@ CONTAINS
 
         dps_blk_scal = 0._wp
         npoints_blk_scal = 0
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) REDUCTION(+: dps_blk_scal, npoints_blk_scal) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) REDUCTION(+: dps_blk_scal, npoints_blk_scal) &
+        !$ACC   COPY(dps_blk_scal, npoints_blk_scal) IF(lzacc)
         DO jc = i_startidx, i_endidx
           dps_blk_scal = dps_blk_scal + ABS(pt_diag%ddt_pres_sfc(jc,jb))
           npoints_blk_scal = npoints_blk_scal + 1
@@ -982,5 +1037,3 @@ CONTAINS
   END SUBROUTINE compute_dpsdt
 
 END MODULE mo_nh_supervise
-
-

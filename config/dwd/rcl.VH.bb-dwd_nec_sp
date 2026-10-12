@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# ICON
+#
+# ------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ------------------------------------------
+
+#
+# configure wrapper which is used for buildbot builder dwd_nec_sp (VH)
+#
+
+# Reduce optimization level for mo_lrtm_taumol with fcgroup, due to out of memory
+# errors during compilation.
+# See attempts to compile in serial with MAKE_PROCS=1 still failing :
+#   https://buildbot.dkrz.de/#/builders/215/builds/33/steps/2/logs/ICON
+ICON_LRTMTAUMOL_PATH="src/atm_phy_schemes/mo_lrtm_taumol.f90"
+
+# Similar modules in ecrad, though we can not control their compilation flags
+# directly like this through ICON build system. Disable ecRad for now, until
+# a better solution is found for compiling rtm_taumol modules in single-precision
+# Note: ecRad *does* compile successfully in single precision and is used in other builders
+#       don't forget restore to `--enable-ecrad --enable-single-precision-ecrad`
+#for i in $(seq 1 16); do
+#  ICON_LRTMTAUMOL_PATH="${ICON_LRTMTAUMOL_PATH}:externals/ecrad/ifsrrtm/rrtm_taumol$i.F90"
+#done
+
+# Workaround to disable ppm DBLOCK_GET - note the space is important :)
+export DBLOCK_GET=" "
+
+"$(dirname -- "${BASH_SOURCE[0]}")"/rcl.VH.gcc-11.2.0_mpi-3.5_oper \
+  --disable-art \
+  --disable-dace \
+  --disable-ecrad \
+  --disable-emvorado \
+  --disable-grib2 \
+  --disable-jsbach-hd \
+  --disable-mixed-precision \
+  --disable-rttov \
+  --enable-jsbach \
+  --enable-single-precision \
+  ICON_LRTMTAUMOL_FCFLAGS="-O1" \
+  ICON_LRTMTAUMOL_PATH="${ICON_LRTMTAUMOL_PATH}" \
+  --enable-fcgroup-LRTMTAUMOL \
+  "$@"

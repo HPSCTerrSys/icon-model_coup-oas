@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -46,7 +46,7 @@ ocean_namelist=NAMELIST_${EXPNAME}
   LOC='POOL'   # all ocean files needed for running are found on pool
 # LOC='othr'   # else all ocean files needed for running are found on local 'grids' directory
 # specific path of input data is set by exec.iconrun
-# 
+#
 #-----------------------------------------------------------------------------
 use_file_initialConditions=".true."
 # prognostic ocean initialization file must match the vertical levels
@@ -85,7 +85,7 @@ ocean_grids="iconR2B04-ocean_etopo40_planet.nc"
 ocean_grid_desc="R2B04"
 #=============================================================================
 #-----------------------------------------------------------------------------
-# ocean forcing (iforc=12) needs an additional flux file 
+# ocean forcing (iforc=12) needs an additional flux file
 iforc=12
 #
 # type of OMIP or NCEP forcing to read (iforc=12 only)
@@ -126,7 +126,7 @@ start_date="2001-01-01T00:00:00Z"  #  do not change - restart/output problems!
 # model parameters
 ocean_model_equations=-1 # equation system: -1=hydrost. ocean
 #
-# 
+#
 #-----------------------------------------------------------------------------
 #
 # write ICON namelist parameters
@@ -136,7 +136,7 @@ ocean_model_equations=-1 # equation system: -1=hydrost. ocean
 cat > ${ocean_namelist} << EOF
 !
 &parallel_nml
- p_test_run =  .false.     
+ p_test_run =  .false.
  nproma         = ${nproma}
  l_fast_sum     = .true.          ! false: results are reproducable, gmres_oce_old is used
 /

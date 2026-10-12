@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -11,7 +11,7 @@
 # ------------------------------------------
 
 #
-# Function for checking if the return status is OK 
+# Function for checking if the return status is OK
 
 check_error()
 {
@@ -37,9 +37,9 @@ do
 done
 
 #==========================================================================
-#                          USER'S SPECIFICATIONS 
+#                          USER'S SPECIFICATIONS
 #--------------------------------------------------------------------------
-# 0. Model name 
+# 0. Model name
 #--------------------------------------------------------------------------
 
 Model="ICOHAM"   # or "ECHAM", "ICONAM"
@@ -47,8 +47,8 @@ Model="ICOHAM"   # or "ECHAM", "ICONAM"
 #--------------------------------------------------------------------------
 # 1. About the model output
 #--------------------------------------------------------------------------
-# 1.1 What is the experiment ID? 
-# The experiment ID is the first part of the file name of your model output, 
+# 1.1 What is the experiment ID?
+# The experiment ID is the first part of the file name of your model output,
 # which is followed by information on hor. and vert. resolution (cf. 1.5),
 # and a file index (cf. 1.6) if the output has been split on several files.
 # You may have used something like "A0001" just for simplicity.
@@ -61,12 +61,12 @@ model_data_path="somewhere/"
 
 # The ICON model developers have an automatic testing system which uses
 # the following convention:
- 
+
 dir=`pwd -P`
 icon_path=${dir%%scripts/postprocessing/testcases}
 model_data_path="${icon_path}experiments/$EXP/"
 
-# 1.3 Shape of control volume (3 = triangle, 6 = hexagon/pentagon) 
+# 1.3 Shape of control volume (3 = triangle, 6 = hexagon/pentagon)
 
 cell_type=3
 
@@ -79,22 +79,22 @@ horizontal_resolution="R2B04"
 vertical_resolution="L31"
 
 # 1.5 The experiment identifier that will appear in the plots, e.g.,
-# "brk R2B5L31" 
+# "brk R2B5L31"
 
 export exp_config="$Model $horizontal_resolution$vertical_resolution"
 
 #--------------------------------------------------------------------------
 # 2. Decide what to do
 #--------------------------------------------------------------------------
-# This script assumes that the output has been split into a series of files. 
+# This script assumes that the output has been split into a series of files.
 # The first file is named ${EXP}"_RxBxxLxx_0001",the second one "_0002",
-# and so on. Now specify the starting and ending file indices for the 
+# and so on. Now specify the starting and ending file indices for the
 # evolution plot.
 
 evol_istart=1
 evol_iend=10
 
-# If you want to obtain plots, set the next variable to 1 
+# If you want to obtain plots, set the next variable to 1
 make_plot=1
 
 # What format do you want, pdf, eps or ps?
@@ -104,47 +104,47 @@ export plot_file_format="pdf"
 # (No specification means NCL default - "portrait".)
 #export wkOrientation="landscape"
 
-# Before plotting, some data processing is needed. 
+# Before plotting, some data processing is needed.
 # If you have already done that and stored the data, turn this step off.
 
 do_computation=1   # (1=ON,0=OFF)
 
-# Select vertical levels: 
+# Select vertical levels:
 #   - plev_evol for pressure levels (unit: Pa)
 #   - hlev_evol for height levels   (unit: km)
 #   - mlev_evol for model levels (i.e., level indices 1, 2, etc.)
-# If the user assigns a meaningful (i.e., not null) string to 
+# If the user assigns a meaningful (i.e., not null) string to
 # one of the three variables, the corresponding vertical levels
 # will be selected; If the user does not set any of the three variables
 # or sets all of them to null (""), the default pressure levels
-# (85000,50000,20000,10000 Pa) will be selected; If more than one 
+# (85000,50000,20000,10000 Pa) will be selected; If more than one
 # of the three variables are assigned meaningful strings, the order
 # of precedence is: plev_evol > hlev_evol > mlev_evol.
 
 plev_evol=""
 
-# To diagnose the zonal mean circulation, the ICON model output 
-# on the geodesic grid needs to be interpolated to a Gaussian grid. 
+# To diagnose the zonal mean circulation, the ICON model output
+# on the geodesic grid needs to be interpolated to a Gaussian grid.
 # Choose the Gaussian grid by specifying the triangular truncation:
 
 trunc=63
 
 # For the horizontal interpolation from the ICON grid to Gaussian grid,
-# a large part of the time will be spent on calculating the remapping 
+# a large part of the time will be spent on calculating the remapping
 # weights. This may take very long when the resolution is high.
-# Therefore we suggest calculating the weights only once and store them 
-# for later use. 
+# Therefore we suggest calculating the weights only once and store them
+# for later use.
 
 compute_remap_weights=0   # (1=ON,0=OFF)
 
-# The remapping weights file generated by this script will be named, 
-# e.g., icon_R2B04_spr0.90_tri_cell_to_T159.nc 
+# The remapping weights file generated by this script will be named,
+# e.g., icon_R2B04_spr0.90_tri_cell_to_T159.nc
 # If the weights are already available, specify the location:
 # (Don't forget the trailing "/")
 
 remap_weights_path="${model_data_path}remap_weights/"
 
-# For the remapping, we also need to know which optimization was used 
+# For the remapping, we also need to know which optimization was used
 # to generate the ICON grid. For example,
 #   "ori"     : original icosahedral grid without optimization
 #   "hro"     : Heikes-Randall optimization
@@ -157,8 +157,8 @@ grid_optimization="spr0.90"
 plot_file_path="${model_data_path}plots/"
 
 #--------------------------------------------------------------------------
-# Now specify the directory in which the intermediate files 
-# (excluding the remapping weights) should be placed. 
+# Now specify the directory in which the intermediate files
+# (excluding the remapping weights) should be placed.
 # Don't forget the trailing "/".
 
 tmp_data_path="${model_data_path}tmp/"
@@ -170,7 +170,7 @@ tmp_data_path="${model_data_path}tmp/"
 cdo_silence=1   #( 1 = silence mode; 0 = detailed report )
 
 #--------------------------------------------------------------------------
-#                    END OF USER'S SPECIFICATIONS 
+#                    END OF USER'S SPECIFICATIONS
 #==========================================================================
 
 if [ -f ${set_env} ] ; then
@@ -182,7 +182,7 @@ fi
 if [ ${plev_evol:-0} -eq 0 ]; then   # User didn't specify any pressure level
  if [ ${hlev_evol:-0} -eq 0 ]; then  # User didn't specify any height level
   if [ ${mlev_evol:-0} -eq 0 ]; then # User didn't specify any model level
-   
+
    # User didn't specify any kind of levels. Will use default pressure values.
    levtype="p"
    cmd="ml2pl"
@@ -201,7 +201,7 @@ if [ ${plev_evol:-0} -eq 0 ]; then   # User didn't specify any pressure level
 else   # Will interpolate to user-specified pessure values
    levtype="p"
    cmd="ml2pl"
-   levs=${plev_evol} 
+   levs=${plev_evol}
 fi
 level_list=`echo $levs | sed 's/,/ /g'`
 
@@ -209,7 +209,7 @@ echo
 echo "**********************************************************"
 echo "***      ICON Tool Kit for APE: evolution plot         ***"
 echo "**********************************************************"
-echo 
+echo
 
 # Temporary variables
 
@@ -229,17 +229,17 @@ if [ $Model == "ECHAM" ]; then
    compute_remap_weights=0
 fi
 
-# The directories for intermediate data and plots will be created, if 
+# The directories for intermediate data and plots will be created, if
 # not already there
 
 if [ ! -d ${plot_file_path} ]; then
-   mkdir -p ${plot_file_path} 
+   mkdir -p ${plot_file_path}
 fi
 if [ ! -d ${tmp_data_path} ]; then
-   mkdir -p ${tmp_data_path} 
+   mkdir -p ${tmp_data_path}
 fi
 
-# Create a directory for soft links. This is used later for 
+# Create a directory for soft links. This is used later for
 # reading zonal statistics from multiple files.
 
 datetime=`date +%F-%H%M%S-%N`
@@ -269,7 +269,7 @@ fi
 if [[ ${compute_remap_weights} -eq 1 && ! -a ${weights} ]]; then
 
  if [ ! -d ${remap_weights_path} ]; then
-    mkdir -p ${remap_weights_path} 
+    mkdir -p ${remap_weights_path}
  fi
 
  echo
@@ -291,7 +291,7 @@ fi
 
     # Look up the user-specified variable name in a registry in order to
     # inquire necessary information for data postprocessing and plotting.
-    # The script lookup_variable.ksh returns the entry ID (as variable "ie"), 
+    # The script lookup_variable.ksh returns the entry ID (as variable "ie"),
     # all cause exit if the variable is not found in the registry.
 
     export varname
@@ -314,7 +314,7 @@ fi
         #------------------------------------------------------
         if [ ! -f ${ftmp}"_"$label"_"${varname}".nc" ]; then
 
-           case $Model in 
+           case $Model in
            "ICOHAM" | "ICONAM")
 
               cdo $silence -r selname,${varname} ${fori}"_"$label".nc" \
@@ -337,9 +337,9 @@ EOF
                 cdo $silence -r setname,${varname} \
                     ${ftmp}"_"$label"_"${varcode[$ie]}".nc" \
                     ${ftmp}"_"$label"_"${varname}".nc"
-  
+
                 rm  ${ftmp}"_"$label"_"${varcode[$ie]}".nc"
-                rm  after.out $Model_$EXP_$varname.nml 
+                rm  after.out $Model_$EXP_$varname.nml
 
              else # physics variables
 
@@ -347,12 +347,12 @@ EOF
                     ${fori}"_"$label".nc" \
                     ${ftmp}"_"$label"_"$varname".nc"
              fi
-       
-           ;; 
+
+           ;;
            *)
              echo "Wrong model name! Abort."
              exit
-           esac 
+           esac
            check_error $? ' - Set/selname'
         fi
 
@@ -360,13 +360,13 @@ EOF
         # Interpolate from model levels to pressure/height levels
         # or simply select the model levels the user specified.
         #----------------------------------------------------------------------------
-        case $varname in 
+        case $varname in
         "PS" | "PHIS")
-           echo " - Vertical interpolation/level selection skipped for $varname" 
+           echo " - Vertical interpolation/level selection skipped for $varname"
         ;;
-        *) 
+        *)
           if [[ $levtype == "p" || $levtype == "h" ]]; then
-          
+
             filein=${ftmp}"_"$label"_"$varname"_ml2phl_tmp.nc"
 
             # Merge PS and PHIS with $varname into one file
@@ -375,7 +375,7 @@ EOF
                   ${ftmp}"_"$label"_"$varname".nc" \
                   ${ftmp}"_"$label"_"PS".nc"       \
                   ${ftmp}"_"$label"_"PHIS".nc"     \
-                  $filein 
+                  $filein
               check_error $? " - Merge $varname with PS and PHIS"
             fi
 
@@ -391,7 +391,7 @@ EOF
             if [ ! -a $fileout ]; then
               cdo $silence $cmd,$lev $filein $fileout
               check_error $? " - ${cmd}, ${lev}"
-            fi 
+            fi
           done
         ;;
         esac #$varname
@@ -399,18 +399,18 @@ EOF
 
         #-------------------------------------------------------------------
         # Compute zonal statistics for each time step. Note that
-        #  1. For the ICON models, interpolation to Gaus grid is necessary. 
+        #  1. For the ICON models, interpolation to Gaus grid is necessary.
         #  2. We do not merge all time steps into a single file but rather
-        #     let the NCL plotting script read data from multiple files. 
-        #  3. Soft links to the zonal mean data files are created to facilitate 
+        #     let the NCL plotting script read data from multiple files.
+        #  3. Soft links to the zonal mean data files are created to facilitate
         #     data loading in NCL.
         #-------------------------------------------------------------------
-        case $varname in 
+        case $varname in
         "PS" | "PHIS")
            echo " - Computation of zonal statistics skipped for $varname" ;;
-        *) 
+        *)
 
-          case $Model in 
+          case $Model in
           "ICOHAM" | "ICONAM") intp="-remap,t${trunc}grid,${weights}" ;;
           "ECHAM")             intp="" ;;
           esac
@@ -423,7 +423,7 @@ EOF
               fileout=${ftmp}"_"$label"_"$varname"_"$levtype$lev"_T"$trunc"_"$stat".nc"
 
               if [ ! -a $fileout ]; then
-                cdo $silence $stat $intp $filein $fileout 
+                cdo $silence $stat $intp $filein $fileout
                 check_error $? " - $stat"
               fi
 
@@ -473,8 +473,8 @@ EOF
          export DataFNameP2="_"$varname"_"$levtype$lev"_T"$trunc"_"$stat".nc"
          export PlotFile=${plot_file_path}${EXP}"_"${resolution}"_"$timerange
          export PlotFile=${PlotFile}"_"$varname"_"$levtype$lev"_T"$trunc"_"$stat"-evol"
-        
-         echo "=== Plotting time evolution ($levtype$lev, $stat) ..."  
+
+         echo "=== Plotting time evolution ($levtype$lev, $stat) ..."
          ncl plot_lat-time.ncl >ncl_output_${datetime}.log
 
          r1=$?

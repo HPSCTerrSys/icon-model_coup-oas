@@ -1,16 +1,16 @@
-! Contains the implementation of the semi-implicit Adams-Bashforth timestepping
-! for the ICON ocean model.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the implementation of the semi-implicit Adams-Bashforth timestepping
+! for the ICON ocean model.
 
 MODULE mo_ocean_ab_timestepping
   USE mo_ocean_nml,                      ONLY: discretization_scheme
@@ -141,14 +141,21 @@ CONTAINS
   END SUBROUTINE calc_vert_velocity
   !-------------------------------------------------------------------------
 !<Optimize:inUse>
-  SUBROUTINE update_time_indices(jg)
+  SUBROUTINE update_time_indices(jg, lacc)
     INTEGER, INTENT(IN) :: jg
-    INTEGER             :: n_temp
+    LOGICAL, INTENT(in), OPTIONAL :: lacc
+    LOGICAL :: lzacc
+    INTEGER :: n_temp
+    !-----------------------------------------------------------------------
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+
     ! Step 7: Swap time indices before output
     !         half time levels of semi-implicit Adams-Bashforth timestepping are
     !         stored in auxiliary arrays g_n and g_nimd of p_diag%aux
     n_temp    = nold(jg)
     nold(jg)  = nnew(jg)
     nnew(jg)  = n_temp
+    !$ACC UPDATE DEVICE(nold, nnew) IF(lzacc)
   END SUBROUTINE update_time_indices
 END MODULE mo_ocean_ab_timestepping

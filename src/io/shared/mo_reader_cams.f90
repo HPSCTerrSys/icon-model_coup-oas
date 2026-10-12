@@ -1,33 +1,30 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
 MODULE mo_reader_cams
 
-  USE mo_kind,                    ONLY: dp, wp, i8
+  USE mo_kind,                    ONLY: wp, i8
   USE mo_parallel_config,         ONLY: get_nproma
   USE mo_exception,               ONLY: finish
-  USE mo_reader_abstract,         ONLY: t_abstract_reader
+  USE mo_reader_abstract,         ONLY: t_abstract_indexed_reader
+  USE mo_reader_util,             ONLY: read_timestamps_from_netcdf
   USE mo_impl_constants,          ONLY: n_camsaermr
   USE mo_io_units,                ONLY: FILENAME_MAX
   USE mo_model_domain,            ONLY: t_patch
   USE mo_netcdf_errhandler,       ONLY: nf
   USE mo_netcdf
-  USE mtime,                      ONLY: julianday, juliandelta, getJulianDayFromDatetime,  &
-                                    &   datetime, newdatetime, deallocatedatetime,         &
-                                    &   OPERATOR(+), ASSIGNMENT(=),                        &
-                                    &   no_of_ms_in_a_day, no_of_ms_in_a_hour,             &
-                                    &   no_of_ms_in_a_minute, no_of_ms_in_a_second
+  USE mtime,                      ONLY: julianday, getJulianDayFromDatetime, datetime, OPERATOR(>)
   USE mo_mpi,                     ONLY: my_process_is_mpi_workroot, process_mpi_root_id, p_comm_work, p_bcast
   USE mo_read_netcdf_distributed, ONLY: distrib_nf_open, distrib_read, distrib_nf_close, idx_blk_time
-  USE mo_fortran_tools,           ONLY: t_ptr_4d
+  USE fortran_support,            ONLY: t_ptr_4d_wp
   USE mo_radiation_config,        ONLY: irad_aero, iRadAeroCAMSclim, iRadAeroCAMStd
 
   IMPLICIT NONE
@@ -36,19 +33,30 @@ MODULE mo_reader_cams
 
   PUBLIC :: t_cams_reader
 
-  TYPE, EXTENDS(t_abstract_reader) :: t_cams_reader
+  TYPE, EXTENDS(t_abstract_indexed_reader) :: t_cams_reader
 
     TYPE(t_patch), POINTER      :: p_patch => NULL()
     CHARACTER(len=NF90_MAX_NAME)  :: varnames(n_camsaermr+1)
     CHARACTER(len=FILENAME_MAX) :: filename
-    INTEGER                     :: fileid, dist_fileid,nlev_cams
+    INTEGER                     :: dist_fileid, nlev_cams
     LOGICAL                     :: lopened = .FALSE.
+
+    TYPE(julianday), ALLOCATABLE :: times(:)
+    INTEGER                     :: index = 1
 
   CONTAINS
 
     PROCEDURE :: init            => cams_init_reader
-    PROCEDURE :: get_one_timelev => cams_get_one_timelevel
-    PROCEDURE :: get_times       => cams_get_times
+    PROCEDURE :: prev            => cams_prev
+    PROCEDURE :: next            => cams_next
+    PROCEDURE :: goto            => cams_goto
+    PROCEDURE :: seek            => cams_seek
+    PROCEDURE :: is_valid        => cams_is_valid
+
+    PROCEDURE :: read            => cams_read
+    PROCEDURE :: get_julian_day  => cams_get_julian_day
+    PROCEDURE :: get_index       => cams_get_index
+
     PROCEDURE :: deinit          => cams_deinit_reader
 
     PROCEDURE :: get_nblks       => cams_get_nblks
@@ -67,26 +75,28 @@ CONTAINS
 
     CHARACTER(len=*), PARAMETER :: routine = 'cams_init_reader'
 
+    INTEGER :: ntimes
+
     this%filename = TRIM(filename)
 
     IF (irad_aero == iRadAeroCAMSclim) THEN
 
-     this%varnames(1)  = "Sea_Salt_bin1"              ! layer-integrated mass (kg/m2)
-     this%varnames(2)  = "Sea_Salt_bin2"              ! layer-integrated mass (kg/m2)
-     this%varnames(3)  = "Sea_Salt_bin3"              ! layer-integrated mass (kg/m2)
-     this%varnames(4)  = "Mineral_Dust_bin1"          ! layer-integrated mass (kg/m2)
-     this%varnames(5)  = "Mineral_Dust_bin2"          ! layer-integrated mass (kg/m2)
-     this%varnames(6)  = "Mineral_Dust_bin3"          ! layer-integrated mass (kg/m2)
-     this%varnames(7)  = "Organic_Matter_hydrophilic" ! layer-integrated mass (kg/m2)
-     this%varnames(8)  = "Organic_Matter_hydrophobic" ! layer-integrated mass (kg/m2)
-     this%varnames(9)  = "Black_Carbon_hydrophilic"   ! layer-integrated mass (kg/m2)
-     this%varnames(10) = "Black_Carbon_hydrophobic"   ! layer-integrated mass (kg/m2)
-     this%varnames(11) = "Sulfates"                   ! layer-integrated mass (kg/m2)
-     this%varnames(12) = "half_level_pressure"        ! Pressure at base of layer (Pa)
+     this%varnames(1)  = "Sea_Salt_bin1"              ! Sea salt bin1 aerosol mass mixing ratio kg kg-1
+     this%varnames(2)  = "Sea_Salt_bin2"              ! Sea salt bin2 aerosol mass mixing ratio kg kg-1
+     this%varnames(3)  = "Sea_Salt_bin3"              ! Sea salt bin3 aerosol mass mixing ratio kg kg-1
+     this%varnames(4)  = "Mineral_Dust_bin1"          ! Mineral dust bin1 aerosol mass mixing ratio kg kg-1
+     this%varnames(5)  = "Mineral_Dust_bin2"          ! Mineral dust bin2 aerosol mass mixing ratio kg kg-1
+     this%varnames(6)  = "Mineral_Dust_bin3"          ! Mineral dust bin3 aerosol mass mixing ratio kg kg-1
+     this%varnames(7)  = "Organic_Matter_hydrophilic" ! Hydrophilic organic matter aerosol mass mixing ratio  kg kg-1
+     this%varnames(8)  = "Organic_Matter_hydrophobic" ! Hydrophobic organic matter aerosol mass mixing ratio kg kg-1
+     this%varnames(9)  = "Black_Carbon_hydrophilic"   ! Hydrophilic black carbon aerosol mass mixing ratio kg kg-1
+     this%varnames(10) = "Black_Carbon_hydrophobic"   ! Hydrophobic black carbon aerosol mass mixing ratio kg kg-1
+     this%varnames(11) = "Sulfates"                   ! Sulfates aerosol mass mixing ratio kg kg-1
+     this%varnames(12) = "pressure"                   ! air_pressure Pressure at layer centres (Pa)
 
-     this%nlev_cams = 60
+     this%nlev_cams = 21
 
-    ELSEIF (irad_aero == iRadAeroCAMStd) THEN
+  ELSEIF (irad_aero == iRadAeroCAMStd) THEN
 
      this%varnames(1)  = "aermr01" ! Sea_Salt_bin1 mixing ratio (kg/kg)
      this%varnames(2)  = "aermr02" ! Sea_Salt_bin2 mixing ratio (kg/kg)
@@ -108,92 +118,77 @@ CONTAINS
     this%p_patch => p_patch
 
     IF (.NOT. this%lopened) THEN
-      IF (my_process_is_mpi_workroot()) THEN
-        CALL nf(nf90_open(this%filename, nf90_nowrite, this%fileid), routine)
-      ENDIF
       this%dist_fileid = distrib_nf_open(TRIM(this%filename))
       this%lopened = .TRUE.
+
+      IF (my_process_is_mpi_workroot()) THEN
+        CALL nf(read_timestamps_from_netcdf(TRIM(this%filename), this%times), routine)
+        ntimes = SIZE(this%times)
+      END IF
+
+      CALL p_bcast(ntimes, process_mpi_root_id, p_comm_work)
+      IF (.NOT. ALLOCATED(this%times)) THEN
+        ALLOCATE(this%times(ntimes))
+      END IF
+
+      CALL p_bcast(this%times(:)%day, process_mpi_root_id, p_comm_work)
+      CALL p_bcast(this%times(:)%ms, process_mpi_root_id, p_comm_work)
     ENDIF
 
   END SUBROUTINE cams_init_reader
 
-  SUBROUTINE cams_get_times (this, times)
+  SUBROUTINE cams_prev (this)
+    CLASS(t_cams_reader), INTENT(INOUT) :: this
 
-    CLASS(t_cams_reader), INTENT(inout) :: &
-      &  this
-    TYPE(julianday), ALLOCATABLE, INTENT(out) :: &
-      &  times(:)
+    this%index = this%index - 1
+  END SUBROUTINE cams_prev
 
-    INTEGER                       :: tvid, tdid
-    CHARACTER(len=NF90_MAX_NAME)  :: cf_timeaxis_string
-    CHARACTER(len=:), ALLOCATABLE :: epoch
-    CHARACTER(len=:), ALLOCATABLE :: base_timeaxis_unit
-    TYPE(datetime), POINTER       :: epoch_datetime
-    TYPE(julianday)               :: epoch_jd
-    TYPE(juliandelta)             :: offset
-    INTEGER(i8)                   :: time_multiplicator
-    REAL(wp), ALLOCATABLE         :: times_read(:)
-    INTEGER                       :: ntimes
-    INTEGER                       :: i
+  SUBROUTINE cams_next (this)
+    CLASS(t_cams_reader), INTENT(INOUT) :: this
 
-    CHARACTER(len=*), PARAMETER :: routine = 'cams_get_times'
+    this%index = this%index + 1
+  END SUBROUTINE cams_next
 
-    IF (my_process_is_mpi_workroot()) THEN
+  SUBROUTINE cams_goto (this, target_datetime)
+    CLASS(t_cams_reader), INTENT(INOUT) :: this
+    TYPE(datetime), INTENT(IN) :: target_datetime
 
-      CALL nf(nf90_inq_varid(this%fileid, "time", tvid), routine)
-      CALL nf(nf90_inq_dimid(this%fileid, "time", tdid), routine)
-      CALL nf(nf90_inquire_dimension(this%fileid, tdid, len = ntimes), routine)
+    TYPE(julianday) :: jd
 
-      ALLOCATE(times_read(ntimes))
+    INTEGER :: i
 
-      CALL nf(nf90_get_var(this%fileid, tvid, times_read), routine)
-      CALL nf(nf90_get_att(this%fileid,   tvid, "units",cf_timeaxis_string), routine)
+    CALL getJulianDayFromDatetime(target_datetime, jd)
 
-    ENDIF
+    DO i = 1, SIZE(this%times)
+      IF (this%times(i) > jd) EXIT
+    END DO
 
-    CALL p_bcast(ntimes, process_mpi_root_id, p_comm_work)
-    IF (.NOT. ALLOCATED(times_read)) THEN
-      ALLOCATE(times_read(ntimes))
-    ENDIF
-    CALL p_bcast(times_read, process_mpi_root_id, p_comm_work)
-    CALL p_bcast(cf_timeaxis_string, process_mpi_root_id, p_comm_work)
+    this%index = i - 1
+  END SUBROUTINE cams_goto
 
-    CALL get_cf_timeaxis_desc(TRIM(cf_timeaxis_string), epoch, base_timeaxis_unit)
+  SUBROUTINE cams_seek (this, index)
+    CLASS(t_cams_reader), INTENT(INOUT) :: this
+    INTEGER(i8), INTENT(IN) :: index
 
-    epoch_datetime => newdatetime(epoch)
-    CALL getJulianDayFromDatetime(epoch_datetime, epoch_jd)
-    CALL deallocateDatetime(epoch_datetime)
-    
-    SELECT CASE (base_timeaxis_unit)
-    CASE('days')
-      time_multiplicator = no_of_ms_in_a_day
-    CASE('hours')
-      time_multiplicator = no_of_ms_in_a_hour
-    CASE('minutes')
-      time_multiplicator = no_of_ms_in_a_minute
-    CASE('seconds')
-      time_multiplicator = no_of_ms_in_a_second
-    END SELECT
-    
-    ALLOCATE(times(ntimes))
+    this%index = INT(index)
+  END SUBROUTINE cams_seek
 
-    DO i = 1, ntimes
-      offset%sign = '+'
-      offset%day  = INT((time_multiplicator * times_read(i))/86400000.0_wp,i8)
-      offset%ms   = NINT(MOD(time_multiplicator * times_read(i), 86400000.0_wp),i8)
-      times(i) = epoch_jd + offset
-    ENDDO
+  FUNCTION cams_is_valid (this, msg) RESULT(valid)
+    CLASS(t_cams_reader), INTENT(IN) :: this
+    CHARACTER(len=*), INTENT(OUT), OPTIONAL :: msg
+    LOGICAL :: valid
 
-  END SUBROUTINE cams_get_times
+    valid = (this%index > 0 .AND. this%index <= SIZE(this%times))
 
+    IF (PRESENT(msg)) msg = 'Index out of bounds'
+  END FUNCTION cams_is_valid
 
-  SUBROUTINE cams_get_one_timelevel(this, timelevel, varname, dat)
-    CLASS(t_cams_reader), INTENT(inout)  :: this
-    INTEGER, INTENT(in   )               :: timelevel
-    CHARACTER(len=*), INTENT(in   )      :: varname
-    REAL(wp), ALLOCATABLE, INTENT(inout) :: dat(:,:,:,:)
+  SUBROUTINE cams_read(this, varname, dat)
+    CLASS(t_cams_reader), INTENT(INOUT)  :: this
+    CHARACTER(len=*), INTENT(IN)         :: varname
+    REAL(wp), ALLOCATABLE, INTENT(INOUT) :: dat(:,:,:,:)
     REAL(wp), ALLOCATABLE, TARGET        :: temp(:,:,:,:)
-    TYPE(t_ptr_4d)                       :: tmp(1)
+    TYPE(t_ptr_4d_wp)                    :: tmp(1)
     INTEGER                              :: var_dimlen(3),var_start(3), var_end(3), jt
 
 
@@ -201,12 +196,12 @@ CONTAINS
     IF (ALLOCATED(dat)) DEALLOCATE(dat)
     ALLOCATE( dat(get_nproma(), this%nlev_cams, this%p_patch%nblks_c, n_camsaermr+1))
 
-      var_dimlen(2) = SIZE(temp, 2) ! number of vertical levels
-      var_dimlen(3) = 1             ! number of time steps = 1
-      var_start(:)  = (/1, 1, 1/)
-      var_end(:)    = var_dimlen(:)
-      var_start(3)  = timelevel
-      var_end(3)    = timelevel
+    var_dimlen(2) = SIZE(temp, 2) ! number of vertical levels
+    var_dimlen(3) = 1             ! number of time steps = 1
+    var_start(:)  = (/1, 1, 1/)
+    var_end(:)    = var_dimlen(:)
+    var_start(3)  = this%index
+    var_end(3)    = this%index
 
     temp(:,:,:,:) = -1.0_wp
 
@@ -227,8 +222,22 @@ CONTAINS
     ENDDO
 
     DEALLOCATE(temp)
-    
-  END SUBROUTINE cams_get_one_timelevel
+
+  END SUBROUTINE cams_read
+
+  FUNCTION cams_get_julian_day (this) RESULT(jd)
+    CLASS(t_cams_reader), INTENT(IN) :: this
+    TYPE(julianday) :: jd
+
+    jd = this%times(this%index)
+  END FUNCTION cams_get_julian_day
+
+  FUNCTION cams_get_index (this) RESULT(index)
+    CLASS(t_cams_reader), INTENT(IN) :: this
+    INTEGER(i8) :: index
+
+    index = this%index
+  END FUNCTION cams_get_index
 
   FUNCTION cams_get_nblks (this) RESULT(nblks)
     CLASS(t_cams_reader), INTENT(in   ) :: this
@@ -244,62 +253,11 @@ CONTAINS
 
   SUBROUTINE cams_deinit_reader(this)
     CLASS(t_cams_reader), INTENT(inout) :: this
-    CHARACTER(len=*), PARAMETER :: routine = 'cams_deinit_reader'
+
     IF (ASSOCIATED(this%p_patch)) NULLIFY(this%p_patch)
     IF (this%lopened) THEN
-      IF (my_process_is_mpi_workroot()) THEN
-        CALL nf(nf90_close(this%fileid), routine)
-      END IF
       CALL distrib_nf_close(this%dist_fileid)
     END IF
   END SUBROUTINE cams_deinit_reader
-
-  SUBROUTINE get_cf_timeaxis_desc(cf_timeaxis_string, epoch, base_timeaxis_unit)
-    CHARACTER(len=*), INTENT(in) :: cf_timeaxis_string
-    CHARACTER(len=:), ALLOCATABLE, INTENT(out) :: epoch, base_timeaxis_unit
-    
-    ! The CF convention allows for a timezone to be included. We will
-    ! ignore that one for all , but gets stored to word(5), if
-    ! provided, to keep the algorithm simple.
-
-    CHARACTER(len=16) :: word(5)
-    INTEGER :: pos1, pos2, n
-
-    pos1 = 1; pos2 = 0; n = 0;
-    word(:) = ""
-
-    DO
-      pos2 = INDEX(cf_timeaxis_string(pos1:), " ")
-      IF (pos2 == 0) THEN
-        n = n + 1
-        word(n) = cf_timeaxis_string(pos1:)
-        EXIT
-      ENDIF
-      n = n + 1
-      word(n) = cf_timeaxis_string(pos1:pos1+pos2-2)
-      pos1 = pos2+pos1
-    ENDDO
-
- ! correct the date part
-    normalize_date: BLOCK
-      INTEGER :: idx1, idx2
-      INTEGER :: year, month, day
-      idx1 = INDEX(word(3), '-')    
-      idx2 = INDEX(word(3)(idx1+1:), '-')+idx1
-      READ(word(3)(      :idx1-1),*) year
-      READ(word(3)(idx1+1:idx2-1),*) month
-      READ(word(3)(idx2+1:      ),*) day
-      WRITE(word(3),'(i0,a,i2.2,a,i2.2)') year, '-', month, '-', day
-    END BLOCK normalize_date
-    
-    IF (word(4) /= "") THEN
-      epoch = TRIM(word(3))//'T'//TRIM(word(4))
-    ELSE
-      epoch = TRIM(word(3))
-    ENDIF
-
-    base_timeaxis_unit = TRIM(word(1))
-
-  END SUBROUTINE get_cf_timeaxis_desc
 
 END MODULE mo_reader_cams

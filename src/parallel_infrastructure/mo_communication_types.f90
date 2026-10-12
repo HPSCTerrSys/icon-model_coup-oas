@@ -1,17 +1,16 @@
-! This module provides communication pattern types.
-! for parallel runs
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides communication pattern types.
+! for parallel runs
 
 #include "crayftn_ptr_fail.inc"
 MODULE mo_communication_types
@@ -26,7 +25,7 @@ MODULE mo_communication_types
 !
 USE mo_kind, ONLY: sp, dp
 USE mo_decomposition_tools, ONLY: t_glb2loc_index_lookup
-USE mo_fortran_tools, ONLY: t_ptr_3d, t_ptr_3d_sp
+USE fortran_support,  ONLY: t_ptr_3d_dp, t_ptr_3d_sp
 
 IMPLICIT NONE
 
@@ -40,10 +39,13 @@ PUBLIC :: t_comm_pattern, t_comm_pattern_collection, t_p_comm_pattern
   END TYPE xfer_list
   PUBLIC :: xfer_list
 
+  TYPE, PUBLIC :: t_comm_pattern_descr
+    CLASS(*), POINTER :: ptr => NULL()
+  END TYPE t_comm_pattern_descr
 !--------------------------------------------------------------------------------------------------
 !
 TYPE, ABSTRACT :: t_comm_pattern
-
+  TYPE(t_comm_pattern_descr) :: descr
   CONTAINS
 
     PROCEDURE(interface_setup_comm_pattern), DEFERRED :: setup
@@ -57,12 +59,17 @@ TYPE, ABSTRACT :: t_comm_pattern
     PROCEDURE(interface_exchange_data_i2d), DEFERRED :: exchange_data_i2d
     PROCEDURE(interface_exchange_data_l2d), DEFERRED :: exchange_data_l2d
     PROCEDURE(interface_exchange_data_l3d), DEFERRED :: exchange_data_l3d
-    PROCEDURE(interface_exchange_data_mult), DEFERRED :: exchange_data_mult
+    PROCEDURE(interface_exchange_data_mult_dp), DEFERRED :: exchange_data_mult_dp
+    PROCEDURE(interface_exchange_data_mult_sp), DEFERRED :: exchange_data_mult_sp
     PROCEDURE(interface_exchange_data_mult_mixprec), DEFERRED :: exchange_data_mult_mixprec
-    PROCEDURE(interface_exchange_data_4de1), DEFERRED :: exchange_data_4de1
+    PROCEDURE(interface_exchange_data_4de1_dp), DEFERRED :: exchange_data_4de1_dp
+    PROCEDURE(interface_exchange_data_4de1_sp), DEFERRED :: exchange_data_4de1_sp
     PROCEDURE(interface_get_np_recv), DEFERRED :: get_np_recv
     PROCEDURE(interface_get_np_send), DEFERRED :: get_np_send
     PROCEDURE(interface_get_pelist_recv), DEFERRED :: get_pelist_recv
+
+    GENERIC :: exchange_data_4de1 => exchange_data_4de1_dp, exchange_data_4de1_sp
+    GENERIC :: exchange_data_mult => exchange_data_mult_dp, exchange_data_mult_sp
 END TYPE t_comm_pattern
 
 TYPE, ABSTRACT :: t_comm_pattern_collection
@@ -70,7 +77,10 @@ TYPE, ABSTRACT :: t_comm_pattern_collection
 
     PROCEDURE(interface_setup_comm_pattern_collection), DEFERRED :: setup
     PROCEDURE(interface_delete_comm_pattern_collection), DEFERRED :: delete
-    PROCEDURE(interface_exchange_data_grf), DEFERRED :: exchange_data_grf
+    PROCEDURE(interface_exchange_data_grf_dp), DEFERRED :: exchange_data_grf_dp
+    PROCEDURE(interface_exchange_data_grf_sp), DEFERRED :: exchange_data_grf_sp
+
+    GENERIC :: exchange_data_grf => exchange_data_grf_dp, exchange_data_grf_sp
 END TYPE t_comm_pattern_collection
 
 TYPE t_p_comm_pattern
@@ -145,25 +155,36 @@ ABSTRACT INTERFACE
     INTEGER, INTENT(IN), OPTIONAL, TARGET :: add (:,:,:)
   END SUBROUTINE interface_exchange_data_i3d
 
-  SUBROUTINE interface_exchange_data_mult( &
+  SUBROUTINE interface_exchange_data_mult_dp( &
     p_pat, lacc, ndim2tot, recv, send, nshift)
-    IMPORT t_comm_pattern, t_ptr_3d
+    IMPORT t_comm_pattern, t_ptr_3d_dp
     CLASS(t_comm_pattern), TARGET, INTENT(INOUT) :: p_pat
     LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
-    TYPE(t_ptr_3d), PTR_INTENT(IN) :: recv(:)
-    TYPE(t_ptr_3d), PTR_INTENT(IN), OPTIONAL :: send(:)
+    TYPE(t_ptr_3d_dp), PTR_INTENT(IN) :: recv(:)
+    TYPE(t_ptr_3d_dp), PTR_INTENT(IN), OPTIONAL :: send(:)
     INTEGER, INTENT(IN)           :: ndim2tot
     INTEGER, OPTIONAL, INTENT(IN) :: nshift
-  END SUBROUTINE interface_exchange_data_mult
+  END SUBROUTINE interface_exchange_data_mult_dp
+
+  SUBROUTINE interface_exchange_data_mult_sp( &
+    p_pat, lacc, ndim2tot, recv, send, nshift)
+    IMPORT t_comm_pattern, t_ptr_3d_sp
+    CLASS(t_comm_pattern), TARGET, INTENT(INOUT) :: p_pat
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    TYPE(t_ptr_3d_sp), PTR_INTENT(IN) :: recv(:)
+    TYPE(t_ptr_3d_sp), PTR_INTENT(IN), OPTIONAL :: send(:)
+    INTEGER, INTENT(IN)           :: ndim2tot
+    INTEGER, OPTIONAL, INTENT(IN) :: nshift
+  END SUBROUTINE interface_exchange_data_mult_sp
 
   SUBROUTINE interface_exchange_data_mult_mixprec( &
     p_pat, lacc, nfields_dp, ndim2tot_dp, nfields_sp, ndim2tot_sp, recv_dp, send_dp, &
     recv_sp, send_sp, nshift)
-    IMPORT t_comm_pattern, t_ptr_3d, t_ptr_3d_sp
+    IMPORT t_comm_pattern, t_ptr_3d_dp, t_ptr_3d_sp
     CLASS(t_comm_pattern), TARGET, INTENT(INOUT) :: p_pat
     LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
-    TYPE(t_ptr_3d), PTR_INTENT(in), OPTIONAL :: recv_dp(:)
-    TYPE(t_ptr_3d), PTR_INTENT(in), OPTIONAL :: send_dp(:)
+    TYPE(t_ptr_3d_dp), PTR_INTENT(in), OPTIONAL :: recv_dp(:)
+    TYPE(t_ptr_3d_dp), PTR_INTENT(in), OPTIONAL :: send_dp(:)
     TYPE(t_ptr_3d_sp), PTR_INTENT(in), OPTIONAL :: recv_sp(:)
     TYPE(t_ptr_3d_sp), PTR_INTENT(in), OPTIONAL :: send_sp(:)
     INTEGER, INTENT(IN)           :: nfields_dp, ndim2tot_dp, nfields_sp, &
@@ -171,14 +192,23 @@ ABSTRACT INTERFACE
     INTEGER, OPTIONAL, INTENT(IN) :: nshift
   END SUBROUTINE interface_exchange_data_mult_mixprec
 
-  SUBROUTINE interface_exchange_data_4de1(p_pat, lacc, nfields, ndim2tot, recv, send)
+  SUBROUTINE interface_exchange_data_4de1_dp(p_pat, lacc, nfields, ndim2tot, recv, send)
     IMPORT t_comm_pattern, dp
     CLASS(t_comm_pattern), TARGET, INTENT(INOUT) :: p_pat
     LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
     REAL(dp), INTENT(INOUT)           :: recv(:,:,:,:)
     REAL(dp), INTENT(IN   ), OPTIONAL :: send(:,:,:,:)
     INTEGER, INTENT(IN)           :: nfields, ndim2tot
-  END SUBROUTINE interface_exchange_data_4de1
+  END SUBROUTINE interface_exchange_data_4de1_dp
+
+  SUBROUTINE interface_exchange_data_4de1_sp(p_pat, lacc, nfields, ndim2tot, recv, send)
+    IMPORT t_comm_pattern, sp
+    CLASS(t_comm_pattern), TARGET, INTENT(INOUT) :: p_pat
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    REAL(sp), INTENT(INOUT)           :: recv(:,:,:,:)
+    REAL(sp), INTENT(IN   ), OPTIONAL :: send(:,:,:,:)
+    INTEGER, INTENT(IN)           :: nfields, ndim2tot
+  END SUBROUTINE interface_exchange_data_4de1_sp
 
   SUBROUTINE interface_exchange_data_r2d(p_pat, lacc, recv, send, add, l_recv_exists)
     IMPORT t_comm_pattern, dp
@@ -250,16 +280,27 @@ ABSTRACT INTERFACE
     CLASS(t_comm_pattern_collection), INTENT(INOUT) :: pattern_collection
   END SUBROUTINE interface_delete_comm_pattern_collection
 
-  SUBROUTINE interface_exchange_data_grf(p_pat_coll, lacc, nfields, ndim2tot, &
+  SUBROUTINE interface_exchange_data_grf_dp(p_pat_coll, lacc, nfields, ndim2tot, &
        recv, send)
-    IMPORT t_comm_pattern_collection, t_ptr_3d
+    IMPORT t_comm_pattern_collection, t_ptr_3d_dp
     CLASS(t_comm_pattern_collection), TARGET, INTENT(INOUT) :: p_pat_coll
     LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
     INTEGER, INTENT(IN) :: nfields
     INTEGER, INTENT(IN) :: ndim2tot
     ! recv itself is intent(in), but the pointed to data will be modified
-    TYPE(t_ptr_3d), PTR_INTENT(in) :: recv(nfields), send(nfields)
-  END SUBROUTINE interface_exchange_data_grf
+    TYPE(t_ptr_3d_dp), PTR_INTENT(in) :: recv(nfields), send(nfields)
+  END SUBROUTINE interface_exchange_data_grf_dp
+
+  SUBROUTINE interface_exchange_data_grf_sp(p_pat_coll, lacc, nfields, ndim2tot, &
+       recv, send)
+    IMPORT t_comm_pattern_collection, t_ptr_3d_sp
+    CLASS(t_comm_pattern_collection), TARGET, INTENT(INOUT) :: p_pat_coll
+    LOGICAL, INTENT(IN) :: lacc ! If true, use openacc
+    INTEGER, INTENT(IN) :: nfields
+    INTEGER, INTENT(IN) :: ndim2tot
+    ! recv itself is intent(in), but the pointed to data will be modified
+    TYPE(t_ptr_3d_sp), PTR_INTENT(in) :: recv(nfields), send(nfields)
+  END SUBROUTINE interface_exchange_data_grf_sp
 END INTERFACE
 
 END MODULE mo_communication_types

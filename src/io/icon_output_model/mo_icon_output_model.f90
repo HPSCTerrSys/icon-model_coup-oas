@@ -1,15 +1,16 @@
-! @page pagecontrolmodelf901 Main program for the ICON icon_output model
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! @page pagecontrolmodelf901 Main program for the ICON icon_output model
+
 #include "iconfor_dsl_definitions.inc"
 !=============================================================================================
 MODULE mo_icon_output_model
@@ -67,12 +68,6 @@ MODULE mo_icon_output_model
   USE mo_icon_output_variables, ONLY: construct_icon_output_variables, destruct_icon_output_variables, &
        & patch_3d
 
-#ifndef __NO_ICON_COMIN__
-  USE mo_mpi,               ONLY: p_comm_comin
-  USE comin_host_interface, ONLY: mpi_handshake_dummy
-#endif
-
-
   IMPLICIT NONE
 
   PRIVATE
@@ -105,7 +100,7 @@ MODULE mo_icon_output_model
     zaxisTypeList = t_zaxisTypeList()
 
     !-------------------------------------------------------------------
-    CALL construct_icon_output_model(icon_output_namelist_filename,shr_namelist_filename)    
+    CALL construct_icon_output_model(icon_output_namelist_filename,shr_namelist_filename)
     !-------------------------------------------------------------------
 
     !-------------------------------------------------------------------
@@ -122,7 +117,7 @@ MODULE mo_icon_output_model
 
     !------------------------------------------------------------------
     ! write initial state
-    !------------------------------------------------------------------    
+    !------------------------------------------------------------------
 !     IF (output_mode%l_nml .and. .true.) THEN
 !     IF (output_mode%l_nml .AND. write_initial_state) THEN
 !       CALL write_initial_icon_output_timestep(patch_3d,icon_output_state(1),v_oce_sfc,v_sea_ice, operators_coefficients)
@@ -141,18 +136,18 @@ MODULE mo_icon_output_model
 
   END SUBROUTINE icon_output_driver
   !--------------------------------------------------------------------------
-  
+
   !--------------------------------------------------------------------------
   SUBROUTINE timestep_icon_output(output_step)
     INTEGER :: output_step
-    
+
     TYPE(datetime), POINTER  :: current_time => NULL()
     CHARACTER(LEN=32)        :: datestring
     CHARACTER(*), PARAMETER  :: method_name = "timestep_icon_output"
-  
+
     CALL message(method_name, "starts...")
     current_time => newNullDatetime()
-  
+
     DO WHILE(.not. isEndOfThisRun())
       output_step = output_step + 1
       ! update model date and time mtime based
@@ -161,17 +156,17 @@ MODULE mo_icon_output_model
       CALL datetimeToString(current_time, datestring)
       WRITE(message_text,'(2a,i10,2a)') TRIM(get_my_process_name()), ' begin of timestep =',output_step,'  datetime:  ', datestring
       CALL message (TRIM(method_name), message_text)
-      
+
       IF (output_mode%l_nml) CALL write_name_list_output(output_step)
- 
+
     ENDDO
-    
-    
+
+
     CALL message(method_name, "ended")
-  
+
   END SUBROUTINE timestep_icon_output
   !--------------------------------------------------------------------------
- 
+
   !--------------------------------------------------------------------------
   !>
   !!
@@ -241,7 +236,7 @@ MODULE mo_icon_output_model
 !      &                             dedicatedRestartProcs, num_test_pe, pio_type)
 !orig
 !pa
-!pa    
+!pa
 !pa    write(0,*)'construct_icon_output_model:pio_type=',pio_type
 !pa    write(0,*)'construct_icon_output_model:restartProcs=',dedicatedRestartProcs
     comp_id = get_my_process_type()
@@ -250,11 +245,6 @@ MODULE mo_icon_output_model
          &                          comp_id,num_prefetch_proc, num_test_pe,      &
          &                          pio_type)
     !pa
-
-#ifndef __NO_ICON_COMIN__
-    ! we dont participate at comin (yet) but we need to be friendly and shake hands
-    CALL mpi_handshake_dummy(p_comm_comin)
-#endif
 
     !-------------------------------------------------------------------
     ! 3.2 Initialize various timers
@@ -298,7 +288,7 @@ MODULE mo_icon_output_model
 
 
     CALL init_dbg_index(patch_3d%p_patch_2d(1))!(patch_2D(1))
-    !---------------------------------------------------------------------    
+    !---------------------------------------------------------------------
 !     IF (use_dummy_cell_closure) CALL create_dummy_cell_closure(patch_3d)
 
     ! initialize icon_output indices for debug output (including 3-dim lsm)
@@ -313,4 +303,3 @@ MODULE mo_icon_output_model
 
 
 END MODULE mo_icon_output_model
-

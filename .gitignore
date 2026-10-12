@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -18,6 +18,7 @@
 *.clw.d
 *.cu.d
 *.f90.d
+*.hip.cc.d
 .dirstamp
 /Makefile
 /c_binding.d
@@ -34,6 +35,7 @@
 /icon.mk
 /inlib.mk
 /run/SETUP.config
+/run/SETUP.config.install
 /run/collect.set-up.info
 /run/set-up.info
 /config/cscs/**/.spack-env/**
@@ -59,6 +61,9 @@ spack-configure-args.txt
 /version.c
 /xmod
 
+# Ignore build files from ragnarok
+/ragnarok/build
+
 # Dist stage files:
 /icon-*.tar.bz2
 
@@ -69,7 +74,6 @@ spack-configure-args.txt
 /run/*.run
 /run/*_member_id_mixed_*
 /run/*_member_id_double_*
-!/run/exp.nwptest_R02B06N07.run
 /run/*.status
 /run/checksuite.nwp/*.run
 /run/performance/pp.store_performance_*
@@ -89,11 +93,11 @@ spack-configure-args.txt
 /scripts/buildbot_scripts/probtest.*
 
 # Intermediate documentation files:
-/doc/Namelist_overview.aux
-/doc/Namelist_overview.log
-/doc/Namelist_overview.out
-/doc/Namelist_overview.synctex.gz
-/doc/Namelist_overview.toc
+/doc/Namelist_overview/Namelist_overview.aux
+/doc/Namelist_overview/Namelist_overview.log
+/doc/Namelist_overview/Namelist_overview.out
+/doc/Namelist_overview/Namelist_overview.synctex.gz
+/doc/Namelist_overview/Namelist_overview.toc
 
 # Mac OS files:
 *.dSYM
@@ -137,3 +141,10 @@ __pychache__
 /run/exp.*member_id*[0-9][0-9]
 scripts/buildbot_scripts/probtest.json
 scripts/buildbot_scripts/probtest.log
+
+# CI/CD artifacts and caches (see .gitlab-ci.yml):
+/.ci_dir/
+
+# Test stage files:
+test/unit-tests/**/*.x
+test/unit-tests/**/*.log

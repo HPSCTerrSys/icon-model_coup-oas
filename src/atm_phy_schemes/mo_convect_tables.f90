@@ -1,17 +1,15 @@
-!
-! Lookup tables for convective adjustment code
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
+
+! Lookup tables for convective adjustment code
 !  D. Salmond, CRAY (UK), August 1991, original code
 
 #if defined __xlC__ && !defined NOXLFPROCESS
@@ -25,6 +23,7 @@ MODULE mo_convect_tables
   USE mo_model_domain,            ONLY: p_patch  ! for debugging only
   USE mo_math_constants,          ONLY: rad2deg  ! for debugging only
   USE mo_lookup_tables_constants, ONLY: c3les, c3ies, c4les, c4ies, c5les, c5ies
+  USE mo_fortran_tools,           ONLY: assert_acc_device_only
 
   IMPLICIT NONE
 
@@ -102,6 +101,9 @@ MODULE mo_convect_tables
   ! new basic table bounds
   REAL(wp), PARAMETER :: flucupmin = 1000._wp
   REAL(wp), PARAMETER :: flucupmax = 8000._wp
+
+  !> Maximum temperature when the upper bound has been extended [K].
+  REAL(wp), PARAMETER :: tmax_extended = 3000._wp
 
   ! logical is fine and logical, but fp faster
   LOGICAL  :: lookupoverflow = .FALSE.          ! preset with false
@@ -464,68 +466,75 @@ CONTAINS
     REAL(wp) :: a,b,c,d,dx,ddx,x,bxa
     INTEGER  ::  jl
 
-    !$ACC DATA PRESENT(idx, zalpha, table)
-    !$ACC DATA PRESENT(ua) IF(PRESENT(ua))
-    !$ACC DATA PRESENT(dua) IF(PRESENT(dua))
+    !$ACC PARALLEL DEFAULT(PRESENT) NO_CREATE(ua, dua) ASYNC(1)
+    !$ACC LOOP GANG VECTOR PRIVATE(x, dx, ddx, a, b, c, d, bxa)
+    DO jl = jcs,size
 
-    IF (PRESENT(ua) .AND. .NOT. PRESENT(dua)) THEN
-      !$ACC PARALLEL ASYNC(1)
-      !$ACC LOOP GANG VECTOR PRIVATE(x, dx, ddx, a, b, c, d, bxa)
-      DO jl = jcs,size
+      x = zalpha(jl)
 
-        x = zalpha(jl)
+      ! derivative and second derivative approximations (2 flops)
 
-        ! derivative and second derivative approximations (2 flops)
+      dx   = table(1,idx(jl)+1) - table(1,idx(jl))
+      ddx  = table(2,idx(jl)+1) + table(2,idx(jl))
 
-        dx   = table(1,idx(jl)+1) - table(1,idx(jl))
-        ddx  = table(2,idx(jl)+1) + table(2,idx(jl))
+      ! determine coefficients (2 fma + 1 flop)
 
-        ! determine coefficients (2 fma + 1 flop)
+      a = ddx - 2._wp*dx
+      b = 3._wp*dx - ddx - table(2,idx(jl))
+      c = table(2,idx(jl))
+      d = table(1,idx(jl))
 
-        a = ddx - 2._wp*dx
-        b = 3._wp*dx - ddx - table(2,idx(jl))
-        c = table(2,idx(jl))
-        d = table(1,idx(jl))
+      ! Horner's scheme to compute the spline functions (3 fmas)
 
-        ! Horner's scheme to compute the spline functions (3 fmas)
-
-        bxa = b + x*a
-        ua(jl) = d + x*(c + x*bxa)
-      END DO
-      !$ACC END PARALLEL
-    ELSE IF (PRESENT(ua) .AND. PRESENT(dua)) THEN
-      !$ACC PARALLEL ASYNC(1)
-      !$ACC LOOP GANG VECTOR PRIVATE(x, dx, ddx, a, b, c, d, bxa)
-      DO jl = jcs,size
-
-        x = zalpha(jl)
-
-        ! derivate and second derivate approximations (2 flops)
-
-        dx   = table(1,idx(jl)+1) - table(1,idx(jl))
-        ddx  = table(2,idx(jl)+1) + table(2,idx(jl))
-
-        ! determine coefficients (2 fma + 1 flop)
-
-        a = ddx - 2._wp*dx
-        b = 3._wp*dx - ddx - table(2,idx(jl))
-        c = table(2,idx(jl))
-        d = table(1,idx(jl))
-
-        ! Horner's scheme to compute the spline functions (5 fmas + 1 flop)
-
-        bxa = b + x*a
-        ua(jl)  = d + x*(c + x*bxa)
-        dua(jl) = 20._wp*(c + x*(3._wp*bxa - b))
-      END DO
-      !$ACC END PARALLEL
-    END IF
-
-    !$ACC END DATA
-    !$ACC END DATA
-    !$ACC END DATA
+      bxa = b + x*a
+      IF (PRESENT(ua))   ua(jl) = d + x*(c + x*bxa)
+      IF (PRESENT(dua)) dua(jl) = 20._wp*(c + x*(3._wp*bxa - b))
+    END DO
+    !$ACC END PARALLEL
 
   END SUBROUTINE fetch_ua_spline
+
+  SUBROUTINE fetch_ua_spline_async(jcs,size,kidx,idx,zalpha,table,ua,dua)
+
+    INTEGER,            INTENT(in) :: jcs, size, kidx
+    INTEGER,            INTENT(in) :: idx(size)
+    REAL(wp),           INTENT(in) :: zalpha(size)
+    REAL(wp),           INTENT(in) :: table(1:2,lucupmin-2:lucupmax+1)
+
+    REAL(wp), OPTIONAL, INTENT(out) :: ua(size), dua(size)
+
+    REAL(wp) :: a,b,c,d,dx,ddx,x,bxa
+    INTEGER  ::  jl
+
+    !$ACC DATA COPYIN(kidx) ASYNC(1)
+    !$ACC PARALLEL DEFAULT(PRESENT) NO_CREATE(ua, dua) ASYNC(1)
+    !$ACC LOOP GANG VECTOR PRIVATE(x, dx, ddx, a, b, c, d, bxa)
+    DO jl = jcs,kidx
+
+      x = zalpha(jl)
+
+      ! derivative and second derivative approximations (2 flops)
+
+      dx   = table(1,idx(jl)+1) - table(1,idx(jl))
+      ddx  = table(2,idx(jl)+1) + table(2,idx(jl))
+
+      ! determine coefficients (2 fma + 1 flop)
+
+      a = ddx - 2._wp*dx
+      b = 3._wp*dx - ddx - table(2,idx(jl))
+      c = table(2,idx(jl))
+      d = table(1,idx(jl))
+
+      ! Horner's scheme to compute the spline functions (3 fmas)
+
+      bxa = b + x*a
+      IF (PRESENT(ua))   ua(jl) = d + x*(c + x*bxa)
+      IF (PRESENT(dua)) dua(jl) = 20._wp*(c + x*(3._wp*bxa - b))
+    END DO
+    !$ACC END PARALLEL
+    !$ACC END DATA
+
+  END SUBROUTINE fetch_ua_spline_async
 
 
   SUBROUTINE fetch_ua(size,idx,table,u)
@@ -785,7 +794,7 @@ CONTAINS
 
   SUBROUTINE prepare_ua_index_spline(name,jcs,size,temp,idx,zalpha, &
     &                                xi,nphase,zphase,iphase,       &
-    &                                klev,kblock,kblock_size)
+    &                                klev,kblock,kblock_size,extend_upper_limit)
 
     CHARACTER(len=*),   INTENT(in) :: name
 
@@ -804,8 +813,12 @@ CONTAINS
     REAL(wp), OPTIONAL, INTENT(out) :: zphase(size)
     INTEGER,  OPTIONAL, INTENT(out) :: iphase(size)
 
+    !> Extend upper temperature limit beyond table bounds.
+    LOGICAL, OPTIONAL, INTENT(IN) :: extend_upper_limit
+
     REAL(wp) :: ztt, ztshft, zinbounds, ztmin,ztmax,znphase,ztest
     INTEGER  ::  jl
+    LOGICAL :: lextend_upper_limit
 
     !---- Argument arrays - intent(in)
     !$ACC DATA PRESENT(temp)
@@ -819,17 +832,22 @@ CONTAINS
     ztmin = flucupmin
     ztmax = flucupmax
 
+    lextend_upper_limit = .FALSE.
+    IF (PRESENT(extend_upper_limit)) lextend_upper_limit = extend_upper_limit
+
     IF (PRESENT(xi)) THEN
 
       znphase = 0.0_wp
 
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(ztshft, ztt, ztest) &
-      !$ACC   REDUCTION(+: znphase) REDUCTION(*: zinbounds) ASYNC(1)
+      !$ACC   REDUCTION(+: znphase) REDUCTION(*: zinbounds) COPY(znphase, zinbounds) ASYNC(1)
       DO jl = jcs,size
 
         ztshft = FSEL(temp(jl)-tmelt,0._wp,1._wp)
         ztt = 20._wp*temp(jl)
-        zalpha(jl) = ztt - DINT(ztt)
+        IF (lextend_upper_limit .AND. ztt >= ztmax .AND. ztt < 20._wp * tmax_extended) &
+            & ztt = ztmax - 1e-6_wp
+        zalpha(jl) = ztt - AINT(ztt)
         idx(jl) = INT(ztt-ztshft)
 
         zinbounds = FSEL(ztmin-ztt,0._wp,zinbounds)
@@ -855,12 +873,14 @@ CONTAINS
 
     ELSE
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(ztshft, ztt) &
-      !$ACC   REDUCTION(*: zinbounds) ASYNC(1)
+      !$ACC   REDUCTION(*: zinbounds) ASYNC(1) COPY(zinbounds)
       DO jl = jcs,size
 
         ztshft = FSEL(temp(jl)-tmelt,0._wp,1._wp)
         ztt = 20._wp*temp(jl)
-        zalpha(jl) = ztt - DINT(ztt)
+        IF (lextend_upper_limit .AND. ztt >= ztmax .AND. ztt < 20._wp * tmax_extended) &
+            & ztt = ztmax - 1e-6_wp
+        zalpha(jl) = ztt - AINT(ztt)
         idx(jl) = INT(ztt-ztshft)
 
         zinbounds = FSEL(ztmin-ztt,0._wp,zinbounds)
@@ -881,7 +901,9 @@ CONTAINS
 
         DO jl = 1, size
           ztt = 20._wp*temp(jl)
-          IF ( ztt <= ztmin .OR. ztt >= ztmax ) THEN
+          IF (ztt <= ztmin &
+              & .OR. (.NOT. lextend_upper_limit .AND. ztt >= ztmax) &
+              & .OR. (lextend_upper_limit .AND. ztt >= 20._wp * tmax_extended)) THEN
 
             WRITE ( 0 , '(a,a,a,a,i5,a,i8,a,f8.2,a,f8.2,a,f8.2)' )                                 &
                  & ' Lookup table problem in ', TRIM(name), ' at ',                                &
@@ -938,7 +960,7 @@ CONTAINS
 
       DO jl = 1,size
 
-        ztt = DNINT(1000._wp*temp(jl))
+        ztt = ANINT(1000._wp*temp(jl))
         idx(jl) = INT(ztt)
 
         zinbounds(jl) = FSEL(ztmin-ztt,0._wp,zinbounds(jl))
@@ -966,7 +988,7 @@ CONTAINS
 
       DO jl = 1,size
 
-        ztt = DNINT(1000.0_wp*temp(jl))
+        ztt = ANINT(1000.0_wp*temp(jl))
         idx(jl) = INT(ztt)
 
         zinbounds(jl) = FSEL(ztmin-ztt,0._wp,zinbounds(jl))
@@ -1012,7 +1034,7 @@ CONTAINS
 
       ztshft = FSEL(temp(jl)-tmelt,0._wp,1._wp)
       ztt = 20._wp*temp(jl)
-      zalpha(nl) = ztt - DINT(ztt)
+      zalpha(nl) = ztt - AINT(ztt)
       idx(nl) = INT(ztt-ztshft)
 
       zinbounds = FSEL(ztmin-ztt,0._wp,zinbounds)
@@ -1027,11 +1049,12 @@ CONTAINS
 
   END SUBROUTINE lookup_ua_list_spline
 
-  SUBROUTINE lookup_ua_list_spline_2(name, size, kidx, list, temp, ua, dua, error_reporter)
+  SUBROUTINE lookup_ua_list_spline_2(name, size, kidx, list, temp, lacc, ua, dua, error_reporter)
     CHARACTER(len=*),   INTENT(in)  :: name
     INTEGER,            INTENT(in)  :: size, kidx
-    INTEGER,            INTENT(in)  :: list(kidx)
+    INTEGER,            INTENT(in)  :: list(size)
     REAL(wp),           INTENT(in)  :: temp(size)
+    LOGICAL,            INTENT(in)  :: lacc
     REAL(wp), OPTIONAL, INTENT(out) :: ua(size), dua(size)
     PROCEDURE(i_error_reporter), OPTIONAL :: error_reporter
 
@@ -1042,20 +1065,21 @@ CONTAINS
     REAL(wp) :: ztt, ztshft, zinbounds, ztmax, ztmin
     INTEGER :: nl, jl
 
-    !$ACC DATA PRESENT(list, temp) &
-    !$ACC   CREATE(idx, zalpha)
-    !$ACC DATA PRESENT(ua) IF(PRESENT(ua))
-    !$ACC DATA PRESENT(dua) IF(PRESENT(dua))
+    CALL assert_acc_device_only ('lookup_ua_list_spline_2', lacc)
+
+    !$ACC DATA PRESENT(list, temp, kidx) &
+    !$ACC   CREATE(idx, zalpha) ASYNC(1)
 
     zinbounds = 1.0_wp
     ztmin = flucupmin
     ztmax = flucupmax
 
     ! first compute all lookup indices and check if they are all within allowed bounds
+    ! DA: Don't do the check in OpenACC for the performance reasons
 
 !IBM* ASSERT(NODEPS)
-    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(jl, ztshft, ztt) &
-    !$ACC   REDUCTION(*: zinbounds) ASYNC(1)
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+    !$ACC LOOP GANG VECTOR PRIVATE(jl, ztshft, ztt) PRIVATE(zinbounds)
     DO nl = 1, kidx
       jl = list(nl)
       ztshft = FSEL(tmelt-temp(jl),1.0_wp,0.0_wp)
@@ -1066,8 +1090,10 @@ CONTAINS
       zinbounds = FSEL(ztmin-ztt,0.0_wp,zinbounds)
       zinbounds = FSEL(ztt-ztmax,0.0_wp,zinbounds)
     END DO
-    !$ACC END PARALLEL LOOP
+    !$ACC END PARALLEL
 
+#ifndef _OPENACC
+    ! Check is turned off for OpenACC
     ! if one index was out of bounds -> print error and exit
     IF (zinbounds == 0.0_wp) THEN
 
@@ -1086,11 +1112,9 @@ CONTAINS
 
       CALL lookuperror(name)
     END IF
+#endif
 
-    CALL fetch_ua_spline(1,kidx, idx, zalpha, tlucu, ua, dua)
-    !$ACC WAIT(1)
-    !$ACC END DATA
-    !$ACC END DATA
+    CALL fetch_ua_spline_async(1,size,kidx, idx, zalpha, tlucu, ua, dua)
     !$ACC END DATA
 
   END SUBROUTINE lookup_ua_list_spline_2
@@ -1121,7 +1145,7 @@ CONTAINS
     DO nl = 1,kidx
       jl = list(nl)
 
-      ztt = DNINT(1000._wp*temp(jl))
+      ztt = ANINT(1000._wp*temp(jl))
       idx(nl) = INT(ztt)
 
       zinbounds(jl) = FSEL(ztmin-ztt,0._wp,zinbounds(jl))
@@ -1168,7 +1192,7 @@ CONTAINS
 
       ztshft = FSEL(temp(jl)-tmelt,0._wp,1._wp)
       ztt = 20._wp*temp(jl)
-      zalpha(nl) = ztt - DINT(ztt)
+      zalpha(nl) = ztt - AINT(ztt)
       idx(nl) = INT(ztt-ztshft)
 
       zinbounds = FSEL(ztmin-ztt,0._wp,zinbounds)
@@ -1211,7 +1235,7 @@ CONTAINS
 
       jl = list(nl)
 
-      ztt = DNINT(1000._wp*temp(jl))
+      ztt = ANINT(1000._wp*temp(jl))
       idx(nl) = INT(ztt)
 
       zinbounds = FSEL(ztmin-ztt,0._wp,zinbounds)
@@ -1243,13 +1267,15 @@ CONTAINS
   !! Compute saturation specific humidity
   !! from the given temperature and pressure.
   !!
-  SUBROUTINE compute_qsat( kbdim, is, loidx, ppsfc, ptsfc, pqs, error_reporter )
+  SUBROUTINE compute_qsat( kbdim, is, loidx, ppsfc, ptsfc, pqs, lacc, error_reporter )
 
     INTEGER, INTENT(IN)  :: kbdim, is
     INTEGER ,INTENT(IN)  :: loidx(:)!<
     REAL(wp),INTENT(IN)  :: ppsfc (:)   !< surface pressure
     REAL(wp),INTENT(IN)  :: ptsfc (:)   !< SST
     REAL(wp),INTENT(INOUT) :: pqs   (:)   !< saturation specific humidity
+
+    LOGICAL,INTENT(IN) :: lacc
 
     PROCEDURE(i_error_reporter), OPTIONAL :: error_reporter
 
@@ -1259,12 +1285,14 @@ CONTAINS
     REAL(wp) :: ua(kbdim)
 
     !-----
+    CALL assert_acc_device_only ('compute_qsat', lacc)
+
     lookupoverflow = .FALSE.
 
     !$ACC DATA PRESENT(loidx, ppsfc, ptsfc, pqs) &
-    !$ACC   CREATE(ua)
+    !$ACC   CREATE(ua) COPYIN(is) ASYNC(1)
 
-    CALL lookup_ua_list_spline_2('compute_qsat',kbdim,is,loidx(:), ptsfc(:), ua(:), error_reporter=error_reporter)
+    CALL lookup_ua_list_spline_2('compute_qsat',kbdim,is,loidx(:), ptsfc(:), lacc=.TRUE., ua=ua(:), error_reporter=error_reporter)
 !
     !$ACC PARALLEL ASYNC(1)
     !$ACC LOOP GANG VECTOR PRIVATE(jl, zpap, zes, zcor)
@@ -1276,7 +1304,6 @@ CONTAINS
       pqs(jl) = zes*zcor
     ENDDO
     !$ACC END PARALLEL
-    !$ACC WAIT(1)
 !
     IF (lookupoverflow) CALL lookuperror ('compute_qsat')
     !$ACC END DATA

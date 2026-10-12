@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -17,15 +17,15 @@ MODULE mo_radiation_random
   LOGICAL, PARAMETER:: big_endian = (transfer(1_i8, 1) == 0)
 
   INTEGER, PARAMETER :: seed_size = 4
-  
+
   PUBLIC :: get_random, seed_size, get_random_rank3
   INTERFACE get_random_rank3
     MODULE PROCEDURE kissvec_mask_rank3, kissvec_all_rank3
   END INTERFACE get_random_rank3
   INTERFACE get_random
-    MODULE PROCEDURE kissvec_masked, kissvec_all 
+    MODULE PROCEDURE kissvec_masked, kissvec_all
   END INTERFACE get_random
-  
+
 CONTAINS
 
 #define m(k,n) (ieor (k, ishft (k, n)))
@@ -41,11 +41,11 @@ CONTAINS
   SUBROUTINE kissvec_all(kproma, kbdim, seed, harvest)
     INTEGER, INTENT(IN) :: kproma, kbdim
     INTEGER, INTENT(INOUT) :: seed(:,:) ! Dimension kbdim, seed_size or bigger
-    REAL(DP), INTENT(INOUT) :: harvest(KBDIM) 
-    
+    REAL(DP), INTENT(INOUT) :: harvest(KBDIM)
+
     INTEGER(i8) :: kiss
-    INTEGER :: jk 
-    
+    INTEGER :: jk
+
     !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR ASYNC(1)
     DO jk = 1, kproma
       seed(jk,1) = low_byte(69069_i8 * seed(jk,1) + 1327217885)
@@ -62,11 +62,11 @@ CONTAINS
   SUBROUTINE kissvec_all_rank3(kproma, kbdim, klev, ksamps, seed, harvest)
     INTEGER, INTENT(IN) :: kproma, kbdim, klev, ksamps
     INTEGER, INTENT(INOUT) :: seed(:,:) ! Dimension kbdim, seed_size or bigger
-    REAL(DP), INTENT(INOUT) :: harvest(KBDIM,klev,ksamps) 
-    
+    REAL(DP), INTENT(INOUT) :: harvest(KBDIM,klev,ksamps)
+
     INTEGER(i8) :: kiss
     INTEGER :: i,j,k
-    
+
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP SEQ
     DO k = 1, ksamps
@@ -92,12 +92,12 @@ CONTAINS
     mask, harvest)
     INTEGER, INTENT(IN) :: kproma, kbdim, klev, ksamps
     INTEGER, INTENT(INOUT) :: seed(:,:) ! Dimension kbdim, seed_size or bigger
-    LOGICAL,  INTENT(IN) :: mask(KBDIM,klev)    
-    REAL(DP), INTENT(INOUT) :: harvest(KBDIM,klev,ksamps) 
-    
+    LOGICAL,  INTENT(IN) :: mask(KBDIM,klev)
+    REAL(DP), INTENT(INOUT) :: harvest(KBDIM,klev,ksamps)
+
     INTEGER(i8) :: kiss
     INTEGER :: i,j,k
-    
+
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP SEQ
     DO k = 1, ksamps
@@ -128,15 +128,15 @@ CONTAINS
   SUBROUTINE kissvec_masked(kproma, kbdim, seed, mask, harvest)
     INTEGER, INTENT(IN) :: kproma, kbdim
     INTEGER, INTENT(INOUT) :: seed(:,:) ! Dimension kbdim, seed_size or bigger
-    LOGICAL,  INTENT(IN) :: mask(KBDIM)    
-    REAL(DP), INTENT(INOUT) :: harvest(KBDIM) 
-    
-    INTEGER(i8) :: kiss 
-    INTEGER     :: jk 
-    
+    LOGICAL,  INTENT(IN) :: mask(KBDIM)
+    REAL(DP), INTENT(INOUT) :: harvest(KBDIM)
+
+    INTEGER(i8) :: kiss
+    INTEGER     :: jk
+
     !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR ASYNC(1)
     DO jk = 1, kproma
-      IF(mask(jk)) THEN  
+      IF(mask(jk)) THEN
         seed(jk,1) = low_byte(69069_i8 * seed(jk,1) + 1327217885)
         seed(jk,2) = m (seed(jk,2), 13)
         seed(jk,2) = m (seed(jk,2), - 17)
@@ -145,10 +145,10 @@ CONTAINS
         seed(jk,4) = 30903 * iand (seed(jk,4), 65535) + ishft (seed(jk,4), - 16)
         kiss       = int(seed(jk,1), i8) + seed(jk,2) + ishft (seed(jk,3), 16) + seed(jk,4)
         harvest(jk) = low_byte(kiss)*2.328306e-10_dp + 0.5_dp
-      ELSE  
+      ELSE
         harvest(jk) = 0._dp
-      END IF 
+      END IF
     END DO
   END SUBROUTINE kissvec_masked
-  
+
 END MODULE mo_radiation_random

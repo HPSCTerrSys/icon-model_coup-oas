@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -125,7 +125,7 @@ if $0 == __FILE__ then
   # = MAIN =======================================================================
   ifile = ARGV[0]
 
-  if ifile.nil? or not File.exist?(ifile) 
+  if ifile.nil? or not File.exist?(ifile)
     warn "Cound not read input file '#{ifile}'!"
     warn "Usage:\n\t./findPath.rb <icon-grid-file>"
     exit(1)

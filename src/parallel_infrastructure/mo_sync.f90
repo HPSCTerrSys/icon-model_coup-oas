@@ -1,17 +1,16 @@
-! The module <i>mo_communication</i>
-! provides functionality for boundary exchange and global sums.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! The module <i>mo_communication</i>
+! provides functionality for boundary exchange and global sums.
 
 !----------------------------
 #include "icon_definitions.inc"
@@ -25,8 +24,9 @@ MODULE mo_sync
 !-------------------------------------------------------------------------
 
 
-USE mo_kind,               ONLY: sp, wp, dp, i8
+USE mo_kind,               ONLY: sp, wp, dp, i4, i8
 USE mo_exception,          ONLY: finish, message, message_text
+USE mo_exception,          ONLY: warning
 USE mo_model_domain,       ONLY: t_patch
 USE mo_decomposition_tools,ONLY: t_grid_domain_decomp_info, get_local_index, &
   &                              get_valid_local_index
@@ -37,22 +37,18 @@ USE mo_impl_constants,     ONLY: min_rlcell_int, min_rledge_int, min_rlvert_int,
 USE mo_impl_constants_grf, ONLY: grf_bdywidth_c, grf_bdywidth_e
 USE mo_io_units,           ONLY: find_next_free_unit, filename_max
 USE mo_mpi,                ONLY: p_pe, p_bcast, p_sum, p_max, p_min, p_send, p_recv,               &
-  &                              p_comm_work_test,  p_comm_work, p_n_work, my_process_is_mpi_test, &
+  &                              p_comm_work_test, p_comm_work, p_n_work, my_process_is_mpi_test,  &
   &                              get_my_mpi_all_id, process_mpi_all_test_id,                       &
-  &                              my_process_is_mpi_parallel, p_work_pe0,p_pe_work,                 &
-  &                              comm_lev, glob_comm, comm_proc0,   &
+  &                              my_process_is_mpi_parallel, p_work_pe0, p_pe_work,                &
+  &                              comm_lev, glob_comm, comm_proc0,                                  &
   &                              p_gather, p_gatherv, num_test_procs
-USE mo_mpi,                ONLY: i_am_accel_node
-USE mo_parallel_config, ONLY:p_test_run,   &
-  & n_ghost_rows, l_log_checks, l_fast_sum
-USE mo_communication,      ONLY: exchange_data, exchange_data_4de1,            &
-                                 exchange_data_mult, t_comm_pattern,           &
-                                 blk_no, idx_no, idx_1d, get_np_recv,          &
+USE mo_parallel_config,    ONLY:p_test_run, n_ghost_rows, l_log_checks, l_fast_sum
+USE mo_communication,      ONLY: exchange_data, exchange_data_4de1, t_comm_pattern, &
+                                 blk_no, idx_no, idx_1d, get_np_recv,               &
                                  get_np_send, get_pelist_recv, exchange_data_mult_mixprec
-
-USE mo_timer,           ONLY: timer_start, timer_stop, activate_sync_timers, &
-  & timer_global_sum, timer_omp_global_sum, timer_ordglb_sum!, timer_omp_ordglb_sum
-USE mo_fortran_tools,   ONLY: t_ptr_3d, t_ptr_3d_sp, insert_dimension, assert_acc_host_only, set_acc_host_or_device
+USE mo_timer,              ONLY: timer_start, timer_stop, activate_sync_timers, &
+  &                              timer_global_sum, timer_omp_global_sum, timer_ordglb_sum!, timer_omp_ordglb_sum
+USE fortran_support,       ONLY: t_ptr_3d_dp, t_ptr_3d_sp, insert_dimension, assert_acc_host_only, set_acc_host_or_device
 
 IMPLICIT NONE
 
@@ -62,13 +58,12 @@ PRIVATE
 !modules interface-------------------------------------------
 !subroutines
 PUBLIC :: sync_patch_array, check_patch_array, sync_idx,              &
-          global_sum_array, omp_global_sum_array,                     &
-          global_sum_array2, global_sum_array3, global_sum,           &
+          global_sum_array, omp_global_sum_array, global_sum,         &
           sync_patch_array_mult, global_min, global_max,              &
           sync_patch_array_4de1, decomposition_statistics,            &
           enable_sync_checks, disable_sync_checks,                    &
           cumulative_sync_patch_array, complete_cumulative_sync,      &
-          sync_patch_array_mult_mp
+          sync_patch_array_mult_mixprec
 
 !
 !variables
@@ -77,61 +72,6 @@ INTEGER, PARAMETER, PUBLIC :: SYNC_C = 1
 INTEGER, PARAMETER, PUBLIC :: SYNC_E = 2
 INTEGER, PARAMETER, PUBLIC :: SYNC_V = 3
 INTEGER, PARAMETER, PUBLIC :: SYNC_C1 = 4
-
-#if defined( __ROUNDOFF_CHECK )
-REAL(wp), PARAMETER :: ABS_TOL  = 1.0D-06
-REAL(wp), PARAMETER :: REL_TOL  = 1.0D-06
-REAL(wp), PARAMETER :: MACH_TOL = 3.0D-14
-#endif
-
-INTERFACE sync_patch_array
-  MODULE PROCEDURE sync_patch_array_r2
-  MODULE PROCEDURE sync_patch_array_r3
-  MODULE PROCEDURE sync_patch_array_s3
-  MODULE PROCEDURE sync_patch_array_i2
-  MODULE PROCEDURE sync_patch_array_i3
-  MODULE PROCEDURE sync_patch_array_l2
-  MODULE PROCEDURE sync_patch_array_l3
-END INTERFACE
-
-INTERFACE check_patch_array
-  MODULE PROCEDURE check_patch_array_2
-  MODULE PROCEDURE check_patch_array_3
-  MODULE PROCEDURE check_patch_array_4
-END INTERFACE
-
-INTERFACE global_min
-  MODULE PROCEDURE global_min_0d
-  MODULE PROCEDURE global_min_1d
-  MODULE PROCEDURE global_min_0di
-END INTERFACE
-
-INTERFACE global_max
-  MODULE PROCEDURE global_max_0d
-  MODULE PROCEDURE global_max_1d
-  MODULE PROCEDURE global_max_0di
-END INTERFACE
-
-INTERFACE global_sum
-  MODULE PROCEDURE global_sum_0d
-  MODULE PROCEDURE global_sum_0di
-  MODULE PROCEDURE global_sum_1d
-  MODULE PROCEDURE global_sum_1di
-END INTERFACE
-
-INTERFACE global_sum_array
-  MODULE PROCEDURE global_sum_array_0d
-  MODULE PROCEDURE global_sum_array_0di
-  MODULE PROCEDURE global_sum_array_1d
-  MODULE PROCEDURE global_sum_array_2d
-  MODULE PROCEDURE global_sum_array_3d
-END INTERFACE
-
-INTERFACE omp_global_sum_array
-  MODULE PROCEDURE omp_global_sum_array_1d
-  MODULE PROCEDURE omp_global_sum_array_2d
-END INTERFACE
-
 
 ! Unit for logging sync errors
 INTEGER, SAVE :: log_unit = -1
@@ -148,24 +88,124 @@ LOGICAL, SAVE :: do_sync_checks = .FALSE.
 !> Type definition for "cumulative syncs": These are boundary
 !  exchanges for 3D cell-based fields, collecting as many fields as
 !  possible before actually performing the sync.
-TYPE t_cumulative_sync
-  REAL(wp),      POINTER :: f3d(:,:,:)
-  TYPE(t_patch), POINTER :: p_patch
-END TYPE t_cumulative_sync
+TYPE t_cumulative_sync_sp
+  REAL(sp),      POINTER :: f3d(:,:,:) => NULL()
+  TYPE(t_patch), POINTER :: p_patch    => NULL()
+END TYPE t_cumulative_sync_sp
+
+TYPE t_cumulative_sync_dp
+  REAL(dp),      POINTER :: f3d(:,:,:) => NULL()
+  TYPE(t_patch), POINTER :: p_patch    => NULL()
+END TYPE t_cumulative_sync_dp
 
 !> max. no. fields that can be handled by "sync_patch_array_mult"
 INTEGER, PARAMETER :: MAX_CUMULATIVE_SYNC = 5
 !> No. of pending cumulative sync; dim (typ,patch_id,fieldno)
-INTEGER :: ncumul_sync(4,max_dom) = 0
+INTEGER :: ncumul_sync_sp(4,max_dom) = 0
+INTEGER :: ncumul_sync_dp(4,max_dom) = 0
 !> List of cumulative sync fields:
-TYPE(t_cumulative_sync) :: cumul_sync(4,max_dom,MAX_CUMULATIVE_SYNC)
+TYPE(t_cumulative_sync_sp) :: cumul_sync_sp(4,max_dom,MAX_CUMULATIVE_SYNC)
+TYPE(t_cumulative_sync_dp) :: cumul_sync_dp(4,max_dom,MAX_CUMULATIVE_SYNC)
 
-  INTERFACE sync_patch_array_mult
-    MODULE PROCEDURE sync_patch_array_mult_dp
-    MODULE PROCEDURE sync_patch_array_mult_sp
-  END INTERFACE sync_patch_array_mult
+INTERFACE sync_patch_array
+  MODULE PROCEDURE sync_patch_array_2d_sp
+  MODULE PROCEDURE sync_patch_array_2d_dp
+  MODULE PROCEDURE sync_patch_array_2d_int
+  MODULE PROCEDURE sync_patch_array_2d_bool
+  MODULE PROCEDURE sync_patch_array_3d_sp
+  MODULE PROCEDURE sync_patch_array_3d_dp
+  MODULE PROCEDURE sync_patch_array_3d_int
+  MODULE PROCEDURE sync_patch_array_3d_bool
+END INTERFACE
 
-  CHARACTER(len=*), PARAMETER :: modname = 'mo_sync'
+INTERFACE check_patch_array
+  MODULE PROCEDURE check_patch_array_2d_sp
+  MODULE PROCEDURE check_patch_array_2d_dp
+  MODULE PROCEDURE check_patch_array_3d_sp
+  MODULE PROCEDURE check_patch_array_3d_dp
+  MODULE PROCEDURE check_patch_array_4d_sp
+  MODULE PROCEDURE check_patch_array_4d_dp
+END INTERFACE
+
+INTERFACE global_min
+  MODULE PROCEDURE global_min_0d_sp
+  MODULE PROCEDURE global_min_0d_dp
+  MODULE PROCEDURE global_min_0d_int
+  MODULE PROCEDURE global_min_1d_sp
+  MODULE PROCEDURE global_min_1d_dp
+END INTERFACE
+
+INTERFACE global_max
+  MODULE PROCEDURE global_max_0d_sp
+  MODULE PROCEDURE global_max_0d_dp
+  MODULE PROCEDURE global_max_0d_int
+  MODULE PROCEDURE global_max_1d_sp
+  MODULE PROCEDURE global_max_1d_dp
+END INTERFACE
+
+INTERFACE global_sum
+  MODULE PROCEDURE global_sum_0d_sp
+  MODULE PROCEDURE global_sum_0d_dp
+  MODULE PROCEDURE global_sum_0d_int
+  MODULE PROCEDURE global_sum_1d_sp
+  MODULE PROCEDURE global_sum_1d_dp
+  MODULE PROCEDURE global_sum_1d_int
+END INTERFACE
+
+INTERFACE global_sum_array
+  MODULE PROCEDURE global_sum_array_0d_sp
+  MODULE PROCEDURE global_sum_array_0d_dp
+  MODULE PROCEDURE global_sum_array_0d_int
+  MODULE PROCEDURE global_sum_array_1d_sp
+  MODULE PROCEDURE global_sum_array_1d_dp
+  MODULE PROCEDURE global_sum_array_2d_sp
+  MODULE PROCEDURE global_sum_array_2d_dp
+  MODULE PROCEDURE global_sum_array_3d_sp
+  MODULE PROCEDURE global_sum_array_3d_dp
+END INTERFACE
+
+INTERFACE omp_global_sum_array
+  MODULE PROCEDURE omp_global_sum_array_1d_dp
+  MODULE PROCEDURE omp_global_sum_array_2d_dp
+  MODULE PROCEDURE omp_global_sum_array_3d_dp
+END INTERFACE
+
+INTERFACE order_insensit_sum
+  MODULE PROCEDURE order_insensit_sum_sp
+  MODULE PROCEDURE order_insensit_sum_dp
+END INTERFACE
+
+INTERFACE omp_order_insensit_sum
+  MODULE PROCEDURE omp_order_insensit_sum_sp
+  MODULE PROCEDURE omp_order_insensit_sum_dp
+END INTERFACE
+
+INTERFACE sync_patch_array_mult ! All routines here call sync_patch_array_mult_mixprec
+  MODULE PROCEDURE sync_patch_array_mult_f3din_sp
+  MODULE PROCEDURE sync_patch_array_mult_f3din_f4din_sp
+  MODULE PROCEDURE sync_patch_array_mult_f3din_f3din_arr_sp
+  MODULE PROCEDURE sync_patch_array_mult_f3din_dp
+  MODULE PROCEDURE sync_patch_array_mult_f3din_f4din_dp
+  MODULE PROCEDURE sync_patch_array_mult_f3din_f3din_arr_dp
+END INTERFACE
+
+INTERFACE sync_patch_array_4de1
+  MODULE PROCEDURE sync_patch_array_4de1_sp
+  MODULE PROCEDURE sync_patch_array_4de1_dp
+END INTERFACE
+
+INTERFACE cumulative_sync_patch_array
+  MODULE PROCEDURE cumulative_sync_patch_array_sp
+  MODULE PROCEDURE cumulative_sync_patch_array_dp
+END INTERFACE
+
+INTERFACE check_result
+  MODULE PROCEDURE check_result_sp
+  MODULE PROCEDURE check_result_dp
+END INTERFACE
+
+
+CHARACTER(len=*), PARAMETER :: modname = 'mo_sync'
 
 CONTAINS
 
@@ -205,32 +245,34 @@ END SUBROUTINE disable_sync_checks
 !-------------------------------------------------------------------------
 !> Does boundary exchange for a 3-D REAL array.
 !
-SUBROUTINE sync_patch_array_r3(typ, p_patch, arr, opt_varname)
+SUBROUTINE sync_patch_array_3d_dp(typ, p_patch, arr, lacc, opt_varname)
    INTEGER,       INTENT(IN)    :: typ
    TYPE(t_patch), TARGET, INTENT(IN) :: p_patch
-   REAL(wp),      INTENT(INOUT) :: arr(:,:,:)
+   REAL(dp),      INTENT(INOUT) :: arr(:,:,:)
+   LOGICAL, INTENT(IN) :: lacc
    CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
    CLASS(t_comm_pattern), POINTER :: p_pat
 
    ! If this is a verification run, check consistency before doing boundary exchange
    IF (p_test_run .AND. do_sync_checks) &
-     CALL check_patch_array_3(typ, p_patch, arr, opt_varname)
+     CALL check_patch_array(typ, p_patch, arr, lacc=lacc, opt_varname=opt_varname)
 
    ! Boundary exchange for work PEs
     IF(my_process_is_mpi_parallel()) THEN
       p_pat => comm_pat_of_type(p_patch, typ)
-      CALL exchange_data(p_pat=p_pat, lacc=i_am_accel_node, recv=arr)
+      CALL exchange_data(p_pat=p_pat, lacc=lacc, recv=arr)
     ENDIF
-END SUBROUTINE sync_patch_array_r3
+END SUBROUTINE sync_patch_array_3d_dp
 
 
 !-------------------------------------------------------------------------
 !> Does boundary exchange for a 3-D single precision array.
 !
-SUBROUTINE sync_patch_array_s3(typ, p_patch, arr, opt_varname)
+SUBROUTINE sync_patch_array_3d_sp(typ, p_patch, arr, lacc, opt_varname)
    INTEGER,       INTENT(IN)    :: typ
    TYPE(t_patch), TARGET, INTENT(IN)    :: p_patch
    REAL(sp),      INTENT(INOUT) :: arr(:,:,:)
+   LOGICAL, INTENT(IN) :: lacc
    CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
    CLASS(t_comm_pattern), POINTER :: p_pat
    CHARACTER(len=4), SAVE, TARGET :: default_varname = 'sync'
@@ -243,16 +285,15 @@ SUBROUTINE sync_patch_array_s3(typ, p_patch, arr, opt_varname)
      ELSE
        varname => default_varname
      ENDIF
-     CALL check_patch_array_sp(typ, p_patch, arr, varname)
+     CALL check_patch_array(typ, p_patch, arr, lacc=lacc, opt_varname=varname)
    ENDIF
 
    ! Boundary exchange for work PEs
    IF(my_process_is_mpi_parallel()) THEN
       p_pat => comm_pat_of_type(p_patch, typ)
-      CALL exchange_data(p_pat=p_pat, lacc=i_am_accel_node, recv=arr)
+      CALL exchange_data(p_pat=p_pat, lacc=lacc, recv=arr)
    ENDIF
-END SUBROUTINE sync_patch_array_s3
-
+END SUBROUTINE sync_patch_array_3d_sp
 
 !-------------------------------------------------------------------------
 !> Does boundary exchange for a 3-D INTEGER array.
@@ -260,47 +301,64 @@ END SUBROUTINE sync_patch_array_s3
 !  @note This implementation does not perform a consistency check
 !        (p_test_run)!
 !
-SUBROUTINE sync_patch_array_i3(typ, p_patch, arr)
+SUBROUTINE sync_patch_array_3d_int(typ, p_patch, arr, lacc)
    INTEGER,       INTENT(IN)    :: typ
    TYPE(t_patch), TARGET, INTENT(IN) :: p_patch
    INTEGER,       INTENT(INOUT) :: arr(:,:,:)
+   LOGICAL, INTENT(IN) :: lacc
    CLASS(t_comm_pattern), POINTER :: p_pat
 
    ! Boundary exchange for work PEs
    IF(my_process_is_mpi_parallel()) THEN
       p_pat => comm_pat_of_type(p_patch, typ)
-      CALL exchange_data(p_pat=p_pat, lacc=i_am_accel_node, recv=arr)
+      CALL exchange_data(p_pat=p_pat, lacc=lacc, recv=arr)
    ENDIF
-END SUBROUTINE sync_patch_array_i3
+END SUBROUTINE sync_patch_array_3d_int
 
-  SUBROUTINE sync_patch_array_l3(typ, p_patch, arr)
-    INTEGER,       INTENT(IN)    :: typ
-    TYPE(t_patch), TARGET, INTENT(IN) :: p_patch
-    LOGICAL,       INTENT(INOUT) :: arr(:,:,:)
-    CLASS(t_comm_pattern), POINTER :: p_pat
+SUBROUTINE sync_patch_array_3d_bool(typ, p_patch, arr, lacc)
+   INTEGER,       INTENT(IN)    :: typ
+   TYPE(t_patch), TARGET, INTENT(IN) :: p_patch
+   LOGICAL,       INTENT(INOUT) :: arr(:,:,:)
+   LOGICAL, INTENT(IN) :: lacc
+   CLASS(t_comm_pattern), POINTER :: p_pat
 
-    ! Boundary exchange for work PEs
-    IF(my_process_is_mpi_parallel()) THEN
-      p_pat => comm_pat_of_type(p_patch, typ)
-      CALL exchange_data(p_pat=p_pat, lacc=i_am_accel_node, recv=arr)
-    ENDIF
-  END SUBROUTINE sync_patch_array_l3
+   ! Boundary exchange for work PEs
+   IF(my_process_is_mpi_parallel()) THEN
+     p_pat => comm_pat_of_type(p_patch, typ)
+     CALL exchange_data(p_pat=p_pat, lacc=lacc, recv=arr)
+   ENDIF
+END SUBROUTINE sync_patch_array_3d_bool
 
 
 !-------------------------------------------------------------------------
 !> Does boundary exchange for a 2-D REAL array.
 !
-SUBROUTINE sync_patch_array_r2(typ, p_patch, arr, opt_varname)
+SUBROUTINE sync_patch_array_2d_sp(typ, p_patch, arr, lacc, opt_varname)
+  INTEGER,       INTENT(IN)    :: typ
+  TYPE(t_patch), INTENT(IN) :: p_patch
+  REAL(sp), TARGET, INTENT(INOUT) :: arr(:,:)
+  LOGICAL, INTENT(IN) :: lacc
+  CHARACTER*(*), INTENT(IN), OPTIONAL :: opt_varname
+  ! local variable
+  REAL(sp), POINTER :: arr3(:,:,:)
+
+  CALL insert_dimension(arr3, arr, 2)
+  CALL sync_patch_array(typ, p_patch, arr3, lacc=lacc, opt_varname=opt_varname)
+END SUBROUTINE sync_patch_array_2d_sp
+
+
+SUBROUTINE sync_patch_array_2d_dp(typ, p_patch, arr, lacc, opt_varname)
    INTEGER,       INTENT(IN)    :: typ
    TYPE(t_patch), INTENT(IN) :: p_patch
-   REAL(wp), TARGET, INTENT(INOUT) :: arr(:,:)
+   REAL(dp), TARGET, INTENT(INOUT) :: arr(:,:)
+   LOGICAL, INTENT(IN) :: lacc
    CHARACTER*(*), INTENT(IN), OPTIONAL :: opt_varname
    ! local variable
-   REAL(wp), POINTER :: arr3(:,:,:)
+   REAL(dp), POINTER :: arr3(:,:,:)
 
    CALL insert_dimension(arr3, arr, 2)
-   CALL sync_patch_array_r3(typ, p_patch, arr3, opt_varname)
-END SUBROUTINE sync_patch_array_r2
+   CALL sync_patch_array(typ, p_patch, arr3, lacc=lacc, opt_varname=opt_varname)
+END SUBROUTINE sync_patch_array_2d_dp
 
 
 !-------------------------------------------------------------------------
@@ -309,205 +367,163 @@ END SUBROUTINE sync_patch_array_r2
 !  @note This implementation does not perform a consistency check
 !        (p_test_run)!
 !
-SUBROUTINE sync_patch_array_i2(typ, p_patch, arr)
+SUBROUTINE sync_patch_array_2d_int(typ, p_patch, arr, lacc)
    INTEGER,       INTENT(IN)    :: typ
    TYPE(t_patch), INTENT(IN)    :: p_patch
    INTEGER, TARGET, INTENT(INOUT) :: arr(:,:)
+   LOGICAL, INTENT(IN) :: lacc
    ! local variable
    INTEGER, POINTER :: arr3(:,:,:)
 
    CALL insert_dimension(arr3, arr, 2)
-   CALL sync_patch_array_i3(typ, p_patch, arr3)
-END SUBROUTINE sync_patch_array_i2
+   CALL sync_patch_array(typ, p_patch, arr3, lacc=lacc)
+END SUBROUTINE sync_patch_array_2d_int
 
-  SUBROUTINE sync_patch_array_l2(typ, p_patch, arr)
+  SUBROUTINE sync_patch_array_2d_bool(typ, p_patch, arr, lacc)
     INTEGER,       INTENT(IN)    :: typ
     TYPE(t_patch), INTENT(IN)    :: p_patch
     LOGICAL, TARGET, INTENT(INOUT) :: arr(:,:)
+   LOGICAL, INTENT(IN) :: lacc
     ! local variable
     LOGICAL, POINTER :: arr3(:,:,:)
 
     CALL insert_dimension(arr3, arr, 2)
-    CALL sync_patch_array_l3(typ, p_patch, arr3)
-  END SUBROUTINE sync_patch_array_l2
+    CALL sync_patch_array(typ, p_patch, arr3, lacc=lacc)
+  END SUBROUTINE sync_patch_array_2d_bool
 
 
-!-------------------------------------------------------------------------
-!! Does boundary exchange for up to 5 3D cell-based fields and/or a 4D field.
-!! The 4D field can alternatively be passed as an array of 3D fields.
-!!
-SUBROUTINE sync_patch_array_mult_dp(typ, p_patch, nfields, f3din1, f3din2, f3din3, &
-                                 f3din4, f3din5, f4din, f3din_arr, opt_varname)
+SUBROUTINE sync_patch_array_mult_f3din_dp(typ, p_patch, nfields, lacc, f3din1, f3din2, f3din3, f3din4, f3din5, opt_varname)
 
-   INTEGER, INTENT(IN)             :: typ
-   TYPE(t_patch), INTENT(IN), TARGET :: p_patch
-   INTEGER,     INTENT(IN)         :: nfields
+  INTEGER, INTENT(IN) :: typ
+  TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+  INTEGER, INTENT(IN) :: nfields
+  LOGICAL, INTENT(IN) :: lacc
 
-   REAL(dp), OPTIONAL, INTENT(INOUT) ::  f3din1(:,:,:), f3din2(:,:,:), f3din3(:,:,:), &
-      &                                  f3din4(:,:,:), f3din5(:,:,:), f4din(:,:,:,:)
-   TYPE(t_ptr_3d), OPTIONAL, INTENT(INOUT) :: f3din_arr(:)
+  REAL(dp), TARGET,           INTENT(INOUT) :: f3din1(:,:,:)
+  REAL(dp), TARGET, OPTIONAL, INTENT(INOUT) :: f3din2(:,:,:), f3din3(:,:,:), &
+    &                                          f3din4(:,:,:), f3din5(:,:,:)
+  CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
 
-   CLASS(t_comm_pattern), POINTER :: p_pat
-   CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
-   INTEGER :: i
-   INTEGER :: ndim2tot ! Sum of second dimensions over all input fields
+  CALL sync_patch_array_mult_mixprec(typ=typ, p_patch=p_patch, nfields_sp=0, nfields_dp=nfields, lacc=lacc, &
+    &                                f3din1_dp=f3din1, f3din2_dp=f3din2, f3din3_dp=f3din3, &
+    &                                f3din4_dp=f3din4, f3din5_dp=f3din5, opt_varname=opt_varname)
+END SUBROUTINE sync_patch_array_mult_f3din_dp
 
-!-----------------------------------------------------------------------
 
-   p_pat => comm_pat_of_type(p_patch, typ)
+SUBROUTINE sync_patch_array_mult_f3din_f4din_dp(typ, p_patch, nfields, lacc, f3din1, f3din2, f3din3, f3din4, f3din5, f4din, opt_varname)
+  INTEGER, INTENT(IN) :: typ
+  TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+  INTEGER, INTENT(IN) :: nfields
+  LOGICAL, INTENT(IN) :: lacc
 
-   ! If this is a verification run, check consistency before doing boundary exchange
-   IF (p_test_run .AND. do_sync_checks) THEN
-     IF (PRESENT(f4din)) THEN
-       DO i = 1, SIZE(f4din,4)
-         CALL check_patch_array_3(typ, p_patch, f4din(:,:,:,i), opt_varname)
-       ENDDO
-     ENDIF
+  REAL(dp), TARGET, INTENT(INOUT) :: f4din(:,:,:,:)
+  REAL(dp), TARGET, OPTIONAL, INTENT(INOUT) :: f3din1(:,:,:), f3din2(:,:,:), f3din3(:,:,:), &
+                                               f3din4(:,:,:), f3din5(:,:,:)
+  CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
 
-     IF (PRESENT(f3din_arr)) THEN
-       DO i = 1, SIZE(f3din_arr)
-         CALL check_patch_array_3(typ, p_patch, f3din_arr(i)%p, opt_varname)
-       ENDDO
-     ENDIF
+  CALL sync_patch_array_mult_mixprec(typ=typ, p_patch=p_patch, nfields_sp=0, nfields_dp=nfields, lacc=lacc,  &
+    &                                f3din1_dp=f3din1, f3din2_dp=f3din2, f3din3_dp=f3din3, f3din4_dp=f3din4, &
+    &                                f3din5_dp=f3din5, f4din_dp=f4din, opt_varname=opt_varname)
+END SUBROUTINE sync_patch_array_mult_f3din_f4din_dp
 
-     IF (PRESENT(f3din1)) CALL check_patch_array_3(typ, p_patch, f3din1, opt_varname)
-     IF (PRESENT(f3din2)) CALL check_patch_array_3(typ, p_patch, f3din2, opt_varname)
-     IF (PRESENT(f3din3)) CALL check_patch_array_3(typ, p_patch, f3din3, opt_varname)
-     IF (PRESENT(f3din4)) CALL check_patch_array_3(typ, p_patch, f3din4, opt_varname)
-     IF (PRESENT(f3din5)) CALL check_patch_array_3(typ, p_patch, f3din5, opt_varname)
-   ENDIF
 
-   ! Boundary exchange for work PEs
-   IF(my_process_is_mpi_parallel()) THEN
-     IF (PRESENT(f4din)) THEN
-       ndim2tot = SIZE(f4din,4)*SIZE(f4din,2)
-     ELSE
-       ndim2tot = 0
-     ENDIF
-     IF (PRESENT(f3din_arr)) THEN
-       DO i = 1, SIZE(f3din_arr)
-         ndim2tot = ndim2tot + SIZE(f3din_arr(i)%p,2)
-       ENDDO
-     ENDIF
-     IF (PRESENT(f3din1)) ndim2tot = ndim2tot+SIZE(f3din1,2)
-     IF (PRESENT(f3din2)) ndim2tot = ndim2tot+SIZE(f3din2,2)
-     IF (PRESENT(f3din3)) ndim2tot = ndim2tot+SIZE(f3din3,2)
-     IF (PRESENT(f3din4)) ndim2tot = ndim2tot+SIZE(f3din4,2)
-     IF (PRESENT(f3din5)) ndim2tot = ndim2tot+SIZE(f3din5,2)
+SUBROUTINE sync_patch_array_mult_f3din_f3din_arr_dp(typ, p_patch, nfields, lacc, f3din1, f3din2, f3din3, f3din4, f3din5, f3din_arr, opt_varname)
+  INTEGER, INTENT(IN) :: typ
+  TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+  INTEGER, INTENT(IN) :: nfields
+  LOGICAL, INTENT(IN) :: lacc
 
-     CALL exchange_data_mult(p_pat=p_pat, lacc=i_am_accel_node, &
-       &                     nfields=nfields, ndim2tot=ndim2tot, recv1=f3din1, recv2=f3din2, &
-       &                     recv3=f3din3, recv4=f3din4, recv5=f3din5, recv4d=f4din , &
-       &                     recv3d_arr=f3din_arr)
-   ENDIF
+  REAL(dp), TARGET, OPTIONAL, INTENT(INOUT) :: f3din1(:,:,:), f3din2(:,:,:), f3din3(:,:,:), &
+                                               f3din4(:,:,:), f3din5(:,:,:)
+  TYPE(t_ptr_3d_dp), INTENT(INOUT) :: f3din_arr(:)
+  CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
 
-END SUBROUTINE sync_patch_array_mult_dp
+  CALL sync_patch_array_mult_mixprec(typ=typ, p_patch=p_patch, nfields_sp=0, nfields_dp=nfields, lacc=lacc,  &
+    &                                f3din1_dp=f3din1, f3din2_dp=f3din2, f3din3_dp=f3din3, f3din4_dp=f3din4, &
+    &                                f3din5_dp=f3din5, f3din_arr_dp=f3din_arr, opt_varname=opt_varname)
+END SUBROUTINE sync_patch_array_mult_f3din_f3din_arr_dp
 
-!-------------------------------------------------------------------------
-!! Does boundary exchange for up to 5 3D cell-based fields and/or a 4D field.
-!! The 4D field can alternatively be passed as an array of 3D fields.
-!!
-SUBROUTINE sync_patch_array_mult_sp(typ, p_patch, nfields, f3din1, f3din2, f3din3, &
-                                 f3din4, f3din5, f4din, f3din_arr, opt_varname)
 
-   INTEGER, INTENT(IN)             :: typ
-   TYPE(t_patch), INTENT(IN), TARGET :: p_patch
-   INTEGER,     INTENT(IN)         :: nfields
+SUBROUTINE sync_patch_array_mult_f3din_sp(typ, p_patch, nfields, lacc, f3din1, f3din2, f3din3, f3din4, f3din5, opt_varname)
+  INTEGER, INTENT(IN) :: typ
+  TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+  INTEGER, INTENT(IN) :: nfields
+  LOGICAL, INTENT(IN) :: lacc
 
-   REAL(sp), TARGET, INTENT(INOUT) :: f3din1(:,:,:)
-   REAL(sp), TARGET, OPTIONAL, INTENT(INOUT) :: f3din2(:,:,:), f3din3(:,:,:), &
-      &                           f3din4(:,:,:), f3din5(:,:,:), f4din(:,:,:,:)
-   TYPE(t_ptr_3d_sp), OPTIONAL, INTENT(INOUT) :: f3din_arr(:)
+  REAL(sp), TARGET, INTENT(INOUT) :: f3din1(:,:,:)
+  REAL(sp), TARGET, OPTIONAL, INTENT(INOUT) :: f3din2(:,:,:), f3din3(:,:,:), &
+                                               f3din4(:,:,:), f3din5(:,:,:)
+  CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
 
-   CLASS(t_comm_pattern), POINTER :: p_pat
-   CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
-   INTEGER :: i, nfields_
-   INTEGER :: ndim2tot ! Sum of second dimensions over all input fields
-   TYPE(t_ptr_3d_sp) :: fld(nfields)
-   CHARACTER(len=*), PARAMETER :: routine &
-        = modname//'::sync_patch_array_mult_sp'
-!-----------------------------------------------------------------------
+  CALL sync_patch_array_mult_mixprec(typ=typ, p_patch=p_patch, nfields_sp=nfields, nfields_dp=0, lacc=lacc,  &
+    &                                f3din1_sp=f3din1, f3din2_sp=f3din2, f3din3_sp=f3din3, f3din4_sp=f3din4, &
+    &                                f3din5_sp=f3din5, opt_varname=opt_varname)
+END SUBROUTINE sync_patch_array_mult_f3din_sp
 
-   p_pat => comm_pat_of_type(p_patch, typ)
 
-   nfields_ = 0
-   nfields_ = nfields_ + 1
-   ndim2tot = SIZE(f3din1,2)
-   fld(nfields_)%p => f3din1
-   IF (PRESENT(f3din2)) THEN
-     nfields_ = nfields_ + 1
-     ndim2tot = ndim2tot + SIZE(f3din2,2)
-     fld(nfields_)%p => f3din2
-   END IF
-   IF (PRESENT(f3din3)) THEN
-     nfields_ = nfields_ + 1
-     ndim2tot = ndim2tot + SIZE(f3din3,2)
-     fld(nfields_)%p => f3din3
-   END IF
-   IF (PRESENT(f3din4)) THEN
-     nfields_ = nfields_ + 1
-     ndim2tot = ndim2tot + SIZE(f3din4,2)
-     fld(nfields_)%p => f3din4
-   END IF
-   IF (PRESENT(f3din5)) THEN
-     nfields_ = nfields_ + 1
-     ndim2tot = ndim2tot + SIZE(f3din5,2)
-     fld(nfields_)%p => f3din5
-   END IF
-   IF (PRESENT(f4din)) THEN
-     DO i = 1, SIZE(f4din,4)
-       nfields_ = nfields_ + 1
-       fld(nfields_)%p => f4din(:,:,:,i)
-     ENDDO
-   ENDIF
-   IF (PRESENT(f3din_arr)) THEN
-     DO i = 1, SIZE(f3din_arr)
-       ndim2tot = ndim2tot + SIZE(f3din_arr(i)%p, 2)
-       fld(nfields_+i)%p => f3din_arr(i)%p
-     ENDDO
-   ENDIF
-   IF (nfields_ /= nfields) THEN
-     CALL finish(routine, 'internal error')
-   END IF
-   ! If this is a verification run, check consistency before doing boundary exchange
-   IF (p_test_run .AND. do_sync_checks) THEN
-     DO i = 1, nfields
-       CALL check_patch_array_sp(typ, p_patch, fld(i)%p, opt_varname)
-     ENDDO
-   ENDIF
+SUBROUTINE sync_patch_array_mult_f3din_f4din_sp(typ, p_patch, nfields, lacc, f3din1, f3din2, f3din3, f3din4, f3din5, f4din, opt_varname)
+  INTEGER, INTENT(IN) :: typ
+  TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+  INTEGER, INTENT(IN) :: nfields
+  LOGICAL, INTENT(IN) :: lacc
 
-   ! Boundary exchange for work PEs
-   IF(my_process_is_mpi_parallel()) THEN
-     CALL p_pat%exchange_data_mult_mixprec(lacc=i_am_accel_node, nfields_dp=0, ndim2tot_dp=0, nfields_sp=nfields, ndim2tot_sp=ndim2tot, &
-          recv_sp=fld)
-   ENDIF
+  REAL(sp), TARGET, INTENT(INOUT) :: f4din(:,:,:,:)
+  REAL(sp), TARGET, OPTIONAL, INTENT(INOUT) :: f3din1(:,:,:), f3din2(:,:,:), f3din3(:,:,:), &
+                                               f3din4(:,:,:), f3din5(:,:,:)
+  CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
 
- END SUBROUTINE sync_patch_array_mult_sp
+  CALL sync_patch_array_mult_mixprec(typ=typ, p_patch=p_patch, nfields_sp=nfields, nfields_dp=0, lacc=lacc,  &
+    &                                f3din1_sp=f3din1, f3din2_sp=f3din2, f3din3_sp=f3din3, f3din4_sp=f3din4, &
+    &                                f3din5_sp=f3din5, f4din_sp=f4din, opt_varname=opt_varname)
+END SUBROUTINE sync_patch_array_mult_f3din_f4din_sp
+
+
+SUBROUTINE sync_patch_array_mult_f3din_f3din_arr_sp(typ, p_patch, nfields, lacc, f3din1, f3din2, f3din3, f3din4, f3din5, f3din_arr, opt_varname)
+  INTEGER, INTENT(IN) :: typ
+  TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+  INTEGER, INTENT(IN) :: nfields
+  LOGICAL, INTENT(IN) :: lacc
+
+  REAL(sp), TARGET, OPTIONAL, INTENT(INOUT) :: f3din1(:,:,:), f3din2(:,:,:), f3din3(:,:,:), &
+                                               f3din4(:,:,:), f3din5(:,:,:)
+  TYPE(t_ptr_3d_sp), INTENT(INOUT) :: f3din_arr(:)
+  CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
+
+  CALL sync_patch_array_mult_mixprec(typ=typ, p_patch=p_patch, nfields_sp=nfields, nfields_dp=0, lacc=lacc,  &
+    &                                f3din1_sp=f3din1, f3din2_sp=f3din2, f3din3_sp=f3din3, f3din4_sp=f3din4, &
+    &                                f3din5_sp=f3din5, f3din_arr_sp=f3din_arr, opt_varname=opt_varname)
+END SUBROUTINE sync_patch_array_mult_f3din_f3din_arr_sp
 
 
 !-------------------------------------------------------------------------
 !! Does boundary exchange for up to 5 3D cell-based fields and/or a 4D field,
 !! which can either be single precision or double precision
 !!
-SUBROUTINE sync_patch_array_mult_mp(typ, p_patch, nfields, nfields_sp, f3din1, f3din2, f3din3, &
-  f3din4, f3din5, f3din1_sp, f3din2_sp, f3din3_sp, f3din4_sp, f3din5_sp, f4din, f4din_sp, opt_varname)
+SUBROUTINE sync_patch_array_mult_mixprec(typ, p_patch, nfields_dp, nfields_sp, lacc, f3din1_dp, f3din2_dp, f3din3_dp, &
+  f3din4_dp, f3din5_dp, f3din1_sp, f3din2_sp, f3din3_sp, f3din4_sp, f3din5_sp, f4din_dp, f4din_sp, f3din_arr_sp, &
+  f3din_arr_dp, opt_varname)
 
    INTEGER, INTENT(IN)               :: typ
    TYPE(t_patch), INTENT(IN), TARGET :: p_patch
-   INTEGER,     INTENT(IN)           :: nfields, nfields_sp
+   INTEGER,     INTENT(IN)           :: nfields_dp, nfields_sp
+   LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
 
-   REAL(dp), OPTIONAL, INTENT(INOUT) ::  f3din1(:,:,:), f3din2(:,:,:), f3din3(:,:,:), &
-      &                                  f3din4(:,:,:), f3din5(:,:,:), f4din(:,:,:,:)
+   REAL(dp), OPTIONAL, INTENT(INOUT) ::  f3din1_dp(:,:,:), f3din2_dp(:,:,:), f3din3_dp(:,:,:), &
+      &                                  f3din4_dp(:,:,:), f3din5_dp(:,:,:), f4din_dp(:,:,:,:)
    REAL(sp), OPTIONAL, INTENT(INOUT) ::  f3din1_sp(:,:,:), f3din2_sp(:,:,:), f3din3_sp(:,:,:), &
       &                                  f3din4_sp(:,:,:), f3din5_sp(:,:,:), f4din_sp(:,:,:,:)
+
+   TYPE(t_ptr_3d_dp), INTENT(INOUT), OPTIONAL :: f3din_arr_dp(:)
+   TYPE(t_ptr_3d_sp), INTENT(INOUT), OPTIONAL :: f3din_arr_sp(:)
 
    CLASS(t_comm_pattern), POINTER :: p_pat
    CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
 
+   ! Local vars
    INTEGER :: i
-   INTEGER :: ndim2tot, ndim2tot_sp ! Sum of second dimensions over all input fields
-
+   INTEGER :: ndim2tot_dp, ndim2tot_sp ! Sum of second dimensions over all input fields
    CHARACTER(len=4), SAVE, TARGET :: default_name = 'sync'
+   CHARACTER(*), PARAMETER :: routine = modname//"::sync_patch_array_mult_mixprec"
 
 !-----------------------------------------------------------------------
 
@@ -523,40 +539,57 @@ SUBROUTINE sync_patch_array_mult_mp(typ, p_patch, nfields, nfields_sp, f3din1, f
 
    ! If this is a verification run, check consistency before doing boundary exchange
    IF (p_test_run .AND. do_sync_checks) THEN
-     IF (PRESENT(f4din)) THEN
-       DO i = 1, SIZE(f4din,4)
-         CALL check_patch_array_3(typ, p_patch, f4din(:,:,:,i), opt_varname)
+     IF (PRESENT(f4din_dp)) THEN
+       DO i = 1, SIZE(f4din_dp,4)
+         CALL check_patch_array(typ, p_patch, f4din_dp(:,:,:,i), lacc=lacc, opt_varname=opt_varname)
        ENDDO
      ENDIF
      IF (PRESENT(f4din_sp)) THEN
        DO i = 1, SIZE(f4din_sp,4)
-         CALL check_patch_array_sp(typ, p_patch, f4din_sp(:,:,:,i), opt_varname)
+         CALL check_patch_array(typ, p_patch, f4din_sp(:,:,:,i), lacc=lacc, opt_varname=opt_varname)
        ENDDO
      ENDIF
-     IF (PRESENT(f3din1)) CALL check_patch_array_3(typ, p_patch, f3din1, opt_varname)
-     IF (PRESENT(f3din2)) CALL check_patch_array_3(typ, p_patch, f3din2, opt_varname)
-     IF (PRESENT(f3din3)) CALL check_patch_array_3(typ, p_patch, f3din3, opt_varname)
-     IF (PRESENT(f3din4)) CALL check_patch_array_3(typ, p_patch, f3din4, opt_varname)
-     IF (PRESENT(f3din5)) CALL check_patch_array_3(typ, p_patch, f3din5, opt_varname)
-     IF (PRESENT(f3din1_sp)) CALL check_patch_array_sp(typ, p_patch, f3din1_sp, opt_varname)
-     IF (PRESENT(f3din2_sp)) CALL check_patch_array_sp(typ, p_patch, f3din2_sp, opt_varname)
-     IF (PRESENT(f3din3_sp)) CALL check_patch_array_sp(typ, p_patch, f3din3_sp, opt_varname)
-     IF (PRESENT(f3din4_sp)) CALL check_patch_array_sp(typ, p_patch, f3din4_sp, opt_varname)
-     IF (PRESENT(f3din5_sp)) CALL check_patch_array_sp(typ, p_patch, f3din5_sp, opt_varname)
+
+     IF (PRESENT(f3din1_dp)) CALL check_patch_array(typ, p_patch, f3din1_dp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din2_dp)) CALL check_patch_array(typ, p_patch, f3din2_dp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din3_dp)) CALL check_patch_array(typ, p_patch, f3din3_dp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din4_dp)) CALL check_patch_array(typ, p_patch, f3din4_dp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din5_dp)) CALL check_patch_array(typ, p_patch, f3din5_dp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din1_sp)) CALL check_patch_array(typ, p_patch, f3din1_sp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din2_sp)) CALL check_patch_array(typ, p_patch, f3din2_sp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din3_sp)) CALL check_patch_array(typ, p_patch, f3din3_sp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din4_sp)) CALL check_patch_array(typ, p_patch, f3din4_sp, lacc=lacc, opt_varname=opt_varname)
+     IF (PRESENT(f3din5_sp)) CALL check_patch_array(typ, p_patch, f3din5_sp, lacc=lacc, opt_varname=opt_varname)
+
+     IF (PRESENT(f3din_arr_dp)) THEN
+       DO i=1, SIZE(f3din_arr_dp)
+         CALL check_patch_array(typ=typ, p_patch=p_patch, arr=f3din_arr_dp(i)%p, lacc=lacc, opt_varname=opt_varname)
+       END DO
+     ENDIF
+     IF (PRESENT(f3din_arr_sp)) THEN
+       DO i=1, SIZE(f3din_arr_sp)
+         CALL check_patch_array(typ, p_patch, f3din_arr_sp(i)%p, lacc=lacc, opt_varname=opt_varname)
+       END DO
+     ENDIF
    ENDIF
 
    ! Boundary exchange for work PEs
    IF(my_process_is_mpi_parallel()) THEN
-     IF (PRESENT(f4din)) THEN
-       ndim2tot = SIZE(f4din,4)*SIZE(f4din,2)
+     IF (PRESENT(f4din_dp)) THEN
+       ndim2tot_dp = SIZE(f4din_dp,4)*SIZE(f4din_dp,2)
      ELSE
-       ndim2tot = 0
+       ndim2tot_dp = 0
      ENDIF
-     IF (PRESENT(f3din1)) ndim2tot = ndim2tot+SIZE(f3din1,2)
-     IF (PRESENT(f3din2)) ndim2tot = ndim2tot+SIZE(f3din2,2)
-     IF (PRESENT(f3din3)) ndim2tot = ndim2tot+SIZE(f3din3,2)
-     IF (PRESENT(f3din4)) ndim2tot = ndim2tot+SIZE(f3din4,2)
-     IF (PRESENT(f3din5)) ndim2tot = ndim2tot+SIZE(f3din5,2)
+     IF (PRESENT(f3din1_dp)) ndim2tot_dp = ndim2tot_dp+SIZE(f3din1_dp,2)
+     IF (PRESENT(f3din2_dp)) ndim2tot_dp = ndim2tot_dp+SIZE(f3din2_dp,2)
+     IF (PRESENT(f3din3_dp)) ndim2tot_dp = ndim2tot_dp+SIZE(f3din3_dp,2)
+     IF (PRESENT(f3din4_dp)) ndim2tot_dp = ndim2tot_dp+SIZE(f3din4_dp,2)
+     IF (PRESENT(f3din5_dp)) ndim2tot_dp = ndim2tot_dp+SIZE(f3din5_dp,2)
+     IF (PRESENT(f3din_arr_dp)) THEN
+       DO i=1, SIZE(f3din_arr_dp)
+         ndim2tot_dp =ndim2tot_dp+SIZE(f3din_arr_dp(i)%p,2)
+       ENDDO
+     ENDIF
 
      IF (PRESENT(f4din_sp)) THEN
        ndim2tot_sp = SIZE(f4din_sp,4)*SIZE(f4din_sp,2)
@@ -568,27 +601,33 @@ SUBROUTINE sync_patch_array_mult_mp(typ, p_patch, nfields, nfields_sp, f3din1, f
      IF (PRESENT(f3din3_sp)) ndim2tot_sp = ndim2tot_sp+SIZE(f3din3_sp,2)
      IF (PRESENT(f3din4_sp)) ndim2tot_sp = ndim2tot_sp+SIZE(f3din4_sp,2)
      IF (PRESENT(f3din5_sp)) ndim2tot_sp = ndim2tot_sp+SIZE(f3din5_sp,2)
+     IF (PRESENT(f3din_arr_sp)) THEN
+       DO i=1, SIZE(f3din_arr_sp)
+        ndim2tot_sp =ndim2tot_sp+SIZE(f3din_arr_sp(i)%p,2)
+       ENDDO
+     ENDIF
 
-     CALL exchange_data_mult_mixprec(p_pat=p_pat, lacc=i_am_accel_node,                                    &
-       nfields_dp=nfields, ndim2tot_dp=ndim2tot, nfields_sp=nfields_sp, ndim2tot_sp=ndim2tot_sp,           &
-       recv1_dp=f3din1,    recv2_dp=f3din2,    recv3_dp=f3din3,    recv4_dp=f3din4,    recv5_dp=f3din5,    &
+     CALL exchange_data_mult_mixprec(p_pat=p_pat, lacc=lacc,                                               &
+       nfields_dp=nfields_dp, ndim2tot_dp=ndim2tot_dp, nfields_sp=nfields_sp, ndim2tot_sp=ndim2tot_sp,     &
+       recv1_dp=f3din1_dp, recv2_dp=f3din2_dp, recv3_dp=f3din3_dp, recv4_dp=f3din4_dp, recv5_dp=f3din5_dp, &
        recv1_sp=f3din1_sp, recv2_sp=f3din2_sp, recv3_sp=f3din3_sp, recv4_sp=f3din4_sp, recv5_sp=f3din5_sp, &
-       recv4d_dp=f4din,    recv4d_sp=f4din_sp                                                              )
+       recv4d_dp=f4din_dp, recv4d_sp=f4din_sp, recv3d_arr_dp=f3din_arr_dp, recv3d_arr_sp=f3din_arr_sp      )
    ENDIF
 
-END SUBROUTINE sync_patch_array_mult_mp
+END SUBROUTINE sync_patch_array_mult_mixprec
 
 
 !! Does boundary exchange for a 4D field for which the extra dimension
 !! is on the third index.
 !!
-SUBROUTINE sync_patch_array_4de1(typ, p_patch, nfields, f4din, opt_varname)
+SUBROUTINE sync_patch_array_4de1_dp(typ, p_patch, nfields, f4din, lacc, opt_varname)
 
    INTEGER, INTENT(IN)             :: typ
    TYPE(t_patch), INTENT(IN), TARGET :: p_patch
    INTEGER,     INTENT(IN)         :: nfields
 
-   REAL(wp), INTENT(INOUT) :: f4din(:,:,:,:)
+   REAL(dp), INTENT(INOUT) :: f4din(:,:,:,:)
+   LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
 
    CLASS(t_comm_pattern), POINTER :: p_pat
    CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
@@ -603,7 +642,7 @@ SUBROUTINE sync_patch_array_4de1(typ, p_patch, nfields, f4din, opt_varname)
 #if !defined( __PGI ) || !defined( _OPENACC )
 ! The silly PGI OpenACC compiler does not know f4din(i,:,:,:) is present on the device
      DO i = 1, nfields
-       CALL check_patch_array_3(typ, p_patch, f4din(i,:,:,:), opt_varname)
+       CALL check_patch_array(typ, p_patch, f4din(i,:,:,:), lacc=lacc, opt_varname=opt_varname)
      ENDDO
 #endif
    ENDIF
@@ -613,36 +652,48 @@ SUBROUTINE sync_patch_array_4de1(typ, p_patch, nfields, f4din, opt_varname)
      IF (nfields/=UBOUND(f4din,1)) &
        CALL finish('sync_patch_array_4de1','inconsistent arguments')
      ndim2tot = nfields*SIZE(f4din,3)
-     CALL exchange_data_4de1(p_pat, i_am_accel_node, nfields, ndim2tot, recv=f4din)
+     CALL exchange_data_4de1(p_pat, lacc, nfields, ndim2tot, recv=f4din)
    ENDIF
 
-END SUBROUTINE sync_patch_array_4de1
+END SUBROUTINE sync_patch_array_4de1_dp
 
 
+SUBROUTINE sync_patch_array_4de1_sp(typ, p_patch, nfields, f4din, lacc, opt_varname)
 
-!-------------------------------------------------------------------------
-!
-!
+  INTEGER, INTENT(IN)             :: typ
+  TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+  INTEGER,     INTENT(IN)         :: nfields
 
-!! Wrapper routine for checking single precision arrays
-SUBROUTINE check_patch_array_sp(typ, p_patch, arr, opt_varname)
+  REAL(sp), INTENT(INOUT) :: f4din(:,:,:,:)
+  LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
 
-   INTEGER, INTENT(IN)     :: typ
-   TYPE(t_patch), INTENT(IN), TARGET :: p_patch
-   CHARACTER(*), INTENT(IN), OPTIONAL :: opt_varname
+  CLASS(t_comm_pattern), POINTER :: p_pat
+  CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
+  INTEGER :: i, ndim2tot
 
-   REAL(sp), INTENT(IN) :: arr(:,:,:)
-   REAL(wp) :: arr_wp(SIZE(arr,1),SIZE(arr,2),SIZE(arr,3))
+!-----------------------------------------------------------------------
 
-   !$ACC DATA CREATE(arr_wp) IF(i_am_accel_node)
-   !$ACC KERNELS ASYNC(1) IF(i_am_accel_node)
-   arr_wp(:,:,:) = REAL(arr(:,:,:),wp)
-   !$ACC END KERNELS
-   CALL check_patch_array_3(typ, p_patch, arr_wp, opt_varname)
-   !$ACC WAIT(1)
-   !$ACC END DATA
+   p_pat => comm_pat_of_type(p_patch, typ)
 
-END SUBROUTINE check_patch_array_sp
+  ! If this is a verification run, check consistency before doing boundary exchange
+  IF (p_test_run .AND. do_sync_checks) THEN
+#if !defined( __PGI ) || !defined( _OPENACC )
+! The silly PGI OpenACC compiler does not know f4din(i,:,:,:) is present on the device
+    DO i = 1, nfields
+      CALL check_patch_array(typ, p_patch, f4din(i,:,:,:), lacc=lacc, opt_varname=opt_varname)
+    ENDDO
+#endif
+  ENDIF
+
+  ! Boundary exchange for work PEs
+    IF(my_process_is_mpi_parallel()) THEN
+    IF (nfields/=UBOUND(f4din,1)) &
+      CALL finish('sync_patch_array_4de1','inconsistent arguments')
+    ndim2tot = nfields*SIZE(f4din,3)
+    CALL exchange_data_4de1(p_pat, lacc, nfields, ndim2tot, recv=f4din)
+  ENDIF
+
+END SUBROUTINE sync_patch_array_4de1_sp
 
 
 !! In a verification run, this routine checks the consistency of an array,
@@ -650,17 +701,241 @@ END SUBROUTINE check_patch_array_sp
 !! the verification PE.
 !! For a non-verification run it just does nothing.
 !!
-SUBROUTINE check_patch_array_3(typ, p_patch, arr, opt_varname)
+SUBROUTINE check_patch_array_3d_sp(typ, p_patch, arr, lacc, opt_varname)
+
+!
+
+  INTEGER, INTENT(IN)     :: typ
+  TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+  REAL(sp), INTENT(IN) :: arr(:,:,:)
+  LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
+  CHARACTER(*), INTENT(IN), OPTIONAL :: opt_varname
+
+  REAL(sp), ALLOCATABLE:: arr_g(:,:,:)
+  INTEGER :: j, jb, jl, jb_g, jl_g, n, ndim2, ndim3, nblks_g, flag, jk
+  INTEGER :: ityp, ndim, ndim_g, jk_min_err
+  INTEGER :: nerr(0:n_ghost_rows), shape_recv(3)
+  INTEGER, POINTER :: p_glb_index(:), p_decomp_domain(:,:)
+  CLASS(t_comm_pattern), POINTER :: p_pat_work2test
+  LOGICAL :: l_my_process_is_mpi_test
+
+  CHARACTER(len=256) :: varname, cfmt
+  INTEGER :: varname_tlen
+
+  CHARACTER(filename_max) :: log_file
+  REAL(sp) :: absmax
+  LOGICAL :: sync_error
+
+  ityp   = -1
+  ndim   = -1
+  ndim_g = -1
+  sync_error = .FALSE.
+
+  NULLIFY(p_glb_index, p_decomp_domain)
+!---------------------------------------------------------------------
+
+  IF(.NOT. p_test_run) RETURN ! This routine is only effective in a verification run
+
+  IF(PRESENT(opt_varname)) THEN
+    varname = opt_varname
+    varname_tlen = LEN(opt_varname)
+  ELSE
+    varname = ' no VARNAME supplied'
+    varname_tlen = 20
+  ENDIF
+
+  ! Check dimensions of arr, determine if this is an cell/edge/vert array
+
+  IF(UBOUND(arr,1) /= nproma) THEN
+    CALL finish('sync_patch_array','first dimension /= nproma')
+  ENDIF
+
+  ndim2 = UBOUND(arr,2)
+  ndim3 = UBOUND(arr,3)
+
+  !$ACC DATA PRESENT(arr) IF(lacc)
+  !$ACC UPDATE HOST(arr) ASYNC(1) IF(lacc)
+
+  IF(typ == SYNC_C .OR. typ == SYNC_C1) THEN
+    ndim   = p_patch%n_patch_cells
+    ndim_g = p_patch%n_patch_cells_g
+    p_glb_index => p_patch%cells%decomp_info%glb_index
+    p_decomp_domain => p_patch%cells%decomp_info%decomp_domain
+    ityp = typ
+    p_pat_work2test => p_patch%comm_pat_work2test(1)%p
+  ELSE IF(typ == SYNC_E) THEN
+    ndim   = p_patch%n_patch_edges
+    ndim_g = p_patch%n_patch_edges_g
+    p_glb_index => p_patch%edges%decomp_info%glb_index
+    p_decomp_domain => p_patch%edges%decomp_info%decomp_domain
+    ityp = typ
+    p_pat_work2test => p_patch%comm_pat_work2test(3)%p
+  ELSE IF(typ == SYNC_V) THEN
+    ndim   = p_patch%n_patch_verts
+    ndim_g = p_patch%n_patch_verts_g
+    p_glb_index => p_patch%verts%decomp_info%glb_index
+    p_decomp_domain => p_patch%verts%decomp_info%decomp_domain
+    ityp = typ
+    p_pat_work2test => p_patch%comm_pat_work2test(2)%p
+  ELSE IF(typ == 0) THEN
+    ! typ == 0 may be set for quick checks without knowing the type of the array.
+    ! It may only be used if the array is correctly dimensioned.
+
+    IF(ndim3 == p_patch%nblks_c) THEN
+        ndim   = p_patch%n_patch_cells
+        ndim_g = p_patch%n_patch_cells_g
+        p_glb_index => p_patch%cells%decomp_info%glb_index
+        p_decomp_domain => p_patch%cells%decomp_info%decomp_domain
+        ityp = SYNC_C
+        p_pat_work2test => p_patch%comm_pat_work2test(1)%p
+    ELSE IF(ndim3 == p_patch%nblks_e) THEN
+        ndim   = p_patch%n_patch_edges
+        ndim_g = p_patch%n_patch_edges_g
+        p_glb_index => p_patch%edges%decomp_info%glb_index
+        p_decomp_domain => p_patch%edges%decomp_info%decomp_domain
+        ityp = SYNC_E
+        p_pat_work2test => p_patch%comm_pat_work2test(3)%p
+    ELSE IF(ndim3 == p_patch%nblks_v) THEN
+        ndim   = p_patch%n_patch_verts
+        ndim_g = p_patch%n_patch_verts_g
+        p_glb_index => p_patch%verts%decomp_info%glb_index
+        p_decomp_domain => p_patch%verts%decomp_info%decomp_domain
+        ityp = SYNC_V
+        p_pat_work2test => p_patch%comm_pat_work2test(2)%p
+    ELSE
+        CALL finish('check_patch_array','typ==0 but unknown blocksize of array')
+    ENDIF
+  ELSE
+    CALL finish('sync_patch_array','Illegal type parameter')
+  ENDIF
+
+  ! Actually do the check.
+  ! The test PE broadcasts its full array, the other check if their section matches.
+
+  nblks_g = (ndim_g-1)/nproma+1
+
+  l_my_process_is_mpi_test = my_process_is_mpi_test()
+  !$ACC WAIT(1) !GV: UPDATE HOST(arr) finished
+  IF (num_test_procs > 1) THEN
+    shape_recv = SHAPE(arr)
+    ALLOCATE(arr_g(shape_recv(1),shape_recv(2),shape_recv(3)))
+    CALL exchange_data(p_pat=p_pat_work2test, lacc=.FALSE., recv=arr_g, send=arr)
+    IF(l_my_process_is_mpi_test) THEN
+      jk_min_err = HUGE(jk_min_err)
+!$OMP PARALLEL PRIVATE(jb,jk,jl) REDUCTION(.or.: sync_error) &
+!$OMP REDUCTION(MIN: jk_min_err)
+!$OMP DO
+      DO jb = 1, ndim3
+        DO jk = 1, ndim2
+          DO jl = 1, nproma
+            IF (p_decomp_domain(jl,jb) == 0) THEN
+              sync_error = sync_error &
+                  .OR. arr(jl, jk, jb) /= arr_g(jl, jk, jb)
+              jk_min_err = MIN(jk_min_err, MERGE(jk, jk_min_err, &
+                  arr(jl, jk, jb) /= arr_g(jl, jk, jb)))
+            END IF
+          END DO
+        END DO
+      END DO
+!$OMP END DO NOWAIT
+!$OMP END PARALLEL
+    END IF
+  ELSE IF(l_my_process_is_mpi_test) THEN
+    ! the test PE may also have reordered global indices. create a
+    ! temporary array in the correct order:
+    ALLOCATE(arr_g(nproma,ndim2,nblks_g))
+    DO j=1,ndim
+        jb = blk_no(j) ! Block index in distributed patch
+        jl = idx_no(j) ! Line  index in distributed patch
+        jb_g = blk_no(p_glb_index(j)) ! Block index in global patch
+        jl_g = idx_no(p_glb_index(j)) ! Line  index in global patch
+        arr_g(jl_g,1:ndim2,jb_g) = arr(jl,1:ndim2,jb)
+    END DO
+    IF(comm_lev==0) THEN
+      CALL p_bcast(arr_g(:,:,1:nblks_g), process_mpi_all_test_id, comm=p_comm_work_test)
+    ELSE
+      CALL p_send(arr_g(:,:,1:nblks_g),comm_proc0(comm_lev)+p_work_pe0,1)
+    ENDIF
+    DEALLOCATE(arr_g)
+  ELSE
+    ALLOCATE(arr_g(nproma,ndim2,nblks_g))
+    IF(comm_lev==0) THEN
+        CALL p_bcast(arr_g(:,:,1:nblks_g), process_mpi_all_test_id, comm=p_comm_work_test)
+    ELSE
+        IF(p_pe_work==comm_proc0(comm_lev)) &
+          & CALL p_recv(arr_g(:,:,1:nblks_g), process_mpi_all_test_id, 1)
+        CALL p_bcast(arr_g(:,:,1:nblks_g),0,comm=glob_comm(comm_lev))
+    ENDIF
+    ! Count errors in the inner domain and the different ghost rows
+    nerr(:) = 0
+    absmax = 0.0_sp
+    DO j = 1, ndim
+        jb = blk_no(j) ! Block index in distributed patch
+        jl = idx_no(j) ! Line  index in distributed patch
+        jb_g = blk_no(p_glb_index(j)) ! Block index in global patch
+        jl_g = idx_no(p_glb_index(j)) ! Line  index in global patch
+        flag = p_decomp_domain(jl,jb)
+        ! Safety measures only:
+        flag = MAX(flag,0)
+        flag = MIN(flag,UBOUND(nerr,1))
+        DO n=1,ndim2
+          IF(arr(jl,n,jb) /= arr_g(jl_g,n,jb_g)) THEN
+              nerr(flag) = nerr(flag)+1
+              IF(flag==0) THEN
+                ! Real sync error detected
+                sync_error = .TRUE.
+                absmax = MAX(absmax,ABS(arr(jl,n,jb) - arr_g(jl_g,n,jb_g)))
+                IF (l_log_checks) THEN
+                    WRITE(log_unit,'(2a,5i7,3e18.10)') varname, 'sync error location:',&
+                      jb,jl,jb_g,jl_g,n,arr(jl,n,jb),arr_g(jl_g,n,jb_g),    &
+                      ABS(arr(jl,n,jb)-arr_g(jl_g,n,jb_g))
+                ENDIF
+              ENDIF
+          ENDIF
+        ENDDO
+    ENDDO
+    IF(l_log_checks) THEN
+        IF(log_unit<0) THEN
+          WRITE(log_file,'(''log'',i4.4,''.txt'')') p_pe
+          log_unit = find_next_free_unit(10,99)
+          OPEN(log_unit,FILE=log_file)
+        ENDIF
+        n = n_ghost_rows
+        WRITE(cfmt,'(a,i3,a)') '(',n+1,'i8,'' '',2a)'
+        IF(ALL(arr == 0.0_sp)) THEN
+          WRITE(log_unit,cfmt) nerr(0:n),varname(1:varname_tlen), ': ALL 0 !!!'
+        ELSE
+          WRITE(log_unit,cfmt) nerr(0:n),varname(1:varname_tlen)
+        ENDIF
+        IF(absmax > 0.0_sp) WRITE(log_unit,*) 'Max abs inner err:',absmax
+    ENDIF
+    ! Terminate the programm if the array is out of sync
+    DEALLOCATE(arr_g)
+  ENDIF
+  IF (sync_error) THEN
+    IF (num_test_procs > 1) &
+        WRITE(0, '(2a,i0)') varname(1:varname_tlen), &
+        ' sync error in level jk = ', jk_min_err
+    IF(l_log_checks) THEN
+      CLOSE (log_unit)
+    ENDIF
+    CALL finish('sync_patch_array','Out of sync detected!')
+  ENDIF
+  !$ACC END DATA
+
+END SUBROUTINE check_patch_array_3d_sp
+
+SUBROUTINE check_patch_array_3d_dp(typ, p_patch, arr, lacc, opt_varname)
 
 !
 
    INTEGER, INTENT(IN)     :: typ
    TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+   REAL(dp), INTENT(IN) :: arr(:,:,:)
+   LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
    CHARACTER(*), INTENT(IN), OPTIONAL :: opt_varname
 
-   REAL(wp), INTENT(IN) :: arr(:,:,:)
-
-   REAL(wp), ALLOCATABLE:: arr_g(:,:,:)
+   REAL(dp), ALLOCATABLE:: arr_g(:,:,:)
    INTEGER :: j, jb, jl, jb_g, jl_g, n, ndim2, ndim3, nblks_g, flag, jk
    INTEGER :: ityp, ndim, ndim_g, jk_min_err
    INTEGER :: nerr(0:n_ghost_rows), shape_recv(3)
@@ -672,7 +947,7 @@ SUBROUTINE check_patch_array_3(typ, p_patch, arr, opt_varname)
    INTEGER :: varname_tlen
 
    CHARACTER(filename_max) :: log_file
-   REAL(wp) :: absmax, relmax
+   REAL(dp) :: absmax
    LOGICAL :: sync_error
 
    ityp   = -1
@@ -702,8 +977,8 @@ SUBROUTINE check_patch_array_3(typ, p_patch, arr, opt_varname)
    ndim2 = UBOUND(arr,2)
    ndim3 = UBOUND(arr,3)
 
-   !$ACC DATA PRESENT(arr) IF(i_am_accel_node)
-   !$ACC UPDATE HOST(arr) ASYNC(1) IF(i_am_accel_node)
+   !$ACC DATA PRESENT(arr) IF(lacc)
+   !$ACC UPDATE HOST(arr) ASYNC(1) IF(lacc)
 
    IF(typ == SYNC_C .OR. typ == SYNC_C1) THEN
       ndim   = p_patch%n_patch_cells
@@ -806,7 +1081,7 @@ SUBROUTINE check_patch_array_3(typ, p_patch, arr, opt_varname)
      IF(comm_lev==0) THEN
        CALL p_bcast(arr_g(:,:,1:nblks_g), process_mpi_all_test_id, comm=p_comm_work_test)
      ELSE
-       CALL p_send(arr_g(:,:,1:nblks_g),comm_proc0(comm_lev)+p_work_pe0,1)
+       CALL p_send(arr_g(:,:,1:nblks_g), comm_proc0(comm_lev)+p_work_pe0, 1)
      ENDIF
      DEALLOCATE(arr_g)
 
@@ -824,8 +1099,7 @@ SUBROUTINE check_patch_array_3(typ, p_patch, arr, opt_varname)
       ! Count errors in the inner domain and the different ghost rows
 
       nerr(:) = 0
-      absmax = 0.0_wp
-      relmax = 0.0_wp
+      absmax = 0.0_dp
 
       DO j = 1, ndim
 
@@ -842,31 +1116,16 @@ SUBROUTINE check_patch_array_3(typ, p_patch, arr, opt_varname)
          flag = MIN(flag,UBOUND(nerr,1))
 
          DO n=1,ndim2
-#if defined( __ROUNDOFF_CHECK )
-            IF( ( ( ABS(arr(jl,n,jb)- arr_g(jl_g,n,jb_g)) > ABS_TOL ) ) .AND.     &
-                ( ( ABS(arr(jl,n,jb)- arr_g(jl_g,n,jb_g) ) ) / (ABS(arr(jl,n,jb))+MACH_TOL) ) > REL_TOL ) THEN
-#else
             IF(arr(jl,n,jb) /= arr_g(jl_g,n,jb_g)) THEN
-#endif
                nerr(flag) = nerr(flag)+1
                IF(flag==0) THEN
                   ! Real sync error detected
                   sync_error = .TRUE.
                   absmax = MAX(absmax,ABS(arr(jl,n,jb) - arr_g(jl_g,n,jb_g)))
-#if defined( __ROUNDOFF_CHECK )
-                  relmax = MAX(relmax,(ABS(arr(jl,n,jb) - arr_g(jl_g,n,jb_g))) / (ABS(arr(jl,n,jb))+MACH_TOL) )
-#endif
                   IF (l_log_checks) THEN
-#if defined( __ROUNDOFF_CHECK )
-!!!                     PRINT *, varname(1:varname_tlen), ' sync error location:',&
-!!!                        jb,jl,jb_g,jl_g,n,arr(jl,n,jb),arr_g(jl_g,n,jb_g),    &
-!!!                       ABS(arr(jl,n,jb)-arr_g(jl_g,n,jb_g)),  &
-!!!                       ( ABS(arr(jl,n,jb)- arr_g(jl_g,n,jb_g) ) ) / (ABS(arr(jl,n,jb))+MACH_TOL)
-#else
                      WRITE(log_unit,'(2a,5i7,3e18.10)') varname, 'sync error location:',&
                        jb,jl,jb_g,jl_g,n,arr(jl,n,jb),arr_g(jl_g,n,jb_g),    &
                        ABS(arr(jl,n,jb)-arr_g(jl_g,n,jb_g))
-#endif
                   ENDIF
                ENDIF
             ENDIF
@@ -884,16 +1143,13 @@ SUBROUTINE check_patch_array_3(typ, p_patch, arr, opt_varname)
          n = n_ghost_rows
          WRITE(cfmt,'(a,i3,a)') '(',n+1,'i8,'' '',2a)'
 
-         IF(ALL(arr == 0.0_wp)) THEN
+         IF(ALL(arr == 0.0_dp)) THEN
             WRITE(log_unit,cfmt) nerr(0:n),varname(1:varname_tlen), ': ALL 0 !!!'
          ELSE
             WRITE(log_unit,cfmt) nerr(0:n),varname(1:varname_tlen)
          ENDIF
-#if defined( __ROUNDOFF_CHECK )
-         IF(absmax > 0.0_wp) WRITE(log_unit,*) 'Max abs inner err:',absmax, ' max rel error ', relmax
-#else
-         IF(absmax > 0.0_wp) WRITE(log_unit,*) 'Max abs inner err:',absmax
-#endif
+
+         IF(absmax > 0.0_dp) WRITE(log_unit,*) 'Max abs inner err:',absmax
       ENDIF
 
       ! Terminate the programm if the array is out of sync
@@ -904,61 +1160,101 @@ SUBROUTINE check_patch_array_3(typ, p_patch, arr, opt_varname)
      IF (num_test_procs > 1) &
           WRITE(0, '(2a,i0)') varname(1:varname_tlen), &
           ' sync error in level jk = ', jk_min_err
-#if defined( __ROUNDOFF_CHECK )
-     PRINT *, TRIM(varname), ' synch error detected '
-     IF(l_log_checks) THEN
-       WRITE(log_file,'(''log'',i4.4,''.txt'')') p_pe
-       OPEN(log_unit, FILE=log_file, STATUS="OLD", POSITION="APPEND", ACTION="WRITE")   ! Reopen file for subsequent output
-       PRINT *, 'OPEN_ACC version: ', TRIM(varname), ' max abs error ', absmax, ' rel error ', relmax
-     ENDIF
-#else
      IF(l_log_checks) THEN
        CLOSE (log_unit)
      ENDIF
      CALL finish('sync_patch_array','Out of sync detected!')
-#endif
    ENDIF
 
    !$ACC END DATA
 
-END SUBROUTINE check_patch_array_3
+END SUBROUTINE check_patch_array_3d_dp
 !-------------------------------------------------------------------------
 !
 !
 
 !! 2-D Interface to check_patch_array.
 !!
-SUBROUTINE check_patch_array_2(typ, p_patch, arr, opt_varname)
+SUBROUTINE check_patch_array_2d_sp(typ, p_patch, arr, lacc, opt_varname)
+
+  !
+
+     INTEGER, INTENT(IN)     :: typ
+     TYPE(t_patch), INTENT(IN) :: p_patch
+     REAL(sp), TARGET, INTENT(IN)    :: arr(:,:)
+     LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
+     CHARACTER(*), INTENT(IN), OPTIONAL :: opt_varname
+
+     REAL(sp), POINTER :: arr3(:,:,:)
+  !-----------------------------------------------------------------------
+
+     IF(.NOT. p_test_run) RETURN ! This routine is only effective in a verification run
+     CALL insert_dimension(arr3, arr, 2)
+
+     CALL check_patch_array(typ, p_patch, arr3, lacc=lacc, opt_varname=opt_varname)
+
+END SUBROUTINE check_patch_array_2d_sp
+
+SUBROUTINE check_patch_array_2d_dp(typ, p_patch, arr, lacc, opt_varname)
 
 !
 
    INTEGER, INTENT(IN)     :: typ
    TYPE(t_patch), INTENT(IN) :: p_patch
-   REAL(wp), TARGET, INTENT(IN)    :: arr(:,:)
+   REAL(dp), TARGET, INTENT(IN)    :: arr(:,:)
+   LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
    CHARACTER(*), INTENT(IN), OPTIONAL :: opt_varname
 
-   REAL(wp), POINTER :: arr3(:,:,:)
+   REAL(dp), POINTER :: arr3(:,:,:)
 !-----------------------------------------------------------------------
 
    IF(.NOT. p_test_run) RETURN ! This routine is only effective in a verification run
    CALL insert_dimension(arr3, arr, 2)
 
-   CALL check_patch_array_3(typ, p_patch, arr3, opt_varname)
+   CALL check_patch_array(typ, p_patch, arr3, lacc=lacc, opt_varname=opt_varname)
 
-END SUBROUTINE check_patch_array_2
+END SUBROUTINE check_patch_array_2d_dp
 !-------------------------------------------------------------------------
 !
 !
 
 !! 4-D Interface to check_patch_array.
 !!
-SUBROUTINE check_patch_array_4(typ, p_patch, arr, opt_varname)
+SUBROUTINE check_patch_array_4d_sp(typ, p_patch, arr, lacc, opt_varname)
+
+  !
+
+     INTEGER, INTENT(IN)     :: typ
+     TYPE(t_patch), INTENT(IN), TARGET :: p_patch
+     REAL(sp), INTENT(INOUT) :: arr(:,:,:,:)
+     LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
+     CHARACTER(len=*), INTENT(IN), OPTIONAL :: opt_varname
+
+     CHARACTER(len=256) :: new_var
+     INTEGER :: jt
+  !-----------------------------------------------------------------------
+
+     IF(.NOT. p_test_run) RETURN ! This routine is only effective in a verification run
+
+     DO jt=1,UBOUND(arr,4)
+        IF(PRESENT(opt_varname)) THEN
+           WRITE(new_var,'(a,''['',i2,'']'')') opt_varname, jt
+           CALL check_patch_array(typ, p_patch, arr(:,:,:,jt), lacc=lacc, opt_varname=TRIM(new_var))
+        ELSE
+           CALL check_patch_array(typ, p_patch, arr(:,:,:,jt), lacc=lacc)
+        ENDIF
+     ENDDO
+
+END SUBROUTINE check_patch_array_4d_sp
+
+SUBROUTINE check_patch_array_4d_dp(typ, p_patch, arr, lacc, opt_varname)
 
 !
 
    INTEGER, INTENT(IN)     :: typ
    TYPE(t_patch), INTENT(IN), TARGET :: p_patch
-   REAL(wp), INTENT(INOUT) :: arr(:,:,:,:)
+   REAL(dp), INTENT(INOUT) :: arr(:,:,:,:)
+   LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
    CHARACTER(len=*), INTENT(IN), OPTIONAL :: opt_varname
 
    CHARACTER(len=256) :: new_var
@@ -970,22 +1266,23 @@ SUBROUTINE check_patch_array_4(typ, p_patch, arr, opt_varname)
    DO jt=1,UBOUND(arr,4)
       IF(PRESENT(opt_varname)) THEN
          WRITE(new_var,'(a,''['',i2,'']'')') opt_varname, jt
-         CALL check_patch_array_3(typ, p_patch, arr(:,:,:,jt),TRIM(new_var))
+         CALL check_patch_array(typ, p_patch, arr(:,:,:,jt), lacc=lacc, opt_varname=TRIM(new_var))
       ELSE
-         CALL check_patch_array_3(typ, p_patch, arr(:,:,:,jt))
+         CALL check_patch_array(typ, p_patch, arr(:,:,:,jt), lacc=lacc)
       ENDIF
    ENDDO
 
-END SUBROUTINE check_patch_array_4
+END SUBROUTINE check_patch_array_4d_dp
 !-------------------------------------------------------------------------
 !-------------------------------------------------------------------------
 !! Syncs an idx/blk pair of arrays
 
-SUBROUTINE sync_idx(type_arr, type_idx, p_patch, idx, blk, opt_remap, opt_varname )
+SUBROUTINE sync_idx(type_arr, type_idx, p_patch, idx, blk, lacc, opt_remap, opt_varname )
 
   INTEGER, INTENT(IN) :: type_arr, type_idx
-  TYPE(t_patch), TARGET, INTENT(INOUT) :: p_patch
+  TYPE(t_patch), TARGET, INTENT(IN) :: p_patch
   INTEGER, INTENT(INOUT) :: idx(:,:), blk(:,:)
+  LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
   LOGICAL, INTENT(IN), OPTIONAL :: opt_remap
   CHARACTER(len=*), TARGET, INTENT(IN), OPTIONAL :: opt_varname
 
@@ -1042,9 +1339,9 @@ SUBROUTINE sync_idx(type_arr, type_idx, p_patch, idx, blk, opt_remap, opt_varnam
 
   ! Set z_idx with the global 1D-index of all points
 
-  !$ACC DATA COPYIN(z_idx) IF(i_am_accel_node)
+  !$ACC DATA COPYIN(z_idx) IF(lacc)
 
-  !$ACC PARALLEL ASYNC(1) IF(i_am_accel_node)
+  !$ACC PARALLEL ASYNC(1) IF(lacc)
   !$ACC LOOP GANG VECTOR COLLAPSE(2)
   DO jb = 1, nblks
     DO jl = 1, nproma
@@ -1063,10 +1360,10 @@ SUBROUTINE sync_idx(type_arr, type_idx, p_patch, idx, blk, opt_remap, opt_varnam
   !$ACC WAIT(1)
 
   ! Sync z_idx
-  CALL sync_patch_array(type_arr, p_patch, z_idx, opt_varname)
+  CALL sync_patch_array(type_arr, p_patch, z_idx, lacc=lacc, opt_varname=opt_varname)
 
   ! Set all points with local index corresponding to z_idx
-  !$ACC PARALLEL ASYNC(1) IF(i_am_accel_node)
+  !$ACC PARALLEL ASYNC(1) IF(lacc)
   !$ACC LOOP GANG VECTOR COLLAPSE(2)
   DO jb = 1, nblks
     DO jl = 1, nproma
@@ -1104,7 +1401,7 @@ SUBROUTINE sync_idx(type_arr, type_idx, p_patch, idx, blk, opt_remap, opt_varnam
     END DO
 
 #ifdef __SX__
-    !NEC: initialize idx and blk in vectroized loop 
+    !NEC: initialize idx and blk in vectroized loop
     DO jl = 1, nproma
       idx(jl,jb) = idx_no(ind_v(jl))
       blk(jl,jb) = blk_no(ind_v(jl))
@@ -1122,11 +1419,11 @@ END SUBROUTINE sync_idx
 ! Routines for global summation of scalar quantities or arrays of scalar quantities
 ! Unlike the subsequent global_sum_array routines, no summation is made over the array elements
 !
-FUNCTION global_sum_0d (z_in, opt_iroot) RESULT (global_sum)
+FUNCTION global_sum_0d_sp (z_in, opt_iroot) RESULT (global_sum)
 
-  REAL(wp),          INTENT(in) :: z_in
+  REAL(sp),          INTENT(in) :: z_in
   INTEGER, OPTIONAL,INTENT(IN)  :: opt_iroot
-  REAL(wp)                      :: global_sum
+  REAL(sp)                      :: global_sum
 
   INTEGER :: p_comm_glob
 !-----------------------------------------------------------------------
@@ -1140,16 +1437,36 @@ FUNCTION global_sum_0d (z_in, opt_iroot) RESULT (global_sum)
   global_sum = p_sum(z_in, comm=p_comm_glob, root=opt_iroot)
 
 
-END FUNCTION global_sum_0d
+END FUNCTION global_sum_0d_sp
+
+FUNCTION global_sum_0d_dp (z_in, opt_iroot) RESULT (global_sum)
+
+  REAL(dp),          INTENT(in) :: z_in
+  INTEGER, OPTIONAL,INTENT(IN)  :: opt_iroot
+  REAL(dp)                      :: global_sum
+
+  INTEGER :: p_comm_glob
+!-----------------------------------------------------------------------
+
+  IF(comm_lev==0) THEN
+    p_comm_glob = p_comm_work
+  ELSE
+    p_comm_glob = glob_comm(comm_lev)
+  ENDIF
+
+  global_sum = p_sum(z_in, comm=p_comm_glob, root=opt_iroot)
+
+
+END FUNCTION global_sum_0d_dp
 
 ! integer variant of global_sum_0d
 !
-FUNCTION global_sum_0di (z_in, opt_iroot) RESULT (global_sum)
+FUNCTION global_sum_0d_int (z_in, opt_iroot) RESULT (global_sum)
 
   INTEGER,          INTENT(in) :: z_in
   INTEGER, OPTIONAL,INTENT(IN) :: opt_iroot
   INTEGER                      :: global_sum
- 
+
   INTEGER :: p_comm_glob, i_in(1), i_out(1)
 !-----------------------------------------------------------------------
 
@@ -1163,15 +1480,15 @@ FUNCTION global_sum_0di (z_in, opt_iroot) RESULT (global_sum)
   i_out      = p_sum(i_in, comm=p_comm_glob, root=opt_iroot)
   global_sum = i_out(1)
 
-END FUNCTION global_sum_0di
+END FUNCTION global_sum_0d_int
 
 ! Variant for 1D arrays
 !
-FUNCTION global_sum_1d (zfield, opt_iroot) RESULT (global_sum)
+FUNCTION global_sum_1d_sp (zfield, opt_iroot) RESULT (global_sum)
 
-  REAL(wp),          INTENT(in) :: zfield(:)
+  REAL(sp),          INTENT(in) :: zfield(:)
   INTEGER, OPTIONAL,INTENT(IN)  :: opt_iroot
-  REAL(wp)                      :: global_sum(SIZE(zfield))
+  REAL(sp)                      :: global_sum(SIZE(zfield))
 
   INTEGER :: p_comm_glob
 !-----------------------------------------------------------------------
@@ -1185,17 +1502,37 @@ FUNCTION global_sum_1d (zfield, opt_iroot) RESULT (global_sum)
   global_sum = p_sum(zfield, comm=p_comm_glob, root=opt_iroot)
 
 
-END FUNCTION global_sum_1d
+END FUNCTION global_sum_1d_sp
+
+FUNCTION global_sum_1d_dp (zfield, opt_iroot) RESULT (global_sum)
+
+  REAL(dp),          INTENT(in) :: zfield(:)
+  INTEGER, OPTIONAL,INTENT(IN)  :: opt_iroot
+  REAL(dp)                      :: global_sum(SIZE(zfield))
+
+  INTEGER :: p_comm_glob
+!-----------------------------------------------------------------------
+
+  IF(comm_lev==0) THEN
+    p_comm_glob = p_comm_work
+  ELSE
+    p_comm_glob = glob_comm(comm_lev)
+  ENDIF
+
+  global_sum = p_sum(zfield, comm=p_comm_glob, root=opt_iroot)
+
+
+END FUNCTION global_sum_1d_dp
 
 
 ! integer variant of global_sum_1d
 !
-FUNCTION global_sum_1di (zfield, opt_iroot) RESULT (global_sum)
+FUNCTION global_sum_1d_int (zfield, opt_iroot) RESULT (global_sum)
 
   INTEGER,          INTENT(in) :: zfield(:)
   INTEGER, OPTIONAL,INTENT(IN) :: opt_iroot
   INTEGER                      :: global_sum(SIZE(zfield))
- 
+
   INTEGER :: p_comm_glob
 !-----------------------------------------------------------------------
 
@@ -1208,7 +1545,7 @@ FUNCTION global_sum_1di (zfield, opt_iroot) RESULT (global_sum)
   global_sum = p_sum(zfield, comm=p_comm_glob, root=opt_iroot)
 
 
-END FUNCTION global_sum_1di
+END FUNCTION global_sum_1d_int
 
 !-------------------------------------------------------------------------
 !! Calculates the global sum of an integer scalar.
@@ -1217,7 +1554,7 @@ END FUNCTION global_sum_1di
 !! @param[in] opt_iroot (Optional:) root PE, otherwise we perform an
 !!            ALL-TO-ALL operation.
 !!
-FUNCTION global_sum_array_0di (zfield, opt_iroot) RESULT (global_sum)
+FUNCTION global_sum_array_0d_int (zfield, opt_iroot) RESULT (global_sum)
 
   INTEGER,           INTENT(in) :: zfield
   INTEGER, OPTIONAL, INTENT(IN) :: opt_iroot
@@ -1240,7 +1577,7 @@ FUNCTION global_sum_array_0di (zfield, opt_iroot) RESULT (global_sum)
   global_sum = NINT(z_auxs)
 
   stop_sync_timer(timer_global_sum)
-END FUNCTION global_sum_array_0di
+END FUNCTION global_sum_array_0d_int
 
 !-------------------------------------------------------------------------
 !! Calculates the global sum of zfield and checks for consistency
@@ -1250,13 +1587,13 @@ END FUNCTION global_sum_array_0di
 !! @param[in] opt_iroot (Optional:) root PE, otherwise we perform an
 !!            ALL-TO-ALL operation (for "l_fast_sum == .TRUE.").
 !!
-FUNCTION global_sum_array_0d (zfield, opt_iroot) RESULT (global_sum)
+FUNCTION global_sum_array_0d_sp (zfield, opt_iroot) RESULT (global_sum)
 
-  REAL(wp), INTENT(IN)           :: zfield
+  REAL(sp), INTENT(IN)           :: zfield
   INTEGER,  INTENT(IN), OPTIONAL :: opt_iroot
-  REAL(wp)                       :: global_sum
+  REAL(sp)                       :: global_sum
   ! local variables
-  REAL(wp)                      :: sum_on_testpe(1), z_aux(1)
+  REAL(sp)                      :: sum_on_testpe(1), z_aux(1)
   INTEGER :: p_comm_glob
 
   IF(comm_lev==0) THEN
@@ -1268,12 +1605,12 @@ FUNCTION global_sum_array_0d (zfield, opt_iroot) RESULT (global_sum)
   z_aux(1) = zfield
 
   IF(l_fast_sum) THEN
-    global_sum = simple_sum(z_aux, SIZE(z_aux), p_comm_glob, opt_iroot)
+    global_sum = simple_sum_sp(z_aux, SIZE(z_aux), p_comm_glob, opt_iroot)
   ELSE
     ! Note: For (l_fast_sum == .FALSE.) there is no special
     !       implementation, which gathers only at rank
     !       "iroot". Instead, we always do an ALLREDUCE here.
-    global_sum = order_insensit_ieee64_sum(z_aux, SIZE(z_aux), p_comm_glob)
+    global_sum = order_insensit_sum_sp(z_aux, SIZE(z_aux), p_comm_glob)
   ENDIF
 
   IF(p_test_run .AND. do_sync_checks) THEN
@@ -1284,19 +1621,55 @@ FUNCTION global_sum_array_0d (zfield, opt_iroot) RESULT (global_sum)
       CALL check_result( (/ global_sum /), 'global_sum_array')
     ENDIF
   ENDIF
-END FUNCTION global_sum_array_0d
+END FUNCTION global_sum_array_0d_sp
+
+FUNCTION global_sum_array_0d_dp (zfield, opt_iroot) RESULT (global_sum)
+
+  REAL(dp), INTENT(IN)           :: zfield
+  INTEGER,  INTENT(IN), OPTIONAL :: opt_iroot
+  REAL(dp)                       :: global_sum
+  ! local variables
+  REAL(dp)                      :: sum_on_testpe(1), z_aux(1)
+  INTEGER :: p_comm_glob
+
+  IF(comm_lev==0) THEN
+    p_comm_glob = p_comm_work
+  ELSE
+    p_comm_glob = glob_comm(comm_lev)
+  ENDIF
+
+  z_aux(1) = zfield
+
+  IF(l_fast_sum) THEN
+    global_sum = simple_sum_dp(z_aux, SIZE(z_aux), p_comm_glob, opt_iroot)
+  ELSE
+    ! Note: For (l_fast_sum == .FALSE.) there is no special
+    !       implementation, which gathers only at rank
+    !       "iroot". Instead, we always do an ALLREDUCE here.
+    global_sum = order_insensit_sum_dp(z_aux, SIZE(z_aux), p_comm_glob)
+  ENDIF
+
+  IF(p_test_run .AND. do_sync_checks) THEN
+    IF(l_fast_sum) THEN
+      CALL check_result( (/ global_sum /), 'global_sum_array', sum_on_testpe)
+      global_sum = sum_on_testpe(1)
+    ELSE
+      CALL check_result( (/ global_sum /), 'global_sum_array')
+    ENDIF
+  ENDIF
+END FUNCTION global_sum_array_0d_dp
 
 !-------------------------------------------------------------------------
 !! Calculates the global sum of zfield and checks for consistency
 !! when doing a verification run.
 !! This routine should be called outside an OMP parallel Region!
 !!
-FUNCTION global_sum_array_1d (zfield, opt_iroot) RESULT (global_sum)
+FUNCTION global_sum_array_1d_sp (zfield, opt_iroot) RESULT (global_sum)
 
-  REAL(wp),          INTENT(in) :: zfield(:)
+  REAL(sp),          INTENT(in) :: zfield(:)
   INTEGER,  INTENT(IN),OPTIONAL :: opt_iroot
-  REAL(wp)                      :: global_sum
-  REAL(wp)                      :: sum_on_testpe(1)
+  REAL(sp)                      :: global_sum
+  REAL(sp)                      :: sum_on_testpe(1)
 
   INTEGER :: p_comm_glob
 !-----------------------------------------------------------------------
@@ -1308,9 +1681,9 @@ FUNCTION global_sum_array_1d (zfield, opt_iroot) RESULT (global_sum)
   ENDIF
 
   IF(l_fast_sum) THEN
-    global_sum = simple_sum(zfield, SIZE(zfield), p_comm_glob, opt_iroot)
+    global_sum = simple_sum_sp(zfield, SIZE(zfield), p_comm_glob, opt_iroot)
   ELSE
-    global_sum = order_insensit_ieee64_sum(zfield, SIZE(zfield), p_comm_glob)
+    global_sum = order_insensit_sum_sp(zfield, SIZE(zfield), p_comm_glob)
   ENDIF
 
   IF(p_test_run .AND. do_sync_checks) THEN
@@ -1323,7 +1696,41 @@ FUNCTION global_sum_array_1d (zfield, opt_iroot) RESULT (global_sum)
   ENDIF
 
 
-END FUNCTION global_sum_array_1d
+END FUNCTION global_sum_array_1d_sp
+
+FUNCTION global_sum_array_1d_dp (zfield, opt_iroot) RESULT (global_sum)
+
+  REAL(dp),          INTENT(in) :: zfield(:)
+  INTEGER,  INTENT(IN),OPTIONAL :: opt_iroot
+  REAL(dp)                      :: global_sum
+  REAL(dp)                      :: sum_on_testpe(1)
+
+  INTEGER :: p_comm_glob
+!-----------------------------------------------------------------------
+
+  IF(comm_lev==0) THEN
+    p_comm_glob = p_comm_work
+  ELSE
+    p_comm_glob = glob_comm(comm_lev)
+  ENDIF
+
+  IF(l_fast_sum) THEN
+    global_sum = simple_sum_dp(zfield, SIZE(zfield), p_comm_glob, opt_iroot)
+  ELSE
+    global_sum = order_insensit_sum_dp(zfield, SIZE(zfield), p_comm_glob)
+  ENDIF
+
+  IF(p_test_run .AND. do_sync_checks) THEN
+    IF(l_fast_sum) THEN
+      CALL check_result( (/ global_sum /), 'global_sum_array', sum_on_testpe)
+      global_sum = sum_on_testpe(1)
+    ELSE
+      CALL check_result( (/ global_sum /), 'global_sum_array')
+    ENDIF
+  ENDIF
+
+
+END FUNCTION global_sum_array_1d_dp
 
 
 !-------------------------------------------------------------------------
@@ -1331,12 +1738,12 @@ END FUNCTION global_sum_array_1d
 !! when doing a verification run.
 !! This routine should be called outside an OMP parallel Region!
 !!
-FUNCTION global_sum_array_2d (zfield, lacc) RESULT (global_sum)
+FUNCTION global_sum_array_2d_sp (zfield, lacc) RESULT (global_sum)
 
-  REAL(wp),          INTENT(in) :: zfield(:, :)
+  REAL(sp),          INTENT(in) :: zfield(:, :)
   LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
-  REAL(wp)                      :: global_sum
-  REAL(wp)                      :: sum_on_testpe(1)
+  REAL(sp)                      :: global_sum
+  REAL(sp)                      :: sum_on_testpe(1)
 
   INTEGER :: p_comm_glob
 !-----------------------------------------------------------------------
@@ -1349,9 +1756,9 @@ FUNCTION global_sum_array_2d (zfield, lacc) RESULT (global_sum)
 
   IF(l_fast_sum) THEN
     CALL assert_acc_host_only("mo_sync:global_sum_array_2d-l_fast_sum", lacc)
-    global_sum = simple_sum(zfield, SIZE(zfield), p_comm_glob)
+    global_sum = simple_sum_sp(zfield, SIZE(zfield), p_comm_glob)
   ELSE
-    global_sum = order_insensit_ieee64_sum(zfield, SIZE(zfield), p_comm_glob, lacc=lacc)
+    global_sum = order_insensit_sum_sp(zfield, SIZE(zfield), p_comm_glob, lacc=lacc)
   ENDIF
 
   IF(p_test_run .AND. do_sync_checks) THEN
@@ -1365,18 +1772,54 @@ FUNCTION global_sum_array_2d (zfield, lacc) RESULT (global_sum)
   ENDIF
 
 
-END FUNCTION global_sum_array_2d
+END FUNCTION global_sum_array_2d_sp
+
+FUNCTION global_sum_array_2d_dp (zfield, lacc) RESULT (global_sum)
+
+  REAL(dp),          INTENT(in) :: zfield(:, :)
+  LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
+  REAL(dp)                      :: global_sum
+  REAL(dp)                      :: sum_on_testpe(1)
+
+  INTEGER :: p_comm_glob
+!-----------------------------------------------------------------------
+
+  IF(comm_lev==0) THEN
+    p_comm_glob = p_comm_work
+  ELSE
+    p_comm_glob = glob_comm(comm_lev)
+  ENDIF
+
+  IF(l_fast_sum) THEN
+    CALL assert_acc_host_only("mo_sync:global_sum_array_2d-l_fast_sum", lacc)
+    global_sum = simple_sum_dp(zfield, SIZE(zfield), p_comm_glob)
+  ELSE
+    global_sum = order_insensit_sum_dp(zfield, SIZE(zfield), p_comm_glob, lacc=lacc)
+  ENDIF
+
+  IF(p_test_run .AND. do_sync_checks) THEN
+    CALL assert_acc_host_only("mo_sync:global_sum_array_2d-do_sync_checks", lacc)
+    IF(l_fast_sum) THEN
+      CALL check_result( (/ global_sum /), 'global_sum_array', sum_on_testpe)
+      global_sum = sum_on_testpe(1)
+    ELSE
+      CALL check_result( (/ global_sum /), 'global_sum_array')
+    ENDIF
+  ENDIF
+
+
+END FUNCTION global_sum_array_2d_dp
 
 !-------------------------------------------------------------------------
 !! Calculates the global sum of zfield and checks for consistency
 !! when doing a verification run.
 !! This routine should be called outside an OMP parallel Region!
 !!
-FUNCTION global_sum_array_3d (zfield) RESULT (global_sum)
+FUNCTION global_sum_array_3d_sp (zfield) RESULT (global_sum)
 
-  REAL(wp),          INTENT(in) :: zfield(:,:,:)
-  REAL(wp)                      :: global_sum
-  REAL(wp)                      :: sum_on_testpe(1)
+  REAL(sp),          INTENT(in) :: zfield(:,:,:)
+  REAL(sp)                      :: global_sum
+  REAL(sp)                      :: sum_on_testpe(1)
 
   INTEGER :: p_comm_glob
 !-----------------------------------------------------------------------
@@ -1388,9 +1831,9 @@ FUNCTION global_sum_array_3d (zfield) RESULT (global_sum)
   ENDIF
 
   IF(l_fast_sum) THEN
-    global_sum = simple_sum(zfield, SIZE(zfield), p_comm_glob)
+    global_sum = simple_sum_sp(zfield, SIZE(zfield), p_comm_glob)
   ELSE
-    global_sum = order_insensit_ieee64_sum(zfield, SIZE(zfield), p_comm_glob)
+    global_sum = order_insensit_sum_sp(zfield, SIZE(zfield), p_comm_glob)
   ENDIF
 
   IF(p_test_run .AND. do_sync_checks) THEN
@@ -1402,7 +1845,39 @@ FUNCTION global_sum_array_3d (zfield) RESULT (global_sum)
     ENDIF
   ENDIF
 
-END FUNCTION global_sum_array_3d
+END FUNCTION global_sum_array_3d_sp
+
+FUNCTION global_sum_array_3d_dp (zfield) RESULT (global_sum)
+
+  REAL(dp),          INTENT(in) :: zfield(:,:,:)
+  REAL(dp)                      :: global_sum
+  REAL(dp)                      :: sum_on_testpe(1)
+
+  INTEGER :: p_comm_glob
+!-----------------------------------------------------------------------
+
+  IF(comm_lev==0) THEN
+    p_comm_glob = p_comm_work
+  ELSE
+    p_comm_glob = glob_comm(comm_lev)
+  ENDIF
+
+  IF(l_fast_sum) THEN
+    global_sum = simple_sum_dp(zfield, SIZE(zfield), p_comm_glob)
+  ELSE
+    global_sum = order_insensit_sum_dp(zfield, SIZE(zfield), p_comm_glob)
+  ENDIF
+
+  IF(p_test_run .AND. do_sync_checks) THEN
+    IF(l_fast_sum) THEN
+      CALL check_result( (/ global_sum /), 'global_sum_array', sum_on_testpe)
+      global_sum = sum_on_testpe(1)
+    ELSE
+      CALL check_result( (/ global_sum /), 'global_sum_array')
+    ENDIF
+  ENDIF
+
+END FUNCTION global_sum_array_3d_dp
 !-------------------------------------------------------------------------
 
 
@@ -1411,12 +1886,13 @@ END FUNCTION global_sum_array_3d
 !! when doing a verification run.
 !! This routine should be called from within an OMP parallel Region!
 !!
-FUNCTION omp_global_sum_array_1d (zfield) RESULT (global_sum)
+!! Not ported to single precision, unused
+FUNCTION omp_global_sum_array_1d_dp (zfield) RESULT (global_sum)
 
 !
-  REAL(wp),          INTENT(in) :: zfield(:)
-  REAL(wp)                      :: global_sum
-  REAL(wp)                      :: sum_on_testpe(1)
+  REAL(dp),          INTENT(in) :: zfield(:)
+  REAL(dp)                      :: global_sum
+  REAL(dp)                      :: sum_on_testpe(1)
 
   INTEGER :: p_comm_glob
 !-----------------------------------------------------------------------
@@ -1428,9 +1904,9 @@ FUNCTION omp_global_sum_array_1d (zfield) RESULT (global_sum)
   ENDIF
 
   IF(l_fast_sum) THEN
-    global_sum = omp_simple_sum(zfield, SIZE(zfield), p_comm_glob)
+    global_sum = omp_simple_sum_dp(zfield, SIZE(zfield), p_comm_glob)
   ELSE
-    global_sum = omp_order_insensit_ieee64_sum(zfield, SIZE(zfield), p_comm_glob)
+    global_sum = omp_order_insensit_sum_dp(zfield, SIZE(zfield), p_comm_glob)
   ENDIF
 
   IF(p_test_run .AND. do_sync_checks) THEN
@@ -1446,19 +1922,20 @@ FUNCTION omp_global_sum_array_1d (zfield) RESULT (global_sum)
 !$OMP BARRIER
   ENDIF
 
-END FUNCTION omp_global_sum_array_1d
+END FUNCTION omp_global_sum_array_1d_dp
 
 !-------------------------------------------------------------------------
 !! Calculates the global sum of zfield and checks for consistency
 !! when doing a verification run.
 !! This routine should be called from within an OMP parallel Region!
 !!
-FUNCTION omp_global_sum_array_2d (zfield) RESULT (global_sum)
+!! Not ported to single precision, unused
+FUNCTION omp_global_sum_array_2d_dp (zfield) RESULT (global_sum)
 
 !
-  REAL(wp),          INTENT(in) :: zfield(:, :)
-  REAL(wp)                      :: global_sum
-  REAL(wp)                      :: sum_on_testpe(1)
+  REAL(dp),          INTENT(in) :: zfield(:, :)
+  REAL(dp)                      :: global_sum
+  REAL(dp)                      :: sum_on_testpe(1)
 
   INTEGER :: p_comm_glob
 !-----------------------------------------------------------------------
@@ -1470,9 +1947,9 @@ FUNCTION omp_global_sum_array_2d (zfield) RESULT (global_sum)
   ENDIF
 
   IF(l_fast_sum) THEN
-    global_sum = omp_simple_sum(zfield, SIZE(zfield), p_comm_glob)
+    global_sum = omp_simple_sum_dp(zfield, SIZE(zfield), p_comm_glob)
   ELSE
-    global_sum = omp_order_insensit_ieee64_sum(zfield, SIZE(zfield), p_comm_glob)
+    global_sum = omp_order_insensit_sum_dp(zfield, SIZE(zfield), p_comm_glob)
   ENDIF
 
   IF(p_test_run .AND. do_sync_checks) THEN
@@ -1488,144 +1965,7 @@ FUNCTION omp_global_sum_array_2d (zfield) RESULT (global_sum)
 !$OMP BARRIER
   ENDIF
 
-END FUNCTION omp_global_sum_array_2d
-
-
-!-------------------------------------------------------------------------
-!
-!
-
-!! Calculates the global sum of zfield and checks for consistency.
-!!
-!! Calculates the global sum of zfield and checks for consistency
-!! when doing a verification run.
-!! This routine has to be called from outside an OMP parallel Region!
-!!
-FUNCTION global_sum_array2 (zfield) RESULT (global_sum)
-
-!
-   REAL(wp), INTENT(in) :: zfield(:,:)
-   REAL(wp)             :: global_sum
-
-   INTEGER(i8)       :: itmp(2), isum(2), ival1, ival2
-   INTEGER(i8)       :: ilsum(SIZE(zfield,2),2)
-   INTEGER           :: i, j, iexp, nblks, nlen
-   REAL(dp)          :: abs_max
-   REAL(dp)          :: fact, r_fact, rval
-   REAL(dp)          :: max_aux(SIZE(zfield,2))
-
-   REAL(dp), PARAMETER :: two_40 = 1099511627776._dp ! 2.**40
-   REAL(dp), PARAMETER :: r_two_40 = 1._dp/two_40
-
-#if defined (__PGI)
-   INTEGER(i8) :: mask40
-   DATA mask40 / z'000000ffffffffff' / ! last 40 bits set
-#else
-   INTEGER(i8), PARAMETER :: mask40 = INT(z'000000ffffffffff',i8)
-#endif
-   INTEGER :: p_comm_glob
-
-!-----------------------------------------------------------------------
-
-   ilsum = 0_i8
-   nblks = SIZE(zfield,2)
-   nlen  = SIZE(zfield,1)
-
-   IF(comm_lev==0) THEN
-     p_comm_glob = p_comm_work
-   ELSE
-     p_comm_glob = glob_comm(comm_lev)
-   ENDIF
-
-   ! Get the maximum absolute value of all numbers.
-!$OMP PARALLEL PRIVATE(rval)
-!$OMP DO PRIVATE(j)
-   DO j=1,nblks
-      max_aux(j) = MAXVAL(ABS(zfield(:,j)))
-   ENDDO
-!$OMP END DO
-
-!$OMP MASTER
-   rval = MAXVAL(max_aux)
-   abs_max = p_max(rval, comm=p_comm_glob)
-
-   ! Get the exponent of abs_max for scaling
-   iexp = EXPONENT(abs_max)
-
-   ! Calculate a factor for scaling the input numbers
-   ! so that the maximum absolute value of a scaled number
-   ! is below 2**40
-
-   fact = SCALE(1._dp,40-iexp) ! same as 2**(40-iexp)
-   r_fact = SCALE(1._dp,iexp-40) ! 1./fact
-
-!$OMP END MASTER
-!$OMP BARRIER
-
-   ! Sum up all numbers as scaled integers
-
-!$OMP DO PRIVATE(i, j, rval, ival1, ival2)
-   DO j=1,nblks
-     DO i=1,nlen
-       ! Scale number into range -2**40 < rval < 2**40
-       ! and store integer part in ival1
-
-       rval = zfield(i,j)*fact
-       ival1 = INT(rval,i8)
-
-       ! Scale fraction by 2**40 and store integer part in ival2
-
-       ival2 = INT((rval - REAL(ival1,dp))*two_40,i8)
-
-       ! Sum up ival1 and ival2; since we are using 8-byte integers
-       ! for the sum there are no problems with overflow
-
-       ilsum(j,1) = ilsum(j,1) + ival1
-       ilsum(j,2) = ilsum(j,2) + ival2
-     ENDDO
-   ENDDO
-!$OMP END DO
-!$OMP END PARALLEL
-
-   ! If the exponent is too small, return 0 in order to avoid
-   ! problems with overflow below
-
-   IF(iexp < -980) THEN
-      global_sum = 0._dp
-      RETURN
-   ENDIF
-
-   itmp(1) = SUM(ilsum(:,1))
-   itmp(2) = SUM(ilsum(:,2))
-   isum = p_sum(itmp, comm=p_comm_glob)
-
-   ! Scale integer numbers back to real numbers and add them.
-   ! For safety, we use only positive INTEGERS < 2**40 when converting to REAL
-
-    IF (isum(1) >= 0_i8) THEN
-       ival1 = ISHFT(isum(1),-40)
-       ival2 = IAND (isum(1),mask40)
-       global_sum = (REAL(ival1,dp)*r_fact)*two_40 + REAL(ival2,dp)*r_fact
-    ELSE
-       ival1 = ISHFT(ABS(isum(1)),-40)
-       ival2 = IAND (ABS(isum(1)),mask40)
-       global_sum = (REAL(ival1,dp)*r_fact)*two_40 + REAL(ival2,dp)*r_fact
-       global_sum = -global_sum
-    ENDIF
-
-    IF (isum(2) >= 0_i8) THEN
-       ival1 = ISHFT(isum(2),-40)
-       ival2 = IAND (isum(2),mask40)
-       global_sum = global_sum + (REAL(ival1,dp)*r_fact) + (REAL(ival2,dp)*r_fact)*r_two_40
-    ELSE
-       ival1 = ISHFT(ABS(isum(2)),-40)
-       ival2 = IAND (ABS(isum(2)),mask40)
-       global_sum = global_sum - (REAL(ival1,dp)*r_fact) - (REAL(ival2,dp)*r_fact)*r_two_40
-    ENDIF
-
-   IF(p_test_run .AND. do_sync_checks) CALL check_result( (/ global_sum /), 'global_sum_array2')
-
-END FUNCTION global_sum_array2
+END FUNCTION omp_global_sum_array_2d_dp
 
 
 !! Calculates the global sum of 3D and/or 4D input fields and checks for
@@ -1636,11 +1976,12 @@ END FUNCTION global_sum_array2
 !! ldiff=.true. (when providing a 4D field as input, it counts as "n" 3D fields)
 !! diffmask specifies if differences or ratios are to be computed.
 !!
-FUNCTION global_sum_array3 (nfields,ldiff,f3din,f3dd,f3din2,f3dd2,f4din,f4dd,diffmask) &
+!! Not ported to single precision, unused
+FUNCTION omp_global_sum_array_3d_dp (nfields,ldiff,f3din,f3dd,f3din2,f3dd2,f4din,f4dd,diffmask) &
          RESULT (global_sum)
 
-   REAL(wp), INTENT(in), TARGET           :: f3din(:,:,:)
-   REAL(wp), INTENT(in), TARGET, OPTIONAL :: f3dd(:,:,:), f3din2(:,:,:), f3dd2(:,:,:), &
+   REAL(dp), INTENT(in), TARGET           :: f3din(:,:,:)
+   REAL(dp), INTENT(in), TARGET, OPTIONAL :: f3dd(:,:,:), f3din2(:,:,:), f3dd2(:,:,:), &
                                              f4din(:,:,:,:), f4dd(:,:,:,:)
 
    INTEGER,  INTENT(in)           :: nfields  ! Total number of 3D input fields
@@ -1648,7 +1989,7 @@ FUNCTION global_sum_array3 (nfields,ldiff,f3din,f3dd,f3din2,f3dd2,f4din,f4dd,dif
                                               ! on diffmask) between f??in and f??d
    INTEGER,  INTENT(in), OPTIONAL :: diffmask(nfields) ! 1: compute differences, 2: compute ratios
 
-   REAL(wp)                       :: global_sum(nfields*SIZE(f3din,2))
+   REAL(dp)                       :: global_sum(nfields*SIZE(f3din,2))
 
    INTEGER(i8)       :: ival1, ival2
    INTEGER           :: i, j, k, kk, n, nblks, nlen, nlev, nblks2, nfldtot, &
@@ -1658,10 +1999,10 @@ FUNCTION global_sum_array3 (nfields,ldiff,f3din,f3dd,f3din2,f3dd2,f4din,f4dd,dif
    INTEGER(i8), ALLOCATABLE :: itmp(:,:),isum(:,:)
    INTEGER    , ALLOCATABLE :: iexp(:)
    REAL(dp),    ALLOCATABLE :: fact(:),r_fact(:),rval(:),abs_max(:)
-   REAL(wp),    ALLOCATABLE :: aux_sum(:)
+   REAL(dp),    ALLOCATABLE :: aux_sum(:)
 
    TYPE t_fieldptr
-     REAL(wp), POINTER :: fld(:,:,:)
+     REAL(dp), POINTER :: fld(:,:,:)
    END TYPE t_fieldptr
 
    TYPE(t_fieldptr), ALLOCATABLE :: ff(:)
@@ -1680,7 +2021,7 @@ FUNCTION global_sum_array3 (nfields,ldiff,f3din,f3dd,f3din2,f3dd2,f4din,f4dd,dif
 !-----------------------------------------------------------------------
 
    IF (ldiff .AND. .NOT.(PRESENT(diffmask))) THEN
-     CALL finish('global_sum_array3','ldiff=.TRUE. requires the presence of diffmask')
+     CALL finish('omp_global_sum_array_3d','ldiff=.TRUE. requires the presence of diffmask')
    ENDIF
 
    IF(comm_lev==0) THEN
@@ -1765,7 +2106,7 @@ FUNCTION global_sum_array3 (nfields,ldiff,f3din,f3dd,f3din2,f3dd2,f4din,f4dd,dif
      ! Calculate a factor for scaling the input numbers
      ! so that the maximum absolute value of a scaled number
      ! is below 2**40
-     fact(k) = 2._wp**(40._wp-REAL(iexp(k),wp))
+     fact(k) = 2._dp**(40._dp-REAL(iexp(k),dp))
      r_fact(k) = 1._dp/fact(k)
    ENDDO
 
@@ -1843,8 +2184,8 @@ FUNCTION global_sum_array3 (nfields,ldiff,f3din,f3dd,f3din2,f3dd2,f4din,f4dd,dif
        IF (diffmask(i) == 1) THEN
          global_sum(k) = aux_sum(k) - aux_sum(k+n)
        ELSE
-         global_sum(k) = MIN(1.001_wp, aux_sum(k) / MAX(1.e-50_wp,aux_sum(k+n)))
-         global_sum(k) = MAX(0.999_wp, global_sum(k))
+         global_sum(k) = MIN(1.001_dp, aux_sum(k) / MAX(1.e-50_dp,aux_sum(k+n)))
+         global_sum(k) = MAX(0.999_dp, global_sum(k))
        ENDIF
      ENDDO
    ELSE
@@ -1852,21 +2193,21 @@ FUNCTION global_sum_array3 (nfields,ldiff,f3din,f3dd,f3din2,f3dd2,f4din,f4dd,dif
      global_sum(1:n) = aux_sum(1:n)
    ENDIF
 
-   IF(p_test_run .AND. do_sync_checks) CALL check_result(global_sum, 'global_sum_array3')
+   IF(p_test_run .AND. do_sync_checks) CALL check_result(global_sum, 'omp_global_sum_array_3d')
 
    DEALLOCATE (ff,itmp,isum,iexp,fact,r_fact,rval,abs_max,aux_sum)
 
-END FUNCTION global_sum_array3
+END FUNCTION omp_global_sum_array_3d_dp
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
 !> global_min/global_max family:
 !! Calculate global min/max (using current communicator) and compare
 !! result to result on test PE (in case of a test run)
-FUNCTION global_min_0d(zfield) RESULT(global_min)
+FUNCTION global_min_0d_sp(zfield) RESULT(global_min)
 
-  REAL(wp), INTENT(IN) :: zfield
-  REAL(wp) :: global_min
+  REAL(sp), INTENT(IN) :: zfield
+  REAL(sp) :: global_min
 
   IF(comm_lev==0) THEN
     global_min = p_min(zfield, comm=p_comm_work)
@@ -1876,12 +2217,27 @@ FUNCTION global_min_0d(zfield) RESULT(global_min)
 
   IF(p_test_run .AND. do_sync_checks) CALL check_result( (/ global_min /), 'global_min' )
 
-END FUNCTION global_min_0d
+END FUNCTION global_min_0d_sp
+
+FUNCTION global_min_0d_dp(zfield) RESULT(global_min)
+
+  REAL(dp), INTENT(IN) :: zfield
+  REAL(dp) :: global_min
+
+  IF(comm_lev==0) THEN
+    global_min = p_min(zfield, comm=p_comm_work)
+  ELSE
+    global_min = p_min(zfield, comm=glob_comm(comm_lev))
+  ENDIF
+
+  IF(p_test_run .AND. do_sync_checks) CALL check_result( (/ global_min /), 'global_min' )
+
+END FUNCTION global_min_0d_dp
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
-!> global_min_0d for INTEGER
-FUNCTION global_min_0di(zfield) RESULT(global_min)
+!> global_min_0d_dp for INTEGER
+FUNCTION global_min_0d_int(zfield) RESULT(global_min)
 
   INTEGER, INTENT(IN) :: zfield
   INTEGER  :: global_min
@@ -1894,18 +2250,18 @@ FUNCTION global_min_0di(zfield) RESULT(global_min)
   ENDIF
 
   IF(p_test_run .AND. do_sync_checks) THEN
-    global_min_check = REAL(global_min)
+    global_min_check = REAL(global_min, KIND=wp)
     CALL check_result( (/ global_min_check /), 'global_min' )
   ENDIF
 
-END FUNCTION global_min_0di
+END FUNCTION global_min_0d_int
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
-FUNCTION global_min_1d(zfield) RESULT(global_min)
+FUNCTION global_min_1d_sp(zfield) RESULT(global_min)
 
-  REAL(wp), INTENT(IN) :: zfield(:)
-  REAL(wp) :: global_min(SIZE(zfield))
+  REAL(sp), INTENT(IN) :: zfield(:)
+  REAL(sp) :: global_min(SIZE(zfield))
 
   IF(comm_lev==0) THEN
     global_min = p_min(zfield, comm=p_comm_work)
@@ -1915,7 +2271,22 @@ FUNCTION global_min_1d(zfield) RESULT(global_min)
 
   IF(p_test_run .AND. do_sync_checks) CALL check_result( global_min, 'global_min' )
 
-END FUNCTION global_min_1d
+END FUNCTION global_min_1d_sp
+
+FUNCTION global_min_1d_dp(zfield) RESULT(global_min)
+
+  REAL(dp), INTENT(IN) :: zfield(:)
+  REAL(dp) :: global_min(SIZE(zfield))
+
+  IF(comm_lev==0) THEN
+    global_min = p_min(zfield, comm=p_comm_work)
+  ELSE
+    global_min = p_min(zfield, comm=glob_comm(comm_lev))
+  ENDIF
+
+  IF(p_test_run .AND. do_sync_checks) CALL check_result( global_min, 'global_min' )
+
+END FUNCTION global_min_1d_dp
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
@@ -1929,14 +2300,14 @@ END FUNCTION global_min_1d
 ! additional data on the maximum value, e.g., the level
 ! index where the maximum occurred.
 !
-FUNCTION global_max_0d(zfield, proc_id, keyval, iroot, icomm) RESULT(global_max)
+FUNCTION global_max_0d_sp(zfield, proc_id, keyval, iroot, icomm) RESULT(global_max)
 
-  REAL(wp), INTENT(IN) :: zfield
+  REAL(sp), INTENT(IN) :: zfield
   INTEGER, OPTIONAL, INTENT(inout) :: proc_id
   INTEGER, OPTIONAL, INTENT(inout) :: keyval
   INTEGER, OPTIONAL, INTENT(in)    :: iroot                !< rank of collecting PE
   INTEGER, OPTIONAL, INTENT(in)    :: icomm                !< MPI communicator
-  REAL(wp) :: global_max
+  REAL(sp) :: global_max
   INTEGER  :: pcomm
 
   IF(comm_lev==0) THEN
@@ -1954,12 +2325,39 @@ FUNCTION global_max_0d(zfield, proc_id, keyval, iroot, icomm) RESULT(global_max)
 
   IF(p_test_run .AND. do_sync_checks) CALL check_result( (/ global_max /), 'global_max' )
 
-END FUNCTION global_max_0d
+END FUNCTION global_max_0d_sp
+
+FUNCTION global_max_0d_dp(zfield, proc_id, keyval, iroot, icomm) RESULT(global_max)
+
+  REAL(dp), INTENT(IN) :: zfield
+  INTEGER, OPTIONAL, INTENT(inout) :: proc_id
+  INTEGER, OPTIONAL, INTENT(inout) :: keyval
+  INTEGER, OPTIONAL, INTENT(in)    :: iroot                !< rank of collecting PE
+  INTEGER, OPTIONAL, INTENT(in)    :: icomm                !< MPI communicator
+  REAL(dp) :: global_max
+  INTEGER  :: pcomm
+
+  IF(comm_lev==0) THEN
+    pcomm=p_comm_work
+  ELSE
+    pcomm=glob_comm(comm_lev)
+  END IF
+  IF (PRESENT(icomm)) pcomm = icomm
+
+  IF (p_test_run) THEN ! all-to-all communication required
+    global_max = p_max(zfield, proc_id=proc_id, keyval=keyval, comm=pcomm)
+  ELSE
+    global_max = p_max(zfield, proc_id=proc_id, keyval=keyval, comm=pcomm, root=iroot)
+  ENDIF
+
+  IF(p_test_run .AND. do_sync_checks) CALL check_result( (/ global_max /), 'global_max' )
+
+END FUNCTION global_max_0d_dp
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
-!> global_max_0d for INTEGER
-FUNCTION global_max_0di(zfield) RESULT(global_max)
+!> global_max_0d_dp for INTEGER
+FUNCTION global_max_0d_int(zfield) RESULT(global_max)
 
   INTEGER, INTENT(IN) :: zfield
   INTEGER  :: global_max
@@ -1979,11 +2377,11 @@ FUNCTION global_max_0di(zfield) RESULT(global_max)
   ENDIF
 
   IF(p_test_run .AND. do_sync_checks) THEN
-    global_max_check = REAL(global_max)
+    global_max_check = REAL(global_max, KIND=wp)
     CALL check_result( (/ global_max_check /), 'global_max' )
   ENDIF
 
-END FUNCTION global_max_0di
+END FUNCTION global_max_0d_int
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
@@ -1997,14 +2395,14 @@ END FUNCTION global_max_0di
 ! additional data on the maximum value, e.g., the level
 ! index where the maximum occurred.
 !
-FUNCTION global_max_1d(zfield, proc_id, keyval, iroot, icomm) RESULT(global_max)
+FUNCTION global_max_1d_sp(zfield, proc_id, keyval, iroot, icomm) RESULT(global_max)
 
-  REAL(wp), INTENT(IN) :: zfield(:)
+  REAL(sp), INTENT(IN) :: zfield(:)
   INTEGER, OPTIONAL, INTENT(inout) :: proc_id(SIZE(zfield))
   INTEGER, OPTIONAL, INTENT(inout) :: keyval(SIZE(zfield))
   INTEGER, OPTIONAL, INTENT(in)    :: iroot                !< rank of collecting PE
   INTEGER, OPTIONAL, INTENT(in)    :: icomm                !< MPI communicator
-  REAL(wp) :: global_max(SIZE(zfield))
+  REAL(sp) :: global_max(SIZE(zfield))
   INTEGER  :: pcomm
 
   IF(comm_lev==0) THEN
@@ -2022,7 +2420,34 @@ FUNCTION global_max_1d(zfield, proc_id, keyval, iroot, icomm) RESULT(global_max)
 
   IF(p_test_run .AND. do_sync_checks) CALL check_result( global_max, 'global_max' )
 
-END FUNCTION global_max_1d
+END FUNCTION global_max_1d_sp
+
+FUNCTION global_max_1d_dp(zfield, proc_id, keyval, iroot, icomm) RESULT(global_max)
+
+  REAL(dp), INTENT(IN) :: zfield(:)
+  INTEGER, OPTIONAL, INTENT(inout) :: proc_id(SIZE(zfield))
+  INTEGER, OPTIONAL, INTENT(inout) :: keyval(SIZE(zfield))
+  INTEGER, OPTIONAL, INTENT(in)    :: iroot                !< rank of collecting PE
+  INTEGER, OPTIONAL, INTENT(in)    :: icomm                !< MPI communicator
+  REAL(dp) :: global_max(SIZE(zfield))
+  INTEGER  :: pcomm
+
+  IF(comm_lev==0) THEN
+    pcomm=p_comm_work
+  ELSE
+    pcomm=glob_comm(comm_lev)
+  END IF
+  IF (PRESENT(icomm)) pcomm = icomm
+
+  IF (p_test_run) THEN ! all-to-all communication required
+    global_max = p_max(zfield, proc_id=proc_id, keyval=keyval, comm=pcomm)
+  ELSE
+    global_max = p_max(zfield, proc_id=proc_id, keyval=keyval, comm=pcomm, root=iroot)
+  ENDIF
+
+  IF(p_test_run .AND. do_sync_checks) CALL check_result( global_max, 'global_max' )
+
+END FUNCTION global_max_1d_dp
 
 !-------------------------------------------------------------------------------
 
@@ -2030,13 +2455,13 @@ END FUNCTION global_max_1d
 !! If res_on_testpe is present, it contains the result on the test PE on exit,
 !! otherwise the routine finishes if the results are not identical.
 
-SUBROUTINE check_result(res, routine, res_on_testpe)
+SUBROUTINE check_result_dp(res, routine, res_on_testpe)
 
-  REAL(wp), INTENT(IN) :: res(:)
+  REAL(dp), INTENT(IN) :: res(:)
   CHARACTER(len=*), INTENT(IN) :: routine
-  REAL(wp), INTENT(out), OPTIONAL :: res_on_testpe(:)
+  REAL(dp), INTENT(out), OPTIONAL :: res_on_testpe(:)
 
-  REAL(wp) :: aux(SIZE(res))
+  REAL(dp) :: aux(SIZE(res))
   INTEGER :: k
   LOGICAL :: out_of_sync, is_mpi_test
 
@@ -2044,7 +2469,7 @@ SUBROUTINE check_result(res, routine, res_on_testpe)
   IF (is_mpi_test) THEN
     aux(:) = res(:)
   ELSE
-    aux(:) = 0.0_wp ! Safety only
+    aux(:) = 0.0_dp ! Safety only
   END IF
 
   IF(comm_lev==0) THEN
@@ -2070,21 +2495,62 @@ SUBROUTINE check_result(res, routine, res_on_testpe)
     out_of_sync = .FALSE.
     DO k = 1, SIZE(res)
       ! Check if result is identical
-#if defined( __ROUNDOFF_CHECK )
-      IF ( ( ( ABS(aux(k)- res(k)) > ABS_TOL ) ) .AND.     &
-                ( ( ABS(aux(k)- res(k) ) ) / (ABS(res(k))+MACH_TOL)  > REL_TOL ) ) THEN
-        out_of_sync = .TRUE.
-        PRINT *, 'Abs. error ', ABS(aux(k)- res(k)), ' rel. error ', ( ABS(aux(k)- res(k) ) ) / (ABS(res(k))+MACH_TOL)
-      ENDIF
-#else
       out_of_sync = out_of_sync .OR. (aux(k)/=res(k))
-#endif
     END DO
     IF (out_of_sync) CALL finish(routine, 'Result out of sync')
   END IF
 
 
-END SUBROUTINE check_result
+END SUBROUTINE check_result_dp
+
+
+SUBROUTINE check_result_sp(res, routine, res_on_testpe)
+
+  REAL(sp), INTENT(IN) :: res(:)
+  CHARACTER(len=*), INTENT(IN) :: routine
+  REAL(sp), INTENT(out), OPTIONAL :: res_on_testpe(:)
+
+  REAL(sp) :: aux(SIZE(res))
+  INTEGER :: k
+  LOGICAL :: out_of_sync, is_mpi_test
+
+  is_mpi_test = my_process_is_mpi_test()
+  IF (is_mpi_test) THEN
+    aux(:) = res(:)
+  ELSE
+    aux(:) = 0.0_dp ! Safety only
+  END IF
+
+  IF(comm_lev==0) THEN
+    CALL p_bcast(aux, process_mpi_all_test_id, comm=p_comm_work_test)
+  ELSE
+    IF(get_my_mpi_all_id() == process_mpi_all_test_id) THEN
+      CALL p_send(aux, comm_proc0(comm_lev)+p_work_pe0, 1)
+    ELSE
+      IF(p_pe_work==comm_proc0(comm_lev)) CALL p_recv(aux, process_mpi_all_test_id, 1)
+      CALL p_bcast(aux, 0, comm=glob_comm(comm_lev))
+    ENDIF
+  ENDIF
+
+  IF( .NOT. is_mpi_test .AND. l_log_checks .AND. log_unit>0) THEN
+    DO k = 1, SIZE(res)
+      WRITE(log_unit,'(a,2g25.18,a,g25.18)') routine,aux(k),res(k),&
+           ' Error: ',ABS(aux(k)-res(k))
+    END DO
+  END IF
+  IF(PRESENT(res_on_testpe)) THEN
+    res_on_testpe = aux
+  ELSE
+    out_of_sync = .FALSE.
+    DO k = 1, SIZE(res)
+      ! Check if result is identical
+      out_of_sync = out_of_sync .OR. (aux(k)/=res(k))
+    END DO
+    IF (out_of_sync) CALL finish(routine, 'Result out of sync')
+  END IF
+
+
+END SUBROUTINE check_result_sp
 
 
 !-------------------------------------------------------------------------------
@@ -2099,7 +2565,149 @@ END SUBROUTINE check_result
 !! ATTENTION: When compiled with OpenMP in effect, this routine
 !! should be called from a parallel region!!!!
 !!
-FUNCTION omp_order_insensit_ieee64_sum(vals, num_vals, mpi_comm) RESULT(global_sum)
+FUNCTION omp_order_insensit_sum_sp(vals, num_vals, mpi_comm) RESULT(global_sum)
+
+  INTEGER,   INTENT(IN)  :: num_vals, mpi_comm
+  REAL(sp),  INTENT(IN)  :: vals(num_vals)
+
+  REAL(sp) :: global_sum
+
+  INTEGER(i4)       :: itmp(2),  ival1, ival2
+  INTEGER(i4), SAVE :: isum(2) ! This must be a shared variable
+  INTEGER           :: i, iexp
+  REAL(sp), SAVE    :: abs_max ! This must be a shared variable
+  REAL(sp)          :: fact, r_fact, rval
+
+  REAL(sp), PARAMETER :: two_15 = 32768._sp ! 2.**15
+  REAL(sp), PARAMETER :: r_two_15 = 1._sp/two_15
+
+#if defined (__PGI)
+  !INTEGER(i8) :: mask30
+  !DATA mask30 / z'000000003fffffff' / ! last 30 bits set, 2^30-1
+   ! For i8: 16 hex bits - 4 times as dense as binary -> 64 binary bits -> 8 binary bytes
+   ! For i4: 8 hex bits -> .. -> 4 binary bytes
+  INTEGER(i4) :: mask15
+  DATA mask15 / z'00007fff' / ! last 15 bits set 2^15-1
+#else
+  !INTEGER(i8), PARAMETER :: mask30 = INT(z'000000003fffffff',i8)
+  INTEGER(i4), PARAMETER :: mask15 = INT(z'00007fff',i4)
+#endif
+
+!-----------------------------------------------------------------------
+!    start_sync_timer(timer_omp_ordglb_sum)
+
+  ! Set shared variables in a MASTER region
+
+!$OMP MASTER
+  abs_max = 0._sp
+  isum(:) = 0_i4
+!$OMP END MASTER
+!$OMP BARRIER
+
+  ! Get the maximum absolute value of all numbers.
+
+!$OMP DO PRIVATE(i), REDUCTION(MAX:abs_max)
+  DO i=1,num_vals
+     abs_max = MAX(abs_max, ABS(vals(i)))
+  ENDDO
+!$OMP END DO
+
+!$OMP MASTER
+  rval = abs_max
+  abs_max = p_max(rval, comm=mpi_comm)
+!$OMP END MASTER
+!$OMP BARRIER
+
+  ! If abs_max is 0, all input values are 0
+  ! and we are done
+
+  IF(abs_max == 0.0_sp) THEN
+     global_sum = 0._sp
+     RETURN
+  ENDIF
+
+  ! Get the exponent of abs_max for scaling
+
+  iexp = EXPONENT(abs_max)
+
+  ! If the exponent is too small, return 0 in order to avoid
+  ! problems with overflow below
+
+  ! IEEE-754 SP: 1 sign, 8 exponent, 23 fraction/mantissa
+  ! UFL = 2^L = 2^(2^L) = 2^(2^8 - 2^7 - 1) = 2^-126
+  ! IEEE-754 DP: 1 sign, 11 exponent, 52 fraction/mantissa
+  ! UFL = 2^L = 2^(2^L) = 2^(2^11 - 2^10) = 2^-1022
+  IF(iexp < -110) THEN
+     global_sum = 0._sp
+     RETURN
+  ENDIF
+
+  ! Calculate a factor for scaling the input numbers
+  ! so that the maximum absolute value of a scaled number
+  ! is below 2**15
+
+  fact = SCALE(1._sp,15-iexp) ! same as 2**(15-iexp)
+  r_fact = SCALE(1._sp,iexp-15) ! 1./fact
+
+  ! Sum up all numbers as scaled INTEGERs
+
+!$OMP DO PRIVATE(i, rval, ival1, ival2), REDUCTION(+:isum)
+  DO i=1,num_vals
+
+     ! Scale number into range -2**30 < rval < 2**30
+     ! and store INTEGER part in ival1
+
+     rval = vals(i)*fact
+     ival1 = INT(rval,i4)
+
+     ! Scale fraction by 2**30 and store INTEGER part in ival2
+
+     ival2 = INT((rval - REAL(ival1,sp))*two_15,i4)
+
+     ! Sum up ival1 and ival2; since we are using 8-byte INTEGERs
+     ! for the sum there are no problems with overflow
+
+     isum(1) = isum(1) + ival1
+     isum(2) = isum(2) + ival2
+
+  ENDDO
+!$OMP END DO
+
+!$OMP MASTER
+  itmp = isum
+  isum = p_sum(itmp, comm=mpi_comm)
+!$OMP END MASTER
+!$OMP BARRIER
+
+  ! Scale INTEGER numbers back to REAL numbers and add them.
+  ! For safety, we use only positive INTEGERS < 2**30 when converting to REAL
+
+   IF(isum(1) >= 0_i4)THEN
+      ival1 = ISHFT(isum(1),-15)
+      ival2 = IAND (isum(1),mask15)
+      global_sum = (REAL(ival1,sp)*r_fact)*two_15 + REAL(ival2,sp)*r_fact
+   ELSE
+      ival1 = ISHFT(ABS(isum(1)),-15)
+      ival2 = IAND (ABS(isum(1)),mask15)
+      global_sum = (REAL(ival1,sp)*r_fact)*two_15 + REAL(ival2,sp)*r_fact
+      global_sum = -global_sum
+   ENDIF
+
+   IF(isum(2) >= 0_i4)THEN
+      ival1 = ISHFT(isum(2),-15)
+      ival2 = IAND (isum(2),mask15)
+      global_sum = global_sum + (REAL(ival1,sp)*r_fact) + (REAL(ival2,sp)*r_fact)*r_two_15
+   ELSE
+      ival1 = ISHFT(ABS(isum(2)),-15)
+      ival2 = IAND (ABS(isum(2)),mask15)
+      global_sum = global_sum - (REAL(ival1,sp)*r_fact) - (REAL(ival2,sp)*r_fact)*r_two_15
+   ENDIF
+
+!    stop_sync_timer(timer_omp_ordglb_sum)
+
+END FUNCTION omp_order_insensit_sum_sp
+
+FUNCTION omp_order_insensit_sum_dp(vals, num_vals, mpi_comm) RESULT(global_sum)
 
 !
    INTEGER  :: num_vals, mpi_comm
@@ -2231,7 +2839,7 @@ FUNCTION omp_order_insensit_ieee64_sum(vals, num_vals, mpi_comm) RESULT(global_s
 
 !    stop_sync_timer(timer_omp_ordglb_sum)
 
-END FUNCTION omp_order_insensit_ieee64_sum
+END FUNCTION omp_order_insensit_sum_dp
 !-------------------------------------------------------------------------------
 
 
@@ -2248,7 +2856,136 @@ END FUNCTION omp_order_insensit_ieee64_sum
 !! should be called outside an omp parallel region!!!!
 !! When used with OpenACC, the result is provided on host only.
 !!
-FUNCTION order_insensit_ieee64_sum(vals, num_vals, mpi_comm, lacc) RESULT(global_sum)
+FUNCTION order_insensit_sum_sp(vals, num_vals, mpi_comm, lacc) RESULT(global_sum)
+
+  !
+     INTEGER, INTENT(IN)  :: num_vals, mpi_comm
+     REAL(sp), INTENT(IN) :: vals(num_vals)
+     LOGICAL, INTENT(IN), OPTIONAL :: lacc ! If true, use openacc
+
+     REAL(sp) :: global_sum
+
+     INTEGER(i8)       :: itmp(2),  ival1, ival2
+     INTEGER(i8)       :: isum_1, isum_2, isum(2)
+     INTEGER           :: i, iexp
+     REAL(sp)          :: abs_max
+     REAL(sp)          :: fact, r_fact, rval
+     LOGICAL :: lzacc ! non-optional version of lacc
+
+     REAL(sp), PARAMETER :: two_30 = 1073741824._sp ! 2.**30
+     REAL(sp), PARAMETER :: r_two_30 = 1._sp/two_30
+
+#if defined (__PGI)
+     INTEGER(i8) :: mask30
+     DATA mask30 / z'000000003fffffff' / ! last 30 bits set
+#else
+     INTEGER(i8), PARAMETER :: mask30 = INT(z'000000003fffffff',i8)
+#endif
+
+  !-----------------------------------------------------------------------
+     start_sync_timer(timer_ordglb_sum)
+
+     CALL set_acc_host_or_device(lzacc, lacc)
+
+     ! Set shared variables in a MASTER region
+     abs_max = 0._sp
+     isum_1 = 0_i8
+     isum_2 = 0_i8
+     ! Get the maximum absolute value of all numbers.
+     !$ACC PARALLEL DEFAULT(PRESENT) COPY(abs_max) ASYNC(1) IF(lzacc)
+     !$ACC LOOP GANG VECTOR REDUCTION(MAX: abs_max)
+     DO i=1,num_vals
+        abs_max = MAX(abs_max, ABS(vals(i)))
+     ENDDO
+     !$ACC END PARALLEL
+     !$ACC WAIT IF(lzacc)
+     rval = abs_max
+     abs_max = p_max(rval, comm=mpi_comm)
+     ! If abs_max is 0, all input values are 0
+     ! and we are done
+     IF(abs_max == 0.0_sp) THEN
+        global_sum = 0._sp
+        stop_sync_timer(timer_ordglb_sum)
+        RETURN
+     ENDIF
+
+     ! Get the exponent of abs_max for scaling
+
+     iexp = EXPONENT(abs_max)
+
+     ! If the exponent is too small, return 0 in order to avoid
+     ! problems with overflow below
+
+     IF(iexp < -980) THEN
+        global_sum = 0._sp
+        stop_sync_timer(timer_ordglb_sum)
+        RETURN
+     ENDIF
+
+     ! Calculate a factor for scaling the input numbers
+     ! so that the maximum absolute value of a scaled number
+     ! is below 2**30
+
+     fact = SCALE(1._sp,30-iexp) ! same as 2**(30-iexp)
+     r_fact = SCALE(1._sp,iexp-30) ! 1./fact
+
+     ! Sum up all numbers as scaled integers
+     !$ACC PARALLEL DEFAULT(PRESENT) COPY(isum_1, isum_2) ASYNC(1) IF(lzacc)
+     !$ACC LOOP GANG VECTOR PRIVATE(rval, ival1, ival2) REDUCTION(+: isum_1, isum_2)
+     DO i=1,num_vals
+
+        ! Scale number into range -2**30 < rval < 2**30
+        ! and store integer part in ival1
+
+        rval = vals(i)*fact
+        ival1 = INT(rval,i8)
+
+        ! Scale fraction by 2**30 and store integer part in ival2
+
+        ival2 = INT((rval - REAL(ival1,sp))*two_30,i8)
+
+        ! Sum up ival1 and ival2; since we are using 8-byte integers
+        ! for the sum there are no problems with overflow
+
+        isum_1 = isum_1 + ival1
+        isum_2 = isum_2 + ival2
+
+     ENDDO
+     !$ACC END PARALLEL
+     !$ACC WAIT IF(lzacc)
+
+     itmp = (/ isum_1, isum_2 /)
+     isum = p_sum(itmp, comm=mpi_comm)
+
+     ! Scale integer numbers back to real numbers and add them.
+     ! For safety, we use only positive INTEGERS < 2**30 when converting to REAL
+
+      IF(isum(1) >= 0_i8)THEN
+         ival1 = ISHFT(isum(1),-30)
+         ival2 = IAND (isum(1),mask30)
+         global_sum = (REAL(ival1,sp)*r_fact)*two_30 + REAL(ival2,sp)*r_fact
+      ELSE
+         ival1 = ISHFT(ABS(isum(1)),-30)
+         ival2 = IAND (ABS(isum(1)),mask30)
+         global_sum = (REAL(ival1,sp)*r_fact)*two_30 + REAL(ival2,sp)*r_fact
+         global_sum = -global_sum
+      ENDIF
+
+      IF(isum(2) >= 0_i8)THEN
+         ival1 = ISHFT(isum(2),-30)
+         ival2 = IAND (isum(2),mask30)
+         global_sum = global_sum + (REAL(ival1,sp)*r_fact) + (REAL(ival2,sp)*r_fact)*r_two_30
+      ELSE
+         ival1 = ISHFT(ABS(isum(2)),-30)
+         ival2 = IAND (ABS(isum(2)),mask30)
+         global_sum = global_sum - (REAL(ival1,sp)*r_fact) - (REAL(ival2,sp)*r_fact)*r_two_30
+      ENDIF
+
+      stop_sync_timer(timer_ordglb_sum)
+
+END FUNCTION order_insensit_sum_sp
+
+FUNCTION order_insensit_sum_dp(vals, num_vals, mpi_comm, lacc) RESULT(global_sum)
 
 !
    INTEGER, INTENT(IN)  :: num_vals, mpi_comm
@@ -2284,7 +3021,7 @@ FUNCTION order_insensit_ieee64_sum(vals, num_vals, mpi_comm, lacc) RESULT(global
    isum_1 = 0_i8
    isum_2 = 0_i8
    ! Get the maximum absolute value of all numbers.
-   !$ACC PARALLEL DEFAULT(PRESENT) REDUCTION(MAX: abs_max) ASYNC(1) IF(lzacc)
+   !$ACC PARALLEL DEFAULT(PRESENT) COPY(abs_max) ASYNC(1) IF(lzacc)
    !$ACC LOOP GANG VECTOR REDUCTION(MAX: abs_max)
    DO i=1,num_vals
       abs_max = MAX(abs_max, ABS(vals(i)))
@@ -2322,7 +3059,7 @@ FUNCTION order_insensit_ieee64_sum(vals, num_vals, mpi_comm, lacc) RESULT(global
    r_fact = SCALE(1._dp,iexp-30) ! 1./fact
 
    ! Sum up all numbers as scaled integers
-   !$ACC PARALLEL DEFAULT(PRESENT) REDUCTION(+: isum_1, isum_2) ASYNC(1) IF(lzacc)
+   !$ACC PARALLEL DEFAULT(PRESENT) COPY(isum_1, isum_2) ASYNC(1) IF(lzacc)
    !$ACC LOOP GANG VECTOR PRIVATE(rval, ival1, ival2) REDUCTION(+: isum_1, isum_2)
    DO i=1,num_vals
 
@@ -2375,7 +3112,7 @@ FUNCTION order_insensit_ieee64_sum(vals, num_vals, mpi_comm, lacc) RESULT(global
 
     stop_sync_timer(timer_ordglb_sum)
 
-END FUNCTION order_insensit_ieee64_sum
+END FUNCTION order_insensit_sum_dp
 !-------------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
@@ -2387,7 +3124,35 @@ END FUNCTION order_insensit_ieee64_sum
 !! @param[in] opt_iroot (Optional:) root PE, otherwise we perform an
 !!            ALL-TO-ALL operation.
 !!
-FUNCTION simple_sum(vals, num_vals, mpi_comm, opt_iroot) RESULT(global_sum)
+FUNCTION simple_sum_sp(vals, num_vals, mpi_comm, opt_iroot) RESULT(global_sum)
+
+  INTEGER                        :: num_vals, mpi_comm
+  REAL(sp)                       :: vals(num_vals)
+  INTEGER,  INTENT(IN), OPTIONAL :: opt_iroot
+  REAL(sp)                       :: global_sum
+  ! local variables
+  INTEGER        :: i
+  REAL(sp), SAVE :: s, res
+
+!-----------------------------------------------------------------------
+   start_sync_timer(timer_global_sum)
+
+   s   = 0._sp
+   res = 0._sp
+
+   ! Sum up all numbers
+   DO i=1,num_vals
+      s = s + vals(i)
+   ENDDO
+   res = p_sum(s, comm=mpi_comm, root=opt_iroot)
+
+   global_sum = res
+
+   stop_sync_timer(timer_global_sum)
+
+END FUNCTION simple_sum_sp
+
+FUNCTION simple_sum_dp(vals, num_vals, mpi_comm, opt_iroot) RESULT(global_sum)
 
   INTEGER                        :: num_vals, mpi_comm
   REAL(dp)                       :: vals(num_vals)
@@ -2413,7 +3178,7 @@ FUNCTION simple_sum(vals, num_vals, mpi_comm, opt_iroot) RESULT(global_sum)
 
    stop_sync_timer(timer_global_sum)
 
-END FUNCTION simple_sum
+END FUNCTION simple_sum_dp
 !-------------------------------------------------------------------------
 
 !-------------------------------------------------------------------------------
@@ -2422,7 +3187,7 @@ END FUNCTION simple_sum
 !! ATTENTION: When compiled with OpenMP in effect, this routine
 !! should be called from a parallel region!!!!
 !!
-FUNCTION omp_simple_sum(vals, num_vals, mpi_comm) RESULT(global_sum)
+FUNCTION omp_simple_sum_dp(vals, num_vals, mpi_comm) RESULT(global_sum)
 
 !
    INTEGER  :: num_vals, mpi_comm
@@ -2434,7 +3199,7 @@ FUNCTION omp_simple_sum(vals, num_vals, mpi_comm) RESULT(global_sum)
    REAL(dp), SAVE :: s, res
 
 !-----------------------------------------------------------------------
-  start_sync_timer(timer_omp_global_sum)
+   start_sync_timer(timer_omp_global_sum)
 
    ! Set shared variables in a MASTER region
 
@@ -2460,7 +3225,7 @@ FUNCTION omp_simple_sum(vals, num_vals, mpi_comm) RESULT(global_sum)
 
    stop_sync_timer(timer_omp_global_sum)
 
-END FUNCTION omp_simple_sum
+END FUNCTION omp_simple_sum_dp
 !-------------------------------------------------------------------------
 
 
@@ -2670,83 +3435,154 @@ END SUBROUTINE decomposition_statistics
 !> Does boundary exchange for 3D cell-based fields, collecting as many
 !  fields as possible before actually performing the sync.
 !
-SUBROUTINE cumulative_sync_patch_array(typ, p_patch, f3d)
+SUBROUTINE cumulative_sync_patch_array_sp(typ, p_patch, f3d, lacc)
   INTEGER,       INTENT(IN)            :: typ
   TYPE(t_patch), INTENT(IN),    TARGET :: p_patch
-  REAL(wp),      INTENT(INOUT), TARGET :: f3d(:,:,:)
+  REAL(sp),      INTENT(INOUT), TARGET :: f3d(:,:,:)
+  LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
   ! local variables
-  CHARACTER(*), PARAMETER :: routine = modname//"::cumulative_sync_patch_array"
+  CHARACTER(*), PARAMETER :: routine = modname//"::cumulative_sync_patch_array_sp"
   INTEGER :: idx
 
   ! add pointer to list of cumulative sync fields:
-  idx = ncumul_sync(typ,p_patch%id) + 1
+  idx = ncumul_sync_sp(typ,p_patch%id) + 1
   IF (idx > MAX_CUMULATIVE_SYNC) CALL finish(routine, "Internal error!")
-  ncumul_sync(typ, p_patch%id)            =  idx
-  cumul_sync(typ, p_patch%id,idx)%f3d     => f3d
-  cumul_sync(typ, p_patch%id,idx)%p_patch => p_patch
+  ncumul_sync_sp(typ, p_patch%id)            =  idx
+  cumul_sync_sp(typ, p_patch%id, idx)%f3d     => f3d
+  cumul_sync_sp(typ, p_patch%id, idx)%p_patch => p_patch
   IF (idx == MAX_CUMULATIVE_SYNC) THEN
 !CDIR NOIEXPAND
-    CALL complete_cumulative_sync(typ, p_patch%id)
+    CALL complete_cumulative_sync(lacc, typ, p_patch%id)
   END IF
-END SUBROUTINE cumulative_sync_patch_array
+END SUBROUTINE cumulative_sync_patch_array_sp
+
+SUBROUTINE cumulative_sync_patch_array_dp(typ, p_patch, f3d, lacc)
+  INTEGER,       INTENT(IN)            :: typ
+  TYPE(t_patch), INTENT(IN),    TARGET :: p_patch
+  REAL(dp),      INTENT(INOUT), TARGET :: f3d(:,:,:)
+  LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
+  ! local variables
+  CHARACTER(*), PARAMETER :: routine = modname//"::cumulative_sync_patch_array_dp"
+  INTEGER :: idx
+
+  ! add pointer to list of cumulative sync fields:
+  idx = ncumul_sync_dp(typ,p_patch%id) + 1
+  IF (idx > MAX_CUMULATIVE_SYNC) CALL finish(routine, "Internal error!")
+  ncumul_sync_dp(typ, p_patch%id)            =  idx
+  cumul_sync_dp(typ, p_patch%id, idx)%f3d     => f3d
+  cumul_sync_dp(typ, p_patch%id, idx)%p_patch => p_patch
+  IF (idx == MAX_CUMULATIVE_SYNC) THEN
+!CDIR NOIEXPAND
+    CALL complete_cumulative_sync(lacc, typ, p_patch%id)
+  END IF
+END SUBROUTINE cumulative_sync_patch_array_dp
 
 
 !-------------------------------------------------------------------------
-!> If there are any pending "cumulative sync" operations: Complete them!
 !
-RECURSIVE SUBROUTINE complete_cumulative_sync(opt_typ, opt_patch_id)
+RECURSIVE SUBROUTINE complete_cumulative_sync(lacc, opt_typ, opt_patch_id)
+  LOGICAL, INTENT(IN) :: lacc ! If compiled with OpenACC: IF lacc is True, use GPU memory
   INTEGER, OPTIONAL, INTENT(IN) :: opt_typ
   INTEGER, OPTIONAL, INTENT(IN) :: opt_patch_id
   ! local variables
   CHARACTER(*), PARAMETER :: routine = modname//"::complete_cumulative_sync"
   TYPE(t_patch), POINTER :: p_patch
-  INTEGER :: i
+  TYPE(t_ptr_3d_dp) :: ptr_3d_dp(MAX_CUMULATIVE_SYNC)
+  TYPE(t_ptr_3d_sp) :: ptr_3d_sp(MAX_CUMULATIVE_SYNC)
+  INTEGER :: i, ncumul_dp, ncumul_sp
 
   ! first, handle the case that this routine has been called for all
   ! sync types or/and all patches:
   IF (.NOT. PRESENT(opt_typ)) THEN
     DO i=1,4
 !CDIR NOIEXPAND
-      CALL complete_cumulative_sync(i, opt_patch_id)
+      CALL complete_cumulative_sync(lacc, i, opt_patch_id)
     END DO
     RETURN
   END IF
   IF (.NOT. PRESENT(opt_patch_id)) THEN
     DO i=1,max_dom
 !CDIR NOIEXPAND
-      CALL complete_cumulative_sync(opt_typ,i)
+      CALL complete_cumulative_sync(lacc, opt_typ,i)
     END DO
     RETURN
   END IF
-  ! now, call "sync_patch_array_mult"
+
+  ncumul_dp = ncumul_sync_dp(opt_typ,opt_patch_id)
+  ncumul_sp = ncumul_sync_sp(opt_typ,opt_patch_id)
+
+  ! Error check sync counters
+  IF ((ncumul_sp < 0 .OR. ncumul_sp > MAX_CUMULATIVE_SYNC) .OR. &
+      (ncumul_dp < 0 .OR. ncumul_dp > MAX_CUMULATIVE_SYNC)) THEN
+    CALL finish(routine, "Internal error!")
+  END IF
+
+  ! No data
+  IF ((ncumul_sp == 0) .AND. (ncumul_dp == 0)) RETURN
+
+  ! now, call "sync_patch_array_mult_mixprec"
   IF (PRESENT(opt_typ) .AND. (PRESENT(opt_patch_id))) THEN
-    p_patch => cumul_sync(opt_typ,opt_patch_id,1)%p_patch
-    SELECT CASE(ncumul_sync(opt_typ,opt_patch_id))
-    CASE (0)
-      RETURN
-    CASE (1)
-      CALL sync_patch_array_mult(opt_typ, p_patch, 1, cumul_sync(opt_typ,opt_patch_id,1)%f3d)
-    CASE (2)
-      CALL sync_patch_array_mult(opt_typ, p_patch, 2, cumul_sync(opt_typ,opt_patch_id, 1)%f3d, &
-        &                        cumul_sync(opt_typ,opt_patch_id,2)%f3d)
-    CASE (3)
-      CALL sync_patch_array_mult(opt_typ, p_patch, 3, cumul_sync(opt_typ,opt_patch_id,1)%f3d,  &
-        &                        cumul_sync(opt_typ,opt_patch_id,2)%f3d, cumul_sync(opt_typ,opt_patch_id,3)%f3d)
-    CASE (4)
-      CALL sync_patch_array_mult(opt_typ, p_patch, 4, cumul_sync(opt_typ,opt_patch_id,1)%f3d,  &
-        &                        cumul_sync(opt_typ,opt_patch_id,2)%f3d, cumul_sync(opt_typ,opt_patch_id,3)%f3d, &
-        &                        cumul_sync(opt_typ,opt_patch_id,4)%f3d)
-    CASE (5)
-      CALL sync_patch_array_mult(opt_typ, p_patch, 5, cumul_sync(opt_typ,opt_patch_id,1)%f3d,  &
-        &                        cumul_sync(opt_typ,opt_patch_id,2)%f3d, cumul_sync(opt_typ,opt_patch_id,3)%f3d, &
-        &                        cumul_sync(opt_typ,opt_patch_id,4)%f3d, cumul_sync(opt_typ,opt_patch_id,5)%f3d)
-    CASE DEFAULT
-      CALL finish(routine, "Internal error!")
-    END SELECT
-    ncumul_sync(opt_typ,opt_patch_id) = 0 ! reset sync counter
+    ! Set up pointers
+    IF (ncumul_sp /= 0) THEN
+      p_patch => cumul_sync_sp(opt_typ,opt_patch_id,1)%p_patch
+
+      DO i=1,ncumul_sp
+        ! Excessive debugging due to problems with NAG compiler :)
+        IF (.NOT. ASSOCIATED(cumul_sync_sp(opt_typ,opt_patch_id,i)%f3d) ) &
+          CALL finish(routine, "internal error, can not find field")
+
+        ptr_3d_sp(i)%p => cumul_sync_sp(opt_typ,opt_patch_id,i)%f3d
+      END DO
+    END IF
+
+    IF (ncumul_dp /= 0) THEN
+      p_patch => cumul_sync_dp(opt_typ,opt_patch_id,1)%p_patch
+
+      DO i = 1, ncumul_dp
+        ! Excessive debugging due to problems with NAG compiler :)
+        IF (.NOT. ASSOCIATED(cumul_sync_dp(opt_typ,opt_patch_id,i)%f3d) ) &
+          CALL finish(routine, "internal error, can not find field")
+
+        ptr_3d_dp(i)%p => cumul_sync_dp(opt_typ,opt_patch_id,i)%f3d
+      END DO
+    END IF
+
+    ! now, call "sync_patch_array_mult_mixprec"
+    IF (ncumul_dp /= 0) THEN
+      IF (ncumul_sp /= 0) THEN
+        CALL sync_patch_array_mult_mixprec(opt_typ, p_patch=p_patch, nfields_sp=ncumul_sp, nfields_dp=ncumul_dp, &
+          &                                f3din_arr_sp=ptr_3d_sp(1:ncumul_sp), f3din_arr_dp=ptr_3d_dp(1:ncumul_dp), &
+          &                                lacc=lacc)
+      ELSE
+        CALL sync_patch_array_mult_mixprec(opt_typ, p_patch=p_patch, nfields_sp=0, nfields_dp=ncumul_dp, &
+          &                                f3din_arr_dp=ptr_3d_dp(1:ncumul_dp), lacc=lacc)
+      ENDIF
+    ELSE
+      IF (ncumul_sp /= 0) THEN
+        CALL sync_patch_array_mult_mixprec(opt_typ, p_patch=p_patch, nfields_sp=ncumul_sp, nfields_dp=0, &
+          &                                f3din_arr_sp=ptr_3d_sp(1:ncumul_sp), lacc=lacc)
+      ELSE
+        CALL finish(routine, "Internal error")
+      ENDIF
+    END IF
+    !$ACC WAIT(1)
+
+    ! clean up cumul_sync_{sp,dp}
+    DO i=1,MAX_CUMULATIVE_SYNC
+      NULLIFY(cumul_sync_sp(opt_typ, opt_patch_id, i)%f3d)
+      NULLIFY(cumul_sync_sp(opt_typ, opt_patch_id, i)%p_patch)
+    END DO
+    DO i=1,MAX_CUMULATIVE_SYNC
+      NULLIFY(cumul_sync_dp(opt_typ, opt_patch_id, i)%f3d)
+      NULLIFY(cumul_sync_dp(opt_typ, opt_patch_id, i)%p_patch)
+    END DO
+    ! reset sync counter
+    ncumul_sync_sp(opt_typ,opt_patch_id) = 0
+    ncumul_sync_dp(opt_typ,opt_patch_id) = 0
+  ELSE
+    CALL finish(routine, "Internal error not present(opt_typ,opt_patch_id)")
   END IF
 END SUBROUTINE complete_cumulative_sync
 
 
 END MODULE mo_sync
-

@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -43,7 +43,7 @@ cdo copy ${DATDIR}/${NAME}_atm_2d_ml.nc $atm_phy
 Varname=rlnt
 if cdo -s showvar -selvar,${Varname}  $atm_phy > /dev/null
 then
-   cdo info -selvar,${Varname} $atm_phy 
+   cdo info -selvar,${Varname} $atm_phy
 else
 ##########if rlnt  doesn't exits ===> =-rlut ##########
    if cdo -s showvar -selvar,rlut  $atm_phy > /dev/null
@@ -64,7 +64,7 @@ fi
 Varname=rsnt
 if cdo -s showvar -selvar,${Varname}  $atm_phy > /dev/null
 then
-   cdo info -selvar,${Varname} $atm_phy 
+   cdo info -selvar,${Varname} $atm_phy
 else
 ##########if rsnt  doesn't exits ===> rsdt-rsut ##########
    if cdo -s showvar -selvar,rsut  $atm_phy > /dev/null
@@ -90,7 +90,7 @@ fi
 Varname=rsns
 if cdo -s showvar -selvar,${Varname}  $atm_phy > /dev/null
 then
-   cdo info -selvar,${Varname} $atm_phy 
+   cdo info -selvar,${Varname} $atm_phy
 else
 ##########if rsns  doesn't exits ===> rsds-rsus ##########
    if cdo -s showvar -selvar,rsus  $atm_phy > /dev/null
@@ -116,7 +116,7 @@ fi
 Varname=rlns
 if cdo -s showvar -selvar,${Varname}  $atm_phy > /dev/null
 then
-   cdo info -selvar,${Varname} $atm_phy 
+   cdo info -selvar,${Varname} $atm_phy
 else
 ##########if rlns  doesn't exits ===> rlds-rlus ##########
    if cdo -s showvar -selvar,rlus  $atm_phy > /dev/null
@@ -186,7 +186,7 @@ mlogin*|mistral*)
   enscript -fCourier10 -o table_${EXP}_fldmean_${TYP}.ps table_${EXP}_fldmean_${TYP}
   enscript  -fCourier8 -r -o table_${EXP}_zonmean_${TYP}.ps table_${EXP}_zonmean_${TYP};;
 esac
-    
+
 
 set +e
 rm -f  mo_tables.mod mo_util_string.mod

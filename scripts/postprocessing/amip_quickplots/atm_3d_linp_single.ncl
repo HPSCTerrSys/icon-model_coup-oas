@@ -1,15 +1,15 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
 ; SPDX-License-Identifier: BSD-3-Clause
 ; ------------------------------------------
 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl" 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl" 
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 
@@ -26,7 +26,7 @@ begin
   nlats=nlati/2
   gs=doubletofloat(gaus(nlats))
   gweight=gs(:,1)
-;***compute mean 
+;***compute mean
   meanV=dim_avg_wgt(Code,gweight,0)
 
   minV=min(Code)
@@ -42,10 +42,10 @@ begin
   txres@txFontHeightF = 0.014                   ; font smaller. default big
   gsn_text_ndc(wks,pltdate,0.9,0.1,txres)
   gsn_text_ndc(wks,comment,0.17,0.1,txres)
-  txres@txFontHeightF = 0.016 
+  txres@txFontHeightF = 0.016
   gsn_text_ndc(wks,statV,0.5,0.22,txres)
 end
-;***end procedure 
+;***end procedure
 undef("define_zon_draw_strings")
  procedure define_zon_draw_strings (nlati,Code,comment,wks)
 ;************************************************
@@ -59,7 +59,7 @@ begin
   nlats=nlati/2
   gs=doubletofloat(gaus(nlats))
   gweight=gs(:,1)
-;***compute mean 
+;***compute mean
   meanV=dim_avg_wgt(Code,gweight,0)
 
   minV=min(Code)
@@ -75,10 +75,10 @@ begin
   txres@txFontHeightF = 0.014                   ; font smaller. default big
   gsn_text_ndc(wks,pltdate,0.93,0.08,txres)
   gsn_text_ndc(wks,comment,0.17,0.08,txres)
-  txres@txFontHeightF = 0.016 
+  txres@txFontHeightF = 0.016
   gsn_text_ndc(wks,statV,0.6,0.22,txres)
 end
-;***end procedure 
+;***end procedure
 undef("plot_cont_zon")
  procedure plot_cont_zon (wks,var,nlati, res_in,pltName,\
                 mainTitle,subTitle,comment)
@@ -92,8 +92,8 @@ begin
     res@tiMainString         = mainTitle
     res@tiYAxisString        = " "              ; Y-Axis no label
     res@gsnCenterString      = subTitle
-    res@gsnLeftString        = " " 
-    res@gsnRightString       = " " 
+    res@gsnLeftString        = " "
+    res@gsnRightString       = " "
     res@trYLog   = False                        ; no logarithmic Y-axis
     res@tmXMajorGrid      = True                ; X Axis grid lines
     res@tmXMajorGridLineColor = "grey"          ; color X Axis grid lines
@@ -101,10 +101,10 @@ begin
     res@tmYMajorGridLineColor = "grey"          ; color Y Axis grid lines
     res@tmYLMode = "Explicit"
     res@tmYLValues = (/100,200,300,400,500,600,700,800,900,1000/)
-    res@tmYLLabels = (/100,200,300,400,500,600,700,800,900,1000/) 
+    res@tmYLLabels = (/100,200,300,400,500,600,700,800,900,1000/)
     res@tmYRMode = "Automatic"
     res@tmYROn               = False     ; Turn off y-axis (right) major ticks
-    res@tmXTOn               = True  
+    res@tmXTOn               = True
     res=res_in
     res@cnFillOn             = True               ; turn on color fill
     res@cnLinesOn            = True               ; turn off contour lines
@@ -112,7 +112,7 @@ begin
     res@pmLabelBarOrthogonalPosF = 0.07           ; move farther to plot
     res@lbOrientation        = "horizontal"       ; vertical label bars
 
-    res@vpWidthF  = 0.78		; set width of plot 
+    res@vpWidthF  = 0.78		; set width of plot
     res@vpHeightF = 0.5		; set height of plot
 
     plot = gsn_csm_pres_hgt(wks,var, res)  ; create plot
@@ -138,10 +138,10 @@ begin
     BWres@tiMainString          = mainTitle
     BWres@tiYAxisString         = " "             ; Y-Axis no label
     BWres@gsnCenterString       = subTitle
-    BWres@gsnLeftString         = " " 
-    BWres@gsnRightString        = " " 
+    BWres@gsnLeftString         = " "
+    BWres@gsnRightString        = " "
     BWres@gsnContourZeroLineThicknessF = 2. 	  ; thickness of zero contour
-    BWres@gsnContourNegLineDashPattern = 1        ; negative contours to dash 
+    BWres@gsnContourNegLineDashPattern = 1        ; negative contours to dash
     BWres@trYLog                = False           ; no logarithmic Y-axis
     BWres@tmXMajorGrid          = True                ; X Axis grid lines
     BWres@tmXMajorGridLineColor = "grey"          ; color X Axis grid lines
@@ -149,14 +149,14 @@ begin
     BWres@tmYMajorGridLineColor = "grey"          ; color Y Axis grid lines
     BWres@tmYLMode = "Explicit"
     BWres@tmYLValues = (/100,200,300,400,500,600,700,800,900,1000/)
-    BWres@tmYLLabels = (/100,200,300,400,500,600,700,800,900,1000/) 
+    BWres@tmYLLabels = (/100,200,300,400,500,600,700,800,900,1000/)
     BWres@tmYRMode = "Automatic"
     BWres@tmYROn               = False   ; Turn off y-axis (right) major ticks
-    BWres@tmXTOn               = True  
+    BWres@tmXTOn               = True
     BWres@cnInfoLabelOn        = False            ; turn off contour label box
     BWres@cnLineLabelFormat    = "#f"             ; no unnecessary 0
 
-    BWres@vpWidthF  = 0.78		; set width of plot 
+    BWres@vpWidthF  = 0.78		; set width of plot
     BWres@vpHeightF = 0.5		; set height of plot
 
 
@@ -195,20 +195,20 @@ begin
 
     Cvar="mastrfu"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-   
+
     mainTitle = "Psi [10~S~9~N~kg/s]  hPa "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
 ;***read code 132
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 ;***create plot
     BWres                      = True             ; plot mods desired
@@ -227,26 +227,26 @@ if (isfilepresent(fili)) then
 
     Cvar="cl"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-   
+
     mainTitle = "Cloud cover [%] "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
-;***read 
-    f       = addfile (fili , "r") 
+;***read
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 ;***create plot
     BWres                      = True             ; plot mods desired
     BWres@tmYLMode = "Explicit"
     BWres@tmYLValues = (/100,200,300,400,500,600,700,800,900,1000/)
-    BWres@tmYLLabels = (/100,200,300,400,500,600,700,800,900,1000/) 
+    BWres@tmYLLabels = (/100,200,300,400,500,600,700,800,900,1000/)
 
     BWres@cnInfoLabelOn        = False            ; turn off contour label box
     BWres@cnLineLabelFormat    = "#f"             ; no unnecessary 0
@@ -266,21 +266,21 @@ if (isfilepresent(fili)) then
 
     Cvar="ta"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-    
+
     mainTitle = "Temperature [C] "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
 
 ;***read code 130
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 ;***create plot
     BWres=True
@@ -299,23 +299,23 @@ if (isfilepresent(fili)) then
 
     Cvar="ta"
     fili    = workdir+"/Ubusy_d"+Cvar+".nc"
-    
+
     mainTitle = "Temperature [C] "+typ
     subTitle  = run+meantime+" - Erain"+eratime
 
 if (isfilepresent(fili)) then
 ;***read code 131
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_era_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_era_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
@@ -323,7 +323,7 @@ if (isfilepresent(fili)) then
     res@cnLevels             = (/-16,-8,-4,-2,-1,1,2,4,8,16/)
     res@cnFillColors         = (/2,4,6,7,9,0,11,12,14,15,17/)
     res@cnMissingValFillColor = missColor
-                       
+
     plot_cont_zon ( wks,var, nlati, res,pltName,\
                 mainTitle,subTitle,comment )
 
@@ -338,21 +338,21 @@ if (isfilepresent(fili)) then
 
     Cvar="ua"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-   
+
     mainTitle = "U [m/s] "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
 
 ;***read code 131
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 ;***create plot
     BWres                      = True             ; plot mods desired
@@ -372,23 +372,23 @@ if (isfilepresent(fili)) then
 
     Cvar="ua"
     fili    = workdir+"/Ubusy_d"+Cvar+".nc"
-    
+
     mainTitle = "U [m/s] "+typ
     subTitle  = run+meantime+" - Erain"+eratime
 
 if (isfilepresent(fili)) then
 ;***read code 131
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_era_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_era_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
@@ -396,7 +396,7 @@ if (isfilepresent(fili)) then
     res@cnLevels             = (/-16,-8,-4,-2,-1,1,2,4,8,16/)
     res@cnFillColors         = (/2,4,6,7,9,0,11,12,14,15,17/)
     res@cnMissingValFillColor = missColor
-                       
+
     plot_cont_zon ( wks,var, nlati, res,pltName,\
                 mainTitle,subTitle,comment )
 
@@ -410,20 +410,20 @@ if (isfilepresent(fili)) then
 
     Cvar="va"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-   
+
     mainTitle = "V [m/s] "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
 ;***read code 132
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 ;***create plot
     BWres                      = True             ; plot mods desired
@@ -442,32 +442,32 @@ if (isfilepresent(fili)) then
 
     Cvar="va"
     fili    = workdir+"/Ubusy_d"+Cvar+".nc"
-    
+
     mainTitle = "V [m/s] "+typ
     subTitle  = run+meantime+" - Erain"+eratime
 
 if (isfilepresent(fili)) then
 
 ;***read code 132
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_era_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_era_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor  = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor  = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
     res@cnLevelSelectionMode = "ExplicitLevels" ; set explicit contour levels
     res@cnLevels             = (/-1.,-0.8,-0.6,-0.4,-0.2,0.2,0.4,0.6,0.8,1./)
     res@cnFillColors         = (/2,4,7,8,9,0,11,12,14,15,17/)
-    res@cnMissingValFillColor = missColor 
-                       
+    res@cnMissingValFillColor = missColor
+
     plot_cont_zon ( wks,var, nlati, res,pltName,\
                 mainTitle,subTitle,comment )
 
@@ -486,15 +486,15 @@ if (isfilepresent(fili)) then
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
-;***read code 
-    f       = addfile (fili , "r") 
+;***read code
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 ;***create plot
     BWres                      = True             ; plot mods desired
@@ -512,20 +512,20 @@ if (isfilepresent(fili)) then
 
     Cvar="hur"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-   
+
     mainTitle = "Relative humidity [%] "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
-;***read 
-    f       = addfile (fili , "r") 
+;***read
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 ;***create plot
     BWres                      = True             ; plot mods desired
@@ -544,32 +544,32 @@ if (isfilepresent(fili)) then
 
     Cvar="hur"
     fili    = workdir+"/Ubusy_d"+Cvar+".nc"
-    
+
     mainTitle = "Relative humidity [%] "+typ
     subTitle  = run+meantime+" - Erain"+eratime
 
 if (isfilepresent(fili)) then
 
-;***read 
-    f       = addfile (fili , "r") 
+;***read
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_era_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_era_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor  = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map 
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor  = NhlNewColor(wks,0.5,0.5,0.5)     ; add gray to color map
 
 ;***create plot
     res                      = True             ; plot mods desired
     res@cnLevelSelectionMode = "ExplicitLevels" ; set explicit contour levels
     res@cnLevels             = (/-30.,-20.,-10.,-5.,-2.,2.,5.,10.,20.,30./)
     res@cnFillColors         = (/2,4,7,8,9,0,11,12,14,15,17/)
-    res@cnMissingValFillColor = missColor 
-                       
+    res@cnMissingValFillColor = missColor
+
     plot_cont_zon ( wks,var, nlati, res,pltName,\
                 mainTitle,subTitle,comment )
 
@@ -584,21 +584,21 @@ if (isfilepresent(fili)) then
 
     Cvar="clw"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-    
+
     mainTitle = "Cloud water [mg/kg] "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
 
-;***read code 
-    f       = addfile (fili , "r") 
+;***read code
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 ;***create plot
     BWres                      = True             ; plot mods desired
@@ -616,22 +616,22 @@ if (isfilepresent(fili)) then
 
     Cvar="cli"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-   
+
     mainTitle = "Cloud ice [mg/kg] "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
 
 ;***read code 154
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     delete(var@long_name)                  ; don't draw long_name by default
     delete(var@units)                      ; don't draw unit by default
-;    printVarSummary(var) 
+;    printVarSummary(var)
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 
 ;***create plot
@@ -651,22 +651,22 @@ if (isfilepresent(fili)) then
 
     Cvar="clw_cli"
     fili    = workdir+"/Ubusy_"+Cvar+".nc"
-    
+
     mainTitle = "Cloud ice + Cloud water [mg/kg] "+typ
     subTitle  = run+meantime
 
 if (isfilepresent(fili)) then
 
 ;***read code
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     var     = f->clw(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
-;   printVarSummary(var) 
+;   printVarSummary(var)
 
 
 ;***open plot
-    pltName = pltPath+Cvar+"_"+typ+"_linp_cont" 
-    wks     = gsn_open_wks(pltType, pltName) 
+    pltName = pltPath+Cvar+"_"+typ+"_linp_cont"
+    wks     = gsn_open_wks(pltType, pltName)
 
 
 ;***create plot

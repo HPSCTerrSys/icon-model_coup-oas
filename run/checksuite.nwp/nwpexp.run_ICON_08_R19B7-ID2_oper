@@ -1,12 +1,17 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ------------------------------------------
+
+##########################################################################
+## For generation of new references (requires manual script execution)
+## grep for "work_mode" and see related documentation
+##########################################################################
 
 # ----------------------------------------------------------------------
 # path definitions
@@ -15,7 +20,7 @@
 make_and_change_to_experiment_dir # function in ../add_run_routines
 
 # Combine START and MODEL if START_MODEL is not already set.
-# START_MODEL is used to ease the execution of a machine that uses a complex 
+# START_MODEL is used to ease the execution of a machine that uses a complex
 # mpirun command with multiple binaries
 START_MODEL="${START_MODEL:=$START $MODEL}"
 
@@ -170,8 +175,8 @@ cat > ${atmo_namelist} << EOF
  dt_iau                = 600
  dt_shift              = -300
  iterate_iau           = .true.
- zpbl1                 = 500. 
- zpbl2                 = 1000. 
+ zpbl1                 = 500.
+ zpbl2                 = 1000.
  dwdfg_filename        = './R<nroot0>B<jlev>_DOM<idom>_ilfff00005500.grb'
  dwdana_filename       = './R<nroot0>B<jlev>_DOM<idom>_ilaf20210601000000.grb'
  ana_varnames_map_file = 'map_file.ana'
@@ -189,6 +194,8 @@ cat > ${atmo_namelist} << EOF
  icpl_da_snowalb       = 2
  icpl_da_sfcfric       = 1
  icpl_da_tkhmin        = 1
+ parallel_grib_decoding = .TRUE.  ! .FALSE.: Workroot PE reads and decodes GRIB file records
+                                  ! .TRUE.:  Workroot PE reads GRIB file records, Work PEs decode them
 /
 &limarea_nml
  dtime_latbc             = 3600          ! 3600.
@@ -202,7 +209,7 @@ cat > ${atmo_namelist} << EOF
 &io_nml
  dt_checkpoint                 = 863913600
  echotop_meta(1)%time_interval = 900.0             ! Reset der Druckminimumbestimmung auf domain 1 alle 15'
- echotop_meta(1)%dbzthresh     = 18.               ! Liste der dbz-thresholds (hier nur einer) fuer domain 1 
+ echotop_meta(1)%dbzthresh     = 18.               ! Liste der dbz-thresholds (hier nur einer) fuer domain 1
  itype_pres_msl                = 5                 ! (1) 3: IFS-type extrapolation
  itype_rh                      = 1                 ! (1) 2: mixed phase (water and ice)
  lmask_boundary                = .true.  ! main -> .true., KENDA = .false.
@@ -281,7 +288,7 @@ cat > ${atmo_namelist} << EOF
  imode_frcsmot = 2     ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  imode_tkesso  = 2
 ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 2    
+ itype_sher    = 2
  ltkeshs       = .true.
  ltkesso       = .true.
  pat_len       = 750.
@@ -325,7 +332,7 @@ cat > ${atmo_namelist} << EOF
   vmr_n2o     = 322.0e-09
   vmr_o2      = 0.20946
   vmr_cfc11   = 240.e-12
-  vmr_cfc12   = 532.e-12 
+  vmr_cfc12   = 532.e-12
   ecrad_data_path = '.'
 ! cp-cv-bugfix:
   direct_albedo_water = 3
@@ -452,7 +459,7 @@ cat > ${atmo_namelist} << EOF
 /
 &synsat_nml
  lsynsat = .true.,.true.
-/ 
+/
 &gribout_nml
  backgroundProcess               = 0
  generatingProcessIdentifier     = 11, 12                            ! 12 .. nest
@@ -465,6 +472,7 @@ cat > ${atmo_namelist} << EOF
  preset                          = "deterministic"
  productionStatusOfProcessedData = 0
  tablesVersion                   = 19
+ grib_lib_compat                 = 'eccodes:2.31.0'
 /
 &assimilation_nml
  dace_coupling   = .false.
@@ -574,12 +582,12 @@ cat > ${atmo_namelist} << EOF
                         'T_2M', 'TMAX_2M', 'TMIN_2M', 'TD_2M', 'T_G',
                         'U_10M', 'V_10M', 'VMAX_10M',
                         'TWATER', 'W_I', 'Z0', 'TQC_DIA', 'TQI_DIA', 'TQV_DIA',
-                        'CEILING', 'LPI_MAX', 'DBZ_CTMAX', 
+                        'CEILING', 'LPI_MAX', 'DBZ_CTMAX',
                         'TCOND_MAX', 'TCOND10_MX', 'UH_MAX', 'UH_MAX_MED', 'UH_MAX_LOW',
                         'VORW_CTMAX', 'W_CTMAX',
                         'H_SNOW', 'RHO_SNOW', 'T_SNOW', 'W_SNOW', 'FRESHSNW', 'SNOWC',
                         'T_SO', 'W_SO', 'W_SO_ICE', 'SMI',
-                        'H_ICE', 'T_ICE', 
+                        'H_ICE', 'T_ICE',
                         'TCH', 'TCM',
                         'T_MNW_LK', 'T_WML_LK', 'T_BOT_LK', 'C_T_LK', 'H_ML_LK'
  stream_partitions_pl = 1
@@ -623,7 +631,7 @@ cat > ${atmo_namelist} << EOF
                         'VORW_CTMAX', 'W_CTMAX',
                         'H_SNOW', 'RHO_SNOW', 'T_SNOW', 'W_SNOW',
                         'T_SO', 'W_SO', 'W_SO_ICE', 'SMI',
-                        'H_ICE', 'T_ICE', 
+                        'H_ICE', 'T_ICE',
                         'TCH', 'TCM'
 !!                      'lhn_diag',
  stream_partitions_pl = 1
@@ -862,22 +870,22 @@ work_mode=${mode_frc}
 #!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 case ${work_mode} in
-  ${mode_off}) 
+  ${mode_off})
     header "work mode off: no checks applied"
     # leave script
     exit
     ;;
-  ${mode_ref}) 
+  ${mode_ref})
     header "work mode ref: create new reference"
     # work mode ref is not intended for use in Buildbot
     if [[ "${USER}" == "buildbot" ]]; then
       print_on_error_and_exit ${error_number} "work mode ref is not available in Buildbot" 1
     fi
     ;;
-  ${mode_def}) 
+  ${mode_def})
     header "work mode def: stop on first mismatch (default mode)"
     ;;
-  ${mode_frc}) 
+  ${mode_frc})
     header " work mode frc: full report of all mismatches (force mode)"
     ;;
   *)
@@ -913,7 +921,7 @@ else
   out_file="${new_ref}/[file]"
 fi
 # create rules file for grib_filter:
-# * remove local-use section 2 
+# * remove local-use section 2
 # * remove bitmap
 # * reduce data vector to one value only
 # * change packing type from grid_simple (5.0) to grid_ieee (5.4)
@@ -933,8 +941,8 @@ cat > ${filter_rules} << EOF2
     transient safeNumberOfValues     = numberOfValues ;
     set deleteLocalDefinition        = 1 ;
     if (bitmapPresent == 1) {
-      set bitmapPresent              = 0 ; 
-    } 
+      set bitmapPresent              = 0 ;
+    }
     set values                       = {0} ;
     set packingType                  = "grid_ieee" ;
     set precision                    = 1 ;
@@ -966,7 +974,7 @@ files2report=${files2check%.*}.diff
 # ---------------------------------------
 # path to reference files
 # ---------------------------------------
-refdir=${DATADIR}/ref_967bee30
+refdir=${DATADIR}/ref_efb9782f
 
 # check if the reference folder actually contains the required GRIB files
 if [ ${work_mode} -eq ${mode_def} ] || [ ${work_mode} -eq ${mode_frc} ]; then
@@ -1043,11 +1051,11 @@ do
     # set overall error indicator
     test_status=${error_number}
     echo " ---> file ${file} failed test!"
-    # the error message of "grib_compare -r" is not very useful, 
+    # the error message of "grib_compare -r" is not very useful,
     # so we repeat the comparison with the different option:
     # -f      Force. Force the execution not to fail on error.
     # If the GRIB messages in "file" are in the same order as in "ref_file",
-    # this yields a useful error message. 
+    # this yields a useful error message.
     # If the order is different, the error message would at least not be more unuseful
     echo "File ${file}" > ${diff_file}
     grib_compare -f ${file} ${ref_file} >> ${diff_file}

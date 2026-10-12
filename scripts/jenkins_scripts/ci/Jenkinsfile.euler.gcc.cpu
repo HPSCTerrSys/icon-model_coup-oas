@@ -1,0 +1,56 @@
+// ICON
+//
+// ---------------------------------------------------------------
+// Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+// Contact information: icon-model.org
+//
+// See AUTHORS.TXT for a list of authors
+// See LICENSES/ for license information
+// SPDX-License-Identifier: BSD-3-Clause
+// ---------------------------------------------------------------
+
+pipeline {
+
+    agent {
+        node {
+            label 'euler'
+        }
+    }
+    options {
+        timeout(time: 2, unit: 'HOURS')
+    }
+    environment {
+       ENV_NAME = "euler_cpu_gcc"
+    }
+    stages {
+            stage('Set Spack version') {
+                steps {
+                    script {
+                    env.SPACK_VERSION = readFile('config/ethz/SPACK_TAG_EULER').trim()
+                    }
+                }
+            }
+            stage('setup spack') {
+                steps {
+                    sh "./scripts/jenkins_scripts/scripts/setup_spack.sh"
+                }
+            }
+            stage('build') {
+                steps {
+                    sh "./scripts/jenkins_scripts/scripts/build_euler.sh"
+                }
+            }
+            stage('run tests') {
+                steps {
+                    sh "./scripts/jenkins_scripts/scripts/jenkins_euler.sh"
+                }
+            }
+    }
+    post {
+        always {
+            echo 'Cleaning up workspace'
+            deleteDir()
+        }
+    }
+
+}

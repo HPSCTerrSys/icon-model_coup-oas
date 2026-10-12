@@ -1,7 +1,7 @@
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -19,7 +19,7 @@ require 'test/unit/assertions'
 include Test::Unit::Assertions
 
 # ============================================================================
-# Please copy this file to the opt directory of you main working copy and 
+# Please copy this file to the opt directory of you main working copy and
 # adjust the remote and local settings
 # usage with the given configuration:
 # * parallel build with gcc (locally) and nag (remotely)
@@ -32,7 +32,7 @@ include Test::Unit::Assertions
 #   DRYRUN=1 rake remoteGccHi_conf
 # ============================================================================
 # AUTHOR: Ralf Mueller, ralf.mueller@zmaw.de
-# REQUIREMENTS: 
+# REQUIREMENTS:
 # * ruby-1.9.* or higher (use with 'module load ruby')
 # * jobQueue (rubygem, install with 'gem install jobQueue --user-install)
 # ============================================================================
@@ -73,7 +73,7 @@ $hosts = {
     :user     => REMOTE_USER,
     :hostname => 'localhost',
     :port     => 50022,
-   #:hostname => 'thunder5.zmaw.de',# use from internal net if login node is down 
+   #:hostname => 'thunder5.zmaw.de',# use from internal net if login node is down
     :dir      => "/scratch/mpi/CC/mh0287/users/#{REMOTE_USER}/builds/remote/icon" },
   :passat => {
     :user     => REMOTE_USER,
@@ -161,7 +161,7 @@ end
 
 # hide some complex hash accesses
 # {
-$hostOf = lambda {|build| 
+$hostOf = lambda {|build|
   host = $builds[build][:host]
 }
 $hostnameOf = lambda {|build|
@@ -474,13 +474,13 @@ def getOceanOnlyfilelist(build)
 
   oceanFiles << getFilesBy("src",%w[advection], filelist: "mo_advection_utils.f90")
 
-  oceanFiles << getFilesBy("src",%w[configure_model], 
+  oceanFiles << getFilesBy("src",%w[configure_model],
              filelist: %w[mo_dynamics_config.f90 mo_gribout_config.f90 mo_grid_config.f90 mo_io_config.f90 mo_name_list_output_config.f90 mo_parallel_config.f90 mo_run_config.f90 mo_time_config.f90])
 
-  oceanFiles << getFilesBy("src",%w[drivers], 
+  oceanFiles << getFilesBy("src",%w[drivers],
                            filelist: %w[control_model.f90 mo_master_control.f90])
 
-  oceanFiles << getFilesBy("src", %w[namelists], 
+  oceanFiles << getFilesBy("src", %w[namelists],
                            filelist: %w[mo_dbg_nml.f90  mo_dynamics_nml.f90 mo_gribout_nml.f90 mo_grid_nml.f90 mo_io_nml.f90 mo_master_nml.f90 mo_parallel_nml.f90 mo_run_nml.f90 mo_sea_ice_nml.f90 mo_time_nml.f90])
 
   oceanFiles << getFilesBy("src", %w[shr_horizontal],
@@ -588,7 +588,7 @@ def doCheckoutRev(build,rev,url)
   revTag = rev == 'HEAD' ? '' : "-r#{rev}"
   call(connect(build,<<-EOS
       [[ ! -d r#{rev} ]] && mkdir -p r#{rev};
-      cd r#{rev}; 
+      cd r#{rev};
       if [[ -d .svn ]];then
         #svn revert -R .;
         svn update #{revTag};
@@ -675,7 +675,7 @@ def doCmpExps(build,expA,expB)
     #{diffThese("${joinModelOutput_#{expA}}","${joinModelOutput_#{expB}}")}
     [[ $showDiffSelection = 'true' ]] && (
         #{selectBy(var,ts,lev)}
-        cdo infov ${selectBy} -sub ${joinModelOutput_#{expA}} ${joinModelOutput_#{expB}} 
+        cdo infov ${selectBy} -sub ${joinModelOutput_#{expA}} ${joinModelOutput_#{expB}}
       )
     #{rmJoinedModelOutput(expA,expB)}
              EOS
@@ -698,7 +698,7 @@ def doCmpDirs(build,dirA: dirA,dirB: dirB,expA: expA,expB: expB)
       #{diffThese("${joinModelOutput_#{expB}_#{expTagA}}","${joinModelOutput_#{expB}_#{expTagB}}")}
       [[ $showDiffSelection = 'true' ]] && (
           #{selectBy(var,ts,lev)}
-          cdo infov ${selectBy} -sub ${joinModelOutput_#{expA}} ${joinModelOutput_#{expB}} 
+          cdo infov ${selectBy} -sub ${joinModelOutput_#{expA}} ${joinModelOutput_#{expB}}
         )
       #{rmJoinedModelOutput(expA,expB)}
     EOS
@@ -735,7 +735,7 @@ def doCmpDirs(build,dirA: dirA,dirB: dirB,expA: expA,expB: expB)
     checks = ENV['CHECK'].split(',')
     checkOutput[dirA,dirB]  if checks.include?('output')
     checkRestart[dirA,dirB] if checks.include?('restart')
-  else  
+  else
     checkOutput[dirA,dirB]
     checkRestart[dirA,dirB]
   end

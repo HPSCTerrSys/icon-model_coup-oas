@@ -1,16 +1,16 @@
-! Read namelists, make sanity checks specific to each namelist and make
-! a cross check once all namelists of a component are available.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Read namelists, make sanity checks specific to each namelist and make
+! a cross check once all namelists of a component are available.
 
 MODULE mo_icon_output_read_namelists
 
@@ -22,7 +22,7 @@ MODULE mo_icon_output_read_namelists
   USE mo_run_config,        ONLY: nsteps, dtime, nlev, configure_run
   USE mo_time_config,       ONLY: time_config, dt_restart
   USE mo_io_config,         ONLY: dt_checkpoint, write_initial_state, lnetcdf_flt64_output
-  USE mo_grid_config,       ONLY: grid_rescale_factor, use_duplicated_connectivity, init_grid_configuration
+  USE mo_grid_config,       ONLY: use_duplicated_connectivity, init_grid_configuration
   USE mo_master_config,     ONLY: isRestart
   USE mo_time_management,   ONLY: compute_timestep_settings,                        &
     &                             compute_restart_settings,                         &
@@ -57,10 +57,10 @@ MODULE mo_icon_output_read_namelists
 
   PRIVATE
   PUBLIC :: read_icon_output_namelists
-  
+
   NAMELIST/vertical_levels_nml/ &
     & zlevels, dz_full_level
-  
+
 
 CONTAINS
 
@@ -73,7 +73,7 @@ CONTAINS
 
     CHARACTER(LEN=*), INTENT(in) :: icon_output_namelist_filename
     CHARACTER(LEN=*), INTENT(in) :: shr_namelist_filename
-    
+
     INTEGER :: status
     INTEGER :: iunit
     CHARACTER(len=*), PARAMETER :: method_name = "read_icon_output_namelists"
@@ -130,7 +130,7 @@ CONTAINS
     !
     CALL read_coupling_namelist       (TRIM(icon_output_namelist_filename))
 
-    
+
     CALL open_nml(TRIM(icon_output_namelist_filename))
     !==================================================================
     ! NOTE: DO NOT USE STATUS FLAG in READ(nnml) WITHOUT CHECKING IT  !
@@ -162,12 +162,12 @@ CONTAINS
 
     ! write an annotate table of all namelist settings to a text file
     IF (my_process_is_stdio()) CALL log_nml_settings(TRIM(icon_output_namelist_filename)//".log")
-    
+
     CALL  close_nml
-    
+
     !-----------------------------------------------------------------
     ! Do some checks
-    
+
     !-----------------------------------------------------------------
     CALL check_parallel_configuration()
 
@@ -204,8 +204,8 @@ CONTAINS
     !    modified in this subroutine which affect the following CALLs.
     !---------------------------------------------------------------------
     CALL configure_run
-  
-    
+
+
   END SUBROUTINE read_icon_output_namelists
   !-------------------------------------------------------------------------
 

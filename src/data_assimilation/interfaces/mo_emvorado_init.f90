@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -24,17 +24,17 @@ MODULE mo_emvorado_init
 CONTAINS
 
   SUBROUTINE prep_emvorado_domains (n_dom_model, radar_flag_doms_model)
-     
+
     INTEGER, INTENT(in) :: n_dom_model                            ! Number of model domains
     LOGICAL, INTENT(in) :: radar_flag_doms_model (1:n_dom_model)  ! Switch for running EMVORADO for each domain
-    
+
 #ifdef HAVE_RADARFWO
     CALL prep_domains_radar (n_dom_model, radar_flag_doms_model(1:n_dom_model))
     CALL prep_domains_radar_nml ()
 #endif
 
   END SUBROUTINE prep_emvorado_domains
-  
+
   SUBROUTINE init_emvorado_mpi (luse_radarfwo,                                              & ! INPUT
                                 comm_world_icon, my_world_id_icon, nproc_icon,              & ! INPUT
                                 comm_work_icon, my_work_id_icon, num_work_icon,             & ! INPUT
@@ -42,7 +42,7 @@ CONTAINS
                                 nprocio_radar_icon, radar_master_icon, radario_master_icon, & ! INPUT
                                 ierror, errmsg                                              & ! OUTPUT
                                 )
-  
+
     ! INPUT parameters:
     !------------------
     INTEGER, INTENT(in) :: comm_work_icon , my_work_id_icon , num_work_icon
@@ -70,7 +70,7 @@ CONTAINS
     ierror = 0
 #endif
 
-    
+
   END SUBROUTINE init_emvorado_mpi
 
 

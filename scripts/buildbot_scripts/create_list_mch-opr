@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -32,14 +32,12 @@ machine=balfrin
 ./addbuilder alps_mch_test_gpu --machine $machine --build_script="./config/buildbot/alps_mch_test_gpu" --builderflags="Active" --list $listname
 
 # add bench experiments
-./addexp "checksuite.icon-dev/check.mch_icon-ch2"  --builders "balfrin_gpu_nvidia_mixed alps_mch_test_gpu" --list $listname --runflags "cpu_time=01:20:00"
-./addexp "checksuite.icon-dev/check.mch_icon-ch1"  --builders "balfrin_gpu_nvidia_mixed alps_mch_test_gpu" --list $listname --runflags "cpu_time=02:00:00"
-./addexp "checksuite.icon-dev/check.mch_kenda-ch1" --builders "balfrin_gpu_nvidia_mixed alps_mch_test_gpu" --list $listname --runflags "cpu_time=00:20:00"
+./../experiments/addexp_from_yml --tag $listname
 
 add_store_performance_exp () {
     exp=$1
     cp ${basedir}/run/performance/pp.store_performance ${basedir}/run/performance/pp.store_performance_${exp}
-    ./addexp "performance/pp.store_performance_${exp}"  --builders "balfrin_gpu_nvidia_mixed alps_mch_test_gpu" --list $listname --runflags "cpu_time=00:05:00"
+    ./addexp "performance/pp.store_performance_${exp}"  --builders "balfrin_gpu_nvidia_mixed alps_mch_test_gpu" --list $listname --runflags "cpu_time=00:10:00"
     ./adddep --from-experiment "performance/pp.store_performance_${exp}" --to-experiment "checksuite.icon-dev/check.${exp}" --builders "balfrin_gpu_nvidia_mixed alps_mch_test_gpu" --list $listname
 }
 
@@ -51,4 +49,3 @@ add_store_performance_exp "mch_kenda-ch1"
 #lets see the list
 ./lslist $listname
 #-----------------------------------------------------------
-

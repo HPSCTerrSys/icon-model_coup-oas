@@ -1,0 +1,267 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+# Implements a before_script that configures ICON and a script that builds ICON.
+#
+# By default, the script assumes $CI_PROJECT_DIR is the root source directory of
+# ICON and performs an in-source build with all model features disabled.
+#
+.utils:icon:build:
+  variables:
+    # Absolute path to the root source directory:
+    ICON_CI_UTILS_ICON_SOURCE_PATH: ${CI_PROJECT_DIR}
+
+    # Space-separated list of relative (to the root source directory) paths to
+    # required extra git submodules (appended to the value of
+    # GIT_SUBMODULE_PATHS, which contains only non-optional submodules):
+    ICON_CI_UTILS_ICON_BUILD_EXTRA_SUBMODULE_PATHS: null
+
+    # Absolute path to the root build directory (must not contain the source
+    # directory as a subdirectory):
+    ICON_CI_UTILS_ICON_BUILD_PATH: ${ICON_CI_UTILS_ICON_SOURCE_PATH}
+
+    # Relative (to the root source directory) path to the configure script or
+    # wrapper:
+    ICON_CI_UTILS_ICON_CONFIG_REL_PATH: configure
+
+    # Additional command-line options passed to the configure script or wrapper:
+    ICON_CI_UTILS_ICON_CONFIG_EXTRA_ARGS: null
+
+    # Build (make) command:
+    ICON_CI_UTILS_ICON_BUILD_COMMAND: make
+
+    # Maximum number of build jobs to run in parallel:
+    ICON_CI_UTILS_ICON_BUILD_JOB_COUNT: 8
+
+    # Space-separated list of make targets to build:
+    ICON_CI_UTILS_ICON_BUILD_TARGETS: all
+
+    # Internal variables:
+    GIT_SUBMODULE_STRATEGY: normal
+    GIT_SUBMODULE_PATHS: >-
+      externals/cdi externals/fortran-support externals/iconmath externals/mtime
+      ${ICON_CI_UTILS_ICON_BUILD_EXTRA_SUBMODULE_PATHS}
+    CLICOLOR_FORCE: 1
+  before_script:
+    - |
+      # !reference [.utils:icon:build, before_script]
+      (
+        set -u
+
+        # Sanity checks:
+        case ${ICON_CI_UTILS_ICON_SOURCE_PATH} in
+          ${ICON_CI_UTILS_ICON_BUILD_PATH}) ;;
+          ${ICON_CI_UTILS_ICON_BUILD_PATH}/*)
+            icon_ci_log_error_msg \
+              "ERROR: source directory '${ICON_CI_UTILS_ICON_SOURCE_PATH}' is a subdirectory \
+      of the build directory '${ICON_CI_UTILS_ICON_BUILD_PATH}'"
+            exit 1 ;;
+        esac
+
+        # Trap the EXIT pseudo-signal to copy the job artifacts to
+        # $CI_PROJECT_DIR (where GitLab can find them), regardless of whether
+        # the job succeeds:
+        test "${ICON_CI_UTILS_ICON_BUILD_PATH}" = "${CI_PROJECT_DIR}" || {
+          copy_artifacts ()
+          {
+            icon_ci_log_info_msg "Moving job artifacts to '${CI_PROJECT_DIR}'"
+            (
+              set -x
+              rsync "${ICON_CI_UTILS_ICON_BUILD_PATH}/" \
+                --include='*/' \
+                --include='*.log' \
+                --include='/run/SETUP.config' \
+                --include='CMakeCache.txt' \
+                --exclude='*' \
+                "${CI_PROJECT_DIR}" \
+                --archive \
+                --compress \
+                --copy-unsafe-links \
+                --human-readable \
+                --prune-empty-dirs \
+                --verbose
+            ) 2>&1
+          }
+          trap copy_artifacts EXIT
+        }
+
+        icon_ci_log_section_start "Configuring with '${ICON_CI_UTILS_ICON_CONFIG_REL_PATH}'"
+        time (
+          eval "set dummy ${ICON_CI_UTILS_ICON_CONFIG_EXTRA_ARGS-}; shift"
+
+          set -x
+
+          mkdir -p "${ICON_CI_UTILS_ICON_BUILD_PATH}"
+
+          cd "${ICON_CI_UTILS_ICON_BUILD_PATH}"
+
+          "${ICON_CI_UTILS_ICON_SOURCE_PATH}/${ICON_CI_UTILS_ICON_CONFIG_REL_PATH}" \
+            --disable-acm-license --disable-aes --disable-art --disable-art-gpl \
+            --disable-atmo --disable-comin --disable-coupling --disable-dace \
+            --disable-dependency-tracking --disable-ecrad --disable-emvorado \
+            --disable-hd --disable-jsbach --disable-jsbach-hd --disable-les \
+            --disable-mpi-checks --disable-nwp --disable-ocean --disable-openmp \
+            --disable-quincy --disable-ragnarok --disable-rte-rrtmgp --disable-rttov \
+            --disable-silent-rules --disable-upatmo --disable-waves --disable-yaxt \
+            --enable-bundled-python=mtime --enable-mpi --enable-separate-mods \
+            "$@"
+        ) 2>&1
+        icon_ci_log_section_end
+      )
+  script:
+    - |
+      # !reference [.utils:icon:build, script]
+      (
+        set -u
+
+        # Trap the EXIT pseudo-signal to copy the job artifacts to
+        # $CI_PROJECT_DIR (where GitLab can find them), regardless of whether
+        # the job succeeds:
+        test "${ICON_CI_UTILS_ICON_BUILD_PATH}" = "${CI_PROJECT_DIR}" || {
+          copy_artifacts ()
+          {
+            icon_ci_log_info_msg "Moving job artifacts to '${CI_PROJECT_DIR}'"
+            (
+              set -x
+              rsync "${ICON_CI_UTILS_ICON_BUILD_PATH}/" \
+                --include='*/' \
+                --include='*.log' \
+                --include='/bin/icon' \
+                --include='/externals/comin/build/_icon/plugins/**/*.so' \
+                --include='/externals/mtime/build/python/mtime/**' \
+                --include='CMakeCache.txt' \
+                --exclude='*' \
+                "${CI_PROJECT_DIR}" \
+                --archive \
+                --compress \
+                --copy-unsafe-links \
+                --human-readable \
+                --prune-empty-dirs \
+                --verbose
+            ) 2>&1
+          }
+          trap copy_artifacts EXIT
+        }
+
+        icon_ci_log_section_start "Building target(s) '${ICON_CI_UTILS_ICON_BUILD_TARGETS}'" 'collapsed=false'
+        time (
+          set -x
+          ${ICON_CI_UTILS_ICON_BUILD_COMMAND} \
+            --directory="${ICON_CI_UTILS_ICON_BUILD_PATH}" \
+            --jobs=${ICON_CI_UTILS_ICON_BUILD_JOB_COUNT} \
+            --no-print-directory \
+            --output-sync=target \
+            ${ICON_CI_UTILS_ICON_BUILD_TARGETS-}
+        ) 2>&1
+        icon_ci_log_section_end
+      )
+  artifacts:
+    paths:
+      - "**/*.log"
+      - "**/CMakeCache.txt"
+      - bin/icon
+      - externals/mtime/build/python/mtime
+      - run/SETUP.config
+    when: always
+    expire_in: 1 day
+
+# Implements a before_script that prepares an ICON experiment script using
+# mkexp, and a script that runs the experiment.
+#
+# Output variables (passed to dependent jobs via the dotenv report):
+#
+#   - ICON_CI_UTILS_ICON_OUTPUT_ID: unique (within a pipeline) and reproducible
+#     (across pipelines) identifier of the job that produced the model output
+#     (typically the job name extending this template).
+#
+#   - ICON_CI_UTILS_ICON_OUTPUT_PATH: absolute path (inside $CI_PROJECT_DIR) to
+#     the directory containing the model output files, which are uploaded as an
+#     artifact.
+#
+#   - ICON_CI_UTILS_ICON_OUTPUT_FILENAME_PREFIX: filename prefix applied to the
+#     model output files, which are uploaded as artifacts.
+#
+.utils:icon:run:
+  variables:
+    # Space-separated list of relative (to the root source directory) paths to
+    # required extra git submodules (appended to the value of
+    # GIT_SUBMODULE_PATHS, which contains only non-optional submodules):
+    ICON_CI_UTILS_ICON_RUN_EXTRA_SUBMODULE_PATHS: null
+
+    # Relative (to the root source directory) path to the mkexp configuration
+    # file:
+    ICON_CI_UTILS_ICON_MKEXP_CONFIG_REL_PATH: null
+
+    # Scheduler account passed to mkexp via the ACCOUNT command-line option (has
+    # no practical effect in the CI setup, but is required by mkexp in some
+    # environments).
+    ICON_CI_UTILS_ICON_MKEXP_ACCOUNT: null
+
+    # Additional command-line options passed to mkexp:
+    ICON_CI_UTILS_ICON_MKEXP_EXTRA_ARGS: null
+
+    # Internal variables:
+    GIT_SUBMODULE_STRATEGY: normal
+    GIT_SUBMODULE_PATHS: >-
+      utils/mkexp ${ICON_CI_UTILS_ICON_RUN_EXTRA_SUBMODULE_PATHS}
+    ICON_CI_UTILS_ICON_MKEXP_WORK_REL_PATH: ${CI_PIPELINE_ID}/${CI_JOB_ID}
+    ICON_CI_UTILS_ICON_MKEXP_RUN_SUBDIR: run_base
+    ICON_CI_UTILS_ICON_MKEXP_EXP_ID: ${CI_JOB_NAME_SLUG}
+  before_script:
+    - |
+      # !reference [.utils:icon:run, before_script]
+      icon_ci_log_section_start "Preparing experiment '${CI_JOB_NAME}'"
+      (
+        set -u
+
+        # Sanity checks:
+        test -n "${ICON_CI_UTILS_ICON_MKEXP_CONFIG_REL_PATH-}" || {
+          icon_ci_log_error_msg "ERROR: ICON_CI_UTILS_ICON_MKEXP_CONFIG_REL_PATH is not set"
+        }
+
+        set -x
+
+        "${CI_PROJECT_DIR}/utils/mkexp/mkexp" \
+          --path "${CI_PROJECT_DIR}/run" \
+          "${CI_PROJECT_DIR}/${ICON_CI_UTILS_ICON_MKEXP_CONFIG_REL_PATH}" \
+          abs_top_srcdir="${CI_PROJECT_DIR}" \
+          abs_top_builddir="${CI_PROJECT_DIR}" \
+          DATA_ROOT='$MODEL_ROOT' \
+          ${ICON_CI_UTILS_ICON_MKEXP_ACCOUNT:+"ACCOUNT=${ICON_CI_UTILS_ICON_MKEXP_ACCOUNT}"} \
+          WORK_DIR="${CI_PROJECT_DIR}/${ICON_CI_UTILS_ICON_MKEXP_WORK_REL_PATH}" \
+          EXP_ID="${ICON_CI_UTILS_ICON_MKEXP_EXP_ID}" \
+          jobs.run.subdir="${ICON_CI_UTILS_ICON_MKEXP_RUN_SUBDIR}" \
+          jobs.run_start.log_timestamps=false \
+          ${ICON_CI_UTILS_ICON_MKEXP_EXTRA_ARGS-}
+      ) 2>&1
+      icon_ci_log_section_end
+  script:
+    - |
+      # !reference [.utils:icon:run, script]
+      icon_ci_log_section_start "Running experiment '${CI_JOB_NAME}'" 'collapsed=false'
+      (
+        set -ux
+        "${CI_PROJECT_DIR}/experiments/${CI_JOB_NAME_SLUG}/scripts/${CI_JOB_NAME_SLUG}.run_start"
+        { icon_ci_log_info_msg 'Preparing the environment for the dependent jobs...'; } 2>/dev/null
+        {
+          echo "ICON_CI_UTILS_ICON_OUTPUT_ID=${CI_JOB_NAME}"
+          echo "ICON_CI_UTILS_ICON_OUTPUT_PATH=\${CI_PROJECT_DIR}/${ICON_CI_UTILS_ICON_MKEXP_WORK_REL_PATH}/${ICON_CI_UTILS_ICON_MKEXP_RUN_SUBDIR}"
+          echo "ICON_CI_UTILS_ICON_OUTPUT_FILENAME_PREFIX=${ICON_CI_UTILS_ICON_MKEXP_EXP_ID}"
+        } >"${CI_PROJECT_DIR}/dependent.env"
+      ) 2>&1
+      icon_ci_log_section_end
+  artifacts:
+    name: ${CI_PIPELINE_ID}-${CI_JOB_NAME_SLUG}
+    paths:
+      - ${ICON_CI_UTILS_ICON_MKEXP_WORK_REL_PATH}/${ICON_CI_UTILS_ICON_MKEXP_RUN_SUBDIR}/${ICON_CI_UTILS_ICON_MKEXP_EXP_ID}*.nc
+    reports:
+      dotenv: dependent.env
+    expire_in: 30 mins

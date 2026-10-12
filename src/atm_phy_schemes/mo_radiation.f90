@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Module to provide interface to radiation routines.
 !
 ! Remarks
@@ -23,18 +33,7 @@
 !   Major segments of this code combines and rewrites (for the ICON standard)
 !   code previously contained in the ECHAM5 routines rad_int.f90,
 !   radiation.f90 and prerad.f90.  Modifications were also made to provide
-!   a cleaner interface to the aerosol and cloud properties. 
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
+!   a cleaner interface to the aerosol and cloud properties.
 
 MODULE mo_radiation
 
@@ -46,7 +45,7 @@ MODULE mo_radiation
   USE mo_model_domain,         ONLY: t_patch
   USE mo_nonhydro_state,       ONLY: p_nh_state
 
-  USE mo_math_constants,       ONLY: pi, rpi, rad2deg
+  USE mo_math_constants,       ONLY: pi, rpi, rad2deg, dbl_eps
   USE mo_math_types,           ONLY: t_geographical_coordinates
   USE mo_physical_constants,   ONLY: grav,  rd,    avo,   amd,  amw,  &
     &                                amco2, amch4, amn2o, amo3, amo2, &
@@ -67,11 +66,12 @@ MODULE mo_radiation
     &                                iRadAeroKinne, iRadAeroVolc,     &
     &                                iRadAeroKinneVolc
   USE mo_lnd_nwp_config,       ONLY: isub_seaice, isub_lake, isub_water
-  USE mo_extpar_config,        ONLY: nhori
+  USE mo_extpar_config,        ONLY: ext_atm_attr
   USE mo_atm_phy_nwp_config,   ONLY: atm_phy_nwp_config
   USE mo_newcld_optics,        ONLY: newcld_optics
   USE mo_bc_aeropt_kinne,      ONLY: set_bc_aeropt_kinne
-  USE mo_bc_aeropt_cmip6_volc, ONLY: add_bc_aeropt_cmip6_volc
+  USE mo_bc_aeropt_volc,       ONLY: add_bc_aeropt_volc
+  USE mo_coupling_config,      ONLY: is_coupled_to_aero
   USE mo_lrtm_par,             ONLY: jpband => nbndlw, jpxsec => maxxsec
   USE mo_lrtm,                 ONLY: lrtm
   USE mo_srtm_config,          ONLY: jpsw, jpinpx
@@ -89,9 +89,9 @@ MODULE mo_radiation
        &                             getDayOfYearFromDatetime, MAX_TIMEDELTA_STR_LEN,&
        &                             deallocateTimedelta, deallocateDatetime,        &
        &                             NO_OF_MS_IN_A_SECOND
-  
+
   USE mo_grid_config,          ONLY: l_scm_mode
-  USE mo_scm_nml,              ONLY: lon_scm, lat_scm 
+  USE mo_scm_nml,              ONLY: lon_scm, lat_scm
   USE mo_fortran_tools,        ONLY: set_acc_host_or_device
 
   IMPLICIT NONE
@@ -158,8 +158,8 @@ CONTAINS
 
     TYPE(datetime), POINTER :: current => NULL()
     TYPE(timedelta), POINTER :: td => NULL()
-    CHARACTER(len=MAX_TIMEDELTA_STR_LEN) :: td_string 
-        
+    CHARACTER(len=MAX_TIMEDELTA_STR_LEN) :: td_string
+
     TYPE(t_geographical_coordinates), TARGET, ALLOCATABLE :: scm_center(:,:)
     TYPE(t_geographical_coordinates), POINTER             :: ptr_center(:,:)
 
@@ -293,7 +293,11 @@ CONTAINS
 
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lacc)
         !$ACC LOOP GANG VECTOR
+#if defined(__INTEL_COMPILER) || defined(__INTEL_LLVM_COMPILER)
+!$OMP SIMD
+#else
 !DIR$ SIMD
+#endif
         DO jc = 1,ie
           IF (n_cosmu0pos(jc,jb) > 0) THEN
             zsmu0(jc,jb) = SQRT(zsmu0(jc,jb)/REAL(n_cosmu0pos(jc,jb),wp))
@@ -476,7 +480,7 @@ CONTAINS
     REAL(wp), INTENT(OUT)             :: zsmu0(kbdim,pt_patch%nblks_c)   ! Cosine of zenith angle
     ! Optional fields for slope-dependent surface radiation: slope angle, slope azimuth, and slope-dependent cosine of zenith angle
     REAL(wp), INTENT(IN), DIMENSION(kbdim,pt_patch%nblks_c) :: slope_ang,slope_azi
-    REAL(wp), INTENT(IN), DIMENSION(kbdim,pt_patch%nblks_c,nhori) :: horizon
+    REAL(wp), INTENT(IN), DIMENSION(kbdim,pt_patch%nblks_c,ext_atm_attr(pt_patch%id)%nhori) :: horizon
     REAL(wp), INTENT(OUT),DIMENSION(kbdim,pt_patch%nblks_c) :: cosmu0_slp, shading_mask
     LOGICAL, OPTIONAL,           INTENT(in)   :: lacc            !< GPU flag
 
@@ -490,7 +494,7 @@ CONTAINS
 ! Local scalars
 ! --------------------------------------------------------------------
     REAL(wp) ::                    &
-      & p_sim_time_rad, x1, x2,    &
+      & p_sim_time_rad,            &
       & zihor, zstunde,            &
       & ztwo  , ztho  ,            &
       & zdtzgl, zdek  ,            &
@@ -516,11 +520,15 @@ CONTAINS
     TYPE(t_geographical_coordinates), TARGET, ALLOCATABLE :: scm_center(:,:)
     TYPE(t_geographical_coordinates), POINTER             :: ptr_center(:,:)
 
+    INTEGER :: nhori
+
     jg = pt_patch%id
 
 #ifdef __INTEL_COMPILER
 !DIR$ ATTRIBUTES ALIGN : 64 :: zsinphi,zcosphi,zeitrad,czra,szra,csang,ssang,csazi,ssazi,zha_sun,zphi_sun,ztheta_sun,ztheta
 #endif
+
+    nhori = ext_atm_attr(jg)%nhori   ! number of sectors for horizon
 
     ! In case of CMIP irradiation (isolrad==2) is used, tsi_rad changes during the day
     ! (ssi_time_interpolation), in which case it makes sense to redo the scaling
@@ -686,8 +694,8 @@ CONTAINS
               ssang(jc) = SIN(slope_ang(jc,jb))
               csazi(jc) = COS(slope_azi(jc,jb))
               ssazi(jc) = SIN(slope_azi(jc,jb))
-              cosmu0_slp(jc,jb) = zdeksin * ( zsinphi(jc)*csang(jc) - zcosphi(jc)*csazi(jc)*ssang(jc) ) + &
-                zdekcos * ( zcosphi(jc)*czra(jc)*csang(jc) + zsinphi(jc)*czra(jc)*csazi(jc)*ssang(jc) + &
+              cosmu0_slp(jc,jb) = zdeksin * ( zsinphi(jc)*csang(jc) + zcosphi(jc)*csazi(jc)*ssang(jc) ) + &
+                zdekcos * ( zcosphi(jc)*czra(jc)*csang(jc) - zsinphi(jc)*czra(jc)*csazi(jc)*ssang(jc) - &
                 szra(jc)*ssazi(jc)*ssang(jc) )
               IF (cosmu0_slp(jc,jb) < 1.e-3_wp) cosmu0_slp(jc,jb) = 0._wp
             ENDDO
@@ -696,11 +704,11 @@ CONTAINS
 
           IF (islope_rad(jg) == 3) THEN ! add orographic shading
             !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-            !$ACC LOOP GANG VECTOR PRIVATE(x1, ii, k)
+            !$ACC LOOP GANG VECTOR PRIVATE(ii, k)
             DO jc = 1, ie
               ztheta_sun(jc) = ASIN(zsmu0(jc,jb)) ! solar elevation angle
-              x1 = MIN(1._wp, MAX(-1._wp, (zsmu0(jc,jb)*zsinphi(jc)-zdeksin)/(COS(ztheta_sun(jc))*zcosphi(jc)) ))
-              zphi_sun(jc) = SIGN(acos(x1),SIN(zeitrad(jc)))+pi  ! solar azimuth angle
+              zphi_sun(jc) = ATAN2(-zdekcos * SIN(zeitrad(jc)), zcosphi(jc) * zdeksin - zsinphi(jc) * zdekcos * czra(jc))
+              IF (zphi_sun(jc) < 0.0) zphi_sun(jc) = zphi_sun(jc) + 2._wp * pi  ! solar azimuth angle
 
               ! elevation angle of orography in the direction of the sun, obtained
               ! by linear interpolation between the precomputed horizon angles
@@ -715,88 +723,6 @@ CONTAINS
             !$ACC END PARALLEL
           ENDIF
 
-          IF (islope_rad(jg) == 2) THEN
-            !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
-            !$ACC LOOP GANG VECTOR PRIVATE(x1, x2, ii, k)
-            DO jc = 1, ie
-              szra(jc)  = SIN(zeitrad(jc))
-
-              ! The following code is from COSMO V5.10 in subroutine calc_rad_corrections of
-              ! radiation_utilities.f90 where :
-              ! thetain  (:) is replaced by the slope_ang(jc,jb)
-              ! phi      (:) is replaced by the slope_azi(jc,jb)
-
-              ! sun elevation angle
-              ztheta_sun(jc) = ASIN(zsmu0(jc,jb))
-
-              ! sun azimuth angle
-              x1 = zdekcos * szra(jc) / COS(ztheta_sun(jc))
-              x2 = ( zsinphi(jc) * zdekcos * czra(jc) -   &
-                   & zcosphi(jc) * zdeksin ) / COS(ztheta_sun(jc))
-
-              IF (x2 < -1.0_wp) x2 = -1.0_wp
-              IF (x2 >  1.0_wp) x2 =  1.0_wp
-              zphi_sun(jc) = ACOS(x2)
-              IF (x1 < 0) zphi_sun(jc) = - zphi_sun(jc)
-              zphi_sun(jc) = zphi_sun(jc) + pi
-
-              ! sun elevation angle corrected by refraction (empiric formula, A.H.Siemer(1988))
-              ztheta_sun(jc) = ztheta_sun(jc) + (1.569000_wp - ztheta_sun(jc)) / &
-                                 &     (185.5_wp + 3620.0_wp * ztheta_sun(jc))
-
-              ! night or day
-              IF (ztheta_sun(jc) < 0.0_wp) THEN
-                ztheta_sun(jc) = 0.0_wp
-              ENDIF
-
-              ! the horizon has a spatial resolution of 360/nhori degrees.
-              ! a distance weighted linear interpolation is 
-              ! done between the two neighboring points.
-              ii = INT(rad2deg*zphi_sun(jc)/zihor)
-              IF (ii >= nhori) THEN
-                ii = nhori - 1
-              ENDIF
-
-              k = MOD(ii+1,nhori)
-
-              zha_sun(jc) = (horizon(jc,jb,k+1) *(rad2deg*zphi_sun(jc)-zihor*ii) +     &
-                &            horizon(jc,jb,ii+1)*(zihor*(ii+1)-rad2deg*zphi_sun(jc)))/ &
-                &            zihor
-
-              ! compute shadowmask
-              shading_mask(jc,jb) = MERGE(0._wp, 1._wp, zha_sun(jc) > rad2deg*ztheta_sun(jc))
- 
-              ! compute correction factor and multiply by sin(ztheta_sun) to get cosmu0_slp
-              ! slope angle and aspect switched off
-              IF (.NOT. lslope_aspect) THEN
-                ztheta(jc) = 0.0_wp
-              ELSE
-                ztheta(jc) = slope_ang(jc,jb) ! thetain(ip)
-              ENDIF
-
-              IF (ztheta_sun(jc) > 0.01_wp) THEN
-              ! Mueller and Scherer (2005) formula (MWR)
-              ! New formula (lower correction, theoretically correct derived)
-                cosmu0_slp(jc,jb) = SIN(ztheta_sun(jc)) *                    &
-                  ( COS(ztheta(jc)) + (SIN(ztheta(jc))/TAN(ztheta_sun(jc)))* &
-                                        COS(zphi_sun(jc) - slope_azi(jc,jb)) )
-              ELSE
-                cosmu0_slp(jc,jb) = SIN(ztheta_sun(jc))
-              ENDIF
-
-              ! Consistency check to avoid negative corrections:
-              ! active in situations with low sun elevation (slope angles > sun elevation)
-              ! when the slope aspect is greater than the daily maxima or smaller than the
-              ! daily minima of the sun azimuth angle (during the sunshine time, a kind
-              ! of self shading effect).
-              IF (cosmu0_slp(jc,jb) < 0.0_wp) THEN
-                cosmu0_slp(jc,jb) = 0.0_wp
-              ENDIF
-
-            ENDDO
-            !$ACC END PARALLEL
-
-          ENDIF
         ENDDO
 
       ELSEIF (izenith == 5) THEN
@@ -818,7 +744,7 @@ CONTAINS
         IF (PRESENT(zsct)) zsct = tsi_radt ! no rescale tsi was adjstd in atm_phy_nwp w ssi_rce
 
       ENDIF
-  
+
     ENDIF
 
     ! Avoid uninitialized output fields
@@ -974,7 +900,7 @@ CONTAINS
       &  flx_lw_net_clr(kbdim,klevp1),& !< Net dn LW flux (clear sky) [Wm2]
       &  flx_sw_net_clr(kbdim,klevp1)   !< Net dn SW flux (clear sky) [Wm2]
     !optional output: 3D flux output
-    REAL(wp),  INTENT(inout), OPTIONAL :: &    
+    REAL(wp),  INTENT(inout), OPTIONAL :: &
       &  flx_lw_dn(:,:),            & !< Downward LW flux (all-sky) [Wm2]
       &  flx_sw_dn(:,:),            & !< Downward SW flux (all-sky) [Wm2]
       &  flx_lw_up(:,:),            & !< Upward LW flux   (all-sky) [Wm2]
@@ -1082,7 +1008,7 @@ CONTAINS
 #else
     xm_cfc11 (1:jce,:) = gas_profile(jce, klev, irad_cfc11,        &
       &                              mmr_gas = mmr_cfc11 ,         &
-      &                              gas_scenario = ghg_cfcmmr(1)  ) 
+      &                              gas_scenario = ghg_cfcmmr(1)  )
     xm_cfc12 (1:jce,:) = gas_profile(jce, klev, irad_cfc12,        &
       &                              mmr_gas = mmr_cfc12,          &
       &                              gas_scenario = ghg_cfcmmr(2)  )
@@ -1277,7 +1203,7 @@ CONTAINS
     & vis_frc_sfc      ,nir_dff_frc_sfc,vis_dff_frc_sfc ,par_dff_frc_sfc  )
 
     TYPE(datetime), POINTER, INTENT(in) :: current_date
-    
+
     INTEGER,INTENT(in)  ::                &
       &  jg,                              & !< domain index
       &  jb,                              & !< block index
@@ -1444,7 +1370,7 @@ CONTAINS
     flx_uplw_sfc_clr(:) = 0._wp
     flx_upsw_sfc(:)     = 0._wp
     flx_upsw_sfc_clr(:) = 0._wp
-    
+
     l_coupled_reff = icpl_reff > 0
 
     IF (atm_phy_nwp_config(jg)%l_3d_rad_fluxes) THEN
@@ -1465,7 +1391,7 @@ CONTAINS
     IF (PRESENT(nir_dff_frc_sfc))   nir_dff_frc_sfc(:)   = 0._wp
     IF (PRESENT(vis_dff_frc_sfc))   vis_dff_frc_sfc(:)   = 0._wp
     IF (PRESENT(par_dff_frc_sfc))   par_dff_frc_sfc(:)   = 0._wp
-    
+
     !
     ! 1.0 Constituent properties
     !--------------------------------
@@ -1542,11 +1468,11 @@ CONTAINS
       END DO
         !
         ! --- extra cloud properties for rad coupling
-        ! 
+        !
       IF ( l_coupled_reff ) THEN
         DO jl = 1, jce
           reff_liq_vr(jl,jk) = reff_liq(jl,jkb)
-          reff_frz_vr(jl,jk) = reff_frz(jl,jkb)      
+          reff_frz_vr(jl,jk) = reff_frz(jl,jkb)
         END DO
       ELSE
         DO jl = 1, jce
@@ -1611,7 +1537,7 @@ CONTAINS
             aer_tau_sw_vr(jl,jk,jspec-jpband) = z_sum_aea + z_sum_aes
 
             ! sw aerosol single scattering albedo
-            aer_piz_sw_vr(jl,jk,jspec-jpband) = z_sum_aes / ( z_sum_aea + z_sum_aes )
+            aer_piz_sw_vr(jl,jk,jspec-jpband) = z_sum_aes / MAX(dbl_eps, z_sum_aea + z_sum_aes)
 
             ! sw aerosol asymmetry factor
             aer_cg_sw_vr(jl,jk,jspec-jpband) =                                  &
@@ -1619,7 +1545,7 @@ CONTAINS
               &   + zaeq2(jl,jkb) * zaes_rrtm(jspec,2) * zaeg_rrtm(jspec,2)   &
               &   + zaeq3(jl,jkb) * zaes_rrtm(jspec,3) * zaeg_rrtm(jspec,3)   &
               &   + zaeq4(jl,jkb) * zaes_rrtm(jspec,4) * zaeg_rrtm(jspec,4)   &
-              &   + zaeq5(jl,jkb) * zaes_rrtm(jspec,5) * zaeg_rrtm(jspec,5) ) / z_sum_aes
+              &   + zaeq5(jl,jkb) * zaes_rrtm(jspec,5) * zaeg_rrtm(jspec,5) ) / MAX(dbl_eps, z_sum_aes)
           ENDDO
         ENDDO
       ENDDO
@@ -1643,23 +1569,23 @@ CONTAINS
         & p_nh_state(jg)% metrics% z_mc(:,:,jb)                     ,&
         & p_nh_state(jg)% metrics% ddqz_z_full(:,:,jb)              ,&
         & aer_tau_sw_vr    ,aer_piz_sw_vr         , aer_cg_sw_vr    ,&
-        & aer_tau_lw_vr                                              )
+        & aer_tau_lw_vr,opt_from_coupler = is_coupled_to_aero()     )
     CASE (iRadAeroVolc)
       ! this is for rrtm radiation in the NWP part, we do not introduce
       ! the simple plumes here
-      ! set zero aerosol before adding CMIP6 volcanic aerosols
+      ! set zero aerosol before adding volcanic aerosols
       aer_tau_lw_vr(:,:,:) = 0.0_wp
       aer_tau_sw_vr(:,:,:) = 0.0_wp
       aer_piz_sw_vr(:,:,:) = 1.0_wp
       aer_cg_sw_vr(:,:,:)  = 0.0_wp
-      CALL add_bc_aeropt_cmip6_volc( current_date ,jg,            1 ,&
+      CALL add_bc_aeropt_volc( current_date ,jg,                  1 ,&
         & jce              ,kbdim                 ,klev             ,&
         & jb               ,jpsw                  ,jpband           ,&
         & p_nh_state(jg)% metrics% z_mc(:,:,jb)                     ,&
         & p_nh_state(jg)% metrics% ddqz_z_full(:,:,jb)              ,&
         & aer_tau_sw_vr    ,aer_piz_sw_vr         ,aer_cg_sw_vr     ,&
         & aer_tau_lw_vr                                              )
-      
+
    CASE (iRadAeroKinneVolc)
       CALL set_bc_aeropt_kinne( current_date                        ,&
         & jg                                                        ,&
@@ -1668,8 +1594,8 @@ CONTAINS
         & p_nh_state(jg)% metrics% z_mc(:,:,jb)                     ,&
         & p_nh_state(jg)% metrics% ddqz_z_full(:,:,jb)              ,&
         & aer_tau_sw_vr    ,aer_piz_sw_vr         ,aer_cg_sw_vr     ,&
-        & aer_tau_lw_vr                                              )
-      CALL add_bc_aeropt_cmip6_volc( current_date ,jg,            1 ,&      
+        & aer_tau_lw_vr,opt_from_coupler = is_coupled_to_aero()     )
+      CALL add_bc_aeropt_volc( current_date ,jg,                  1 ,&
         & jce              ,kbdim                 ,klev             ,&
         & jb               ,jpsw                  ,jpband           ,&
         & p_nh_state(jg)% metrics% z_mc(:,:,jb)                     ,&
@@ -1688,7 +1614,7 @@ CONTAINS
         & jce          ,kbdim        ,klev         ,jpband       ,jpsw         ,&
         & zglac        ,zland        ,ktype        ,icldlyr      ,tk_fl_vr     ,&
         & zlwp_vr      ,ziwp_vr      ,zlwc_vr      ,ziwc_vr      ,cdnc_vr      ,&
-        & reff_liq_vr  ,reff_frz_vr  ,icpl_reff                                ,& 
+        & reff_liq_vr  ,reff_frz_vr  ,icpl_reff                                ,&
         & cld_tau_lw_vr,cld_tau_sw_vr,cld_piz_sw_vr,cld_cg_sw_vr                )
     ENDIF
 
@@ -1753,14 +1679,14 @@ CONTAINS
       DO jk = 1, klev+1
         jkb = klev+2-jk
         DO jl = jcs, jce
-          flx_lw_dn(jl,jk)      = flx_dnlw_vr(jl,jkb) 
+          flx_lw_dn(jl,jk)      = flx_dnlw_vr(jl,jkb)
           flx_sw_dn(jl,jk)      = flx_dnsw(jl,jk)
-          flx_lw_up(jl,jk)      = flx_uplw_vr(jl,jkb)    
-          flx_sw_up(jl,jk)      = flx_upsw(jl,jk)        
+          flx_lw_up(jl,jk)      = flx_uplw_vr(jl,jkb)
+          flx_sw_up(jl,jk)      = flx_upsw(jl,jk)
           flx_lw_dn_clr(jl,jk)  = flx_dnlw_clr_vr(jl,jkb)
-          flx_sw_dn_clr(jl,jk)  = flx_dnsw_clr(jl,jk)    
+          flx_sw_dn_clr(jl,jk)  = flx_dnsw_clr(jl,jk)
           flx_lw_up_clr(jl,jk)  = flx_uplw_clr_vr(jl,jkb)
-          flx_sw_up_clr(jl,jk)  = flx_upsw_clr(jl,jk)    
+          flx_sw_up_clr(jl,jk)  = flx_upsw_clr(jl,jk)
         END DO
       END DO
     END IF
@@ -1831,12 +1757,11 @@ CONTAINS
     &                 list_seaice_idx, & ! optional: index list of seaice points
     &                 list_lake_count, & ! optional: number of lake points
     &                 list_lake_idx,   & ! optional: index list of lake points
-    &                 gp_count_t,      & ! optional: number of land points per tile 
+    &                 gp_count_t,      & ! optional: number of land points per tile
     &                 idx_lst_t,       & ! optional: index list of land points per tile
     &                 cosmu0,          & ! optional: cosine of zenith angle
     &                 cosmu0_slp,      & ! optional: slope-dependent cosine of zenith angle
     &                 shading_mask,    & ! optional: orographic shading mask
-    &                 skyview,         & ! optional: skyview factor for islope_rad=2
     &                 opt_nh_corr   ,  & ! optional: switch for applying corrections for NH model
     &                 use_trsolclr_sfc,& ! optional: use clear-sky surface transmissivity passed on input
     &                 ptrmsw        ,  &
@@ -1889,7 +1814,6 @@ CONTAINS
       &     cosmu0    (kbdim),       & ! cosine of solar zenith angle (w.r.t. plain surface)
       &     cosmu0_slp(kbdim),       & ! slope-dependent cosine of solar zenith angle
       &     shading_mask(kbdim),     & ! shading mask
-      &     skyview   (:),           & ! skyview factor for islope_rad=2
       &     albedo    (kbdim),       & ! grid-box average albedo
       &     albedo_t  (:,:),         & ! tile-specific albedo
                                        ! dim: (kbdim,ntiles+ntiles_wtr)
@@ -1925,8 +1849,8 @@ CONTAINS
 
     REAL(wp), INTENT(inout), OPTIONAL :: &
       &     pflxsfcsw (kbdim),       & ! shortwave surface net flux [W/m2]
-      &     pflxsfcsw_os (kbdim),     & ! shortwave surface net flux uncorr. [W/m2]
-      &     pflxsfcsw_tan_os (kbdim),     & ! shortwave surface net flux uncorr. [W/m2]
+      &     pflxsfcsw_os (:),        & ! shortwave surface net flux uncorr. [W/m2]
+      &     pflxsfcsw_tan_os (:),    & ! shortwave surface net flux uncorr. [W/m2]
       &     pflxsfclw (kbdim),       & ! longwave  surface net flux [W/m2]
       &     pflxsfcsw_t(:,:),        & ! tile-specific shortwave surface net flux [W/m2]
                                        ! dim: (kbdim,ntiles+ntiles_wtr)
@@ -1937,12 +1861,12 @@ CONTAINS
       &     lwflx_up_sfc(kbdim), &     ! longwave upward flux at surface [W/m2]
       &     swflx_up_toa(kbdim), &     ! shortwave upward flux at the top of the atmosphere [W/m2]
       &     swflx_up_sfc(kbdim), &     ! shortwave upward flux at the surface [W/m2]
-      &     swflx_up_sfc_os(kbdim), &  ! shortwave upward flux at the surface [W/m2] incl. orographic shading
-      &     swflx_up_sfc_tan_os(kbdim), & ! shortwave upward flux at the surface [W/m2] incl. slope-dependent and orographic shading
+      &     swflx_up_sfc_os(:), &      ! shortwave upward flux at the surface [W/m2] incl. orographic shading
+      &     swflx_up_sfc_tan_os(:), &  ! shortwave upward flux at the surface [W/m2] incl. slope-dependent and orographic shading
       &     swflx_nir_sfc(kbdim), &    ! near-infrared downward flux at the surface [W/m2]
       &     swflx_vis_sfc(kbdim), &    ! visible downward flux at the surface [W/m2]
       &     swflx_par_sfc(kbdim), &    ! photosynthetically active downward flux at the surface [W/m2]
-      &     swflx_par_sfc_tan_os(kbdim), &    ! photosynthetically active downward flux at the surface [W/m2]
+      &     swflx_par_sfc_tan_os(:), & ! photosynthetically active downward flux at the surface [W/m2]
       &     swflx_clr_sfc(kbdim), &    ! clear-sky net shortwave flux at the surface [W/m2]
       &     swflx_dn_sfc_diff(kbdim)   ! shortwave diffuse downward radiative flux at the surface [W/m2]
 
@@ -1990,11 +1914,6 @@ CONTAINS
       l_nh_corr = .FALSE.
     ENDIF
 
-    IF (islope_rad(jg) >= 2 .AND. .NOT. (PRESENT(skyview) )) THEN
-      ! we need skyview
-      CALL finish('radheat', 'I/O field skyview is missing')
-    ENDIF
-
     IF ( (islope_rad(jg)> 0).AND. .NOT. &
         (PRESENT(pflxsfcsw_os)    .AND. PRESENT(pflxsfcsw_tan_os) .AND. PRESENT(swflx_par_sfc_tan_os) .AND. &
          PRESENT(swflx_up_sfc_os) .AND. PRESENT(swflx_up_sfc_tan_os)) ) THEN
@@ -2018,7 +1937,7 @@ CONTAINS
       lcalc_clrflx = .FALSE.
     ENDIF
 
- 
+
     ! Conversion factor for heating rates
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     !$ACC LOOP GANG VECTOR COLLAPSE(2)
@@ -2044,7 +1963,7 @@ CONTAINS
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     !$ACC LOOP GANG VECTOR COLLAPSE(2)
     DO jk = 1, klevp1
-      DO jc = jcs, jce 
+      DO jc = jcs, jce
         zflxsw(jc,jk)      = ptrmsw(jc,jk) * pi0(jc)
       END DO
     END DO
@@ -2187,7 +2106,7 @@ CONTAINS
           dflxsw_o_dalb(jc) = - zflxsw(jc,klevp1)*swfac1/((1._wp-albedo(jc))*swfac2)
         ENDDO
         !$ACC END PARALLEL
- 
+
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         !$ACC LOOP SEQ
         DO jt = 1,ntiles
@@ -2228,7 +2147,7 @@ CONTAINS
         ENDDO
         !$ACC END PARALLEL
 
-        ! (open) water points (needed for A-O coupling)
+        ! (open) water points (needed for A-O coupling and air-sea interaction)
         !
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         !$ACC LOOP GANG VECTOR PRIVATE(jc)
@@ -2344,7 +2263,7 @@ CONTAINS
       ENDDO
       !$ACC END PARALLEL
     ENDIF
-    IF ( PRESENT(pflxtoalw) ) THEN 
+    IF ( PRESENT(pflxtoalw) ) THEN
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       !$ACC LOOP GANG VECTOR
       DO jc = jcs, jce

@@ -1,21 +1,21 @@
-!  Contains the data structures for the hydrostatic ocean model.
-!
-!  Contains the data structures to store the hydrostatic & boussinesq ocean model state.
-!  Implementation is based on ICON-Shallow-Water model
-!  to store the shallow water model state and other auxiliary variables.
-!  Constructors and destructors for these data structures are also defined here.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the data structures for the hydrostatic ocean model.
+!
+! Contains the data structures to store the hydrostatic & boussinesq ocean model state.
+! Implementation is based on ICON-Shallow-Water model
+! to store the shallow water model state and other auxiliary variables.
+! Constructors and destructors for these data structures are also defined here.
+
 #include "iconfor_dsl_definitions.inc"
 !=============================================================================================
 MODULE mo_icon_output_variables
@@ -45,7 +45,7 @@ MODULE mo_icon_output_variables
     &                               add_ref, t_var_list_ptr
   USE mo_var_list_register,   ONLY: vlr_add, vlr_del
   USE mo_var_metadata,        ONLY: get_timelevel_string
-  USE mo_var_groups,          ONLY: groups 
+  USE mo_var_groups,          ONLY: groups
   USE mo_cf_convention
   USE mo_util_dbg_prnt,       ONLY: dbg_print
   USE mo_grib2,               ONLY: grib2_var, t_grib2_var
@@ -71,12 +71,12 @@ MODULE mo_icon_output_variables
   PUBLIC :: destruct_icon_output_variables
   PUBLIC :: zlevels, dz_full_level
   PUBLIC :: patch_3d
- 
+
   !----------------------------------------------------------------------------
   INTEGER :: zlevels = 0
   INTEGER, PARAMETER :: max_allocated_levels = 1024
   REAL(wp) :: dz_full_level(max_allocated_levels) = 0  ! namelist input of layer thickness
-  
+
   TYPE t_output_collection
     onCells_3D_sp :: output_variable
   END TYPE t_output_collection
@@ -91,20 +91,20 @@ CONTAINS
   !-------------------------------------------------------------------------
 !<Optimize:inUse>
   SUBROUTINE construct_icon_output_variables
-  
+
     CHARACTER(LEN=max_char_length) :: listname
     TYPE(t_patch), POINTER :: patch_2d
     CHARACTER(:), ALLOCATABLE :: model_name
     INTEGER :: alloc_cell_blocks
     INTEGER :: datatype_flt
-    
+
     ! creat a var_list
     model_name=get_my_process_name()
     patch_2d => patch_3d%p_patch_2d(1)
     alloc_cell_blocks = patch_2d%alloc_cell_blocks
     datatype_flt = DATATYPE_FLT32
 
-    
+
     ! IMO the number of variable lists should be as small as possible
     ! default list: elements can be written to disk, but not to the restart file
     WRITE(listname,'(a)')  'output_default_list'
@@ -118,8 +118,8 @@ CONTAINS
       & grib2_var(255, 255, 255, DATATYPE_PACK16, GRID_UNSTRUCTURED, grid_cell),&
       & ldims=(/nproma,zlevels,alloc_cell_blocks/),in_group=groups("output_model"))
     myOutputCollection%output_variable = 0.0_wp
-    
-      
+
+
   END SUBROUTINE construct_icon_output_variables
   !-------------------------------------------------------------------------
 
@@ -128,7 +128,7 @@ CONTAINS
   SUBROUTINE destruct_icon_output_variables
     CHARACTER(LEN=*), PARAMETER :: &
       & method_name = 'destruct_icon_output_variables'
- 
+
     !-------------------------------------------------------------------------
     CALL message(TRIM(method_name), 'starting...')
 

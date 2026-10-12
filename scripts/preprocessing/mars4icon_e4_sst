@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -19,7 +19,7 @@
 #
 # Usage:  mars4icon_e4_sst "months" sst|skt
 #
-# attention: 
+# attention:
 #   * at DWD requires ECMWF login by eccert
 #   * requires atleast mars version 1.9.9
 #
@@ -158,7 +158,7 @@ cat > ${nml_ifld} <<EOF_NML
  inputname      = "sd"
  outputname     = "H_SNOW"
  code           = 141
- type_of_layer  = "surface" 
+ type_of_layer  = "surface"
 /
 EOF_NML
 

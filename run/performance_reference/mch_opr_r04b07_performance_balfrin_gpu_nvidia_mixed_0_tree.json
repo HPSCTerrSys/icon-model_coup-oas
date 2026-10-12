@@ -16,6 +16,15 @@
           ],
           "children": [
             {
+              "name": "gpu_mem_use",
+              "ancestry": [
+                "root",
+                "total",
+                "integrate_nh"
+              ],
+              "children": []
+            },
+            {
               "name": "nh_solve",
               "ancestry": [
                 "root",
@@ -160,56 +169,28 @@
                   ]
                 }
               ]
-            },
-            {
-              "name": "nesting",
-              "ancestry": [
-                "root",
-                "total",
-                "integrate_nh"
-              ],
-              "children": [
-                {
-                  "name": "nesting.bdy_interp",
-                  "ancestry": [
-                    "root",
-                    "total",
-                    "integrate_nh",
-                    "nesting"
-                  ],
-                  "children": []
-                }
-              ]
             }
           ]
-        }
-      ]
-    },
-    {
-      "name": "exch_data",
-      "ancestry": [
-        "root"
-      ],
-      "children": [
+        },
         {
-          "name": "exch_data.wait",
+          "name": "action",
           "ancestry": [
             "root",
-            "exch_data"
+            "total"
           ],
           "children": []
         }
       ]
     },
     {
-      "name": "global_sum",
+      "name": "acc_data_copies",
       "ancestry": [
         "root"
       ],
       "children": []
     },
     {
-      "name": "ordglb_sum",
+      "name": "global_sum",
       "ancestry": [
         "root"
       ],
@@ -245,7 +226,17 @@
             "root",
             "physics"
           ],
-          "children": []
+          "children": [
+            {
+              "name": "ordglb_sum",
+              "ancestry": [
+                "root",
+                "physics",
+                "phys_acc_sync"
+              ],
+              "children": []
+            }
+          ]
         },
         {
           "name": "satad",

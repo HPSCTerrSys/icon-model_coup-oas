@@ -1,20 +1,19 @@
-!
-! Data types for the cloud microphsics "graupel" parameterization
-!
-! This module provides the data types for the variables used to
-! configure the parameterization and to store the input and output
-! for the parameterization.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Data types for the cloud microphsics "graupel" parameterization
+!
+! This module provides the data types for the variables used to
+! configure the parameterization and to store the input and output
+! for the parameterization.
 
 MODULE mo_cloud_mig_types
 
@@ -26,13 +25,13 @@ MODULE mo_cloud_mig_types
   PUBLIC :: t_cloud_mig_config, t_cloud_mig_input, t_cloud_mig_output
 
   !-----------------------------------------------------------------------------
-  
+
   TYPE t_cloud_mig_config
      !
      ! configuration parameters
      ! ------------------------
      !
-     ! no parameters available.....
+     REAL(wp) :: cia        !control ice amount
      !
      ! thresholds
      !
@@ -41,7 +40,7 @@ MODULE mo_cloud_mig_types
   END TYPE t_cloud_mig_config
 
   !-----------------------------------------------------------------------------
-  
+
   TYPE t_cloud_mig_input
      !
      ! Input arguments: parameters
@@ -69,7 +68,7 @@ MODULE mo_cloud_mig_types
   END TYPE t_cloud_mig_input
 
   !-----------------------------------------------------------------------------
-  
+
   TYPE t_cloud_mig_output
      !
      ! Output arguments: fields
@@ -94,5 +93,5 @@ MODULE mo_cloud_mig_types
   END TYPE t_cloud_mig_output
 
   !-----------------------------------------------------------------------------
-  
+
 END MODULE mo_cloud_mig_types

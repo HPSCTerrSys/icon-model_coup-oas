@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -15,6 +15,7 @@
 # The purpose is the technical testing of the ICON-waves.
 # Idealized test, in which the horizontal propagation and refraction of wave energy
 # are the only active processes. Wave physics is switched off completely.
+# - analytic JONSWAP spectrum is used for initialization (bsed on analytic wind-field)
 #
 # Mikhail Dobrynin, 2022
 #
@@ -146,6 +147,10 @@ cat > ${wave_namelist} << EOF
  itopo = 0 !do not read atmospheric exp file
  extpar_filename = '${wave_extpar}'
 /
+&initwave_nml
+ init_mode       = 2       ! coldstart: initialize wave energy spectrum by
+                           ! analytic parameterization (JONSWAP)
+/
 &wave_nml
  ndirs            = ${nd}   ! number of directions
  nfreqs           = ${nf}   ! number of frequencies
@@ -173,7 +178,7 @@ cat > ${wave_namelist} << EOF
  ml_varlist              = 'bathymetry_c',
                            'group:wave_forcing',
                            'group:wave_phy','group:wave_short',
-                           'q112_010_004','q1_001_001','fl_020_010','fl_025_001'
+                           'wesd_f006_d001','wesd_f006_d002','wesd_f007_d001','wesd_f007_d002','fl_f001'
 /
 &output_nml
  filetype                =                          4         ! output format: 2=GRIB2, 4=NETCDFv2
@@ -188,7 +193,7 @@ cat > ${wave_namelist} << EOF
  reg_lon_def             =                 0., 1, 360.
  reg_lat_def             =                 -90.,1.,90.
  ml_varlist              = 'bathymetry_c','hs','emean',
-                           'q112_010_004','q1_001_001','fl_020_010','fl_025_001'
+                           'wesd_f006_d001','wesd_f006_d002','wesd_f007_d001','wesd_f007_d002'
 /
 EOF
 

@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -17,33 +17,33 @@ MODULE mo_cf_convention
   !!
   !! title
   !!
-  !!    A succint description of what is in the dataset. 
+  !!    A succint description of what is in the dataset.
   !!
   !! institution
   !!
-  !!    Specifies where the original data was produced. 
+  !!    Specifies where the original data was produced.
   !!
   !! source
   !!
-  !!    The method of production of the original data. If it 
-  !!    was model-generated, source should name the model and 
+  !!    The method of production of the original data. If it
+  !!    was model-generated, source should name the model and
   !!    its version, as specifically as could be useful.
   !!
   !! history
   !!
-  !!    Provides an audit trail for modifications to the original 
-  !!    data. Well-behaved generic netCDF filters will automatically 
-  !!    append their name and the parameters with which they were 
-  !!    invoked to the global history attribute of an input netCDF file. 
+  !!    Provides an audit trail for modifications to the original
+  !!    data. Well-behaved generic netCDF filters will automatically
+  !!    append their name and the parameters with which they were
+  !!    invoked to the global history attribute of an input netCDF file.
   !!
   !! references
   !!
-  !!    Published or web-based references that describe the data or methods 
-  !!    used to produce it. 
+  !!    Published or web-based references that describe the data or methods
+  !!    used to produce it.
   !!
   !! comment
   !!
-  !!    Miscellaneous information about the data or methods used to produce it. 
+  !!    Miscellaneous information about the data or methods used to produce it.
   !!
   !!
   !!----------------------------------------------------------------------------
@@ -52,35 +52,35 @@ MODULE mo_cf_convention
   !!
   !! standard name
   !!
-  !!    The name used to identify the physical quantity. A standard name 
-  !!    contains no whitespace and is case sensitive. 
+  !!    The name used to identify the physical quantity. A standard name
+  !!    contains no whitespace and is case sensitive.
   !!
   !! canonical units
   !!
-  !!    Representative units of the physical quantity. Unless it is 
-  !!    dimensionless, a variable with a standard_name attribute must have 
-  !!    units which are physically equivalent (not necessarily identical) to 
-  !!    the canonical units, possibly modified by an operation specified by 
+  !!    Representative units of the physical quantity. Unless it is
+  !!    dimensionless, a variable with a standard_name attribute must have
+  !!    units which are physically equivalent (not necessarily identical) to
+  !!    the canonical units, possibly modified by an operation specified by
   !!    either the standard name modifier.
   !!
   !!  description
   !!
-  !!    The description is meant to clarify the qualifiers of the fundamental 
-  !!    quantities such as which surface a quantity is defined on or what the 
-  !!    flux sign conventions are. We don"t attempt to provide precise 
-  !!    definitions of fundumental physical quantities (e.g., temperature) 
-  !!    which may be found in the literature. 
+  !!    The description is meant to clarify the qualifiers of the fundamental
+  !!    quantities such as which surface a quantity is defined on or what the
+  !!    flux sign conventions are. We don"t attempt to provide precise
+  !!    definitions of fundumental physical quantities (e.g., temperature)
+  !!    which may be found in the literature.
   !!
   !!----------------------------------------------------------------------------
 
-  IMPLICIT NONE 
+  IMPLICIT NONE
 
   PRIVATE
 
   TYPE t_cf_global
     CHARACTER(len=128) :: title         = ''
     CHARACTER(len=128) :: institution   = ''
-    CHARACTER(len=128) :: source        = ''
+    CHARACTER(len=256) :: source        = ''
     CHARACTER(len=128) :: history       = ''
     CHARACTER(len=128) :: references    = ''
     CHARACTER(len=128) :: comment       = ''
@@ -97,7 +97,7 @@ MODULE mo_cf_convention
   TYPE t_cf_gridspec
     CHARACTER(len=36)   :: gridspec_coordinates_id   ! uuid
     CHARACTER(len=36)   :: gridspec_data_id          ! uuid
-    CHARACTER(len= 9)   :: gridspec_file_type        ! always: grid_file       
+    CHARACTER(len= 9)   :: gridspec_file_type        ! always: grid_file
     CHARACTER(len=1024) :: gridspec_tile_name        ! URL of grid file
   END type t_cf_gridspec
 
@@ -110,7 +110,7 @@ MODULE mo_cf_convention
   PUBLIC :: set_cf_gridspec
 
   TYPE(t_cf_global), SAVE, PUBLIC, PROTECTED :: cf_global_info
-  
+
 CONTAINS
 
   SUBROUTINE set_cf_global(title, institution, source, history, references, comment)
@@ -120,11 +120,11 @@ CONTAINS
     CHARACTER(len=*), INTENT(in), OPTIONAL :: history
     CHARACTER(len=*), INTENT(in), OPTIONAL :: references
     CHARACTER(len=*), INTENT(in), OPTIONAL :: comment
-   
+
     IF (PRESENT(title))       cf_global_info%title       = TRIM(title)
     IF (PRESENT(institution)) cf_global_info%institution = TRIM(institution)
-    IF (PRESENT(source))      cf_global_info%source      = TRIM(source) 
-    IF (PRESENT(history))     cf_global_info%history     = TRIM(history)  
+    IF (PRESENT(source))      cf_global_info%source      = TRIM(source)
+    IF (PRESENT(history))     cf_global_info%history     = TRIM(history)
     IF (PRESENT(references))  cf_global_info%references  = TRIM(references)
     IF (PRESENT(comment))     cf_global_info%comment     = TRIM(comment)
 

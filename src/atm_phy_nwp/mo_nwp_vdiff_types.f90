@@ -1,16 +1,15 @@
-!
-! Types for the interface to the VDIFF turbulence scheme and JSBACH land-surface scheme.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Types for the interface to the VDIFF turbulence scheme and JSBACH land-surface scheme.
 
 MODULE mo_nwp_vdiff_types
 
@@ -26,6 +25,9 @@ MODULE mo_nwp_vdiff_types
   USE mo_var_groups, ONLY: groups
   USE mo_var_list, ONLY: t_var_list_ptr, add_var, add_ref
   USE mo_zaxis_type, ONLY: ZA_REFERENCE, ZA_SURFACE
+  USE mo_fortran_tools,      ONLY: assert_acc_device_only
+  USE mo_run_config, ONLY: ico2
+  USE mo_ccycle_config, ONLY: ccycle_config, CCYCLE_MODE_INTERACTIVE
 
   USE mtime, ONLY: datetime
 
@@ -89,6 +91,9 @@ MODULE mo_nwp_vdiff_types
 
     !> Deallocate fields when structure is destroyed.
     LOGICAL :: deallocate = .FALSE.
+
+    !> Initialization flag.
+    LOGICAL :: initialized = .FALSE.
   CONTAINS
     PROCEDURE :: init => nwp_vdiff_albedos_init
 
@@ -122,6 +127,11 @@ MODULE mo_nwp_vdiff_types
     !> Meridional ocean surface velocity [m/s] (nproma,nblks_c).
     REAL(wp), CONTIGUOUS, POINTER :: ocean_v(:,:) => NULL()
 
+    !> Zonal sea ice velocity [m/s] (nproma,nblks_c).
+    REAL(wp), CONTIGUOUS, POINTER :: ice_u(:,:) => NULL()
+    !> Meridional sea ice velocity [m/s] (nproma,nblks_c).
+    REAL(wp), CONTIGUOUS, POINTER :: ice_v(:,:) => NULL()
+
     !> Natural CO2 flux over sea [kg/m**2(ocean)/s] (nproma,nblks_c).
     REAL(wp), CONTIGUOUS, POINTER :: flx_co2_natural_sea(:,:) => NULL()
 
@@ -134,6 +144,9 @@ MODULE mo_nwp_vdiff_types
 
     !> Time for last sea surface temperature update.
     TYPE(datetime) :: time_last_update_t_seasfc
+
+    !> Initialization flag.
+    LOGICAL :: initialized = .FALSE.
 
   CONTAINS
 
@@ -178,6 +191,9 @@ MODULE mo_nwp_vdiff_types
     !> Natural CO2 flux over land [kg/m**2/s] (nproma,nblks_c).
     REAL(wp), CONTIGUOUS, POINTER :: flx_co2_natural_land(:,:) => NULL()
 
+    !> Anthropogenic CO2 flux [kg/m**2/s] (nproma,nblks_c).
+    REAL(wp), CONTIGUOUS, POINTER :: fco2ant(:,:) => NULL()
+
     !> Total turbulent energy [J/kg?] (nproma,nlev,nblks_c)
     REAL(wp), CONTIGUOUS, POINTER :: total_turbulence_energy(:,:,:) => NULL()
 
@@ -207,6 +223,9 @@ MODULE mo_nwp_vdiff_types
     !> Sea state.
     TYPE(t_nwp_vdiff_sea_state) :: sea_state
 
+    !> Initialization flag.
+    LOGICAL :: initialized = .FALSE.
+
   CONTAINS
     PROCEDURE :: init => nwp_vdiff_state_init
 
@@ -219,12 +238,13 @@ MODULE mo_nwp_vdiff_types
 CONTAINS
 
   !> Initialize a `t_nwp_vdiff_state` structure, adding the variables to the given varlist.
-  SUBROUTINE nwp_vdiff_state_init (self, nproma, nlev, nblks_c, varlist)
+  SUBROUTINE nwp_vdiff_state_init (self, nproma, nlev, nblks_c, id, varlist)
 
     CLASS(t_nwp_vdiff_state), INTENT(OUT) :: self !< Object to initialize.
     INTEGER, INTENT(IN) :: nproma !< Block size.
     INTEGER, INTENT(IN) :: nlev !< Number of levels.
     INTEGER, INTENT(IN) :: nblks_c !< Number of cell blocks.
+    INTEGER, INTENT(IN) :: id !< ID of domain
     TYPE(t_var_list_ptr), INTENT(INOUT) :: varlist !< Varlist to append variables.
 
     TYPE(t_cf_var) :: cf_desc
@@ -239,6 +259,7 @@ CONTAINS
     INTEGER :: shape2d_sfc(3) !< Shape of 2D fields with surface-class index.
 
     INTEGER :: i
+    INTEGER :: iccycle
 
     REAL(wp), POINTER :: p2d(:,:)
 
@@ -255,6 +276,7 @@ CONTAINS
 
     grib2_bits = DATATYPE_PACK16
 
+    self%initialized = .TRUE.
     !$ACC ENTER DATA ASYNC(1) COPYIN(self)
 
     ! self%exchange_coeff_h(nproma,nlev,nblks_c)
@@ -349,6 +371,21 @@ CONTAINS
         & lrestart=.TRUE., in_group=groups('vdiff') &
       )
     !$ACC ENTER DATA ASYNC(1) ATTACH(self%flx_co2_natural_land)
+
+    ! self%fco2ant(nproma,nblks_c)
+    IF (ico2 > 0) THEN
+      ! Setting iccycle for lrestart_cont (lrestart_cont == TRUE if iccycle == 1)
+      iccycle = ccycle_config(id)%iccycle
+      cf_desc = t_cf_var('fco2ant', 'kg m-2 s-1', 'Anthropogenic CO2 flux', datatype_flt)
+      grib2_desc = grib2_var(255, 255, 255, grib2_bits, GRID_UNSTRUCTURED, GRID_CELL)
+      CALL add_var(varlist, 'fco2ant', self%fco2ant, &
+          & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc, &
+          & ldims=shape2d, isteptype=TSTEP_INSTANT, lopenacc=.TRUE., &
+          & lrestart_cont=(iccycle == CCYCLE_MODE_INTERACTIVE), &
+          & lrestart=.TRUE., in_group=groups('vdiff') &
+        )
+    !$ACC ENTER DATA ASYNC(1) ATTACH(self%fco2ant)
+    END IF
 
     ! self%flx_heat_latent_sft(nproma,nblks_c,SFT_NUM)
     cf_desc = t_cf_var('flx_heat_latent_sft', 'W m-2', &
@@ -574,6 +611,11 @@ CONTAINS
     !$ACC   HOST(self%wstar_sfc) &
     !$ACC   HOST(self%z0m_sfc) &
     !$ACC   HOST(self%z0h_land)
+
+    IF (ASSOCIATED(self%fco2ant)) THEN
+      !$ACC UPDATE ASYNC(1) &
+      !$ACC   HOST(self%fco2ant)
+    END IF
     !$ACC WAIT(1)
 
   END SUBROUTINE nwp_vdiff_state_d2h
@@ -606,6 +648,11 @@ CONTAINS
     !$ACC   DEVICE(self%z0m_sfc) &
     !$ACC   DEVICE(self%z0h_land)
 
+    IF (ASSOCIATED(self%fco2ant)) THEN
+      !$ACC UPDATE ASYNC(1) &
+      !$ACC   DEVICE(self%fco2ant)
+    END IF
+
   END SUBROUTINE nwp_vdiff_state_h2d
 
 
@@ -615,7 +662,7 @@ CONTAINS
     TYPE(t_nwp_vdiff_state), INTENT(INOUT) :: self !< Object to destroy.
 
     ! This routine gets called when entering init. Thanks, Fortran!
-    IF (.NOT. ASSOCIATED(self%fact_q_air)) RETURN
+    IF (.NOT. self%initialized) RETURN
 
     !$ACC WAIT
 
@@ -625,11 +672,14 @@ CONTAINS
 
 
   !> Initialize a `t_nwp_vdiff_albedos` structure. This routine is OpenMP orphaned.
-  SUBROUTINE nwp_vdiff_albedos_init (self, kproma, nblks_c)
+  SUBROUTINE nwp_vdiff_albedos_init (self, kproma, nblks_c, lacc)
 
     CLASS(t_nwp_vdiff_albedos), INTENT(OUT) :: self !< Object to initialize.
     INTEGER, INTENT(IN) :: kproma !< Block size.
     INTEGER, INTENT(IN) :: nblks_c !< Number of cell blocks.
+    LOGICAL, INTENT(IN) :: lacc
+
+    CALL assert_acc_device_only ('nwp_vdiff_albedos_init', lacc)
 
     !$OMP SINGLE
       ALLOCATE( &
@@ -640,6 +690,7 @@ CONTAINS
           & self%lw_emissivity(kproma,nblks_c,SFT_NUM) &
         )
       self%deallocate = .TRUE.
+      self%initialized = .TRUE.
     !$OMP END SINGLE
 
     !$OMP WORKSHARE
@@ -721,7 +772,7 @@ CONTAINS
     TYPE(t_nwp_vdiff_albedos), INTENT(INOUT) :: self !< Object to destroy.
 
     ! This routine gets called when entering init. Thanks, Fortran!
-    IF (.NOT. ASSOCIATED(self%alb_nir_dif)) RETURN
+    IF (.NOT. self%initialized) RETURN
 
     !$ACC WAIT
     IF (.NOT. self%deallocate) THEN
@@ -783,6 +834,7 @@ CONTAINS
 
     self%time_ref_t_seasfc = assumePrevMidnight(time_config%tc_exp_startdate)
     self%time_last_update_t_seasfc = self%time_ref_t_seasfc
+    self%initialized = .TRUE.
     !$ACC ENTER DATA ASYNC(1) COPYIN(self)
 
     cf_desc = t_cf_var('t_seasfc_offset', 'K', 'Initial sea surface temperature', &
@@ -906,7 +958,7 @@ CONTAINS
         )
       !$ACC ENTER DATA ASYNC(1) ATTACH(self%flx_co2_natural_sea)
 
-      cf_desc = t_cf_var('ocean_u', 'm s-1', 'Zonal ocean surface velocity', &
+      cf_desc = t_cf_var('eastward_sea_water_velocity', 'm s-1', 'Eastward ocean surface velocity', &
           & datatype_flt)
       grib2_desc = grib2_var(255, 255, 255, grib2_bits, GRID_UNSTRUCTURED, GRID_CELL)
       CALL add_var(varlist, 'ocean_u', self%ocean_u, &
@@ -916,7 +968,7 @@ CONTAINS
         )
       !$ACC ENTER DATA ASYNC(1) ATTACH(self%ocean_u)
 
-      cf_desc = t_cf_var('ocean_v', 'm s-1', 'Meridional ocean surface velocity', &
+      cf_desc = t_cf_var('northward_sea_water_velocit', 'm s-1', 'Northward ocean surface velocity', &
           & datatype_flt)
       grib2_desc = grib2_var(255, 255, 255, grib2_bits, GRID_UNSTRUCTURED, GRID_CELL)
       CALL add_var(varlist, 'ocean_v', self%ocean_v, &
@@ -925,6 +977,28 @@ CONTAINS
           & lrestart=.TRUE., in_group=groups('vdiff') &
         )
       !$ACC ENTER DATA ASYNC(1) ATTACH(self%ocean_v)
+
+      cf_desc = t_cf_var('eastward_sea_ice_velocity', 'm s-1', 'Eastward sea ice velocity', &
+          & datatype_flt)
+      grib2_desc = grib2_var(255, 255, 255, grib2_bits, GRID_UNSTRUCTURED, GRID_CELL)
+      CALL add_var(varlist, 'ice_u', self%ice_u, &
+          & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc, &
+          & ldims=shape2d, isteptype=TSTEP_INSTANT, lopenacc=.TRUE., &
+          & lrestart=.TRUE., in_group=groups('vdiff') &
+        )
+      !$ACC ENTER DATA ASYNC(1) ATTACH(self%ice_u)
+
+      cf_desc = t_cf_var('northward_sea_ice_velocity', 'm s-1', 'Northward sea ice velocity', &
+          & datatype_flt)
+      grib2_desc = grib2_var(255, 255, 255, grib2_bits, GRID_UNSTRUCTURED, GRID_CELL)
+      CALL add_var(varlist, 'ice_v', self%ice_v, &
+          & GRID_UNSTRUCTURED_CELL, ZA_SURFACE, cf_desc, grib2_desc, &
+          & ldims=shape2d, isteptype=TSTEP_INSTANT, lopenacc=.TRUE., &
+          & lrestart=.TRUE., in_group=groups('vdiff') &
+        )
+      !$ACC ENTER DATA ASYNC(1) ATTACH(self%ice_v)
+
+
     END IF
 
   END SUBROUTINE nwp_vdiff_sea_state_init
@@ -982,7 +1056,7 @@ CONTAINS
     TYPE(t_nwp_vdiff_sea_state), INTENT(INOUT) :: self !< Object to destroy.
 
     ! This routine gets called when entering init. Thanks, Fortran!
-    IF (.NOT. ASSOCIATED(self%t_seasfc_offset)) RETURN
+    IF (.NOT. self%initialized) RETURN
 
     !$ACC WAIT
 

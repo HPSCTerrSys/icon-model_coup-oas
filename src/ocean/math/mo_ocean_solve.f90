@@ -1,15 +1,15 @@
-! contains general interface to the actual solver backends (init, solve, destruct)
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! contains general interface to the actual solver backends (init, solve, destruct)
 
 #include "icon_definitions.inc"
 
@@ -23,12 +23,13 @@ MODULE mo_ocean_solve
   USE mo_ocean_solve_backend, ONLY: t_ocean_solve_backend
   USE mo_ocean_solve_gmres, ONLY: t_ocean_solve_gmres
   USE mo_ocean_solve_cg, ONLY: t_ocean_solve_cg
+  USE mo_ocean_solve_cgo, ONLY: t_ocean_solve_cgo
   USE mo_ocean_solve_cgj, ONLY: t_ocean_solve_cgj
   USE mo_ocean_solve_bicgStab, ONLY: t_ocean_solve_bicgStab
   USE mo_ocean_solve_legacy_gmres, ONLY: t_ocean_solve_legacy_gmres
   USE mo_ocean_solve_mres, ONLY: t_ocean_solve_mres
   USE mo_ocean_solve_aux, ONLY: solve_gmres, solve_cg, solve_mres, &
-    & solve_precon_jac, solve_bcgs, solve_legacy_gmres, &
+    & solve_precon_jac, solve_cg_opt, solve_bcgs, solve_legacy_gmres, &
     & t_ocean_solve_parm
   USE mo_run_config, ONLY: ltimer
   USE mo_timer, ONLY: new_timer, timer_start, timer_stop
@@ -68,17 +69,21 @@ MODULE mo_ocean_solve
 CONTAINS
 
 ! dumps lhs-matrix to text-file
-  SUBROUTINE ocean_solve_dump_matrix(this, id, lprecon_in)
+  SUBROUTINE ocean_solve_dump_matrix(this, id, lprecon_in, lacc)
     CLASS(t_ocean_solve), INTENT(INOUT) :: this
     INTEGER, INTENT(IN) :: id
     LOGICAL, INTENT(IN), OPTIONAL :: lprecon_in
+    LOGICAL, INTENT(IN), OPTIONAL :: lacc
     LOGICAL :: lprecon
     CHARACTER(LEN=*), PARAMETER :: routine = this_mod_name // &
       & "::t_ocean_solve::ocean_solve_dump_matrix()"
+    LOGICAL :: lzacc
+
+    CALL set_acc_host_or_device(lzacc, lacc)
 
     lprecon = .false.
     IF (PRESENT(lprecon_in)) lprecon = lprecon_in
-    CALL this%act%dump_matrix(id, lprecon)
+    CALL this%act%dump_matrix(id, lprecon, lacc=lzacc)
   END SUBROUTINE ocean_solve_dump_matrix
 
 ! init solver object (allocate backend and initialize it)
@@ -100,6 +105,13 @@ CONTAINS
       this%timer_init = new_timer("solver init")
       CALL timer_start(this%timer_init)
     END IF
+#ifdef _OPENACC
+    IF (lzacc) THEN
+      IF ((st /= solve_cg) .OR. (par%pt == solve_precon_jac)) THEN
+        CALL finish(routine, "OpenACC version only implemented for CG solver without preconditioning")
+      END IF
+    END IF
+#endif
 ! decide which backend-solver to use
     SELECT CASE(st)
     CASE(solve_gmres)
@@ -112,6 +124,10 @@ CONTAINS
         this%timer = new_timer("cgj_solve")
         WRITE(this%sol_type_name, "(a)") "CG+JAC"
         ALLOCATE(t_ocean_solve_cgj :: this%act)
+      CASE(solve_cg_opt)
+        this%timer = new_timer("cg_solve")
+        WRITE(this%sol_type_name, "(a)") "CG-OPT"
+        ALLOCATE(t_ocean_solve_cgo :: this%act)
       CASE DEFAULT
         this%timer = new_timer("cg_solve")
         WRITE(this%sol_type_name, "(a)") "CG"
@@ -142,11 +158,16 @@ CONTAINS
 ! init backend
     CALL this%act%construct(par, par_sp, lhs_agen, trans, lacc=lzacc)
 ! init arrays / pointers
+    !$ACC EXIT DATA DELETE(this%b_loc_wp) ASYNC(1) IF(lzacc)
+    !$ACC WAIT(1)
     NULLIFY(this%b_loc_wp)
     ALLOCATE(this%x_loc_wp(par%nidx, par%nblk_a), this%res_loc_wp(2))
     this%x_loc_wp(:, par%nblk_a) = 0._wp
     this%act%res_loc_wp => this%res_loc_wp
     this%act%x_loc_wp => this%x_loc_wp
+    !$ACC ENTER DATA COPYIN(this%x_loc_wp) ASYNC(1) IF(lzacc)
+    !$ACC WAIT(1)
+
     IF (ltimer) THEN
       CALL timer_stop(this%timer_init)
       IF (.NOT.trans%is_solver_pe) THEN

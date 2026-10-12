@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -73,7 +73,7 @@ init_relax=0   # 1: use relaxation initialization file
 #   ts_surf_annual-iconR${R}B0{B}-${init_rel_suff}
 #
 #-----------------------------------------------------------------------------
-# ocean forcing (iforc=12) needs an additional flux file 
+# ocean forcing (iforc=12) needs an additional flux file
 # NO_FORCING                 = 10
 # ANALYT_FORC                = 11  - dependent on testcase
 # FORCING_FROM_FILE_FLUX     = 12  - OMIP or NCEP type forcing
@@ -131,7 +131,7 @@ ocean_model_equations=-1     # equation system: -1=hydrost. ocean
   grid_ext="etopo05_planet"     # global flat bottom bathymetry for aqua planet experiments
 #
 ocean_grids="iconR${R}B0${B}-ocean_${grid_ext}.nc"
-# 
+#
 #-----------------------------------------------------------------------------
 #
 # write namelist parameters
@@ -189,7 +189,7 @@ cat > ${ocean_namelist} << EOF
   l_partial_cells = .FALSE.      ! partial bottom cells=true: local varying bottom depth
    solver_tolerance = 1.0E-11              !  absolute (new) or relative (gmres_oce_old) - to be checked
   solver_max_iter_per_restart = 30        !  outer solver loop with syncing
-  solver_max_restart_iterations = 50      !  inner solver loop without syncing (30*50 iterations maximum)  
+  solver_max_restart_iterations = 50      !  inner solver loop without syncing (30*50 iterations maximum)
   use_continuity_correction= .true.
 /
 &ocean_tracer_transport_nml
@@ -234,7 +234,7 @@ cat > ${ocean_namelist} << EOF
   initial_salinity_type      = 402
   initial_temperature_type   = 207
   initial_sst_type           = 'sst1'
-  initial_temperature_top    = 27.0 
+  initial_temperature_top    = 27.0
   initial_temperature_bottom = 0.0
 /
 &ocean_diagnostics_nml
@@ -250,4 +250,3 @@ EOF
 # add standard atmo_non-hydrostatic_files
 . ${thisdir}/add_required_ocean_files
 #-----------------------------------------------------------------------------
-

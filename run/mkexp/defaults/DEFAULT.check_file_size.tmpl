@@ -1,0 +1,161 @@
+#! %{JOB.python3} #%# -*- mode: python -*- vi: set ft=python :
+#%#- ICON
+#%#-
+#%#- ---------------------------------------------------------------
+#%#- Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+#%#- Contact information: icon-model.org
+#%#-
+#%#- See AUTHORS.TXT for a list of authors
+#%#- See LICENSES/ for license information
+#%#- SPDX-License-Identifier: BSD-3-Clause
+#%#- ---------------------------------------------------------------
+#%#-
+#%#- This template generates a script which compares the size of one
+#%#- or more output files, given in the experiment .config to given
+#%#- boundaries <min_size> and <max_size>.
+#%#- The boundaries can be given in human readable format, eg. 5K,
+#%#- 2.5M, 1G (convention by $du).
+
+"""\
+This test compares the size of one or more output files, given in the
+experiment .config to given boundaries <min_size> and <max_size>.
+The boundaries can be given in human readable format, eg. 5K, 2.5M,
+1G (convention by $du).
+"""
+import os
+import sys
+import re
+import argparse
+
+#% include 'mkexp/defaults/logging.tmpl'
+#% include 'mkexp/defaults/mtime.tmpl'
+#% include 'mkexp/defaults/testing.tmpl'
+
+#--------------------
+def parse_size(size_str):
+    """\
+    Convert human-readable size string to bytes (e.g., '5M' -> 5242880) according to convention by $du
+    """
+    size_str = size_str.strip().upper()
+    match = re.fullmatch(r'(\d+(?:\.\d+)?)([KMGT]?B?)', size_str)
+    if not match:
+        raise ValueError(f"Invalid size format: '{size_str}'")
+    number, unit = match.groups()
+    number = float(number)
+    unit_multipliers = {
+        '': 1,
+        'B': 1,
+        'K': 1024,
+        'KB': 1000,
+        'M': 1024 ** 2,
+        'MB': 1000 ** 2,
+        'G': 1024 ** 3,
+        'GB': 1000 ** 3,
+        'T': 1024 ** 4,
+        'TB': 1000 ** 4,
+    }
+    multiplier = unit_multipliers.get(unit, None)
+    if multiplier is None:
+        raise ValueError(f"Unknown unit: '{unit}'")
+    return int(number * multiplier)
+
+
+def check_range(min_size_str, max_size_str):
+    """\
+    Check given file size range is plausible
+    """
+    try:
+        min_size = parse_size(min_size_str)
+        max_size = parse_size(max_size_str)
+        if min_size > max_size:
+            logging.info(f"FAILED: Given range is wrong: min_size ({min_size} bytes) >  max_size ({max_size} bytes).")
+            return TestStatus.FAILED
+        else:
+            return TestStatus.PASSED
+    except ValueError as ve:
+        logging.error(f"Error: {ve}")
+        return TestStatus.FAILED
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        return TestStatus.FAILED
+
+
+def check_file_size_in_range(filepath, min_size_str, max_size_str):
+    """\
+    Check if the size of a file is within the range [min_size; max_size]
+    """
+    try:
+        size = os.path.getsize(filepath)
+        min_size = parse_size(min_size_str)
+        max_size = parse_size(max_size_str)
+        if min_size <= size <= max_size:
+            logging.info(f"PASSED: File size ({size} is within the specified range [{min_size} bytes, {max_size} bytes].")
+            return TestStatus.PASSED
+        else:
+            logging.info(f"FAILED: File size ({size}) is outside the specified range [{min_size} bytes, {max_size} bytes].")
+            return TestStatus.FAILED
+    except FileNotFoundError:
+        logging.error(f"Error: File '{filepath}' not found.")
+        return TestStatus.FAILED
+    except ValueError as ve:
+        logging.error(f"Error: {ve}")
+        return TestStatus.FAILED
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+        return TestStatus.FAILED
+
+
+
+#--------------------
+def main():
+
+    # Get the run dir name:
+    start_date = mtime.DateTime("%{namelists['icon_master.namelist'].master_time_control_nml.experimentstartdate}")
+    logging.debug(f"start_date: {start_date}")
+
+    #%  set atmo_time_step = JOB.atmo_time_step|d(ATMO_TIME_STEP)
+    #%  set ocean_time_step = JOB.ocean_time_step|d(OCEAN_TIME_STEP)
+    #%  set interval = JOB.interval|d(INTERVAL)
+    #%  set final_date = JOB.final_date|d(FINAL_DATE)
+    final_date = mtime.DateTime('%{final_date}')
+    next_date = start_date + mtime.TimeDelta('%{interval}')
+    if next_date > final_date:
+        logging.warning('next date after final date; setting next date to final date')
+        next_date_orig = next_date
+        next_date = final_date
+    end_date = (next_date + mtime.TimeDelta('-%{atmo_time_step or ocean_time_step or "PT0.001S"}'))
+    logging.debug(f"end_date: {end_date}")
+
+    weed = re.compile(r'[-:]|\.\d+$')
+    template_dict = {}
+    template_dict['start_stamp'] = re.sub(weed, '', str(start_date))
+    template_dict['end_stamp'] = re.sub(weed, '', str(end_date))
+    run_dir = os.path.join('%{WORK_DIR}','%{jobs.run.subdir}'.format(**template_dict))
+    logging.debug(f"run_dir = '{run_dir}'\n")
+
+
+    # Check size of all given files
+    status = TestStatus.PASSED
+
+    #% for file_name in JOB.sections:
+    #%   set settings = JOB[file_name]
+    file_path = os.path.join(run_dir, f"%{EXP_ID}_%{file_name}_ml_{template_dict['start_stamp']}Z.nc")
+    logging.info(f"File: '{file_path}'")
+    result = check_range('%{settings.min_size}', '%{settings.max_size}')
+    if result == TestStatus.PASSED:
+        result = check_file_size_in_range(file_path, '%{settings.min_size}', '%{settings.max_size}')
+    logging.debug(f"result of a single check = {result.name}")
+    result = flip_single_result('%{settings.expected_fail}', result)
+    status = flip_test_status(status, result)
+
+    #% endfor
+
+    logging.info("============================")
+    logging.info(f"Final status of the check_file_size test:")
+    logging.info(f"  {status.name}")
+    logging.info("============================")
+    logging.debug(f"exit check_file_size test with {status.value}")
+    sys.exit(status.value)
+
+if __name__ == "__main__":
+    main()

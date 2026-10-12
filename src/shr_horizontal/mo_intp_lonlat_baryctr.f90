@@ -1,24 +1,20 @@
-! Contains the implementation of interpolation onto regular grids
-! with barycentric interpolation.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------  
+! ---------------------------------------------------------------
+
+! Contains the implementation of interpolation onto regular grids
+! with barycentric interpolation.
 
 #ifdef __xlC__
   @PROCESS smp=noopt
   @PROCESS noopt
-#endif
-#ifdef __PGI
-  !pgi$g opt=1
 #endif
 
   MODULE mo_intp_lonlat_baryctr
@@ -40,7 +36,7 @@
     USE mo_math_utilities,      ONLY: gc2cc, cc2gc, cc_dot_product,           &
       &                               project_point_to_plane
     USE mo_math_constants,      ONLY: pi, pi_2
-    USE mo_io_units,            ONLY: filename_max 
+    USE mo_io_units,            ONLY: filename_max
     USE mo_parallel_config,     ONLY: nproma
     USE mo_grid_config,         ONLY: set_patches_grid_filename, n_dom_start, n_dom
     USE mo_loopindices,         ONLY: get_indices_c
@@ -69,6 +65,9 @@
     PUBLIC :: setup_barycentric_intp_lonlat_repartition
     PUBLIC :: compute_auxiliary_triangulation
     PUBLIC :: try_triangulation_readin
+#ifdef __MSGWAM
+    PUBLIC :: inside_triangle
+#endif
 
     INTERFACE compute_auxiliary_triangulation
       MODULE PROCEDURE compute_triangulation_local_partition
@@ -98,11 +97,11 @@
       CALL points%initialize()
       DO k=1,n
         h = MIN(MAX(-1._wp + 2._wp*(k-1)/(N-1), -1._wp), 1._wp)
-        points_gc(k)%lat = ACOS(h) 
+        points_gc(k)%lat = ACOS(h)
         IF ((k==1) .OR. (k==n)) THEN
           points_gc(k)%lon = 0._wp
         ELSE
-          points_gc(k)%lon = MOD( (points_gc(k-1)%lon + 3.6_wp/SQRT(n*(1._wp-h*h))) , 2._wp*pi ) 
+          points_gc(k)%lon = MOD( (points_gc(k-1)%lon + 3.6_wp/SQRT(n*(1._wp-h*h))) , 2._wp*pi )
         END IF
         points_gc(k)%lon = points_gc(k)%lon - pi
         points_gc(k)%lat = points_gc(k)%lat - pi_2
@@ -120,7 +119,7 @@
     !> provided through the array @v vertex.
     !
     SUBROUTINE compute_barycentric_coords(pt, v, u)
-      TYPE(t_geographical_coordinates), INTENT(IN)  :: pt                  !< query point (longitude/latitude)  
+      TYPE(t_geographical_coordinates), INTENT(IN)  :: pt                  !< query point (longitude/latitude)
       !> triangle vertices, first index is x,y,z,
       !! second index is 1st,2nd or 3rd vertex
       REAL(wp),                         INTENT(IN)  :: v(3,3)
@@ -148,7 +147,7 @@
       B2(1:2) = (/ B1(2)               , cc_dot_product(b,b) /)   ! (a-c)*(b-c) ,  (b-c)^2
       r(1:2)  = (/ cc_dot_product(p,a) , cc_dot_product(p,b) /)   ! [ (p-c)*(a-c), (p-c)*(b-c) ]
       ! solve using Cramer's rule:
-      det     = B2(2)*B1(1) - B1(2)*B2(1) 
+      det     = B2(2)*B1(1) - B1(2)*B2(1)
       u(1)    = ( r(1)*B2(2) - r(2)*B1(2) )/det
       u(2)    = ( r(2)*B1(1) - r(1)*B2(1) )/det
       u(3)    = 1._wp - (u(1) + u(2))
@@ -194,7 +193,7 @@
       REAL(wp) :: rscale1
 
       center = (v1 + v2 + v3)/3._wp
-      
+
       ! grow the v-triangle from the center by rscale
       ! \vec{g_i} = \vec{v_i} + scale * (\vec{v_i} - \vec{center}) = (scale+1) * \vec{v_i} - scale * \vec{center}
       rscale1 = 1._wp + rscale
@@ -268,9 +267,9 @@
         !
         ! we disturb the triangulation by adding
         !  f(lon,lat) = 1.e-10 * cos(lon) * sin(lat)
-        
+
         IF (dbg_level > 10)  WRITE (0,*) "# slightly disturb symmetric coordinates"
-        
+
 !$OMP PARALLEL DO PRIVATE(perturbation,gc,cc)
         DO i=0,(p_global%nentries-1)
           cc%x(1:3)       = (/ p_global%a(i)%x, p_global%a(i)%y, p_global%a(i)%z /)
@@ -306,7 +305,7 @@
       INTEGER                           :: errstat, i
       TYPE (t_spherical_cap)            :: subset
 #ifdef _OPENMP
-      DOUBLE PRECISION                  :: time_s, toc
+      REAL(wp)                          :: time_s, toc
 #endif
 
       ! --- create an array-like data structure containing the mass points
@@ -428,7 +427,7 @@
       TYPE (t_point_list)             :: p_local
       TYPE (t_spherical_cap)          :: subset
 #ifdef _OPENMP
-      DOUBLE PRECISION                :: time_s, toc
+      REAL(wp)                        :: time_s, toc
 #endif
       TYPE(t_point)                   :: centroid
       TYPE(t_cartesian_coordinates)   :: p_x
@@ -496,7 +495,7 @@
 !$OMP END PARALLEL DO
 
       ! --- create a global copy of all points
-      
+
       p_global = point_list(p_local)
       CALL p_global%sync()
 
@@ -547,7 +546,7 @@
           centroid = centroid + p_local%a(i)
         END DO
         centroid = centroid/REAL(p_local%nentries,wp)
-        subset = spherical_cap(centroid, MIN(RADIUS_FACTOR*point_cloud_diam(p_local, centroid), pi - 1.e-12_wp))      
+        subset = spherical_cap(centroid, MIN(RADIUS_FACTOR*point_cloud_diam(p_local, centroid), pi - 1.e-12_wp))
         IF (dbg_level > 1) THEN
           WRITE (0,*) "spherical cap around ", p_local%a(0)%x, p_local%a(0)%y, p_local%a(0)%z, "; radius ", subset%radius
         END IF
@@ -639,7 +638,7 @@
       REAL(wp)                        :: brange(2,3)          !< box range (min/max, dim=1,2,3)
       TYPE (t_point), POINTER         :: previous_p, current_p
 #ifdef _OPENMP
-      DOUBLE PRECISION                :: time_s, toc
+      REAL(wp)                        :: time_s, toc
 #endif
       LOGICAL                         :: llocal_partition
 
@@ -655,8 +654,8 @@
 #ifdef _OPENMP
         time_s = omp_get_wtime()
 #endif
-        
-        nlocal_triangles = 0 
+
+        nlocal_triangles = 0
         ! TODO: OpenMP parallelization
         DO l=0,(tri_global%nentries-1)
           pmin0(:) =  99._wp
@@ -683,7 +682,7 @@
           ! See comment and descriptions of "bulge height" and "sagitta" below
           pmin0(:) = pmin0(:) - 2._wp*max_sagitta
           pmax0(:) = pmax0(:) + 2._wp*max_sagitta
-          
+
           IF (.NOT. ((pmax0(0) < opt_minrange(0)) .OR. (pmin0(0) > opt_maxrange(0)) .OR.  &
             &        (pmax0(1) < opt_minrange(1)) .OR. (pmin0(1) > opt_maxrange(1)) .OR.  &
             &        (pmax0(2) < opt_minrange(2)) .OR. (pmin0(2) > opt_maxrange(2)))) THEN
@@ -744,13 +743,13 @@
           ! Determine sagitta of the longest triangle edge
           max_sagitta = MAX(max_sagitta, sagitta_on_unit_sphere(current_p, previous_p))
         END DO
-        ! Enlarge the triangle bounding by the maximum sagitta of all edges to include the bulge 
+        ! Enlarge the triangle bounding by the maximum sagitta of all edges to include the bulge
         ! height of the triangle.
-        ! The "bulge height" describes the maximum distance of any point on the spherical triangle 
-        ! from the plane trough all vertices.  The bulge height of a spherical triangle might be 
-        ! more than the sagitta of its longest edge, but is less then _two times_ this sagitta (3D 
+        ! The "bulge height" describes the maximum distance of any point on the spherical triangle
+        ! from the plane trough all vertices.  The bulge height of a spherical triangle might be
+        ! more than the sagitta of its longest edge, but is less then _two times_ this sagitta (3D
         ! effect).  The sagitta of an edge is distance from the center of the arc (i.e. the edge) to
-        ! the center of its base (i.e. n chord). The longest edge however has the smallest dot 
+        ! the center of its base (i.e. n chord). The longest edge however has the smallest dot
         ! product between a pair of vertices, i.e. min_dot_product.
 
         pmin0(:) = pmin0(:) - 2._wp*max_sagitta
@@ -801,7 +800,7 @@
 #endif
     END SUBROUTINE compute_triangle_bboxes
 
-    
+
     !-------------------------------------------------------------------------
     !> Compute barycentric coordinates for a set of points, based on a
     !  given auxiliary triangulation.
@@ -813,7 +812,7 @@
       TYPE (t_range_octree),  INTENT(IN)    :: octree               !< octree data structure
       INTEGER,                INTENT(IN)    :: g2l_index(:)         !< point index mapping: global->local
       LOGICAL,                INTENT(IN)    :: lcheck_locality      !< Flag. .FALSE. for relaxed consistency check
-      TYPE (t_lon_lat_intp),  INTENT(INOUT) :: ptr_int_lonlat       !< Indices of source points and interpolation coefficients 
+      TYPE (t_lon_lat_intp),  INTENT(INOUT) :: ptr_int_lonlat       !< Indices of source points and interpolation coefficients
 
       ! local parameters
       CHARACTER(*), PARAMETER :: routine = modname//"::compute_barycentric_coordinates"
@@ -831,7 +830,7 @@
         &                                      i, j, k, idx0, idx1(3), nblks_lonlat, &
         &                                      npromz_lonlat, i_scale
 #ifdef _OPENMP
-      DOUBLE PRECISION                      :: time_s, toc
+      REAL(wp)                              :: time_s, toc
 #endif
       INTEGER                               :: obj_list(NMAX_HITS)  !< query result (triangle search)
       TYPE(t_cartesian_coordinates)         :: ll_point_c           !< cartes. coordinates of lon-lat points
@@ -888,7 +887,7 @@
           ! contains "ll_point_c":
           idx0         = -1
           last_idx1(:) = -1
-          ! If no triangle is found in the first round of LOOP_SCALING, increase the size of the test triangles 
+          ! If no triangle is found in the first round of LOOP_SCALING, increase the size of the test triangles
           ! by scaling them up. The up-scaling is necessary to solve numerically unclear situations when the
           ! test point is on the edge of a triangle.
           LOOP_SCALING: DO i_scale=0,NMAX_UP_SCALE
@@ -1029,18 +1028,18 @@
 
             IF (ALL(last_idx1(1:3) >= 1)) THEN
               ! get indices of the containing triangle
-              ptr_int_lonlat%baryctr%stencil(jc,jb) = 3            
+              ptr_int_lonlat%baryctr%stencil(jc,jb) = 3
               ptr_int_lonlat%baryctr%idx(1:3,jc,jb) = idx_no(last_idx1(1:3))
               ptr_int_lonlat%baryctr%blk(1:3,jc,jb) = blk_no(last_idx1(1:3))
             ELSE
-              IF (lcheck_locality) THEN                
+              IF (lcheck_locality) THEN
                 WRITE (0,*) "g2l_index(tri_global%a(idx0)%p(0:2)) = ", last_idx1(:)
                 CALL finish(routine, "Internal error!")
               END IF
             END IF
 
           END IF
-          
+
         END DO
       END DO
 !$OMP END PARALLEL DO
@@ -1185,7 +1184,7 @@
         maxval = 0._wp        !
 !$OMP PARALLEL DO PRIVATE(i,pidx,p_c,diff), REDUCTION(MAX:maxval)
         DO i=0,(p_global%nentries-1)
-          pidx = g2l_index(p_global%a(i)%gindex) 
+          pidx = g2l_index(p_global%a(i)%gindex)
           IF (pidx > 0) THEN
             p_c  = gc2cc(ptr_patch%cells%center(idx_no(pidx),blk_no(pidx)))
             ! consistency check: compute distance between old and new:
@@ -1240,7 +1239,7 @@
         &                                  g2l_index, lcheck_locality, ptr_int_lonlat)
 
       ! clean up
-      !NEC_RP: only call finalization when octree is allocated 
+      !NEC_RP: only call finalization when octree is allocated
       IF (ALLOCATED(octree%box)) THEN
         CALL octree_finalize(octree)
       END IF
@@ -1379,7 +1378,7 @@
 !$OMP END PARALLEL DO
 
       ! clean up
-      !NEC_RP: only call finalization when octree is allocated 
+      !NEC_RP: only call finalization when octree is allocated
       IF (ALLOCATED(octree%box)) THEN
         CALL octree_finalize(octree)
       END IF

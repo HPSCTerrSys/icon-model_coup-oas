@@ -1,10 +1,7 @@
-! Contains the setup of variables related to horizontal diffusion
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,12 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Contains the setup of variables related to horizontal diffusion
+
 MODULE mo_diffusion_nml
 
   USE mo_diffusion_config,    ONLY: diffusion_config
   USE mo_kind,                ONLY: wp
   USE mo_impl_constants,      ONLY: max_dom
-  USE mo_mpi,                 ONLY: my_process_is_stdio 
+  USE mo_mpi,                 ONLY: my_process_is_stdio
   USE mo_exception,           ONLY: message, finish
   USE mo_io_units,            ONLY: nnml, nnml_output
   USE mo_namelist,            ONLY: position_nml, positioned, open_nml, close_nml
@@ -42,7 +41,7 @@ MODULE mo_diffusion_nml
 
   REAL(wp) :: hdiff_efdt_ratio      ! ratio of e-folding time to (2*)time step
   REAL(wp) :: hdiff_w_efdt_ratio    ! ratio of e-folding time to time step for w diffusion (NH only)
-  REAL(wp) :: hdiff_min_efdt_ratio  ! minimum value of hdiff_efdt_ratio 
+  REAL(wp) :: hdiff_min_efdt_ratio  ! minimum value of hdiff_efdt_ratio
                                     ! (for upper sponge layer)
   REAL(wp) :: hdiff_tv_ratio        ! the ratio of diffusion coefficient: temp:mom
   REAL(wp) :: hdiff_smag_fac        ! scaling factor for Smagorinsky diffusion at height hdiff_smag_z and below
@@ -73,20 +72,20 @@ MODULE mo_diffusion_nml
 
 CONTAINS
   !-------------------------------------------------------------------------
-  !! Read Namelist for horizontal diffusion. 
+  !! Read Namelist for horizontal diffusion.
   !!
-  !! This subroutine 
+  !! This subroutine
   !! - reads the Namelist for diffusion
   !! - sets default values
-  !! - potentially overwrites the defaults by values used in a 
+  !! - potentially overwrites the defaults by values used in a
   !!   previous integration (if this is a resumed run)
   !! - reads the user's (new) specifications
   !! - stores the Namelist for restart
-  !! - fills the configuration state (partly)  
+  !! - fills the configuration state (partly)
   !!
   SUBROUTINE read_diffusion_namelist( filename )
 
-    CHARACTER(LEN=*), INTENT(IN) :: filename 
+    CHARACTER(LEN=*), INTENT(IN) :: filename
     INTEGER :: istat, funit, iunit
 
     CHARACTER(len=*), PARAMETER ::  &
@@ -131,7 +130,7 @@ CONTAINS
 
 
     !------------------------------------------------------------------
-    ! 2. If this is a resumed integration, overwrite the defaults above 
+    ! 2. If this is a resumed integration, overwrite the defaults above
     !    by values used in the previous integration.
     !------------------------------------------------------------------
     IF (use_restart_namelists()) THEN
@@ -238,17 +237,17 @@ CONTAINS
     diffusion_config(:)% hdiff_smag_z3        =  hdiff_smag_z3
     diffusion_config(:)% hdiff_smag_z4        =  hdiff_smag_z4
     diffusion_config(:)% hdiff_multfac        =  hdiff_multfac
-    diffusion_config(:)% hdiff_tv_ratio       =  hdiff_tv_ratio 
+    diffusion_config(:)% hdiff_tv_ratio       =  hdiff_tv_ratio
     diffusion_config(:)%itype_vn_diffu        =  itype_vn_diffu
-    diffusion_config(:)%itype_t_diffu         =  itype_t_diffu 
+    diffusion_config(:)%itype_t_diffu         =  itype_t_diffu
 
     !-----------------------------------------------------
     ! 6. Store the namelist for restart
     !-----------------------------------------------------
     IF(my_process_is_stdio())  THEN
       funit = open_tmpfile()
-      WRITE(funit,NML=diffusion_nml)                    
-      CALL store_and_close_namelist(funit,'diffusion_nml') 
+      WRITE(funit,NML=diffusion_nml)
+      CALL store_and_close_namelist(funit,'diffusion_nml')
     ENDIF
     ! 7. write the contents of the namelist to an ASCII file
     IF(my_process_is_stdio()) WRITE(nnml_output,nml=diffusion_nml)

@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Definition of optional (diagnostic) model variables
 !
 ! In the metadata of each model variable ("add_var") it is specified
@@ -10,18 +20,6 @@
 ! internal post-processing tasks (each field forms its own task). As
 ! we do not know in advance the contents of this list, we call them
 ! "optional diagnostics".
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_opt_diagnostics
 
@@ -759,14 +757,14 @@ CONTAINS
 
     ! Initialization
     !$OMP PARALLEL
-    CALL init(vcoeff_lin%wfac_lin, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_lin%idx0_lin, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_lin%bot_idx_lin, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_lin%wfacpbl1, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_lin%wfacpbl2, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_lin%kpbl1, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_lin%kpbl2, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_lin%zextrap, lacc=.TRUE., opt_acc_async=.TRUE.)
+    CALL init(vcoeff_lin%wfac_lin, lacc=.TRUE.)
+    CALL init(vcoeff_lin%idx0_lin, lacc=.TRUE.)
+    CALL init(vcoeff_lin%bot_idx_lin, lacc=.TRUE.)
+    CALL init(vcoeff_lin%wfacpbl1, lacc=.TRUE.)
+    CALL init(vcoeff_lin%wfacpbl2, lacc=.TRUE.)
+    CALL init(vcoeff_lin%kpbl1, lacc=.TRUE.)
+    CALL init(vcoeff_lin%kpbl2, lacc=.TRUE.)
+    CALL init(vcoeff_lin%zextrap, lacc=.TRUE.)
     !$OMP END PARALLEL
   END SUBROUTINE vcoeff_lin_allocate
 
@@ -799,11 +797,11 @@ CONTAINS
 
     ! Initialization
     !$OMP PARALLEL
-    CALL init(vcoeff_cub%coef1, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_cub%coef2, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_cub%coef3, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_cub%idx0_cub, lacc=.TRUE., opt_acc_async=.TRUE.)
-    CALL init(vcoeff_cub%bot_idx_cub, lacc=.TRUE., opt_acc_async=.TRUE.)
+    CALL init(vcoeff_cub%coef1, lacc=.TRUE.)
+    CALL init(vcoeff_cub%coef2, lacc=.TRUE.)
+    CALL init(vcoeff_cub%coef3, lacc=.TRUE.)
+    CALL init(vcoeff_cub%idx0_cub, lacc=.TRUE.)
+    CALL init(vcoeff_cub%bot_idx_cub, lacc=.TRUE.)
     !$OMP END PARALLEL
   END SUBROUTINE vcoeff_cub_allocate
 
@@ -919,7 +917,7 @@ CONTAINS
       call vcoeff_cub_deallocate(vcoeff%cub_edge)
 
       vcoeff%l_allocated = .FALSE.
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 20
       !ACCWA: Cray compiler (16.0.1) is too eager on the optimization
       !$ACC WAIT
 #endif

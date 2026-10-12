@@ -1,16 +1,15 @@
-! Provide an implementation of the ocean tracer nuding functionality.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of the ocean tracer nuding functionality.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -117,7 +116,7 @@ CONTAINS
       !---------DEBUG DIAGNOSTICS-------------------------------------------
       idt_src=1  ! output print level (1-5, fix)
       CALL dbg_print('3d_relax: tracer T forc', ocean_nudge%forc_3dimRelax_Temp, str_module,idt_src, in_subset=cells_in_domain)
-      CALL dbg_print('3d_relax: tracer T data', ocean_nudge%data_3dimRelax_Temp, str_module,idt_src, in_subset=cells_in_domain)      
+      CALL dbg_print('3d_relax: tracer T data', ocean_nudge%data_3dimRelax_Temp, str_module,idt_src, in_subset=cells_in_domain)
       z_c(:,:,:) =  p_os%p_prog(nnew(1))%tracer(:,:,:,1)
       CALL dbg_print('3d_relax: tracer T trac', z_c, str_module,idt_src, in_subset=cells_in_domain)
       !---------------------------------------------------------------------
@@ -173,5 +172,3 @@ CONTAINS
 
 
 END MODULE mo_ocean_nudging
-
-

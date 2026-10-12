@@ -1,11 +1,7 @@
-!
-! Module handling the collection of grid information for synchronous
-! and asynchronous output.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -13,14 +9,17 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Module handling the collection of grid information for synchronous
+! and asynchronous output.
+
 MODULE mo_name_list_output_gridinfo
 
+  USE mo_kind,                              ONLY: dp
   USE mo_cdi,                               ONLY: DATATYPE_PACK16, TIME_CONSTANT, TSTEP_CONSTANT, vlistDefVar, cdiEncodeParam, &
                                                 & streamWriteVar, vlistDefVarDatatype, vlistDefVarName, vlistDefVarTsteptype, &
                                                 & vlistDefVarParam, gridDefXvals, gridDefYvals, gridDefXbounds, gridDefYbounds, &
                                                 & GRID_UNSTRUCTURED
   USE mo_zaxis_type,                        ONLY: ZA_surface
-  USE mo_kind,                              ONLY: wp
   USE mo_parallel_config,                   ONLY: nproma
   USE mo_exception,                         ONLY: finish
   USE mo_model_domain,                      ONLY: t_patch
@@ -140,7 +139,7 @@ CONTAINS
     ! local variables
     CHARACTER(LEN=*), PARAMETER :: routine = modname//"::collect_all_grid_info"
     INTEGER                             :: ierrstat, max_cell_connectivity, max_vertex_connectivity
-    REAL(wp), ALLOCATABLE               :: lonv(:,:,:), latv(:,:,:)
+    REAL(dp), ALLOCATABLE               :: lonv(:,:,:), latv(:,:,:)
 
     ! logical domain ID
     max_cell_connectivity   = p_patch%cells%max_connectivity
@@ -215,7 +214,7 @@ CONTAINS
     CHARACTER(LEN=*), PARAMETER :: &
       routine = modname//"::distributed_all_grid_info"
     INTEGER :: ierrstat, max_a_size, igeom
-    REAL(wp), ALLOCATABLE :: lonv(:), latv(:)
+    REAL(dp), ALLOCATABLE :: lonv(:), latv(:)
     TYPE cf_1_1_grid_ptr
       PROCEDURE(cf_1_1_grid_verts), NOPASS, POINTER :: p
     END TYPE cf_1_1_grid_ptr
@@ -282,23 +281,22 @@ CONTAINS
     &                                     grid_info, nconn, nblks, cf_1_1_grid)
     TYPE(t_patch), INTENT(in) :: p_patch
     TYPE(t_reorder_info), INTENT(in) :: ri
-    REAL(wp), TARGET, INTENT(inout) :: lonv(:), latv(:)
+    REAL(dp), TARGET, INTENT(inout) :: lonv(:), latv(:)
     TYPE(t_geographical_coordinates), INTENT(IN) :: coordinates(:,:)
     TYPE(t_grid_info), INTENT(inout) :: grid_info
     INTEGER, INTENT(in) :: nconn, nblks
     INTERFACE
       SUBROUTINE cf_1_1_grid(p_patch, lonv, latv)
-        USE mo_model_domain, ONLY: t_patch
-        USE mo_kind,         ONLY: wp
+        IMPORT :: t_patch, dp
         TYPE(t_patch),      INTENT(IN)    :: p_patch
-        REAL(wp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
+        REAL(dp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
       END SUBROUTINE cf_1_1_grid
     END INTERFACE
 
     CHARACTER(len=*), PARAMETER :: &
       routine = modname//'::create_distributed_grid_info'
     INTEGER :: ierrstat, j, n_own, ofs
-    REAL(wp), POINTER :: plonv(:,:,:), platv(:,:,:)
+    REAL(dp), POINTER :: plonv(:,:,:), platv(:,:,:)
 
     n_own = ri%n_own
     plonv(1:nproma, 1:nblks, 1:nconn) => lonv
@@ -328,14 +326,14 @@ CONTAINS
     INTEGER,                          INTENT(IN)    :: nblks_glb,     &  ! global number of blocks
       &                                                nblks_loc         ! local  number of blocks
     TYPE(t_geographical_coordinates), INTENT(IN)    :: in_lonlat(:,:)
-    REAL(wp),                         INTENT(IN)    :: lonv(:,:,:), latv(:,:,:)
+    REAL(dp),                         INTENT(IN)    :: lonv(:,:,:), latv(:,:,:)
     TYPE(t_grid_info),                INTENT(INOUT) :: out_lonlat
     INTEGER,                          INTENT(IN)    :: dim3
     TYPE(t_comm_gather_pattern),  POINTER           :: p_pat
     ! local variables
     CHARACTER(LEN=*), PARAMETER :: routine  =  modname//"::collect_grid_info"
     INTEGER               :: ierrstat, jb, jc, idim
-    REAL(wp), ALLOCATABLE :: r_tmp_lon(:,:), r_tmp_lat(:,:)
+    REAL(dp), ALLOCATABLE :: r_tmp_lon(:,:), r_tmp_lat(:,:)
 
     ! allocate destination (on work root)
     IF ( my_process_is_mpi_workroot() ) THEN
@@ -344,10 +342,10 @@ CONTAINS
         &      out_lonlat%lonv(dim3,nproma*nblks_glb), &
         &      out_lonlat%latv(dim3,nproma*nblks_glb), &
         &      STAT=ierrstat)
-      out_lonlat%lon = 0._wp
-      out_lonlat%lat = 0._wp
-      out_lonlat%lonv = 0._wp
-      out_lonlat%latv = 0._wp
+      out_lonlat%lon = 0._dp
+      out_lonlat%lat = 0._dp
+      out_lonlat%lonv = 0._dp
+      out_lonlat%latv = 0._dp
     ELSE
       ALLOCATE(out_lonlat%lon(1), out_lonlat%lat (1),            &
         &      out_lonlat%lonv(dim3,1), out_lonlat%latv(dim3,1), &
@@ -398,13 +396,13 @@ CONTAINS
   !
   SUBROUTINE cf_1_1_grid_cells(p_patch, lonv, latv)
     TYPE(t_patch),      INTENT(IN)    :: p_patch
-    REAL(wp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
+    REAL(dp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
     ! local variables
     INTEGER :: jc, jb, j, iidx, iblk,                  &
       &        rl_start, rl_end, i_startblk, i_endblk, &
       &        i_startidx, i_endidx, i_nchdom
     INTEGER :: max_cell_connectivity
-    REAL(wp) :: lonv_temp, latv_temp
+    REAL(dp) :: lonv_temp, latv_temp
 
     rl_start   = 1
     rl_end     = min_rlcell_int
@@ -419,8 +417,8 @@ CONTAINS
         &                i_startidx, i_endidx, rl_start, rl_end)
       DO j = 1, max_cell_connectivity
         DO jc = 1, i_startidx - 1
-          lonv(jc,jb,j) = 0.0_wp
-          latv(jc,jb,j) = 0.0_wp
+          lonv(jc,jb,j) = 0.0_dp
+          latv(jc,jb,j) = 0.0_dp
         END DO
         DO jc = i_startidx, i_endidx
           iidx = p_patch%cells%vertex_idx(jc,jb,j)
@@ -428,21 +426,21 @@ CONTAINS
           IF (iidx > 0) THEN
             lonv_temp = p_patch%verts%vertex(iidx,iblk)%lon
             latv_temp = p_patch%verts%vertex(iidx,iblk)%lat
-            latv(jc,jb,j) = MERGE(latv_temp, 0.0_wp, &
-                 ABS(latv_temp) >= EPSILON(0.0_wp))
-            lonv(jc,jb,j) = MERGE(lonv_temp, 0.0_wp, &
-                 ABS(lonv_temp) >= EPSILON(0.0_wp))
-            IF (ABS(latv_temp) > 0.5_wp*pi-EPSILON(0.0_wp)) THEN
+            latv(jc,jb,j) = MERGE(latv_temp, 0.0_dp, &
+                 ABS(latv_temp) >= EPSILON(0.0_dp))
+            lonv(jc,jb,j) = MERGE(lonv_temp, 0.0_dp, &
+                 ABS(lonv_temp) >= EPSILON(0.0_dp))
+            IF (ABS(latv_temp) > 0.5_dp*pi-EPSILON(0.0_dp)) THEN
               lonv(jc,jb,j) = p_patch%cells%center(jc,jb)%lon
             ENDIF
           ELSE
-            lonv(jc,jb,j) = 0.0_wp
-            latv(jc,jb,j) = 0.0_wp
+            lonv(jc,jb,j) = 0.0_dp
+            latv(jc,jb,j) = 0.0_dp
           ENDIF
         END DO
         DO jc = i_endidx+1, nproma
-          lonv(jc,jb,j) = 0.0_wp
-          latv(jc,jb,j) = 0.0_wp
+          lonv(jc,jb,j) = 0.0_dp
+          latv(jc,jb,j) = 0.0_dp
         END DO
       END DO
     END DO
@@ -457,13 +455,13 @@ CONTAINS
   !
   SUBROUTINE cf_1_1_grid_edges(p_patch, lonv, latv)
     TYPE(t_patch),      INTENT(IN)    :: p_patch
-    REAL(wp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
+    REAL(dp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
     ! local variables
     INTEGER  :: jc, jb, j, iidx, iblk,                 &
       &        rl_start, rl_end, i_startblk, i_endblk, &
       &        i_startidx, i_endidx, i_nchdom
-    REAL(wp) :: swap(4)
-    REAL(wp) :: lonv_temp, latv_temp
+    REAL(dp) :: swap(4)
+    REAL(dp) :: lonv_temp, latv_temp
 
     rl_start   = 1
     rl_end     = min_rledge_int
@@ -492,8 +490,8 @@ CONTAINS
           lonv(jc,jb,4) = p_patch%cells%center(iidx,iblk)%lon
           latv(jc,jb,4) = p_patch%cells%center(iidx,iblk)%lat
         ELSE
-          lonv(jc,jb,4) = 0._wp
-          latv(jc,jb,4) = 0._wp
+          lonv(jc,jb,4) = 0._dp
+          latv(jc,jb,4) = 0._dp
         ENDIF
 
         IF (p_patch%edges%cell_idx(jc,jb,2) > 0) THEN
@@ -502,33 +500,33 @@ CONTAINS
           lonv(jc,jb,2) = p_patch%cells%center(iidx,iblk)%lon
           latv(jc,jb,2) = p_patch%cells%center(iidx,iblk)%lat
         ELSE
-          lonv(jc,jb,2) = 0._wp
-          latv(jc,jb,2) = 0._wp
+          lonv(jc,jb,2) = 0._dp
+          latv(jc,jb,2) = 0._dp
         END IF
       END DO
       DO j = 1, 4
         DO jc = 1, i_startidx - 1
-          lonv(jc,jb,j) = 0.0_wp
-          latv(jc,jb,j) = 0.0_wp
+          lonv(jc,jb,j) = 0.0_dp
+          latv(jc,jb,j) = 0.0_dp
         END DO
         DO jc = i_startidx, i_endidx
-          latv_temp = MERGE(latv(jc,jb,j), 0.0_wp, &
-            &               ABS(latv(jc,jb,j)) >= EPSILON(0.0_wp))
+          latv_temp = MERGE(latv(jc,jb,j), 0.0_dp, &
+            &               ABS(latv(jc,jb,j)) >= EPSILON(0.0_dp))
           latv(jc,jb,j) = latv_temp
-          IF ( ABS(latv_temp) > 0.5_wp*pi-EPSILON(0.0_wp)) THEN
+          IF ( ABS(latv_temp) > 0.5_dp*pi-EPSILON(0.0_dp)) THEN
             lonv(jc,jb,j) = p_patch%edges%center(jc,jb)%lon
           ELSE
-            lonv(jc,jb,j) = MERGE(lonv(jc,jb,j), 0.0_wp, &
-              &                   ABS(lonv(jc,jb,j)) < EPSILON(0.0_wp))
+            lonv(jc,jb,j) = MERGE(lonv(jc,jb,j), 0.0_dp, &
+              &                   ABS(lonv(jc,jb,j)) < EPSILON(0.0_dp))
           END IF
         END DO
         DO jc = i_endidx+1, nproma
-          lonv(jc,jb,j) = 0.0_wp
-          latv(jc,jb,j) = 0.0_wp
+          lonv(jc,jb,j) = 0.0_dp
+          latv(jc,jb,j) = 0.0_dp
         END DO
       END DO
       DO jc = i_startidx, i_endidx
-        IF ( check_orientation(p_patch%edges%center(jc,jb)%lon, &
+        IF ( check_orientation(REAL(p_patch%edges%center(jc,jb)%lon,kind=dp), &
           &                    lonv(jc,jb,:), latv(jc,jb,:), 4) < 0 ) THEN
           swap(1:4) = lonv(jc,jb,4:1:-1)
           lonv(jc,jb,:) = swap(:)
@@ -552,7 +550,7 @@ CONTAINS
   !
   SUBROUTINE cf_1_1_grid_verts_ocean(patch_2D, lonv, latv)
     TYPE(t_patch),      INTENT(IN)    :: patch_2D
-    REAL(wp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
+    REAL(dp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
     ! local variables
     INTEGER :: jc, jb, j, &
       &        iidx(nproma,patch_2D%verts%max_connectivity), &
@@ -575,8 +573,8 @@ CONTAINS
       last_valid_cell = 0
       DO j = 1, max_vrtx_conn
         DO jc = 1, i_startidx - 1
-          lonv(jc,jb,j) = 0.0_wp
-          latv(jc,jb,j) = 0.0_wp
+          lonv(jc,jb,j) = 0.0_dp
+          latv(jc,jb,j) = 0.0_dp
         END DO
         DO jc = i_startidx, i_endidx
           last_valid_cell(jc) = MERGE(j, last_valid_cell(jc), &
@@ -589,8 +587,8 @@ CONTAINS
           latv(jc,jb, j) = patch_2D%cells%center(iidx(jc,j),iblk(jc,j))%lat
         ENDDO
         DO jc = i_endidx+1, nproma
-          lonv(jc,jb,j) = 0.0_wp
-          latv(jc,jb,j) = 0.0_wp
+          lonv(jc,jb,j) = 0.0_dp
+          latv(jc,jb,j) = 0.0_dp
         END DO
       END DO
     END DO
@@ -607,7 +605,7 @@ CONTAINS
   !
   SUBROUTINE cf_1_1_grid_verts(p_patch, lonv, latv)
     TYPE(t_patch),      INTENT(IN)    :: p_patch
-    REAL(wp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
+    REAL(dp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
     ! local variables
     INTEGER :: jc, jb, j, iidx, iblk,                  &
       &        rl_start, rl_end, i_startblk, i_endblk, &
@@ -627,8 +625,8 @@ CONTAINS
         &                i_startidx, i_endidx, rl_start, rl_end)
       DO j = 1,max_vertex_connectivity
         DO jc = 1, i_startidx - 1
-          lonv(jc,jb,j) = 0.0_wp
-          latv(jc,jb,j) = 0.0_wp
+          lonv(jc,jb,j) = 0.0_dp
+          latv(jc,jb,j) = 0.0_dp
         END DO
         DO jc = i_startidx, i_endidx
           IF ((p_patch%verts%cell_idx(jc,jb,j) == 0) .AND. &
@@ -639,8 +637,8 @@ CONTAINS
             latv(jc,jb,max_vertex_connectivity+1-j) = p_patch%cells%center(iidx,iblk)%lat
           ELSE IF ((p_patch%verts%cell_idx(jc,jb,j) < 0) .OR. &
             &      (p_patch%verts%refin_ctrl(jc,jb) == 1)) THEN
-            lonv(jc,jb,max_vertex_connectivity+1-j) = 0._wp
-            latv(jc,jb,max_vertex_connectivity+1-j) = 0._wp
+            lonv(jc,jb,max_vertex_connectivity+1-j) = 0._dp
+            latv(jc,jb,max_vertex_connectivity+1-j) = 0._dp
           ELSE
             iidx = p_patch%verts%cell_idx(jc,jb,j)
             iblk = p_patch%verts%cell_blk(jc,jb,j)
@@ -649,8 +647,8 @@ CONTAINS
           ENDIF
         ENDDO
         DO jc = i_endidx+1, nproma
-          lonv(jc,jb,j) = 0.0_wp
-          latv(jc,jb,j) = 0.0_wp
+          lonv(jc,jb,j) = 0.0_dp
+          latv(jc,jb,j) = 0.0_dp
         END DO
       ENDDO
     END DO
@@ -806,9 +804,9 @@ CONTAINS
     INTEGER :: ncid, dimid, varid, tlen
     INTEGER :: i_nc, i_ne, i_nv, max_cell_connectivity, max_verts_connectivity
 
-    REAL(wp), ALLOCATABLE :: clon(:), clat(:), clonv(:,:), clatv(:,:)
-    REAL(wp), ALLOCATABLE :: elon(:), elat(:), elonv(:,:), elatv(:,:)
-    REAL(wp), ALLOCATABLE :: vlon(:), vlat(:), vlonv(:,:), vlatv(:,:)
+    REAL(dp), ALLOCATABLE :: clon(:), clat(:), clonv(:,:), clatv(:,:)
+    REAL(dp), ALLOCATABLE :: elon(:), elat(:), elonv(:,:), elatv(:,:)
+    REAL(dp), ALLOCATABLE :: vlon(:), vlat(:), vlonv(:,:), vlatv(:,:)
 
     CHARACTER(LEN=*), PARAMETER :: routine = modname//"::copy_grid_info"
 
@@ -980,7 +978,7 @@ CONTAINS
     ! Note that this works within the array as long as idx is monotonically increasing
     SUBROUTINE reorder1(starts, counts, array)
       INTEGER, INTENT(IN), CONTIGUOUS :: starts(:), counts(:)
-      REAL(wp), INTENT(INOUT), CONTIGUOUS :: array(:)
+      REAL(dp), INTENT(INOUT), CONTIGUOUS :: array(:)
       INTEGER :: i, j, m, n, doff, soff
 
       m = SIZE(counts)
@@ -998,7 +996,7 @@ CONTAINS
     ! reorder2: same as reorder1 for 2D array
     SUBROUTINE reorder2(starts, counts, array)
       INTEGER, INTENT(IN), CONTIGUOUS :: starts(:), counts(:)
-      REAL(wp), INTENT(INOUT), CONTIGUOUS :: array(:,:)
+      REAL(dp), INTENT(INOUT), CONTIGUOUS :: array(:,:)
       INTEGER :: i, j, m, n, doff, soff
 
       m = SIZE(counts)
@@ -1026,10 +1024,9 @@ CONTAINS
     TYPE(t_comm_gather_pattern), TARGET, INTENT(INOUT) :: gather_pattern
     INTERFACE
       SUBROUTINE cf_1_1_grid(p_patch, lonv, latv)
-        USE mo_model_domain, ONLY: t_patch
-        USE mo_kind,         ONLY: wp
+        IMPORT :: t_patch, dp
         TYPE(t_patch),      INTENT(IN)    :: p_patch
-        REAL(wp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
+        REAL(dp),           INTENT(INOUT) :: lonv(:,:,:), latv(:,:,:)
       END SUBROUTINE cf_1_1_grid
     END INTERFACE
     !> only those I/O processes which need the coordinate data for
@@ -1042,9 +1039,9 @@ CONTAINS
     INTEGER :: i
     LOGICAL :: is_io
     TYPE(t_comm_allgather_pattern) :: allgather_pattern
-    REAL(wp), ALLOCATABLE          :: lonv(:,:,:), latv(:,:,:)
-    REAL(wp), POINTER              :: r1d(:)
-    REAL(wp), TARGET               :: dummy(1)
+    REAL(dp), ALLOCATABLE          :: lonv(:,:,:), latv(:,:,:)
+    REAL(dp), POINTER              :: r1d(:)
+    REAL(dp), TARGET               :: dummy(1)
 
     is_io = my_process_is_io()
     IF (is_io .AND. keep_grid_info) THEN
@@ -1053,10 +1050,10 @@ CONTAINS
         &      grid_info%lonv(connectivity, nproma*nblks_glb), &
         &      grid_info%latv(connectivity, nproma*nblks_glb), &
         &      lonv(1,1,connectivity), latv(1,1,connectivity))
-      grid_info%lon = 0._wp
-      grid_info%lat = 0._wp
-      grid_info%lonv = 0._wp
-      grid_info%latv = 0._wp
+      grid_info%lon = 0._dp
+      grid_info%lat = 0._dp
+      grid_info%lonv = 0._dp
+      grid_info%latv = 0._dp
     ELSE IF (is_io .AND. .NOT. keep_grid_info) THEN
       ALLOCATE(r1d(nproma*nblks_glb), lonv(0,0,connectivity), latv(0,0,connectivity))
     ELSE
@@ -1073,10 +1070,10 @@ CONTAINS
 
     ! gathers coordinates on all io procs
     IF (is_io .AND. keep_grid_info) r1d => grid_info%lon
-    CALL exchange_data(in_array=coordinates(:,:)%lon, out_array=r1d, &
+    CALL exchange_data(in_array=REAL(coordinates(:,:)%lon,dp), out_array=r1d, &
       &                allgather_pattern=allgather_pattern)
     IF (is_io .AND. keep_grid_info) r1d => grid_info%lat
-    CALL exchange_data(in_array=coordinates(:,:)%lat, out_array=r1d, &
+    CALL exchange_data(in_array=REAL(coordinates(:,:)%lat,dp), out_array=r1d, &
       &                allgather_pattern=allgather_pattern)
     DO i = 1, connectivity
       IF (is_io .AND. keep_grid_info) r1d => grid_info%lonv(i,:)
@@ -1116,8 +1113,8 @@ CONTAINS
       dummy_global_size = 0
       CALL setup_comm_gather_pattern(dummy_global_size, dummy_owner_local, &
         &                            dummy_glb_index, empty_gather_pattern)
-      dummy_coordinates(1,1)%lon = -1._wp
-      dummy_coordinates(1,1)%lat = -1._wp
+      dummy_coordinates(1,1)%lon = -1._dp
+      dummy_coordinates(1,1)%lat = -1._dp
       coordinates => dummy_coordinates
       gather_pattern => empty_gather_pattern
       nblks = 0
@@ -1182,7 +1179,7 @@ CONTAINS
 
     INTEGER                        :: errstat, idom, igrid, n, idom_log
     TYPE (t_lon_lat_grid), POINTER :: grid
-    REAL(wp), ALLOCATABLE          :: rotated_pts(:,:,:), r_out_dp(:,:), r_out_dp_1D(:)
+    REAL(dp), ALLOCATABLE          :: rotated_pts(:,:,:), r_out_dp(:,:), r_out_dp_1D(:)
     CHARACTER(LEN=vname_len), POINTER :: p_varlist(:)
     INTEGER, PARAMETER :: idx(3) = (/ ICELL, IEDGE, IVERT /)
 
@@ -1258,7 +1255,7 @@ CONTAINS
   CONTAINS
     SUBROUTINE write_unstruct_grid2var(fileid, varid, r_out_dp_1D, ri)
       INTEGER, INTENT(in) :: fileid, varid
-      REAL(wp), INTENT(in), CONTIGUOUS :: r_out_dp_1d(:)
+      REAL(dp), INTENT(in), CONTIGUOUS :: r_out_dp_1d(:)
       TYPE(t_reorder_info), INTENT(in) :: ri
 #ifdef HAVE_CDI_PIO
       TYPE(extent) :: grid_size_desc, grid_part_desc
@@ -1280,7 +1277,7 @@ CONTAINS
 
     SUBROUTINE write_remap_grid2var(fileid, varid, r_out_dp)
       INTEGER, INTENT(in) :: fileid, varid
-      REAL(wp), TARGET, INTENT(in), CONTIGUOUS :: r_out_dp(:,:)
+      REAL(dp), TARGET, INTENT(in), CONTIGUOUS :: r_out_dp(:,:)
 #ifdef HAVE_CDI_PIO
       TYPE(extent) :: grid_size_desc(2), grid_part_desc(2)
       INTEGER(c_int) :: grid_chunk(2, 3)

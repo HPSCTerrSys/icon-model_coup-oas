@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -37,7 +36,7 @@ MODULE mo_diffusion_config
 
     REAL(wp) :: hdiff_efdt_ratio      ! ratio of e-folding time to (2*)time step
     REAL(wp) :: hdiff_w_efdt_ratio    ! ratio of e-folding time to time step for w diffusion (NH only)
-    REAL(wp) :: hdiff_min_efdt_ratio  ! minimum value of hdiff_efdt_ratio 
+    REAL(wp) :: hdiff_min_efdt_ratio  ! minimum value of hdiff_efdt_ratio
                                       ! (for upper sponge layer)
     REAL(wp) :: hdiff_tv_ratio        ! the ratio of diffusion coefficient: temp:mom
     REAL(wp) :: hdiff_smag_fac        ! scaling factor for Smagorinsky diffusion at height hdiff_smag_z and below
@@ -64,9 +63,9 @@ MODULE mo_diffusion_config
 
     REAL(wp) :: k6, k4, k2, k4w  ! numerical diffusion coefficients
                                  ! Values for these parameters are not directly
-                                 ! specified by the user, but derived from the ratio 
+                                 ! specified by the user, but derived from the ratio
                                  ! between the e-folding time and the model time step
-                                 ! (hdiff_efdt_ratio above), and the horizontal 
+                                 ! (hdiff_efdt_ratio above), and the horizontal
                                  ! resolution of the model
 
   END TYPE t_diffusion_config

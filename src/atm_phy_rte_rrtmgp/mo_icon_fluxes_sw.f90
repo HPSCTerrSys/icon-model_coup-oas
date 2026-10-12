@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -31,7 +31,7 @@ MODULE mo_icon_fluxes_sw
       band_weight(:), & ! adjustment for current Earth/Sun distance
       frc_par(:), &
       frc_vis(:)
-    
+
   CONTAINS
     PROCEDURE, PUBLIC :: reduce      => reduce_icon
     PROCEDURE, PUBLIC :: are_desired => are_desired_icon
@@ -52,14 +52,14 @@ CONTAINS
     REAL(wp), ALLOCATABLE :: wavenum(:,:), delwave(:)
 
     nbndsw = optical_props%get_nband()
-    
+
     IF (.not. ALLOCATED(this%frc_par)) THEN
       ALLOCATE(this%frc_par(nbndsw))
       ALLOCATE(this%frc_vis(nbndsw))
       ALLOCATE(this%band_weight(nbndsw))
       ALLOCATE(wavenum(2,nbndsw))
       ALLOCATE(delwave(nbndsw))
-      
+
       wavenum = optical_props%get_band_lims_wavenumber()
       delwave = wavenum(2,:) - wavenum(1,:)
 
@@ -68,7 +68,7 @@ CONTAINS
       this%frc_par(10) = 1.0_wp
       this%frc_par(11) = 0.550164_wp
 
-      DO i = 1, nbndsw 
+      DO i = 1, nbndsw
         this%frc_vis(i) = MAX(0.0_wp, MIN(1.0_wp, &
           (wavenum(2,i) - nir_vis_boundary) / delwave(i) ))
       ENDDO
@@ -181,7 +181,7 @@ CONTAINS
     ENDDO
     !$ACC END PARALLEL
     !$ACC WAIT(1)
-  
+
   END FUNCTION reduce_icon
 
   FUNCTION are_desired_icon(this)

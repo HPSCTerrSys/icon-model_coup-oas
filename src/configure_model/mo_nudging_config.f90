@@ -1,20 +1,20 @@
-! Processing of nudging parameters for the nudging types:
-! - Upper boundary nudging
-! - Global nudging
-! For the lateral boundary nudging, please see:
-! - src/configure_model/mo_limarea_config
-! - src/configure_model/mo_interpol_config
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Processing of nudging parameters for the nudging types:
+! - Upper boundary nudging
+! - Global nudging
+! For the lateral boundary nudging, please see:
+! - src/configure_model/mo_limarea_config
+! - src/configure_model/mo_interpol_config
 
 MODULE mo_nudging_config
 
@@ -51,7 +51,7 @@ MODULE mo_nudging_config
   !                     Parameter types
   !---------------------------------------------------------
 
-  ! Note: the following parameter types are introduced for convenience: 
+  ! Note: the following parameter types are introduced for convenience:
   ! * combine thematically related identifiers, to unburden the USE-areas in modules, where they are required
   ! * use the number of list box entries 'ixyz%nitem' for allocation purposes and loop boundaries
   ! * most changes with regard to the identifiers can be confined to this module
@@ -76,39 +76,39 @@ MODULE mo_nudging_config
   !                                           4  ) ! nitem = d, since d is the last list element
   !
   ! Why this construction rule?
-  ! -> We may want to loop over whatever the items of ixyz identify: 
+  ! -> We may want to loop over whatever the items of ixyz identify:
   !
   !    DO jitem = 1, ixyz%nitem
-  !      ! jitem successivly takes the values of ixyz%a, ixyz%b, ixyz%c, ... 
+  !      ! jitem successivly takes the values of ixyz%a, ixyz%b, ixyz%c, ...
   !      ! and can be compared with namelist entries etc.
   !    ENDDO
-  ! 
-  ! -> The items of ixyz shall be parameters, so a setup during runtime 
-  !    by means of some object is ineligible. 
-  !    We have to count the items of ixyz manually and store the value in nitem. 
   !
-  ! Please, be careful, if you modify the following types, 
-  ! since a reasonable check for the adherence to the above construction rule 
+  ! -> The items of ixyz shall be parameters, so a setup during runtime
+  !    by means of some object is ineligible.
+  !    We have to count the items of ixyz manually and store the value in nitem.
+  !
+  ! Please, be careful, if you modify the following types,
+  ! since a reasonable check for the adherence to the above construction rule
   ! during runtime is not possible.
 
   ! IDENTIFIERS for nudging type:.....................................................................................
   !
   TYPE t_indg_type
     INTEGER :: off      ! Switched off
-    INTEGER :: ubn      ! Upper boundary nudging 
+    INTEGER :: ubn      ! Upper boundary nudging
     INTEGER :: globn    ! Global nudging
-    !   
+    !
     INTEGER :: nitem    ! Number of preceding list elements
   END TYPE t_indg_type
   TYPE(t_indg_type), PARAMETER :: indg_type = t_indg_type( 0, & ! off
     &                                                      1, & ! ubn
     &                                                      2, & ! globn
     !
-    &                                                      2  ) ! (not 3) nitem 
+    &                                                      2  ) ! (not 3) nitem
 
   ! IDENTIFIERS for nudging profile:..................................................................................
   !
-  ! For a visualization of the global nudging profiles  
+  ! For a visualization of the global nudging profiles
   ! please see the end of this file.
   !
   TYPE t_indg_profile
@@ -116,36 +116,36 @@ MODULE mo_nudging_config
     INTEGER :: const     ! Constant profile for nudging strength (for global nudging)
     INTEGER :: tanh      ! Hyperbolic tangent profile for nudging strength (for global nudging)
     INTEGER :: trapid    ! Trapezoidal profile (for global nudging)
-    ! 
+    !
     INTEGER :: nitem     ! Number of list elements
   END TYPE t_indg_profile
   TYPE(t_indg_profile), PARAMETER :: indg_profile = t_indg_profile( 1, & ! sqrddist
     &                                                               2, & ! const
     &                                                               3, & ! tanh
     &                                                               4, & ! trapid
-    ! 
-    &                                                               4  ) ! nitem 
+    !
+    &                                                               4  ) ! nitem
 
   ! IDENTIFIERS for type of thermodynamic variables:..................................................................
-  !  
+  !
   TYPE t_ithermdyn_type
     INTEGER :: hydrostatic      ! Hydrostatically balanced
     INTEGER :: nonhydrostatic   ! Non-hydrostatic
-    ! 
+    !
     INTEGER :: nitem            ! Number of list elements
   END TYPE t_ithermdyn_type
   TYPE(t_ithermdyn_type), PARAMETER ::  ithermdyn_type = t_ithermdyn_type( 1, & ! hydrostatic
     &                                                                      2, & ! nonhydrostatic
     !
-    &                                                                      2  ) ! nitem 
+    &                                                                      2  ) ! nitem
 
   ! IDENTIFIERS for variables/variable groups subject to nudging:.....................................................
-  !  
+  !
   TYPE t_indg_var
     INTEGER :: vn         ! Horizontal wind
     INTEGER :: thermdyn   ! Thermodynamic variables
     INTEGER :: qv         ! Water vapour
-    ! 
+    !
     INTEGER :: nitem      ! Number of preceding list elements
     ! Abstracts
     INTEGER :: all        ! All variables
@@ -156,7 +156,7 @@ MODULE mo_nudging_config
     &                                                   2, & ! thermdyn
     &                                                   3, & ! qv
     !
-    &                                                   3, & ! nitem 
+    &                                                   3, & ! nitem
     ! Abstracts
     &                                                   4, & ! all
     !
@@ -166,7 +166,7 @@ MODULE mo_nudging_config
   INTEGER, PARAMETER :: NDG_VARLIST_STR_LEN = 2 * indg_var%nitem * NDG_VAR_STR_LEN  ! Factor 2 is margin for commas etc.
 
   ! CHARACTER IDENTIFIERS for variables/variable groups subject to nudging:...........................................
-  !  
+  !
   CHARACTER(LEN=NDG_VAR_STR_LEN), PARAMETER :: cndg_var(indg_var%nitem_2) = &
     & (/ "vn        ", & ! vn
     &    "thermdyn  ", & ! thermdyn
@@ -192,14 +192,14 @@ MODULE mo_nudging_config
     INTEGER  :: nudge_type                           ! Nudging type identifier:
                                                      ! - 0 -> switched off
                                                      ! - 1 -> upper boundary nudging
-                                                     ! - 2 -> global nudging 
+                                                     ! - 2 -> global nudging
     REAL(wp) :: max_nudge_coeff_vn                   ! Max. nudging coefficient for horizontal wind
     REAL(wp) :: max_nudge_coeff_thermdyn             ! Max. nudging coefficient for thermodynamic variables
     REAL(wp) :: nudge_start_height                   ! Nudging start height
 
-    ! Non-namelist parameters 
-    ! in case of upper boundary nudging, 
-    ! namelist parameters 
+    ! Non-namelist parameters
+    ! in case of upper boundary nudging,
+    ! namelist parameters
     ! in case of global nudging
     INTEGER  :: thermdyn_type                        ! Type of thermodynamic variables (from the perspective
                                                      ! of the nudging-target variables in ICON):
@@ -214,8 +214,8 @@ MODULE mo_nudging_config
                                                      ! - 4 -> trapezoidal profile (for global nudging only)
     REAL(wp) :: nudge_end_height                     ! Nudging end height
     REAL(wp) :: nudge_scale_height                   ! Scale height for profiles
-    CHARACTER(LEN=NDG_VARLIST_STR_LEN) :: nudge_var  ! Nudging variable(s) (for global nudging only): 
-                                                     ! - 'vn'       -> horizontal wind 
+    CHARACTER(LEN=NDG_VARLIST_STR_LEN) :: nudge_var  ! Nudging variable(s) (for global nudging only):
+                                                     ! - 'vn'       -> horizontal wind
                                                      ! - 'thermdyn' -> thermodynamic variables
                                                      ! - 'qv'       -> water vapour
                                                      ! - 'all'      -> all variables (i.e., 'vn' & 'thermdyn' & 'qv')
@@ -228,7 +228,7 @@ MODULE mo_nudging_config
     INTEGER  :: ilev_start                           ! Index of grid layer corresponding to 'nudge_end_height'
     INTEGER  :: ilev_end                             ! Index of grid layer corresponding to 'nudge_start_height'
     LOGICAL  :: lvar(indg_var%nitem)                 ! .TRUE. -> variable is subject to nudging
-    
+
     ! Auxiliary variables
     TYPE(t_thr)      :: msg_thr                      ! Message thresholds for print
     TYPE(t_thr)      :: tmr_thr                      ! Timer thresholds
@@ -240,24 +240,24 @@ MODULE mo_nudging_config
     ! Parameters for type status
     LOGICAL  :: lchecked    = .FALSE.                ! .TRUE. -> crosschecks of namelist took place
     LOGICAL  :: lconfigured = .FALSE.                ! .TRUE. -> configuration of this type took place
- 
+
   END TYPE t_nudging_config
 
-  ! Important: 'nudging_config' is uninitialized until the call of 'configure_nudging'. 
-  ! So whenever you use 'nudging_config' outside this module at a relatively early point of the program sequence, 
-  ! please check its status by: 
-  ! 
-  !  IF (nudging_config%lconfigured) THEN 
+  ! Important: 'nudging_config' is uninitialized until the call of 'configure_nudging'.
+  ! So whenever you use 'nudging_config' outside this module at a relatively early point of the program sequence,
+  ! please check its status by:
+  !
+  !  IF (nudging_config%lconfigured) THEN
   !    ! Do what you would like to do
-  !  ELSE 
+  !  ELSE
   !    CALL finish(routine, "nudging_config still unconfigured.")
   !  ENDIF
-  ! 
+  !
   ! to be on the safe side.
   TYPE(t_nudging_config), TARGET :: nudging_config(max_dom)
 
   ! Convenience substitute for 'nudging_config%ltype(indg_type%globn)'
-  ! for use in 'src/atm_dyn_iconam/mo_nh_stepping' 
+  ! for use in 'src/atm_dyn_iconam/mo_nh_stepping'
   ! (and 'src/drivers/mo_atmo_nonhydrostatic: destruct_atmo_nonhydrostatic').
   LOGICAL :: l_global_nudging = .FALSE.
 
@@ -288,7 +288,7 @@ CONTAINS !......................................................................
 
     !----------------------------------------
 
-    ! Crosscheck of namelist entries should have taken place beforehand 
+    ! Crosscheck of namelist entries should have taken place beforehand
     ! in 'src/namelists/mo_nudging_nml: check_nudging'.
     IF (.NOT. ALL(nudging_config(1:n_dom)%lchecked)) THEN
       CALL finish(routine, "Crosscheck of nudging_nml still pending. " &
@@ -304,7 +304,7 @@ CONTAINS !......................................................................
       nudging_config(jg)%msg_thr%low  = 4   ! For important output
       nudging_config(jg)%msg_thr%med  = 10  ! For less important output
       nudging_config(jg)%msg_thr%high = 12  ! For least important output
-    
+
       ! Set thresholds for timers
       nudging_config(jg)%tmr_thr%low  = 1
       nudging_config(jg)%tmr_thr%med  = 5
@@ -336,8 +336,8 @@ CONTAINS !......................................................................
         nudging_config(jg)%ltype(nudging_config(jg)%nudge_type) = .TRUE.
 
 
-        ! Vertical start and end levels are determined for DOM 1 only, and lateron 
-        ! adapted for eventually vertically nested domains by taking into account 
+        ! Vertical start and end levels are determined for DOM 1 only, and lateron
+        ! adapted for eventually vertically nested domains by taking into account
         ! the vertical shift parameter nshift_total(jg).
         IF (jg==1) THEN
 
@@ -352,18 +352,18 @@ CONTAINS !......................................................................
           DO jk = nlevp1, 1, -1
             ! (No shift of vertical index necessary, because this is done for the primary domain, only)
             ! Nominal height of half level
-            ! (Note: we (arbitrarily) defined that those vertical grid layers, 
-            ! in which 'start/end_height' lie, should be subject to nudging. 
+            ! (Note: we (arbitrarily) defined that those vertical grid layers,
+            ! in which 'start/end_height' lie, should be subject to nudging.
             ! This is, why we do not use 'height = 0.5_wp * (vct_a(jk) + vct_a(jk+1))' here.)
             height = vct_a(jk)
             IF (height > start_height) THEN
               ! We have found the lowermost grid layer, where nudging is applied
-              ! (Because vertical looping starts from model top, 'ilev_end' corresponds 
+              ! (Because vertical looping starts from model top, 'ilev_end' corresponds
               ! to the start height, and 'ilev_start' corresponds to the end height)
               nudging_config(jg)%ilev_end = jk
               ! Indicate the find
               lfound = .TRUE.
-              EXIT 
+              EXIT
             ENDIF
           ENDDO  !jk
           IF (.NOT. lfound) CALL finish(TRIM(routine), 'Could not find ilev_end corresponding to nudge_start_height.')
@@ -389,9 +389,9 @@ CONTAINS !......................................................................
           ! We replace the namelist entry for end height by the effective end height
           nudging_config(jg)%nudge_end_height   = 0.5_wp * ( vct_a(nudging_config(jg)%ilev_start)     &
             &                                          + vct_a(nudging_config(jg)%ilev_start + 1) )
-          ! Finally, we can compute the nudging scale height 
+          ! Finally, we can compute the nudging scale height
           ! (if there is no explicit namelist input for it, or 'nudge_profile = 1' is selected)
-          IF ( nudging_config(jg)%nudge_scale_height < 0._wp .OR.        & 
+          IF ( nudging_config(jg)%nudge_scale_height < 0._wp .OR.        &
             &  nudging_config(jg)%nudge_profile == indg_profile%sqrddist ) THEN
             nudging_config(jg)%nudge_scale_height = nudging_config(jg)%nudge_end_height - nudging_config(jg)%nudge_start_height
           ENDIF
@@ -418,14 +418,14 @@ CONTAINS !......................................................................
         IF (nudging_config(jg)%nudge_type == indg_type%globn) THEN
           ! Evaluate the namelist input for the variables that are to be nudged
           ! (please note that the evaluation is very rudimentary without any sophisticated error handling)
-          IF (LEN_TRIM(nudging_config(jg)%nudge_var) == 0) THEN 
+          IF (LEN_TRIM(nudging_config(jg)%nudge_var) == 0) THEN
             ! The string list with the variables that shall be nudged is empty
             CALL finish(routine, "nudge_var is empty.")
           ELSEIF (INDEX(TRIM(nudging_config(jg)%nudge_var), TRIM(cndg_var(indg_var%all))) > 0) THEN
             ! All variables, for which nudging has been implemented, are subject to nudging
             nudging_config(jg)%lvar(:) = .TRUE.
           ELSE
-            ! In this case, the string should contain either the character identifier of a single variable, 
+            ! In this case, the string should contain either the character identifier of a single variable,
             ! or a comma-separated list with the character identifiers of several variables
             lfound = .FALSE.
             DO jvar = 1, indg_var%nitem
@@ -452,7 +452,7 @@ CONTAINS !......................................................................
         ! Print some info
         !---------------------------------------------------
 
-        IF (msg_level >= nudging_config(jg)%msg_thr%med) THEN 
+        IF (msg_level >= nudging_config(jg)%msg_thr%med) THEN
 
           ! Nudging type
           SELECT CASE(nudging_config(jg)%nudge_type)
@@ -474,7 +474,7 @@ CONTAINS !......................................................................
             c4print = "constant"
           CASE(indg_profile%tanh)
             c4print = "hyperbolic tangent decreasing in magnitude from nudging end height downwards"
-          CASE(indg_profile%trapid) 
+          CASE(indg_profile%trapid)
             c4print = "trapezoidal"
           END SELECT
           WRITE(message_text,'(a)') 'Selected profile of nudging strength between start and end height: ' &
@@ -485,17 +485,17 @@ CONTAINS !......................................................................
           WRITE(message_text,'(a)') 'Nudging includes the full levels between:'
           CALL message(TRIM(routine), message_text)
           jk     = nudging_config(jg)%ilev_start
-          height = 0.5_wp * ( vct_a(jk) + vct_a(jk+1) )  
+          height = 0.5_wp * ( vct_a(jk) + vct_a(jk+1) )
           WRITE(message_text,'(a)') ' - Level jk = '//TRIM(int2string(jk))//', height z(jk) = ' &
             & //TRIM(real2string(height))//' m'
           CALL message(' ', message_text)
           jk     = nudging_config(jg)%ilev_end
-          height = 0.5_wp * ( vct_a(jk) + vct_a(jk+1) )  
+          height = 0.5_wp * ( vct_a(jk) + vct_a(jk+1) )
           WRITE(message_text,'(a)') ' - Level jk = '//TRIM(int2string(jk))//', height z(jk) = ' &
             & //TRIM(real2string(height))//' m'
           CALL message(' ', message_text)
           IF (ANY((/indg_profile%sqrddist, indg_profile%tanh, indg_profile%trapid/) &
-            & == nudging_config(jg)%nudge_profile)) THEN 
+            & == nudging_config(jg)%nudge_profile)) THEN
             WRITE(message_text,'(a)') 'Scale height for profile of nudging strength: ' &
               & //TRIM(real2string(nudging_config(jg)%nudge_scale_height))//' m'
             CALL message(TRIM(routine), message_text)
@@ -543,7 +543,7 @@ CONTAINS !......................................................................
             ENDDO  !jvar
             IF (lremove_qv) THEN
               ! Although requested, water vapour may not be available for nudging
-              WRITE(message_text,'(a)') 'Note: qv has been removed from the list of nudging variables, ...' 
+              WRITE(message_text,'(a)') 'Note: qv has been removed from the list of nudging variables, ...'
               CALL message(TRIM(routine), message_text)
               WRITE(message_text,'(a)') '... since the current model setup does not allow to nudge it.'
               CALL message(TRIM(routine), message_text)
@@ -576,7 +576,7 @@ END MODULE mo_nudging_config
   !   Visualization of the nudging profiles
   !--------------------------------------------
 
-  ! For upper-boundary nudging 
+  ! For upper-boundary nudging
   ! and global nudging:
 
   !--------------------------------------------
@@ -585,13 +585,13 @@ END MODULE mo_nudging_config
 
   !
   !               nominal height z
-  ! 
+  !
   !                     /|\
   !                      |
   !                      |
-  !         top_height ---    *                         . 
-  !                      |    *                         . 
-  !                      |    *                         . 
+  !         top_height ---    *                         .
+  !                      |    *                         .
+  !                      |    *                         .
   !                      |    *                         .
   !   nudge_end_height --- .............................*..  --- (upper-boundary nudging: nudge_end_height = top_height)
   !                      |                        *     .     |
@@ -600,8 +600,8 @@ END MODULE mo_nudging_config
   !                      |            *                 .     |
   !                      |          *                   .     |
   !                      |        *                     .     | < nudge_scale_height = nudge_end_height - nudge_start_height
-  !                      |       *                      .     | 
-  !                      |      *                       .     |  
+  !                      |       *                      .     |
+  !                      |      *                       .     |
   !                      |     *                        .     |
   !                      |     *                        .     |
   !  nudge_start_height --- ..*............................  ---
@@ -622,26 +622,26 @@ END MODULE mo_nudging_config
 
   !
   !               nominal height z
-  ! 
+  !
   !                     /|\
   !                      |
   !                      |
   !         top_height ---    *                         .
-  !                      |    *                         . 
-  !                      |    *                         . 
   !                      |    *                         .
-  !   nudge_end_height --- .............................*..  
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !  nudge_start_height --- ............................*..  
+  !                      |    *                         .
+  !                      |    *                         .
+  !   nudge_end_height --- .............................*..
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !  nudge_start_height --- ............................*..
   !                      |    *                         .
   !                      |    *                         .
   !                      |    *                         .
@@ -657,13 +657,13 @@ END MODULE mo_nudging_config
 
   !
   !               nominal height z
-  ! 
+  !
   !                     /|\
   !                      |
   !                      |
   !         top_height ---    *                         .
-  !                      |    *                         . 
-  !                      |    *                         . 
+  !                      |    *                         .
+  !                      |    *                         .
   !                      |    *                         .
   !   nudge_end_height --- .............................*..  ---
   !                      |                         *    .     |
@@ -672,7 +672,7 @@ END MODULE mo_nudging_config
   !                      |                *             .     |
   !                      |              *               .     |
   !                      |             *                .     |
-  !                      |            *                 .     |      
+  !                      |            *                 .     |
   !                      |           *                  .     | < nudge_scale_height = namelist input
   !                      |          *                   .     |
   !                      |          *                   .     |
@@ -692,42 +692,42 @@ END MODULE mo_nudging_config
 
   !
   !               nominal height z
-  ! 
+  !
   !                     /|\
   !                      |
   !                      |
   !         top_height ---    *                         .
-  !                      |    *                         . 
-  !                      |    *                         . 
   !                      |    *                         .
-  !   nudge_end_height --- ...*............................  ---  
+  !                      |    *                         .
+  !                      |    *                         .
+  !   nudge_end_height --- ...*............................  ---
   !                      |     *                        .     |
   !                      |       *                      .     |
   !                      |          *                   .     |
   !                      |               *              .     | < nudge_scale_height = namelist input
   !                      |                     *        .     |
   !                      |                         *    .     |
-  !                      |                            * .     | 
-  !                      |                             *.    ~~~          
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                              *     
-  !                      |                             *.    ~~~      
-  !                      |                            * .     |     
-  !                      |                         *    .     |      
-  !                      |                     *        .     |      
-  !                      |               *              .     | < nudge_scale_height = namelist input     
-  !                      |          *                   .     |      
-  !                      |       *                      .     |      
-  !                      |     *                        .     |      
-  !  nudge_start_height --- ..*............................  ---  
+  !                      |                            * .     |
+  !                      |                             *.    ~~~
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                              *
+  !                      |                             *.    ~~~
+  !                      |                            * .     |
+  !                      |                         *    .     |
+  !                      |                     *        .     |
+  !                      |               *              .     | < nudge_scale_height = namelist input
+  !                      |          *                   .     |
+  !                      |       *                      .     |
+  !                      |     *                        .     |
+  !  nudge_start_height --- ..*............................  ---
   !                      |    *                         .
   !                      |    *                         .
   !                      |    *                         .

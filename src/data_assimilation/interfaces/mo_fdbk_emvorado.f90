@@ -1,9 +1,7 @@
-! 3DVAR/COSMO source module for feedback file interface to COSMO
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -11,12 +9,14 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! 3DVAR/COSMO source module for feedback file interface to COSMO
+
 MODULE mo_fdbk_emvorado
 
 !-------------------------------------------------------------------------------
 !
 ! Description:
-!   COSMO interface to write NetCDF feedobs (or feedback) file (FOF, 
+!   COSMO interface to write NetCDF feedobs (or feedback) file (FOF,
 !   Common format for FOF in 3DVAR and COSMO), especially for
 !   the radar forward OPERATOR emvorado.
 !
@@ -42,8 +42,7 @@ USE mo_fdbk,          ONLY: t_fdbk
 
 USE mo_t_netcdf_file, ONLY: nlen
 
-USE mo_netcdf_param   ! provides access to the parameters defined
-                      ! in 'netcdf.inc' of the NetCDF package
+USE netcdf
 #endif
 
 IMPLICIT  NONE
@@ -70,7 +69,7 @@ PUBLIC :: t_acc_radar
 PUBLIC :: write_report_radar_1, write_report_radar_2
 
 !Interface block
- INTERFACE add_data
+INTERFACE add_data
    MODULE PROCEDURE              &
      add_inte_vala,              &
      add_real_vala_1D,           &
@@ -86,7 +85,7 @@ TYPE t_acc_header
   INTEGER           ::   i_spec            ! spec offset in netcdf file
   INTEGER           ::   l_spec            ! number of spec elements in report
   INTEGER           ::   spec_r_flags      ! bitwise flags for radar sim config
-  INTEGER           ::   varno_back        ! 
+  INTEGER           ::   varno_back        !
   INTEGER           ::   data_category     !
   INTEGER           ::   sub_category      !
   INTEGER           ::   center            !
@@ -194,11 +193,11 @@ INTEGER,          INTENT(in)    :: count      ! number of data to be stored
 INTEGER,          INTENT(inout) :: ierror     ! netcdf error
 !-------------------------------------------------------------------------------
 
-  ierror = nf_put_vara_int ( file% nc% ncid,                &
-                             file% nc% vars(in)% varid,     &
-                             [start],                       &
-                             [count],                       &
-                             ivala(1:count)             )
+  ierror = nf90_put_var ( file% nc% ncid,                &
+                          file% nc% vars(in)% varid,     &
+                          ivala(1:count),                &
+                          [start],                       &
+                          [count]                        )
 
 END SUBROUTINE add_inte_vala
 
@@ -216,11 +215,11 @@ INTEGER,          INTENT(in)    :: count      ! number of data to be stored
 INTEGER,          INTENT(inout) :: ierror     ! netcdf error
 !-------------------------------------------------------------------------------
 
-  ierror = nf_put_vara_real (file% nc% ncid,              &
-                             file% nc% vars(in)% varid,   &
-                             [start],                     &
-                             [count],                     &
-                             rvala1(1:count)              )
+  ierror = nf90_put_var (file% nc% ncid,              &
+                         file% nc% vars(in)% varid,   &
+                         rvala1(1:count),             &
+                         [start],                     &
+                         [count]                      )
 
 END SUBROUTINE add_real_vala_1D
 
@@ -239,11 +238,11 @@ INTEGER,          INTENT(in)    :: count        ! number of data to be stored
 INTEGER,          INTENT(inout) :: ierror       ! netcdf error
 !-------------------------------------------------------------------------------
 
-  ierror = nf_put_vara_real (file% nc% ncid,              &
-                             file% nc% vars(in)% varid,   &
-                             (/start, nr            /),   &
-                             (/count, size(rvala2,2)/),   &
-                             rvala2(:,:)                )
+  ierror = nf90_put_var (file% nc% ncid,              &
+                         file% nc% vars(in)% varid,   &
+                         rvala2(:,:),                 &
+                         (/start, nr            /),   &
+                         (/count, SIZE(rvala2,2)/)    )
 
 END SUBROUTINE add_real_vala_2D
 
@@ -264,11 +263,11 @@ INTEGER   ::  cn      ! string length to be stored
 !-------------------------------------------------------------------------------
   cn = file% nc% vars(in)% p(1)% dim% len
 
-  ierror = nf_put_vara_text (file% nc% ncid,              &
-                             file% nc% vars(in)% varid,   &
-                             (/1,    start/),             &
-                             (/cn,   count/),             &
-                             cvala(1:count)(1:cn)     )
+  ierror = nf90_put_var (file% nc% ncid,              &
+                         file% nc% vars(in)% varid,   &
+                         cvala(1:count)(1:cn),        &
+                         (/1,    start/),             &
+                         (/cn,   count/)              )
 
 END SUBROUTINE add_text_vala
 
@@ -278,7 +277,7 @@ END SUBROUTINE add_text_vala
 
 ! Version with rep_header(nrep), rep_body(nrep,:) instead of container report(:)
 ! otherwise similar to write_report above.
-!    Optimized on the NEC for the case that number of reports "nrep" is much 
+!    Optimized on the NEC for the case that number of reports "nrep" is much
 !    smaller than the typical body length of one report.
 
 SUBROUTINE write_report_radar_1 ( file, rep_header, rep_body, spec_radar       &
@@ -305,7 +304,7 @@ SUBROUTINE write_report_radar_1 ( file, rep_header, rep_body, spec_radar       &
   INTEGER,            INTENT (inout) :: jerr       ! error status variable
   ! it is assumed here that LEN >= 72 !
   CHARACTER (LEN= *), INTENT (inout) :: yerr       ! error message
-  CHARACTER (LEN= *), INTENT (in), OPTIONAL :: yzstatid       
+  CHARACTER (LEN= *), INTENT (in), OPTIONAL :: yzstatid
                                                    ! Optional station id valid for all data in rep_header
 !---------------------------------------------------------
   INTEGER                       ::  &
@@ -334,7 +333,7 @@ SUBROUTINE write_report_radar_1 ( file, rep_header, rep_body, spec_radar       &
   REAL(KIND=sp)     , ALLOCATABLE :: rvala2(:,:) ! buffer for real body   elem.
   CHARACTER(len=100), ALLOCATABLE :: cvala(:)    ! buffer for char header elem.
 !-------------------------------------------------------------------------------
- 
+
   jerr = 0
   kerr = 0
   IF (jerr == 0)  ALLOCATE ( ivalh (nrep ) , STAT = jerr )
@@ -356,10 +355,10 @@ SUBROUTINE write_report_radar_1 ( file, rep_header, rep_body, spec_radar       &
                                                                           RETURN
   ENDIF
 
-  kerr = nf_enddef(file% nc% ncid )
-! IF (kerr /= NF_NOERR) THEN
+  kerr = nf90_enddef(file% nc% ncid )
+! IF (kerr /= NF90_NOERR) THEN
 !   jerr = kerr
-!   WRITE( yerr,'("ERROR in nf_enddef in write_reports")' )
+!   WRITE( yerr,'("ERROR in nf90_enddef in write_reports")' )
 !                                                                         RETURN
 ! ENDIF
 
@@ -385,9 +384,9 @@ SUBROUTINE write_report_radar_1 ( file, rep_header, rep_body, spec_radar       &
     IF (file% nc% vars(in)% nvdims == 1) THEN
 
       kcase = 1
-      IF (     (file% nc% vars(in)% xtype == NF_FLOAT)                         &
-          .OR. (file% nc% vars(in)% xtype == NF_FILL_DOUBLE))  kcase = 2
-!     IF (file% nc% vars(in)% xtype == NF_CHAR)  kcase = 5
+      IF (     (file% nc% vars(in)% xtype == NF90_FLOAT)                         &
+          .OR. (file% nc% vars(in)% xtype == NF90_FILL_DOUBLE))  kcase = 2
+!     IF (file% nc% vars(in)% xtype == NF90_CHAR)  kcase = 5
       ydim  =  file% nc% vars(in)% p(1)% dim% name
       IF (ydim (1:LEN_TRIM( ydim )) == 'd_body') THEN
         kcase = kcase + 2
@@ -737,13 +736,13 @@ END SUBROUTINE write_report_radar_1
 !!$                (kcase = 7 and 8)
 
 ! .. Version similar to write_report_radar_1, but optimized on the NEC for
-!    the case that number of reports "nrep" is much larger than the 
+!    the case that number of reports "nrep" is much larger than the
 !    typical body length of one report.
 
 SUBROUTINE write_report_radar_2 ( file, rep_header, rep_body, rep_offset, rep_len &
                         , nrep, dim2_body, nbody, ihoff, iboff &
                         , imdi, rmdich, jerr, yerr )
- 
+
 !-------------------------------------------------------------------------------
   IMPLICIT NONE
 !---------------------------------------------------------
@@ -794,7 +793,7 @@ SUBROUTINE write_report_radar_2 ( file, rep_header, rep_body, rep_offset, rep_le
   INTEGER           :: ifillbuf(nrep,dim2_body)
   REAL(KIND=sp)     :: rfillbuf(nrep,dim2_body)
 !-------------------------------------------------------------------------------
- 
+
   jerr = 0
   kerr = 0
   IF (jerr == 0)  ALLOCATE ( ivalh (nrep ) , STAT = jerr )
@@ -816,14 +815,14 @@ SUBROUTINE write_report_radar_2 ( file, rep_header, rep_body, rep_offset, rep_le
                                                                           RETURN
   ENDIF
 
-  kerr = nf_enddef(file% nc% ncid )
-! IF (kerr /= NF_NOERR) THEN
+  kerr = nf90_enddef(file% nc% ncid )
+! IF (kerr /= NF90_NOERR) THEN
 !   jerr = kerr
-!   WRITE( yerr,'("ERROR in nf_enddef in write_reports")' )
+!   WRITE( yerr,'("ERROR in nf90_enddef in write_reports")' )
 !                                                                         RETURN
 ! ENDIF
 
-  
+
   write_loop: DO in = 1, file% nc% nvar
 
     IF (.NOT. file% nc% vars(in)% opt_used)                                CYCLE
@@ -845,9 +844,9 @@ SUBROUTINE write_report_radar_2 ( file, rep_header, rep_body, rep_offset, rep_le
     IF (file% nc% vars(in)% nvdims == 1) THEN
 
       kcase = 1
-      IF (     (file% nc% vars(in)% xtype == NF_FLOAT)                         &
-          .OR. (file% nc% vars(in)% xtype == NF_FILL_DOUBLE))  kcase = 2
-!     IF (file% nc% vars(in)% xtype == NF_CHAR)  kcase = 5
+      IF (     (file% nc% vars(in)% xtype == NF90_FLOAT)                         &
+          .OR. (file% nc% vars(in)% xtype == NF90_FILL_DOUBLE))  kcase = 2
+!     IF (file% nc% vars(in)% xtype == NF90_CHAR)  kcase = 5
       ydim  =  file% nc% vars(in)% p(1)% dim% name
       IF (ydim (1:LEN_TRIM( ydim )) == 'd_body') THEN
         kcase = kcase + 2
@@ -1173,7 +1172,7 @@ CONTAINS
         END IF
       END DO
     END DO
-  
+
   END SUBROUTINE fill_bodybuf_int
 
   SUBROUTINE fill_bodybuf_real (rbodydata, rbuf)
@@ -1196,7 +1195,7 @@ CONTAINS
         END IF
       END DO
     END DO
-  
+
   END SUBROUTINE fill_bodybuf_real
 
 END SUBROUTINE write_report_radar_2

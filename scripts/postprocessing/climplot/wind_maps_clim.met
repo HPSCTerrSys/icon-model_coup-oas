@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -13,7 +13,7 @@
 # metview script called by climplot_sfc.sms to plot seasonal
 # mean tropical wind vectors against ERA40
 #
-# run as: metview -b wind_maps_clim.met efip [19870501,19870502,19870503] 3000 
+# run as: metview -b wind_maps_clim.met efip [19870501,19870502,19870503] 3000
 #         * levels (925, 700 and 200hPa) are automatically plotted
 #
 # Peter Bechtold & Martin Koehler and Adrian Tompkins, March 2004
@@ -38,7 +38,7 @@ else
 	nmon=3                 # number of months of period diagnosed
 	start_dates=20001001/20001002/20001003
 	res=2.5
-	eratext='ERA40'     
+	eratext='ERA40'
 end if
 
 # -------------------------------------------------------
@@ -51,10 +51,10 @@ NZONES=3 # 1=Tropics, 2=NH, 3=SH; for P>700hPa only plot Tropics
 
 # --- directory
 
-dir = getenv("PLOTDATA") 
+dir = getenv("PLOTDATA")
 if (dir="") then
   dir="."
-end if 
+end if
 dir=dir&"/"
 
 start_dates=(parse(string(initime),"/"))
@@ -136,10 +136,10 @@ for nl=1 to count(lev) do
 
       File   = ps_output(  OUTPUT_NAME : filename  )
 
-      mode=runmode() 
-      if mode = 'batch' or mode = 'execute' then  
-         setoutput(File)  
-      end if  
+      mode=runmode()
+      if mode = 'batch' or mode = 'execute' then
+         setoutput(File)
+      end if
 
 #----------------------------
 
@@ -214,7 +214,7 @@ for nl=1 to count(lev) do
 		wind_arrow_thickness		:	5,
         	WIND_THINNING_FACTOR     	:  	3,
 		grib_text_experiment		:	"off",
-		grib_text_plot_type		:	"off"#, 
+		grib_text_plot_type		:	"off"#,
 #       	wind_arrow_legend_x_position	:	-1,
 #        	wind_arrow_legend_y_position	:	0
 		)
@@ -317,7 +317,7 @@ for nl=1 to count(lev) do
            	legend_title		       :    "on",
            	legend_text_colour	       :    "black"
                 )
-       
+
       display_window = build_layout(nzon)
       plot (display_window[1],uv_exp1_m, arrows,     text_1, legend)
       plot (display_window[2],uv_era40_m,arrows,     text_2, legend)
@@ -349,7 +349,7 @@ coastlines = pcoast(
     map_label_colour			:	"black",
     map_label_quality			:	"medium"
     )
-    
+
 
 tropic = mapview(
      area			:	[-30,0,30,360],
@@ -373,7 +373,7 @@ sh = mapview(
         MAP_HEMISPHERE          :  	'SOUTH',
         coastlines		:	coastlines,
         subpage_frame_thickness	:	2,
-        page_frame 		:	'off' 
+        page_frame 		:	'off'
 		)
 
 if nzon <=1 then
@@ -432,6 +432,6 @@ display_window = plot_superpage(
 		pages			:	[page,page_1,page_2]
 		)
 
-return display_window 
+return display_window
 
 end build_layout

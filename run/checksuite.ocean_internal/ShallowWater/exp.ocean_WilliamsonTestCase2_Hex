@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -86,14 +86,14 @@ cat > ${ocean_namelist} << EOF
  dzlev_m(1:1)      =   1.0
   l_edge_based    = .false.       ! edge- or cell-based mimetic discretization
 
-  select_solver                   = 4       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart 
+  select_solver                   = 40       ! 1=gmres_oce_old; 2=ocean_restart_gmres, 3=mixed precisison restart
                                             ! 4=CG (default) 5=CGJ 6=BiCG 7=GMRES restart (legacy) 8=MINRES
   use_absolute_solver_tolerance   = .true.
   solver_tolerance                = 1.0E-13 ! this may further be reduced
 
   select_lhs                      = 1       ! 1=operator based (default) 2=matrix based
-  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default) 
-  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default) 
+  l_lhs_direct                    = .false. ! .true.= use lhs implementation directly  .false.= matrix scanner (default)
+  solver_FirstGuess               = 2       ! 0=start from zeros 1=last timestep smoothed 2=last timestep (default)
   l_lhs_direct = .true.
 
   fast_performance_level        = 200      !  performance level 12: for cell-based; 5: default
@@ -101,7 +101,7 @@ cat > ${ocean_namelist} << EOF
   cfl_check = .false.
   cfl_write = .false.
   iswm_oce= 1
-  MASS_MATRIX_INVERSION_TYPE = 0 !0=no mass matrix inversio, =1 for advective term  
+  MASS_MATRIX_INVERSION_TYPE = 0 !0=no mass matrix inversio, =1 for advective term
 /
 &ocean_tracer_transport_nml
   no_tracer             = 1      ! tracer-transport: 0=no transport, 1=temperature, 2=temp. and salinity
@@ -129,8 +129,8 @@ cat > ${ocean_namelist} << EOF
   iforc_oce                   = 10       ! ocean forcing
 /
 &ocean_initialConditions_nml
-  initial_velocity_type  = 202     !Williamson test2:202, Williamson test 5:203  
-  sea_surface_height_type= 204     !Williamson test2:204, Williamson test 5:205 
+  initial_velocity_type  = 202     !Williamson test2:202, Williamson test 5:203
+  sea_surface_height_type= 204     !Williamson test2:204, Williamson test 5:205
   topography_type=200              !For Williamson test5=201 otherwise =200
   initial_temperature_type=211
 /

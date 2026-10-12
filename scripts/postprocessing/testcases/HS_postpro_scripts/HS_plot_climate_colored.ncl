@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -21,7 +21,7 @@
 ;---------------------------------------------------------
  begin
 
-    PlotFormat = getenv("plot_file_format") 
+    PlotFormat = getenv("plot_file_format")
     DataPath   = getenv("DataPath")
     DataID     = getenv("DataID")
     DataGrid   = getenv("trunc")
@@ -32,7 +32,7 @@
 
     suffix     = "_t"+DataGrid+"grid.nc"
 
-    varNameF   = (/"ta_ta","ta_tv","tapvap_ta","ua_ta","ua_tv","eke_ta","va_ta","va_tv","uapvap_ta","wa_ta","wa_tv","uapwap_ta"/) 
+    varNameF   = (/"ta_ta","ta_tv","tapvap_ta","ua_ta","ua_tv","eke_ta","va_ta","va_tv","uapvap_ta","wa_ta","wa_tv","uapwap_ta"/)
     varName    = (/"ta"   ,"ta"   ,"ta"       ,"ua"   ,"ua"   ,"ua"    ,"va"   ,"va"   ,"ua"       ,"wa"   ,"wa"   ,"ua"       /)
 
 ;------
@@ -51,7 +51,7 @@
                 "(l) vertical eddy momentum flux <u'w'> (1e-2 m~S~2~N~s~S~-2~N~)"        /)
 
  nvar = dimsizes(LeftString)
- 
+
  Min = (/ 190,   4, -24, -32,  40,  40, -0.80,  40, -64, -0.25, 0.4, -2.5 /)
  Max = (/ 305,  52,  24,  32, 480, 480,  0.80, 480,  64,  0.25, 4.0,  2.5 /)
  Int = (/   5,   4,   3,   4,  40,  40,  0.08,  40,   8,  0.05, 0.4,  0.5 /)
@@ -77,7 +77,7 @@
      ResC@gsnDraw  = False
      ResC@gsnFrame = False
 
-     ResC@tiYAxisString          = "Height Km" 
+     ResC@tiYAxisString          = "Height Km"
 
      FontHeight = 0.02
 
@@ -94,7 +94,7 @@
      ResC@pmLabelBarWidthF         = 0.58
      ResC@lbLabelAutoStride        = True
      ResC@pmLabelBarOrthogonalPosF = 0.01
-     ResC@lbLabelFontHeightF       = FontHeight 
+     ResC@lbLabelFontHeightF       = FontHeight
 
      ResC@tmYRMode      = "Automatic"
      ResC@trYReverse    = False

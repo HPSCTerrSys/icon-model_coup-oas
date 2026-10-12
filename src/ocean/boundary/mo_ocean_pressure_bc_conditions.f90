@@ -1,17 +1,16 @@
-! Implementation of tides by computation of the Sun's and Moon's full tidal potential
-! This will be used in the pressure gradient calculation
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Implementation of tides by computation of the Sun's and Moon's full tidal potential
+! This will be used in the pressure gradient calculation
 
 !----------------------------
 #include "icon_definitions.inc"
@@ -108,7 +107,7 @@ CONTAINS
     ! total top potential
 
     IF ( (switch_atm_pressure + switch_vert_cor_type + switch_tides) > 0.0_wp ) THEN
-    
+
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, start_index, end_index)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)

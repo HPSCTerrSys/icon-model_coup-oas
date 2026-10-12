@@ -1,15 +1,16 @@
-! Contains the variables to set up the ocean model.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains the variables to set up the ocean model.
+
 #include "iconfor_dsl_definitions.inc"
 
 MODULE mo_hamocc_types
@@ -26,6 +27,7 @@ MODULE mo_hamocc_types
 
   PUBLIC :: t_hamocc_diag
   PUBLIC :: t_hamocc_monitor
+  PUBLIC :: t_hamocc_vertint
   PUBLIC :: t_hamocc_state
   PUBLIC :: t_hamocc_tend
   PUBLIC :: t_hamocc_sed
@@ -88,11 +90,26 @@ MODULE mo_hamocc_types
 
   END TYPE t_hamocc_monitor
 
+  TYPE t_hamocc_vertint
+    !--------------------------------------------
+    ! dimension: (nproma, nblks_e)
+    REAL(wp), POINTER :: dic(:,:)
+    REAL(wp), POINTER :: alk(:,:)
+    REAL(wp), POINTER :: phy(:,:)
+    REAL(wp), POINTER :: npp(:,:)
+    REAL(wp), POINTER :: phoc(:,:)
+    REAL(wp), POINTER :: graz(:,:)
+    REAL(wp), POINTER :: zoomor(:,:)
+    REAL(wp), POINTER :: bacfra(:,:)
+    REAL(wp), POINTER :: remina(:,:)
+    REAL(wp), POINTER :: delcar(:,:)
+  END TYPE t_hamocc_vertint
+
   TYPE t_hamocc_diag
     !--------------------------------------------
     ! dimension: (nproma,n_zlev, nblks_e)
-    REAL(wp), POINTER ::  hi(:,:,:)          
-    REAL(wp), POINTER ::  co3(:,:,:)     
+    REAL(wp), POINTER ::  hi(:,:,:)
+    REAL(wp), POINTER ::  co3(:,:,:)
     !--------------------------------------------
   END TYPE t_hamocc_diag
   !
@@ -100,124 +117,124 @@ MODULE mo_hamocc_types
   TYPE t_hamocc_sed
     !--------------------------------------------
     ! dimension: (nproma, ks, nblks_e)
-    REAL(wp), POINTER ::  so12(:,:,:)       
-    REAL(wp), POINTER ::  sc12(:,:,:)       
-    REAL(wp), POINTER ::  ssil(:,:,:)       
-    REAL(wp), POINTER ::  ster(:,:,:)       
-    REAL(wp), POINTER ::  pwic(:,:,:)       
-    REAL(wp), POINTER ::  pwal(:,:,:)       
-    REAL(wp), POINTER ::  pwph(:,:,:)       
-    REAL(wp), POINTER ::  pwox(:,:,:)       
-    REAL(wp), POINTER ::  pwsi(:,:,:)       
-    REAL(wp), POINTER ::  pwfe(:,:,:)       
-    REAL(wp), POINTER ::  pwh2s(:,:,:)       
-    REAL(wp), POINTER ::  pwn2(:,:,:)       
-    REAL(wp), POINTER ::  pwno3(:,:,:)       
-    REAL(wp), POINTER ::  sedhi(:,:,:)       
-    REAL(wp), POINTER ::  pwh2ob(:,:,:)       
-    REAL(wp), POINTER ::  pwn2b(:,:,:)       
-    REAL(wp), POINTER ::  bo12(:,:)       
-    REAL(wp), POINTER ::  bc12(:,:)       
-    REAL(wp), POINTER ::  bsil(:,:)       
-    REAL(wp), POINTER ::  bter(:,:)       
+    REAL(wp), POINTER ::  so12(:,:,:)
+    REAL(wp), POINTER ::  sc12(:,:,:)
+    REAL(wp), POINTER ::  ssil(:,:,:)
+    REAL(wp), POINTER ::  ster(:,:,:)
+    REAL(wp), POINTER ::  pwic(:,:,:)
+    REAL(wp), POINTER ::  pwal(:,:,:)
+    REAL(wp), POINTER ::  pwph(:,:,:)
+    REAL(wp), POINTER ::  pwox(:,:,:)
+    REAL(wp), POINTER ::  pwsi(:,:,:)
+    REAL(wp), POINTER ::  pwfe(:,:,:)
+    REAL(wp), POINTER ::  pwh2s(:,:,:)
+    REAL(wp), POINTER ::  pwn2(:,:,:)
+    REAL(wp), POINTER ::  pwno3(:,:,:)
+    REAL(wp), POINTER ::  sedhi(:,:,:)
+    REAL(wp), POINTER ::  pwh2ob(:,:,:)
+    REAL(wp), POINTER ::  pwn2b(:,:,:)
+    REAL(wp), POINTER ::  bo12(:,:)
+    REAL(wp), POINTER ::  bc12(:,:)
+    REAL(wp), POINTER ::  bsil(:,:)
+    REAL(wp), POINTER ::  bter(:,:)
 
     ! N-cycle
     REAL(wp), POINTER ::  pwnh4(:,:,:)
-    REAL(wp), POINTER ::  pwno2(:,:,:)   
- 
-    INTEGER, POINTER ::  kbo(:,:)       
-    REAL(wp), POINTER ::  bolay(:,:)       
+    REAL(wp), POINTER ::  pwno2(:,:,:)
+
+    INTEGER, POINTER ::  kbo(:,:)
+    REAL(wp), POINTER ::  bolay(:,:)
   END TYPE t_hamocc_sed
 
   TYPE t_hamocc_tend
     !--------------------------------------------
     ! dimension: (nproma,n_zlev, nblks_e)
-    REAL(wp), POINTER ::  npp(:,:,:)           
-    REAL(wp), POINTER ::  phoc(:,:,:)           
-    REAL(wp), POINTER ::  cyloss(:,:,:)           
-    REAL(wp), POINTER ::  graz(:,:,:)       
-    REAL(wp), POINTER ::  graton(:,:,:)       
-    REAL(wp), POINTER ::  exud(:,:,:)       
-    REAL(wp), POINTER ::  exudz(:,:,:)       
-    REAL(wp), POINTER ::  zoomor(:,:,:)       
-    REAL(wp), POINTER ::  phymor(:,:,:)       
-    REAL(wp), POINTER ::  nfix(:,:,:)       
-    REAL(wp), POINTER ::  remina(:,:,:)       
-    REAL(wp), POINTER ::  remins(:,:,:)       
-    REAL(wp), POINTER ::  reminn(:,:,:)       
-    REAL(wp), POINTER ::  bacfra(:,:,:)       
-    REAL(wp), POINTER ::  co2mr(:,:)       
-    REAL(wp), POINTER ::  pco2(:,:)       
-    REAL(wp), POINTER ::  cflux(:,:)       
-    REAL(wp), POINTER ::  nflux(:,:)       
-    REAL(wp), POINTER ::  n2oflux(:,:)       
-    REAL(wp), POINTER ::  dmsflux(:,:)       
-    REAL(wp), POINTER ::  oflux(:,:)       
-    REAL(wp), POINTER ::  nfixd(:,:)       
-    REAL(wp), POINTER ::  delsil(:,:,:)       
-    REAL(wp), POINTER ::  delcar(:,:,:)       
-    REAL(wp), POINTER ::  prcaca(:,:)       
-    REAL(wp), POINTER ::  produs(:,:)       
-    REAL(wp), POINTER ::  prorca(:,:)       
-    REAL(wp), POINTER ::  silpro(:,:)       
-    REAL(wp), POINTER ::  coex90(:,:)       
-    REAL(wp), POINTER ::  opex90(:,:)       
-    REAL(wp), POINTER ::  calex90(:,:)       
-    REAL(wp), POINTER ::  coex1000(:,:)       
-    REAL(wp), POINTER ::  opex1000(:,:)       
-    REAL(wp), POINTER ::  calex1000(:,:)       
-    REAL(wp), POINTER ::  coex2000(:,:)       
-    REAL(wp), POINTER ::  opex2000(:,:)       
-    REAL(wp), POINTER ::  calex2000(:,:)       
-    REAL(wp), POINTER ::  orginp(:,:)   ! for now constant value read via nml    
-    REAL(wp), POINTER ::  silinp(:,:)   ! later riverine input possible     
-    REAL(wp), POINTER ::  calinp(:,:)   ! via mo_bgc_bcond    
-  !  REAL(wp), POINTER ::  nitinp(:,:)     ! nitrogen input 
-    REAL(wp), POINTER ::  h2obudget(:,:,:)       
-    REAL(wp), POINTER ::  n2budget(:,:,:)       
-    REAL(wp), POINTER ::  sedflic(:,:)       
-    REAL(wp), POINTER ::  sedflal(:,:)       
-    REAL(wp), POINTER ::  sedflph(:,:)       
-    REAL(wp), POINTER ::  sedflox(:,:)       
-    REAL(wp), POINTER ::  sedflsi(:,:)       
-    REAL(wp), POINTER ::  sedflfe(:,:)       
-    REAL(wp), POINTER ::  sedfln2(:,:)       
-    REAL(wp), POINTER ::  sedflno3(:,:)       
-    REAL(wp), POINTER ::  sedflh2s(:,:)       
-    REAL(wp), POINTER ::  sedro2(:,:,:)       
-    REAL(wp), POINTER ::  sedrn(:,:,:)       
-    REAL(wp), POINTER ::  sedrs(:,:,:)       
-    REAL(wp), POINTER ::  dmsprod(:,:,:)       
-    REAL(wp), POINTER ::  dmsbac(:,:,:)       
-    REAL(wp), POINTER ::  dmsuv(:,:,:)       
-    REAL(wp), POINTER ::  euexp(:,:,:)       
-    REAL(wp), POINTER ::  plim(:,:,:)       
-    REAL(wp), POINTER ::  flim(:,:,:)       
-    REAL(wp), POINTER ::  nlim(:,:,:)       
-    REAL(wp), POINTER ::  aksp(:,:,:)       
-    REAL(wp), POINTER ::  akb(:,:,:)       
-    REAL(wp), POINTER ::  akw(:,:,:)       
-    REAL(wp), POINTER ::  ak1(:,:,:)       
-    REAL(wp), POINTER ::  ak2(:,:,:)       
+    REAL(wp), POINTER ::  npp(:,:,:)
+    REAL(wp), POINTER ::  phoc(:,:,:)
+    REAL(wp), POINTER ::  cyloss(:,:,:)
+    REAL(wp), POINTER ::  graz(:,:,:)
+    REAL(wp), POINTER ::  graton(:,:,:)
+    REAL(wp), POINTER ::  exud(:,:,:)
+    REAL(wp), POINTER ::  exudz(:,:,:)
+    REAL(wp), POINTER ::  zoomor(:,:,:)
+    REAL(wp), POINTER ::  phymor(:,:,:)
+    REAL(wp), POINTER ::  nfix(:,:,:)
+    REAL(wp), POINTER ::  remina(:,:,:)
+    REAL(wp), POINTER ::  remins(:,:,:)
+    REAL(wp), POINTER ::  reminn(:,:,:)
+    REAL(wp), POINTER ::  bacfra(:,:,:)
+    REAL(wp), POINTER ::  co2mr(:,:)
+    REAL(wp), POINTER ::  pco2(:,:)
+    REAL(wp), POINTER ::  cflux(:,:)
+    REAL(wp), POINTER ::  nflux(:,:)
+    REAL(wp), POINTER ::  n2oflux(:,:)
+    REAL(wp), POINTER ::  dmsflux(:,:)
+    REAL(wp), POINTER ::  oflux(:,:)
+    REAL(wp), POINTER ::  nfixd(:,:)
+    REAL(wp), POINTER ::  delsil(:,:,:)
+    REAL(wp), POINTER ::  delcar(:,:,:)
+    REAL(wp), POINTER ::  prcaca(:,:)
+    REAL(wp), POINTER ::  produs(:,:)
+    REAL(wp), POINTER ::  prorca(:,:)
+    REAL(wp), POINTER ::  silpro(:,:)
+    REAL(wp), POINTER ::  coex90(:,:)
+    REAL(wp), POINTER ::  opex90(:,:)
+    REAL(wp), POINTER ::  calex90(:,:)
+    REAL(wp), POINTER ::  coex1000(:,:)
+    REAL(wp), POINTER ::  opex1000(:,:)
+    REAL(wp), POINTER ::  calex1000(:,:)
+    REAL(wp), POINTER ::  coex2000(:,:)
+    REAL(wp), POINTER ::  opex2000(:,:)
+    REAL(wp), POINTER ::  calex2000(:,:)
+    REAL(wp), POINTER ::  orginp(:,:)   ! for now constant value read via nml
+    REAL(wp), POINTER ::  silinp(:,:)   ! later riverine input possible
+    REAL(wp), POINTER ::  calinp(:,:)   ! via mo_bgc_bcond
+  !  REAL(wp), POINTER ::  nitinp(:,:)     ! nitrogen input
+    REAL(wp), POINTER ::  h2obudget(:,:,:)
+    REAL(wp), POINTER ::  n2budget(:,:,:)
+    REAL(wp), POINTER ::  sedflic(:,:)
+    REAL(wp), POINTER ::  sedflal(:,:)
+    REAL(wp), POINTER ::  sedflph(:,:)
+    REAL(wp), POINTER ::  sedflox(:,:)
+    REAL(wp), POINTER ::  sedflsi(:,:)
+    REAL(wp), POINTER ::  sedflfe(:,:)
+    REAL(wp), POINTER ::  sedfln2(:,:)
+    REAL(wp), POINTER ::  sedflno3(:,:)
+    REAL(wp), POINTER ::  sedflh2s(:,:)
+    REAL(wp), POINTER ::  sedro2(:,:,:)
+    REAL(wp), POINTER ::  sedrn(:,:,:)
+    REAL(wp), POINTER ::  sedrs(:,:,:)
+    REAL(wp), POINTER ::  dmsprod(:,:,:)
+    REAL(wp), POINTER ::  dmsbac(:,:,:)
+    REAL(wp), POINTER ::  dmsuv(:,:,:)
+    REAL(wp), POINTER ::  euexp(:,:,:)
+    REAL(wp), POINTER ::  plim(:,:,:)
+    REAL(wp), POINTER ::  flim(:,:,:)
+    REAL(wp), POINTER ::  nlim(:,:,:)
+    REAL(wp), POINTER ::  aksp(:,:,:)
+    REAL(wp), POINTER ::  akb(:,:,:)
+    REAL(wp), POINTER ::  akw(:,:,:)
+    REAL(wp), POINTER ::  ak1(:,:,:)
+    REAL(wp), POINTER ::  ak2(:,:,:)
     REAL(wp), POINTER ::  aksi(:,:,:)
     REAL(wp), POINTER ::  aks(:,:,:)
     REAL(wp), POINTER ::  akf(:,:,:)
     REAL(wp), POINTER ::  ak1p(:,:,:)
     REAL(wp), POINTER ::  ak2p(:,:,:)
     REAL(wp), POINTER ::  ak3p(:,:,:)
-    REAL(wp), POINTER ::  satoxy(:,:,:)       
-    REAL(wp), POINTER ::  satn2(:,:)       
-    REAL(wp), POINTER ::  satn2o(:,:)       
-    REAL(wp), POINTER ::  solco2(:,:)       
-    REAL(wp), POINTER ::  aou(:,:,:)       
-    REAL(wp), POINTER ::  cTlim(:,:,:)       
-    REAL(wp), POINTER ::  cLlim(:,:,:)       
-    REAL(wp), POINTER ::  cPlim(:,:,:)       
-    REAL(wp), POINTER ::  cFlim(:,:,:)       
-    REAL(wp), POINTER ::  o2min(:,:)       
-    REAL(wp), POINTER ::  zo2min(:,:)       
-    REAL(wp), POINTER ::  h2sprod(:,:,:)       
-    REAL(wp), POINTER ::  h2sloss(:,:,:)       
+    REAL(wp), POINTER ::  satoxy(:,:,:)
+    REAL(wp), POINTER ::  satn2(:,:)
+    REAL(wp), POINTER ::  satn2o(:,:)
+    REAL(wp), POINTER ::  solco2(:,:)
+    REAL(wp), POINTER ::  aou(:,:,:)
+    REAL(wp), POINTER ::  cTlim(:,:,:)
+    REAL(wp), POINTER ::  cLlim(:,:,:)
+    REAL(wp), POINTER ::  cPlim(:,:,:)
+    REAL(wp), POINTER ::  cFlim(:,:,:)
+    REAL(wp), POINTER ::  o2min(:,:)
+    REAL(wp), POINTER ::  zo2min(:,:)
+    REAL(wp), POINTER ::  h2sprod(:,:,:)
+    REAL(wp), POINTER ::  h2sloss(:,:,:)
     REAL(wp), POINTER ::  lysocline(:,:)
     REAL(wp), POINTER ::  nitrogeninp(:,:)
 
@@ -230,20 +247,21 @@ MODULE mo_hamocc_types
     REAL(wp), POINTER ::  dnrn(:,:,:)
     REAL(wp), POINTER ::  dnra(:,:,:)
     REAL(wp), POINTER ::  anam(:,:,:)
-    REAL(wp), POINTER ::  sedflnh4(:,:)       
-    REAL(wp), POINTER ::  sedflno2(:,:)  
-    REAL(wp), POINTER ::  sedammox(:,:,:)       
-    REAL(wp), POINTER ::  sednitox(:,:,:)       
+    REAL(wp), POINTER ::  sedflnh4(:,:)
+    REAL(wp), POINTER ::  sedflno2(:,:)
+    REAL(wp), POINTER ::  sedammox(:,:,:)
+    REAL(wp), POINTER ::  sednitox(:,:,:)
     REAL(wp), POINTER ::  sedanam(:,:,:)
-    REAL(wp), POINTER ::  seddnrn(:,:,:)       
-    REAL(wp), POINTER ::  seddnra(:,:,:)       
-    REAL(wp), POINTER ::  sednrn2(:,:,:)     
+    REAL(wp), POINTER ::  seddnrn(:,:,:)
+    REAL(wp), POINTER ::  seddnra(:,:,:)
+    REAL(wp), POINTER ::  sednrn2(:,:,:)
     REAL(wp), POINTER ::  wdust(:,:,:)
     REAL(wp), POINTER ::  wpoc(:,:,:)
     REAL(wp), POINTER ::  wopal(:,:,:)
     REAL(wp), POINTER ::  wcal(:,:,:)
 
     TYPE(t_hamocc_monitor) :: monitor
+    TYPE(t_hamocc_vertint) :: vertint
   END TYPE t_hamocc_tend
 
  TYPE t_hamocc_agg  ! mm: agg
@@ -266,7 +284,7 @@ MODULE mo_hamocc_types
   TYPE t_hamocc_prog
     REAL(wp), POINTER :: tracer(:,:,:,:)
     TYPE(t_tracer_collection) :: tracer_collection
-    TYPE(t_onCells_Pointer_3d_wp), ALLOCATABLE :: tracer_ptr(:) 
+    TYPE(t_onCells_Pointer_3d_wp), ALLOCATABLE :: tracer_ptr(:)
   END TYPE t_hamocc_prog
 
 ! array of states
@@ -277,7 +295,7 @@ MODULE mo_hamocc_types
     TYPE(t_hamocc_sed)  :: p_sed
     TYPE(t_hamocc_agg)  :: p_agg
     TYPE(t_hamocc_prog), ALLOCATABLE :: p_prog(:)
-    
+
   END TYPE t_hamocc_state
 
   TYPE t_hamocc_bcond
@@ -289,6 +307,4 @@ MODULE mo_hamocc_types
    REAL(wp), POINTER:: produs(:,:)       !  index1=1,nproma, nblks_e
   END TYPE t_hamocc_bcond
 
-END MODULE 
-
-
+END MODULE

@@ -1,19 +1,18 @@
-! Types and procedures for save/restore of 5D fields
-!
-! This module contains types and procedures for saving and
-! restoring arbitrary 5D fields to/from a key-value storage.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Types and procedures for save/restore of 5D fields
+!
+! This module contains types and procedures for saving and
+! restoring arbitrary 5D fields to/from a key-value storage.
 
 MODULE mo_save_restore
 
@@ -35,10 +34,6 @@ MODULE mo_save_restore
   USE mo_util_string,             ONLY: pretty_print_string_list
   USE mo_fortran_tools,           ONLY: copy, init
 
-#if defined(__PGI) || defined(__FLANG)
-  USE mo_util_texthash,           ONLY: t_char_workaround
-#endif
-
   IMPLICIT NONE
 
   PRIVATE
@@ -51,7 +46,7 @@ MODULE mo_save_restore
   PUBLIC :: t_saved_field
 
   ! subroutines
-  PUBLIC :: save_var_group_state 
+  PUBLIC :: save_var_group_state
   PUBLIC :: restore_var_group_state
   PUBLIC :: reinit_var_group_state
 
@@ -121,10 +116,6 @@ CONTAINS
     CHARACTER(len=vname_len), ALLOCATABLE :: savedGroup(:)
     INTEGER :: savedGroupSize
     INTEGER :: i, jg
-#if defined(__PGI) || defined(__FLANG)
-    TYPE(t_char_workaround), POINTER :: key_p
-#endif
-
 
     ! skip patch, if inactive
     IF (.NOT. p_patch%ldom_active) RETURN
@@ -158,6 +149,15 @@ CONTAINS
 
   CONTAINS
 
+#if defined(__PGI) || defined(__FLANG)
+    ! workaround for compiler limitations
+    SUBROUTINE alloc_ptr_from_str(ptr, src)
+      CLASS(*), POINTER, INTENT(out) :: ptr
+      CHARACTER(len=*), INTENT(in) :: src
+      ALLOCATE(ptr, SOURCE=src)
+    END SUBROUTINE alloc_ptr_from_str
+#endif
+
     SUBROUTINE save(fields, var)
       TYPE(t_HashTable), INTENT(INOUT) :: fields
       TYPE(t_var),       INTENT(IN)    :: var
@@ -174,7 +174,7 @@ CONTAINS
       ! skip variables which are defined on a regular lat-lon grid
       IF (var%info%hgrid == GRID_REGULAR_LONLAT) RETURN
       !
-      ! abort if a variable is a reference to a container slice and 
+      ! abort if a variable is a reference to a container slice and
       ! if the corresponding container is in the same group.
       ! This avoids duplicate entries of the same thing.
       IF (ASSOCIATED(var%ref_to)) THEN  ! variable at hand is a reference
@@ -207,9 +207,7 @@ CONTAINS
       ENDIF
 
 #if defined(__PGI) || defined(__FLANG)
-      ALLOCATE(key_p)
-      key_p%c = TRIM(get_var_name(var%info))
-      key => key_p
+      CALL alloc_ptr_from_str(key, TRIM(get_var_name(var%info)))
 #else
       ALLOCATE(key, SOURCE=TRIM(get_var_name(var%info)))
 #endif
@@ -232,8 +230,6 @@ CONTAINS
     END SUBROUTINE save
 
   END SUBROUTINE save_var_group_state
-
-
 
   !>
   !! Restore state of a variable group. E.g. used for iterative IAU (see mo_iau.f90).

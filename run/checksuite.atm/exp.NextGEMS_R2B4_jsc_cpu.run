@@ -9,7 +9,7 @@
 #SBATCH --account=exaww
 
 
-module --force purge 
+module --force purge
 export USERINSTALLATIONS=/p/usersoftware/slmet/easybuild/stages/2023/
 module load Stages/2023 NVHPC/23.1 ParaStationMPI/5.8.0-1 netCDF-Fortran ecCodes libfyaml CMake
 module list
@@ -30,7 +30,7 @@ ulimit -c 0
 # with_mpi=yes
 # with_openmp=no
 # memory_model=large
-# submit with 
+# submit with
 #
 builder=default_pgi
 #=============================================================================
@@ -47,7 +47,7 @@ export OMP_STACKSIZE=200M
 # -------------
 no_of_nodes=${SLURM_JOB_NUM_NODES:=1}
 num_io_procs=4           # Note that it should match the number of atm output files
-mpi_procs_pernode=${SLURM_TASKS_PER_NODE:=4}
+mpi_procs_pernode=${SLURM_NTASKS_PER_NODE:=4}
 ((mpi_total_procs=no_of_nodes * mpi_procs_pernode))
 #
 # blocking length
@@ -107,7 +107,7 @@ cdo_diff="cdo diffn"
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -135,7 +135,7 @@ author_list='Monika Esch, MPIM'
 # nproma_sub             = radiation blocking length
 #                          which is set in run/create_target_header for the used machine
 #
-icon_data_poolFolder="/p/fastdata/slmet/slmet111/model_data/ICON"
+icon_data_poolFolder="/p/data1/slmet/model_data/ICON"
 
 
 #--------------------------------------------------------------------------------------------------
@@ -186,8 +186,10 @@ lcarbon=$([ "${jsbach_with_carbon:=yes}" == yes ] && echo .TRUE. || echo .FALSE.
 #
 if [[ $jsbach_usecase == *pfts* ]]
 then
-  pft_file_tag="11pfts_"
+  npft=11
+  pft_file_tag="${npft}pfts_"
 else
+  npft=0
   pft_file_tag=""
 fi
 
@@ -358,8 +360,8 @@ cat > ${atmo_namelist} << EOF
 /
 &aes_cop_nml
  aes_cop_config(1)%cinhomi  = 1.0
- aes_cop_config(1)%cinhoms  = 1.0
- aes_cop_config(1)%cinhoml  = 0.4
+ aes_cop_config(1)%cinhoml_cfl= 0.4
+ aes_cop_config(1)%cinhoml_cfo= 0.4
  aes_cop_config(1)%cn1lnd   = 50.0
  aes_cop_config(1)%cn1sea   = 50.0
  aes_cop_config(1)%cn2lnd   = 220.0
@@ -386,6 +388,7 @@ EOF
 cat > ${jsbach_namelist} << EOF
 &jsb_model_nml
  usecase             = "${jsbach_usecase}"
+ npft                = ${npft}
  use_lakes           = .TRUE.
  use_tmx             = .TRUE.    ! adapted to ngc3039, does not work proper yet
  fract_filename      = 'bc_land_frac.nc'
@@ -410,7 +413,6 @@ cat > ${jsbach_namelist} << EOF
  l_heat_cond_map     = .FALSE.
  l_heat_cap_dyn      = .FALSE.
  l_heat_cond_dyn     = .FALSE.
- l_snow              = .TRUE.
  l_dynsnow           = .TRUE.
  l_freeze            = .TRUE.
  l_supercool         = .FALSE.
@@ -420,6 +422,7 @@ cat > ${jsbach_namelist} << EOF
 /
 &jsb_hydro_nml
  l_socmap            = .FALSE.
+ l_organic           = .FALSE.
  bc_filename         = 'bc_land_soil.nc'
  ic_filename         = 'ic_land_soil.nc'
  bc_sso_filename     = 'bc_land_sso.nc'
@@ -477,13 +480,13 @@ cat dict.iconam.mpim  > ${dict_file}
 add_required_file ${basedir}/run/${dict_file}                             ./
 
 # initial and boundary conditions
-# 
+#
 datadir=${icon_data_poolFolder}/${grid_id}/initial_condition/r0001
 add_link_file $datadir/ifs2icon_1979010100_${grid_refinement}_G.nc        ./ifs2icon.nc
 #
 datadir=${icon_data_poolFolder}/${grid_id}/ozone/r0001
 add_link_file $datadir/bc_ozone_picontrol.nc                              ./bc_ozone.nc
-# 
+#
 datadir=${icon_data_poolFolder}/${grid_id}/sst_and_seaice/r0001
 add_link_file $datadir/bc_sic_1979_2016.nc                                ./bc_sic.nc
 add_link_file $datadir/bc_sst_1979_2016.nc                                ./bc_sst.nc
@@ -501,7 +504,7 @@ add_link_file $datadir/swflux_14band_cmip6_1850-2299-v3.2.nc              ./bc_s
 #
 datadir=${icon_data_poolFolder}/${grid_id_land}/land/r0002
 add_link_file $datadir/ic_land_soil_1979.nc                               ./ic_land_soil.nc
-add_link_file $datadir/bc_land_frac_1979.nc                               ./bc_land_frac.nc
+add_link_file $datadir/bc_land_frac_${pft_file_tag}1979.nc                ./bc_land_frac.nc
 add_link_file $datadir/bc_land_phys_1979.nc                               ./bc_land_phys.nc
 add_link_file $datadir/bc_land_soil_1979.nc                               ./bc_land_soil.nc
 add_link_file $datadir/bc_land_sso_1979.nc                                ./bc_land_sso.nc
@@ -640,7 +643,7 @@ ldd ${MODEL}
 # ICON
 #
 # ---------------------------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -649,7 +652,7 @@ ldd ${MODEL}
 
 #=============================================================================
 #
-# This section of the run script prepares and starts the model integration. 
+# This section of the run script prepares and starts the model integration.
 #
 # MODEL and START must be defined as environment variables or
 # they must be substituted with appropriate values.
@@ -727,7 +730,7 @@ if [ x$namelist_list = x ]; then
     modeltype_list[0]=99
   else
     check_error 1 "No namelist is defined"
-  fi 
+  fi
 fi
 
 #-----------------------------------------------------------------------------
@@ -789,7 +792,7 @@ for gridfile in ${all_grids}; do
   ls -l ${HGRIDDIR}/$gridfile
   check_error $? "${HGRIDDIR}/$gridfile does not exist."
   add_link_file ${HGRIDDIR}/${gridfile} ./
-  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then    
+  if [ -f ${HGRIDDIR}/${grfinfofile} ]; then
     add_link_file ${HGRIDDIR}/${grfinfofile} ./
   fi
 done
@@ -1062,7 +1065,7 @@ cd $RUNSCRIPTDIR
 
 #-----------------------------------------------------------------------------
 
-	
+
 # exit 0
 #
 # vim:ft=sh

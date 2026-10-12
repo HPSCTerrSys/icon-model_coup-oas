@@ -1,18 +1,17 @@
-! Provide an implementation of ice thermodynamic growth model: ice_slow_thermo.
-! Calculates ice growth rate over thick ice and open ocean. Updates heat
-! and fresh-water fluxes which are passed to the ocean for coupling.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of ice thermodynamic growth model: ice_slow_thermo.
+! Calculates ice growth rate over thick ice and open ocean. Updates heat
+! and fresh-water fluxes which are passed to the ocean for coupling.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -124,12 +123,13 @@ CONTAINS
     ! totalsnowfall is applied in ice_growth_*
     DO jb = 1,p_patch%nblks_c
       CALL get_index_range(p_patch%cells%all, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         ice%totalsnowfall(jc, jb) =  atmos_fluxes%rpreci(jc, jb) * dtime
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 
     ! thick ice growth/melt (K-classes): calculates ice%hs, ice%hi, ice%heatOceI
     !-------------------------------------------------------------------------------
@@ -147,12 +147,13 @@ CONTAINS
 
     DO jb = 1,p_patch%nblks_c
       CALL get_index_range(p_patch%cells%all, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c,i_endidx_c
         ice%totalsnowfall(jc, jb) =  ice%totalsnowfall(jc, jb) * ice%concSum(jc, jb)
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 
     !-------------------------------------------------------------------------------
     CALL dbg_print('IceSlow: aftZero: totalSnF', ice%totalsnowfall, str_module, 3, in_subset=p_patch%cells%owned)
@@ -245,9 +246,14 @@ CONTAINS
 
     !$ACC DATA CREATE(AvailMLHeat) IF(lzacc)
 
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
-    AvailMLHeat(:,:) = 0.0_wp
-    !$ACC END KERNELS
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+    DO jb = 1, p_patch%alloc_cell_blocks
+      DO jc = 1, nproma
+        AvailMLHeat(jc,jb) = 0.0_wp
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
     !-------------------------------------------------------------------------------
     CALL dbg_print('IceOpenOcean bef: SST',     sst,            str_module, 4, in_subset=p_patch%cells%owned)
     CALL dbg_print('IceOpenOcean bef: newice',  ice%newice,     str_module, 4, in_subset=p_patch%cells%owned)
@@ -257,7 +263,7 @@ CONTAINS
     !TODOram: openmp
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c, i_endidx_c
         IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
 
@@ -293,6 +299,7 @@ CONTAINS
       END DO
       !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 
     !$ACC END DATA
 
@@ -347,20 +354,27 @@ CONTAINS
 
     !$ACC DATA CREATE(fi1, fi2, fi3, snowiceave, icegrowave, snowmelted) IF(lzacc)
 
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
-    fi1         (:,:) = 0.0_wp
-    fi2         (:,:) = 0.0_wp
-    fi3         (:,:) = 0.0_wp
-    snowiceave  (:,:) = 0.0_wp
-    icegrowave  (:,:) = 0.0_wp
-    snowmelted  (:,:) = 0.0_wp
-    !$ACC END KERNELS
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+    DO jb = 1, p_patch%alloc_cell_blocks
+      DO jc = 1, nproma
+        fi1         (jc,jb) = 0.0_wp
+        fi2         (jc,jb) = 0.0_wp
+        fi3         (jc,jb) = 0.0_wp
+        snowiceave  (jc,jb) = 0.0_wp
+        icegrowave  (jc,jb) = 0.0_wp
+        snowmelted  (jc,jb) = 0.0_wp
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
+
     !-------------------------------------------------------------------------------
 
   !TODOram: openmp
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+#ifndef __LVECTOR__
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c, i_endidx_c
         IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
 
@@ -423,7 +437,116 @@ CONTAINS
 
       END DO
       !$ACC END PARALLEL LOOP
+#else
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+
+        ! Collect the atm fluxes into p_oce_sfc
+        p_oce_sfc%HeatFlux_ShortWave(jc,jb) = atmos_fluxes%SWnetw(jc,jb)*(1.0_wp-ice%concSum(jc,jb))
+        p_oce_sfc%HeatFlux_LongWave (jc,jb) = atmos_fluxes%LWnetw(jc,jb)*(1.0_wp-ice%concSum(jc,jb))
+        p_oce_sfc%HeatFlux_Sensible (jc,jb) = atmos_fluxes%sensw (jc,jb)*(1.0_wp-ice%concSum(jc,jb))
+        p_oce_sfc%HeatFlux_Latent   (jc,jb) = atmos_fluxes%latw  (jc,jb)*(1.0_wp-ice%concSum(jc,jb))
+
+      END DO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+        ! heatOceI is calculated in ice_growth_*; heatOceW is calculated in ice_open_ocean
+        p_oce_sfc%HeatFlux_Total(jc,jb) = SUM(ice%heatOceI(jc,:,jb)) + ice%heatOceW(jc,jb)
+      END DO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+
+        ! Volmue flux (rain that goes through ice)
+        p_oce_sfc%FrshFlux_VolumeIce(jc,jb) = atmos_fluxes%rprecw(jc,jb)*ice%concSum(jc,jb)
+      END DO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+
+        ! FrshFlux_TotalIce contains fluxes that do not change the total fresh-water volume in the cell
+        IF (v_base%lsm_c(jc,1,jb) <= sea_boundary ) THEN
+
+          snowiceave(jc,jb) = SUM( ice%snow_to_ice(jc,:,jb)*ice%conc(jc,:,jb) )
+        ENDIF
+      END DO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+        IF (v_base%lsm_c(jc,1,jb) <= sea_boundary ) THEN
+          ! thickness of ice growth/melt + new ice in open water + snow_to_ice conversion (in cell-average water equiv.)
+          icegrowave(jc,jb) = ( (SUM(ice%delhi(jc,:,jb)) + ice%newice(jc,jb))*rhoi + snowiceave(jc,jb)*rhos ) / rho_ref
+        ENDIF
+      END DO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+        IF (v_base%lsm_c(jc,1,jb) <= sea_boundary ) THEN
+          ! total salt flux from ocean to sea ice:
+          p_oce_sfc%FrshFlux_IceSalt(jc,jb) = - sice * icegrowave(jc,jb) / dtime
+        ENDIF
+      END DO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+        IF (v_base%lsm_c(jc,1,jb) <= sea_boundary ) THEN
+
+          IF (vert_cor_type == 0) THEN
+            fi1(jc,jb) = - (1._wp-sice/sss(jc,jb)) * ( SUM( ice%delhi(jc,:,jb) )*rhoi + snowiceave(jc,jb)*rhos )/(rho_ref*dtime)
+          ELSEIF (vert_cor_type == 1) THEN
+            fi1(jc,jb) = - ( SUM( ice%delhi(jc,:,jb) )*rhoi + snowiceave(jc,jb)*rhos )/(rho_ref*dtime)
+          ENDIF
+        ENDIF
+      END DO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+        IF (v_base%lsm_c(jc,1,jb) <= sea_boundary ) THEN
+
+          snowmelted(jc,jb) = ( SUM( ice%delhs(jc,:,jb) )- snowiceave(jc,jb))*rhos/rho_ref-ice%totalsnowfall(jc,jb)
+        ENDIF
+      END DO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG(STATIC: 1) VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        IF (all_cells%vertical_levels(jc,jb) < 1) CYCLE ! Ocean points only
+        IF (v_base%lsm_c(jc,1,jb) <= sea_boundary ) THEN
+          fi2(jc,jb) = - MIN(snowmelted(jc,jb), 0.0_wp)/dtime
+
+          ! new ice formation
+          IF (vert_cor_type == 0) THEN
+            fi3(jc,jb) =-(1._wp-sice/sss(jc,jb))*ice%newice(jc,jb)*rhoi/(rho_ref*dtime)
+          ELSEIF (vert_cor_type == 1) THEN
+            fi3(jc,jb) = - ice%newice(jc,jb)*rhoi/(rho_ref*dtime)
+          ENDIF
+
+          ! total freshwater flux from sea ice thermodynamics:
+          p_oce_sfc%FrshFlux_TotalIce(jc,jb) = fi1(jc,jb) + fi2(jc,jb) + fi3(jc,jb)
+
+        ENDIF
+
+      END DO
+      !$ACC END PARALLEL LOOP
+#endif
     END DO
+    !$ACC WAIT(1)
 
     !$ACC END DATA
 
@@ -561,13 +684,19 @@ CONTAINS
     ! surface layer thickness, same as patch_3d%p_patch_1d(1)%prism_thick_flat_sfc_c(:,1,:)
     prism_thick_flat = v_base%del_zlev_m(1)
     ! sea surface salinity
-    !$ACC KERNELS DEFAULT(PRESENT) IF(lzacc)
-    sss(:,:)  =  p_os%p_prog(nold(1))%tracer(:,1,:,2)
-    !$ACC END KERNELS
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+    DO jb = 1, p_patch%alloc_cell_blocks
+      DO jc = 1, nproma
+        sss(jc,jb)  =  p_os%p_prog(nold(1))%tracer(jc,1,jb,2)
+      END DO
+    END DO
+    !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
 
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+#ifndef __LVECTOR__
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c, i_endidx_c
 
         DO k = 1, p_ice%kice
@@ -613,7 +742,62 @@ CONTAINS
 
       ENDDO
       !$ACC END PARALLEL LOOP
+#else
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO k = 1, p_ice%kice
+        DO jc = i_startidx_c, i_endidx_c
+
+            z_smax = seaice_limit * prism_thick_flat
+
+            IF (vert_cor_type .eq. 1) THEN
+              z_smax = z_smax*p_os%p_prog(nold(1))%stretch_c(jc, jb)
+            END IF
+            IF (seaice_limit_abs > 0._wp .AND. z_smax > seaice_limit_abs) THEN
+              z_smax = seaice_limit_abs
+            ENDIF
+
+            IF ( v_base%lsm_c(jc,1,jb) <= sea_boundary  .AND.  p_ice%hi(jc,k,jb) > z_smax ) THEN
+                IF (vert_cor_type .EQ. 1 ) THEN  ! FrshFlx_Total_ice is used differently here
+                  p_oce_sfc%FrshFlux_TotalIce (jc,jb) = p_oce_sfc%FrshFlux_TotalIce (jc,jb)                      &
+                        & + (p_ice%hi(jc,k,jb)-z_smax)*p_ice%conc(jc,k,jb)*rhoi/(rho_ref*dtime)  ! Ice
+                ELSE
+                  p_oce_sfc%FrshFlux_TotalIce (jc,jb) = p_oce_sfc%FrshFlux_TotalIce (jc,jb)                      &
+                      & + (1._wp-sice/sss(jc,jb))*(p_ice%hi(jc,k,jb)-z_smax)*p_ice%conc(jc,k,jb)*rhoi/(rho_ref*dtime)  ! Ice
+                ENDIF
+
+                p_oce_sfc%FrshFlux_IceSalt(jc,jb) = p_oce_sfc%FrshFlux_IceSalt(jc,jb) &
+                  & + sice * (p_ice%hi(jc,k,jb)-z_smax)*p_ice%conc(jc,k,jb)*rhoi/(rho_ref*dtime)
+
+                p_oce_sfc%HeatFlux_Total(jc,jb) = p_oce_sfc%HeatFlux_Total(jc,jb)   &
+                      & + (p_ice%hi(jc,k,jb)-z_smax)*p_ice%conc(jc,k,jb)*alf*rhoi/dtime           ! Ice
+                p_ice%hi  (jc,k,jb) = z_smax
+                p_ice%vol (jc,k,jb) = p_ice%hi(jc,k,jb)*p_ice%conc(jc,k,jb)*p_patch%cells%area(jc,jb)
+            ENDIF
+
+            p_ice%draft(jc,k,jb)   = (rhos * p_ice%hs(jc,k,jb) + rhoi * p_ice%hi(jc,k,jb)) / rho_ref
+
+        ENDDO
+
+      ENDDO
+      !$ACC END PARALLEL LOOP
+
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      DO jc = i_startidx_c, i_endidx_c
+        p_ice%draftave(jc,jb) = 0._wp
+      END DO
+      !$ACC END PARALLEL LOOP
+      !$ACC WAIT(1)
+
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
+      DO k = LBOUND(p_ice%draft(i_startidx_c:i_endidx_c,:,jb),2), UBOUND(p_ice%draft(i_startidx_c:i_endidx_c,:,jb),2)
+        DO jc = i_startidx_c, i_endidx_c
+          p_ice%draftave (jc,jb) = p_ice%draftave (jc,jb) + (p_ice%draft(jc,k,jb) * p_ice%conc(jc,k,jb))
+        ENDDO
+      ENDDO
+      !$ACC END PARALLEL LOOP
+#endif
     ENDDO
+    !$ACC WAIT(1)
 
     !$ACC END DATA
 
@@ -658,7 +842,7 @@ CONTAINS
 
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, i_startidx_c, i_endidx_c)
-      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO jc = i_startidx_c, i_endidx_c
 
         DO k = 1, p_ice%kice
@@ -707,6 +891,7 @@ CONTAINS
       ENDDO
       !$ACC END PARALLEL LOOP
     ENDDO
+    !$ACC WAIT(1)
 
     !---------DEBUG DIAGNOSTICS-------------------------------------------
     CALL dbg_print('iceClUp: hi aft. limiter'     ,p_ice%hi       ,str_module, 3, in_subset=p_patch%cells%owned)
@@ -735,8 +920,8 @@ CONTAINS
     ! initialize ice-growth-related variables with zeros
     DO jb = 1, p_patch%nblks_c
       CALL get_index_range(p_patch%cells%all, jb, i_startidx_c, i_endidx_c)
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) COLLAPSE(2) ASYNC(1) IF(lzacc)
       DO k=1,ice%kice
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
         DO jc = i_startidx_c,i_endidx_c
           ice % zHeatOceI   (jc, k, jb) = 0._wp
           ice % heatOceI    (jc, k, jb) = 0._wp
@@ -751,9 +936,10 @@ CONTAINS
             ice % totalsnowfall (jc, jb) = 0._wp
           END IF
         END DO
-        !$ACC END PARALLEL LOOP
       END DO
+      !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 
   END SUBROUTINE ice_growth_init
 

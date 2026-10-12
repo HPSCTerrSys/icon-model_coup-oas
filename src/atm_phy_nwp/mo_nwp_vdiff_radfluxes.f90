@@ -1,20 +1,19 @@
-!
-! Surface radiation fluxes for the NWP VDIFF interface.
-!
-! This module is separate because it is required by the interface and sea model. Due to the
-! dependence on mo_nwp_phy_types it cannot be included with mo_nwp_vdiff_types because that would
-! introduce a cycle.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Surface radiation fluxes for the NWP VDIFF interface.
+!
+! This module is separate because it is required by the interface and sea model. Due to the
+! dependence on mo_nwp_phy_types it cannot be included with mo_nwp_vdiff_types because that would
+! introduce a cycle.
 
 MODULE mo_nwp_vdiff_radfluxes
 
@@ -23,6 +22,7 @@ MODULE mo_nwp_vdiff_radfluxes
   USE mo_loopindices, ONLY: get_indices_c
   USE mo_model_domain, ONLY: t_patch
   USE mo_nwp_phy_types, ONLY: t_nwp_phy_diag
+  USE mo_fortran_tools,                 ONLY: assert_acc_device_only
 
   IMPLICIT NONE
 
@@ -56,8 +56,9 @@ CONTAINS
 
   !> Initialize a `t_nwp_vdiff_surface_rad_fluxes` structure and compute downward radiation fluxes
   !! at surface from fluxes provided in `phy_diag`. This routine is OpenMP orphaned.
-  SUBROUTINE nwp_vdiff_surface_rad_fluxes_init (self, patch, phy_diag)
+  SUBROUTINE nwp_vdiff_surface_rad_fluxes_init (self, patch, phy_diag, lacc)
 
+    LOGICAL, INTENT(IN) :: lacc
     CLASS(t_nwp_vdiff_surface_rad_fluxes), INTENT(OUT) :: self !< Object to initialize.
 
     TYPE(t_patch), INTENT(IN) :: patch !< Current patch.
@@ -67,6 +68,8 @@ CONTAINS
 
     INTEGER :: i_startblk, i_endblk, i_blk
     INTEGER :: ics, ice, ic
+
+    CALL assert_acc_device_only ('nwp_vdiff_surface_rad_fluxes_init', lacc)
 
     !$OMP SINGLE
       ALLOCATE(self%flx_lw_down(SIZE(phy_diag%lwflxsfc, DIM=1), SIZE(phy_diag%lwflxsfc, DIM=2)))
@@ -128,7 +131,7 @@ CONTAINS
     TYPE(t_patch), INTENT(IN) :: patch !< Current patch.
     REAL(wp), INTENT(IN) :: albnirdif(:,:) !< diffuse NIR albedo.
     REAL(wp), INTENT(IN) :: albvisdif(:,:) !< diffuse VIS albedo.
-    REAL(wp), INTENT(OUT) :: albdif(:,:) !< average diffuse albedo.
+    REAL(wp), INTENT(INOUT) :: albdif(:,:) !< average diffuse albedo.
 
     !> Minimal reference flux for calculating albedos [W/m**2].
     REAL(wp), PARAMETER :: FLX_RAD_EPSILON = 1e-3_wp

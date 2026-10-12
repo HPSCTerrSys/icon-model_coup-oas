@@ -1,14 +1,7 @@
-!
-! Subroutine ml_ocean computes the surface temperature of a mixed
-! layer slab ocean based only on the vertical energy budget.  currently
-! there is no land/lakes, no ice, and no flux heat correction
-!
-! original purpose: use for a Radiative Convective Equilibrium APE exp
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -16,10 +9,16 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Subroutine ml_ocean computes the surface temperature of a mixed
+! layer slab ocean based only on the vertical energy budget.  currently
+! there is no land/lakes, no ice, and no flux heat correction
+!
+! original purpose: use for a Radiative Convective Equilibrium APE exp
+
 MODULE mo_ml_ocean
 
   USE mo_kind,               ONLY: wp
-  USE mo_physical_constants, ONLY: rho_ref  
+  USE mo_physical_constants, ONLY: rho_ref
 
   IMPLICIT NONE
   PUBLIC :: ml_ocean
@@ -58,7 +57,7 @@ CONTAINS
     dmixsea   = 50._wp   ! [m] depth of mixed layer (zdmix)
     cpsea     = 3994._wp ! [J/(kg K)] specific heat capacity of water (what temp? looks low to me)
 
-    zmixcap   = rho_ref*cpsea*dmixsea ! mixed layer heat capacity? 
+    zmixcap   = rho_ref*cpsea*dmixsea ! mixed layer heat capacity?
 
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP GANG VECTOR PRIVATE(zfluxw)

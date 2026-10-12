@@ -1,10 +1,7 @@
-!
-! Classes and functions for the turbulent mixing package (tmx)
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,17 +9,21 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Classes and functions for the turbulent mixing package (tmx)
+
 MODULE mo_tmx_process_class
 
   USE mo_kind, ONLY: wp
   USE mo_exception, ONLY: message, finish
-  USE mo_fortran_tools, ONLY: init
+  USE mo_fortran_tools, ONLY: init_contiguous_dp, init_contiguous_sp
+  USE mo_util_string, ONLY: int2string
   USE mtime,        ONLY: t_datetime => datetime
-  USE mo_variable, ONLY: t_variable, bind_variable, allocate_variable
-  USE mo_variable_list, ONLY: t_variable_list, t_variable_set
+  USE mo_timer, ONLY: new_timer
   USE mo_surrogate_class, ONLY: t_surrogate
-  USE mo_tmx_field_class, ONLY: t_tmx_field, t_tmx_field_list, t_domain !bind_tmx_field
+  USE mo_tmx_field_class, ONLY: t_tmx_field, t_tmx_field_p, t_domain !bind_tmx_field
   USE mo_tmx_time_integration_class, ONLY: t_time_scheme
+  USE mo_tmx_var, ONLY: t_tmx_var, t_tmx_var_p
+  USE memman, ONLY: var_descriptor, add_var_real, allocate_var_dp, get_var_data
 
 #ifdef _OPENACC
   use openacc
@@ -42,23 +43,21 @@ MODULE mo_tmx_process_class
     TYPE(t_domain),        POINTER     :: domain       !< Spatial domain
     REAL(wp)                           :: dt           !< Time step
     LOGICAL                            :: is_initial_time
-    TYPE(t_tmx_field_list)             :: states       !< State variables
-    TYPE(t_variable_list)              :: tendencies   !< Tendency variables
-    TYPE(t_variable_list)              :: new_states   !< New state variables
-    CLASS(t_variable_set), ALLOCATABLE :: diagnostics  !< Diagnostic variables
-    CLASS(t_variable_set), ALLOCATABLE :: config       !< Config variables
-    CLASS(t_variable_set), ALLOCATABLE :: inputs       !< Input variables
+    TYPE(t_tmx_field_p),   ALLOCATABLE :: states(:)       !< State variables
+    TYPE(t_tmx_var_p),     ALLOCATABLE :: tendencies(:)   !< Tendency variables
+    TYPE(t_tmx_var_p),     ALLOCATABLE :: new_states(:)   !< New state variables
+    INTEGER                            :: max_no_states = 0 !< Maximum number of states
     CLASS(t_time_scheme),  ALLOCATABLE :: time_scheme  !< Time integration scheme
     TYPE(t_tmx_process_p), POINTER     :: processes(:) => NULL() !< Subprocesses
+    INTEGER                            :: timer_compute, timer_diagnostics
   CONTAINS
-    PROCEDURE                          :: Init => Init_process
-    ! PROCEDURE(init_iface),     DEFERRED :: Init
-    PROCEDURE                          :: Lock_variable_sets
+    PROCEDURE                          :: Init_process => Init_tmx_process
+    PROCEDURE(init_iface),         DEFERRED :: Init
     PROCEDURE                          :: Add_process
-    PROCEDURE                          :: Add_state_r2d
-    PROCEDURE                          :: Add_state_r3d
+    ! PROCEDURE                          :: Add_state_r2d
+    PROCEDURE                          :: Add_state_multi
     PROCEDURE                          :: Add_state_shape_real
-    GENERIC                            :: Add_state => Add_state_r2d, Add_state_r3d, Add_state_shape_real
+    GENERIC                            :: Add_state => Add_state_multi, Add_state_shape_real
     PROCEDURE                          :: Set_time_scheme
     PROCEDURE                          :: Step_forward
     PROCEDURE(compute_iface),      DEFERRED :: Compute !< Compute
@@ -66,8 +65,7 @@ MODULE mo_tmx_process_class
     PROCEDURE(compute_diag_iface), DEFERRED :: Update_diagnostics !< Update diagnostics
     PROCEDURE                          :: Get_tendency_r2d
     PROCEDURE                          :: Get_tendency_r3d
-    PROCEDURE                          :: Get_diagnostic_r2d
-    PROCEDURE                          :: Get_diagnostic_r3d
+    PROCEDURE                          :: Get_tendency_r4d
   END TYPE t_tmx_process
 
   TYPE t_tmx_process_p
@@ -75,11 +73,10 @@ MODULE mo_tmx_process_class
   END TYPE t_tmx_process_p
 
   ABSTRACT INTERFACE
-    ! SUBROUTINE init_iface(this, config)
-    !   IMPORT :: t_tmx_process, t_variable_list
-    !   CLASS(t_tmx_process),  INTENT(inout) :: this
-    !   TYPE(t_variable_list), INTENT(in)    :: config
-    ! END SUBROUTINE
+    SUBROUTINE init_iface(this)
+      IMPORT :: t_tmx_process
+      CLASS(t_tmx_process), INTENT(inout), TARGET :: this
+    END SUBROUTINE
     SUBROUTINE compute_iface(this, datetime)
       IMPORT :: t_tmx_process, t_datetime
       CLASS(t_tmx_process),     INTENT(inout), TARGET :: this
@@ -92,14 +89,14 @@ MODULE mo_tmx_process_class
   END INTERFACE
 
   CHARACTER(len=*), PARAMETER :: modname = 'mo_tmx_process_class'
-  
+
 CONTAINS
 
-  SUBROUTINE Init_process(this, dt, name, domain)
+  SUBROUTINE Init_tmx_process(this, dt, name, domain)
 
     CLASS(t_tmx_process), INTENT(inout)        :: this
     REAL(wp),             INTENT(in)           :: dt
-    CHARACTER(len=*),     INTENT(in), OPTIONAL :: name 
+    CHARACTER(len=*),     INTENT(in), OPTIONAL :: name
     TYPE(t_domain),       POINTER,    OPTIONAL :: domain
 
     this%dt = dt
@@ -116,39 +113,17 @@ CONTAINS
       __acc_attach(this%domain)
     END IF
 
-    this%states      = t_tmx_field_list('states')
+    ALLOCATE(this%states(this%max_no_states))
     !$ACC ENTER DATA COPYIN(this%states)
-    this%new_states  = t_variable_list ('new states')
+    ALLOCATE(this%new_states(this%max_no_states))
     !$ACC ENTER DATA COPYIN(this%new_states)
-    ! this%tendencies  = t_tmx_field_list('tendencies')
-    this%tendencies  = t_variable_list ('tendencies')
+    ALLOCATE(this%tendencies(this%max_no_states))
     !$ACC ENTER DATA COPYIN(this%tendencies)
-    ! this%config      = t_variable_list ('config')
-    ! this%inputs      = t_variable_list ('inputs')
-    ! this%diagnostics = t_variable_list ('diagnostics')
 
-  END SUBROUTINE Init_process
+    this%timer_compute     = new_timer('tmx_'//name//'_compute')
+    this%timer_diagnostics = new_timer('tmx_'//name//'_diag')
 
-  RECURSIVE SUBROUTINE Lock_variable_sets(this)
-
-    CLASS(t_tmx_process), INTENT(inout):: this
-
-    INTEGER :: iproc
-
-    CHARACTER(len=*), PARAMETER :: routine = modname//':Lock_variable_sets'
-
-    IF (ALLOCATED(this%config))      CALL this%config%Set_pointers()
-    IF (ALLOCATED(this%inputs))      CALL this%inputs%Set_pointers()
-    IF (ALLOCATED(this%diagnostics)) CALL this%diagnostics%list%allocator()
-    IF (ALLOCATED(this%diagnostics)) CALL this%diagnostics%Set_pointers()
-
-    IF (ASSOCIATED(this%processes)) THEN
-      DO iproc=1,SIZE(this%processes)
-        CALL this%processes(iproc)%p%Lock_variable_sets()
-      END DO
-    END IF
-
-  END SUBROUTINE Lock_variable_sets
+  END SUBROUTINE Init_tmx_process
 
   SUBROUTINE Add_process(this, process)
 
@@ -178,17 +153,20 @@ CONTAINS
 
   END SUBROUTINE Add_process
 
-  SUBROUTINE Add_state_shape_real(this, name, type, dims)
-
-    USE mo_variable,        ONLY: t_variable, bind_variable
+  SUBROUTINE Add_state_shape_real(this, idx, dims, diffusion_type)
 
     CLASS(t_tmx_process), INTENT(inout), TARGET :: this
-    CHARACTER(len=*),     INTENT(in)            :: name
-    INTEGER,              INTENT(in)            :: type
+    INTEGER,              INTENT(in)            :: idx
     INTEGER,              INTENT(in)            :: dims(:)
+    INTEGER,              INTENT(in)            :: diffusion_type
 
-    TYPE(t_variable), POINTER :: tv
-    INTEGER :: ndims
+    INTEGER :: ndims, istat
+
+    TYPE(var_descriptor) :: var_desc
+    TYPE(t_tmx_field), POINTER :: field
+    TYPE(t_tmx_var), POINTER :: var
+    REAL(wp), POINTER :: ptr_r3d(:,:,:), ptr_r5d(:,:,:,:,:)
+    CHARACTER(LEN=:), ALLOCATABLE :: idx_str
 
     CHARACTER(len=*), PARAMETER :: routine = modname//':Add_state_shape_real'
 
@@ -223,209 +201,192 @@ CONTAINS
       END IF
     END IF
 
-    CALL this%states%append(t_tmx_field(name, dims, type))
-    tv => this%states%Search(name)
-    IF (tv%bound) CALL finish(routine, 'State variable for '//name//' already bound to outside variable')
-    CALL allocate_variable(tv)
+    idx_str = TRIM(ADJUSTL(int2string(idx)))
 
-    ! Add state variable to inputs list of process
-    ! tv => this%states%Search(name)
-    ! CALL this%inputs%list%append(tv)
+    var_desc = var_descriptor('TMX '//this%name//' state '//idx_str, 1, 1, 1, 1)
+    field => t_tmx_field(var_desc%name, "double", dims, diffusion_type, var_desc)
+    this%states(idx)%p => field
 
     ! Add variable to new_state varlist with the same attributes as state
-    CALL this%new_states%append(t_variable(name, dims, "", type_id="real"))
-    tv => this%new_states%Search(name)
-    IF (tv%bound) CALL finish(routine, 'new_state variable for '//name//' should not be bound to outside variable')
-    CALL allocate_variable(tv)
-!$OMP PARALLEL
-    IF (ndims == 2) THEN
-      CALL init(tv%r2d, lacc=.FALSE.)
-    ELSE IF (ndims == 3) THEN
-      CALL init(tv%r3d, lacc=.FALSE.)
-    ELSE IF (ndims == 4) THEN
-      CALL init(tv%r4d, lacc=.FALSE.)
-    ELSE
-      CALL finish(routine, 'ERROR')
-    END IF
-!$OMP END PARALLEL
-    
-    ! Add variable to tendencies varlist with the same attributes as state
-    CALL this%tendencies%append(t_variable(name, dims, "", type_id="real"))
-    tv => this%tendencies%Search(name)
-    IF (tv%bound) CALL finish(routine, 'Tendency variable for '//name//' should not be bound to outside variable')
-    CALL allocate_variable(tv)
-!$OMP PARALLEL
-    IF (ndims == 2) THEN
-      CALL init(tv%r2d, lacc=.FALSE.)
-    ELSE IF (ndims == 3) THEN
-      CALL init(tv%r3d, lacc=.FALSE.)
-    ELSE IF (ndims == 4) THEN
-      CALL init(tv%r4d, lacc=.FALSE.)
-    ELSE
-      CALL finish(routine, 'ERROR')
-    END IF
-!$OMP END PARALLEL
+    var_desc = var_descriptor('TMX '//this%name//' new state '//idx_str, &
+      &field%patch_id, field%hgrid_id, field%vgrid_id, 5)
 
-    tv => this%states%search(name)
-    CALL message(routine, 'New state: '//tv%name//' for process '//this%name)
+    var => t_tmx_var(var_desc%name, "double", var_desc, dims=dims)
+    this%new_states(idx)%p => var
+    istat = get_var_data(ptr_r5d, var_desc)
+    IF (istat /= 0) ERROR STOP
+!$OMP PARALLEL
+#ifdef __SINGLE_PRECISION
+    CALL init_contiguous_sp(ptr_r5d, PRODUCT(SHAPE(ptr_r5d)), 0._wp, lacc=.TRUE.)
+#else
+    CALL init_contiguous_dp(ptr_r5d, PRODUCT(SHAPE(ptr_r5d)), 0._wp, lacc=.TRUE.)
+#endif
+!$OMP END PARALLEL
+    NULLIFY(var, ptr_r5d)
+
+    ! Add variable to tendencies varlist with the same attributes as state
+    var_desc = var_descriptor('TMX '//this%name//' tendency '//idx_str, &
+      & field%patch_id, field%hgrid_id, field%vgrid_id, 6)
+    var => t_tmx_var(var_desc%name, "double", var_desc, dims=dims)
+    this%tendencies(idx)%p => var
+    istat = get_var_data(ptr_r5d, var_desc)
+    IF (istat /= 0) ERROR STOP
+!$OMP PARALLEL
+#ifdef __SINGLE_PRECISION
+    CALL init_contiguous_sp(ptr_r5d, PRODUCT(SHAPE(ptr_r5d)), 0._wp, lacc=.TRUE.)
+#else
+    CALL init_contiguous_dp(ptr_r5d, PRODUCT(SHAPE(ptr_r5d)), 0._wp, lacc=.TRUE.)
+#endif
+!$OMP END PARALLEL
+    NULLIFY(var, ptr_r5d)
+
+    CALL message(routine, 'New state: TMX '//idx_str//' for process '//this%name)
 
   END SUBROUTINE Add_state_shape_real
 
-  SUBROUTINE Add_state_r2d(this, name, type, field)
-
-    USE mo_variable,        ONLY: t_variable, bind_variable
+  SUBROUTINE Add_state_multi(this, idx, diffusion_type, var_desc, rank, ref_pos, ref_idx)
 
     CLASS(t_tmx_process), INTENT(inout), TARGET :: this
-    CHARACTER(len=*),     INTENT(in)            :: name
-    INTEGER,              INTENT(in)            :: type
-    REAL(wp),             POINTER               :: field(:,:)
+    INTEGER,              INTENT(in)            :: idx
+    INTEGER,              INTENT(in)            :: diffusion_type
+    TYPE(var_descriptor), INTENT(in)            :: var_desc
+    INTEGER,              INTENT(in)            :: rank
+    INTEGER, OPTIONAL,    INTENT(in)            :: ref_pos
+    INTEGER, OPTIONAL,    INTENT(in)            :: ref_idx(:)
 
-    TYPE(t_variable), POINTER :: tv
+    REAL(wp), POINTER :: ptr_r5d(:,:,:,:,:)
+    TYPE(t_tmx_field), POINTER :: field
+    TYPE(t_tmx_var), POINTER :: var
+    TYPE(var_descriptor) :: tmp_var_desc
+    INTEGER :: istat
+    INTEGER :: dims(rank)
+    INTEGER :: tmp_shape(5)
+    CHARACTER(LEN=:), ALLOCATABLE :: idx_str
 
-    CHARACTER(len=*), PARAMETER :: routine = modname//':Add_state_r2d'
+    CHARACTER(len=*), PARAMETER :: routine = modname//':Add_state_multi'
 
-    IF (SIZE(field,1) /= this%domain%nproma .OR. SIZE(field,2) /= this%domain%nblks_c) THEN
-      CALL finish(routine, 'Dimension mismatch')
+    idx_str = TRIM(ADJUSTL(int2string(idx)))
+
+    IF (rank < 2 .OR. rank > 4) CALL finish(routine, &
+      & 'State '//idx_str//' - only 2d, 3d or 4d variable supported')
+
+    istat = get_var_data(ptr_r5d, var_desc)
+    IF (istat /= 0) THEN
+      CALL finish(routine, var_desc%name//' not found.')
     END IF
 
-    CALL this%states%append(t_tmx_field(name, SHAPE(field), type))
-    ! CALL bind_tmx_field(this%states%search_field(name), field)
-    CALL bind_variable(this%states%search(name), field)
-    tv => this%states%Search(name)
+    tmp_shape(1:5) = SHAPE(ptr_r5d)
+    dims(1:rank) = tmp_shape(1:rank)
 
-    ! Add state variable to inputs list of process
-    ! tv => this%states%Search(name)
-    ! CALL this%inputs%list%append(tv)
+    field => t_tmx_field('TMX '//this%name//' state '//idx_str, &
+      & "double", dims, diffusion_type, var_desc, ref_pos, ref_idx)
+    this%states(idx)%p => field
+
+    SELECT CASE (field%rank)
+    CASE (2)
+      IF (SIZE(ptr_r5d,1) /= this%domain%nproma .OR. SIZE(ptr_r5d,2) /= this%domain%nblks_c) THEN
+        CALL finish(routine, 'Dimension mismatch for '//var_desc%name//' in '//this%name)
+      END IF
+    CASE (3)
+      IF (this%domain%ntiles > 1) THEN
+        IF (SIZE(ptr_r5d,1) /= this%domain%nproma .OR. SIZE(ptr_r5d,2) /= this%domain%nblks_c) THEN
+          CALL finish(routine, 'Dimension mismatch for '//var_desc%name//' in '//this%name)
+        END IF
+      ELSE IF (this%domain%nlev > 1) THEN
+        IF (SIZE(ptr_r5d,1) /= this%domain%nproma .OR. SIZE(ptr_r5d,3) /= this%domain%nblks_c) THEN
+          CALL finish(routine, 'Dimension mismatch for '//var_desc%name//' in '//this%name)
+        END IF
+      END IF
+    CASE (4)
+      IF (this%domain%ntiles > 1) THEN
+        IF (SIZE(ptr_r5d,1) /= this%domain%nproma .OR. SIZE(ptr_r5d,2) /= this%domain%nblks_c) THEN
+          CALL finish(routine, 'Dimension mismatch for '//var_desc%name//' in '//this%name)
+        END IF
+      ELSE IF (this%domain%nlev > 1) THEN
+        IF (SIZE(ptr_r5d,1) /= this%domain%nproma .OR. SIZE(ptr_r5d,3) /= this%domain%nblks_c) THEN
+          CALL finish(routine, 'Dimension mismatch for '//var_desc%name//' in '//this%name)
+        END IF
+      END IF
+    END SELECT
 
     ! Add variable to new_states varlist with the same attributes as state
-    CALL this%new_states%append(t_variable(name, SHAPE(field), "", type_id="real"))
-    tv => this%new_states%Search(name)
-    IF (tv%bound) CALL finish(routine, 'new_state variable for '//name//' should not be bound to outside variable')
-    CALL allocate_variable(tv)
+    tmp_var_desc = var_descriptor('TMX '//this%name//' new state '//idx_str, &
+      & field%patch_id, field%hgrid_id, field%vgrid_id, 5)
+
+    var => t_tmx_var(tmp_var_desc%name, "double", tmp_var_desc, dims=dims, ref_pos=ref_pos)
+    this%new_states(idx)%p => var
+    istat = get_var_data(ptr_r5d, tmp_var_desc)
 !$OMP PARALLEL
-    CALL init(tv%r2d, lacc=.FALSE.)
+#ifdef __SINGLE_PRECISION
+    CALL init_contiguous_sp(ptr_r5d, PRODUCT(SHAPE(ptr_r5d)), 0._wp, lacc=.TRUE.)
+#else
+    CALL init_contiguous_dp(ptr_r5d, PRODUCT(SHAPE(ptr_r5d)), 0._wp, lacc=.TRUE.)
+#endif
 !$OMP END PARALLEL
 
     ! Add variable to tendencies varlist with the same attributes as state
-    CALL this%tendencies%append(t_variable(name, SHAPE(field), "", type_id="real"))
-    tv => this%tendencies%Search(name)
-    IF (tv%bound) CALL finish(routine, 'Tendency variable for '//name//' should not be bound to outside variable')
-    CALL allocate_variable(tv)
+    tmp_var_desc = var_descriptor('TMX '//this%name//' tendency '//idx_str, &
+      & field%patch_id, field%hgrid_id, field%vgrid_id, 6)
+
+    var => t_tmx_var(tmp_var_desc%name, "double", tmp_var_desc, dims=dims, ref_pos=ref_pos)
+    this%tendencies(idx)%p => var
+    istat = get_var_data(ptr_r5d, tmp_var_desc)
 !$OMP PARALLEL
-    CALL init(tv%r2d, lacc=.FALSE.)
+#ifdef __SINGLE_PRECISION
+    CALL init_contiguous_sp(ptr_r5d, PRODUCT(SHAPE(ptr_r5d)), 0._wp, lacc=.TRUE.)
+#else
+    CALL init_contiguous_dp(ptr_r5d, PRODUCT(SHAPE(ptr_r5d)), 0._wp, lacc=.TRUE.)
+#endif
 !$OMP END PARALLEL
 
-    tv => this%states%search(name)
-    CALL message(routine, 'New state: '//tv%name//' for process '//this%name)
+    CALL message(routine, 'New state: TMX '//idx_str//' ('//field%var_descriptor%name//') for process '//this%name)
 
-  END SUBROUTINE Add_state_r2d
+  END SUBROUTINE Add_state_multi
 
-  SUBROUTINE Add_state_r3d(this, name, type, field)
-
-    USE mo_variable,        ONLY: t_variable, bind_variable
-
-    CLASS(t_tmx_process), INTENT(inout), TARGET :: this
-    CHARACTER(len=*),     INTENT(in)            :: name
-    INTEGER,              INTENT(in)            :: type
-    REAL(wp),             POINTER               :: field(:,:,:)
-
-    TYPE(t_variable), POINTER :: tv
-
-    CHARACTER(len=*), PARAMETER :: routine = modname//':Add_state_r3d'
-
-    IF (this%domain%ntiles > 1) THEN
-      IF (SIZE(field,1) /= this%domain%nproma .OR. SIZE(field,2) /= this%domain%nblks_c) THEN
-        CALL finish(routine, 'Dimension mismatch for '//name//' in '//this%name)
-      END IF
-    ELSE IF (this%domain%nlev > 1) THEN
-      IF (SIZE(field,1) /= this%domain%nproma .OR. SIZE(field,3) /= this%domain%nblks_c) THEN
-        CALL finish(routine, 'Dimension mismatch for '//name//' in '//this%name)
-      END IF
-    END IF
-
-    CALL this%states%append(t_tmx_field(name, SHAPE(field), type))
-    ! CALL bind_tmx_field(this%states%search_field(name), field)
-    CALL bind_variable(this%states%search(name), field)
-    ! tv => this%states%Search(name)
-
-    ! Add state variable to inputs list of process
-    ! tv => this%states%Search(name)
-    ! CALL this%inputs%list%append(tv)
-
-    ! Add variable to new_states varlist with the same attributes as state
-    CALL this%new_states%append(t_variable(name, SHAPE(field), "", type_id="real"))
-    tv => this%new_states%Search(name)
-    IF (tv%bound) CALL finish(routine, 'new_states variable for '//name//' should not be bound to outside variable')
-    CALL allocate_variable(tv)
-!$OMP PARALLEL
-    CALL init(tv%r3d, lacc=.FALSE.)
-!$OMP END PARALLEL
-
-    ! Add variable to tendencies varlist with the same attributes as state
-    CALL this%tendencies%append(t_variable(name, SHAPE(field), "", type_id="real"))
-    tv => this%tendencies%Search(name)
-    IF (tv%bound) CALL finish(routine, 'Tendency variable for '//name//' should not be bound to outside variable')
-    CALL allocate_variable(tv)
-!$OMP PARALLEL
-    CALL init(tv%r3d, lacc=.FALSE.)
-!$OMP END PARALLEL
-
-    tv => this%states%search(name)
-    CALL message(routine, 'New state: '//tv%name//' for process '//this%name)
-
-  END SUBROUTINE Add_state_r3d
-
-  FUNCTION Get_tendency_r2d(this, name) RESULT(result)
+  FUNCTION Get_tendency_r2d(this, idx) RESULT(result)
 
     CLASS(t_tmx_process), INTENT(in) :: this
-    CHARACTER(len=*),     INTENT(in) :: name
+    INTEGER,              INTENT(in) :: idx
     REAL(wp), POINTER                :: result(:,:)
 
-    TYPE(t_variable), POINTER :: tv
+    CHARACTER(len=*), PARAMETER :: routine = modname//':Get_tendency_r2d'
 
-    tv => this%tendencies%Search(name)
-    result => tv%r2d
+    result => NULL()
+    result => this%tendencies(idx)%p%Get_ptr_r2d()
+    IF (.NOT. ASSOCIATED(result)) CALL finish(routine, 'Could not fetch tendency for state '// &
+      & TRIM(ADJUSTL(int2string(idx)))//' of process '//this%name)
 
   END FUNCTION Get_tendency_r2d
 
-  FUNCTION Get_tendency_r3d(this, name) RESULT(result)
+  FUNCTION Get_tendency_r3d(this, idx) RESULT(result)
 
     CLASS(t_tmx_process), INTENT(in) :: this
-    CHARACTER(len=*),     INTENT(in) :: name
+    INTEGER,              INTENT(in) :: idx
     REAL(wp), POINTER                :: result(:,:,:)
 
-    TYPE(t_variable), POINTER :: tv
+    CHARACTER(len=*), PARAMETER :: routine = modname//':Get_tendency_r3d'
 
-    tv => this%tendencies%Search(name)
-    result => tv%r3d
+    result => NULL()
+    result => this%tendencies(idx)%p%Get_ptr_r3d()
+    IF (.NOT. ASSOCIATED(result)) CALL finish(routine, 'Could not fetch tendency for '// &
+      & TRIM(ADJUSTL(int2string(idx)))//' of process '//this%name)
 
   END FUNCTION Get_tendency_r3d
 
-  FUNCTION Get_diagnostic_r2d(this, name) RESULT(result)
+  FUNCTION Get_tendency_r4d(this, idx) RESULT(result)
 
     CLASS(t_tmx_process), INTENT(in) :: this
-    CHARACTER(len=*),     INTENT(in) :: name
-    REAL(wp), POINTER                :: result(:,:)
+    INTEGER,              INTENT(in) :: idx
+    REAL(wp), POINTER                :: result(:,:,:,:)
 
-    TYPE(t_variable), POINTER :: tv
+    CHARACTER(len=*), PARAMETER :: routine = modname//':Get_tendency_r4d'
 
-    tv => this%diagnostics%Search(name)
-    result => tv%r2d
+    result => NULL()
+    result => this%tendencies(idx)%p%Get_ptr_r4d()
+    IF (.NOT. ASSOCIATED(result)) CALL finish(routine, 'Could not fetch tendency for '// &
+      & TRIM(ADJUSTL(int2string(idx)))//' of process '//this%name)
 
-  END FUNCTION Get_diagnostic_r2d
-
-  FUNCTION Get_diagnostic_r3d(this, name) RESULT(result)
-
-    CLASS(t_tmx_process), INTENT(in) :: this
-    CHARACTER(len=*),     INTENT(in) :: name
-    REAL(wp), POINTER                :: result(:,:,:)
-
-    TYPE(t_variable), POINTER :: tv
-
-    tv => this%diagnostics%Search(name)
-    result => tv%r3d
-
-  END FUNCTION Get_diagnostic_r3d
+  END FUNCTION Get_tendency_r4d
 
   SUBROUTINE Set_time_scheme(this, time_scheme)
 

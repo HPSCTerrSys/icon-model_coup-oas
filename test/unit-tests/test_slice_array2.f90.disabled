@@ -1,0 +1,218 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
+! WARNING: DISABLED DUE TO PROBLEMS WHEN COMPILING ON NAG AND NEC
+!          REDUCED COMPLEXITY IN TEST_SLICE_ARRAY.F90
+!
+!          THIS UNIT TEST REMAINS DISABLED FOR FURTHER EXAMINATION OF ISSUE.
+!          ERROR MESSAGE:
+!             free(): double free detected in tcache 2
+!             Abort
+
+! Unit test to ensure the following functions from `mo_slice_array` work as expected:
+!   get_3d_general
+!   get_2d_general
+
+PROGRAM test_slice_array
+
+  USE mo_kind,        ONLY: wp, xwp, vp, dp, sp
+  USE mo_var,         ONLY: t_var
+  USE mo_slice_array, ONLY: get_2d_general, get_3d_general
+  USE mo_test_common, ONLY: test_fail, test_pass
+
+#if (defined NAGFOR) || (defined __SX__)
+  USE mo_io_units, ONLY: nerr
+  USE mo_test_common, ONLY: test_skip
+#endif
+
+  IMPLICIT NONE
+
+  LOGICAL, PARAMETER :: debug = .FALSE. ! Not yet used
+  CHARACTER(*), PARAMETER :: modname = 'test_slice_array'
+
+!#if (defined NAGFOR) || (defined __SX__)
+!  WRITE (nerr, '(a)') modname//' skipped for NAG and NEC compilers due to compilation issue'
+!  CALL test_skip()
+!#else
+  TYPE(t_var) :: var
+  REAL(dp), TARGET, ALLOCATABLE :: r_data(:,:,:,:,:)
+  REAL(sp), TARGET, ALLOCATABLE :: s_data(:,:,:,:,:)
+  INTEGER,  TARGET, ALLOCATABLE :: i_data(:,:,:,:,:)
+  INTEGER, PARAMETER :: data_shape(5) = (/5,4,3,2,1/)
+  INTEGER, PARAMETER :: data_size = PRODUCT(data_shape)
+  INTEGER :: init_data(data_size)
+  INTEGER :: i
+
+  ALLOCATE( r_data(data_shape(1),data_shape(2),data_shape(3),data_shape(4),data_shape(5)) )
+  ALLOCATE( s_data(data_shape(1),data_shape(2),data_shape(3),data_shape(4),data_shape(5)) )
+  ALLOCATE( i_data(data_shape(1),data_shape(2),data_shape(3),data_shape(4),data_shape(5)) )
+  DO i = 1, PRODUCT(data_shape)
+    init_data(i) = i
+  END DO
+  r_data = RESHAPE( REAL(init_data,dp), SHAPE=data_shape)
+  s_data = RESHAPE( REAL(init_data+data_size,sp), SHAPE=data_shape)
+  i_data = RESHAPE( init_data+2*data_size, SHAPE=data_shape)
+
+  var%r_ptr => r_data
+  var%s_ptr => s_data
+  var%i_ptr => i_data
+  CALL var%set_auxiliary_pointers()
+
+  IF (debug) THEN
+    WRITE (*,*) "data_shape: ", data_shape
+    !WRITE (*,*) "data: ", init_data
+    !WRITE (*,*) "r_ptr: ", var%r_ptr
+  END IF
+
+  CALL check_get_ptr(var, r_data, s_data, i_data)
+  CALL check_get_3d_general(var, r_data, s_data, i_data)
+  CALL check_get_2d_general(var, r_data, s_data, i_data)
+
+  DEALLOCATE( r_data, s_data, i_data )
+  CALL test_pass
+
+  CONTAINS
+    SUBROUTINE check_get_ptr(var, r_data, s_data, i_data)
+      TYPE(t_var), INTENT(IN) :: var
+      REAL(dp), INTENT(IN) :: r_data(:,:,:,:,:)
+      REAL(sp), INTENT(IN) :: s_data(:,:,:,:,:)
+      INTEGER,  INTENT(IN) :: i_data(:,:,:,:,:)
+
+      IF ( ANY(r_data /= var%r_ptr) ) THEN
+        CALL test_fail(modname,"r_ptr")
+      END IF
+
+      IF ( ANY(s_data /= var%s_ptr) ) THEN
+        CALL test_fail(modname,"s_ptr")
+      END IF
+
+#ifdef __SINGLE_PRECISION
+      IF ( .NOT. ASSOCIATED(var%wp_ptr,var%s_ptr) ) THEN
+        CALL test_fail(modname,"Working precision=sp : error in wp_ptr")
+      END IF
+      IF ( .NOT. ASSOCIATED(var%xwp_ptr,var%r_ptr) ) THEN
+        CALL test_fail(modname,"Working precision=sp : error in xwp_ptr)")
+      END IF
+#else
+      IF ( .NOT. ASSOCIATED(var%wp_ptr,var%r_ptr) ) THEN
+        CALL test_fail(modname,"Working precision=dp: error in wp_ptr)")
+      END IF
+      IF ( .NOT. ASSOCIATED(var%xwp_ptr,var%s_ptr) ) THEN
+        CALL test_fail(modname,"Working precision=dp: error in xwp_ptr")
+      END IF
+#endif
+
+      IF ( ANY(i_data /= var%i_ptr) ) THEN
+        CALL test_fail(modname,"error in i_ptr")
+      END IF
+
+    END SUBROUTINE check_get_ptr
+
+    SUBROUTINE check_get_3d_general(var, r_data, s_data, i_data)
+      TYPE(t_var), INTENT(IN) :: var
+      REAL(dp), INTENT(IN) :: r_data(:,:,:,:,:)
+      REAL(sp), INTENT(IN) :: s_data(:,:,:,:,:)
+      INTEGER,  INTENT(IN) :: i_data(:,:,:,:,:)
+
+      ! Local vars
+      REAL(dp), POINTER :: r_ptr_3d(:,:,:)
+      REAL(sp), POINTER :: s_ptr_3d(:,:,:)
+      INTEGER,  POINTER :: i_ptr_3d(:,:,:)
+
+      REAL(wp), POINTER :: wp_ptr_3d(:,:,:)
+      REAL(vp), POINTER :: vp_ptr_3d(:,:,:)
+
+      r_ptr_3d => get_3d_general(var%r_ptr, (/3,2/), (/.TRUE.,.FALSE.,.TRUE.,.FALSE.,.FALSE./))
+      IF ( ANY(r_data(3,:,2,:,:) /= r_ptr_3d) ) THEN
+        CALL test_fail(modname,"get_3d_general(r_ptr)")
+      END IF
+
+      s_ptr_3d => get_3d_general(var%s_ptr, (/3,2/), (/.TRUE.,.FALSE.,.TRUE.,.FALSE.,.FALSE./))
+      IF ( ANY(s_data(3,:,2,:,:) /= s_ptr_3d) ) THEN
+        CALL test_fail(modname,"get_3d_general(s_ptr)")
+      END IF
+
+      i_ptr_3d => get_3d_general(var%i_ptr, (/3,2/), (/.TRUE.,.FALSE.,.TRUE.,.FALSE.,.FALSE./))
+      IF ( ANY(i_data(3,:,2,:,:) /= i_ptr_3d) ) THEN
+        CALL test_fail(modname,"get_3d_general(i_ptr)")
+      END IF
+
+      wp_ptr_3d => get_3d_general(var%wp_ptr, (/3,2/), (/.TRUE.,.FALSE.,.TRUE.,.FALSE.,.FALSE./))
+#ifdef __SINGLE_PRECISION
+      IF ( ANY(s_data(3,:,2,:,:) /= wp_ptr_3d) ) THEN
+#else
+      IF ( ANY(r_data(3,:,2,:,:) /= wp_ptr_3d) ) THEN
+#endif
+        CALL test_fail(modname,"get_3d_general(wp_ptr)")
+      END IF
+
+      vp_ptr_3d => get_3d_general(var%vp_ptr, (/3,2/), (/.TRUE.,.FALSE.,.TRUE.,.FALSE.,.FALSE./))
+#if defined __SINGLE_PRECISION || defined __MIXED_PRECISION
+      IF ( ANY(s_data(3,:,2,:,:) /= vp_ptr_3d) ) THEN
+#else
+      IF ( ANY(r_data(3,:,2,:,:) /= vp_ptr_3d) ) THEN
+#endif
+        CALL test_fail(modname,"get_3d_general(vp_ptr)")
+      END IF
+
+    END SUBROUTINE check_get_3d_general
+
+    SUBROUTINE check_get_2d_general(var, r_data, s_data, i_data)
+      TYPE(t_var), INTENT(IN) :: var
+      REAL(dp), INTENT(IN) :: r_data(:,:,:,:,:)
+      REAL(sp), INTENT(IN) :: s_data(:,:,:,:,:)
+      INTEGER,  INTENT(IN) :: i_data(:,:,:,:,:)
+
+      ! Local vars
+      REAL(dp), POINTER :: r_ptr_2d(:,:)
+      REAL(sp), POINTER :: s_ptr_2d(:,:)
+      INTEGER,  POINTER :: i_ptr_2d(:,:)
+
+      REAL(wp), POINTER :: wp_ptr_2d(:,:)
+      REAL(vp), POINTER :: vp_ptr_2d(:,:)
+
+      r_ptr_2d => get_2d_general(var%r_ptr, (/3,2,2/), (/.TRUE.,.FALSE.,.TRUE.,.TRUE.,.FALSE./))
+      IF ( ANY(r_data(3,:,2,2,:) /= r_ptr_2d) ) THEN
+        CALL test_fail(modname,"get_2d_general(r_ptr)")
+      END IF
+
+      s_ptr_2d => get_2d_general(var%s_ptr, (/3,2,2/), (/.TRUE.,.FALSE.,.TRUE.,.TRUE.,.FALSE./))
+      IF ( ANY(s_data(3,:,2,2,:) /= s_ptr_2d) ) THEN
+        CALL test_fail(modname,"get_2d_general(s_ptr)")
+      END IF
+
+      i_ptr_2d => get_2d_general(var%i_ptr, (/3,2,2/), (/.TRUE.,.FALSE.,.TRUE.,.TRUE.,.FALSE./))
+      IF ( ANY(i_data(3,:,2,2,:) /= i_ptr_2d) ) THEN
+        CALL test_fail(modname,"get_2d_general(i_ptr)")
+      END IF
+
+      wp_ptr_2d => get_2d_general(var%wp_ptr, (/3,2,2/), (/.TRUE.,.FALSE.,.TRUE.,.TRUE.,.FALSE./))
+#ifdef __SINGLE_PRECISION
+      IF ( ANY(s_data(3,:,2,2,:) /= wp_ptr_2d) ) THEN
+#else
+      IF ( ANY(r_data(3,:,2,2,:) /= wp_ptr_2d) ) THEN
+#endif
+        CALL test_fail(modname,"get_2d_general(wp_ptr)")
+      END IF
+
+      vp_ptr_2d => get_2d_general(var%vp_ptr, (/3,2,2/), (/.TRUE.,.FALSE.,.TRUE.,.TRUE.,.FALSE./))
+#if defined __SINGLE_PRECISION || defined __MIXED_PRECISION
+      IF ( ANY(s_data(3,:,2,2,:) /= vp_ptr_2d) ) THEN
+#else
+      IF ( ANY(r_data(3,:,2,2,:) /= vp_ptr_2d) ) THEN
+#endif
+        CALL test_fail(modname,"get_2d_general(vp_ptr)")
+      END IF
+
+    END SUBROUTINE check_get_2d_general
+
+!#endif ! if (defined NAGFOR) || (defined __SX__)
+END PROGRAM test_slice_array

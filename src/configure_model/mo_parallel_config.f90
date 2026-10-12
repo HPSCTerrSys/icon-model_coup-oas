@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -42,7 +41,7 @@ MODULE mo_parallel_config
        &  num_dist_array_replicas, comm_pattern_type_orig,          &
        &  comm_pattern_type_yaxt, default_comm_pattern_type,        &
        &  io_process_stride, io_process_rotate, proc0_shift,        &
-       &  use_omp_input
+       &  use_omp_input, process_stride_pgrib
 
   PUBLIC :: set_nproma, set_nproma_nblocks, set_nproma_nblocks_sub, get_nproma, cpu_min_nproma, proc0_offloading, &
        &    check_parallel_configuration, use_async_restart_output, blk_no, idx_no, idx_1d,    &
@@ -118,6 +117,7 @@ MODULE mo_parallel_config
   INTEGER :: max_no_of_comm_patterns   = 32
   INTEGER :: icon_comm_method = 1
   INTEGER :: sync_barrier_mode = 0
+  INTEGER :: process_stride_pgrib = 1 ! process stride for parallel GRIB decoding
 
   LOGICAL :: icon_comm_openmp = .false.
 
@@ -144,7 +144,7 @@ MODULE mo_parallel_config
   ! Derived variable to indicate hybrid mode with proc 0 doing stdio only
   LOGICAL :: proc0_offloading
 
-  ! Use OpenMP-parallelized input for atmospheric input data (in initicon), 
+  ! Use OpenMP-parallelized input for atmospheric input data (in initicon),
   ! i.e. overlapping of reading data, communicating data and computing statistics
   LOGICAL :: use_omp_input = .FALSE.
 
@@ -287,6 +287,9 @@ CONTAINS
 
 #endif
 
+    IF (process_stride_pgrib < 1) &
+      & CALL finish(method_name, "A positive definite integer value is required for process_stride_pgrib")
+
   END SUBROUTINE check_parallel_configuration
   !-------------------------------------------------------------------------
 
@@ -308,35 +311,35 @@ CONTAINS
     INTEGER, INTENT(IN) :: loc_nproma, loc_nblocks_c, loc_nblocks_e
     CHARACTER(*), PARAMETER :: method_name = "set_nproma_nblocks"
 
-   ! Note: mo_model_domimp_patches:read_pre_patch assumes nproma>0, and recomputation of nproma from 
-   ! nblocks_c or nblocks_e (if required), only happens in the subsequent step. So we set nproma=1 in such 
-   ! cases even though it is overwritten in prepare_patch 
+   ! Note: mo_model_domimp_patches:read_pre_patch assumes nproma>0, and recomputation of nproma from
+   ! nblocks_c or nblocks_e (if required), only happens in the subsequent step. So we set nproma=1 in such
+   ! cases even though it is overwritten in prepare_patch
     IF(loc_nblocks_c > 0) THEN
-        IF (loc_nblocks_e > 0 .OR. loc_nproma > 0) THEN 
+        IF (loc_nblocks_e > 0 .OR. loc_nproma > 0) THEN
             WRITE(message_text,'(a,i7,a,i3,a,i3)') 'More than one of (nproma, nblocks_c, nblocks_e)' // &
             ' is specified (>0), nproma=',loc_nproma,', nblocks_c=',loc_nblocks_c,', nblocks_e=',loc_nblocks_e
-            CALL finish(TRIM(method_name), message_text) 
+            CALL finish(TRIM(method_name), message_text)
         ENDIF
         nblocks_c = loc_nblocks_c
         nproma = 1       ! Required for mo_model_domimp_patches:read_pre_patch
         ignore_nproma_use_nblocks_c=.TRUE.
-        CALL message(TRIM(method_name), 'Will recompute nproma based on nblocks_c') 
+        CALL message(TRIM(method_name), 'Will recompute nproma based on nblocks_c')
     ELSE IF(loc_nblocks_e > 0) THEN
         IF (loc_nproma > 0) THEN
             WRITE(message_text,'(a,i7,a,i3,a,i3)') 'More than one of (nproma, nblocks_c, nblocks_e)' // &
             ' is specified (>0), nproma=',loc_nproma,', nblocks_c=',loc_nblocks_c,', nblocks_e=',loc_nblocks_e
-            CALL finish(TRIM(method_name), message_text) 
+            CALL finish(TRIM(method_name), message_text)
         ENDIF
         nblocks_e = loc_nblocks_e
         nproma = 1       ! Required for mo_model_domimp_patches:read_pre_patch
         ignore_nproma_use_nblocks_e=.TRUE.
-        CALL message(TRIM(method_name), 'Will recompute nproma based on nblocks_e') 
+        CALL message(TRIM(method_name), 'Will recompute nproma based on nblocks_e')
     ELSE IF(loc_nproma > 0) THEN
         nproma = loc_nproma
         WRITE(message_text,'(a,i7)') 'Using namelist nproma=',nproma
-        CALL message(TRIM(method_name), message_text) 
+        CALL message(TRIM(method_name), message_text)
     !$ACC UPDATE DEVICE(nproma) ASYNC(1) IF_PRESENT
-    ELSE        
+    ELSE
         CALL message(TRIM(method_name),'Setting nproma = 1, as none of (nproma, nblocks_c, nblocks_e) specified (> 0).')
         nproma = 1
     !$ACC UPDATE DEVICE(nproma) ASYNC(1) IF_PRESENT
@@ -354,7 +357,7 @@ CONTAINS
         IF (loc_nproma_sub > 0) CALL finish(TRIM(method_name),'Cannot specify both nproma_sub and nblocks_sub in the namelist')
         nblocks_sub = loc_nblocks_sub
         ignore_nproma_sub_use_nblocks_sub=.TRUE.
-        CALL message(TRIM(method_name), 'Will recompute nproma_sub based on nblocks_sub') 
+        CALL message(TRIM(method_name), 'Will recompute nproma_sub based on nblocks_sub')
     ELSE IF(loc_nproma_sub > 0) THEN
         nproma_sub = loc_nproma_sub
         WRITE(message_text,'(a,i7)') 'Using namelist nproma_sub=',nproma_sub
@@ -378,7 +381,7 @@ CONTAINS
     IF (my_process_is_io()) THEN
       CALL set_nproma(nproma_max)
     ENDIF
-  
+
   END SUBROUTINE update_nproma_for_io_procs
   !-------------------------------------------------------------------------
 
@@ -403,7 +406,7 @@ CONTAINS
     new_nproma = MIN(nproma, min_nproma)
 #endif
 
-  END FUNCTION cpu_min_nproma 
+  END FUNCTION cpu_min_nproma
   !-------------------------------------------------------------------------
 
   !-------------------------------------------------------------------------

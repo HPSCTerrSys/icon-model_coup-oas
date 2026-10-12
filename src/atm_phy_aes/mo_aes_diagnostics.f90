@@ -1,8 +1,7 @@
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -21,9 +20,10 @@ MODULE mo_aes_diagnostics
   USE mo_parallel_config,     ONLY: nproma
   USE mo_exception,           ONLY: message, message_text
   USE mo_sync,                ONLY: global_max, global_min
-  USE mo_run_config,          ONLY: iqv, iqc, iqi, iqr, iqs, iqg, iqh
+  USE mo_run_config,          ONLY: iqv, iqc, iqi, iqr, iqs, iqg, iqh, ico2
+  USE mo_ccycle_config,       ONLY: ccycle_config
   USE mo_model_domain        ,ONLY: t_patch
-  USE mo_statistics          ,ONLY: levels_horizontal_mean
+  USE mo_statistics          ,ONLY: levels_horizontal_mean, horizontal_mean, subset_sum
   USE mo_name_list_output_init, ONLY: isRegistered
   USE mo_aes_phy_memory      ,ONLY: t_aes_phy_field, prm_field
   USE mo_loopindices         ,ONLY: get_indices_c
@@ -31,6 +31,7 @@ MODULE mo_aes_diagnostics
   USE mo_impl_constants_grf  ,ONLY: grf_bdywidth_c
   USE mo_nonhydro_types      ,ONLY: t_nh_prog, t_nh_diag
   USE mo_util_phys           ,ONLY: compute_field_rel_hum_wmo
+  USE mo_physical_constants  ,ONLY: amc, amco2
 
   IMPLICIT NONE
 
@@ -46,6 +47,7 @@ CONTAINS
     REAL(wp)                           :: scr(nproma,patch%alloc_cell_blocks)
 
     REAL(wp) :: tas_gmean, rsdt_gmean, rsut_gmean, rlut_gmean, prec_gmean, evap_gmean, &
+      &         carbon_gsum, co2_gmean, co2flx_gmean, &
       &         radtop_gmean, radbot_gmean, kedisp_gmean, &
       &         udynvi_gmean, duphyvi_gmean, utmxvi_gmean, ufts_gmean, ufvs_gmean, ufcs_gmean, &
       &         fwfoce_gmean
@@ -111,6 +113,30 @@ CONTAINS
           & evap_gmean, lopenacc=.TRUE.)
     END IF
     prm_field(patch%id)%evap_gmean = evap_gmean
+
+    ! global mass of carbon in GT C and global mean of CO2 in kg m-2
+    carbon_gsum = 0.0_wp
+    co2_gmean = 0.0_wp
+    IF ( (isRegistered("carbon_gsum") .OR. isRegistered("co2_gmean")) .and. ccycle_config(patch%id)%iccycle /= 0) THEN
+      carbon_gsum = subset_sum( prm_field(patch%id)%mtrcvi(:,:,ico2), &
+          & patch%cells%area(:,:), &
+          & patch%cells%owned, &
+          & mean=co2_gmean, &
+          & lopenacc=.TRUE.)
+      carbon_gsum = carbon_gsum * 1e-12_wp * amc / amco2 ! convert from kg CO2 to GT C
+      prm_field(patch%id)%carbon_gsum = carbon_gsum
+      prm_field(patch%id)%co2_gmean   = co2_gmean
+    END IF
+    ! global mean of CO2 flux from the surface in kg CO2 m-2 s-1
+    co2flx_gmean = 0.0_wp
+    IF ( isRegistered("co2flx_gmean") .and. ccycle_config(patch%id)%iccycle /= 0) THEN
+      CALL horizontal_mean( prm_field(patch%id)%fco2ant(:,:) + prm_field(patch%id)%fco2nat(:,:), &
+          & patch%cells%area(:,:), &
+          & patch%cells%owned, &
+          & co2flx_gmean, &
+          & lopenacc=.TRUE.)
+      prm_field(patch%id)%co2flx_gmean   = co2flx_gmean
+    END IF
 
     ! global mean toa total radiation, radtop, derived variable
     radtop_gmean = 0.0_wp
@@ -334,11 +360,11 @@ CONTAINS
     !
     ! rsdt - TOA incoming shortwave radiation
     ! rsut - TOA outgoing shortwave radiation
-    ! 
+    !
     ! rlut - TOA outgoing longwave radiation
     ! N/A - TOA incoming longwave radiation
     !
-    ! Output (with some encodings for eccodes handling) 
+    ! Output (with some encodings for eccodes handling)
     !
     ! 176: rsns: surface net shortwave radiation flux: rsds - rsus 0-4-9-ffs1-sp1
     ! 177: rlns: surface net longwave radiation flux:  rlds - rlus 0-5-5-ffs1-sp1
@@ -366,7 +392,7 @@ CONTAINS
 
       NULLIFY(field)
     END IF
-    
+
     IF ( isRegistered("rlns") ) THEN
 
       field => prm_field(patch%id)
@@ -435,7 +461,7 @@ CONTAINS
 
     !_____________________________________________________________________________
     !
-    
+
   END SUBROUTINE aes_global_diagnostics
 
   SUBROUTINE aes_diag_output_minmax_micro (patch,lpos)

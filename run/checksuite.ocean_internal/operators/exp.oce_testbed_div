@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -61,7 +61,7 @@ cat > ${ocean_namelist} << EOF
  output               = 'nml'        ! namelist controlled output scheme
  activate_sync_timers = .TRUE.
  profiling_output = 3
- test_mode     = 110 
+ test_mode     = 110
 /
 &ocean_dynamics_nml
   n_zlev        =   2      ! number of vertical levels and (dzlev_m) thicknesses

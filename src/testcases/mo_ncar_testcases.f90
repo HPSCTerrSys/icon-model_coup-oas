@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -57,7 +57,7 @@ MODULE mo_ncar_testcases
   USE mo_model_domain,   ONLY: t_patch
   USE mo_grid_config,    ONLY: grid_sphere_radius, grid_angular_velocity
   USE mo_exception,      ONLY: finish
-  
+
   IMPLICIT NONE
 
 !=======================================================================
@@ -79,7 +79,7 @@ MODULE mo_ncar_testcases
        eta_tropo  = 0.2_wp     ,                     & ! tropopause level
        T0         = 288._wp    ,                     & ! horizontal mean T at surface
        eta0       = 0.252_wp   ,                     & ! center of jets (hybrid)
-       u0         = 35._wp     ,                     & ! 35 m/s  
+       u0         = 35._wp     ,                     & ! 35 m/s
        !
        radius                 = 10._wp,             & ! reciprocal radius of the
                                                       ! perturbation without 'a'
@@ -108,7 +108,7 @@ CONTAINS
   END SUBROUTINE init_ncar_testcases_domain
   !-------------------------------------------------------------------
 
-  
+
 !********************************************************************
 !
 ! Temperature (equation (6) in Jablonowski and Williamson, 2006)

@@ -2,18 +2,21 @@
 #
 # exp.test_nwp_R02B04_R02B05_nest_comin
 #
-# Basic real-data test case for the ICON NWP mode. This rather
-# unphysical test case computes a few steps of a global weather
-# forecast (160 km resolution, 2014-06-01) with a local region (80km
-# resolution, Europe). The purpose is the testing of the technical
-# setup of NWP mode including asynchronous output.
+# This attaches a "simple_fortran_plugin" via the ICON Community Interface ComIn.
+# The plugin is shipped together with the ComIn library and demonstrates
+# various functionalities of the ComIn API, eg. attaching callbacks to entry points,
+# adding additional ICON variables, and accessing meta-data.
+#
+# About the ICON setup: Basic real-data test case for the ICON NWP mode. This rather
+# unphysical test case computes a few steps of a global weather forecast (160 km
+# resolution, 2014-06-01) with a local region (80km resolution, Europe).
 #
 #
 # This section of the run script contains the specifications of the experiment.
 # The specifications are passed by namelist to the program.
 # For a complete list see Namelist_overview.pdf
 #
-# EXPNAME and NPROMA must be defined as environment variables or they must 
+# EXPNAME and NPROMA must be defined as environment variables or they must
 # be substituted with appropriate values.
 #
 #-----------------------------------------------------------------------------
@@ -21,7 +24,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -87,17 +90,13 @@ INDIR="${icon_data_rootFolder}/buildbot_data/nwp/R02B04_R02B05_nest"
 add_link_file $INDIR/extpar_iconR2B04_DOM01.nc extpar_iconR2B04_DOM01.nc
 add_link_file $INDIR/extpar_iconR2B05_DOM02.nc extpar_iconR2B05_DOM02.nc
 
-add_link_file $INDIR/ifs2icon_R2B04_DOM01.nc ifs2icon_R2B04_DOM01.nc 
-add_link_file $INDIR/ifs2icon_R2B05_DOM02.nc ifs2icon_R2B05_DOM02.nc 
-
-add_link_file $basedir/data/rrtmg_lw.nc rrtmg_lw.nc
-add_link_file $basedir/data/ECHAM6_CldOptProps.nc ECHAM6_CldOptProps.nc
-
+add_link_file $INDIR/ifs2icon_R2B04_DOM01.nc ifs2icon_R2B04_DOM01.nc
+add_link_file $INDIR/ifs2icon_R2B05_DOM02.nc ifs2icon_R2B05_DOM02.nc
 
 # If the model runs with mpi_procs=1, then this script exits without error:
 if [[ ${mpi_total_procs} = 1 ]]; then
   echo "This test must not be started if mpi_procs=1 --> exit test without error"
-  check_error 0 "exp.nat_jww_nwp_mpiomp"
+  check_error 1 "exp.nat_jww_nwp_mpiomp"
   exit 0
 fi
 
@@ -117,9 +116,9 @@ done
 dynamics_parent_grid_id="${dynamics_parent_grid_id},"
 #
 
-# Add the path to the COMIN and plugins shared libraries to LD_LIBRARY_PATH 
+# Add the path to the COMIN and plugins shared libraries to LD_LIBRARY_PATH
 
-simple_fortran_plugin_dir=/externals/comin/build/plugins/simple_fortran
+simple_fortran_plugin_dir=/externals/comin/build/_icon/plugins/simple_fortran
 add_comin_setup "$simple_fortran_plugin_dir"
 mpi_communicator_test_dir=/externals/comin/build/test
 
@@ -157,7 +156,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  dynamics_parent_grid_id = 0,1
  lredgrid_phys           = .false.,.false.
  lfeedback               = .false.
-/ 
+/
 &run_nml
  num_lev                 = ${nlev},${nlev}      ! number of full levels of vertical grid
  dtime                   = ${dtime}             ! [s] timestep in seconds
@@ -165,7 +164,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  ltransport              = .TRUE.               ! transport
  iforcing                = ${iforcing}          !
  ntracer                 =  5                   ! number of tracers - default 0
- ltimer                  = .true.               ! 
+ ltimer                  = .true.               !
  ltestcase               = .false.              ! initialize with real data
  timers_level            = 0
  msg_level               = 12                   ! detailed report during integration
@@ -190,11 +189,15 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
 &nwp_phy_nml
  inwp_gscp               = 1
  inwp_convection         = 1
- inwp_radiation          = 1
+ inwp_radiation          = 4
  inwp_cldcover           = 1
  inwp_turb               = 1
  inwp_satad              = 1
  inwp_surface            = 1
+/
+&radiation_nml
+ irad_aero               = 6
+ ecrad_data_path         = '${basedir}/externals/ecrad/data'
 /
 &transport_nml
  ivadv_tracer            = 3,3,3,3,3
@@ -248,7 +251,7 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
  reg_lat_def             = -90.,1.,90.
  ml_varlist              = 'pres_sfc', 't_so', 'tmin_2m', 'tot_prec'
  hl_varlist              = 'temp'
- h_levels                = 200, 500, 2000 
+ h_levels                = 200, 500, 2000
  m_levels                = "5...(nlev+1)"
 /
 &extpar_nml
@@ -259,8 +262,6 @@ cat > ${basedir}/run/${atmo_namelist} << EOF
 &lnd_nml
  llake                   = .false.
  ntiles                  = 3
- nlev_snow               = 2
- lmulti_snow             = .true.
  idiag_snowfrac          = 2
  lsnowtile               = .false.
 /

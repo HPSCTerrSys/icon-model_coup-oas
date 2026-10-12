@@ -1,18 +1,17 @@
-! This module provides definition of ocean surface module types that describe:
-!  1) ocean surface fluxes : t_ocean_surface
-!  2) OMIP fluxes          : t_atmos_fluxes
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! This module provides definition of ocean surface module types that describe:
+!  1) ocean surface fluxes : t_ocean_surface
+!  2) OMIP fluxes          : t_atmos_fluxes
 
 MODULE mo_ocean_surface_types
   USE mo_kind,                ONLY: wp
@@ -95,7 +94,6 @@ MODULE mo_ocean_surface_types
   ! The fluxes are then used to set the oceans surface boundary conditions.
 
   TYPE t_atmos_for_ocean
-
     ! on cell-centers, dimension: (nproma, nblks_c)
     REAL(wp), POINTER :: &
       & tafo                     (:,:), & ! 2 m air temperature                              [C]
@@ -103,6 +101,7 @@ MODULE mo_ocean_surface_types
       & fclou                    (:,:), & ! Fractional cloud cover
       & fu10                     (:,:), & ! 10 m wind speed                                  [m/s]
       & fswr                     (:,:), & ! Incoming surface solar radiation                 [W/m]
+      & flwr                     (:,:), & ! Incoming surface lw radiation                 [W/m]
       & pao                      (:,:), & ! Surface atmospheric pressure                     [hPa]
       & u                        (:,:), & ! wind in reference height                         [m/s]
       & v                        (:,:), &
@@ -123,4 +122,3 @@ MODULE mo_ocean_surface_types
 ! ---------------------------------------------------------------------------------------
 
 END MODULE mo_ocean_surface_types
-

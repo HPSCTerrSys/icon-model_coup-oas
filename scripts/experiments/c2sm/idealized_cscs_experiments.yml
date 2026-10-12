@@ -1,0 +1,43 @@
+# ICON
+#
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Contact information: icon-model.org
+#
+# See AUTHORS.TXT for a list of authors
+# See LICENSES/ for license information
+# SPDX-License-Identifier: BSD-3-Clause
+# ---------------------------------------------------------------
+
+experiments:
+  - name: atm_heldsuarez_test
+    check: checksuite.icon-dev/check.atm_heldsuarez
+    types: ['ml pl hl']
+    dates: [
+      '00010101T000000Z', '00010101T001000Z', '00010101T002000Z',
+      '00010101T003000Z', '00010101T004000Z', '00010101T005000Z',
+      '00010101T010000Z'
+    ]
+    restart_date: ['00010101T003000Z']
+
+  - name: exclaim_ape_R02B04
+    check: checksuite.icon-dev/check.exclaim_ape_R02B04
+    types: ['atm_1d atm_2d atm_3d_pl']
+    dates: [
+      '20000101T000002Z', '20000101T000004Z', '20000101T000004Z',
+      '20000101T000006Z', '20000101T000008Z', '20000101T000010Z',
+      '20000101T000012Z', '20000101T000014Z', '20000101T000016Z',
+      '20000101T000018Z', '20000101T000020Z', '20000101T000026Z',
+      '20000101T000028Z', '20000101T000030Z'
+    ]
+    restart_date: ['20000101T000020Z']
+    tolerance:
+      file_id:
+        - NetCDF: ['*atm_3d_pl*.nc', '*atm_2d*.nc']
+        - latlon: ['*atm_1d*.nc']
+
+  - name: atm_tracer_Hadley
+    check: checksuite.icon-dev/check.atm_tracer_Hadley
+    types: ['atm_3d_ml']
+    dates: ['20080902T000000Z']
+    restart_date: ['20080901T000000Z']

@@ -1,22 +1,20 @@
-!
-! Calculates 3D subgrid-scale (with metric terms) for viscosity and diffusivity
-! in the nonhydrostatic model
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Calculates 3D subgrid-scale (with metric terms) for viscosity and diffusivity
+! in the nonhydrostatic model
+
+!----------------------------
 #include "omp_definitions.inc"
 !----------------------------
-
 
 MODULE mo_sgs_turbmetric
 
@@ -48,7 +46,7 @@ MODULE mo_sgs_turbmetric
   USE mo_statistics,          ONLY: levels_horizontal_mean
   USE mo_nh_vert_interp_les,  ONLY: brunt_vaisala_freq, vert_intp_full2half_cell_3d
   USE mo_fortran_tools,       ONLY: copy, init, assert_acc_device_only
-  USE mo_atm_phy_nwp_config,  ONLY: atm_phy_nwp_config 
+  USE mo_atm_phy_nwp_config,  ONLY: atm_phy_nwp_config
 
 
   IMPLICIT NONE
@@ -92,7 +90,7 @@ MODULE mo_sgs_turbmetric
 
     TYPE(t_nh_prog),   INTENT(inout)     :: p_nh_prog     !< single nh prognostic state
     TYPE(t_nh_prog),   INTENT(inout)     :: p_nh_prog_now_rcf !< old state for tke
-    TYPE(t_nh_prog),   INTENT(inout)     :: p_nh_prog_rcf     !< rcf nh prognostic state    
+    TYPE(t_nh_prog),   INTENT(inout)     :: p_nh_prog_rcf     !< rcf nh prognostic state
     TYPE(t_nh_diag),   INTENT(inout)     :: p_nh_diag     !< single nh diagnostic state
     TYPE(t_nh_metrics),INTENT(in),TARGET :: p_nh_metrics  !< single nh metric state
     TYPE(t_patch),  INTENT(inout),TARGET :: p_patch       !< single patch
@@ -201,7 +199,7 @@ MODULE mo_sgs_turbmetric
                             p_prog_lnd_new, p_diag_lnd, prm_diag, theta,              &
                             p_nh_prog%tracer(:,:,:,iqv), p_sim_time, lacc=.TRUE.)
 
-    IF ( atm_phy_nwp_config(jg)%inwp_turb == iprog) THEN 
+    IF ( atm_phy_nwp_config(jg)%inwp_turb == iprog) THEN
 #ifdef _OPENACC
       CALL finish ('mo_sgs_turbmetric:', 'inwp_turb=iprog: OpenACC version currently not implemented')
 #endif
@@ -225,7 +223,7 @@ MODULE mo_sgs_turbmetric
 
     CALL diffuse_scalar(theta, p_nh_metrics, p_patch, p_int, prm_nwp_tend%ddt_temp_turb,          &
                         p_nh_prog%exner, prm_diag, p_nh_prog%rho, dt, tracer_theta)
-                        
+
 
     !For qv and qc: implement for qr as well
     IF(.NOT.les_config(jg)%is_dry_cbl)THEN
@@ -295,13 +293,13 @@ MODULE mo_sgs_turbmetric
     INTEGER  :: nlev, nlevp1             !< number of full levels
     INTEGER,  DIMENSION(:,:,:), POINTER :: ividx, ivblk, iecidx, iecblk, ieidx, ieblk
 
-    REAL(wp) :: vn_vert1, vn_vert2, vn_vert3, vn_vert4 
+    REAL(wp) :: vn_vert1, vn_vert2, vn_vert3, vn_vert4
     REAL(wp) :: vt_vert1, vt_vert2, vt_vert3, vt_vert4
     REAL(wp) :: w_full_c1, w_full_c2, w_full_v1, w_full_v2
     REAL(wp) :: D_11, D_12, D_13, D_22, D_23, D_33
 
-    REAL(wp) :: shear(nproma,p_patch%nlev,p_patch%nblks_e)           
-    REAL(wp) :: div_of_stress(nproma,p_patch%nlev,p_patch%nblks_e)    
+    REAL(wp) :: shear(nproma,p_patch%nlev,p_patch%nblks_e)
+    REAL(wp) :: div_of_stress(nproma,p_patch%nlev,p_patch%nblks_e)
 
     !--------------------------------------------------------------------------
 
@@ -333,17 +331,17 @@ MODULE mo_sgs_turbmetric
     !--------------------------------------------------------------------------
 
     CALL cells2verts_scalar(p_nh_prog%w, p_patch, p_int%cells_aw_verts, w_vert,   &
-                            opt_rlend=min_rlvert_int, opt_acc_async=.TRUE.)
+                            lacc=.TRUE., opt_rlend=min_rlvert_int, opt_acc_async=.TRUE.)
     CALL cells2edges_scalar(p_nh_prog%w, p_patch, p_int%c_lin_e, w_ie,            &
-                            opt_rlend=min_rledge_int-2, lacc=.TRUE.)
+                            lacc=.TRUE., opt_rlend=min_rledge_int-2)
 
     ! RBF reconstruction of velocity at vertices: include halos
     CALL rbf_vec_interpol_vertex(p_nh_prog%vn, p_patch, p_int, u_vert, v_vert,    &
-                            opt_rlend=min_rlvert_int, opt_acc_async=.TRUE.)
+                                 lacc=.TRUE., opt_rlend=min_rlvert_int, opt_acc_async=.TRUE.)
 
-    !$ACC WAIT
+    !$ACC WAIT !TODO: to be gone?
     !sync them
-    CALL sync_patch_array_mult(SYNC_V, p_patch, 3, u_vert, v_vert, w_vert)
+    CALL sync_patch_array_mult(SYNC_V, p_patch, 3, lacc=.TRUE., f3din1=u_vert, f3din2=v_vert, f3din3=w_vert)
 
     !Get vn at interfaces and then get vt at interfaces
     !Boundary values are extrapolated like dynamics although
@@ -390,15 +388,15 @@ MODULE mo_sgs_turbmetric
 !$OMP END DO
 !$OMP END PARALLEL
 
-    CALL rbf_vec_interpol_edge(vn_ie, p_patch, p_int, vt_ie, opt_rlstart=3, &
+    CALL rbf_vec_interpol_edge(vn_ie, p_patch, p_int, vt_ie, lacc=.TRUE., opt_rlstart=3, &
                                opt_rlend=min_rledge_int-2, opt_acc_async=.TRUE.)
 
     ! RBF reconstruction of velocity on half levels at vertices: include halos
-    CALL rbf_vec_interpol_vertex( vn_ie, p_patch, p_int, &
-                                  u_iv, v_iv, opt_rlend=min_rlvert_int, opt_acc_async=.TRUE.)
+    CALL rbf_vec_interpol_vertex( vn_ie, p_patch, p_int, u_iv, v_iv, &
+                                  lacc=.TRUE., opt_rlend=min_rlvert_int, opt_acc_async=.TRUE.)
 
-    !$ACC WAIT
-    CALL sync_patch_array_mult(SYNC_V, p_patch, 2, u_iv, v_iv)
+    !$ACC WAIT !TODO to be gone?
+    CALL sync_patch_array_mult(SYNC_V, p_patch, 2, lacc=.TRUE., f3din1=u_iv, f3din2=v_iv)
 
     !--------------------------------------------------------------------------
     !2) Compute horizontal strain rate tensor at full levels
@@ -645,7 +643,7 @@ MODULE mo_sgs_turbmetric
 !$OMP END PARALLEL
 
     !$ACC WAIT
-    CALL sync_patch_array(SYNC_C, p_patch, kh_ic)
+    CALL sync_patch_array(SYNC_C, p_patch, kh_ic, lacc=.TRUE.)
 
 !$OMP PARALLEL PRIVATE (rl_start,rl_end,i_startblk,i_endblk)
     !--------------------------------------------------------------------------
@@ -684,7 +682,7 @@ MODULE mo_sgs_turbmetric
 
     ! 4b) visc at vertices
     CALL cells2verts_scalar(kh_ic, p_patch, p_int%cells_aw_verts, km_iv, &
-                            opt_rlstart=5, opt_rlend=min_rlvert_int-1, opt_acc_async=.TRUE.)
+                            lacc=.TRUE., opt_rlstart=5, opt_rlend=min_rlvert_int-1, opt_acc_async=.TRUE.)
 
     DO jb = 1, p_patch%nblks_v
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -698,8 +696,8 @@ MODULE mo_sgs_turbmetric
     END DO
 
     ! 4c) Now calculate km at half levels at edge
-    CALL cells2edges_scalar(kh_ic, p_patch, p_int%c_lin_e, km_ie, &
-                            opt_rlstart=grf_bdywidth_e, opt_rlend=min_rledge_int-1, lacc=.TRUE.)
+    CALL cells2edges_scalar(kh_ic, p_patch, p_int%c_lin_e, km_ie, lacc=.TRUE., &
+                            opt_rlstart=grf_bdywidth_e, opt_rlend=min_rledge_int-1)
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jb,jk,jc,i_startidx,i_endidx)
     DO jb = 1, p_patch%nblks_e
@@ -741,7 +739,7 @@ MODULE mo_sgs_turbmetric
 
   SUBROUTINE prognostic_tke(p_nh_prog, p_prog_now_rcf, p_prog_rcf, p_nh_diag, p_nh_metrics,       &
                             p_patch, p_int, p_diag, dtime, D_11_ie, D_12_ie, D_13_ie)
-                            
+
     TYPE(t_nh_prog),      INTENT(inout)     :: p_nh_prog            !< single nh prognostic state
     TYPE(t_nh_prog),      INTENT(in)        :: p_prog_now_rcf       !< old state for tke
     TYPE(t_nh_prog),      INTENT(inout)     :: p_prog_rcf           !< progs w. red. call frequency
@@ -750,30 +748,30 @@ MODULE mo_sgs_turbmetric
     TYPE(t_patch),        INTENT(inout),TARGET :: p_patch              !< single patch
     TYPE(t_int_state),    INTENT(in),TARGET :: p_int                !< single interpolation state
     TYPE(t_nwp_phy_diag), INTENT(inout)     :: p_diag               !< atm phys vars
-    REAL(wp),             INTENT(in)        :: dtime                !< time-step  
+    REAL(wp),             INTENT(in)        :: dtime                !< time-step
     REAL(wp), DIMENSION(nproma,p_patch%nlevp1,p_patch%nblks_e), INTENT(out) :: &
-                                               D_11_ie, D_12_ie, D_13_ie             
+                                               D_11_ie, D_12_ie, D_13_ie
 
     INTEGER ::  i_startblk, i_endblk, i_startidx, i_endidx          !< loop variables
-    INTEGER ::  rl_start, rl_end, nlev, nlevp1                      !< loop & level variables 
-    INTEGER ::  jb, jc, jg, je, jk                                  !< indices 
+    INTEGER ::  rl_start, rl_end, nlev, nlevp1                      !< loop & level variables
+    INTEGER ::  jb, jc, jg, je, jk                                  !< indices
 
-    INTEGER, DIMENSION(:,:,:), POINTER ::                   & 
+    INTEGER, DIMENSION(:,:,:), POINTER ::                   &
                 ividx, ivblk, iecidx, iecblk, ieidx, ieblk          !< index conversion arrays
 
     REAL(wp) :: D_11, D_12, D_13, D_22, D_23, D_33
     REAL(wp) :: ddt_tke, dthvdz, l_stable                           !< tke-tend, thv grad, dummy
-    REAL(wp) :: l_grid, mixlen_by_l_grid, mixlen                    !< mix. length & avg spacing 
+    REAL(wp) :: l_grid, mixlen_by_l_grid, mixlen                    !< mix. length & avg spacing
     REAL(wp) :: vn_vert1, vn_vert2, vn_vert3, vn_vert4              !< nor. velocities at vortex
     REAL(wp) :: vt_vert1, vt_vert2, vt_vert3, vt_vert4              !< tang. velociies at vortex
     REAL(wp) :: w_full_c1, w_full_c2, w_full_v1, w_full_v2          !< vert. velocities
-    REAL(wp) :: ddt_tke_adv(nproma,p_patch%nlev+1,p_patch%nblks_c)  !< advection tendency 
-    REAL(wp) :: diff_tke(nproma,p_patch%nlev+1,p_patch%nblks_c)     !< advection tendency 
+    REAL(wp) :: ddt_tke_adv(nproma,p_patch%nlev+1,p_patch%nblks_c)  !< advection tendency
+    REAL(wp) :: diff_tke(nproma,p_patch%nlev+1,p_patch%nblks_c)     !< advection tendency
     REAL(wp) :: div_of_stress(nproma,p_patch%nlev,p_patch%nblks_e)  !< divergence of stress
-    REAL(wp) :: shear(nproma,p_patch%nlev+1,p_patch%nblks_e)        !< shear in mech. prod.          
+    REAL(wp) :: shear(nproma,p_patch%nlev+1,p_patch%nblks_e)        !< shear in mech. prod.
     REAL(wp) :: thetav_ic(nproma,p_patch%nlev+1,p_patch%nblks_c)    !< thv at half level
     REAL(wp) :: vn_ie(nproma,p_patch%nlev+1,p_patch%nblks_e)        !< vn at half lev. edges
-    REAL(wp) :: vt_ie(nproma,p_patch%nlev+1,p_patch%nblks_e)        !< vt at half lev. edges  
+    REAL(wp) :: vt_ie(nproma,p_patch%nlev+1,p_patch%nblks_e)        !< vt at half lev. edges
 
     REAL(wp), POINTER :: km_ic(:,:,:), kh_ic(:,:,:)
 
@@ -804,7 +802,7 @@ MODULE mo_sgs_turbmetric
     !  Advection of TKE
     !
     !  Utilizes the advection mechanism used for tracers; defined at cell center.
-    !  Tendency (mo_step_advection) is interpolated to half-level. 
+    !  Tendency (mo_step_advection) is interpolated to half-level.
     !--------------------------------------------------------------------------
     CALL vert_intp_full2half_cell_3d(p_patch, p_nh_metrics,                                       &
                                      p_nh_diag%ddt_tracer_adv(:,:,:,iqtke), ddt_tke_adv,          &
@@ -824,27 +822,27 @@ MODULE mo_sgs_turbmetric
     !--------------------------------------------------------------------------
     !  Shear term
     !
-    !  The method to compute the mechanical production is adopted from the   
-    !  Smagorinsky scheme: 
+    !  The method to compute the mechanical production is adopted from the
+    !  Smagorinsky scheme:
     !  mech_prod   = K_m * D**2     with:
-    !  D**2        = 2 D_ij * D_ij =  (D_11**2 + D_22**2 + D_33**2 + 
-    !                                 2 * (D_12**2 + D_13**2 + D_23**2) 
+    !  D**2        = 2 D_ij * D_ij =  (D_11**2 + D_22**2 + D_33**2 +
+    !                                 2 * (D_12**2 + D_13**2 + D_23**2)
     !  where, D_11 = 2 * du_1/dx_1
     !         D_22 = 2 * d_u2/dx_2
     !         D_33 = 2 * d_u3/dx_3
     !         D_12 = du_1/dx_2 + du_2/dx_1
     !         D_13 = du_1/dx_3 + du_3/dx_1
     !         D_23 = du_2/dx_3 + du_3/dx_2
-    !  For triangles: 1=normal, 2=tangential, and 3 = z directions 
+    !  For triangles: 1=normal, 2=tangential, and 3 = z directions
     !--------------------------------------------------------------------------
     CALL cells2verts_scalar(p_nh_prog%w, p_patch, p_int%cells_aw_verts, w_vert,                   &
-                            opt_rlend=min_rlvert_int)
+                            lacc=.FALSE., opt_rlend=min_rlvert_int)
     CALL cells2edges_scalar(p_nh_prog%w, p_patch, p_int%c_lin_e, w_ie,                            &
-                            opt_rlend=min_rledge_int-2)
+                            lacc=.FALSE., opt_rlend=min_rledge_int-2)
     CALL rbf_vec_interpol_vertex(p_nh_prog%vn, p_patch, p_int, u_vert, v_vert,                    &
-                                  opt_rlend=min_rlvert_int)
-    CALL sync_patch_array_mult(SYNC_V, p_patch, 3, w_vert, u_vert, v_vert)
- 
+                                 lacc=.FALSE., opt_rlend=min_rlvert_int)
+    CALL sync_patch_array_mult(SYNC_V, p_patch, 3, lacc=.FALSE., f3din1=w_vert, f3din2=u_vert, f3din3=v_vert)
+
     rl_start   = grf_bdywidth_e+1
     rl_end     = min_rledge_int
     i_startblk = p_patch%edges%start_block(rl_start)
@@ -884,16 +882,16 @@ MODULE mo_sgs_turbmetric
 !$OMP END DO
 !$OMP END PARALLEL
 
-    CALL sync_patch_array(SYNC_E, p_patch, vn_ie)
+    CALL sync_patch_array(SYNC_E, p_patch, vn_ie, lacc=.FALSE.)
 
-    CALL rbf_vec_interpol_edge(vn_ie, p_patch, p_int, vt_ie, opt_rlstart=3, &
-                               opt_rlend=min_rledge_int-2)
+    CALL rbf_vec_interpol_edge(vn_ie, p_patch, p_int, vt_ie, lacc=.FALSE., &
+                               opt_rlstart=3, opt_rlend=min_rledge_int-2)
 
     ! RBF reconstruction of velocity on half levels at vertices: include halos
     CALL rbf_vec_interpol_vertex( vn_ie, p_patch, p_int, &
-                                  u_iv, v_iv, opt_rlend=min_rlvert_int )
+                                  u_iv, v_iv, lacc=.FALSE., opt_rlend=min_rlvert_int )
 
-    CALL sync_patch_array_mult(SYNC_V, p_patch, 2, u_iv, v_iv)
+    CALL sync_patch_array_mult(SYNC_V, p_patch, 2, lacc=.FALSE., f3din1=u_iv, f3din2=v_iv)
 
     !--------------------------------------------------------------------------
     !2) Compute horizontal strain rate tensor at full levels
@@ -1004,15 +1002,15 @@ MODULE mo_sgs_turbmetric
       ENDDO
     ENDDO
 !$OMP END DO
-!$OMP END PARALLEL  
+!$OMP END PARALLEL
 
     rl_start   = grf_bdywidth_c+1
     rl_end     = min_rlcell_int !-1 for its use in hor. diffusion
     i_startblk = p_patch%cells%start_block(rl_start)
     i_endblk   = p_patch%cells%end_block(rl_end)
 
-    ! Interpolation of div_of_stress from edge to cell-center 
-!$OMP PARALLEL    
+    ! Interpolation of div_of_stress from edge to cell-center
+!$OMP PARALLEL
 !$OMP DO PRIVATE(jb,jk,jc,i_startidx,i_endidx)
     DO jb = i_startblk,i_endblk
        CALL get_indices_c(p_patch, jb, i_startblk, i_endblk,      &
@@ -1049,7 +1047,7 @@ MODULE mo_sgs_turbmetric
                     shear(ieidx(jc,jb,1),jk,ieblk(jc,jb,1)) * p_int%e_bln_c_s(jc,1,jb)   +    &
                     shear(ieidx(jc,jb,2),jk,ieblk(jc,jb,2)) * p_int%e_bln_c_s(jc,2,jb)   +    &
                     shear(ieidx(jc,jb,3),jk,ieblk(jc,jb,3)) * p_int%e_bln_c_s(jc,3,jb) ) +    &
-                    ( 1._wp - p_nh_metrics%wgtfac_c(jc,jk,jb) ) * (                           &  
+                    ( 1._wp - p_nh_metrics%wgtfac_c(jc,jk,jb) ) * (                           &
                     shear(ieidx(jc,jb,1),jk-1,ieblk(jc,jb,1)) * p_int%e_bln_c_s(jc,1,jb) +    &
                     shear(ieidx(jc,jb,2),jk-1,ieblk(jc,jb,2)) * p_int%e_bln_c_s(jc,2,jb) +    &
                     shear(ieidx(jc,jb,3),jk-1,ieblk(jc,jb,3)) * p_int%e_bln_c_s(jc,3,jb) ) )
@@ -1058,22 +1056,22 @@ MODULE mo_sgs_turbmetric
           !  Buoyancy term
           !
           !  TKE production by buoyancy: buoy = - K_h * g * dtheta_v/dz / theta_v
-          !-------------------------------------------------------------------------- 
+          !--------------------------------------------------------------------------
           ! Temperature gradient over two levels due to better numerical stability
           dthvdz  = ( thetav_ic(jc,jk-1,jb) - thetav_ic(jc,jk+1,jb) ) /                         &
-                    ( p_nh_metrics%ddqz_z_half(jc,jk,jb) + p_nh_metrics%ddqz_z_half(jc,jk+1,jb) )   
+                    ( p_nh_metrics%ddqz_z_half(jc,jk,jb) + p_nh_metrics%ddqz_z_half(jc,jk+1,jb) )
 
-          ddt_tke = ddt_tke - ( kh_ic(jc,jk,jb) * grav * dthvdz / thetav_ic(jc,jk,jb) )      
+          ddt_tke = ddt_tke - ( kh_ic(jc,jk,jb) * grav * dthvdz / thetav_ic(jc,jk,jb) )
 
           !--------------------------------------------------------------------------
-          !  Dissipation term 
+          !  Dissipation term
           !
-          !  Takes into account stratification and grid spacing. 
+          !  Takes into account stratification and grid spacing.
           !--------------------------------------------------------------------------
-          l_grid = ( p_nh_metrics%ddqz_z_half(jc,jk,jb) * p_patch%cells%area(jc,jb) )**0.333333_wp       
+          l_grid = ( p_nh_metrics%ddqz_z_half(jc,jk,jb) * p_patch%cells%area(jc,jb) )**0.333333_wp
 
           ! mixing length either avg. grid spacing or stratification dependent
-          IF ( dthvdz > 0.0_wp ) THEN  
+          IF ( dthvdz > 0.0_wp ) THEN
             l_stable   = 0.76_wp * SQRT( p_prog_now_rcf%tke(jc,jk,jb) /                           &
                          ( grav * dthvdz / thetav_ic(jc,jk,jb) ) ) + 1E-5_wp
           ELSE
@@ -1082,7 +1080,7 @@ MODULE mo_sgs_turbmetric
 
           IF (jk == nlev) THEN
             mixlen   = MIN( l_grid, l_stable, 1.8_wp * p_nh_metrics%ddqz_z_half(jc,nlev,jb) )
-            l_grid   = MIN( l_grid, 1.8_wp * p_nh_metrics%ddqz_z_half(jc,nlev,jb))         
+            l_grid   = MIN( l_grid, 1.8_wp * p_nh_metrics%ddqz_z_half(jc,nlev,jb))
           ELSE
             mixlen           = MIN( l_grid, l_stable)
           END IF
@@ -1102,17 +1100,17 @@ MODULE mo_sgs_turbmetric
             p_prog_rcf%tke(jc,jk,jb) = 0.1_wp * p_prog_now_rcf%tke(jc,jk,jb)
           END IF
 
-          km_ic(jc,jk,jb) = 0.1_wp * mixlen * SQRT( p_prog_now_rcf%tke(jc,jk,jb) ) 
-          kh_ic(jc,jk,jb) = ( 1._wp + 2._wp * mixlen_by_l_grid ) * km_ic(jc,jk,jb) 
+          km_ic(jc,jk,jb) = 0.1_wp * mixlen * SQRT( p_prog_now_rcf%tke(jc,jk,jb) )
+          kh_ic(jc,jk,jb) = ( 1._wp + 2._wp * mixlen_by_l_grid ) * km_ic(jc,jk,jb)
         END DO
-      END DO 
+      END DO
 
       DO jc = i_startidx, i_endidx
-        p_prog_rcf%tke(jc,nlevp1,jb) = p_prog_rcf%tke(jc,nlev,jb)                                
-        km_ic(jc,nlevp1,jb)          = km_ic(jc,nlev,jb)                    
+        p_prog_rcf%tke(jc,nlevp1,jb) = p_prog_rcf%tke(jc,nlev,jb)
+        km_ic(jc,nlevp1,jb)          = km_ic(jc,nlev,jb)
         kh_ic(jc,nlevp1,jb)          = kh_ic(jc,nlev,jb)
         p_prog_rcf%tke(jc,1,jb)      = p_prog_rcf%tke(jc,2,jb)
-      ENDDO 
+      ENDDO
 
 #ifdef __LOOP_EXCHANGE
       DO jc = i_startidx, i_endidx
@@ -1125,23 +1123,23 @@ MODULE mo_sgs_turbmetric
                                                          p_prog_rcf%tke(jc,jk+1,jb) )
 
           km_c(jc,jk,jb) = MAX( les_config(jg)%km_min,                                            &
-                                0.5_wp * ( km_ic(jc,jk,jb) + km_ic(jc,jk+1,jb) ) )                    
-        ENDDO  
-      ENDDO     
+                                0.5_wp * ( km_ic(jc,jk,jb) + km_ic(jc,jk+1,jb) ) )
+        ENDDO
+      ENDDO
     END DO !jb
 !$OMP END DO
 !$OMP END PARALLEL
 
-    CALL sync_patch_array_mult(SYNC_C, p_patch, 3, km_ic, kh_ic, p_prog_rcf%tke)
+    CALL sync_patch_array_mult(SYNC_C, p_patch, 3, lacc=.FALSE., f3din1=km_ic, f3din2=kh_ic, f3din3=p_prog_rcf%tke)
 
-    ! Interpolate diffusivity (viscosity) to different locations: calculate  
+    ! Interpolate diffusivity (viscosity) to different locations: calculate
     ! them for halos also because they will be used in diffusion
-    CALL cells2verts_scalar(km_ic, p_patch, p_int%cells_aw_verts, km_iv, opt_rlstart=5,           &
-                            opt_rlend=min_rlvert_int-1)
+    CALL cells2verts_scalar(km_ic, p_patch, p_int%cells_aw_verts, km_iv, lacc=.FALSE.,             &
+                            opt_rlstart=5, opt_rlend=min_rlvert_int-1)
     CALL cells2edges_scalar(km_ic, p_patch, p_int%c_lin_e, km_ie, opt_rlstart=grf_bdywidth_e,     &
-                            opt_rlend=min_rledge_int-1)
+                            lacc=.FALSE., opt_rlend=min_rledge_int-1)
     CALL cells2edges_scalar(kh_ic, p_patch, p_int%c_lin_e, kh_ie, opt_rlstart=grf_bdywidth_e,     &
-                            opt_rlend=min_rledge_int-1)
+                            lacc=.FALSE., opt_rlend=min_rledge_int-1)
 
     ! Assure that diffusivity and viscosity have minimum values
     ! May be obsolete if km_ic & kh_ic are initialized with les_config(jg)%km_min
@@ -1242,7 +1240,7 @@ MODULE mo_sgs_turbmetric
 
     !density at edge
     CALL cells2edges_scalar(p_nh_prog%rho, p_patch, p_int%c_lin_e, inv_rhoe, &
-                            opt_rlstart=rl_start, opt_rlend=rl_end, lacc=.TRUE.)
+                            lacc=.TRUE., opt_rlstart=rl_start, opt_rlend=rl_end)
 
     ! compute inv_rho
     ! compute D_11, D_12 on interface edges
@@ -1253,7 +1251,7 @@ MODULE mo_sgs_turbmetric
                          i_startidx, i_endidx, rl_start, rl_end)
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR COLLAPSE(2)
-#ifdef __LOOP_EXCHANGE   
+#ifdef __LOOP_EXCHANGE
       DO je = i_startidx, i_endidx
         DO jk = 1, nlev
 #else
@@ -1478,7 +1476,7 @@ MODULE mo_sgs_turbmetric
                       ( km_ie(je,jk,jb) * ( vn_vert4i - vn_vert3i )   - &
                         km_ie(je,jk+1,jb) * ( vn_vert4i_p1 - vn_vert3i_p1 ) ) )
 
-         tang_metr = -p_nh_metrics%ddxt_z_full(je,jk,jb)              * &          
+         tang_metr = -p_nh_metrics%ddxt_z_full(je,jk,jb)              * &
                       p_nh_metrics%inv_ddqz_z_full_e(je,jk,jb)        * &
                       ( p_patch%edges%inv_primal_edge_length(je,jb)   * &
                       ( ( km_ie(je,jk,jb) * ( vn_vert2i - vn_vert1i ) - &
@@ -1837,8 +1835,9 @@ MODULE mo_sgs_turbmetric
 
     !5) Get turbulent tendency at cell center
     !$ACC WAIT
-    CALL sync_patch_array(SYNC_E, p_patch, vn_new)
-    CALL rbf_vec_interpol_cell(vn_new, p_patch, p_int, unew, vnew, opt_rlend=min_rlcell_int, opt_acc_async=.TRUE.)
+    CALL sync_patch_array(SYNC_E, p_patch, vn_new, lacc=.TRUE.)
+    CALL rbf_vec_interpol_cell(vn_new, p_patch, p_int, unew, vnew, &
+                               lacc=.TRUE., opt_rlend=min_rlcell_int, opt_acc_async=.TRUE.)
 
     rl_start   = grf_bdywidth_c+1
     rl_end     = min_rlcell_int
@@ -1877,9 +1876,9 @@ MODULE mo_sgs_turbmetric
 #endif
 
 !$OMP PARALLEL PRIVATE(rl_start, rl_end, i_startblk, i_endblk)
-      CALL init(unew(:,:,:), lacc=.TRUE.)
-      CALL init(vnew(:,:,:), lacc=.TRUE.)
-      CALL init(vn_new(:,:,:), lacc=.TRUE.)
+      CALL init(unew(:,:,:), lacc=.FALSE.)
+      CALL init(vnew(:,:,:), lacc=.FALSE.)
+      CALL init(vn_new(:,:,:), lacc=.FALSE.)
 !$OMP BARRIER
 
       rl_start   = grf_bdywidth_e+1
@@ -1935,9 +1934,9 @@ MODULE mo_sgs_turbmetric
 !$OMP END PARALLEL
 
       !Get sgs flux at cell center
-      CALL sync_patch_array(SYNC_E, p_patch, vn_new)
+      CALL sync_patch_array(SYNC_E, p_patch, vn_new, lacc=.FALSE.)
       CALL rbf_vec_interpol_cell(vn_new, p_patch, p_int, unew, vnew, &
-                                 opt_rlend=min_rlcell_int)
+                                 lacc=.TRUE., opt_rlend=min_rlcell_int)
 
       !u sgs flux
       CALL levels_horizontal_mean(unew, p_patch%cells%area, p_patch%cells%owned, outvar)
@@ -2037,8 +2036,8 @@ MODULE mo_sgs_turbmetric
 !$OMP END PARALLEL
 
 
-    CALL rbf_vec_interpol_edge(p_nh_prog%vn, p_patch, p_int, vt_e, opt_rlend=min_rledge_int-1, &
-                               opt_acc_async=.TRUE.)
+    CALL rbf_vec_interpol_edge(p_nh_prog%vn, p_patch, p_int, vt_e, lacc=.TRUE., &
+                               opt_rlend=min_rledge_int-1, opt_acc_async=.TRUE. )
 
     !Calculate rho at interface for vertical diffusion
     rl_start   = grf_bdywidth_c+1
@@ -2202,7 +2201,7 @@ MODULE mo_sgs_turbmetric
                   km_iv(jvn,jk-1,jbn) * ( w_vert(jvn,jk-1,jbn) +                        &
                   w_vert(jvn,jk,jbn) - w_vert(ividx(je,jb,1),jk-1,ivblk(je,jb,1)) -     &
                   w_vert(ividx(je,jb,1),jk,ivblk(je,jb,1))  )
-          w2mw1_p1 = 0.5_wp * p_patch%edges%inv_primal_edge_length(je,jb) *             & 
+          w2mw1_p1 = 0.5_wp * p_patch%edges%inv_primal_edge_length(je,jb) *             &
                      p_patch%edges%tangent_orientation(je,jb) *                         &
                      km_iv(jvn,jk,jbn) * ( w_vert(jvn,jk,jbn) +                         &
                      w_vert(jvn,jk+1,jbn) - w_vert(ividx(je,jb,1),jk,ivblk(je,jb,1)) -  &
@@ -2216,7 +2215,7 @@ MODULE mo_sgs_turbmetric
                          km_c(jcn,jk,jcb) * p_nh_metrics%inv_ddqz_z_full_e(je,jk,jb) *      &
                          ( vt_ie(je,jk,jb) -vt_ie(je,jk+1,jb) ) -                           &
                          p_nh_metrics%inv_ddqz_z_half_e(je,jk,jb) * (w2mw1 - w2mw1_p1) )
-                     
+
 
           hor_tend(je,jk,jb) = ( flux_up_c - flux_dn_c ) *                                  &
                                p_patch%edges%inv_dual_edge_length(je,jb) +                  &
@@ -2232,7 +2231,7 @@ MODULE mo_sgs_turbmetric
 !$OMP END PARALLEL
 
     !$ACC WAIT
-    CALL sync_patch_array(SYNC_E, p_patch, hor_tend)
+    CALL sync_patch_array(SYNC_E, p_patch, hor_tend, lacc=.TRUE.)
 
     !Interpolate horizontal tendencies to w point: except top and bottom boundaries
     !w==0 at these boundaries
@@ -2360,7 +2359,7 @@ MODULE mo_sgs_turbmetric
         !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR
         DO jc = i_startidx, i_endidx
-          c(jc,2)   = - km_c(jc,2,jb) *                                                           & 
+          c(jc,2)   = - km_c(jc,2,jb) *                                                           &
                     ( p_nh_metrics%ddxn_z_full_c(jc,2,jb) * p_nh_metrics%ddxn_z_half_c(jc,2,jb) + &
                       p_nh_metrics%ddxt_z_full_c(jc,2,jb) * p_nh_metrics%ddxt_z_half_c(jc,2,jb) + &
                       2._wp ) * p_nh_metrics%inv_ddqz_z_full(jc,2,jb) *                           &
@@ -2447,7 +2446,7 @@ MODULE mo_sgs_turbmetric
 !$OMP END PARALLEL
 
     !$ACC WAIT
-    CALL sync_patch_array(SYNC_C, p_patch, p_nh_prog%w)
+    CALL sync_patch_array(SYNC_C, p_patch, p_nh_prog%w, lacc=.TRUE.)
 
     !$ACC WAIT
     !$ACC END DATA ! local CREATE
@@ -2547,7 +2546,7 @@ MODULE mo_sgs_turbmetric
     !2) Calculate exner at edge for horizontal diffusion
 
     IF (scalar_name == tracer_theta) &
-      CALL cells2edges_scalar(exner, p_patch, p_int%c_lin_e, exner_me, opt_rlend=min_rledge_int-2, lacc=.TRUE.)
+      CALL cells2edges_scalar(exner, p_patch, p_int%c_lin_e, exner_me, lacc=.TRUE., opt_rlend=min_rledge_int-2)
 
     !3) Calculate exner at interface for vertical diffusion
 
@@ -2674,10 +2673,11 @@ MODULE mo_sgs_turbmetric
 !$OMP END PARALLEL
 
     !$ACC WAIT
-    CALL sync_patch_array(SYNC_C, p_patch, var_ic)
+    CALL sync_patch_array(SYNC_C, p_patch, var_ic, lacc=.TRUE.)
 
     CALL cells2edges_scalar(var_ic, p_patch, p_int%c_lin_e, var_ie, lacc=.TRUE.)
-    CALL cells2verts_scalar(var_ic, p_patch, p_int%cells_aw_verts, var_iv, opt_acc_async=.TRUE.)
+    CALL cells2verts_scalar(var_ic, p_patch, p_int%cells_aw_verts, var_iv,   &
+                            lacc=.TRUE., opt_acc_async=.TRUE.)
 
 
 !$OMP PARALLEL PRIVATE(rl_start, rl_end, i_startblk, i_endblk)
@@ -2809,7 +2809,7 @@ MODULE mo_sgs_turbmetric
 
               tang_metr = - les_config(jg)%rturb_prandtl *                                        &
                           p_patch%edges%inv_primal_edge_length(je,jb) *                           &
-                          p_patch%edges%tangent_orientation(je,jb) * ( km_ie(je,jk,jb) *          & 
+                          p_patch%edges%tangent_orientation(je,jb) * ( km_ie(je,jk,jb) *          &
                           ( var_iv(jvn,jk,jbn) - var_iv(ievidx(je,jb,1),jk,ievblk(je,jb,1)) ) *   &
                             exner_ie(je,jk,jb) - km_ie(je,jk+1,jb) *                              &
                           ( var_iv(jvn,jk+1,jbn) -                                                &
@@ -2842,7 +2842,7 @@ MODULE mo_sgs_turbmetric
     i_startblk = p_patch%edges%start_block(rl_start)
     i_endblk   = p_patch%edges%end_block(rl_end)
 
-    IF ( atm_phy_nwp_config(jg)%inwp_turb == iprog) THEN 
+    IF ( atm_phy_nwp_config(jg)%inwp_turb == iprog) THEN
 #ifdef _OPENACC
       CALL finish ('mo_sgs_turbmetric:', 'inwp_turb=iprog: OpenACC version currently not implemented')
 #endif
@@ -3044,7 +3044,7 @@ MODULE mo_sgs_turbmetric
                 a(jc,jk)   = - kh_ic(jc,jk,jb) * p_nh_metrics%inv_ddqz_z_half(jc,jk,jb) *         &
                   p_nh_metrics%inv_ddqz_z_full(jc,jk,jb) *                                        &
                   ( p_nh_metrics%ddxn_z_half_c(jc,jk,jb) * p_nh_metrics%ddxn_z_full_c(jc,jk,jb) + &
-                    p_nh_metrics%ddxt_z_half_c(jc,jk,jb) * p_nh_metrics%ddxt_z_full_c(jc,jk,jb) + & 
+                    p_nh_metrics%ddxt_z_half_c(jc,jk,jb) * p_nh_metrics%ddxt_z_full_c(jc,jk,jb) + &
                     1._wp ) * exner_ic(jc,jk,jb) * fac(jc,jk,jb)
 
                 c(jc,jk)   = -kh_ic(jc,jk+1,jb) * p_nh_metrics%inv_ddqz_z_half(jc,jk+1,jb) *      &
@@ -3194,7 +3194,7 @@ MODULE mo_sgs_turbmetric
   !! - Should be mergeable with diffuse_scalar
   !!------------------------------------------------------------------------
   SUBROUTINE diffuse_tke(var_ic, var, p_nh_metrics, p_patch, p_int, tot_tend_ic, p_diag, dt)
-                        
+
     REAL(wp),             INTENT(in)        :: var_ic(:,:,:)          !< SGS-TKE half level
     REAL(wp),             INTENT(in)        :: var(:,:,:)             !< SGS-TKE full level
     TYPE(t_nh_metrics),   INTENT(in),TARGET :: p_nh_metrics           !< single nh metric state
@@ -3212,19 +3212,19 @@ MODULE mo_sgs_turbmetric
     INTEGER, DIMENSION(:,:,:), POINTER :: ievidx, ievblk
 
     REAL(wp) :: flux_up, flux_dn, inv_dt, norm_metr, tang_metr
-    REAL(wp) :: inv_rho_ic(nproma,p_patch%nlev+1,p_patch%nblks_c)     
+    REAL(wp) :: inv_rho_ic(nproma,p_patch%nlev+1,p_patch%nblks_c)
     REAL(wp) :: var_e(nproma,p_patch%nlevp1,p_patch%nblks_e)
     REAL(wp) :: var_v(nproma,p_patch%nlevp1,p_patch%nblks_v)
     REAL(wp) :: km_e(nproma,p_patch%nlevp1,p_patch%nblks_e)
-    REAL(wp) :: km_v(nproma,p_patch%nlevp1,p_patch%nblks_v)   
-    REAL(wp) :: metric_tend_ie(nproma,p_patch%nlev,p_patch%nblks_e)     
+    REAL(wp) :: km_v(nproma,p_patch%nlevp1,p_patch%nblks_v)
+    REAL(wp) :: metric_tend_ie(nproma,p_patch%nlev,p_patch%nblks_e)
 
     REAL(wp), DIMENSION(p_patch%nlev+1)      :: var_new
     REAL(wp), DIMENSION(nproma,p_patch%nlev) :: a, b, c, rhs
-    REAL(wp), DIMENSION(nproma,p_patch%nlev+1,p_patch%nblks_e) :: nabla2_ie, rho_ie 
+    REAL(wp), DIMENSION(nproma,p_patch%nlev+1,p_patch%nblks_e) :: nabla2_ie, rho_ie
     REAL(wp), POINTER :: km_ic(:,:,:)
 
-    !--------------------------------------------------------------------------    
+    !--------------------------------------------------------------------------
 
     IF (msg_level >= 18) &
          CALL message(TRIM(inmodule), 'diffuse_tke')
@@ -3265,19 +3265,19 @@ MODULE mo_sgs_turbmetric
 #endif
             inv_rho_ic(jc,jk,jb) = 1._wp / rho_ic(jc,jk,jb)
             km_c(jc,jk,jb)       = MAX( les_config(jg)%km_min,  &
-                                        0.5_wp * ( km_ic(jc,jk,jb) + km_ic(jc,jk+1,jb) ) ) 
+                                        0.5_wp * ( km_ic(jc,jk,jb) + km_ic(jc,jk+1,jb) ) )
           END DO
         END DO
       END DO
 !$OMP END DO
 !$OMP END PARALLEL
 
-    CALL cells2edges_scalar(rho_ic, p_patch, p_int%c_lin_e, rho_ie, opt_rlstart=grf_bdywidth_e,   &
-                            opt_rlend=min_rledge_int-1)
-    CALL cells2edges_scalar(km_c, p_patch, p_int%c_lin_e, km_e, opt_rlstart=grf_bdywidth_e,       &
-                            opt_rlend=min_rledge_int-1)
-    CALL cells2edges_scalar(var, p_patch, p_int%c_lin_e, var_e)
-    CALL cells2verts_scalar(var, p_patch, p_int%cells_aw_verts, var_v)
+    CALL cells2edges_scalar(rho_ic, p_patch, p_int%c_lin_e, rho_ie, lacc=.FALSE.,  &
+                            opt_rlstart=grf_bdywidth_e, opt_rlend=min_rledge_int-1)
+    CALL cells2edges_scalar(km_c, p_patch, p_int%c_lin_e, km_e, lacc=.FALSE.,  &
+                            opt_rlstart=grf_bdywidth_e, opt_rlend=min_rledge_int-1)
+    CALL cells2edges_scalar(var, p_patch, p_int%c_lin_e, var_e, lacc=.FALSE.)
+    CALL cells2verts_scalar(var, p_patch, p_int%cells_aw_verts, var_v, lacc=.FALSE.)
 
     var_e(:,nlev+1,:) = var_e(:,nlev,:)
     var_v(:,nlev+1,:) = var_v(:,nlev,:)
@@ -3351,7 +3351,7 @@ MODULE mo_sgs_turbmetric
 #endif
           ! compute 2 * rho_ie * km_ie * grad_horiz(tke)
           nabla2_ie(je,jk,jb) = 2._wp * rho_ie(je,jk,jb) * km_ie(je,jk,jb)     *   &
-                                ( p_patch%edges%inv_dual_edge_length(je,jb)    *   & 
+                                ( p_patch%edges%inv_dual_edge_length(je,jb)    *   &
                                 ( var_ic(iecidx(je,jb,2),jk,iecblk(je,jb,2))   -   &
                                   var_ic(iecidx(je,jb,1),jk,iecblk(je,jb,1)) ) -   &
                                 ( var_e(je,jk,jb) - var_e(je,jk+1,jb) )        *   &
@@ -3369,7 +3369,7 @@ MODULE mo_sgs_turbmetric
     i_endblk   = p_patch%cells%end_block(rl_end)
 
     ! divergence of km_ie * grad_horiz(e) at interface center
-!$OMP PARALLEL    
+!$OMP PARALLEL
 !$OMP DO PRIVATE(jc,jb,jk,i_startidx,i_endidx)
     DO jb = i_startblk,i_endblk
       CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, &
@@ -3393,7 +3393,7 @@ MODULE mo_sgs_turbmetric
     ENDDO
 !$OMP END DO
 !$OMP END PARALLEL
-    
+
     !---------------------------------------------------------------
     ! Vertical diffusion
     !---------------------------------------------------------------
@@ -3455,10 +3455,10 @@ MODULE mo_sgs_turbmetric
 #endif
             a(jc,jk)   = - 2._wp * km_c(jc,jk-1,jb) * p_nh_metrics%inv_ddqz_z_full(jc,jk-1,jb) *  &
                            p_nh_metrics%inv_ddqz_z_half(jc,jk,jb) * inv_rho_ic(jc,jk,jb) *        &
-                           ( p_nh_metrics%ddxn_z_full_c(jc,jk-1,jb) *                             & 
+                           ( p_nh_metrics%ddxn_z_full_c(jc,jk-1,jb) *                             &
                              p_nh_metrics%ddxn_z_half_c(jc,jk,jb)   +                             &
                              p_nh_metrics%ddxt_z_full_c(jc,jk-1,jb) *                             &
-                             p_nh_metrics%ddxt_z_half_c(jc,jk,jb) + 2._wp ) 
+                             p_nh_metrics%ddxt_z_half_c(jc,jk,jb) + 2._wp )
 
             c(jc,jk)   = - 2._wp * km_c(jc,jk,jb) * p_nh_metrics%inv_ddqz_z_full(jc,jk,jb) *      &
                            p_nh_metrics%inv_ddqz_z_half(jc,jk,jb) * inv_rho_ic(jc,jk,jb) *        &
@@ -3498,7 +3498,7 @@ MODULE mo_sgs_turbmetric
           a(jc,nlev)   = - 2._wp * km_c(jc,nlev-1,jb) *                                           &
                            p_nh_metrics%inv_ddqz_z_full(jc,nlev-1,jb) *                           &
                            p_nh_metrics%inv_ddqz_z_half(jc,nlev,jb) * inv_rho_ic(jc,nlev,jb) *    &
-                           ( p_nh_metrics%ddxn_z_full_c(jc,nlev-1,jb) *                           &  
+                           ( p_nh_metrics%ddxn_z_full_c(jc,nlev-1,jb) *                           &
                              p_nh_metrics%ddxn_z_half_c(jc,nlev,jb)   +                           &
                              p_nh_metrics%ddxt_z_full_c(jc,nlev-1,jb) *                           &
                              p_nh_metrics%ddxt_z_half_c(jc,nlev,jb) + 2._wp )
@@ -3507,7 +3507,7 @@ MODULE mo_sgs_turbmetric
                            p_nh_metrics%inv_ddqz_z_full(jc,nlev,jb) *                             &
                            p_nh_metrics%inv_ddqz_z_half(jc,nlev,jb) * inv_rho_ic(jc,nlev,jb)
 
-          rhs(jc,nlev) =   var_ic(jc,nlev,jb) * inv_dt 
+          rhs(jc,nlev) =   var_ic(jc,nlev,jb) * inv_dt
         END DO
         ! CALL TDMA
         DO jc = i_startidx, i_endidx
@@ -3524,7 +3524,7 @@ MODULE mo_sgs_turbmetric
     END SELECT !vert_scheme
 
   END SUBROUTINE diffuse_tke
-  
+
 !---------------------------------------------------------------------------------
 
 END MODULE mo_sgs_turbmetric

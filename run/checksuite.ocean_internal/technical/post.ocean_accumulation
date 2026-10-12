@@ -1,7 +1,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -48,7 +48,7 @@ for expDir in ${EXP_DAILY} ${EXP_HOURLY} ${EXPNAME}; do
     case "${expDir}" in
       "${EXP_HOURLY}"|"${EXPNAME}")
         for ifile in ocean_accumulation*.nc*; do
-          for var in u h s t; do 
+          for var in u h s t; do
             myDiff $ifile $var wet_c || exit 1
           done;
         done;

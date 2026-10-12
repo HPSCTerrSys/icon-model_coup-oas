@@ -1,10 +1,7 @@
-! Cariolle scheme.
-! documentation: cr2016_10_22_rjs
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,9 +9,12 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Cariolle scheme.
+! documentation: cr2016_10_22_rjs
+
 MODULE mo_lcariolle
 
-  USE mo_kind, ONLY: wp => dp, wi => i4
+  USE mo_kind, ONLY: wp, wi => i4
   USE mo_read_interface, ONLY: read_bcast_REAL_3D, read_1D,  &
     & closeFile, openInputFile
   USE mo_physical_constants, ONLY: avo
@@ -24,7 +24,7 @@ MODULE mo_lcariolle
   PRIVATE
 
   PUBLIC :: t_avi, t_time_interpolation, lcariolle_init_o3, &
-    & l_cariolle_initialized_o3, lcariolle_init, lcariolle_do3dt 
+    & l_cariolle_initialized_o3, lcariolle_init, lcariolle_do3dt
 
 ! number of latitudes, pressure layers and months used in the Cariolle
 ! climatology
@@ -101,13 +101,18 @@ CONTAINS
 
     SUBROUTINE read_fill_array(aname, arr)
       CHARACTER(*), INTENT(IN) :: aname
-      REAL(wp), INTENT(OUT) :: arr(:,:,0:)
+      REAL(wp), INTENT(OUT) :: arr(0:,:,0:)
       REAL(wp) :: a_3d(nmonthx,nlevx,nlatx)
 
       CALL read_bcast_REAL_3D(file_id, aname, fill_array=a_3d)
+      ! store external data on indices (1:nlatx,:,1:12)
       arr(1:nlatx,:,1:12)=RESHAPE(a_3d,(/nlatx,nlevx,nmonthx/),ORDER=(/3,2,1/))
-      arr(1:nlatx,:,0)=arr(1:nlatx,:,12)
-      arr(1:nlatx,:,13)=arr(1:nlatx,:,1)
+      ! copy data from month index 12 to 0 and from 1 to 13
+      arr(1:nlatx,:, 0) = arr(1:nlatx,:,12)
+      arr(1:nlatx,:,13) = arr(1:nlatx,:, 1)
+      ! copy data from latitudes index 1 to 0 and from index nlatx to nlatx+1
+      arr(      0,:,0:13) = arr(    1,:,0:13)
+      arr(nlatx+1,:,0:13) = arr(nlatx,:,0:13)
     END SUBROUTINE read_fill_array
   END SUBROUTINE lcariolle_init
 
@@ -126,7 +131,7 @@ CONTAINS
          & nlev         !< number of levels in column
     TYPE(t_time_interpolation), INTENT(IN) :: time_ip  !< contains linear interpolation weights
     TYPE(t_avi),INTENT(IN) :: avi                      !< derived type containing all variables
-                                                       !< passed to submodel Cariolle 
+                                                       !< passed to submodel Cariolle
     REAL(wp),INTENT(INOUT) :: vmr_o3(NCX,nlev) ! initial ozone volume mixing ratio
     INTEGER(wi)            :: ilev,ic
     REAL(wp)               :: wgt1_lat(NCX),wgt2_lat(NCX), &
@@ -137,14 +142,14 @@ CONTAINS
     INTEGER(wi)            :: iw1,iw2,ip1,ip2
     REAL(wp)               :: a3_p1,a3_p2
     REAL(wp)               :: at3(0:nlatx+1,nlevx)
-    
+
     ! calculate linear interpolation weights for latitude interpolation
     CALL lcariolle_lat_intp_li(                                      &
        & jcb,                 jce,                NCX,          &
        & avi%cell_center_lat, nlatx,              pvi%rlat,     &
        & pvi%delta_lat,       pvi%l_lat_sn,       wgt1_lat,     &
        & wgt2_lat,            inmw1_lat,          inmw2_lat     )
-    ! calculate linear interpolation weights for pressure interpolation 
+    ! calculate linear interpolation weights for pressure interpolation
     CALL lcariolle_pres_intp_li(                                     &
        & jcb,                 jce,                NCX,          &
        & nlev,                avi%pres,           nlevx,        &
@@ -245,7 +250,7 @@ CONTAINS
 !! Interpolation weights for linear interpolation from a
 !! regular grid between N pole and S pole. The N pole and S pole have to
 !! be included, but the distance to the first (last) point of the regular
-!! grid can be different. 
+!! grid can be different.
 !! documentation: cr2016_10_22_rjs
 !!
   SUBROUTINE lcariolle_lat_intp_li(                                         &
@@ -264,7 +269,7 @@ CONTAINS
     LOGICAL,INTENT(IN)            :: l_lat_clim_sn        !< .true. if order is S->N,
                                                           !< .false. otherwise
     REAL(wp),INTENT(OUT)          :: wgt1_lat(NCX),wgt2_lat(NCX)   !< interpolation weights
-    INTEGER(wi),INTENT(OUT)       :: inmw1_lat(NCX),inmw2_lat(NCX) !< corresponding indices 
+    INTEGER(wi),INTENT(OUT)       :: inmw1_lat(NCX),inmw2_lat(NCX) !< corresponding indices
     INTEGER(wi)                   :: n_order
     REAL(wp)                      :: r_delta_lat_clim_i
     INTEGER                       :: ic
@@ -272,7 +277,7 @@ CONTAINS
     LOGICAL                       :: lzacc
 
     CALL set_acc_host_or_device(lzacc, lacc)
-    
+
     n_order = MERGE(1, -1, l_lat_clim_sn)
     r_delta_lat_clim_i=1._wp/r_delta_lat_clim
 
@@ -304,9 +309,9 @@ CONTAINS
     TYPE(t_avi),INTENT(IN)    :: avi                     !< derived type containing all variables
                                                          !< passed to submodel Cariolle
     REAL(wp),   INTENT(INOUT) :: do3dt(NCX,nlev)         !< tendency of ozone VMR per second
-    
+
     INTEGER(wi)            :: ilev,ic
-    REAL(wp)               :: o3_column(NCX,nlev)        !< overhead ozone column 
+    REAL(wp)               :: o3_column(NCX,nlev)        !< overhead ozone column
     REAL(wp)               :: wgt1_lat(NCX),wgt2_lat(NCX), &
                             & wgt1_p(NCX,nlev),wgt2_p(NCX,nlev)
     INTEGER(wi)            :: inmw1_lat(NCX),inmw2_lat(NCX), &
@@ -347,7 +352,7 @@ CONTAINS
       END DO
     END DO
     !$ACC END PARALLEL LOOP
-   
+
     ! calculate linear interpolation weights for latitude interpolation
     CALL lcariolle_lat_intp_li(                  &
        & jcb, jce, NCX,                          &
@@ -361,7 +366,7 @@ CONTAINS
        & inmw1_lat        = inmw1_lat,           &
        & inmw2_lat        = inmw2_lat,           &
        & lacc             = .TRUE.               )
-    
+
     ! calculate linear interpolation weights for pressure interpolation
     CALL lcariolle_pres_intp_li( &
        & jcb, jce, NCX, nlev,    &
@@ -379,7 +384,7 @@ CONTAINS
     wp2=time_ip%weight2
     ip1=time_ip%imonth1
     ip2=time_ip%imonth2
-    
+
     !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR COLLAPSE(2) ASYNC(1)
     DO ilevx=1,nlevx
       DO ilatx=0,nlatx+1
@@ -392,9 +397,9 @@ CONTAINS
         at7(ilatx,ilevx)=wp1*pvi%a7(ilatx,ilevx,ip1)+wp2*pvi%a7(ilatx,ilevx,ip2)
         at8(ilatx,ilevx)=wp1*pvi%a8(ilatx,ilevx,ip1)+wp2*pvi%a8(ilatx,ilevx,ip2)
       END DO
-    END DO 
+    END DO
     !$ACC END PARALLEL LOOP
-    
+
     ! latitude and pressure interpolation of at1,...,at8
     !$ACC PARALLEL DEFAULT(PRESENT) PRIVATE(wgt1, wgt2, iw1, iw2, wp1, wp2, ip1, ip2) &
     !$ACC   PRIVATE(a1_p1, a2_p1, a3_p1, a4_p1, a5_p1, a6_p1, a7_p1, a8_p1) &
@@ -456,7 +461,7 @@ CONTAINS
       END DO
     END DO
     !$ACC END PARALLEL
-    
+
     ! calculate equation (1) of Cariolle et al., Atmos. Chem. Phys. 7, 2183 (2007).
     ! first step: all terms except the A_8 term for polar stratospheric clouds
     !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR COLLAPSE(2) ASYNC(1)
@@ -469,7 +474,7 @@ CONTAINS
       END DO
     END DO
     !$ACC END PARALLEL LOOP
-    
+
     ! Add A_8 in case of polar stratospheric clouds and daylight for
     ! additional ozone destruction
     !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR COLLAPSE(2) ASYNC(1)
@@ -498,14 +503,14 @@ CONTAINS
          & jcb,jce,  & !< begin, end index of column
          & NCX,      & !< first dim of fields as in calling subprogram
          & nlev        !< number of levels in column
-    REAL(wp),INTENT(IN)     :: o3_vmr(NCX,nlev)    !< ozone VMR 
+    REAL(wp),INTENT(IN)     :: o3_vmr(NCX,nlev)    !< ozone VMR
     REAL(wp),INTENT(IN)     :: vmr2molm2(NCX,nlev) !< conversion factor from VMR to mole/m^2
     LOGICAL,INTENT(IN)      :: ldown               !< .true. if layers are counted from top
                                                    !< to bottom, .false. otherwise
     REAL(wp),INTENT(INOUT)  :: o3_column(NCX,nlev) !< overhead ozone column (mole/m^2)
     INTEGER                 :: ic
     INTEGER(wi)             :: ii,ilev,ilev0,incr
-    
+
     ilev = MERGE(1, nlev, ldown)
     incr = MERGE(1, -1, ldown)
     !
@@ -522,7 +527,7 @@ CONTAINS
     DO ii=1,nlev-1
       !$ACC LOOP GANG VECTOR PRIVATE(ilev)
       DO ic = jcb,jce
-        ilev = ilev0 + ii*incr  
+        ilev = ilev0 + ii*incr
         o3_column(ic,ilev) = o3_column(ic,ilev-incr) +                   &
               & 0.5_wp * o3_vmr(ic,ilev-incr) * vmr2molm2(ic,ilev-incr) +&
               & 0.5_wp * o3_vmr(ic,ilev) * vmr2molm2(ic,ilev)

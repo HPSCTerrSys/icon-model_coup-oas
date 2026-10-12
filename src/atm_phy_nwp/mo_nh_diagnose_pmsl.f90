@@ -1,17 +1,15 @@
-! Contains utilities for diagnose mean sea level pressure.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains utilities for diagnose mean sea level pressure.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -118,7 +116,7 @@ CONTAINS
     !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     pres_out(:,nblks) = 0._wp
     !$ACC END KERNELS
-    
+
 !$OMP PARALLEL
 !$OMP DO PRIVATE(jb,nlen,jc,geop_sfc,temp_in,pres_in,pres_sfc,ztstar,ztmsl,zalph,zprt,zprtal) ICON_OMP_DEFAULT_SCHEDULE
     DO jb = 1, nblks
@@ -127,7 +125,7 @@ CONTAINS
       ELSE
         nlen = npromz
       ENDIF
-     
+
       !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc) &
       !$ACC   PRIVATE(geop_sfc, temp_in, pres_in, pres_sfc, ztstar, ztmsl, zalph, zprt, zprtal)
       DO jc = 1, nlen
@@ -506,4 +504,3 @@ CONTAINS
 
 
 END MODULE  mo_nh_diagnose_pmsl
-

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -9,7 +9,7 @@
 ; ------------------------------------------
 
 ;----------------------------------------------------------------------
-; plot_torus_tz.ncl 
+; plot_torus_tz.ncl
 ;----------------------------------------------------------------------
 ; Plot torus profile over time.
 ;
@@ -19,7 +19,7 @@
 ;    varName=\"${var}\" expnum=\"${title}\"
 ;
 ; Required Parameters:
-; iFile         : input file 
+; iFile         : input file
 ; varName       : name of the variable to plot
 ;
 ; Optional Parameter:
@@ -31,7 +31,7 @@
 ;----------------------------------------------------------------------
 
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"  
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 
 begin
@@ -57,12 +57,12 @@ begin
 ;----------------------------------------------------------------------
 ; read data
 ;----------------------------------------------------------------------
-  
+
   File = addfile( iFile, "r" )
   if (varName.eq."w") then
     lev = File->height_2             ;lev_2 or ilev
     zz  = File->z_ifc
-  else   
+  else
     lev = File->height               ;lev or mlev]
     zz  = File->z_mc
   end if
@@ -85,8 +85,8 @@ begin
   res@trYMaxF                = nbot
   res@gsnCenterString        = expnum
   res@gsnCenterStringOrthogonalPosF = 0.08
-  res@gsnLeftString          = varlongname 
-  res@tiXAxisString          = "Time [h]" 
+  res@gsnLeftString          = varlongname
+  res@tiXAxisString          = "Time [h]"
   res@tiYAxisString          = "Model Level"
   res@tiXAxisFontHeightF     = 0.018
   res@tiYAxisFontHeightF     = 0.018
@@ -107,9 +107,9 @@ begin
   res@lbBoxMinorExtentF      = 0.15              ; horizontal width
   res@vpXF                   = 0.13              ; viewport left margin (def: 0.2)
   res@vpWidthF               = 0.62              ; viewport width (def: 0.6)
-  
-  wks = gsn_open_wks(oType,oFile) 
-  gsn_define_colormap(wks,colormap)  
+
+  wks = gsn_open_wks(oType,oFile)
+  gsn_define_colormap(wks,colormap)
 
 ;----------------------------------------------------------------------
 ; create an independent axis with level heights
@@ -148,15 +148,15 @@ begin
       "tmXTBorderOn"            : "False"
       "tmXBBorderOn"            : "False"
       "tmYLBorderOn"            : "False"
-      "vpXF"                    : 0.13    
-      "vpWidthF"                : 0.62    
+      "vpXF"                    : 0.13
+      "vpWidthF"                : 0.62
   end create
   draw(xy3)
 
 ;---------------------------------------------------------------------
 ; Make the plot
 ;---------------------------------------------------------------------
-  
+
   var0 = var(:, res@trYMinF-1:res@trYMaxF-1, 0, 0)
   z0   = lev(   res@trYMinF-1:res@trYMaxF-1)
   var1 = transpose(var0)

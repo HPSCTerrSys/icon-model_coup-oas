@@ -1,17 +1,16 @@
-! Contains allocation, initialization and setup of the FEM mesh
-! in relation to the ICON grid.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains allocation, initialization and setup of the FEM mesh
+! in relation to the ICON grid.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -48,6 +47,8 @@ MODULE mo_ice_fem_icon_init
   PUBLIC  :: ice_fem_grid_post
 
   PUBLIC  :: exchange_nod2D
+  PUBLIC  :: copy_fem2icon, copy_icon2fem
+  PUBLIC  :: copy_femelem2iconcell, copy_iconcell2femelem
 
   INTERFACE exchange_nod2d
     MODULE PROCEDURE exchange_nod2d
@@ -147,11 +148,12 @@ CONTAINS
         ENDDO
 
       ENDDO
- 
+
     ENDDO
 !ICON_OMP_END_PARALLEL_DO
 
-    CALL message (TRIM(routine), 'end')        
+    !$ACC ENTER DATA COPYIN(c2v_wgt)
+    CALL message (TRIM(routine), 'end')
 
   END SUBROUTINE init_fem_wgts
 
@@ -234,6 +236,7 @@ CONTAINS
   ENDDO   !loop over all blocks
 !ICON_OMP_END_PARALLEL_DO
 
+  !$ACC ENTER DATA COPYIN(v2c_wgt)
   END SUBROUTINE init_fem_wgts_extra
 
   !-------------------------------------------------------------------------
@@ -248,27 +251,33 @@ CONTAINS
     !-------------------------------------------------------------------------
     CALL message(TRIM(routine), 'start' )
 
+    !$ACC EXIT DATA DELETE(c2v_wgt)
     DEALLOCATE(c2v_wgt,STAT=ist)
     IF (ist /= SUCCESS) THEN
       CALL finish (routine,'deallocating c2v_wgt failed')
     ENDIF
 
-    IF (allocated(v2c_wgt)) DEALLOCATE(v2c_wgt,STAT=ist)
+    IF (allocated(v2c_wgt)) THEN
+      !$ACC EXIT DATA DELETE(v2c_wgt)
+      DEALLOCATE(v2c_wgt,STAT=ist)
+    ENDIF
     IF (ist /= SUCCESS) THEN
       CALL finish (routine,'deallocating v2c_wgt failed')
     ENDIF
 
+    !$ACC EXIT DATA DELETE(rot_mat)
     DEALLOCATE(rot_mat,STAT=ist)
     IF (ist /= SUCCESS) THEN
       CALL finish (routine,'deallocating rot_mat failed')
     ENDIF
 
+    !$ACC EXIT DATA DELETE(rot_mat_3D)
     DEALLOCATE(rot_mat_3D,STAT=ist)
     IF (ist /= SUCCESS) THEN
       CALL finish (routine,'deallocating rot_mat_3D failed')
     ENDIF
 
-    CALL message (TRIM(routine), 'end')        
+    CALL message (TRIM(routine), 'end')
 
   END SUBROUTINE destruct_fem_wgts
   !-------------------------------------------------------------------------
@@ -342,7 +351,7 @@ CONTAINS
     ! index_nod2D
     k=0
     DO jb = p_patch%verts%all%start_block, p_patch%verts%all%end_block
-      CALL get_index_range(p_patch%verts%all, jb, i_startidx_v, i_endidx_v) 
+      CALL get_index_range(p_patch%verts%all, jb, i_startidx_v, i_endidx_v)
       DO jv = i_startidx_v,i_endidx_v
         k=k+1
         verts(jv,jb) = k
@@ -391,7 +400,7 @@ CONTAINS
     ! nodes each element is made up of.
     k=0
     DO jb = p_patch%cells%all%start_block, p_patch%cells%all%end_block
-      CALL get_index_range(p_patch%cells%all, jb, i_startidx_c, i_endidx_c) 
+      CALL get_index_range(p_patch%cells%all, jb, i_startidx_c, i_endidx_c)
       DO jc = i_startidx_c,i_endidx_c
         k=k+1
         elem2D_nodes(1,k) =   &
@@ -453,6 +462,7 @@ CONTAINS
     buffy = RESHAPE(halo_mask(:,:), SHAPE(buffy))
     index_nod2D = index_nod2D+buffy(1:SIZE(index_nod2D))
 
+    !$ACC ENTER DATA COPYIN(coord_nod2D, coriolis_nod2D, rot_mat, rot_mat_3D)
   END SUBROUTINE ice_fem_grid_init
 
   !-------------------------------------------------------------------------
@@ -481,6 +491,7 @@ CONTAINS
     IF (ist /= SUCCESS) THEN
       CALL finish (routine,'allocating bafux_nod/bafuy_nod failed')
     ENDIF
+    !$ACC UPDATE SELF(bafux, bafuy)
     ! initialize with zeros
     bafux_nod = 0.0_wp
     bafuy_nod = 0.0_wp
@@ -518,6 +529,7 @@ CONTAINS
 !ICON_OMP_END_PARALLEL_DO
     if (kill) &
        CALL finish(routine, "FEM element-vertex connectivity inconsistency")
+    !$ACC ENTER DATA COPYIN(bafux_nod, bafuy_nod)
   END SUBROUTINE basisfunctions_nod
 
   !-------------------------------------------------------------------------
@@ -552,7 +564,7 @@ CONTAINS
 
     CALL copy_fem2icon(u_ice, u_, 1, 1)
 
-    CALL sync_patch_array(SYNC_V, fem_patch, u_(:,:))
+    CALL sync_patch_array(SYNC_V, fem_patch, u_(:,:), lacc=.FALSE.)
 
     CALL copy_icon2fem(u_, u_ice, 1, 1)
   END SUBROUTINE exchange_nod2D
@@ -570,27 +582,31 @@ CONTAINS
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
-    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) IF(lzacc)
+    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     DO jb = 1, fem_patch%nblks_v-1
       DO jv = 1, nproma
         u_(jv, lev_idx, jb) = u_ice((jb-1)*nproma + jv)
       END DO
     END DO
     !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
 
     npad = nproma*fem_patch%nblks_v - fem_patch%n_patch_verts
     nlast = nproma - npad
     jb = fem_patch%nblks_v
-    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     DO jv = 1, nlast
       u_(jv, lev_idx, jb) = u_ice((jb-1)*nproma + jv)
     END DO
     !$ACC END PARALLEL LOOP
-    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+    !$ACC WAIT(1)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     DO jv = nlast+1,nproma
-      u_(jv, lev_idx, jb) = -9999._wp
+      !      u_(jv, lev_idx, jb) = -9999._wp
+      u_(jv, lev_idx, jb) = 0.0_wp
     END DO
     !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
 
   END SUBROUTINE copy_fem2icon
 
@@ -606,28 +622,105 @@ CONTAINS
 
     CALL set_acc_host_or_device(lzacc, lacc)
 
-    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) IF(lzacc)
+    !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     DO jb = 1, fem_patch%nblks_v-1
       DO jv = 1, nproma
         u_ice((jb-1)*nproma + jv) = u_(jv, lev_idx, jb)
       END DO
     END DO
     !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
     npad = nproma*fem_patch%nblks_v - fem_patch%n_patch_verts
     nlast = nproma - npad
     jb = fem_patch%nblks_v
-    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     DO jv = 1, nlast
       u_ice((jb-1)*nproma + jv) = u_(jv, lev_idx, jb)
     END DO
     !$ACC END PARALLEL LOOP
+    !$ACC WAIT(1)
   END SUBROUTINE copy_icon2fem
+
+!> map fesom variable on elements --> ICON cells
+SUBROUTINE copy_femelem2iconcell(u_elem, u_cell, lacc)
+  REAL(wp), INTENT(IN)    :: u_elem(fem_patch%n_patch_cells)
+  REAL(wp), INTENT(INOUT) :: u_cell(nproma, fem_patch%nblks_c)
+  LOGICAL, INTENT(IN), OPTIONAL :: lacc
+
+  INTEGER :: jc, jb, npad, nlast
+  LOGICAL :: lzacc
+
+  CALL set_acc_host_or_device(lzacc, lacc)
+
+  ! all full blocks
+  !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) IF(lzacc)
+  DO jb = 1, fem_patch%nblks_c-1
+    DO jc = 1, nproma
+      u_cell(jc, jb) = u_elem((jb-1)*nproma + jc)
+    END DO
+  END DO
+  !$ACC END PARALLEL LOOP
+
+  ! last block (probably not full)
+  npad  = nproma*fem_patch%nblks_c - fem_patch%n_patch_cells
+  nlast = nproma - npad
+  jb    = fem_patch%nblks_c
+
+  !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+  DO jc = 1, nlast
+    u_cell(jc, jb) = u_elem((jb-1)*nproma + jc)
+  END DO
+  !$ACC END PARALLEL LOOP
+
+  ! fill the rest with 0
+  !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+  DO jc = nlast+1, nproma
+    u_cell(jc, jb) = 0.0_wp
+  END DO
+  !$ACC END PARALLEL LOOP
+
+END SUBROUTINE copy_femelem2iconcell
+
+
+!> map ICON variable on cells --> fesom elements
+SUBROUTINE copy_iconcell2femelem(u_cell, u_elem, lacc)
+  REAL(wp), INTENT(IN)  :: u_cell(nproma, fem_patch%nblks_c)
+  REAL(wp), INTENT(INOUT) :: u_elem(fem_patch%n_patch_cells)
+  LOGICAL, INTENT(IN), OPTIONAL :: lacc
+
+  INTEGER :: jc, jb, npad, nlast
+  LOGICAL :: lzacc
+
+  CALL set_acc_host_or_device(lzacc, lacc)
+
+  ! all full blocks
+  !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) IF(lzacc)
+  DO jb = 1, fem_patch%nblks_c-1
+    DO jc = 1, nproma
+      u_elem((jb-1)*nproma + jc) = u_cell(jc, jb)
+    END DO
+  END DO
+  !$ACC END PARALLEL LOOP
+
+  ! last block (probably not full)
+  npad  = nproma*fem_patch%nblks_c - fem_patch%n_patch_cells
+  nlast = nproma - npad
+  jb    = fem_patch%nblks_c
+
+  !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) IF(lzacc)
+  DO jc = 1, nlast
+    u_elem((jb-1)*nproma + jc) = u_cell(jc, jb)
+  END DO
+  !$ACC END PARALLEL LOOP
+
+END SUBROUTINE copy_iconcell2femelem
+
 
   SUBROUTINE exchange_nod2Dx2(u1_ice, u2_ice, lacc)
     REAL(wp), INTENT(INOUT) :: u1_ice(fem_patch%n_patch_verts), &
          u2_ice(fem_patch%n_patch_verts)
     LOGICAL, INTENT(IN), OPTIONAL :: lacc
-    
+
     LOGICAL :: lzacc
     ! Temporary buffer
     REAL(wp) :: u_(nproma, 2, fem_patch%nblks_v)
@@ -639,7 +732,7 @@ CONTAINS
     CALL copy_fem2icon(u1_ice, u_, 2, 1, lacc=lzacc)
     CALL copy_fem2icon(u2_ice, u_, 2, 2, lacc=lzacc)
 
-    CALL sync_patch_array(SYNC_V, fem_patch, u_)
+    CALL sync_patch_array(SYNC_V, fem_patch, u_, lacc=lzacc)
 
     CALL copy_icon2fem(u_, u1_ice, 2, 1, lacc=lzacc)
     CALL copy_icon2fem(u_, u2_ice, 2, 2, lacc=lzacc)
@@ -659,7 +752,7 @@ CONTAINS
     CALL copy_fem2icon(u2_ice, u_, 3, 2)
     CALL copy_fem2icon(u3_ice, u_, 3, 3)
 
-    CALL sync_patch_array(SYNC_V, fem_patch, u_)
+    CALL sync_patch_array(SYNC_V, fem_patch, u_, lacc=.FALSE.)
 
     CALL copy_icon2fem(u_, u1_ice, 3, 1)
     CALL copy_icon2fem(u_, u2_ice, 3, 2)
@@ -709,7 +802,7 @@ CONTAINS
     CALL basisfunctions_nod
 
     all_verts => p_patch%verts%all
-    
+
     ! Sort the list myList_nod2D using the global index
     ! Note: myList_nod2D==(1:nod2D) and myList_elem2D==(1:elem2D)
     k=0
@@ -726,7 +819,7 @@ CONTAINS
     ! Sort the list myList_elem2D using the global index
     k=0
     DO jb = p_patch%cells%all%start_block, p_patch%cells%all%end_block
-      CALL get_index_range(p_patch%cells%all, jb, i_startidx_c, i_endidx_c) 
+      CALL get_index_range(p_patch%cells%all, jb, i_startidx_c, i_endidx_c)
       DO jc = i_startidx_c,i_endidx_c
         k=k+1
         globList_elem2D(k) = p_patch%cells%decomp_info%glb_index(k)
@@ -749,6 +842,7 @@ CONTAINS
     ! But for later restructuring -- keep this way, instead of recalculating
     buffy_v = RESHAPE(p_patch%verts%f_v(:,:), SHAPE(buffy_v))
     coriolis_nod2D = buffy_v(1:SIZE(coriolis_nod2D))
+    !$ACC UPDATE DEVICE(lmass_matrix, voltriangle, coriolis_nod2D)
 
   END SUBROUTINE ice_fem_grid_post
 

@@ -1,13 +1,7 @@
-!
-! Two-moment bulk microphysics by Axel Seifert, Klaus Beheng and Uli Blahak
-!
-! Description:
-! Provides various derived types for two-moment bulk microphysics
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -15,15 +9,24 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Two-moment bulk microphysics by Axel Seifert, Klaus Beheng and Uli Blahak
+!
+! Description:
+! Provides various derived types for two-moment bulk microphysics
+
 MODULE mo_2mom_mcrph_types
 
-  USE mo_kind,               ONLY: sp, wp
+  USE mo_kind,               ONLY: wp
   USE mo_exception,          ONLY: finish, message, txt => message_text
 
   IMPLICIT NONE
 
+  ! The following parameter is supposed to raise an error, if mistakenly used.
+  ! It will be overwritten if initialised.
+  REAL(wp), PARAMETER      :: missing =  -HUGE(1.0_wp)
+
   PUBLIC
-  
+
   !==================================================================================
   ! Type declarations:
   !==================================================================================
@@ -32,9 +35,9 @@ MODULE mo_2mom_mcrph_types
   TYPE ATMOSPHERE
     REAL(wp), POINTER, DIMENSION(:,:) :: w, p, t, rho, qv, zh, tke
   END TYPE ATMOSPHERE
-  
+
   ! Derived type for hydrometeor species including pointers to data
-  TYPE PARTICLE
+  TYPE particle
     CHARACTER(20) :: name       !..name of particle class
     REAL(wp)      :: nu         !..first shape parameter of size distribution
     REAL(wp)      :: mu         !..2nd shape parameter
@@ -52,82 +55,60 @@ MODULE mo_2mom_mcrph_types
     REAL(wp), POINTER, DIMENSION(:,:) :: n     !..number density
     REAL(wp), POINTER, DIMENSION(:,:) :: q     !..mass density
     REAL(wp), POINTER, DIMENSION(:,:) :: rho_v !..density correction of terminal fall velocity
-  END TYPE PARTICLE
 
-  TYPE, EXTENDS(particle) :: particle_frozen
     REAL(wp)      :: ecoll_c    !..maximum collision efficiency with cloud droplets
     REAL(wp)      :: D_crit_c   !..D-threshold for cloud riming
     REAL(wp)      :: q_crit_c   !..q-threshold for cloud riming
     REAL(wp)      :: s_vel      !..dispersion of fall velocity for collection kernel (see SB2006, Eqs 60-63)
-  END TYPE particle_frozen
-
-  TYPE, EXTENDS(particle_frozen) :: particle_lwf
+    ! The following are needed only needed for lwf
     REAL(wp)      :: lwf_cnorm1  !..1st parameter for normalized diameter
     REAL(wp)      :: lwf_cnorm2  !..2nd parameter for normalized diameter
     REAL(wp)      :: lwf_cnorm3  !..3rd parameter for normalized diameter
     REAL(wp)      :: lwf_cmelt1  !..1st parameter for melting integral
     REAL(wp)      :: lwf_cmelt2  !..2nd parameter for melting integral
     REAL(wp), pointer, dimension(:,:) :: l  !..mass density of liquid water on ice (per unit volume of air)
-  END TYPE particle_lwf
+  END TYPE particle
 
   ! .. Because of OpenMP we have to separate the data pointers from the run-time-invariant coefficients.
   !    Therefore we carry 2 data structures for each particle species, e.g. graupel and graupel_coeff.
   !    The following derived types are for the run-time coefficients
-  
+
   TYPE particle_coeffs
     REAL(wp)      :: a_f  ! ventilation coefficient, vent_coeff_a(particle,1)
     REAL(wp)      :: b_f  ! ventilation coefficient, vent_coeff_b(particle,1) * N_sc**n_f / SQRT(nu_l)
     REAL(wp)      :: c_i  ! 1.0/particle%cap
     REAL(wp)      :: c_z  ! coefficient for 2nd mass moment
-  END type particle_coeffs
-  
+
   ! .. for spherical particles we need to store the coefficients for the
   !    power law bulk sedimentation velocity
-  TYPE, EXTENDS(particle_coeffs) :: particle_sphere
-    REAL(wp)      :: coeff_alfa_n
-    REAL(wp)      :: coeff_alfa_q
-    REAL(wp)      :: coeff_lambda
-  END TYPE particle_sphere
+    REAL(wp)      :: coeff_alfa_n = missing
+    REAL(wp)      :: coeff_alfa_q = missing
+    REAL(wp)      :: coeff_lambda = missing
 
   ! .. non-spherical particles have an Atlas-type terminal fall velocity relation
-  TYPE, EXTENDS(particle_coeffs) :: particle_nonsphere
-    REAL(wp)      :: alfa   !..1st parameter in Atlas-type fall speed
-    REAL(wp)      :: beta   !..2nd parameter in Atlas-type fall speed
-    REAL(wp)      :: gama   !..3rd parameter in Atlas-type fall speed
-  END TYPE particle_nonsphere
+    REAL(wp)      :: alfa = missing   !..1st parameter in Atlas-type fall speed
+    REAL(wp)      :: beta = missing   !..2nd parameter in Atlas-type fall speed
+    REAL(wp)      :: gama = missing   !..3rd parameter in Atlas-type fall speed
 
   ! .. raindrops have an Atlas-type terminal fall velocity relation
   !    and a mu-D-relation which is used in sedimentation and evaporation
   !    (see Seifert 2008, J. Atmos. Sci.)
-  TYPE, EXTENDS(particle_nonsphere) :: particle_rain_coeffs
-    REAL(wp)      :: cmu0   !..Parameters for mu-D-relation of rain: max of left branch
-    REAL(wp)      :: cmu1   !     max of right branch
-    REAL(wp)      :: cmu2   !     scaling factor
-    REAL(wp)      :: cmu3   !     location of min value = breakup equilibrium diameter
-    REAL(wp)      :: cmu4   !     min value of relation
-    INTEGER       :: cmu5   !     exponent
-  END TYPE particle_rain_coeffs
+    REAL(wp)      :: cmu0 = missing   !..Parameters for mu-D-relation of rain: max of left branch
+    REAL(wp)      :: cmu1 = missing   !     max of right branch
+    REAL(wp)      :: cmu2 = missing   !     scaling factor
+    REAL(wp)      :: cmu3 = missing   !     location of min value = breakup equilibrium diameter
+    REAL(wp)      :: cmu4 = missing   !     min value of relation
+    INTEGER       :: cmu5             !     exponent
 
-  TYPE, EXTENDS(particle_coeffs) :: particle_cloud_coeffs
-    REAL(wp)      :: k_au   !..Parameters for autoconversion
-    REAL(wp)      :: k_sc   !    and selfcollection
-  END TYPE particle_cloud_coeffs
+    REAL(wp)      :: k_au = missing   !..Parameters for autoconversion
+    REAL(wp)      :: k_sc = missing   !    and selfcollection
 
-  TYPE, EXTENDS(particle_sphere) :: particle_graupel_coeffs
-    REAL(wp)      :: sc_coll_n  !..Parameters for self-collection
-  END TYPE particle_graupel_coeffs
-
-  TYPE, EXTENDS(particle_sphere) :: particle_snow_coeffs
-    REAL(wp)      :: sc_delta_n !..Parameters for self-collection
-    REAL(wp)      :: sc_theta_n !   of snow
-  END TYPE particle_snow_coeffs
-
-  TYPE, EXTENDS(particle_sphere) :: particle_ice_coeffs
-    REAL(wp)      :: sc_delta_n !..Parameters for self-collection
-    REAL(wp)      :: sc_delta_q !   of cloud ice
-    REAL(wp)      :: sc_theta_n
-    REAL(wp)      :: sc_theta_q
-  END TYPE particle_ice_coeffs
+    REAL(wp)      :: sc_coll_n  = missing !..Parameters for self-collection
+    REAL(wp)      :: sc_delta_n = missing !..Parameters for self-collection
+    REAL(wp)      :: sc_theta_n = missing !   of snow
+    REAL(wp)      :: sc_delta_q = missing !   of cloud ice
+    REAL(wp)      :: sc_theta_q = missing
+  END TYPE particle_coeffs
 
   TYPE aerosol_ccn
      REAL(wp)      :: Ncn0      ! CN concentration at ground
@@ -174,6 +155,13 @@ MODULE mo_2mom_mcrph_types
     REAL(wp) :: alf_dep, bet_dep, nin_dep, &
                 alf_imm, bet_imm, nin_imm
   END TYPE dep_imm_coeffs
+
+  !..these are coefficients for diagnostics, which should be pre-computed at
+  !   the initial stage:
+  TYPE t_diag_coeffs_2mom
+    ! for hail kinetic energy flux including horizontal transport:
+    REAL(wp) :: coeff_v3_kef_hail, coeff_v2_kef_hail, coeff_v1_kef_hail
+  END TYPE t_diag_coeffs_2mom
 
   ! Type declaration for a general 1D equidistant lookup table:
   TYPE lookupt_1D
@@ -232,7 +220,7 @@ MODULE mo_2mom_mcrph_types
   !==================================================================================
   ! Actual instances of types:
   !==================================================================================
-  
+
   ! Types to hold the equidistant lookup table for graupel wetgrowth diameter:
   TYPE(lookupt_4d), TARGET :: ltabdminwgg
   ! Types to hold the equidistant lookup table for hail wetgrowth diameter:

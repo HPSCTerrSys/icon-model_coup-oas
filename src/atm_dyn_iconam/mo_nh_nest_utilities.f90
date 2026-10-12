@@ -1,19 +1,16 @@
-!
-!  This module contains the routines needed for nesting in the nonhydrostatic.
-!  version.
-!
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+!  This module contains the routines needed for nesting in the nonhydrostatic.
+!  version.
 
 !----------------------------
 #include "omp_definitions.inc"
@@ -46,8 +43,8 @@ MODULE mo_nh_nest_utilities
   USE mo_nwp_phy_types,       ONLY: t_nwp_phy_diag
   USE mo_prepadv_types,       ONLY: t_prepare_adv
   USE mo_nonhydrostatic_config,ONLY: ndyn_substeps_var
-  USE mo_atm_phy_nwp_config,  ONLY: iprog_aero
-  USE mo_impl_constants,      ONLY: SUCCESS, min_rlcell_int, min_rledge_int, min_rlcell, min_rledge
+  USE mo_atm_phy_nwp_config,  ONLY: i2daero_dust, i2daero_seas, i2daero_anthro
+  USE mo_impl_constants,      ONLY: SUCCESS, min_rlcell_int, min_rledge_int, min_rlcell, min_rledge, inwp
   USE mo_loopindices,         ONLY: get_indices_c, get_indices_e
   USE mo_impl_constants_grf,  ONLY: grf_bdyintp_start_c, grf_bdyintp_end_c, grf_bdywidth_c, &
     &                               grf_bdywidth_e, grf_nudgintp_start_c, grf_nudgintp_start_e, &
@@ -466,7 +463,7 @@ CONTAINS
           p_nh%diag%mflx_ic_int(jc,jb,nsubs+1)       = p_nh%diag%mflx_ic_int(jc,jb,nsubs+1)    * rnsubs
         ENDDO
 
-        ! Compute time tendencies to obtain second order in time accuracy for child nest UBC, 
+        ! Compute time tendencies to obtain second order in time accuracy for child nest UBC,
         ! and store them at index nsubs+2.
         !$ACC LOOP GANG(STATIC: 1) VECTOR
         DO jc = i_startidx, i_endidx
@@ -668,11 +665,11 @@ CONTAINS
   !>
   !! Interpolates time tendencies of prognostic variables to the lateral boundary
   !! of a refined mesh.
-  !! In addition, interpolates prognostic variables to child upper boundary  
+  !! In addition, interpolates prognostic variables to child upper boundary
   !! for vertical nesting.
   !!
   SUBROUTINE boundary_interpolation (jg,jgc,ntp_dyn,ntc_dyn,ntp_tr,ntc_tr, &
-    p_patch, p_nh_state, prep_adv, prm_diag, p_grf_state, lacc)
+    p_patch, p_nh_state, prep_adv, p_grf_state, prm_diag, lacc)
 
     CHARACTER(len=*), PARAMETER ::  &
       &  routine = modname//':boundary_interpolation'
@@ -682,11 +679,11 @@ CONTAINS
     ! Parent and child time levels for dynamical variables and tracers
     INTEGER,  INTENT(IN)    :: ntp_dyn, ntc_dyn, ntp_tr, ntc_tr
 
-    TYPE(t_patch)        , INTENT(   IN), TARGET :: p_patch(:)
-    TYPE(t_nh_state)     , INTENT(INOUT), TARGET :: p_nh_state(:)
-    TYPE(t_prepare_adv)  , INTENT(INOUT), TARGET :: prep_adv(:)
-    TYPE(t_nwp_phy_diag) , INTENT(INOUT)         :: prm_diag(:)
-    TYPE(t_gridref_state), INTENT(   IN), TARGET :: p_grf_state(:)
+    TYPE(t_patch)        , INTENT(   IN), TARGET   :: p_patch(:)
+    TYPE(t_nh_state)     , INTENT(INOUT), TARGET   :: p_nh_state(:)
+    TYPE(t_prepare_adv)  , INTENT(INOUT), TARGET   :: prep_adv(:)
+    TYPE(t_gridref_state), INTENT(   IN), TARGET   :: p_grf_state(:)
+    TYPE(t_nwp_phy_diag) , INTENT(INOUT), OPTIONAL :: prm_diag(:)
     LOGICAL, INTENT(IN) :: lacc
 
     ! local variables
@@ -789,7 +786,7 @@ CONTAINS
         !$ACC END KERNELS
       ENDIF
 
-      CALL sync_patch_array(SYNC_E,p_pp,p_diagp%vn_ie_int)
+      CALL sync_patch_array(SYNC_E,p_pp,p_diagp%vn_ie_int,lacc=.TRUE.)
 
       CALL interpol_vec_ubc (p_pp, p_pc, p_grf%p_dom(i_chidx), &
         p_diagp%vn_ie_int, p_diagc%vn_ie_ubc, lacc=.TRUE.)
@@ -809,7 +806,7 @@ CONTAINS
 
           CALL get_indices_c(p_pp, jb, i_startblk, i_endblk, i_startidx, i_endidx, &
             0, min_rlcell_int)
-        
+
           !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
           !$ACC LOOP GANG(STATIC: 1) VECTOR
 !$NEC ivdep
@@ -831,7 +828,7 @@ CONTAINS
         ENDDO
 !$OMP END PARALLEL DO
 
-        CALL sync_patch_array(SYNC_C,p_pp,aux3dp)
+        CALL sync_patch_array(SYNC_C,p_pp,aux3dp,lacc=.TRUE.)
 
         CALL interpol_scal_ubc (p_pc, p_grf%p_dom(i_chidx),  &
           ntracer+8, aux3dp, aux3dc, lacc=.TRUE.)
@@ -885,7 +882,7 @@ CONTAINS
         ENDDO
 !$OMP END PARALLEL DO
 
-        CALL sync_patch_array(SYNC_C,p_pp,aux3dp)
+        CALL sync_patch_array(SYNC_C,p_pp,aux3dp,lacc=.TRUE.)
 
         CALL interpol_scal_ubc(p_pc, p_grf%p_dom(i_chidx), 8, aux3dp, aux3dc, lacc=.TRUE.)
 
@@ -939,7 +936,7 @@ CONTAINS
 
       ! Interpolation of temporal tendencies, full w, perturbation density (stored in div)
       !  and perturbationvirtual potential temperature (stored in dpres_mc)
-      CALL interpol_scal_grf (p_pp=p_pp, p_pc=p_pc, p_grf=p_grf%p_dom(i_chidx), nfields=6, lacc=.TRUE., &
+      CALL interpol_scal_grf (p_pp=p_pp, p_pc=p_pc, p_grf=p_grf%p_dom(i_chidx), nfields=6, nlev_ex=1, lacc=.TRUE., &
         f3din1=p_diagp%grf_tend_rho, f3dout1=p_diagc%grf_tend_rho,  &
         f3din2=p_diagp%grf_tend_thv, f3dout2=p_diagc%grf_tend_thv,  &
         f3din3=p_diagp%grf_tend_w,   f3dout3=p_diagc%grf_tend_w,    &
@@ -1020,7 +1017,7 @@ CONTAINS
       l_limit(ntracer_bdyintp+1:2*ntracer_bdyintp) = .TRUE.
 
       CALL interpol_scal_grf ( p_pp=p_pp, p_pc=p_pc, p_grf=p_grf%p_dom(i_chidx),    &
-        nfields=2*ntracer_bdyintp, lacc=.TRUE.,                                     &
+        nfields=2*ntracer_bdyintp, lacc=.TRUE., nlev_ex=1,                          &
         f4din1 =  p_diagp%grf_tend_tracer(:,:,:,1:ntracer_bdyintp),                 &
         f4dout1 = p_diagc%grf_tend_tracer(:,:,:,1:ntracer_bdyintp),                 &
         f4din2  = p_nhp_tr%tracer(:,:,:,1:ntracer_bdyintp),                         &
@@ -1029,10 +1026,11 @@ CONTAINS
 
     ENDIF
 
-    IF (ltransport .AND. iprog_aero >= 1) THEN
+    IF (ltransport .AND. iforcing == inwp &
+      & .AND. ANY( (/i2daero_dust, i2daero_seas, i2daero_anthro/) > 0 ) ) THEN
      CALL interpol_scal_grf (p_pp=p_pp, p_pc=p_pc, p_grf=p_grf%p_dom(i_chidx), nfields=1, lacc=.TRUE., &
       f3din1=prm_diag(jg)%aerosol, f3dout1=prm_diag(jgc)%aerosol, &
-      llimit_nneg=(/.TRUE./), lnoshift=.TRUE.)
+      llimit_nneg=(/.TRUE./), lnoshift=.TRUE., nlev_ex=SIZE(prm_diag(jgc)%aerosol,2))
     ENDIF
 
     ! Lateral boundary interpolation of edge-based variables  (velocity components)
@@ -1062,10 +1060,10 @@ CONTAINS
   !! This routine prepares boundary nudging for use with 1-way nesting.
   !!
   !! The following steps are executed:
-  !! 1. Mapping of parent grid prognostic variables to intermediate grid having 
+  !! 1. Mapping of parent grid prognostic variables to intermediate grid having
   !!    the horizontal resolution of the parent grid, but sharing
   !!    the domain decomposition and vertical dimension with the child grid.
-  !! 2. a) Interpolation/Averaging of child grid variables to intermediate grid. 
+  !! 2. a) Interpolation/Averaging of child grid variables to intermediate grid.
   !!    b) Computation of differences between mapped parent-grid values and averaged child grid
   !!    variables.
   !! 3. Interpolation of difference fields to the child grid
@@ -1184,7 +1182,7 @@ CONTAINS
     !$ACC DATA CREATE(parent_thv, diff_thv, parent_rho, diff_rho, parent_w, diff_w) &
     !$ACC   CREATE(parent_vn, diff_vn)
     !$ACC DATA CREATE(parent_tr, diff_tr) IF(ltransport)
-    
+
     ! Set pointers to index and coefficient fields for cell-based variables
     iidx  => p_gcp%child_idx
     iblk  => p_gcp%child_blk
@@ -1352,35 +1350,39 @@ CONTAINS
     ! Please note that we cannot use sync_patch_array here (comparing parallel/non parallel results)
     ! since the arrays don't start with lower bound 1 in the non parallel case!
 
-    ! Synchronization is needed after the interpolation step because the nudging tendencies are applied outside 
+    ! Synchronization is needed after the interpolation step because the nudging tendencies are applied outside
     ! the dynamical core. This is needed for the scalars for reasons of mass consistency, but is also done for the
     ! wind tendencies because this turns out to improve noise filtering
 
     IF(l_parallel) CALL exchange_data(p_pat=p_pp%comm_pat_e, lacc=.TRUE., recv=diff_vn)
     CALL interpol_vec_nudging (p_pp, p_pc, p_int, p_grf%p_dom(i_chidx),   &
       &                        0, istartblk_e, diff_vn,p_diag%grf_tend_vn, lacc=.TRUE.)
-    CALL sync_patch_array(SYNC_E,p_pc,p_diag%grf_tend_vn)
+    CALL sync_patch_array(SYNC_E,p_pc,p_diag%grf_tend_vn,lacc=.TRUE.)
 
     IF(l_parallel) CALL exchange_data_mult(p_pat=p_pp%comm_pat_c, &
       lacc=.TRUE., &
       nfields=3, ndim2tot=3*nlev_c+1, &
       recv1=diff_thv, recv2=diff_rho, recv3=diff_w)
-    CALL interpol_scal_nudging (p_pp, p_int, p_grf%p_dom(i_chidx), 0, 3, istartblk_c,          &
+    CALL interpol_scal_nudging (p_pp, p_int, p_grf%p_dom(i_chidx), nshift=0, nfields=3,        &
+      &                         nlev_ex=1, istart_blk=istartblk_c, lacc=.TRUE.,                &
       &                         f3din1=diff_thv, f3dout1=p_diag%grf_tend_thv,                  &
       &                         f3din2=diff_rho, f3dout2=p_diag%grf_tend_rho,                  &
       &                         f3din3=diff_w,   f3dout3=p_diag%grf_tend_w                     )
-    CALL sync_patch_array_mult(SYNC_C,p_pc,3,p_diag%grf_tend_thv,p_diag%grf_tend_rho,  &
-      p_diag%grf_tend_w)
+    CALL sync_patch_array_mult(SYNC_C, p_pc, 3, lacc=.TRUE., &
+                               f3din1=p_diag%grf_tend_thv, f3din2=p_diag%grf_tend_rho, &
+                               f3din3 = p_diag%grf_tend_w)
 
     IF (ltransport) THEN
       IF(l_parallel) CALL exchange_data_mult(p_pat=p_pp%comm_pat_c, &
         lacc=.TRUE., &
         nfields=ntracer_nudge, ndim2tot=ntracer_nudge*nlev_c, recv4d=diff_tr)
 
-      CALL interpol_scal_nudging (p_pp, p_int, p_grf%p_dom(i_chidx),                   &
-        &                         0, ntracer_nudge, istartblk_c, f4din=diff_tr,        &
+      CALL interpol_scal_nudging (p_pp, p_int, p_grf%p_dom(i_chidx), nshift=0,                &
+        &                         nfields=ntracer_nudge, nlev_ex=1, istart_blk=istartblk_c,   &
+        &                         lacc=.TRUE., f4din=diff_tr,                                 &
         &                         f4dout=p_diag%grf_tend_tracer(:,:,:,1:ntracer_nudge) )
-      CALL sync_patch_array_mult(SYNC_C,p_pc,ntracer_nudge,f4din=p_diag%grf_tend_tracer(:,:,:,1:ntracer_nudge))
+      CALL sync_patch_array_mult(SYNC_C, p_pc, ntracer_nudge, lacc=.TRUE., &
+                                 f4din=p_diag%grf_tend_tracer(:,:,:,1:ntracer_nudge))
     ENDIF
 
     !$ACC WAIT
@@ -1398,10 +1400,10 @@ CONTAINS
   !! This routine prepares boundary nudging for density only (for use with 2-way nesting)
   !!
   !! The following steps are executed:
-  !! 1. Mapping of parent grid prognostic variables to intermediate grid having 
+  !! 1. Mapping of parent grid prognostic variables to intermediate grid having
   !!    the horizontal resolution of the parent grid, but sharing
   !!    the domain decomposition and vertical dimension with the child grid.
-  !! 2. a) Interpolation/Averaging of child grid variables to intermediate grid. 
+  !! 2. a) Interpolation/Averaging of child grid variables to intermediate grid.
   !!    b) Computation of differences between mapped parent-grid values and averaged child grid
   !!    variables.
   !! 3. Interpolation of difference fields to the child grid
@@ -1548,9 +1550,10 @@ CONTAINS
     ! those, the nudging tendencies are applied outside the dynamical core for reasons of mass consistency
 
     IF(l_parallel) CALL exchange_data(p_pat=p_pp%comm_pat_c, lacc=.TRUE., recv=diff_rho)
-    CALL interpol_scal_nudging (p_pp, p_int, p_grf%p_dom(i_chidx), 0, 1, istartblk_c, &
-      &                         f3din1=diff_rho, f3dout1=p_diag%grf_tend_rho                   )
-    CALL sync_patch_array(SYNC_C,p_pc,p_diag%grf_tend_rho)
+    CALL interpol_scal_nudging (p_pp, p_int, p_grf%p_dom(i_chidx), nshift=0,               &
+      &                         nfields=1, nlev_ex=1, istart_blk=istartblk_c, lacc=.TRUE., &
+      &                         f3din1=diff_rho, f3dout1=p_diag%grf_tend_rho)
+    CALL sync_patch_array(SYNC_C,p_pc,p_diag%grf_tend_rho,lacc=.TRUE.)
 
     !$ACC WAIT(1)
     !$ACC END DATA
@@ -1579,7 +1582,7 @@ CONTAINS
     TYPE(t_pi_atm),     INTENT(IN), OPTIONAL :: p_latbc_old, p_latbc_new
     REAL(wp),           INTENT(IN), OPTIONAL :: lc1     ! time interpolation weight
     REAL(wp),           INTENT(IN), OPTIONAL :: lc2     ! time interpolation weight
-    
+
     ! local variables
     INTEGER  :: jb, jc, jk, je, ic, nlev
     INTEGER  :: jg, nshift
@@ -1605,7 +1608,7 @@ CONTAINS
 
     IF (PRESENT(lc1) .AND. PRESENT(lc2)) THEN
       wfac_old = lc1
-      wfac_new = lc2  
+      wfac_new = lc2
     ELSE
       wfac_old = -999._wp
       wfac_new = -999._wp
@@ -1915,14 +1918,14 @@ CONTAINS
 
     IF (PRESENT(lc1) .AND. PRESENT(lc2)) THEN
       wfac_old = lc1
-      wfac_new = lc2  
+      wfac_new = lc2
     ELSE
       wfac_old = -999._wp
       wfac_new = -999._wp
    ENDIF
-   
+
     !
-    ! Check if hydrostatic or nonhydrostatic thermodynamic variables shall be used for computing nudging increments 
+    ! Check if hydrostatic or nonhydrostatic thermodynamic variables shall be used for computing nudging increments
     lnudge_hydro_pres_ubn = nudging_config(jg)%thermdyn_type == ithermdyn_type%hydrostatic .AND. ltransport
     !
     ! Max. nudging coefficients (qv is not nudged in upper boundary zone)
@@ -2102,7 +2105,7 @@ CONTAINS
 
 
   !>
-  !! This routine interpolates lateral boundary data (or more generally forcing data) 
+  !! This routine interpolates lateral boundary data (or more generally forcing data)
   !! from the base domain to a specific child domain (jg), and all childs contained therein.
   !!
   RECURSIVE SUBROUTINE intp_nestubc_nudging (p_patch, latbc_data, jg, lacc)
@@ -2110,7 +2113,7 @@ CONTAINS
     TYPE(t_patch),       INTENT(INOUT) :: p_patch(:)
     TYPE(t_latbc_state), INTENT(INOUT) :: latbc_data        ! source data (for base domain)
 
-    INTEGER, INTENT(IN) :: jg      ! domain ID of the target (child) domain. 
+    INTEGER, INTENT(IN) :: jg      ! domain ID of the target (child) domain.
                                    ! i.e. the domain to which the data are interpolated
     LOGICAL, INTENT(IN) :: lacc ! if true (and compile with OpenACC) use data on GPU
 
@@ -2133,7 +2136,7 @@ CONTAINS
       IF (msg_level >= 12) THEN
         CALL datetimeToString(latbc_data%vDateTime, vDateTime_str_cur)
         WRITE(message_text,'(a,i2,a,a)') 'latbc data interpolation to DOM', jg, &
-          &                               ' at ', TRIM(vDateTime_str_cur) 
+          &                               ' at ', TRIM(vDateTime_str_cur)
         CALL message(routine, message_text)
       ENDIF
 
@@ -2149,7 +2152,7 @@ CONTAINS
 
       ! temporary local_parent arrays
       ALLOCATE(pres_lp(nproma, nlev, p_plp%nblks_c),  &
-        &      temp_lp(nproma, nlev, p_plp%nblks_c),  & 
+        &      temp_lp(nproma, nlev, p_plp%nblks_c),  &
         &      qv_lp  (nproma, nlev, p_plp%nblks_c),  &
         &      vn_lp  (nproma, nlev, p_plp%nblks_e)   )
 
@@ -2175,15 +2178,16 @@ CONTAINS
         &                     nfields=3, ndim2tot=3*nlev, &
         &                     recv1=pres_lp, recv2=temp_lp, recv3=qv_lp)
       !
-      CALL interpol_scal_nudging (p_plp, p_int, p_grf%p_dom(i_chidx), 0, 3, 1,           &
-        &                         f3din1=pres_lp, f3dout1=latbc_data%atm_child(jg)%pres, &
-        &                         f3din2=temp_lp, f3dout2=latbc_data%atm_child(jg)%temp, &
-        &                         f3din3=qv_lp,   f3dout3=latbc_data%atm_child(jg)%qv    )
+      CALL interpol_scal_nudging (p_plp, p_int, p_grf%p_dom(i_chidx), nshift=0, nfields=3, &
+        &                         nlev_ex=1, istart_blk=1, lacc=lacc,                      &
+        &                         f3din1=pres_lp, f3dout1=latbc_data%atm_child(jg)%pres,   &
+        &                         f3din2=temp_lp, f3dout2=latbc_data%atm_child(jg)%temp,   &
+        &                         f3din3=qv_lp,   f3dout3=latbc_data%atm_child(jg)%qv      )
       !
-      CALL sync_patch_array_mult(SYNC_C, p_patch(jg), 3,        &
-        &                        latbc_data%atm_child(jg)%pres, &
-        &                        latbc_data%atm_child(jg)%temp, &
-        &                        latbc_data%atm_child(jg)%qv)
+      CALL sync_patch_array_mult(SYNC_C, p_patch(jg), 3, lacc=lacc, &
+        &                        f3din1=latbc_data%atm_child(jg)%pres, &
+        &                        f3din2=latbc_data%atm_child(jg)%temp, &
+        &                        f3din3=latbc_data%atm_child(jg)%qv)
 
       ! vn
       !
@@ -2192,14 +2196,14 @@ CONTAINS
       CALL interpol_vec_nudging (p_plp, p_patch(jg), p_int, p_grf%p_dom(i_chidx), &
         &                        0, 1, vn_lp, latbc_data%atm_child(jg)%vn, lacc=lacc)
       !
-      CALL sync_patch_array(SYNC_E, p_patch(jg), latbc_data%atm_child(jg)%vn)
+      CALL sync_patch_array(SYNC_E, p_patch(jg), latbc_data%atm_child(jg)%vn, lacc=lacc)
 
       DEALLOCATE(pres_lp, temp_lp, qv_lp, vn_lp)
 
     ENDIF
 
 
-    ! in case that child domains exist for the current domain jg, repeat the interpolation 
+    ! in case that child domains exist for the current domain jg, repeat the interpolation
     ! for each child domain.
     DO jn = 1, p_patch(jg)%n_childdom
 
@@ -2434,4 +2438,3 @@ CONTAINS
 
 
 END MODULE mo_nh_nest_utilities
-

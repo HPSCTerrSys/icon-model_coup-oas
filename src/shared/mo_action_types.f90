@@ -1,16 +1,15 @@
-! Type definition for action events
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Type definition for action events
 
 MODULE mo_action_types
 
@@ -191,7 +190,7 @@ CONTAINS
     INTEGER, INTENT(IN) :: act_typ    ! type of action
     ! local
     INTEGER :: ia
- 
+
     n_act = 0
     DO ia=1,var_action%n_actions
       IF (var_action%action(ia)%actionTyp == act_typ) THEN
@@ -241,4 +240,3 @@ CONTAINS
   END FUNCTION var_action__getActiveAction
 
 END MODULE mo_action_types
-

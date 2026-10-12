@@ -1,7 +1,7 @@
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -12,7 +12,7 @@
 MODULE mo_mtrace
   USE iso_c_binding, ONLY: c_char, c_null_char, c_int
   USE mpi
-  USE mo_exception, ONLY: em_warn, message
+  USE mo_exception, ONLY: warning, message
   PRIVATE
   PUBLIC :: start_memory_tracing
   INTERFACE
@@ -44,8 +44,7 @@ CONTAINS
     got_rank = get_world_rank_slurm(world_size, world_rank)
     IF (.NOT. got_rank) got_rank = get_world_rank_mpi(world_size, world_rank)
     IF (.NOT. got_rank) THEN
-      CALL message(routine, 'Cannot determine output file for memory tracing', &
-           all_print=.TRUE., level=em_warn)
+      CALL warning(routine, 'Cannot determine output file for memory tracing')
       RETURN
     END IF
     ndig = 1
@@ -67,8 +66,7 @@ CONTAINS
     ow = 1_c_int
     se_rc =  setenv(mtrace_fn_env, mt_fn, ow)
     IF (se_rc /= 0) THEN
-      CALL message(routine, 'Failed to set environment variable!', &
-           level=em_warn, all_print=.TRUE.)
+      CALL warning(routine, 'Failed to set environment variable!')
       RETURN
     END IF
     CALL mtrace
@@ -84,21 +82,18 @@ CONTAINS
     succeeded = .FALSE.
     CALL mpi_initialized(is_mpi_initialized, ierror)
     IF (ierror /= mpi_success) THEN
-      CALL message(routine, 'Error in mpi_initialized!', level=em_warn, &
-        &          all_print=.TRUE.)
+      CALL warning(routine, 'Error in mpi_initialized!')
       RETURN
     END IF
     IF (.NOT. is_mpi_initialized) RETURN
     CALL mpi_comm_size(mpi_comm_world, world_size, ierror)
     IF (ierror /= mpi_success) THEN
-      CALL message(routine, 'Failed to retrieve world size!', level=em_warn, &
-        &          all_print=.TRUE.)
+      CALL warning(routine, 'Failed to retrieve world size!')
       RETURN
     END IF
     CALL mpi_comm_rank(mpi_comm_world, world_rank, ierror)
     IF (ierror /= mpi_success) THEN
-      CALL message(routine, 'Failed to retrieve world rank!', level=em_warn, &
-        &          all_print=.TRUE.)
+      CALL warning(routine, 'Failed to retrieve world rank!')
       RETURN
     END IF
     succeeded = .TRUE.

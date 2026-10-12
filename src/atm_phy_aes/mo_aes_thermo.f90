@@ -1,16 +1,15 @@
-!
-! Module containing thermodynamic functions used by the AES department in MPI-M
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Module containing thermodynamic functions used by the AES department in MPI-M
 
 MODULE mo_aes_thermo
 
@@ -35,8 +34,8 @@ USE mo_physical_constants, ONLY: rv     , & !> gas constant for water vapour
 
   PRIVATE
 
-  PUBLIC  :: internal_energy       ! calculates internal energy 
-  PUBLIC  :: T_from_internal_energy! calculates temprature from internal energy 
+  PUBLIC  :: internal_energy       ! calculates internal energy
+  PUBLIC  :: T_from_internal_energy! calculates temprature from internal energy
   PUBLIC  :: saturation_adjustment ! partitions water mass to maintain saturation
   PUBLIC  :: qsat_rho              ! sat. vapor pres. (over liquid) at constant density
   PUBLIC  :: qsat_ice_rho          ! sat. vapor pres. (over ice) at constant density
@@ -47,14 +46,15 @@ USE mo_physical_constants, ONLY: rv     , & !> gas constant for water vapour
   PUBLIC  :: sat_pres_ice          ! saturation pressure over ice
   PUBLIC  :: specific_humidity     ! calculate specific humidity from vapor and total pressure
   PUBLIC  :: potential_temperature ! calculate potential temperature
+  PUBLIC  :: dewpoint_temperature  ! calculate dewpoint temperature
 
   PUBLIC  :: lvc                   ! invariant part of vaporization enthalpy
   PUBLIC  :: lsc                   ! invariant part of sublimation enthalpy
-  
+
   REAL (KIND=wp), PARAMETER ::     &
        ci  = 2108.0_wp,            & !! specific heat of ice
-       lvc = alv-(cpv-clw)*tmelt,  & !! invariant part of vaporization enthalpy    
-       lsc = als-(cpv-ci )*tmelt,  & !! invariant part of sublimation enthalpy    
+       lvc = alv-(cpv-clw)*tmelt,  & !! invariant part of vaporization enthalpy
+       lsc = als-(cpv-ci )*tmelt,  & !! invariant part of sublimation enthalpy
        c1es  = 610.78_wp,          & !! constants for saturation vapor pressure
        c2es  = c1es*rd/rv,         & !!
        c3les = 17.269_wp,          & !!
@@ -111,7 +111,7 @@ SUBROUTINE saturation_adjustment ( ilo,  iup,  klo,  kup, &
        cv,  & ! isometric specific heat of moist system with condensate
        ue,  & ! partial (that which varies with condensation) internal energy at qce and Te
        ux,  & ! partial (that which varies with condensation) internal energy at qcx and Tx
-       dqx, & ! change in saturation vapor pressure at Tx 
+       dqx, & ! change in saturation vapor pressure at Tx
        dux    ! derivative of ux wrt Tx
 
   !------------ End of header ----------------------------------------------------
@@ -133,21 +133,21 @@ SUBROUTINE saturation_adjustment ( ilo,  iup,  klo,  kup, &
       ! If subsaturated upon evaporating all cloud water, T can be diagnosed explicitly,
       ! so test for this.  If not then T needs to be solved for iteratively.
       !
-      IF (qve(i,k)+qce(i,k) <= qx ) THEN 
+      IF (qve(i,k)+qce(i,k) <= qx ) THEN
         qve(i,k)  = qve(i,k)+qce(i,k)
         qce(i,k)  = 0.0_wp
-      ELSE 
+      ELSE
         Tx = te(i,k)
         !$ACC LOOP SEQ
-        DO iter = 1, 6 
+        DO iter = 1, 6
            qx   = qsat_rho(Tx, rho(i,k))
            dqx  = dqsatdT_rho(qx, Tx)
            qcx  = qve(i,k)+qce(i,k) - qx
-           cv   = cvc + cvv*qx + clw*qcx 
+           cv   = cvc + cvv*qx + clw*qcx
            ux   = cv*Tx -qcx*lvc
            dux  = cv + dqx*(lvc + (cvv-clw)*Tx)
-           Tx   = Tx - (ux-ue) / dux 
-        END DO 
+           Tx   = Tx - (ux-ue) / dux
+        END DO
         qx       = qsat_rho(Tx, rho(i,k))
         qce(i,k) = MAX( qve(i,k) + qce(i,k) - qx, 0.0_wp)
         qve(i,k) = qx
@@ -173,10 +173,10 @@ END SUBROUTINE saturation_adjustment
   !      * dqsatdT_rho         ! d(qsat_rho)/dT
   !      * vaporization_energy ! internal energy of vaporization
   !      * sublimation_energy  ! internal energy of sublimation
-  
+
   !
   ! Method (also GPU directives):
-  !   Most functions are elemental.  However functions that use the directive 
+  !   Most functions are elemental.  However functions that use the directive
   !   ACC ROUTINE SEQ are conditionally elemental as this directive is not
   !   compatible with an elemental function
   !
@@ -196,7 +196,7 @@ PURE FUNCTION internal_energy(TK,qv,qliq,qice,rho,dz)
   REAL (KIND=wp) :: cv   !! moist isometric specific heat
 
   !$ACC ROUTINE SEQ
-    
+
   qtot = qliq + qice + qv
   cv   = cvd*(1.0_wp - qtot) + cvv*qv + clw*qliq + ci*qice
 
@@ -220,7 +220,7 @@ PURE FUNCTION T_from_internal_energy(U,qv,qliq,qice,rho,dz)
   REAL (KIND=wp) :: cv   !! moist isometric specific heat
 
   !$ACC ROUTINE SEQ
-    
+
   qtot = qliq + qice + qv
   cv   = (cvd*(1.0_wp - qtot) + cvv*qv + clw*qliq + ci*qice)*rho*dz
 
@@ -230,9 +230,6 @@ END FUNCTION T_from_internal_energy
 
 !!!=============================================================================================
 
-#ifndef _OPENACC
-ELEMENTAL &
-#endif
 PURE FUNCTION potential_temperature(TK, pres)
 
   REAL(wp) :: potential_temperature
@@ -245,6 +242,33 @@ PURE FUNCTION potential_temperature(TK, pres)
   potential_temperature = TK * EXP(rd_o_cpd * LOG(p0ref/pres))
 
 END FUNCTION potential_temperature
+
+!!!=============================================================================================
+
+PURE FUNCTION dewpoint_temperature(TK, qv, pres)
+
+  REAL(wp) :: dewpoint_temperature
+  REAL(wp), INTENT(in) :: &
+    & TK, & !! temperature
+    & qv, & !! specific humidity
+    & pres  !! pressure
+
+  REAL(wp) :: zfrac, zcvm3, zcvm4
+
+  !$ACC ROUTINE SEQ
+
+  IF (TK > tmelt) THEN
+    zcvm3 = c3les
+    zcvm4 = c4les
+  ELSE
+    zcvm3 = c3ies
+    zcvm4 = c4ies
+  ENDIF
+
+  zfrac = LOG(pres * qv / (c2es * (1._wp + vtmpc1 * qv))) / zcvm3
+  dewpoint_temperature = MIN(TK, (tmelt - zfrac * zcvm4) / (1._wp - zfrac))
+
+END FUNCTION dewpoint_temperature
 
 !!!=============================================================================================
 
@@ -320,7 +344,7 @@ PURE FUNCTION dqsatdT_rho(qs, TK)
 
   !$ACC ROUTINE SEQ
   dqsatdT_rho = qs * (c5les/(TK-c4les)**2_i4 - 1.0_wp / TK)
-  
+
 END FUNCTION dqsatdT_rho
 
 !!!=============================================================================================
@@ -356,7 +380,7 @@ PURE FUNCTION vaporization_energy(TK)
 
   !$ACC ROUTINE SEQ
   vaporization_energy = lvc + (cvv - clw)*TK
-  
+
 END FUNCTION vaporization_energy
 
 !!!=============================================================================================
@@ -368,8 +392,7 @@ PURE FUNCTION sublimation_energy(TK)
 
   !$ACC ROUTINE SEQ
   sublimation_energy = als + (cpv - ci)*(TK-tmelt) -rv*TK
-  
+
 END FUNCTION sublimation_energy
 
 END MODULE mo_aes_thermo
-

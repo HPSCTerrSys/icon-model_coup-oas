@@ -1,18 +1,17 @@
-! Basic module initializing the MPI communication and handling most
-! of the MPI calls (wrapper functions).
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
-!
+
+! Basic module initializing the MPI communication and handling most
+! of the MPI calls (wrapper functions).
+
 !  MPI-Handshake
 !  -------------
 !
@@ -223,7 +222,7 @@ MODULE mo_mpi
   ! Comment: Please use basic WRITE to nerr for messaging in the whole
   !          MPI package to achieve proper output.
 
-  USE, INTRINSIC :: iso_c_binding, ONLY: c_char, c_signed_char, c_int
+  USE, INTRINSIC :: iso_c_binding, ONLY: c_char, c_signed_char, c_int, c_bool
 
 #ifndef NOMPI
   USE mpi
@@ -233,7 +232,7 @@ MODULE mo_mpi
   USE omp_lib, ONLY: omp_get_max_threads, omp_set_num_threads
 #endif
 
-  USE mo_kind, ONLY: i4, i8, dp, sp, wp
+  USE mo_kind, ONLY: i4, i8, dp, sp, wp, check_numerical_requirements
   USE mo_io_units,       ONLY: nerr
   USE mo_impl_constants, ONLY: pio_type_async, pio_type_cdipio
   USE mtime,             ONLY: datetime, max_datetime_str_len, datetimeToString, &
@@ -259,7 +258,8 @@ MODULE mo_mpi
 #endif
 
   USE mo_master_control, ONLY: get_my_process_type, hamocc_process, ocean_process, process_exists, &
-       &                       my_process_is_hamocc, my_process_is_ocean
+       &                       my_process_is_hamocc, my_process_is_ocean, my_process_is_atmo, &
+       &                       get_my_process_name
 
 #ifdef HAVE_YAXT
   USE yaxt,                   ONLY: xt_initialize, xt_initialized
@@ -274,7 +274,9 @@ MODULE mo_mpi
 
 #ifndef __NO_ICON_COMIN__
   USE comin_host_interface,   ONLY: comin_callback_context_call,  &
-    &                               EP_FINISH, COMIN_DOMAIN_OUTSIDE_LOOP
+    &                               EP_FINISH, COMIN_DOMAIN_OUTSIDE_LOOP, comin_parallel_mpi_handshake, &
+    &                               mpi_handshake_dummy
+  USE mo_comin_config,            ONLY: comin_config
 #endif
 
   IMPLICIT NONE
@@ -323,7 +325,7 @@ MODULE mo_mpi
   PUBLIC :: get_my_mpi_all_comm_size   ! this is the the size of the communicator for the specific component
   PUBLIC :: get_my_mpi_work_communicator   ! the communicator for the workers of this component
   PUBLIC :: get_my_mpi_work_comm_size   ! this is the the size of the workers
-  PUBLIC :: get_hamocc_ocean_mpi_communicator 
+  PUBLIC :: get_hamocc_ocean_mpi_communicator
 
   PUBLIC :: get_mpi_all_workroot_id, get_my_global_mpi_id, get_my_mpi_all_id
   PUBLIC :: get_mpi_all_ioroot_id
@@ -371,17 +373,14 @@ MODULE mo_mpi
   PUBLIC :: p_send, p_recv, p_sendrecv, p_bcast, p_barrier
 ! PUBLIC :: p_bcast_achar
   PUBLIC :: p_get_bcast_role
-  PUBLIC :: p_isend, p_irecv, p_wait, p_wait_any,         &
-    &       p_irecv_packed, p_send_packed, p_recv_packed, &
-    &       p_bcast_packed,                               &
-    &       p_pack_int, p_pack_bool, p_pack_real,         &
-    &       p_pack_int_1d, p_pack_real_1d,                &
-    &       p_pack_string, p_pack_real_2d,                &
-    &       p_pack_size_int, p_pack_size_bool,            &
-    &       p_pack_size_real_dp, p_pack_size_string,         &
-    &       p_unpack_int, p_unpack_bool, p_unpack_real,   &
-    &       p_unpack_int_1d, p_unpack_real_1d,            &
-    &       p_unpack_string, p_unpack_real_2d, p_test
+  PUBLIC :: p_isend, p_irecv, p_wait, p_wait_any
+  PUBLIC :: p_pack, p_unpack
+  PUBLIC :: p_pack_size_int, p_pack_size_bool,            &
+    &       p_pack_size_real_dp, p_pack_size_real_sp,     &
+    &       p_pack_size_string
+  PUBLIC :: p_irecv_packed, p_send_packed, p_recv_packed, &
+    &       p_bcast_packed
+  PUBLIC :: p_test
   PUBLIC :: p_max, p_min, p_lor, p_sum, p_global_sum, p_field_sum
   PUBLIC :: p_scatter, p_gather
   PUBLIC :: p_probe
@@ -390,6 +389,7 @@ MODULE mo_mpi
   PUBLIC :: p_allreduce_max
   PUBLIC :: p_reduce
   PUBLIC :: p_allreduce
+  PUBLIC :: p_allreduce_in_place
   PUBLIC :: p_commit_type_struct
   PUBLIC :: p_alltoall
   PUBLIC :: p_alltoallv
@@ -431,7 +431,7 @@ MODULE mo_mpi
   PUBLIC :: p_real_dp_byte, p_real_sp_byte, p_int_byte
   PUBLIC :: p_int_i4_byte, p_int_i8_byte
   PUBLIC :: p_mpi_comm_null
-  
+
   ! mpi reduction operators
   PUBLIC :: mpi_lor, mpi_land, mpi_sum, mpi_min, mpi_max, &
        mpi_minloc, mpi_maxloc
@@ -630,16 +630,15 @@ MODULE mo_mpi
   INTEGER :: p_int_i8_byte  = 0
 
   INTEGER :: p_mpi_comm_null = -32766
-  
+
   ! Flag if processor splitting is active
   LOGICAL, PUBLIC :: proc_split = .FALSE.
-  LOGICAL, PUBLIC :: i_am_accel_node = .FALSE.
 
 #ifdef USE_NCCL
   INTEGER, PARAMETER :: gpu_comm_queue_depth = 32
   INTEGER :: gpu_comm_queue(gpu_comm_queue_depth)
   INTEGER :: gpu_comm_queue_id = 0
-  LOGICAL :: nccl_active = .FALSE. 
+  LOGICAL :: nccl_active = .FALSE.
   TYPE(ncclComm) :: nccl_comm
   TYPE(ncclUniqueId) :: nccl_id
   PUBLIC :: push_gpu_comm_queue, pop_gpu_comm_queue
@@ -662,95 +661,125 @@ MODULE mo_mpi
   ! define generic interfaces to allow proper compiling with picky compilers
   ! like NAG f95 for clean argument checking and shortening the call sequence.
 
+  INTERFACE p_pack
+     MODULE PROCEDURE p_pack_dp
+     MODULE PROCEDURE p_pack_sp
+     MODULE PROCEDURE p_pack_int
+     MODULE PROCEDURE p_pack_bool
+     MODULE PROCEDURE p_pack_string
+     MODULE PROCEDURE p_pack_dp_1d
+     MODULE PROCEDURE p_pack_sp_1d
+     MODULE PROCEDURE p_pack_int_1d
+     MODULE PROCEDURE p_pack_dp_2d
+     MODULE PROCEDURE p_pack_sp_2d
+  END INTERFACE p_pack
+
+  INTERFACE p_unpack
+     MODULE PROCEDURE p_unpack_dp
+     MODULE PROCEDURE p_unpack_sp
+     MODULE PROCEDURE p_unpack_int
+     MODULE PROCEDURE p_unpack_bool
+     MODULE PROCEDURE p_unpack_string
+     MODULE PROCEDURE p_unpack_dp_1d
+     MODULE PROCEDURE p_unpack_sp_1d
+     MODULE PROCEDURE p_unpack_int_1d
+     MODULE PROCEDURE p_unpack_dp_2d
+     MODULE PROCEDURE p_unpack_sp_2d
+  END INTERFACE p_unpack
+
   INTERFACE p_send
      MODULE PROCEDURE p_send_char
-     MODULE PROCEDURE p_send_real
-     MODULE PROCEDURE p_send_sreal
+     MODULE PROCEDURE p_send_dp
+     MODULE PROCEDURE p_send_sp
      MODULE PROCEDURE p_send_int
      MODULE PROCEDURE p_send_bool
-     MODULE PROCEDURE p_send_real_1d
-     MODULE PROCEDURE p_send_sreal_1d
+     MODULE PROCEDURE p_send_dp_1d
+     MODULE PROCEDURE p_send_sp_1d
      MODULE PROCEDURE p_send_int_1d
      MODULE PROCEDURE p_send_bool_1d
      MODULE PROCEDURE p_send_char_1d
-     MODULE PROCEDURE p_send_real_2d
+     MODULE PROCEDURE p_send_dp_2d
+     MODULE PROCEDURE p_send_sp_2d
      MODULE PROCEDURE p_send_int_2d
      MODULE PROCEDURE p_send_bool_2d
-     MODULE PROCEDURE p_send_real_3d
+     MODULE PROCEDURE p_send_dp_3d
+     MODULE PROCEDURE p_send_sp_3d
      MODULE PROCEDURE p_send_int_3d
      MODULE PROCEDURE p_send_bool_3d
-     MODULE PROCEDURE p_send_real_4d
+     MODULE PROCEDURE p_send_dp_4d
      MODULE PROCEDURE p_send_int_4d
      MODULE PROCEDURE p_send_bool_4d
-     MODULE PROCEDURE p_send_real_5d
+     MODULE PROCEDURE p_send_dp_5d
   END INTERFACE
 
   INTERFACE p_isend
      MODULE PROCEDURE p_isend_char
-     MODULE PROCEDURE p_isend_real
-     MODULE PROCEDURE p_isend_sreal
+     MODULE PROCEDURE p_isend_dp
+     MODULE PROCEDURE p_isend_sp
      MODULE PROCEDURE p_isend_int
      MODULE PROCEDURE p_isend_bool
      MODULE PROCEDURE p_isend_char_1d
-     MODULE PROCEDURE p_isend_real_1d
-     MODULE PROCEDURE p_isend_sreal_1d
+     MODULE PROCEDURE p_isend_dp_1d
+     MODULE PROCEDURE p_isend_sp_1d
      MODULE PROCEDURE p_isend_int_1d
      MODULE PROCEDURE p_isend_bool_1d
-     MODULE PROCEDURE p_isend_real_2d
-     MODULE PROCEDURE p_isend_sreal_2d
+     MODULE PROCEDURE p_isend_dp_2d
+     MODULE PROCEDURE p_isend_sp_2d
      MODULE PROCEDURE p_isend_int_2d
      MODULE PROCEDURE p_isend_bool_2d
-     MODULE PROCEDURE p_isend_real_3d
+     MODULE PROCEDURE p_isend_dp_3d
      MODULE PROCEDURE p_isend_int_3d
      MODULE PROCEDURE p_isend_bool_3d
-     MODULE PROCEDURE p_isend_real_4d
+     MODULE PROCEDURE p_isend_dp_4d
      MODULE PROCEDURE p_isend_int_4d
      MODULE PROCEDURE p_isend_bool_4d
-     MODULE PROCEDURE p_isend_real_5d
+     MODULE PROCEDURE p_isend_dp_5d
   END INTERFACE
 
   INTERFACE p_recv
      MODULE PROCEDURE p_recv_char
-     MODULE PROCEDURE p_recv_real
-     MODULE PROCEDURE p_recv_sreal
+     MODULE PROCEDURE p_recv_dp
+     MODULE PROCEDURE p_recv_sp
      MODULE PROCEDURE p_recv_int
      MODULE PROCEDURE p_recv_bool
-     MODULE PROCEDURE p_recv_real_1d
-     MODULE PROCEDURE p_recv_sreal_1d
+     MODULE PROCEDURE p_recv_dp_1d
+     MODULE PROCEDURE p_recv_sp_1d
      MODULE PROCEDURE p_recv_int_1d
      MODULE PROCEDURE p_recv_bool_1d
      MODULE PROCEDURE p_recv_char_1d
-     MODULE PROCEDURE p_recv_real_2d
+     MODULE PROCEDURE p_recv_dp_2d
+     MODULE PROCEDURE p_recv_sp_2d
      MODULE PROCEDURE p_recv_int_2d
      MODULE PROCEDURE p_recv_bool_2d
-     MODULE PROCEDURE p_recv_real_3d
+     MODULE PROCEDURE p_recv_dp_3d
+     MODULE PROCEDURE p_recv_sp_3d
      MODULE PROCEDURE p_recv_int_3d
      MODULE PROCEDURE p_recv_bool_3d
-     MODULE PROCEDURE p_recv_real_4d
+     MODULE PROCEDURE p_recv_dp_4d
      MODULE PROCEDURE p_recv_int_4d
      MODULE PROCEDURE p_recv_bool_4d
-     MODULE PROCEDURE p_recv_real_5d
+     MODULE PROCEDURE p_recv_dp_5d
   END INTERFACE
 
   INTERFACE p_irecv
      MODULE PROCEDURE p_irecv_char
-     MODULE PROCEDURE p_irecv_real
-     MODULE PROCEDURE p_irecv_sreal
+     MODULE PROCEDURE p_irecv_dp
+     MODULE PROCEDURE p_irecv_sp
      MODULE PROCEDURE p_irecv_int
      MODULE PROCEDURE p_irecv_bool
      MODULE PROCEDURE p_irecv_char_1d
-     MODULE PROCEDURE p_irecv_real_1d
-     MODULE PROCEDURE p_irecv_sreal_1d
+     MODULE PROCEDURE p_irecv_dp_1d
+     MODULE PROCEDURE p_irecv_sp_1d
      MODULE PROCEDURE p_irecv_int_1d
      MODULE PROCEDURE p_irecv_bool_1d
-     MODULE PROCEDURE p_irecv_real_2d
-     MODULE PROCEDURE p_irecv_sreal_2d
+     MODULE PROCEDURE p_irecv_dp_2d
+     MODULE PROCEDURE p_irecv_sp_2d
      MODULE PROCEDURE p_irecv_int_2d
      MODULE PROCEDURE p_irecv_bool_2d
-     MODULE PROCEDURE p_irecv_real_3d
+     MODULE PROCEDURE p_irecv_dp_3d
      MODULE PROCEDURE p_irecv_int_3d
      MODULE PROCEDURE p_irecv_bool_3d
-     MODULE PROCEDURE p_irecv_real_4d
+     MODULE PROCEDURE p_irecv_dp_4d
      MODULE PROCEDURE p_irecv_int_4d
      MODULE PROCEDURE p_irecv_bool_4d
   END INTERFACE p_irecv
@@ -768,10 +797,10 @@ MODULE mo_mpi
   END INTERFACE p_clear_request
 
   INTERFACE p_sendrecv
-     MODULE PROCEDURE p_sendrecv_real_1d
-     MODULE PROCEDURE p_sendrecv_real_2d
-     MODULE PROCEDURE p_sendrecv_real_3d
-     MODULE PROCEDURE p_sendrecv_real_4d
+     MODULE PROCEDURE p_sendrecv_dp_1d
+     MODULE PROCEDURE p_sendrecv_dp_2d
+     MODULE PROCEDURE p_sendrecv_dp_3d
+     MODULE PROCEDURE p_sendrecv_dp_4d
      MODULE PROCEDURE p_sendrecv_char_array
   END INTERFACE
 
@@ -781,29 +810,31 @@ MODULE mo_mpi
   END INTERFACE p_send_packed
 
   INTERFACE p_bcast
-     MODULE PROCEDURE p_bcast_real
-     MODULE PROCEDURE p_bcast_real_single
+     MODULE PROCEDURE p_bcast_dp
+     MODULE PROCEDURE p_bcast_sp
      MODULE PROCEDURE p_bcast_int_i4
      MODULE PROCEDURE p_bcast_int_i8
      MODULE PROCEDURE p_bcast_bool
-     MODULE PROCEDURE p_bcast_real_1d
-     MODULE PROCEDURE p_bcast_real_1d_single
+     MODULE PROCEDURE p_bcast_dp_1d
+     MODULE PROCEDURE p_bcast_sp_1d
      MODULE PROCEDURE p_bcast_int_1d
      MODULE PROCEDURE p_bcast_int_i8_1d
      MODULE PROCEDURE p_bcast_bool_1d
-     MODULE PROCEDURE p_bcast_real_2d
-     MODULE PROCEDURE p_bcast_real_2d_single
+     MODULE PROCEDURE p_bcast_dp_2d
+     MODULE PROCEDURE p_bcast_sp_2d
      MODULE PROCEDURE p_bcast_int_2d
      MODULE PROCEDURE p_bcast_bool_2d
-     MODULE PROCEDURE p_bcast_real_3d
+     MODULE PROCEDURE p_bcast_dp_3d
+     MODULE PROCEDURE p_bcast_sp_3d
      MODULE PROCEDURE p_bcast_int_3d
      MODULE PROCEDURE p_bcast_bool_3d
-     MODULE PROCEDURE p_bcast_real_4d
+     MODULE PROCEDURE p_bcast_dp_4d
+     MODULE PROCEDURE p_bcast_sp_4d
      MODULE PROCEDURE p_bcast_int_4d
      MODULE PROCEDURE p_bcast_bool_4d
-     MODULE PROCEDURE p_bcast_real_5d
+     MODULE PROCEDURE p_bcast_dp_5d
      MODULE PROCEDURE p_bcast_int_7d
-     MODULE PROCEDURE p_bcast_real_7d
+     MODULE PROCEDURE p_bcast_dp_7d
      MODULE PROCEDURE p_bcast_char
      MODULE PROCEDURE p_bcast_cchar
      MODULE PROCEDURE p_bcast_char_1d
@@ -812,8 +843,8 @@ MODULE mo_mpi
   END INTERFACE
 
   INTERFACE p_scatter
-     MODULE PROCEDURE p_scatter_real_1d1d
-     MODULE PROCEDURE p_scatter_real_2d1d
+     MODULE PROCEDURE p_scatter_dp_1d1d
+     MODULE PROCEDURE p_scatter_dp_2d1d
      MODULE PROCEDURE p_scatter_sp_1d1d
      MODULE PROCEDURE p_scatter_sp_2d1d
      MODULE PROCEDURE p_scatter_int_1d1d
@@ -821,11 +852,13 @@ MODULE mo_mpi
   END INTERFACE
 
   INTERFACE p_gather
-     MODULE PROCEDURE p_gather_real_0d1d
-     MODULE PROCEDURE p_gather_real_1d2d
-     MODULE PROCEDURE p_gather_real_2d3d
-     MODULE PROCEDURE p_gather_real_5d6d
-     MODULE PROCEDURE p_gather_real_1d1d
+     MODULE PROCEDURE p_gather_dp_0d1d
+     MODULE PROCEDURE p_gather_sp_0d1d
+     MODULE PROCEDURE p_gather_dp_1d2d
+     MODULE PROCEDURE p_gather_sp_1d2d
+     MODULE PROCEDURE p_gather_dp_2d3d
+     MODULE PROCEDURE p_gather_dp_5d6d
+     MODULE PROCEDURE p_gather_dp_1d1d
      MODULE PROCEDURE p_gather_int_0d1d
      MODULE PROCEDURE p_gather_int_1d1d
      MODULE PROCEDURE p_gather_int_1d2d
@@ -840,48 +873,53 @@ MODULE mo_mpi
   END INTERFACE
 
   INTERFACE p_allgatherv
-     MODULE PROCEDURE p_allgatherv_real_1d
+     MODULE PROCEDURE p_allgatherv_dp_1d
+     MODULE PROCEDURE p_allgatherv_sp_1d
      MODULE PROCEDURE p_allgatherv_int_1d
      MODULE PROCEDURE p_allgatherv_int_1d_contiguous
   END INTERFACE
 
   INTERFACE p_scatterv
-    MODULE PROCEDURE p_scatterv_real1D2D
-    MODULE PROCEDURE p_scatterv_real1D1D
+    MODULE PROCEDURE p_scatterv_dp_1D1D
+    MODULE PROCEDURE p_scatterv_dp_1D2D
     MODULE PROCEDURE p_scatterv_int_1d1d
-    MODULE PROCEDURE p_scatterv_single1D1D
+    MODULE PROCEDURE p_scatterv_sp_1D1D
   END INTERFACE
 
   INTERFACE p_gatherv
     MODULE PROCEDURE p_gatherv_int
-    MODULE PROCEDURE p_gatherv_real2D1D
-    MODULE PROCEDURE p_gatherv_real3D1D
-    MODULE PROCEDURE p_gatherv_int2D1D
-    MODULE PROCEDURE p_gatherv_real2D2D
-    MODULE PROCEDURE p_gatherv_sreal2D2D
-    MODULE PROCEDURE p_gatherv_int2D2D
+    MODULE PROCEDURE p_gatherv_dp_2D1D
+    MODULE PROCEDURE p_gatherv_dp_3D1D
+    MODULE PROCEDURE p_gatherv_int_2D1D
+    MODULE PROCEDURE p_gatherv_dp_2D2D
+    MODULE PROCEDURE p_gatherv_sp_2D2D
+    MODULE PROCEDURE p_gatherv_int_2D2D
   END INTERFACE
 
   INTERFACE p_max
-     MODULE PROCEDURE p_max_0d
+     MODULE PROCEDURE p_max_dp_0d
+     MODULE PROCEDURE p_max_sp_0d
      MODULE PROCEDURE p_max_int_0d
-     MODULE PROCEDURE p_max_1d
+     MODULE PROCEDURE p_max_dp_1d
+     MODULE PROCEDURE p_max_sp_1d
      MODULE PROCEDURE p_max_int_1d
-     MODULE PROCEDURE p_max_2d
-     MODULE PROCEDURE p_max_3d
-     MODULE PROCEDURE p_max_0d_sp
-     MODULE PROCEDURE p_max_1d_sp
-     MODULE PROCEDURE p_max_2d_sp
-     MODULE PROCEDURE p_max_3d_sp
+     MODULE PROCEDURE p_max_dp_2d
+     MODULE PROCEDURE p_max_sp_2d
+     MODULE PROCEDURE p_max_dp_3d
+     MODULE PROCEDURE p_max_sp_3d
   END INTERFACE
 
   INTERFACE p_min
-     MODULE PROCEDURE p_min_0d
+     MODULE PROCEDURE p_min_dp_0d
+     MODULE PROCEDURE p_min_sp_0d
      MODULE PROCEDURE p_min_int_0d
-     MODULE PROCEDURE p_min_1d
+     MODULE PROCEDURE p_min_dp_1d
+     MODULE PROCEDURE p_min_sp_1d
      MODULE PROCEDURE p_min_int_1d
-     MODULE PROCEDURE p_min_2d
-     MODULE PROCEDURE p_min_3d
+     MODULE PROCEDURE p_min_dp_2d
+     MODULE PROCEDURE p_min_sp_2d
+     MODULE PROCEDURE p_min_dp_3d
+     MODULE PROCEDURE p_min_sp_3d
   END INTERFACE
 
   INTERFACE p_lor
@@ -889,12 +927,14 @@ MODULE mo_mpi
   END INTERFACE p_lor
 
   INTERFACE p_sum
-     MODULE PROCEDURE p_sum_sp_0d
-     MODULE PROCEDURE p_sum_sp_1d
      MODULE PROCEDURE p_sum_dp_0d
+     MODULE PROCEDURE p_sum_sp_0d
      MODULE PROCEDURE p_sum_dp_1d
+     MODULE PROCEDURE p_sum_sp_1d
      MODULE PROCEDURE p_sum_dp_2d
+     mODULE PROCEDURE p_sum_sp_2d
      MODULE PROCEDURE p_sum_dp_3d
+     MODULE PROCEDURE p_sum_sp_3d
      MODULE PROCEDURE p_sum_i8_1d
      MODULE PROCEDURE p_sum_i_1d
      MODULE PROCEDURE p_sum_i_0d
@@ -905,8 +945,8 @@ MODULE mo_mpi
   END INTERFACE
 
   INTERFACE p_field_sum
-     MODULE PROCEDURE p_field_sum_1d
-     MODULE PROCEDURE p_field_sum_2d
+     MODULE PROCEDURE p_field_sum_dp_1d
+     MODULE PROCEDURE p_field_sum_dp_2d
   END INTERFACE
 
   !> generic interface for MPI communication calls
@@ -925,15 +965,22 @@ MODULE mo_mpi
     MODULE PROCEDURE p_allreduce_int8_0d
   END INTERFACE p_allreduce
 
+  INTERFACE p_allreduce_in_place
+    MODULE PROCEDURE p_allreduce_in_place_int4_1d
+    MODULE PROCEDURE p_allreduce_in_place_bool_0d
+  END INTERFACE p_allreduce_in_place
+
   INTERFACE p_alltoall
     MODULE PROCEDURE p_alltoall_int
   END INTERFACE
 
   INTERFACE p_alltoallv
     MODULE PROCEDURE p_alltoallv_int
+    MODULE PROCEDURE p_alltoallv_dp
+    MODULE PROCEDURE p_alltoallv_sp
     MODULE PROCEDURE p_alltoallv_int_i8_1d
-    MODULE PROCEDURE p_alltoallv_real_2d
-    MODULE PROCEDURE p_alltoallv_sreal_2d
+    MODULE PROCEDURE p_alltoallv_dp_2d
+    MODULE PROCEDURE p_alltoallv_sp_2d
     MODULE PROCEDURE p_alltoallv_int_2d
   END INTERFACE
 
@@ -948,14 +995,14 @@ MODULE mo_mpi
   END INTERFACE
 
   INTERFACE p_minmax_common
-    MODULE PROCEDURE p_minmax_common
+    MODULE PROCEDURE p_minmax_common_dp
     MODULE PROCEDURE p_minmax_common_sp
   END INTERFACE p_minmax_common
 
   CHARACTER(*), PARAMETER :: modname = 'mo_mpi'
 
   CHARACTER(len=256) :: message_text = ''
-  
+
 
 CONTAINS
 
@@ -1731,6 +1778,23 @@ CONTAINS
        ENDIF
     ENDIF
 
+#if defined(__NEC__) || defined(__NEC_VH__)
+# ifdef __NEC__
+    my_arch = IBSET(0, 1) ! NEC-SX
+# else
+    my_arch = IBSET(0, 0)
+# endif
+
+    ! Each present different arch sets a bit in the result. If more than one bit
+    ! is set, workers run on different architectures.
+    IF (my_mpi_function == work_mpi_process) THEN
+      p = p_reduce(my_arch, MPI_BOR, 0, p_comm_work_only)
+      IF (p_pe_work_only == 0 .AND. POPCNT(p) > 1) THEN
+        CALL finish(routine, "All worker PEs must run on same architecture!")
+      END IF
+    END IF
+#endif
+
     ! Create p_comm_work_io, the communicator spanning work group and I/O PEs
     IF (num_io_procs > 0) THEN
       my_color = MERGE(2, &
@@ -1741,13 +1805,8 @@ CONTAINS
       CALL mpi_comm_split(process_mpi_all_comm, my_color, p_pe, &
            p_comm_work_io, p_error)
 
+#if defined(__NEC__) || defined(__NEC_VH__)
       ! Check whether all detached std I/O PEs and I/O PEs run on same architecture
-#ifdef __NEC__
-      my_arch = 1 ! NEC-SX
-#else
-      my_arch = 0
-#endif
-
       IF (p_comm_work_io /= MPI_COMM_NULL .AND. PRESENT(num_dio_procs)) THEN
         ! gather all architectures on PE0
         ALLOCATE(glb_arch(num_work_procs + num_io_procs))
@@ -1775,6 +1834,7 @@ CONTAINS
           END IF
         END IF
       END IF
+#endif
 
       IF (pio_type_ == pio_type_async &
         & .AND. (     my_mpi_function == work_mpi_process &
@@ -2015,28 +2075,28 @@ CONTAINS
 
         IF ((get_my_process_type() == hamocc_process .or. get_my_process_type() == ocean_process) &
             .AND. my_mpi_function == work_mpi_process) THEN
-          my_color = 1 
+          my_color = 1
         ELSE
           my_color = 0
         ENDIF
         ! create a intracommunicator between hamocc and ocean
         CALL mpi_comm_split(global_mpi_communicator, my_color, my_global_mpi_id, &
           tmp_common_intracom, p_error)
-          
+
         IF (my_color == 0)  THEN
           ! we will not use this communicator if not hamocc and ocean
           CALL MPI_COMM_FREE(tmp_common_intracom, p_error)
-          hamocc_ocean_mpi_communicator = MPI_COMM_NULL 
+          hamocc_ocean_mpi_communicator = MPI_COMM_NULL
         ELSE
           !------------------------------------------------
-          ! we neet to create an intercommunicator 
+          ! we neet to create an intercommunicator
           !   split again to the compoment communicators
           CALL MPI_COMM_RANK (tmp_common_intracom, my_common_intracom_mpi_id, p_error)
           my_color = get_my_process_type()
           CALL mpi_comm_split(tmp_common_intracom, my_color, my_common_intracom_mpi_id, &
             tmp_work_intracom, p_error)
-          CALL MPI_COMM_RANK (tmp_work_intracom, my_work_intracom_mpi_id, p_error)        
-        
+          CALL MPI_COMM_RANK (tmp_work_intracom, my_work_intracom_mpi_id, p_error)
+
           ! get the my_common_intracom_mpi_id of the roots to proc 0
           !   first get the hamocc root_buffer
           I_am_sender = .false.
@@ -2048,7 +2108,7 @@ CONTAINS
           ENDIF
           IF (my_common_intracom_mpi_id == 0) I_am_receiver = .true.
           IF (I_am_receiver .and. I_am_sender) THEN
-            ! do nothing 
+            ! do nothing
             I_am_receiver = .false.
             I_am_sender   = .false.
           ENDIF
@@ -2057,12 +2117,12 @@ CONTAINS
             CALL MPI_SEND(root_buffer, 1, p_int, 0, 0, tmp_common_intracom, p_error)
           ENDIF
           IF (I_am_receiver) THEN
-            root_buffer(1) = -1        
+            root_buffer(1) = -1
             CALL MPI_RECV(root_buffer, 1, p_int, MPI_ANY_SOURCE, 0, &
               & tmp_common_intracom, p_status, p_error)
-            hamocc_root = root_buffer(1)          
-          ENDIF        
-          
+            hamocc_root = root_buffer(1)
+          ENDIF
+
           ! now get the ocean root_buffer
           I_am_sender = .false.
           I_am_receiver = .false.
@@ -2073,7 +2133,7 @@ CONTAINS
           ENDIF
           IF (my_common_intracom_mpi_id == 0) I_am_receiver = .true.
           IF (I_am_receiver .and. I_am_sender) THEN
-            ! do nothing 
+            ! do nothing
             I_am_receiver = .false.
             I_am_sender   = .false.
           ENDIF
@@ -2082,23 +2142,23 @@ CONTAINS
             CALL MPI_SEND(root_buffer, 1, p_int, 0, 0, tmp_common_intracom, p_error)
           ENDIF
           IF (I_am_receiver) THEN
-            root_buffer(1) = -1        
+            root_buffer(1) = -1
             CALL MPI_RECV(root_buffer, 1, p_int, MPI_ANY_SOURCE, 0, &
               & tmp_common_intracom, p_status, p_error)
-            ocean_root = root_buffer(1)          
-          ENDIF        
-        
+            ocean_root = root_buffer(1)
+          ENDIF
+
           ! ok, now broadcast the ocean and hamocc roots
           IF (my_common_intracom_mpi_id == 0) THEN
             root_buffer(1) = ocean_root
-            root_buffer(2) = hamocc_root          
+            root_buffer(2) = hamocc_root
             CALL MPI_BCAST(root_buffer, 2, p_int, 0, tmp_common_intracom, p_error)
           ELSE
             CALL MPI_BCAST(root_buffer, 2, p_int, 0, tmp_common_intracom, p_error)
             ocean_root = root_buffer(1)
             hamocc_root = root_buffer(2)
           ENDIF
-          
+
           ! now we are ready to create the intercommunicator between haomcc and ocean
           IF (my_process_is_ocean()) THEN
             CALL MPI_Intercomm_create(tmp_work_intracom, 0, tmp_common_intracom, &
@@ -2107,20 +2167,20 @@ CONTAINS
               ! this is a hamocc process
             CALL MPI_Intercomm_create(tmp_work_intracom, 0, tmp_common_intracom, &
                 & ocean_root, 0, hamocc_ocean_mpi_communicator, p_error)
-                                    
+
           ENDIF
-          
+
           CALL MPI_COMM_FREE(tmp_work_intracom, p_error)
           CALL MPI_COMM_FREE(tmp_common_intracom, p_error)
 
-          ! -- done -- 
+          ! -- done --
         ENDIF
-        
+
         DEALLOCATE(root_buffer)
-       
-      ENDIF ! hamocc process exists 
+
+      ENDIF ! hamocc process exists
 #endif
-    
+
 #ifdef HAVE_YAXT
 !   initialize here yaxt for all the processors
       IF (.NOT. xt_initialized()) CALL xt_initialize(global_mpi_communicator)
@@ -2146,7 +2206,7 @@ CONTAINS
         CALL push_gpu_comm_queue(1)
       END IF
 #endif
-   
+
 
 #ifdef DEBUG
       WRITE (nerr,'(a,a,i5)') method_name, ' p_pe=',            p_pe
@@ -2158,6 +2218,19 @@ CONTAINS
       WRITE (nerr,'(a,a,i5)') method_name, ' p_comm_work_2_restart=', &
         & p_comm_work_2_restart
       WRITE (nerr,'(a,a,i5)') method_name, ' my_mpi_function=', my_mpi_function
+#endif
+
+#ifndef __NO_ICON_COMIN__
+      ! Split the comin communicator into the plugin communicators.  Each plagin
+      ! can specify a "comm" indentifier in the namelist.  The plugin
+      ! communicator allows plugins to communicate with external
+      ! processes. (E.g. to offload work)
+      IF (my_process_is_work()) THEN
+        CALL comin_parallel_mpi_handshake(p_comm_comin, &
+             & comin_config%plugin_list(1:comin_config%nplugins)%comm, TRIM(get_my_process_name()))
+      ELSE
+        CALL mpi_handshake_dummy(p_comm_comin)
+      ENDIF
 #endif
 
   END SUBROUTINE set_mpi_work_communicators
@@ -2492,9 +2565,9 @@ CONTAINS
        WRITE (nerr,'(a,i0)') " required: ", MPI_THREAD_MULTIPLE
        CALL MPI_Finalize(p_error)
 #ifdef __STANDALONE
-      CALL exit(iexit)
+      CALL exit(p_error)
 #else
-      CALL util_exit(iexit)
+      CALL util_exit(p_error)
 #endif
     END IF
 #else
@@ -2654,6 +2727,11 @@ CONTAINS
 
 #endif
 
+    ! check floating point precision and range:
+    IF (.NOT. check_numerical_requirements()) THEN
+      WRITE (nerr,'(a,a)') routine, ' check_numerical_requirements failed.'
+      CALL abort_mpi
+    ENDIF
 
     is_global_mpi_parallel = global_mpi_size > 1
 
@@ -2748,11 +2826,11 @@ CONTAINS
       global_comm, opt_comin_comm, opt_yac_comm)
 
 #if !defined __NO_ICON_COMIN__
-      USE comin_host_interface, handshake => mpi_handshake
+      USE comin_host_interface, ONLY: handshake => mpi_handshake
       INTEGER, PARAMETER :: GROUP_NAME_LENGTH = 256
 #elif defined YAC_coupling
-      USE mo_yac_finterface, handshake => yac_fmpi_handshake
-      USE mo_yac_finterface, ONLY: YAC_MAX_CHARLEN
+      USE yac, ONLY: handshake => yac_fmpi_handshake
+      USE yac, ONLY: YAC_MAX_CHARLEN
       INTEGER, PARAMETER :: GROUP_NAME_LENGTH = YAC_MAX_CHARLEN
 #endif
 
@@ -2805,7 +2883,7 @@ CONTAINS
   !------------------------------------------------------------------------------
   SUBROUTINE stop_mpi
 
-    INTEGER :: iexit = 0    
+    INTEGER :: iexit = 0
     ! finish MPI and clean up all PEs
 
 #ifndef NOMPI
@@ -2842,8 +2920,8 @@ CONTAINS
     ! of all PEs
 
 #ifndef __NO_ICON_COMIN__
-    ! we dont use timers here due to cycic dependencies...
-    CALL comin_callback_context_call(EP_FINISH, COMIN_DOMAIN_OUTSIDE_LOOP)
+    ! we dont use timers here due to cyclic dependencies...
+    CALL comin_callback_context_call(EP_FINISH, COMIN_DOMAIN_OUTSIDE_LOOP, lacc=.FALSE._C_BOOL)
 #endif
 
 #ifndef NOMPI
@@ -3070,7 +3148,7 @@ CONTAINS
 !=========================================================================
 
   ! send implementation
-  SUBROUTINE p_send_real (t_buffer, p_destination, p_tag, p_count, comm, use_g2g)
+  SUBROUTINE p_send_dp (t_buffer, p_destination, p_tag, p_count, comm, use_g2g)
 
     REAL (dp), INTENT(in) :: t_buffer
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3097,7 +3175,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_send(t_buffer, icount, p_real_dp, p_destination, p_tag, &
@@ -3124,12 +3202,12 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_send_real
+  END SUBROUTINE p_send_dp
 
 
   ! send implementation
 
-  SUBROUTINE p_send_sreal (t_buffer, p_destination, p_tag, p_count, comm, use_g2g)
+  SUBROUTINE p_send_sp (t_buffer, p_destination, p_tag, p_count, comm, use_g2g)
 
     REAL (sp), INTENT(in) :: t_buffer
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3156,7 +3234,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_send(t_buffer, icount, p_real_sp, p_destination, p_tag, &
@@ -3183,10 +3261,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_send_sreal
+  END SUBROUTINE p_send_sp
 
 
-  SUBROUTINE p_send_real_1d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_send_dp_1d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(in) :: t_buffer(:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3221,9 +3299,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_send_real_1d
+  END SUBROUTINE p_send_dp_1d
 
-  SUBROUTINE p_send_sreal_1d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_send_sp_1d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (sp), INTENT(in) :: t_buffer(:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3257,9 +3335,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_send_sreal_1d
+  END SUBROUTINE p_send_sp_1d
 
-  SUBROUTINE p_send_real_2d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_send_dp_2d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(in) :: t_buffer(:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3293,9 +3371,45 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_send_real_2d
+  END SUBROUTINE p_send_dp_2d
 
-  SUBROUTINE p_send_real_3d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_send_sp_2d (t_buffer, p_destination, p_tag, p_count, comm)
+
+    REAL (sp), INTENT(in) :: t_buffer(:,:)
+    INTEGER,   INTENT(in) :: p_destination, p_tag
+    INTEGER, OPTIONAL, INTENT(in) :: p_count, comm
+#ifndef NOMPI
+    INTEGER :: p_comm, icount
+
+    IF (PRESENT(comm)) THEN
+      p_comm = comm
+    ELSE
+      p_comm = process_mpi_all_comm
+    ENDIF
+    IF (PRESENT(p_count)) THEN
+      icount = p_count
+    ELSE
+      icount = SIZE(t_buffer)
+    END IF
+
+
+    CALL mpi_send(t_buffer, icount, p_real_sp, p_destination, p_tag, &
+         p_comm, p_error)
+
+
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) THEN
+       WRITE (nerr,'(a,i4,a,i4,a,i6,a)') ' MPI_SEND from ', my_process_mpi_all_id, &
+            ' to ', p_destination, ' for tag ', p_tag, ' failed.'
+       WRITE (nerr,'(a,i4)') ' Error = ', p_error
+       CALL abort_mpi
+    END IF
+#endif
+#endif
+
+  END SUBROUTINE p_send_sp_2d
+
+  SUBROUTINE p_send_dp_3d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(in) :: t_buffer(:,:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3329,9 +3443,45 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_send_real_3d
+  END SUBROUTINE p_send_dp_3d
 
-  SUBROUTINE p_send_real_4d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_send_sp_3d (t_buffer, p_destination, p_tag, p_count, comm)
+
+    REAL (sp), INTENT(in) :: t_buffer(:,:,:)
+    INTEGER,   INTENT(in) :: p_destination, p_tag
+    INTEGER, OPTIONAL, INTENT(in) :: p_count, comm
+#ifndef NOMPI
+    INTEGER :: p_comm, icount
+
+    IF (PRESENT(comm)) THEN
+      p_comm = comm
+    ELSE
+      p_comm = process_mpi_all_comm
+    ENDIF
+    IF (PRESENT(p_count)) THEN
+      icount = p_count
+    ELSE
+      icount = SIZE(t_buffer)
+    END IF
+
+
+    CALL mpi_send(t_buffer, icount, p_real_sp, p_destination, p_tag, &
+         p_comm, p_error)
+
+
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) THEN
+       WRITE (nerr,'(a,i4,a,i4,a,i6,a)') ' MPI_SEND from ', my_process_mpi_all_id, &
+            ' to ', p_destination, ' for tag ', p_tag, ' failed.'
+       WRITE (nerr,'(a,i4)') ' Error = ', p_error
+       CALL abort_mpi
+    END IF
+#endif
+#endif
+
+  END SUBROUTINE p_send_sp_3d
+
+  SUBROUTINE p_send_dp_4d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(in) :: t_buffer(:,:,:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3365,9 +3515,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_send_real_4d
+  END SUBROUTINE p_send_dp_4d
 
-  SUBROUTINE p_send_real_5d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_send_dp_5d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(in) :: t_buffer(:,:,:,:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3401,8 +3551,7 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_send_real_5d
-
+  END SUBROUTINE p_send_dp_5d
   SUBROUTINE p_send_int (t_buffer, p_destination, p_tag, p_count, comm, use_g2g)
 
     INTEGER, INTENT(in) :: t_buffer
@@ -3430,7 +3579,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_send(t_buffer, icount, p_int, p_destination, p_tag, &
@@ -3632,7 +3781,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_send(t_buffer, icount, p_bool, p_destination, p_tag, &
@@ -3915,7 +4064,7 @@ CONTAINS
   END SUBROUTINE
 #endif
 
-  SUBROUTINE p_isend_real (t_buffer, p_destination, p_tag, p_count, comm, request, use_g2g)
+  SUBROUTINE p_isend_dp (t_buffer, p_destination, p_tag, p_count, comm, request, use_g2g)
 
     REAL (dp), INTENT(inout) :: t_buffer
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -3948,7 +4097,7 @@ CONTAINS
 #endif
     ELSE
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
       IF (loc_use_g2g) THEN
         !$ACC HOST_DATA USE_DEVICE(t_buffer)
         CALL mpi_isend(t_buffer, icount, p_real_dp, p_destination, p_tag, &
@@ -3964,7 +4113,7 @@ CONTAINS
            &         p_comm, out_request, p_error)
       !$ACC END HOST_DATA
 #endif
-                
+
       IF (PRESENT(request)) THEN
         request               = out_request
       ELSE
@@ -3983,10 +4132,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_real
+  END SUBROUTINE p_isend_dp
 
 
-  SUBROUTINE p_isend_sreal (t_buffer, p_destination, p_tag, p_count, comm, request, use_g2g)
+  SUBROUTINE p_isend_sp (t_buffer, p_destination, p_tag, p_count, comm, request, use_g2g)
 
     REAL (sp), INTENT(inout) :: t_buffer
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -4014,7 +4163,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_isend(t_buffer, icount, p_real_sp, p_destination, p_tag, &
@@ -4048,10 +4197,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_sreal
+  END SUBROUTINE p_isend_sp
 
 
-  SUBROUTINE p_isend_real_1d (t_buffer, p_destination, p_tag, p_count, comm, request)
+  SUBROUTINE p_isend_dp_1d (t_buffer, p_destination, p_tag, p_count, comm, request)
 
     REAL (dp), INTENT(inout) :: t_buffer(:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -4093,10 +4242,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_real_1d
+  END SUBROUTINE p_isend_dp_1d
 
 
-  SUBROUTINE p_isend_sreal_1d (t_buffer, p_destination, p_tag, p_count, comm, request)
+  SUBROUTINE p_isend_sp_1d (t_buffer, p_destination, p_tag, p_count, comm, request)
 
     REAL (sp), INTENT(inout) :: t_buffer(:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -4138,10 +4287,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_sreal_1d
+  END SUBROUTINE p_isend_sp_1d
 
 
-  SUBROUTINE p_isend_real_2d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_isend_dp_2d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(inout) :: t_buffer(:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -4177,10 +4326,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_real_2d
+  END SUBROUTINE p_isend_dp_2d
 
 
-  SUBROUTINE p_isend_sreal_2d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_isend_sp_2d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (sp), INTENT(inout) :: t_buffer(:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -4216,10 +4365,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_sreal_2d
+  END SUBROUTINE p_isend_sp_2d
 
 
-  SUBROUTINE p_isend_real_3d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_isend_dp_3d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(inout) :: t_buffer(:,:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -4255,9 +4404,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_real_3d
+  END SUBROUTINE p_isend_dp_3d
 
-  SUBROUTINE p_isend_real_4d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_isend_dp_4d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(inout) :: t_buffer(:,:,:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -4293,9 +4442,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_real_4d
+  END SUBROUTINE p_isend_dp_4d
 
-  SUBROUTINE p_isend_real_5d (t_buffer, p_destination, p_tag, p_count, comm)
+  SUBROUTINE p_isend_dp_5d (t_buffer, p_destination, p_tag, p_count, comm)
 
     REAL (dp), INTENT(inout) :: t_buffer(:,:,:,:,:)
     INTEGER,   INTENT(in) :: p_destination, p_tag
@@ -4331,7 +4480,7 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_isend_real_5d
+  END SUBROUTINE p_isend_dp_5d
 
   SUBROUTINE p_isend_int(t_buffer, p_destination, p_tag, p_count, comm, request, use_g2g)
 
@@ -4362,7 +4511,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_isend(t_buffer, icount, p_int, p_destination, p_tag, &
@@ -4585,7 +4734,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_isend(t_buffer, icount, p_bool, p_destination, p_tag, &
@@ -4807,7 +4956,7 @@ CONTAINS
 
   ! recv implementation
 
-  SUBROUTINE p_recv_real (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
+  SUBROUTINE p_recv_dp (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
 
     REAL (dp), INTENT(out) :: t_buffer
     INTEGER,   INTENT(in)  :: p_source, p_tag
@@ -4834,7 +4983,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_recv(t_buffer, icount, p_real_dp, p_source, p_tag, &
@@ -4861,11 +5010,11 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_recv_real
+  END SUBROUTINE p_recv_dp
 
   ! recv implementation
 
-  SUBROUTINE p_recv_sreal (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
+  SUBROUTINE p_recv_sp (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
 
     REAL (sp), INTENT(out) :: t_buffer
     INTEGER,   INTENT(in)  :: p_source, p_tag
@@ -4892,7 +5041,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_recv(t_buffer, icount, p_real_sp, p_source, p_tag, &
@@ -4919,7 +5068,7 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_recv_sreal
+  END SUBROUTINE p_recv_sp
 
   SUBROUTINE p_isend_char_1d(t_buffer, p_destination, p_tag, p_count, comm)
     CHARACTER(len=*),  INTENT(inout) :: t_buffer(:)
@@ -4956,7 +5105,7 @@ CONTAINS
 #endif
   END SUBROUTINE p_isend_char_1d
 
-  SUBROUTINE p_recv_real_1d (t_buffer, p_source, p_tag, p_count, comm, displs)
+  SUBROUTINE p_recv_dp_1d (t_buffer, p_source, p_tag, p_count, comm, displs)
 
     REAL (dp), INTENT(out) :: t_buffer(:)
     INTEGER,   INTENT(in)  :: p_source, p_tag
@@ -4991,9 +5140,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_recv_real_1d
+  END SUBROUTINE p_recv_dp_1d
 
-  SUBROUTINE p_recv_sreal_1d (t_buffer, p_source, p_tag, p_count, comm, displs)
+  SUBROUTINE p_recv_sp_1d (t_buffer, p_source, p_tag, p_count, comm, displs)
 
     REAL (sp), INTENT(out) :: t_buffer(:)
     INTEGER,   INTENT(in)  :: p_source, p_tag
@@ -5032,9 +5181,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_recv_sreal_1d
+  END SUBROUTINE p_recv_sp_1d
 
-  SUBROUTINE p_recv_real_2d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_recv_dp_2d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL (dp), INTENT(out) :: t_buffer(:,:)
     INTEGER,   INTENT(in)  :: p_source, p_tag
@@ -5068,9 +5217,45 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_recv_real_2d
+  END SUBROUTINE p_recv_dp_2d
 
-  SUBROUTINE p_recv_real_3d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_recv_sp_2d (t_buffer, p_source, p_tag, p_count, comm)
+
+    REAL (sp), INTENT(out) :: t_buffer(:,:)
+    INTEGER,   INTENT(in)  :: p_source, p_tag
+    INTEGER, OPTIONAL, INTENT(in) :: p_count, comm
+#ifndef NOMPI
+    INTEGER :: p_comm, icount
+
+    IF (PRESENT(comm)) THEN
+      p_comm = comm
+    ELSE
+      p_comm = process_mpi_all_comm
+    ENDIF
+    IF (PRESENT(p_count)) THEN
+      icount = p_count
+    ELSE
+      icount = SIZE(t_buffer)
+    END IF
+
+
+    CALL mpi_recv(t_buffer, icount, p_real_sp, p_source, p_tag, &
+      &           p_comm, p_status, p_error)
+
+
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) THEN
+       WRITE (nerr,'(a,i4,a,i4,a,i6,a)') ' MPI_RECV on ', my_process_mpi_all_id, &
+            ' from ', p_source, ' for tag ', p_tag, ' failed.'
+       WRITE (nerr,'(a,i4)') ' Error = ', p_error
+       CALL abort_mpi
+    END IF
+#endif
+#endif
+
+  END SUBROUTINE p_recv_sp_2d
+
+  SUBROUTINE p_recv_dp_3d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL (dp), INTENT(out) :: t_buffer(:,:,:)
     INTEGER,   INTENT(in)  :: p_source, p_tag
@@ -5104,9 +5289,45 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_recv_real_3d
+  END SUBROUTINE p_recv_dp_3d
 
-  SUBROUTINE p_recv_real_4d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_recv_sp_3d (t_buffer, p_source, p_tag, p_count, comm)
+
+    REAL (sp), INTENT(out) :: t_buffer(:,:,:)
+    INTEGER,   INTENT(in)  :: p_source, p_tag
+    INTEGER, OPTIONAL, INTENT(in) :: p_count, comm
+#ifndef NOMPI
+    INTEGER :: p_comm, icount
+
+    IF (PRESENT(comm)) THEN
+      p_comm = comm
+    ELSE
+      p_comm = process_mpi_all_comm
+    ENDIF
+    IF (PRESENT(p_count)) THEN
+      icount = p_count
+    ELSE
+      icount = SIZE(t_buffer)
+    END IF
+
+
+    CALL mpi_recv(t_buffer, icount, p_real_sp, p_source, p_tag, &
+      &           p_comm, p_status, p_error)
+
+
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) THEN
+       WRITE (nerr,'(a,i4,a,i4,a,i6,a)') ' MPI_RECV on ', my_process_mpi_all_id, &
+            ' from ', p_source, ' for tag ', p_tag, ' failed.'
+       WRITE (nerr,'(a,i4)') ' Error = ', p_error
+       CALL abort_mpi
+    END IF
+#endif
+#endif
+
+  END SUBROUTINE p_recv_sp_3d
+
+  SUBROUTINE p_recv_dp_4d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL (dp), INTENT(out) :: t_buffer(:,:,:,:)
     INTEGER,   INTENT(in)  :: p_source, p_tag
@@ -5140,9 +5361,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_recv_real_4d
+  END SUBROUTINE p_recv_dp_4d
 
-  SUBROUTINE p_recv_real_5d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_recv_dp_5d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL (dp), INTENT(out) :: t_buffer(:,:,:,:,:)
     INTEGER,   INTENT(in)  :: p_source, p_tag
@@ -5176,7 +5397,7 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_recv_real_5d
+  END SUBROUTINE p_recv_dp_5d
 
   SUBROUTINE p_recv_int (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
 
@@ -5205,7 +5426,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_recv(t_buffer, icount, p_int, p_source, p_tag, &
@@ -5406,7 +5627,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_recv(t_buffer, icount, p_bool, p_source, p_tag, &
@@ -5754,7 +5975,7 @@ CONTAINS
   END SUBROUTINE p_irecv_nccl_real
 #endif
 
-  SUBROUTINE p_irecv_real (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
+  SUBROUTINE p_irecv_dp (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
 
     REAL(dp),  INTENT(inout) :: t_buffer
     INTEGER,   INTENT(in) :: p_source, p_tag
@@ -5787,7 +6008,7 @@ CONTAINS
     ELSE
       CALL p_inc_request
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
       IF (loc_use_g2g) THEN
         !$ACC HOST_DATA USE_DEVICE(t_buffer)
         CALL mpi_irecv(t_buffer, icount, p_real_dp, p_source, p_tag, &
@@ -5815,10 +6036,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_irecv_real
+  END SUBROUTINE p_irecv_dp
 
 
-  SUBROUTINE p_irecv_sreal (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
+  SUBROUTINE p_irecv_sp (t_buffer, p_source, p_tag, p_count, comm, use_g2g)
 
     REAL(sp),  INTENT(inout) :: t_buffer
     INTEGER,   INTENT(in) :: p_source, p_tag
@@ -5846,7 +6067,7 @@ CONTAINS
 
     CALL p_inc_request
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_irecv(t_buffer, icount, p_real_sp, p_source, p_tag, &
@@ -5873,9 +6094,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_irecv_sreal
+  END SUBROUTINE p_irecv_sp
 
-  SUBROUTINE p_irecv_real_1d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_irecv_dp_1d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL(dp),  INTENT(inout) :: t_buffer(:)
     INTEGER,   INTENT(in) :: p_source, p_tag
@@ -5910,10 +6131,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_irecv_real_1d
+  END SUBROUTINE p_irecv_dp_1d
 
 
-  SUBROUTINE p_irecv_sreal_1d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_irecv_sp_1d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL(sp),  INTENT(inout) :: t_buffer(:)
     INTEGER,   INTENT(in) :: p_source, p_tag
@@ -5948,10 +6169,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_irecv_sreal_1d
+  END SUBROUTINE p_irecv_sp_1d
 
 
-  SUBROUTINE p_irecv_real_2d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_irecv_dp_2d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL(dp),  INTENT(inout) :: t_buffer(:,:)
     INTEGER,   INTENT(in) :: p_source, p_tag
@@ -5987,10 +6208,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_irecv_real_2d
+  END SUBROUTINE p_irecv_dp_2d
 
 
-  SUBROUTINE p_irecv_sreal_2d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_irecv_sp_2d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL(sp),  INTENT(inout) :: t_buffer(:,:)
     INTEGER,   INTENT(in) :: p_source, p_tag
@@ -6026,10 +6247,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_irecv_sreal_2d
+  END SUBROUTINE p_irecv_sp_2d
 
 
-  SUBROUTINE p_irecv_real_3d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_irecv_dp_3d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL(dp),  INTENT(inout) :: t_buffer(:,:,:)
     INTEGER,   INTENT(in) :: p_source, p_tag
@@ -6065,9 +6286,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_irecv_real_3d
+  END SUBROUTINE p_irecv_dp_3d
 
-  SUBROUTINE p_irecv_real_4d (t_buffer, p_source, p_tag, p_count, comm)
+  SUBROUTINE p_irecv_dp_4d (t_buffer, p_source, p_tag, p_count, comm)
 
     REAL(dp),  INTENT(inout) :: t_buffer(:,:,:,:)
     INTEGER,   INTENT(in) :: p_source, p_tag
@@ -6103,7 +6324,8 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_irecv_real_4d
+  END SUBROUTINE p_irecv_dp_4d
+
   !================================================================================================
   ! INTEGER SECTION -------------------------------------------------------------------------------
   !
@@ -6135,7 +6357,7 @@ CONTAINS
     END IF
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_irecv(t_buffer, icount, p_int, p_source, p_tag, &
@@ -6360,7 +6582,7 @@ CONTAINS
 
     CALL p_inc_request
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
     IF (loc_use_g2g) THEN
       !$ACC HOST_DATA USE_DEVICE(t_buffer)
       CALL mpi_irecv(t_buffer, icount, p_bool, p_source, p_tag, &
@@ -6584,9 +6806,9 @@ CONTAINS
 #endif
   END SUBROUTINE p_pack_bool
 
-  SUBROUTINE p_pack_real (t_var, t_buffer, p_pos, comm)
+  SUBROUTINE p_pack_dp (t_var, t_buffer, p_pos, comm)
 
-    REAL(wp),  INTENT(IN)    :: t_var
+    REAL(dp),  INTENT(IN)    :: t_var
     CHARACTER, INTENT(INOUT) :: t_buffer(:)
     INTEGER,   INTENT(INOUT) :: p_pos
     INTEGER, OPTIONAL, INTENT(IN) :: comm
@@ -6601,10 +6823,32 @@ CONTAINS
 
     CALL MPI_PACK(t_var, 1, p_real_dp, t_buffer, SIZE(t_buffer), p_pos, p_comm, p_error)
 #ifdef DEBUG
-   IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_real", 'MPI call failed')
+   IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_dp", 'MPI call failed')
 #endif
 #endif
-  END SUBROUTINE p_pack_real
+  END SUBROUTINE p_pack_dp
+
+  SUBROUTINE p_pack_sp (t_var, t_buffer, p_pos, comm)
+
+    REAL(sp),  INTENT(IN)    :: t_var
+    CHARACTER, INTENT(INOUT) :: t_buffer(:)
+    INTEGER,   INTENT(INOUT) :: p_pos
+    INTEGER, OPTIONAL, INTENT(IN) :: comm
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    CALL MPI_PACK(t_var, 1, p_real_sp, t_buffer, SIZE(t_buffer), p_pos, p_comm, p_error)
+#ifdef DEBUG
+   IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_sp", 'MPI call failed')
+#endif
+#endif
+  END SUBROUTINE p_pack_sp
 
   SUBROUTINE p_pack_int_1d (t_var, p_count, t_buffer, p_pos, comm)
 
@@ -6629,9 +6873,9 @@ CONTAINS
 #endif
   END SUBROUTINE p_pack_int_1d
 
-  SUBROUTINE p_pack_real_1d (t_var, p_count, t_buffer, p_pos, comm)
+  SUBROUTINE p_pack_dp_1d (t_var, p_count, t_buffer, p_pos, comm)
 
-    REAL(wp),  INTENT(IN)    :: t_var(:)
+    REAL(dp),  INTENT(IN)    :: t_var(:)
     INTEGER,   INTENT(IN)    :: p_count
     CHARACTER, INTENT(INOUT) :: t_buffer(:)
     INTEGER,   INTENT(INOUT) :: p_pos
@@ -6647,11 +6891,33 @@ CONTAINS
 
     CALL MPI_PACK(t_var, p_count, p_real_dp, t_buffer, SIZE(t_buffer), p_pos, p_comm, p_error)
 #ifdef DEBUG
-    IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_real_1d", 'MPI call failed')
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_dp_1d", 'MPI call failed')
 #endif
 #endif
-  END SUBROUTINE p_pack_real_1d
+  END SUBROUTINE p_pack_dp_1d
 
+  SUBROUTINE p_pack_sp_1d (t_var, p_count, t_buffer, p_pos, comm)
+
+    REAL(sp),  INTENT(IN)    :: t_var(:)
+    INTEGER,   INTENT(IN)    :: p_count
+    CHARACTER, INTENT(INOUT) :: t_buffer(:)
+    INTEGER,   INTENT(INOUT) :: p_pos
+    INTEGER, OPTIONAL, INTENT(IN) :: comm
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    CALL MPI_PACK(t_var, p_count, p_real_sp, t_buffer, SIZE(t_buffer), p_pos, p_comm, p_error)
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_sp_1d", 'MPI call failed')
+#endif
+#endif
+  END SUBROUTINE p_pack_sp_1d
 
   SUBROUTINE p_pack_string (t_var, t_buffer, p_pos, comm)
 
@@ -6681,9 +6947,9 @@ CONTAINS
 #endif
   END SUBROUTINE p_pack_string
 
-  SUBROUTINE p_pack_real_2d (t_var, p_count, t_buffer, p_pos, comm)
+  SUBROUTINE p_pack_dp_2d (t_var, p_count, t_buffer, p_pos, comm)
 
-    REAL(wp),  INTENT(IN)    :: t_var(:,:)
+    REAL(dp),  INTENT(IN)    :: t_var(:,:)
     INTEGER,   INTENT(IN)    :: p_count
     CHARACTER, INTENT(INOUT) :: t_buffer(:)
     INTEGER,   INTENT(INOUT) :: p_pos
@@ -6699,10 +6965,33 @@ CONTAINS
 
     CALL MPI_PACK(t_var, p_count, p_real_dp, t_buffer, SIZE(t_buffer), p_pos, p_comm, p_error)
 #ifdef DEBUG
-    IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_real_2d", 'MPI call failed')
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_dp_2d", 'MPI call failed')
 #endif
 #endif
-  END SUBROUTINE p_pack_real_2d
+  END SUBROUTINE p_pack_dp_2d
+
+  SUBROUTINE p_pack_sp_2d (t_var, p_count, t_buffer, p_pos, comm)
+
+    REAL(sp),  INTENT(IN)    :: t_var(:,:)
+    INTEGER,   INTENT(IN)    :: p_count
+    CHARACTER, INTENT(INOUT) :: t_buffer(:)
+    INTEGER,   INTENT(INOUT) :: p_pos
+    INTEGER, OPTIONAL, INTENT(IN) :: comm
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    CALL MPI_PACK(t_var, p_count, p_real_sp, t_buffer, SIZE(t_buffer), p_pos, p_comm, p_error)
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_pack_sp_2d", 'MPI call failed')
+#endif
+#endif
+  END SUBROUTINE p_pack_sp_2d
 
   FUNCTION p_pack_size_int(p_count, comm) RESULT(pack_size)
     INTEGER, INTENT(in) :: p_count, comm
@@ -6738,13 +7027,27 @@ CONTAINS
 #ifndef NOMPI
     CALL mpi_pack_size(p_count, p_real_dp, comm, pack_size, p_error)
 #ifdef DEBUG
-    IF (p_error /= MPI_SUCCESS) CALL finish("p_pack_size_int", 'MPI call failed')
+    IF (p_error /= MPI_SUCCESS) CALL finish("p_pack_size_real_dp", 'MPI call failed')
 #endif
 #else
     ! packing is only supported when mpi is available
     pack_size = -1
 #endif
   END FUNCTION p_pack_size_real_dp
+
+  FUNCTION p_pack_size_real_sp(p_count, comm) RESULT(pack_size)
+    INTEGER, INTENT(in) :: p_count, comm
+    INTEGER :: pack_size
+#ifndef NOMPI
+    CALL mpi_pack_size(p_count, p_real_sp, comm, pack_size, p_error)
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) CALL finish("p_pack_size_real_sp", 'MPI call failed')
+#endif
+#else
+    ! packing is only supported when mpi is available
+    pack_size = -1
+#endif
+  END FUNCTION p_pack_size_real_sp
 
   FUNCTION p_pack_size_string(maxlen, comm) RESULT(pack_size)
     INTEGER, INTENT(in) :: maxlen, comm
@@ -6807,11 +7110,11 @@ CONTAINS
 #endif
   END SUBROUTINE p_unpack_bool
 
-  SUBROUTINE p_unpack_real (t_buffer, p_pos, t_var, comm)
+  SUBROUTINE p_unpack_dp (t_buffer, p_pos, t_var, comm)
 
     CHARACTER, INTENT(IN)    :: t_buffer(:)
     INTEGER,   INTENT(INOUT) :: p_pos
-    REAL(wp),  INTENT(OUT)   :: t_var
+    REAL(dp),  INTENT(OUT)   :: t_var
     INTEGER, OPTIONAL, INTENT(IN) :: comm
 #ifndef NOMPI
     INTEGER :: p_comm
@@ -6824,10 +7127,33 @@ CONTAINS
 
     CALL MPI_UNPACK(t_buffer, SIZE(t_buffer), p_pos, t_var, 1, p_real_dp, p_comm, p_error)
 #ifdef DEBUG
-    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_real", 'MPI call failed')
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_dp", 'MPI call failed')
 #endif
 #endif
-  END SUBROUTINE p_unpack_real
+  END SUBROUTINE p_unpack_dp
+
+
+  SUBROUTINE p_unpack_sp (t_buffer, p_pos, t_var, comm)
+
+    CHARACTER, INTENT(IN)    :: t_buffer(:)
+    INTEGER,   INTENT(INOUT) :: p_pos
+    REAL(sp),  INTENT(OUT)   :: t_var
+    INTEGER, OPTIONAL, INTENT(IN) :: comm
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    CALL MPI_UNPACK(t_buffer, SIZE(t_buffer), p_pos, t_var, 1, p_real_sp, p_comm, p_error)
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_sp", 'MPI call failed')
+#endif
+#endif
+  END SUBROUTINE p_unpack_sp
 
   SUBROUTINE p_unpack_int_1d (t_buffer, p_pos, t_var, p_count, comm)
 
@@ -6852,11 +7178,11 @@ CONTAINS
 #endif
   END SUBROUTINE p_unpack_int_1d
 
-  SUBROUTINE p_unpack_real_1d (t_buffer, p_pos, t_var, p_count, comm)
+  SUBROUTINE p_unpack_dp_1d (t_buffer, p_pos, t_var, p_count, comm)
 
     CHARACTER, INTENT(IN)    :: t_buffer(:)
     INTEGER,   INTENT(INOUT) :: p_pos
-    REAL(wp),  INTENT(INOUT) :: t_var(:)
+    REAL(dp),  INTENT(INOUT) :: t_var(:)
     INTEGER,   INTENT(IN)    :: p_count
     INTEGER, OPTIONAL, INTENT(IN) :: comm
 #ifndef NOMPI
@@ -6870,11 +7196,34 @@ CONTAINS
 
     CALL MPI_UNPACK(t_buffer, SIZE(t_buffer), p_pos, t_var, p_count, p_real_dp, p_comm, p_error)
 #ifdef DEBUG
-    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_real_1d", 'MPI call failed')
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_dp_1d", 'MPI call failed')
 #endif
 #endif
-  END SUBROUTINE p_unpack_real_1d
+  END SUBROUTINE p_unpack_dp_1d
 
+
+  SUBROUTINE p_unpack_sp_1d (t_buffer, p_pos, t_var, p_count, comm)
+
+    CHARACTER, INTENT(IN)    :: t_buffer(:)
+    INTEGER,   INTENT(INOUT) :: p_pos
+    REAL(sp),  INTENT(INOUT) :: t_var(:)
+    INTEGER,   INTENT(IN)    :: p_count
+    INTEGER, OPTIONAL, INTENT(IN) :: comm
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    CALL MPI_UNPACK(t_buffer, SIZE(t_buffer), p_pos, t_var, p_count, p_real_sp, p_comm, p_error)
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_sp_1d", 'MPI call failed')
+#endif
+#endif
+  END SUBROUTINE p_unpack_sp_1d
 
   SUBROUTINE p_unpack_string (t_buffer, p_pos, t_var, comm)
 
@@ -6904,11 +7253,11 @@ CONTAINS
   END SUBROUTINE p_unpack_string
 
 
-  SUBROUTINE p_unpack_real_2d (t_buffer, p_pos, t_var, p_count, comm)
+  SUBROUTINE p_unpack_dp_2d (t_buffer, p_pos, t_var, p_count, comm)
 
     CHARACTER, INTENT(IN)    :: t_buffer(:)
     INTEGER,   INTENT(INOUT) :: p_pos
-    REAL(wp),  INTENT(INOUT) :: t_var(:,:)
+    REAL(dp),  INTENT(INOUT) :: t_var(:,:)
     INTEGER,   INTENT(IN)    :: p_count
     INTEGER, OPTIONAL, INTENT(IN) :: comm
 #ifndef NOMPI
@@ -6922,10 +7271,33 @@ CONTAINS
 
     CALL MPI_UNPACK(t_buffer, SIZE(t_buffer), p_pos, t_var, p_count, p_real_dp, p_comm, p_error)
 #ifdef DEBUG
-    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_real_2d", 'MPI call failed')
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_dp_2d", 'MPI call failed')
 #endif
 #endif
-  END SUBROUTINE p_unpack_real_2d
+  END SUBROUTINE p_unpack_dp_2d
+
+  SUBROUTINE p_unpack_sp_2d (t_buffer, p_pos, t_var, p_count, comm)
+
+    CHARACTER, INTENT(IN)    :: t_buffer(:)
+    INTEGER,   INTENT(INOUT) :: p_pos
+    REAL(sp),  INTENT(INOUT) :: t_var(:,:)
+    INTEGER,   INTENT(IN)    :: p_count
+    INTEGER, OPTIONAL, INTENT(IN) :: comm
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    CALL MPI_UNPACK(t_buffer, SIZE(t_buffer), p_pos, t_var, p_count, p_real_sp, p_comm, p_error)
+#ifdef DEBUG
+    IF (p_error /= MPI_SUCCESS) CALL finish ("p_unpack_sp_2d", 'MPI call failed')
+#endif
+#endif
+  END SUBROUTINE p_unpack_sp_2d
 
   SUBROUTINE p_recv_packed (t_buffer, p_source, p_tag, p_count, comm)
 
@@ -7093,7 +7465,7 @@ CONTAINS
 
   ! sendrecv implementation
 
-  SUBROUTINE p_sendrecv_real_1d (sendbuf, p_dest, recvbuf, p_source, &
+  SUBROUTINE p_sendrecv_dp_1d (sendbuf, p_dest, recvbuf, p_source, &
                                   p_tag, comm)
 
     REAL(dp), INTENT(in)           :: sendbuf (:)
@@ -7128,9 +7500,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_sendrecv_real_1d
+  END SUBROUTINE p_sendrecv_dp_1d
 
-  SUBROUTINE p_sendrecv_real_2d (sendbuf, p_dest, recvbuf, p_source, &
+  SUBROUTINE p_sendrecv_dp_2d (sendbuf, p_dest, recvbuf, p_source, &
                                   p_tag, comm)
 
     REAL(dp), INTENT(in)           :: sendbuf (:,:)
@@ -7165,9 +7537,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_sendrecv_real_2d
+  END SUBROUTINE p_sendrecv_dp_2d
 
-  SUBROUTINE p_sendrecv_real_3d (sendbuf, p_dest, recvbuf, p_source, &
+  SUBROUTINE p_sendrecv_dp_3d (sendbuf, p_dest, recvbuf, p_source, &
                                   p_tag, comm)
 
     REAL(dp), INTENT(in)           :: sendbuf (:,:,:)
@@ -7202,9 +7574,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_sendrecv_real_3d
+  END SUBROUTINE p_sendrecv_dp_3d
 
-  SUBROUTINE p_sendrecv_real_4d (sendbuf, p_dest, recvbuf, p_source, &
+  SUBROUTINE p_sendrecv_dp_4d (sendbuf, p_dest, recvbuf, p_source, &
                                   p_tag, comm)
 
     REAL(dp), INTENT(in)           :: sendbuf (:,:,:,:)
@@ -7239,7 +7611,7 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_sendrecv_real_4d
+  END SUBROUTINE p_sendrecv_dp_4d
 
   SUBROUTINE p_sendrecv_char_array (sendbuf, p_dest, recvbuf, p_source, p_tag, comm)
     CHARACTER(KIND = C_CHAR), INTENT(in) :: sendbuf (:)
@@ -7276,7 +7648,7 @@ CONTAINS
 
   ! bcast implementation
 
-  SUBROUTINE p_bcast_real (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_dp (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(dp) :: t_buffer
@@ -7319,12 +7691,12 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real
+  END SUBROUTINE p_bcast_dp
 
   !---------------------------------------------------------------------------------------------------------------------------------
   !> wrapper for MPI_Bcast
   !---------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE p_bcast_real_single (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_sp (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(sp) :: t_buffer
@@ -7367,9 +7739,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_single
+  END SUBROUTINE p_bcast_sp
 
-  SUBROUTINE p_bcast_real_1d (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_dp_1d (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(dp) :: t_buffer(:)
@@ -7412,12 +7784,12 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_1d
+  END SUBROUTINE p_bcast_dp_1d
 
   !---------------------------------------------------------------------------------------------------------------------------------
   !> wrapper for MPI_Bcast
   !---------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE p_bcast_real_1d_single (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_sp_1d (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(sp) :: t_buffer(:)
@@ -7460,9 +7832,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_1d_single
+  END SUBROUTINE p_bcast_sp_1d
 
-  SUBROUTINE p_bcast_real_2d (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_dp_2d (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(dp) :: t_buffer(:,:)
@@ -7506,10 +7878,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_2d
+  END SUBROUTINE p_bcast_dp_2d
 
 
-  SUBROUTINE p_bcast_real_2d_single (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_sp_2d (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(sp) :: t_buffer(:,:) ! SINGLE PRECISION
@@ -7553,10 +7925,10 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_2d_single
+  END SUBROUTINE p_bcast_sp_2d
 
 
-  SUBROUTINE p_bcast_real_3d (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_dp_3d (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL (dp) :: t_buffer(:,:,:)
@@ -7600,9 +7972,55 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_3d
+  END SUBROUTINE p_bcast_dp_3d
 
-  SUBROUTINE p_bcast_real_4d (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_sp_3d (t_buffer, p_source, comm)
+    ! intentionally without argument intent, because p_source determines if
+    ! t_buffer is read or written
+    REAL (sp) :: t_buffer(:,:,:)
+    INTEGER,   INTENT(in)    :: p_source
+    INTEGER, OPTIONAL, INTENT(in) :: comm
+
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+#ifdef DEBUG
+    nbcast = nbcast+1
+#endif
+
+    IF (process_mpi_all_size == 1) THEN
+       RETURN
+    ELSE
+
+
+       CALL MPI_BCAST (t_buffer, SIZE(t_buffer), p_real_sp, p_source, &
+            p_comm, p_error)
+
+
+    ENDIF
+
+#ifdef DEBUG
+    WRITE (nerr,'(a,i4,a,i4,a)') ' MPI_BCAST from ', p_source, &
+            ' with broadcast number ', nbcast, ' successful.'
+
+    IF (p_error /= MPI_SUCCESS) THEN
+       WRITE (nerr,'(a,i4,a)') ' MPI_BCAST from ', p_source, &
+            ' failed.'
+       WRITE (nerr,'(a,i4)') ' Error = ', p_error
+       CALL abort_mpi
+    END IF
+#endif
+#endif
+
+  END SUBROUTINE p_bcast_sp_3d
+
+  SUBROUTINE p_bcast_dp_4d (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(dp) :: t_buffer(:,:,:,:)
@@ -7646,9 +8064,55 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_4d
+  END SUBROUTINE p_bcast_dp_4d
 
-  SUBROUTINE p_bcast_real_5d (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_sp_4d (t_buffer, p_source, comm)
+    ! intentionally without argument intent, because p_source determines if
+    ! t_buffer is read or written
+    REAL(sp) :: t_buffer(:,:,:,:)
+    INTEGER,   INTENT(in)    :: p_source
+    INTEGER, OPTIONAL, INTENT(in) :: comm
+
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+#ifdef DEBUG
+    nbcast = nbcast+1
+#endif
+
+    IF (process_mpi_all_size == 1) THEN
+       RETURN
+    ELSE
+
+
+       CALL MPI_BCAST (t_buffer, SIZE(t_buffer), p_real_sp, p_source, &
+            p_comm, p_error)
+
+
+    ENDIF
+
+#ifdef DEBUG
+    WRITE (nerr,'(a,i4,a,i4,a)') ' MPI_BCAST from ', p_source, &
+            ' with broadcast number ', nbcast, ' successful.'
+
+     IF (p_error /= MPI_SUCCESS) THEN
+       WRITE (nerr,'(a,i4,a)') ' MPI_BCAST from ', p_source, &
+            ' failed.'
+       WRITE (nerr,'(a,i4)') ' Error = ', p_error
+       CALL abort_mpi
+    END IF
+#endif
+#endif
+
+  END SUBROUTINE p_bcast_sp_4d
+
+  SUBROUTINE p_bcast_dp_5d (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(dp) :: t_buffer(:,:,:,:,:)
@@ -7692,9 +8156,9 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_5d
+  END SUBROUTINE p_bcast_dp_5d
 
-  SUBROUTINE p_bcast_real_7d (t_buffer, p_source, comm)
+  SUBROUTINE p_bcast_dp_7d (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
     ! t_buffer is read or written
     REAL(dp) :: t_buffer(:,:,:,:,:,:,:)
@@ -7738,7 +8202,7 @@ CONTAINS
 #endif
 #endif
 
-  END SUBROUTINE p_bcast_real_7d
+  END SUBROUTINE p_bcast_dp_7d
 
   SUBROUTINE p_bcast_int_i4 (t_buffer, p_source, comm)
     ! intentionally without argument intent, because p_source determines if
@@ -8558,7 +9022,7 @@ CONTAINS
     TYPE(datetime), POINTER             :: mtime_datetime_ptr
     TYPE(datetime), POINTER             :: datetime_loc
     INTEGER                             :: errno
- 
+
 #ifndef NOMPI
     mtime_datetime_ptr => mtime_datetime
     CALL datetimeToString(mtime_datetime_ptr, mtime_datetime_str, errno)
@@ -8603,10 +9067,10 @@ CONTAINS
 
   ! probe implementation
 
-  SUBROUTINE p_probe (p_tagcount, p_tagtable, p_source, &
-       p_tag, p_count, comm)
+  SUBROUTINE p_probe (p_tagcount, p_tagtable, p_datatype, &
+       p_source, p_tag, p_count, comm)
 
-    INTEGER,   INTENT(in)  :: p_tagcount, p_tagtable(:)
+    INTEGER,   INTENT(in)  :: p_tagcount, p_tagtable(:), p_datatype
     INTEGER,   INTENT(out) :: p_source, p_tag, p_count
     INTEGER, OPTIONAL, INTENT(in) :: comm
 
@@ -8636,7 +9100,7 @@ CONTAINS
           IF (flag) THEN
              p_source = p_status(MPI_SOURCE)
              p_tag = p_status(MPI_TAG)
-             CALL MPI_GET_COUNT(p_status, p_real_dp, p_count, p_error)
+             CALL MPI_GET_COUNT(p_status, p_datatype, p_count, p_error)
 #ifdef DEBUG
              IF (p_error /= MPI_SUCCESS) THEN
                 WRITE (nerr,'(a,i4,a,i4,a,i6,a)') ' MPI_GET_COUNT on ', &
@@ -8776,22 +9240,33 @@ CONTAINS
   !------------------------------------------------------
 
   !------------------------------------------------------
-  !> computes a global sum of real single precision numbers
+  !> computes a global sum of real numbers
   !
-  !  perform an ALLREDUCE operation
-  FUNCTION p_sum_sp_0d (zfield, comm) RESULT (p_sum)
+  ! @param[in]    root     (Optional:) root PE, otherwise we perform an
+  !                                    ALLREDUCE operation
+  FUNCTION p_sum_sp_0d (zfield, comm, root) RESULT (p_sum)
 
     REAL(sp)                        :: p_sum
     REAL(sp),  INTENT(in)           :: zfield
     INTEGER,   INTENT(in)           :: comm
+    INTEGER,   INTENT(in), OPTIONAL :: root
 #ifndef NOMPI
-    INTEGER :: p_comm
+    INTEGER :: p_comm, my_rank
 
     p_comm = comm
 
     IF (my_process_is_mpi_parallel()) THEN
+      IF (PRESENT(root)) THEN
+        CALL MPI_REDUCE (zfield, p_sum, 1, p_real_sp, &
+          mpi_sum, root, p_comm, p_error)
+        ! get local PE identification
+        CALL MPI_COMM_RANK (p_comm, my_rank, p_error)
+        ! do not use the result on all the other ranks:
+        IF (root /= my_rank)  p_sum = zfield
+      ELSE
         CALL MPI_ALLREDUCE (zfield, p_sum, 1, p_real_sp, &
           mpi_sum, p_comm, p_error)
+      END IF
     ELSE
        p_sum = zfield
     END IF
@@ -8799,13 +9274,8 @@ CONTAINS
     p_sum = zfield
 #endif
   END FUNCTION p_sum_sp_0d
-  !------------------------------------------------------
 
-  !------------------------------------------------------
-  !> computes a global sum of real numbers
-  !
-  ! @param[in]    root     (Optional:) root PE, otherwise we perform an
-  !                                    ALLREDUCE operation
+
   FUNCTION p_sum_dp_0d (zfield, comm, root) RESULT (p_sum)
 
     REAL(dp)                        :: p_sum
@@ -8910,7 +9380,7 @@ CONTAINS
       ELSE
 
 ! ACCWA (Cray Fortran <= 16.0.1.1) : ACC IF generate wrong assembly which segfaults CAST-32453
-#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 16
+#if defined(_CRAYFTN) && _RELEASE_MAJOR <= 19
         IF (loc_use_g2g) THEN
           !$ACC HOST_DATA USE_DEVICE(zfield)
           CALL mpi_allreduce (zfield, p_sum, SIZE(zfield), p_real_dp, &
@@ -8974,6 +9444,43 @@ CONTAINS
 
   END FUNCTION p_sum_dp_2d
 
+
+  FUNCTION p_sum_sp_2d (zfield, comm, root) RESULT (p_sum)
+
+    REAL(sp),          INTENT(in) :: zfield(:,:)
+    INTEGER, OPTIONAL, INTENT(in) :: comm, root
+    REAL(sp)                      :: p_sum (SIZE(zfield,1),SIZE(zfield,2))
+
+#ifndef NOMPI
+    INTEGER :: p_comm, my_rank
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    IF (my_process_is_mpi_all_parallel()) THEN
+      IF (PRESENT(root)) THEN
+        CALL mpi_reduce(zfield, p_sum, SIZE(zfield), p_real_sp, &
+             mpi_sum, root, p_comm, p_error)
+        ! get local PE identification
+        CALL mpi_comm_rank(p_comm, my_rank, p_error)
+        ! do not use the result on all the other ranks:
+        IF (root /= my_rank) p_sum = zfield
+      ELSE
+        CALL mpi_allreduce (zfield, p_sum, SIZE(zfield), p_real_sp, &
+             mpi_sum, p_comm, p_error)
+      END IF
+    ELSE
+       p_sum = zfield
+    END IF
+#else
+    p_sum = zfield
+#endif
+
+  END FUNCTION p_sum_sp_2d
+
   !------------------------------------------------------
   FUNCTION p_sum_dp_3d (zfield, comm, root) RESULT (p_sum)
 
@@ -9010,6 +9517,42 @@ CONTAINS
 #endif
 
   END FUNCTION p_sum_dp_3d
+
+  FUNCTION p_sum_sp_3d (zfield, comm, root) RESULT (p_sum)
+
+    REAL(sp),          INTENT(in) :: zfield(:,:,:)
+    INTEGER, OPTIONAL, INTENT(in) :: comm, root
+    REAL(sp)                      :: p_sum (SIZE(zfield,1),SIZE(zfield,2),SIZE(zfield,3))
+
+#ifndef NOMPI
+    INTEGER :: p_comm, my_rank
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    IF (my_process_is_mpi_all_parallel()) THEN
+      IF (PRESENT(root)) THEN
+        CALL mpi_reduce(zfield, p_sum, SIZE(zfield), p_real_sp, &
+             mpi_sum, root, p_comm, p_error)
+        ! get local PE identification
+        CALL mpi_comm_rank(p_comm, my_rank, p_error)
+        ! do not use the result on all the other ranks:
+        IF (root /= my_rank) p_sum = zfield
+      ELSE
+        CALL mpi_allreduce (zfield, p_sum, SIZE(zfield), p_real_sp, &
+             mpi_sum, p_comm, p_error)
+      END IF
+    ELSE
+       p_sum = zfield
+    END IF
+#else
+    p_sum = zfield
+#endif
+
+  END FUNCTION p_sum_sp_3d
 
   FUNCTION p_sum_i8_1d (kfield, comm) RESULT (p_sum)
 
@@ -9131,7 +9674,7 @@ CONTAINS
 
   END FUNCTION p_global_sum_1d
 
-  FUNCTION p_field_sum_1d (zfield, comm) RESULT (p_sum)
+  FUNCTION p_field_sum_dp_1d (zfield, comm) RESULT (p_sum)
 
     REAL(dp),          INTENT(in) :: zfield(:)
     INTEGER, OPTIONAL, INTENT(in) :: comm
@@ -9157,9 +9700,9 @@ CONTAINS
     p_sum = zfield
 #endif
 
-  END FUNCTION p_field_sum_1d
+  END FUNCTION p_field_sum_dp_1d
 
-  FUNCTION p_field_sum_2d (zfield, comm) RESULT (p_sum)
+  FUNCTION p_field_sum_dp_2d (zfield, comm) RESULT (p_sum)
 
     REAL(dp),          INTENT(in) :: zfield(:,:)
     INTEGER, OPTIONAL, INTENT(in) :: comm
@@ -9185,10 +9728,10 @@ CONTAINS
     p_sum = zfield
 #endif
 
-  END FUNCTION p_field_sum_2d
+  END FUNCTION p_field_sum_dp_2d
 
   !> common code of min/max reductions
-  SUBROUTINE p_minmax_common(in_field, out_field, n, op, loc_op, &
+  SUBROUTINE p_minmax_common_dp(in_field, out_field, n, op, loc_op, &
        proc_id, keyval, comm, root)
     INTEGER, INTENT(in) :: n, op, loc_op
     REAL(dp), INTENT(in) :: in_field(n)
@@ -9204,7 +9747,7 @@ CONTAINS
     LOGICAL :: compute_ikey
     INTEGER, ALLOCATABLE  :: meta_info(:), ikey(:)
 #ifndef SLOW_MPI_MAXMINLOC
-    DOUBLE PRECISION, ALLOCATABLE :: val_loc(:,:,:)
+    REAL(dp), ALLOCATABLE :: val_loc(:,:,:)
 #endif
 
     IF (PRESENT(comm)) THEN
@@ -9231,16 +9774,16 @@ CONTAINS
           CALL MPI_COMM_RANK(p_comm, rank, p_error)
 #ifdef SLOW_MPI_MAXMINLOC
           ! on BG/Q, {max|min}loc is slow
-          CALL mpi_allreduce(in_field, out_field, n, mpi_double_precision, &
+          CALL mpi_allreduce(in_field, out_field, n, p_real_dp, &
                op, p_comm, p_error)
           ikey = MERGE(meta_info, HUGE(1), in_field == out_field)
-          CALL mpi_reduce(ikey, meta_info, n, mpi_integer, &
+          CALL mpi_reduce(ikey, meta_info, n, p_int, &
                mpi_min, root, p_comm, p_error)
 #else
-          val_loc(1, :, 1) = DBLE(in_field)
-          val_loc(2, :, 1) = DBLE(meta_info)
+          val_loc(1, :, 1) = REAL(in_field,dp)
+          val_loc(2, :, 1) = REAL(meta_info,dp)
           CALL mpi_reduce(val_loc(:, :, 1), val_loc(:, :, 2), &
-               n, mpi_2double_precision, loc_op, root, p_comm, p_error)
+               n, mpi_2double_precision, loc_op, root, p_comm, p_error) ! 2x p_real_dp
           IF (rank == root) THEN
              out_field = val_loc(1, :, 2)
           ELSE
@@ -9250,16 +9793,16 @@ CONTAINS
           compute_ikey = rank == root
         ELSE
 #ifdef SLOW_MPI_MAXMINLOC
-          CALL mpi_allreduce(in_field, out_field, n, mpi_double_precision, &
+          CALL mpi_allreduce(in_field, out_field, n, p_real_dp, &
                op, p_comm, p_error)
           ikey = MERGE(meta_info, HUGE(1), in_field == out_field)
-          CALL mpi_allreduce(ikey, meta_info, n, mpi_integer, &
+          CALL mpi_allreduce(ikey, meta_info, n, p_int, &
                mpi_min, p_comm, p_error)
 #else
-          val_loc(1, :, 1) = DBLE(in_field)
-          val_loc(2, :, 1) = DBLE(meta_info)
+          val_loc(1, :, 1) = in_field
+          val_loc(2, :, 1) = REAL(meta_info, dp)
           CALL mpi_allreduce(val_loc(:, :, 1), val_loc(:, :, 2), &
-               n, mpi_2double_precision, loc_op, p_comm, p_error)
+               n, mpi_2double_precision, loc_op, p_comm, p_error) ! 2x p_real_dp
           out_field = val_loc(1, :, 2)
 #endif
           compute_ikey = .TRUE.
@@ -9291,7 +9834,7 @@ CONTAINS
 #else
     out_field = in_field
 #endif
-  END SUBROUTINE p_minmax_common
+  END SUBROUTINE p_minmax_common_dp
 
   SUBROUTINE p_minmax_common_sp(in_field, out_field, n, op, loc_op, &
        proc_id, keyval, comm, root)
@@ -9309,7 +9852,7 @@ CONTAINS
     LOGICAL :: compute_ikey
     INTEGER, ALLOCATABLE  :: meta_info(:), ikey(:)
 #ifndef SLOW_MPI_MAXMINLOC
-    DOUBLE PRECISION, ALLOCATABLE :: val_loc(:,:,:)
+    REAL(sp), ALLOCATABLE :: val_loc(:,:,:)
 #endif
 
     IF (PRESENT(comm)) THEN
@@ -9336,16 +9879,16 @@ CONTAINS
           CALL MPI_COMM_RANK(p_comm, rank, p_error)
 #ifdef SLOW_MPI_MAXMINLOC
           ! on BG/Q, {max|min}loc is slow
-          CALL mpi_allreduce(in_field, out_field, n, mpi_double_precision, &
+          CALL mpi_allreduce(in_field, out_field, n, p_real_sp, &
                op, p_comm, p_error)
           ikey = MERGE(meta_info, HUGE(1), in_field == out_field)
-          CALL mpi_reduce(ikey, meta_info, n, mpi_integer, &
+          CALL mpi_reduce(ikey, meta_info, n, p_int, &
                p_min_op(), root, p_comm, p_error)
 #else
-          val_loc(1, :, 1) = DBLE(in_field)
-          val_loc(2, :, 1) = DBLE(meta_info)
+          val_loc(1, :, 1) = REAL(in_field,sp)
+          val_loc(2, :, 1) = REAL(meta_info,sp)
           CALL mpi_reduce(val_loc(:, :, 1), val_loc(:, :, 2), &
-               n, mpi_2double_precision, loc_op, root, p_comm, p_error)
+               n, mpi_2real, loc_op, root, p_comm, p_error) ! 2x p_real_sp
           IF (rank == root) THEN
              out_field = val_loc(1, :, 2)
           ELSE
@@ -9355,16 +9898,16 @@ CONTAINS
           compute_ikey = rank == root
         ELSE
 #ifdef SLOW_MPI_MAXMINLOC
-          CALL mpi_allreduce(in_field, out_field, n, mpi_double_precision, &
+          CALL mpi_allreduce(in_field, out_field, n, p_real_sp, &
                op, p_comm, p_error)
           ikey = MERGE(meta_info, HUGE(1), in_field == out_field)
-          CALL mpi_allreduce(ikey, meta_info, n, mpi_integer, &
+          CALL mpi_allreduce(ikey, meta_info, n, p_int, &
                p_min_op(), p_comm, p_error)
 #else
-          val_loc(1, :, 1) = DBLE(in_field)
-          val_loc(2, :, 1) = DBLE(meta_info)
+          val_loc(1, :, 1) = in_field
+          val_loc(2, :, 1) = REAL(meta_info,sp)
           CALL mpi_allreduce(val_loc(:, :, 1), val_loc(:, :, 2), &
-               n, mpi_2double_precision, loc_op, p_comm, p_error)
+               n, mpi_2real, loc_op, p_comm, p_error) ! 2x p_real_sp
           out_field = val_loc(1, :, 2)
 #endif
           compute_ikey = .TRUE.
@@ -9383,10 +9926,10 @@ CONTAINS
       ELSE
         ! compute simple (standard) minimum
         IF (PRESENT(root)) THEN
-          CALL mpi_reduce(in_field, out_field, n, p_real_dp, &
+          CALL mpi_reduce(in_field, out_field, n, p_real_sp, &
                op, root, p_comm, p_error)
         ELSE
-          CALL mpi_allreduce(in_field, out_field, n, p_real_dp, &
+          CALL mpi_allreduce(in_field, out_field, n, p_real_sp, &
                op, p_comm, p_error)
         END IF
      END IF
@@ -9410,7 +9953,7 @@ CONTAINS
   ! additional data on the maximum value, e.g., the level
   ! index where the maximum occurred.
   !
-  FUNCTION p_max_0d (zfield, proc_id, keyval, comm, root) RESULT (p_max)
+  FUNCTION p_max_dp_0d (zfield, proc_id, keyval, comm, root) RESULT (p_max)
 
     REAL(dp)                         :: p_max
     REAL(dp),          INTENT(in)    :: zfield
@@ -9444,9 +9987,9 @@ CONTAINS
 
     p_max = temp_out(1)
 
-  END FUNCTION p_max_0d
+  END FUNCTION p_max_dp_0d
 
-  FUNCTION p_max_0d_sp (zfield, proc_id, keyval, comm, root) RESULT (p_max)
+  FUNCTION p_max_sp_0d (zfield, proc_id, keyval, comm, root) RESULT (p_max)
 
     REAL(sp)                         :: p_max
     REAL(sp),          INTENT(in)    :: zfield
@@ -9455,7 +9998,7 @@ CONTAINS
     INTEGER, OPTIONAL, INTENT(in)    :: root
     INTEGER, OPTIONAL, INTENT(in)    :: comm
 
-    REAL(dp) :: temp_in(1), temp_out(1)
+    REAL(sp) :: temp_in(1), temp_out(1)
     INTEGER :: temp_keyval(1), temp_proc_id(1)
     temp_in(1) = zfield
     IF (PRESENT(proc_id) .AND. PRESENT(keyval)) THEN
@@ -9480,7 +10023,7 @@ CONTAINS
 
     p_max = temp_out(1)
 
-  END FUNCTION p_max_0d_sp
+  END FUNCTION p_max_sp_0d
 
   FUNCTION p_max_int_0d (zfield, comm) RESULT (p_max)
 
@@ -9519,7 +10062,7 @@ CONTAINS
   ! additional data on the maximum value, e.g., the level
   ! index where the maximum occurred.
   !
-  FUNCTION p_max_1d (zfield, proc_id, keyval, comm, root) RESULT (p_max)
+  FUNCTION p_max_dp_1d (zfield, proc_id, keyval, comm, root) RESULT (p_max)
 
     REAL(dp),          INTENT(in)    :: zfield(:)
     INTEGER, OPTIONAL, INTENT(inout) :: proc_id(SIZE(zfield))
@@ -9531,9 +10074,9 @@ CONTAINS
     CALL p_minmax_common(zfield, p_max, SIZE(zfield), mpi_max, mpi_maxloc, &
            proc_id=proc_id, keyval=keyval, comm=comm, root=root)
 
-  END FUNCTION p_max_1d
+  END FUNCTION p_max_dp_1d
 
-  FUNCTION p_max_1d_sp (zfield, proc_id, keyval, comm, root) RESULT (p_max)
+  FUNCTION p_max_sp_1d (zfield, proc_id, keyval, comm, root) RESULT (p_max)
 
     REAL(sp),          INTENT(in)    :: zfield(:)
     INTEGER, OPTIONAL, INTENT(inout) :: proc_id(SIZE(zfield))
@@ -9545,7 +10088,7 @@ CONTAINS
     CALL p_minmax_common(zfield, p_max, SIZE(zfield), mpi_max, mpi_maxloc, &
            proc_id=proc_id, keyval=keyval, comm=comm, root=root)
 
-  END FUNCTION p_max_1d_sp
+  END FUNCTION p_max_sp_1d
 
   ! Computes maximum of a 1D field of integers.
   !
@@ -9584,7 +10127,7 @@ CONTAINS
 
   END FUNCTION p_max_int_1d
 
-  FUNCTION p_max_2d (zfield, comm) RESULT (p_max)
+  FUNCTION p_max_dp_2d (zfield, comm) RESULT (p_max)
 
     REAL(dp),          INTENT(in) :: zfield(:,:)
     INTEGER, OPTIONAL, INTENT(in) :: comm
@@ -9609,9 +10152,9 @@ CONTAINS
     p_max = zfield
 #endif
 
-  END FUNCTION p_max_2d
+  END FUNCTION p_max_dp_2d
 
-  FUNCTION p_max_2d_sp (zfield, comm) RESULT (p_max)
+  FUNCTION p_max_sp_2d (zfield, comm) RESULT (p_max)
 
     REAL(sp),          INTENT(in) :: zfield(:,:)
     INTEGER, OPTIONAL, INTENT(in) :: comm
@@ -9627,7 +10170,7 @@ CONTAINS
     ENDIF
 
     IF (my_process_is_mpi_all_parallel()) THEN
-       CALL MPI_ALLREDUCE (zfield, p_max, SIZE(zfield), p_real_dp, &
+       CALL MPI_ALLREDUCE (zfield, p_max, SIZE(zfield), p_real_sp, &
             mpi_max, p_comm, p_error)
     ELSE
        p_max = zfield
@@ -9636,9 +10179,9 @@ CONTAINS
     p_max = zfield
 #endif
 
-  END FUNCTION p_max_2d_sp
+  END FUNCTION p_max_sp_2d
 
-  FUNCTION p_max_3d (zfield, comm) RESULT (p_max)
+  FUNCTION p_max_dp_3d (zfield, comm) RESULT (p_max)
 
     REAL(dp),          INTENT(in) :: zfield(:,:,:)
     INTEGER, OPTIONAL, INTENT(in) :: comm
@@ -9664,9 +10207,9 @@ CONTAINS
     p_max = zfield
 #endif
 
-  END FUNCTION p_max_3d
+  END FUNCTION p_max_dp_3d
 
-  FUNCTION p_max_3d_sp (zfield, comm) RESULT (p_max)
+  FUNCTION p_max_sp_3d (zfield, comm) RESULT (p_max)
 
     REAL(sp),          INTENT(in) :: zfield(:,:,:)
     INTEGER, OPTIONAL, INTENT(in) :: comm
@@ -9683,7 +10226,7 @@ CONTAINS
     ENDIF
 
     IF (my_process_is_mpi_all_parallel()) THEN
-       CALL MPI_ALLREDUCE (zfield, p_max, SIZE(zfield), p_real_dp, &
+       CALL MPI_ALLREDUCE (zfield, p_max, SIZE(zfield), p_real_sp, &
             mpi_max, p_comm, p_error)
     ELSE
        p_max = zfield
@@ -9692,7 +10235,7 @@ CONTAINS
     p_max = zfield
 #endif
 
-  END FUNCTION p_max_3d_sp
+  END FUNCTION p_max_sp_3d
 
 
   !> computes a global minimum of real numbers
@@ -9706,7 +10249,7 @@ CONTAINS
   ! additional data on the maximum value, e.g., the level
   ! index where the maximum occurred.
   !
-  FUNCTION p_min_0d (zfield, proc_id, keyval, comm, root) RESULT (p_min)
+  FUNCTION p_min_dp_0d (zfield, proc_id, keyval, comm, root) RESULT (p_min)
 
     REAL(dp)                         :: p_min
     REAL(dp),          INTENT(in)    :: zfield
@@ -9740,7 +10283,43 @@ CONTAINS
 
     p_min = temp_out(1)
 
-  END FUNCTION p_min_0d
+  END FUNCTION p_min_dp_0d
+
+  FUNCTION p_min_sp_0d (zfield, proc_id, keyval, comm, root) RESULT (p_min)
+
+    REAL(sp)                         :: p_min
+    REAL(sp),          INTENT(in)    :: zfield
+    INTEGER, OPTIONAL, INTENT(inout) :: proc_id
+    INTEGER, OPTIONAL, INTENT(inout) :: keyval
+    INTEGER, OPTIONAL, INTENT(in)    :: root
+    INTEGER, OPTIONAL, INTENT(in)    :: comm
+
+    REAL(sp) :: temp_in(1), temp_out(1)
+    INTEGER :: temp_keyval(1), temp_proc_id(1)
+    temp_in(1) = zfield
+    IF (PRESENT(proc_id) .AND. PRESENT(keyval)) THEN
+      temp_keyval(1) = keyval; temp_proc_id(1) = proc_id
+      CALL p_minmax_common(temp_in, temp_out, 1, mpi_min, mpi_minloc, &
+           proc_id=temp_proc_id, keyval=temp_keyval, comm=comm, root=root)
+      keyval = temp_keyval(1); proc_id = temp_proc_id(1)
+    ELSE IF (PRESENT(proc_id)) THEN
+      temp_proc_id(1) = proc_id
+      CALL p_minmax_common(temp_in, temp_out, 1, mpi_min, mpi_minloc, &
+           proc_id=temp_proc_id, comm=comm, root=root)
+      proc_id = temp_proc_id(1)
+    ELSE IF (PRESENT(keyval)) THEN
+      temp_keyval(1) = keyval
+      CALL p_minmax_common(temp_in, temp_out, 1, mpi_min, mpi_minloc, &
+         keyval=temp_keyval, comm=comm, root=root)
+      keyval = temp_keyval(1)
+    ELSE ! .not. present(keyval) .and. .not. present(proc_id)
+      CALL p_minmax_common(temp_in, temp_out, 1, mpi_min, mpi_minloc, &
+           comm=comm, root=root)
+    END IF
+
+    p_min = temp_out(1)
+
+  END FUNCTION p_min_sp_0d
 
   FUNCTION p_min_int_0d (zfield, comm) RESULT (p_min)
 
@@ -9768,7 +10347,7 @@ CONTAINS
 
   END FUNCTION p_min_int_0d
 
-  FUNCTION p_min_1d (zfield, proc_id, keyval, comm, root) RESULT (p_min)
+  FUNCTION p_min_dp_1d (zfield, proc_id, keyval, comm, root) RESULT (p_min)
 
     REAL(dp),          INTENT(in) :: zfield(:)
     INTEGER, OPTIONAL, INTENT(inout) :: proc_id(SIZE(zfield))
@@ -9780,7 +10359,21 @@ CONTAINS
     CALL p_minmax_common(zfield, p_min, SIZE(zfield), mpi_min, mpi_minloc, &
            proc_id=proc_id, keyval=keyval, comm=comm, root=root)
 
-  END FUNCTION p_min_1d
+  END FUNCTION p_min_dp_1d
+
+  FUNCTION p_min_sp_1d (zfield, proc_id, keyval, comm, root) RESULT (p_min)
+
+    REAL(sp),          INTENT(in) :: zfield(:)
+    INTEGER, OPTIONAL, INTENT(inout) :: proc_id(SIZE(zfield))
+    INTEGER, OPTIONAL, INTENT(inout) :: keyval(SIZE(zfield))
+    INTEGER, OPTIONAL, INTENT(in) :: root
+    INTEGER, OPTIONAL, INTENT(in) :: comm
+    REAL(sp)                      :: p_min (SIZE(zfield))
+
+    CALL p_minmax_common(zfield, p_min, SIZE(zfield), mpi_min, mpi_minloc, &
+           proc_id=proc_id, keyval=keyval, comm=comm, root=root)
+
+  END FUNCTION p_min_sp_1d
 
   FUNCTION p_min_int_1d (zfield, comm) RESULT (p_min)
 
@@ -9809,7 +10402,7 @@ CONTAINS
 
   END FUNCTION p_min_int_1d
 
-  FUNCTION p_min_2d (zfield, comm) RESULT (p_min)
+  FUNCTION p_min_dp_2d (zfield, comm) RESULT (p_min)
 
     REAL(dp),          INTENT(in) :: zfield(:,:)
     INTEGER, OPTIONAL, INTENT(in) :: comm
@@ -9834,9 +10427,36 @@ CONTAINS
     p_min = zfield
 #endif
 
-  END FUNCTION p_min_2d
+  END FUNCTION p_min_dp_2d
 
-  FUNCTION p_min_3d (zfield, comm) RESULT (p_min)
+  FUNCTION p_min_sp_2d (zfield, comm) RESULT (p_min)
+
+    REAL(sp),          INTENT(in) :: zfield(:,:)
+    INTEGER, OPTIONAL, INTENT(in) :: comm
+    REAL(sp)                      :: p_min (SIZE(zfield,1),SIZE(zfield,2))
+
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    IF (my_process_is_mpi_all_parallel()) THEN
+       CALL MPI_ALLREDUCE (zfield, p_min, SIZE(zfield), p_real_sp, &
+            mpi_min, p_comm, p_error)
+    ELSE
+       p_min = zfield
+    END IF
+#else
+    p_min = zfield
+#endif
+
+  END FUNCTION p_min_sp_2d
+
+  FUNCTION p_min_dp_3d (zfield, comm) RESULT (p_min)
 
     REAL(dp),          INTENT(in) :: zfield(:,:,:)
     INTEGER, OPTIONAL, INTENT(in) :: comm
@@ -9861,7 +10481,34 @@ CONTAINS
     p_min = zfield
 #endif
 
-  END FUNCTION p_min_3d
+  END FUNCTION p_min_dp_3d
+
+  FUNCTION p_min_sp_3d (zfield, comm) RESULT (p_min)
+
+    REAL(sp),          INTENT(in) :: zfield(:,:,:)
+    INTEGER, OPTIONAL, INTENT(in) :: comm
+    REAL(sp)                      :: p_min (SIZE(zfield,1),SIZE(zfield,2)&
+                                           ,SIZE(zfield,3))
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+    IF (my_process_is_mpi_all_parallel()) THEN
+       CALL MPI_ALLREDUCE (zfield, p_min, SIZE(zfield), p_real_sp, &
+            mpi_min, p_comm, p_error)
+    ELSE
+       p_min = zfield
+    END IF
+#else
+    p_min = zfield
+#endif
+
+  END FUNCTION p_min_sp_3d
 
   FUNCTION p_lor_0d(zfield, comm) RESULT(res)
     LOGICAL :: res
@@ -9987,17 +10634,43 @@ CONTAINS
 #endif
   END FUNCTION p_allreduce_int8_0d
 
+  SUBROUTINE p_allreduce_in_place_int4_1d(buf, reductionOp, comm)
+    INTEGER(i4), INTENT(inout) :: buf(:)
+    INTEGER, INTENT(in) :: reductionOp, comm
+
+#ifndef NOMPI
+    INTEGER :: ierror
+    CHARACTER(*), PARAMETER :: routine = modname//":p_allreduce_in_place_int4_1d"
+
+    CALL MPI_Allreduce(mpi_in_place, buf, SIZE(buf), p_int, reductionOp, &
+      & comm, ierror)
+    IF(ierror /= MPI_SUCCESS) CALL finish(routine, "error in MPI call")
+#endif
+  END SUBROUTINE p_allreduce_in_place_int4_1d
+
+  SUBROUTINE p_allreduce_in_place_bool_0d(buf, reductionOp, comm)
+    LOGICAL, INTENT(inout) :: buf
+    INTEGER, INTENT(in) :: reductionOp, comm
+
+#ifndef NOMPI
+    INTEGER :: ierror
+    CHARACTER(*), PARAMETER :: routine = modname//":p_allreduce_in_place_bool_0d"
+
+    CALL MPI_Allreduce(mpi_in_place, buf, 1, p_bool, reductionOp, comm, ierror)
+    IF(ierror /= MPI_SUCCESS) CALL finish(routine, "error in MPI call")
+#endif
+  END SUBROUTINE p_allreduce_in_place_bool_0d
 
   !---------------------------------------------------------------------------------------------------------------------------------
   !> wrapper for MPI_Scatter
   !---------------------------------------------------------------------------------------------------------------------------------
-  SUBROUTINE p_scatter_real_1d1d(sendbuf, recvbuf, p_src, comm)
+  SUBROUTINE p_scatter_dp_1d1d(sendbuf, recvbuf, p_src, comm)
     REAL(dp),          INTENT(inout) :: sendbuf(:), recvbuf(:)
     INTEGER,           INTENT(in) :: p_src
     INTEGER, OPTIONAL, INTENT(in) :: comm
 
 #ifndef NOMPI
-    CHARACTER(*), PARAMETER :: routine = modname//"::p_scatter_real_1d1d"
+    CHARACTER(*), PARAMETER :: routine = modname//"::p_scatter_dp_1d1d"
     INTEGER :: p_comm
 
     IF (PRESENT(comm)) THEN
@@ -10013,16 +10686,16 @@ CONTAINS
 #else
      recvbuf = sendbuf
 #endif
-   END SUBROUTINE p_scatter_real_1d1d
+   END SUBROUTINE p_scatter_dp_1d1d
 
 
-   SUBROUTINE p_scatter_real_2d1d(sendbuf, recvbuf, p_src, comm)
+   SUBROUTINE p_scatter_dp_2d1d(sendbuf, recvbuf, p_src, comm)
     REAL(dp),          INTENT(inout) :: sendbuf(:,:), recvbuf(:)
     INTEGER,           INTENT(in) :: p_src
     INTEGER, OPTIONAL, INTENT(in) :: comm
 
 #ifndef NOMPI
-    CHARACTER(*), PARAMETER :: routine = modname//"::p_scatter_real_1d1d"
+    CHARACTER(*), PARAMETER :: routine = modname//"::p_scatter_dp_2d1d"
     INTEGER :: p_comm
 
     IF (PRESENT(comm)) THEN
@@ -10038,7 +10711,7 @@ CONTAINS
 #else
     recvbuf = sendbuf(:,1)
 #endif
-  END SUBROUTINE p_scatter_real_2d1d
+  END SUBROUTINE p_scatter_dp_2d1d
 
   SUBROUTINE p_scatter_sp_1d1d(sendbuf, recvbuf, p_src, comm)
     REAL(sp),          INTENT(inout) :: sendbuf(:), recvbuf(:)
@@ -10046,7 +10719,7 @@ CONTAINS
     INTEGER, OPTIONAL, INTENT(in) :: comm
 
 #ifndef NOMPI
-    CHARACTER(*), PARAMETER :: routine = modname//"::p_scatter_single_1d1d"
+    CHARACTER(*), PARAMETER :: routine = modname//"::p_scatter_sp_1d1d"
     INTEGER :: p_comm
 
     IF (PRESENT(comm)) THEN
@@ -10070,7 +10743,7 @@ CONTAINS
     INTEGER, OPTIONAL, INTENT(in) :: comm
 
 #ifndef NOMPI
-    CHARACTER(*), PARAMETER :: routine = modname//"::p_scatter_real_1d1d"
+    CHARACTER(*), PARAMETER :: routine = modname//"::p_scatter_sp_2d1d"
     INTEGER :: p_comm
 
     IF (PRESENT(comm)) THEN
@@ -10139,7 +10812,7 @@ CONTAINS
 #endif
   END SUBROUTINE p_scatter_int_2d1d
 
-  SUBROUTINE p_gather_real_0d1d (sendbuf, recvbuf, p_dest, comm)
+  SUBROUTINE p_gather_dp_0d1d (sendbuf, recvbuf, p_dest, comm)
     REAL(dp),          INTENT(in   ) :: sendbuf
     REAL(dp),          INTENT(inout) :: recvbuf(:)
     INTEGER,           INTENT(in   ) :: p_dest
@@ -10160,9 +10833,32 @@ CONTAINS
 #else
      recvbuf(:) = sendbuf
 #endif
-  END SUBROUTINE p_gather_real_0d1d
+  END SUBROUTINE p_gather_dp_0d1d
 
-  SUBROUTINE p_gather_real_1d2d (sendbuf, recvbuf, p_dest, comm)
+  SUBROUTINE p_gather_sp_0d1d (sendbuf, recvbuf, p_dest, comm)
+    REAL(sp),          INTENT(in   ) :: sendbuf
+    REAL(sp),          INTENT(inout) :: recvbuf(:)
+    INTEGER,           INTENT(in   ) :: p_dest
+    INTEGER, OPTIONAL, INTENT(in   ) :: comm
+
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+     CALL MPI_GATHER(sendbuf, 1, p_real_sp, &
+                     recvbuf, 1, p_real_sp, &
+                     p_dest, p_comm, p_error)
+#else
+     recvbuf(:) = sendbuf
+#endif
+  END SUBROUTINE p_gather_sp_0d1d
+
+  SUBROUTINE p_gather_dp_1d2d (sendbuf, recvbuf, p_dest, comm)
     REAL(dp),          INTENT(in   ) :: sendbuf(:)
     REAL(dp),          INTENT(inout) :: recvbuf(:,:)
     INTEGER,           INTENT(in   ) :: p_dest
@@ -10183,9 +10879,32 @@ CONTAINS
 #else
      recvbuf(:,1) = sendbuf(:)
 #endif
-  END SUBROUTINE p_gather_real_1d2d
+  END SUBROUTINE p_gather_dp_1d2d
 
-  SUBROUTINE p_gather_real_2d3d(sendbuf, recvbuf, p_dest, comm)
+  SUBROUTINE p_gather_sp_1d2d (sendbuf, recvbuf, p_dest, comm)
+    REAL(sp),          INTENT(in   ) :: sendbuf(:)
+    REAL(sp),          INTENT(inout) :: recvbuf(:,:)
+    INTEGER,           INTENT(in   ) :: p_dest
+    INTEGER, OPTIONAL, INTENT(in   ) :: comm
+
+#ifndef NOMPI
+    INTEGER :: p_comm
+
+    IF (PRESENT(comm)) THEN
+       p_comm = comm
+    ELSE
+       p_comm = process_mpi_all_comm
+    ENDIF
+
+     CALL MPI_GATHER(sendbuf, SIZE(sendbuf), p_real_sp, &
+                     recvbuf, SIZE(sendbuf), p_real_sp, &
+                     p_dest, p_comm, p_error)
+#else
+     recvbuf(:,1) = sendbuf(:)
+#endif
+  END SUBROUTINE p_gather_sp_1d2d
+
+  SUBROUTINE p_gather_dp_2d3d(sendbuf, recvbuf, p_dest, comm)
     REAL(dp),          INTENT(in   ) :: sendbuf(:,:)
     REAL(dp),          INTENT(inout) :: recvbuf(:,:,:)
     INTEGER,           INTENT(in   ) :: p_dest
@@ -10206,9 +10925,9 @@ CONTAINS
 #else
     recvbuf(:,:,1) = sendbuf(:,:)
 #endif
-  END SUBROUTINE p_gather_real_2d3d
+  END SUBROUTINE p_gather_dp_2d3d
 
-   SUBROUTINE p_gather_real_5d6d (sendbuf, recvbuf, p_dest, comm)
+   SUBROUTINE p_gather_dp_5d6d (sendbuf, recvbuf, p_dest, comm)
      REAL(dp),          INTENT(in   ) :: sendbuf(:,:,:,:,:)
      REAL(dp),          INTENT(inout) :: recvbuf(:,:,:,:,:,:)
      INTEGER,           INTENT(in   ) :: p_dest
@@ -10228,16 +10947,16 @@ CONTAINS
                      p_dest, p_comm, p_error)
 
      IF (p_error /= MPI_SUCCESS) THEN
-       CALL finish('p_gather_real_5d6d', message_text)
+       CALL finish('p_gather_dp_5d6d', message_text)
      END IF
 
 #else
      recvbuf(:,:,:,:,:,LBOUND(recvbuf,6)) = sendbuf(:,:,:,:,:)
 #endif
-   END SUBROUTINE p_gather_real_5d6d
+   END SUBROUTINE p_gather_dp_5d6d
 
 
-  SUBROUTINE p_gather_real_1d1d (sendbuf, recvbuf, p_dest, comm)
+  SUBROUTINE p_gather_dp_1d1d (sendbuf, recvbuf, p_dest, comm)
     REAL(dp),          INTENT(in   ) :: sendbuf(:)
     REAL(dp),          INTENT(inout) :: recvbuf(:)
     INTEGER,           INTENT(in   ) :: p_dest
@@ -10258,7 +10977,7 @@ CONTAINS
 #else
      recvbuf(:) = sendbuf(:)
 #endif
-   END SUBROUTINE p_gather_real_1d1d
+   END SUBROUTINE p_gather_dp_1d1d
 
 
   !---------------------------------------------------------------------------------------------------------------------------------
@@ -10469,7 +11188,7 @@ CONTAINS
    END SUBROUTINE p_gatherv_int
 
 
-   SUBROUTINE p_gatherv_real2D2D (sendbuf, sendcount, recvbuf, recvcounts, &
+   SUBROUTINE p_gatherv_dp_2D2D (sendbuf, sendcount, recvbuf, recvcounts, &
      &                            displs, p_dest, comm)
      REAL(DP), INTENT(IN) :: sendbuf(:,:)
      INTEGER, INTENT(IN)  :: sendcount
@@ -10480,7 +11199,7 @@ CONTAINS
      INTEGER, INTENT(IN)  :: comm
 
 #ifndef NOMPI
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_real2D2D"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_dp_2D2D"
 
      INTEGER :: dim1_size
 
@@ -10494,10 +11213,10 @@ CONTAINS
 #else
      recvbuf(:, (displs(1)+1):(displs(1)+sendcount)) = sendbuf(:, 1:sendcount)
 #endif
-   END SUBROUTINE p_gatherv_real2D2D
+   END SUBROUTINE p_gatherv_dp_2D2D
 
 
-   SUBROUTINE p_gatherv_sreal2D2D (sendbuf, sendcount, recvbuf, recvcounts, &
+   SUBROUTINE p_gatherv_sp_2D2D (sendbuf, sendcount, recvbuf, recvcounts, &
      &                            displs, p_dest, comm)
      REAL(SP), INTENT(IN) :: sendbuf(:,:)
      INTEGER, INTENT(IN)  :: sendcount
@@ -10508,7 +11227,7 @@ CONTAINS
      INTEGER, INTENT(IN)  :: comm
 
 #ifndef NOMPI
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_sreal2D2D"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_sp_2D2D"
 
      INTEGER :: dim1_size
 
@@ -10522,10 +11241,10 @@ CONTAINS
 #else
      recvbuf(:, (displs(1)+1):(displs(1)+sendcount)) = sendbuf(:, 1:sendcount)
 #endif
-   END SUBROUTINE p_gatherv_sreal2D2D
+   END SUBROUTINE p_gatherv_sp_2D2D
 
 
-   SUBROUTINE p_gatherv_int2D2D (sendbuf, sendcount, recvbuf, recvcounts, &
+   SUBROUTINE p_gatherv_int_2D2D (sendbuf, sendcount, recvbuf, recvcounts, &
      &                            displs, p_dest, comm)
      INTEGER, INTENT(IN)  :: sendbuf(:,:)
      INTEGER, INTENT(IN)  :: sendcount
@@ -10536,7 +11255,7 @@ CONTAINS
      INTEGER, INTENT(IN)  :: comm
 
 #ifndef NOMPI
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_int2D2D"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_int_2D2D"
 
      INTEGER :: dim1_size
 
@@ -10550,10 +11269,10 @@ CONTAINS
 #else
      recvbuf(:, (displs(1)+1):(displs(1)+sendcount)) = sendbuf(:, 1:sendcount)
 #endif
-   END SUBROUTINE p_gatherv_int2D2D
+   END SUBROUTINE p_gatherv_int_2D2D
 
 
-   SUBROUTINE p_gatherv_real2D1D (sendbuf, sendcount, recvbuf, recvcounts, displs, p_dest, comm)
+   SUBROUTINE p_gatherv_dp_2D1D (sendbuf, sendcount, recvbuf, recvcounts, displs, p_dest, comm)
      REAL(dp),          INTENT(IN)    :: sendbuf(:,:)
      INTEGER,           INTENT(IN)    :: sendcount
      REAL(dp),          INTENT(INOUT) :: recvbuf(:)
@@ -10562,7 +11281,7 @@ CONTAINS
      INTEGER,           INTENT(in)    :: comm
 
 #if !defined(NOMPI)
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_real2D1D"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_dp_2D1D"
      INTEGER :: p_error
 
      CALL MPI_GATHERV(sendbuf, sendcount, p_real_dp,   &    ! sendbuf, sendcount, sendtype
@@ -10572,10 +11291,10 @@ CONTAINS
 #else
      recvbuf(:) = RESHAPE(sendbuf, (/ SIZE(recvbuf) /) )
 #endif
-   END SUBROUTINE p_gatherv_real2D1D
+   END SUBROUTINE p_gatherv_dp_2D1D
 
 
-  SUBROUTINE p_gatherv_int2D1D (sendbuf, sendcount, recvbuf, recvcounts, displs, p_dest, comm)
+  SUBROUTINE p_gatherv_int_2D1D (sendbuf, sendcount, recvbuf, recvcounts, displs, p_dest, comm)
     INTEGER,           INTENT(IN)    :: sendbuf(:,:)
     INTEGER,           INTENT(IN)    :: sendcount
     INTEGER,           INTENT(INOUT) :: recvbuf(:)
@@ -10584,7 +11303,7 @@ CONTAINS
     INTEGER,           INTENT(in)    :: comm
 
 #if !defined(NOMPI)
-    CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_int2D1D"
+    CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_int_2D1D"
     INTEGER :: p_error
 
     CALL MPI_GATHERV(sendbuf, sendcount, p_int,       &    ! sendbuf, sendcount, sendtype
@@ -10594,10 +11313,10 @@ CONTAINS
 #else
     recvbuf(:) = RESHAPE(sendbuf, (/ SIZE(recvbuf) /) )
 #endif
-  END SUBROUTINE p_gatherv_int2D1D
+  END SUBROUTINE p_gatherv_int_2D1D
 
 
-   SUBROUTINE p_gatherv_real3D1D (sendbuf, sendcount, recvbuf, recvcounts, displs, p_dest, comm)
+   SUBROUTINE p_gatherv_dp_3D1D (sendbuf, sendcount, recvbuf, recvcounts, displs, p_dest, comm)
      REAL(dp),          INTENT(IN)    :: sendbuf(:,:,:)
      INTEGER,           INTENT(IN)    :: sendcount
      REAL(dp),          INTENT(INOUT) :: recvbuf(:)
@@ -10606,7 +11325,7 @@ CONTAINS
      INTEGER,           INTENT(in)    :: comm
 
 #if !defined(NOMPI)
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_real2D1D"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_gatherv_dp_2D1D"
      INTEGER :: p_error
 
      CALL MPI_GATHERV(sendbuf, sendcount, p_real_dp,   &    ! sendbuf, sendcount, sendtype
@@ -10616,10 +11335,10 @@ CONTAINS
 #else
      recvbuf(:) = RESHAPE(sendbuf, (/ SIZE(recvbuf) /) )
 #endif
-   END SUBROUTINE p_gatherv_real3D1D
+   END SUBROUTINE p_gatherv_dp_3D1D
 
 
-   SUBROUTINE p_scatterv_real1D2D (sendbuf, sendcounts, displs, recvbuf, recvcount, p_dest, comm)
+   SUBROUTINE p_scatterv_dp_1D2D (sendbuf, sendcounts, displs, recvbuf, recvcount, p_dest, comm)
      REAL(dp),          INTENT(IN)    :: sendbuf(:)
      INTEGER,           INTENT(IN)    :: sendcounts(:), displs(:)
      REAL(dp),          INTENT(INOUT) :: recvbuf(:,:)
@@ -10628,7 +11347,7 @@ CONTAINS
      INTEGER,           INTENT(in)    :: comm
 
 #if !defined(NOMPI)
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_scatterv_real1D2D"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_scatterv_dp_1D2D"
      INTEGER :: p_error
 
      CALL MPI_SCATTERV(sendbuf, sendcounts, displs,   &    ! sendbuf, sendcount, displs
@@ -10638,24 +11357,24 @@ CONTAINS
 #else
      recvbuf(:,:) = RESHAPE(sendbuf, (/ SIZE(recvbuf,1), SIZE(recvbuf,2) /))
 #endif
-   END SUBROUTINE p_scatterv_real1D2D
+   END SUBROUTINE p_scatterv_dp_1D2D
 
 
   !---------------------------------------------------------------------------------------------------------------------------------
   !> wrapper for MPI_Scatterv()
   !---------------------------------------------------------------------------------------------------------------------------------
-   SUBROUTINE p_scatterv_real1D1D (sendbuf, sendcounts, displs, recvbuf, recvcount, p_src, comm)
+   SUBROUTINE p_scatterv_dp_1D1D (sendbuf, sendcounts, displs, recvbuf, recvcount, p_src, comm)
         implicit none
-        REAL(wp), INTENT(IN) :: sendbuf(:)
+        REAL(dp), INTENT(IN) :: sendbuf(:)
         INTEGER, INTENT(IN)  :: sendcounts(:)
-        REAL(wp), INTENT(INOUT) :: recvbuf(:)
+        REAL(dp), INTENT(INOUT) :: recvbuf(:)
         INTEGER, INTENT(IN)  :: recvcount
         INTEGER, INTENT(IN)  :: displs(:)
         INTEGER, INTENT(IN)  :: p_src
         INTEGER, INTENT(IN)  :: comm
 
 #ifndef NOMPI
-        CHARACTER(*), PARAMETER :: routine = modname//"::p_scatterv_real1D1D"
+        CHARACTER(*), PARAMETER :: routine = modname//"::p_scatterv_dp_1D1D"
         INTEGER :: ierr
 
         CALL MPI_Scatterv(sendbuf, sendcounts, displs, p_real_dp, &
@@ -10665,7 +11384,7 @@ CONTAINS
 #else
         recvbuf(1:recvcount) = sendbuf((displs(1)+1):(displs(1)+recvcount))
 #endif
-   END SUBROUTINE p_scatterv_real1D1D
+   END SUBROUTINE p_scatterv_dp_1D1D
 
    SUBROUTINE p_scatterv_int_1d1d(sendbuf, sendcounts, displs, recvbuf, &
      recvcount, p_src, comm)
@@ -10679,7 +11398,7 @@ CONTAINS
      INTEGER, INTENT(IN)  :: comm
 
 #ifndef NOMPI
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_scatterv_real1D1D"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_scatterv_int_1D1D"
      INTEGER :: ierr
 
      CALL MPI_Scatterv(sendbuf, sendcounts, displs, p_int, &
@@ -10694,7 +11413,7 @@ CONTAINS
   !---------------------------------------------------------------------------------------------------------------------------------
   !> wrapper for MPI_Scatterv()
   !---------------------------------------------------------------------------------------------------------------------------------
-   SUBROUTINE p_scatterv_single1D1D (sendbuf, sendcounts, displs, recvbuf, recvcount, p_src, comm)
+   SUBROUTINE p_scatterv_sp_1D1D (sendbuf, sendcounts, displs, recvbuf, recvcount, p_src, comm)
         implicit none
         REAL(sp), INTENT(IN) :: sendbuf(:)
         INTEGER, INTENT(IN)  :: sendcounts(:)
@@ -10705,7 +11424,7 @@ CONTAINS
         INTEGER, INTENT(IN)  :: comm
 
 #ifndef NOMPI
-        CHARACTER(*), PARAMETER :: routine = modname//"::p_scatterv_single1D1D"
+        CHARACTER(*), PARAMETER :: routine = modname//"::p_scatterv_sp_1D1D"
         INTEGER :: ierr
 
         CALL MPI_Scatterv(sendbuf, sendcounts, displs, p_real_sp, &
@@ -10715,7 +11434,7 @@ CONTAINS
 #else
         recvbuf(1:recvcount) = sendbuf((displs(1)+1):(displs(1)+recvcount))
 #endif
-   END SUBROUTINE p_scatterv_single1D1D
+   END SUBROUTINE p_scatterv_sp_1D1D
 
    SUBROUTINE p_allgather_int_0d1d(sendbuf, recvbuf, sendcount, recvcount, comm)
      INTEGER,           INTENT(inout) :: recvbuf(:)
@@ -10784,14 +11503,14 @@ CONTAINS
 #endif
    END SUBROUTINE p_allgather_int_1d2d
 
-   SUBROUTINE p_allgatherv_real_1d(sendbuf, recvbuf, recvcounts, comm)
+   SUBROUTINE p_allgatherv_dp_1d(sendbuf, recvbuf, recvcounts, comm)
      REAL(dp),          INTENT(in)    :: sendbuf(:)
      REAL(dp),          INTENT(inout) :: recvbuf(:)
      INTEGER,           INTENT(in)    :: recvcounts(:)
      INTEGER, OPTIONAL, INTENT(in)    :: comm
 
 #ifndef NOMPI
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_allgatherv_real_1d"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_allgatherv_dp_1d"
      INTEGER :: p_comm, sendcount, comm_size, i
      INTEGER, ALLOCATABLE :: displs(:)
 
@@ -10828,7 +11547,53 @@ CONTAINS
 #else
      recvbuf = sendbuf
 #endif
-   END SUBROUTINE p_allgatherv_real_1d
+   END SUBROUTINE p_allgatherv_dp_1d
+
+   SUBROUTINE p_allgatherv_sp_1d(sendbuf, recvbuf, recvcounts, comm)
+     REAL(sp),          INTENT(in)    :: sendbuf(:)
+     REAL(sp),          INTENT(inout) :: recvbuf(:)
+     INTEGER,           INTENT(in)    :: recvcounts(:)
+     INTEGER, OPTIONAL, INTENT(in)    :: comm
+
+#ifndef NOMPI
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_allgatherv_sp_1d"
+     INTEGER :: p_comm, sendcount, comm_size, i
+     INTEGER, ALLOCATABLE :: displs(:)
+
+     IF (PRESENT(comm)) THEN
+       p_comm = comm
+     ELSE
+       p_comm = process_mpi_all_comm
+     ENDIF
+
+     IF (p_comm_is_intercomm(p_comm)) THEN
+      comm_size = p_comm_remote_size(p_comm)
+     ELSE
+      comm_size = p_comm_size(p_comm)
+     END IF
+
+     IF ((comm_size > SIZE(recvcounts, 1)) .OR. &
+      &  (SUM(recvcounts) > SIZE(recvbuf, 1))) &
+       CALL finish(routine, "invalid recvcounts")
+
+     ALLOCATE(displs(comm_size))
+     displs(1) = 0
+     DO i = 2, comm_size
+       displs(i) = displs(i-1) + recvcounts(i-1)
+     END DO
+
+     sendcount = SIZE(sendbuf)
+     CALL mpi_allgatherv(sendbuf, sendcount, p_real_sp, &
+          &              recvbuf, recvcounts, displs, p_real_sp, &
+          &              p_comm, p_error)
+     IF (p_error /=  MPI_SUCCESS) &
+       CALL finish (routine, 'Error in mpi_allgatherv operation!')
+
+     DEALLOCATE(displs)
+#else
+     recvbuf = sendbuf
+#endif
+   END SUBROUTINE p_allgatherv_sp_1d
 
    SUBROUTINE p_allgatherv_int_1d(sendbuf, recvbuf, recvcounts, displs, &
      &                            comm)
@@ -10942,7 +11707,7 @@ CONTAINS
    END SUBROUTINE p_alltoall_int
 
 
-   SUBROUTINE p_alltoallv_real_2d (sendbuf, sendcounts, sdispls, &
+   SUBROUTINE p_alltoallv_dp_2d (sendbuf, sendcounts, sdispls, &
      &                             recvbuf, recvcounts, rdispls, comm)
      REAL(dp), TARGET,  INTENT(in) :: sendbuf(:,:)
      INTEGER,           INTENT(in) :: sendcounts(:), sdispls(:)
@@ -10950,7 +11715,7 @@ CONTAINS
      INTEGER,           INTENT(in) :: recvcounts(:), rdispls(:)
      INTEGER,           INTENT(in) :: comm
 #if !defined(NOMPI)
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_alltoallv_real_2d"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_alltoallv_dp_2d"
      INTEGER :: p_comm, p_error, dim1_size
      REAL(dp), POINTER :: p_sendbuf(:,:)
      REAL(dp), TARGET :: dummy(1,1)
@@ -10973,10 +11738,10 @@ CONTAINS
      recvbuf(:,rdispls(1)+1:rdispls(1)+recvcounts(1)) = &
        sendbuf(:,sdispls(1)+1:sdispls(1)+sendcounts(1))
 #endif
-   END SUBROUTINE p_alltoallv_real_2d
+   END SUBROUTINE p_alltoallv_dp_2d
 
 
-   SUBROUTINE p_alltoallv_sreal_2d (sendbuf, sendcounts, sdispls, &
+   SUBROUTINE p_alltoallv_sp_2d (sendbuf, sendcounts, sdispls, &
      &                              recvbuf, recvcounts, rdispls, comm)
      REAL(sp), TARGET,  INTENT(in) :: sendbuf(:,:)
      INTEGER,           INTENT(in) :: sendcounts(:), sdispls(:)
@@ -10984,7 +11749,7 @@ CONTAINS
      INTEGER,           INTENT(in) :: recvcounts(:), rdispls(:)
      INTEGER,           INTENT(in) :: comm
 #if !defined(NOMPI)
-     CHARACTER(*), PARAMETER :: routine = modname//"::p_alltoallv_sreal_2d"
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_alltoallv_sp_2d"
      INTEGER :: p_comm, p_error, dim1_size
      REAL(sp), POINTER :: p_sendbuf(:,:)
      REAL(sp), TARGET :: dummy(1,1)
@@ -11007,7 +11772,7 @@ CONTAINS
      recvbuf(:,rdispls(1)+1:rdispls(1)+recvcounts(1)) = &
        sendbuf(:,sdispls(1)+1:sdispls(1)+sendcounts(1))
 #endif
-   END SUBROUTINE p_alltoallv_sreal_2d
+   END SUBROUTINE p_alltoallv_sp_2d
 
 
    SUBROUTINE p_alltoallv_int_2d (sendbuf, sendcounts, sdispls, &
@@ -11066,6 +11831,54 @@ CONTAINS
 #endif
    END SUBROUTINE p_alltoallv_int
 
+   SUBROUTINE p_alltoallv_dp (sendbuf, sendcounts, sdispls, &
+     &                        recvbuf, recvcounts, rdispls, comm)
+     REAL(dp),          INTENT(in) :: sendbuf(:)
+     INTEGER,           INTENT(in) :: sendcounts(:), sdispls(:)
+     REAL(dp),          INTENT(inout) :: recvbuf(:)
+     INTEGER,           INTENT(in) :: recvcounts(:), rdispls(:)
+     INTEGER,           INTENT(in) :: comm
+#if !defined(NOMPI)
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_alltoallv_dp"
+     INTEGER :: p_comm, p_error
+
+     p_comm = comm
+     CALL MPI_ALLTOALLV(sendbuf, sendcounts, sdispls, p_real_dp, &
+       &                recvbuf, recvcounts, rdispls, p_real_dp, &
+       &                p_comm, p_error)
+     IF (p_error /=  MPI_SUCCESS) &
+       CALL finish (routine, 'Error in MPI_ALLTOALLV operation!')
+#else
+     ! displs are zero based -> have to add 1
+     recvbuf(rdispls(1)+1:rdispls(1)+recvcounts(1)) = &
+       sendbuf(sdispls(1)+1:sdispls(1)+sendcounts(1))
+#endif
+   END SUBROUTINE p_alltoallv_dp
+
+   SUBROUTINE p_alltoallv_sp (sendbuf, sendcounts, sdispls, &
+     &                        recvbuf, recvcounts, rdispls, comm)
+     REAL(sp),          INTENT(in) :: sendbuf(:)
+     INTEGER,           INTENT(in) :: sendcounts(:), sdispls(:)
+     REAL(sp),          INTENT(inout) :: recvbuf(:)
+     INTEGER,           INTENT(in) :: recvcounts(:), rdispls(:)
+     INTEGER,           INTENT(in) :: comm
+#if !defined(NOMPI)
+     CHARACTER(*), PARAMETER :: routine = modname//"::p_alltoallv_sp"
+     INTEGER :: p_comm, p_error
+
+     p_comm = comm
+     CALL MPI_ALLTOALLV(sendbuf, sendcounts, sdispls, p_real_sp, &
+       &                recvbuf, recvcounts, rdispls, p_real_sp, &
+       &                p_comm, p_error)
+     IF (p_error /=  MPI_SUCCESS) &
+       CALL finish (routine, 'Error in MPI_ALLTOALLV operation!')
+#else
+     ! displs are zero based -> have to add 1
+     recvbuf(rdispls(1)+1:rdispls(1)+recvcounts(1)) = &
+       sendbuf(sdispls(1)+1:sdispls(1)+sendcounts(1))
+#endif
+   END SUBROUTINE p_alltoallv_sp
+
    SUBROUTINE p_alltoallv_int_i8_1d(sendbuf, sendcounts, sdispls, &
      &                         recvbuf, recvcounts, rdispls, comm)
      INTEGER(i8),       INTENT(in) :: sendbuf(:)
@@ -11105,15 +11918,7 @@ CONTAINS
 
      comm_size = p_comm_size(comm)
      tag = 1
-     SELECT CASE (wp)
-       CASE(sp)
-         datatype = p_real_sp
-       CASE(dp)
-         datatype = p_real_dp
-       CASE DEFAULT
-         datatype = -1
-         CALL finish (routine, 'invalid read type')
-     END SELECT
+     datatype = p_real
      DO i = 1, comm_size
        IF (recvcounts(i) > 0) THEN
          ofs = 1 + rdispls(i)

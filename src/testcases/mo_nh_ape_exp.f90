@@ -1,3 +1,14 @@
+! ICON
+!
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Aqua Planet experiments for the NH-Core
 !
 ! Literature
@@ -7,18 +18,6 @@
 ! - Neale, R. B. and Hoskins B. J.(2001): "A standard test for AGCMs
 !   including their physical parametrizations: II: Results for The Met
 !   Office Model", Atmospheric Science Letters (2001)
-!
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
 
 MODULE mo_nh_ape_exp
 !-------------------------------------------------------------------------
@@ -39,7 +38,7 @@ USE mo_ext_data_types,      ONLY: t_external_data
 USE mo_nonhydro_types,      ONLY: t_nh_prog, t_nh_diag, t_nh_metrics
 USE mo_parallel_config,     ONLY: nproma
 USE mo_run_config,          ONLY: iqv, ntracer
-USE mo_satad,               ONLY:  sat_pres_water, &  !! saturation vapor pressure w.r.t. water
+USE mo_thdyn_functions,     ONLY:  sat_pres_water, &  !! saturation vapor pressure w.r.t. water
       &                            sat_pres_ice
 USE mo_exception,           ONLY: message, message_text
 
@@ -147,7 +146,7 @@ CONTAINS
   !     WRITE (message_text,'(A,I3,3E12.5)') ' jk z_mc z_ifc(jk+1) ddqz_z_full = ', &
   !                                                       & jk, p_metrics%z_mc(1,jk,1), &
   !                                                       & p_metrics%z_ifc(1,jk+1,1),  &
-  !                                                       & p_metrics%ddqz_z_full(1,jk,1)  
+  !                                                       & p_metrics%ddqz_z_full(1,jk,1)
 
   !     CALL message('',message_text)
 
@@ -194,8 +193,8 @@ CONTAINS
                       IF (  ptr_nh_diag%pres(jc,jk,jb) <= 10000._wp) &
                          &  ptr_nh_prog%tracer(jc,jk,jb,jjt)      &
                          &  = MIN ( 5.e-6_wp, ptr_nh_prog%tracer(jc,jk,jb,jjt) )
-                    
-                      ! Limit QV in the tropics                       
+
+                      ! Limit QV in the tropics
                       ptr_nh_prog%tracer(jc,jk,jb,jjt) = &
                       &   MIN(qv_max,ptr_nh_prog%tracer(jc,jk,jb,jjt))
 
@@ -214,9 +213,9 @@ CONTAINS
 
       ENDDO !jk
     ENDDO !jb
-!!$OMP END DO 
+!!$OMP END DO
     WRITE (message_text,'(A,2E12.5)') '      MAX/MIN pres  = ',MAXVAL(ptr_nh_diag%pres) &
-                                                           &,MINVAL(ptr_nh_diag%pres)   
+                                                           &,MINVAL(ptr_nh_diag%pres)
     CALL message('',message_text)
     WRITE (message_text,'(A,2E12.5)') '      MAX/MIN tracer  = ',MAXVAL(ptr_nh_prog%tracer) &
                                                            &,MINVAL(ptr_nh_prog%tracer)
@@ -253,11 +252,11 @@ CONTAINS
            z_help = p_metrics%ddqz_z_full(jc,jk,jb) * ptr_nh_prog%rho(jc,jk,jb) &
                                                   & * ptr_patch%cells%area(jc,jb)
            tot_moist= tot_moist + ptr_nh_prog%tracer(jc,jk,jb,iqv) * z_help
-         ENDDO 
+         ENDDO
       ENDDO !jk
     ENDDO !jb
     tot_moist = tot_moist / tot_area
-    WRITE (message_text,'(A,1E12.5)') '       tot_moist  = ',tot_moist 
+    WRITE (message_text,'(A,1E12.5)') '       tot_moist  = ',tot_moist
     CALL message('',message_text)
     WRITE (message_text,'(A,2E12.5)') '       rho  = ', MAXVAL(ptr_nh_prog%rho) &
                                                            &,MINVAL(ptr_nh_prog%rho)
@@ -271,11 +270,11 @@ CONTAINS
        ptr_nh_prog%tracer(:,:,:,iqv) = ptr_nh_prog%tracer(:,:,:,iqv) * ztmc_ape / tot_moist
      END IF
     WRITE (message_text,'(A,2E12.5)') '      MAX/MIN tracer  = ',MAXVAL(ptr_nh_prog%tracer) &
-                                                           &,MINVAL(ptr_nh_prog%tracer)    
+                                                           &,MINVAL(ptr_nh_prog%tracer)
     CALL message('',message_text)
 
-    
-! !$OMP DO PRIVATE(jb,jk,nlen) 
+
+! !$OMP DO PRIVATE(jb,jk,nlen)
     DO jb = 1, nblks_c
       IF (jb /= nblks_c) THEN
          nlen = nproma
@@ -311,7 +310,7 @@ CONTAINS
       ENDDO !jk
     ENDDO !jb
 
-!!$OMP END DO 
+!!$OMP END DO
 
  END DO
 !!$OMP END PARALLEL

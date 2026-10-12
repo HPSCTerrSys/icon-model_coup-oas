@@ -3,14 +3,44 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
 # ------------------------------------------
 
-set -x
+# ----------------------------------------------------------------------------
+#PBS -S /bin/bash
+#PBS -q sx_norm
+#PBS -v NE=1,CPE=1
+#PBS -l elapstim_req=01:00:00
+#PBS --venode=${NE}          # NE: number VE nodes, CPE: number cores on each VE
+#PBS --venum-lhost=1         # Number of VE per logical host
+#PBS --cpunum-lhost=2        # Number of VH-x86-Cores per log. host
+#PBS -T necmpi_hydra         # necessary for parallel jobs  with NEC-MPI
+##PBS -o /hpc/uwork/${USER}/wq/iconSCM.%s
+#PBS -j o
+# ----------------------------------------------------------------------------
+
+set -xv
+
+module load mpi/3.5.0
+. /etc/profile
+
+# OpenMP settings
+export OMP_SCHEDULE="static"
+export OMP_DYNAMIC="false"
+export OMP_NUM_THREADS=1                   # check total number of requested cores!
+export VE_TRACEBACK=VERBOSE
+export VE_FPE_ENABLE=DIV,FOF,INV
+
+# Run information
+let PPN=${CPE}*${NE}/${OMP_NUM_THREADS}    # no. of MPI procs. per NQS job
+
+ID=`echo $PBS_JOBID | cut -d: -f2 | cut -d. -f1`
+ulimit -s unlimited
+
 
 # ----------------------------------------------------------------------------
 # specifiy experiment (idealized simulation)
@@ -22,7 +52,8 @@ EXPNAME=SCM_BOMEX
 # ----------------------------------------------------------------------------
 
 # base directory for ICON sources and binary:
-ICONDIR="$PWD/../../.."
+#ICONDIR="$PWD/../../.."
+ICONDIR=${PBS_O_WORKDIR%/*/*/*}    # local icon directory (up from scripts/scm/run)
 
 # SCM data directory (grids, init data, extpar)
 SCMDATA=/hpc/uwork/mkoehler/scm/data       # at DWD on NEC
@@ -34,10 +65,11 @@ GRIDDIR=${SCMDATA}/grid
 INITDIR=${SCMDATA}/init_data
 
 # absolute path to directory with plenty of space:
-EXPDIR=${SCMDATA}/${EXPNAME}
+EXPDIR=${WORK}/scm/${EXPNAME}
 
 # path to model binary, including the executable:
-MODEL=${ICONDIR}/bin/icon
+MODEL_VH=${ICONDIR}/build/VH/bin/icon
+MODEL_VE=${ICONDIR}/build/VE/bin/icon
 
 
 # ----------------------------------------------------------------------------
@@ -53,13 +85,7 @@ cd ${EXPDIR}
 # files needed for radiation
 ln -sf ${ICONDIR}/data/ECHAM6_CldOptProps.nc .
 ln -sf ${ICONDIR}/data/rrtmg_lw.nc .
-
-# APE BCs
-ln -sf ${ICONDIR}/data/external/ape_o3_R2B04_1Pa_spr0.90-cell.nc o3_icon_DOM01.nc
-
-
-# link binary
-ln -sf $MODEL icon
+ln -sf ${ICONDIR}/data/rrtmg_sw.nc .
 
 
 #-----------------------------------------------------------------------------
@@ -81,8 +107,8 @@ end_date="1969-06-27T00:00:00Z"
 #-----------------------------------------------------------------------------
 DT_DATA=`expr 1 \* 3600`      # output each n hours
 DT_DATA=${dtime}              # output every time step
-#n_in_ofile=60                # number of time steps per output file 
-n_in_ofile=10000              # number of time steps per output file 
+#n_in_ofile=60                # number of time steps per output file
+n_in_ofile=10000              # number of time steps per output file
 
 # ----------------------------------------------------------------------------
 # grid namelist settings
@@ -105,7 +131,7 @@ done
 ln -sf ${GRIDDIR}/${atmo_dyn_grids} .
 
 #forcings
-ln -sf ${INITDIR}/init_SCM_BOMEX.nc init_SCM.nc
+ln -sf ${SCMDATA}/init_data/init_SCM_BOMEX.nc init_SCM.nc
 
 # ----------------------------------------------------------------------------
 # create ICON master namelist
@@ -113,12 +139,9 @@ ln -sf ${INITDIR}/init_SCM_BOMEX.nc init_SCM.nc
 
 cat > icon_master.namelist << EOF
 
-! master_nml: ----------------------------------------------------------------
 &master_nml
  lrestart                    =                     .FALSE.        ! .TRUE.=current experiment is resumed
 /
-
-! master_model_nml: repeated for each model ----------------------------------
 &master_model_nml
  model_type                  =                          1         ! identifies which component to run (atmosphere,ocean,...)
  model_name                  =                      "ATMO"        ! character string for naming this component.
@@ -136,16 +159,15 @@ cat > icon_master.namelist << EOF
 
 EOF
 
-
 # ----------------------------------------------------------------------------
 # model namelists
 # ----------------------------------------------------------------------------
-# For a complete list see doc/Namelist_overview.pdf
+# For a complete list see Namelist_overview.pdf
 
 cat > NAMELIST_${EXPNAME} << EOF
 
 &parallel_nml
- nproma         =  8
+ nproma         =  1         ! 8
  p_test_run     = .false.
  num_io_procs   =  1         ! number of I/O processors
  l_test_openmp  = .false.
@@ -183,7 +205,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  ntracer        = 5            ! default: 0
  iforcing       = 3            ! 3: NWP forcing; 6:inhecham forcing
  ltestcase      = .TRUE.       ! run testcase
- ltimer         = .FALSE.      ! 
+ ltimer         = .FALSE.      !
  msg_level      = 12           ! detailed report during integration
  output         = 'nml','totint'
 /
@@ -222,26 +244,50 @@ cat > NAMELIST_${EXPNAME} << EOF
  is_rad_forcing       = .FALSE.
  is_nudging           = .FALSE.
  is_nudging_uv        = .FALSE.
- is_nudging_tq        = .FALSE.
+ is_nudging_t         = .FALSE.
+ is_nudging_q         = .FALSE.
 /
 
 &turbdiff_nml
- tkhmin        = 0.75   ! new default since rev. 16527
- tkmmin        = 0.75   !           " 
+ tkhmin        = 0.6
+ tkmmin        = 0.75
  pat_len       = 750.
  c_diff        = 0.2
- rat_sea       = 8.5    ! new value since rev. 25646 (reduced saturation vapor pressure over salt water)
+ rat_sea       = 0.8
+ rlam_heat     = 10.
  ltkesso       = .false.
 !frcsmot       = 0.2    ! these 2 switches together apply vertical smoothing of the TKE source terms
 !imode_frcsmot = 2      ! in the tropics (only), which reduces the moist bias in the tropical lower troposphere
  ! use horizontal shear production terms with 1/SQRT(Ri) scaling to prevent unwanted side effects:
- itype_sher    = 0    
+ itype_sher    = 0
  ltkeshs       = .false.
  a_hshr        = 2.0
  !lconst_z0    = .TRUE.
  !const_z0     = 0.035
  icldm_tran    = 2
  icldm_turb    = 2
+/
+
+&nwp_tuning_nml
+ itune_albedo  = 1
+ tune_gkwake   = 1.5
+ tune_gfrcrit  = 0.425
+ tune_grcrit   = 0.5
+ tune_gkdrag   = 0.16
+ tune_zvz0i    = 0.85
+ tune_box_liq_asy = 3.25
+ tune_minsnowfrac = 0.2
+ tune_gfluxlaun  = 3.75e-3
+ tune_rcucov = 0.075
+ tune_rhebc_land = 0.825
+ lcalib_clcov     = .FALSE. !no tuning of cloud cover!
+!tune_entrorg     = 7.4E-3 ! is 1.85e-3 normally
+!tune_rdepths     = 60000.
+!tune_texc        = 0.2 !0.125
+!tune_qexc        = 1.e-4 !1.25e-2
+!tune_gust_factor = 7.0
+!icpl_turb_clc    = 2
+!tune_box_liq     = 0.04
 /
 
 &diffusion_nml
@@ -253,8 +299,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 
 &nonhydrostatic_nml
  ivctype        = 2         ! sleve vertical coordinate
- damp_height    = 5000.     ! top_height-damp_height should be about 15km
- l_open_ubc     = .false.   ! top open upper boundary condition. might help to go higher
  rayleigh_coeff = 0.0
  htop_moist_proc= 22500.
  hbot_qvsubstep	= 22500.    ! Default: 22500  ! M. Koehler: 19000; at least as large as htop_moist_proc
@@ -270,8 +314,6 @@ cat > NAMELIST_${EXPNAME} << EOF
 /
 
 &dynamics_nml
- iequations     = 3       ! equation system
- idiv_method    = 1
  divavg_cntrwgt = 0.50
  lcoriolis      = .TRUE.
 /
@@ -288,7 +330,7 @@ cat > NAMELIST_${EXPNAME} << EOF
  filename_format  = "<output_filename>_<levtype>_<datetime2>"
  ml_varlist       = 'z_ifc','z_mc','u','v','w','temp','pres','rho','theta_v','pres_sfc','div',
                     'qv','qc','qi','qs','qr','rh',
-                    'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t', 
+                    'ashfl_s', 'alhfl_s', 'athb_s', 'athb_t', 'asob_s', 'asob_t',
                     'ddt_temp_radsw', 'ddt_temp_radlw', 'ddt_temp_turb', 'ddt_temp_drag', 'ddt_temp_pconv',
                     'ddt_qv_turb','ddt_qc_turb','ddt_qv_conv','ddt_qc_conv','u_10m', 'v_10m', 't_2m', 't_g',
                     'qv_s','z_mc','lhfl_s','shfl_s','umfl_s','vmfl_s','tcm','tch','clc','tke','rcld','qhfl_s'
@@ -302,4 +344,10 @@ EOF
 # run the model!
 # ----------------------------------------------------------------------------
 
-./icon > out.txt 2>out2.txt
+##./icon > out.txt 2>out2.txt
+
+# --- VE with openMP only (PPN = 1!)
+#/opt/nec/ve/mpi/3.5.0/bin/runtime/mpiexec -v -x -venode -np ${PPN} ${MODEL_VE}
+
+# --- VH only
+/opt/nec/ve/mpi/3.5.0/bin/runtime/mpiexec -v -vh -node 0 -np 1 ${MODEL_VH}

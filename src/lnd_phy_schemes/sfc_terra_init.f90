@@ -1,16 +1,15 @@
-! Initialization routine for multi-layer soil model
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Initialization routine for multi-layer soil model
 
 MODULE sfc_terra_init
 
@@ -51,11 +50,11 @@ CONTAINS
 !>
 !! Performs initialization of soil model TERRA
 !!
-!! Performs initialization of soil model TERRA. Depending on the initialization mode 
+!! Performs initialization of soil model TERRA. Depending on the initialization mode
 !! chosen, a coldstart- , warmstart-  or warmstart with snow increments (IAU)-initialization
 !! is performed
 !!
-SUBROUTINE terra_init (            & 
+SUBROUTINE terra_init (            &
                 init_mode,         & ! 1 = coldstart, 2 = warmstart, 3 = warmstart with snow increments (IAU)
                 nvec,              & ! array dimensions
                 ivstart,           & ! start index for computations in the parallel program
@@ -65,7 +64,7 @@ SUBROUTINE terra_init (            &
 !                ke,           & ! nsubs0=1 for single tile, nsubs0=2 for multi-tile
 !                nsubs0ubs1,& ! nsubs1=1 for single tile, nsubs1=#tiles+1 for multi-tile
                 ke_soil, ke_snow , &
-                zmls             , & ! processing soil level structure 
+                zmls             , & ! processing soil level structure
                 soiltyp_subs     , & ! type of the soil (keys 0-9)                     --
                 rootdp           , & ! depth of the roots                            ( m  )
                 plcov            , & ! fraction of surface covered by plants         ( -  )
@@ -100,12 +99,12 @@ SUBROUTINE terra_init (            &
                   ivstart,      & ! start index for computations in the parallel program
                   ivend,        & ! end index for computations in the parallel program
                   iblock,       & ! number of block
-                  ke_soil, ke_snow      
+                  ke_soil, ke_snow
   REAL    (KIND = wp)    , DIMENSION(ke_soil+1), INTENT(IN) :: &
-                  zmls            ! processing soil level structure 
-  INTEGER, DIMENSION(nvec), INTENT(IN) :: & 
+                  zmls            ! processing soil level structure
+  INTEGER, DIMENSION(nvec), INTENT(IN) :: &
                   soiltyp_subs    ! type of the soil (keys 0-9)                     --
-  REAL    (KIND = wp)    , DIMENSION(nvec), INTENT(IN) :: & 
+  REAL    (KIND = wp)    , DIMENSION(nvec), INTENT(IN) :: &
                   rootdp          ! depth of the roots                            ( m  )
   REAL    (KIND = wp)    , DIMENSION(nvec), INTENT(IN) :: &
                   plcov           ! plant coverage                                ( -  )
@@ -153,9 +152,9 @@ SUBROUTINE terra_init (            &
 ! -------------
 
   INTEGER ::  &
-    kso            , & ! loop index for soil moisture layers           
+    kso            , & ! loop index for soil moisture layers
     ksn,k          , & ! loop index for snow layers
-    i,ic           , & ! loop index in x-direction              
+    i,ic           , & ! loop index in x-direction
     mstyp              ! soil type index
 
   REAL    (KIND=wp) ::  &
@@ -277,7 +276,7 @@ SUBROUTINE terra_init (            &
     zedb  (i)   = 1.0_wp/zb_por(i)
   ENDDO
   !$noacc end parallel
- 
+
   ! Further parameters for soil water freezing/melting
   t_zw_up  = 270.15_wp     ! temp -3 degC
   t_zw_low = 233.15_wp     ! temp -40 degC
@@ -369,7 +368,7 @@ SUBROUTINE terra_init (            &
   ! Currently, the multi layer soil model starts from the FG.
   IF ( init_mode == 1 ) THEN
 
-    ! Initialization of 
+    ! Initialization of
     ! - snow density (if necessary)
     ! - multi layer snow variables (if necessary)
     !   * wtot_snow, dzh_snow, wliq_snow
@@ -560,7 +559,7 @@ SUBROUTINE terra_init (            &
       DO kso   = 1,ke_soil+1
         !$noacc loop gang vector
         DO i = ivstart, ivend
-          IF (t_so_now(i,kso) < (t0_melt-eps_temp)) THEN 
+          IF (t_so_now(i,kso) < (t0_melt-eps_temp)) THEN
 
             zaa    = g*zpsis(i)/lh_f
 
@@ -584,7 +583,7 @@ SUBROUTINE terra_init (            &
 
             IF (t_so_now(i,kso) < t_zw_low) THEN
               zw_m(i) = zw_m_low
-            ELSE IF (t_so_now(i,kso) < t_zw_up) THEN ! Logarithmic Interpolation between -3 degC and -40 degC 
+            ELSE IF (t_so_now(i,kso) < t_zw_up) THEN ! Logarithmic Interpolation between -3 degC and -40 degC
               zw_m(i) = zw_m_low*EXP((t_so_now(i,kso) - t_zw_low)*(LOG(zw_m_up) - LOG(zw_m_low))/(t_zw_up-t_zw_low))
             ELSE
               zw_m(i) = zporv(i,kso)*zdzhs(kso)*EXP(-zedb(i)*LOG((t_so_now(i,kso)-t0_melt)/(t_so_now(i,kso)*zaa)) )
@@ -703,7 +702,7 @@ SUBROUTINE terra_init (            &
     IF(lmelt .AND. lmelt_var) THEN
       DO kso   = 1,ke_soil+1
         DO i = ivstart, ivend
-          IF (t_so_now(i,kso) < (t0_melt-eps_temp)) THEN 
+          IF (t_so_now(i,kso) < (t0_melt-eps_temp)) THEN
 
             zaa     = g*zpsis(i)/lh_f
 
@@ -727,7 +726,7 @@ SUBROUTINE terra_init (            &
 
             IF (t_so_now(i,kso) < t_zw_low) THEN
               zw_m(i) = zw_m_low
-            ELSE IF (t_so_now(i,kso) < t_zw_up) THEN ! Logarithmic Interpolation between -3 degC and -40 degC 
+            ELSE IF (t_so_now(i,kso) < t_zw_up) THEN ! Logarithmic Interpolation between -3 degC and -40 degC
               zw_m(i) = zw_m_low*EXP((t_so_now(i,kso) - t_zw_low)*(LOG(zw_m_up) - LOG(zw_m_low))/(t_zw_up-t_zw_low))
             ELSE
               zw_m(i) = zporv(i,kso)*zdzhs(kso)*EXP(-zedb(i)*LOG((t_so_now(i,kso)-t0_melt)/(t_so_now(i,kso)*zaa)) )
@@ -758,7 +757,7 @@ SUBROUTINE terra_init (            &
           rho_snow_mult_now(i,1:ke_snow) = 0._wp
           wliq_snow_now(i,1:ke_snow) = 0._wp
           t_snow_mult_now(i,1:ke_snow) = t_snow_now(i)
-        ELSE IF (h_snow_fg(i) <= eps_soil .AND. h_snow(i) > eps_soil) THEN 
+        ELSE IF (h_snow_fg(i) <= eps_soil .AND. h_snow(i) > eps_soil) THEN
 
           ! snow analysis has either reestablished a snow cover that had been erroneously melted away by the model
           ! or generated a new snow cover that was missed by the model due to a lack of precipitation (or wrong phase of precip)
@@ -816,7 +815,7 @@ SUBROUTINE terra_init (            &
 
             IF (ksn == 1) THEN ! Limit top layer to max_toplaydepth
               zhh_snow(i,ksn) = -MAX( h_snow(i)-max_toplaydepth, h_snow(i)/ke_snow*(ke_snow-ksn) )
-              zhm_snow(i,ksn) = (-h_snow(i) + zhh_snow(i,ksn))/2._wp   
+              zhm_snow(i,ksn) = (-h_snow(i) + zhh_snow(i,ksn))/2._wp
               dzh_snow_now(i,ksn) = zhh_snow(i,ksn) + h_snow(i)    !layer thickness betw. half levels of uppermost snow layer
             ELSE IF (ksn == 2 .AND. ke_snow > 2) THEN ! Limit second layer to 8*max_toplaydepth
               zhh_snow(i,ksn) = MIN( 8._wp*max_toplaydepth+zhh_snow(i,1), zhh_snow(i,1)/(ke_snow-1)*(ke_snow-ksn) )
@@ -846,15 +845,15 @@ SUBROUTINE terra_init (            &
       END DO
 
       ! mass-weighted recomputation of temperatures and densities
-      DO ksn = ke_snow,1,-1 
+      DO ksn = ke_snow,1,-1
         DO k = ke_snow,1,-1
           DO i = ivstart, ivend
             IF(l_redist(i)) THEN
-         
+
               weight = MAX(MIN(z_old(i,k)+dz_old(i,k)/2._wp,zhm_snow(i,ksn) + dzh_snow_now(i,ksn)/2._wp)-   &
                        MAX(z_old(i,k)-dz_old(i,k)/2._wp, zhm_snow(i,ksn)-dzh_snow_now(i,ksn)/2._wp),0._wp) &
                        &/dzh_snow_now(i,ksn)
-      
+
               t_new  (i,ksn) = t_new  (i,ksn) + t_snow_mult_now  (i,k)*weight
               rho_new(i,ksn) = rho_new(i,ksn) + rho_snow_mult_now(i,k)*weight
               wl_new (i,ksn) = wl_new (i,ksn) + wliq_snow_now    (i,k)*weight
@@ -871,11 +870,11 @@ SUBROUTINE terra_init (            &
             wtot_snow_now    (i,ksn) = rho_new(i,ksn)*dzh_snow_now(i,ksn)/rho_w
             wliq_snow_now    (i,ksn) = wl_new (i,ksn)*dzh_snow_now(i,ksn)
           END IF
-        END DO   
+        END DO
       END DO
 
 
-      ! Re-diagnose integrated/averaged snow-fields, in order to 
+      ! Re-diagnose integrated/averaged snow-fields, in order to
       ! have a consistent state.
       !
       h_snow      (ivstart:ivend) = 0.0_wp
@@ -908,7 +907,7 @@ SUBROUTINE terra_init (            &
     ELSE  ! single snow layer
 
       ! diagnose w_snow and rho_snow from analyzed h_snow
-      ! h_snow is taken from analysis, while up to this point 
+      ! h_snow is taken from analysis, while up to this point
       ! rho_snow_now and w_snow_now contain the first guess.
       CALL get_wsnow(h_snow,         &  ! in
                      rho_snow_now,   &  ! inout
@@ -948,7 +947,7 @@ SUBROUTINE terra_init (            &
 !!  variable. The prognostic model variables describing the evolution of
 !!  snow are snow water eqivalent and snow density.
 !!  This subroutine calculates snow water equivalent from snow depth.
-!!  For non-permanent ice points, hsnow is limited to 4m. w_snow is limited 
+!!  For non-permanent ice points, hsnow is limited to 4m. w_snow is limited
 !!  accordingly, using rho_snow from the first guess.
 !!
 !! Method:
@@ -975,7 +974,7 @@ SUBROUTINE get_wsnow(h_snow, rho_snow, t_snow, istart, iend, soiltyp, w_snow)
   DO jc = istart, iend
     IF (rho_snow(jc) < 1._wp) rho_snow(jc)=rho_snw_default      ! average initial density
     IF (h_snow(jc) > 0._wp) THEN
-      ! multiply analysed snow depth [m] by (first-guess) density 
+      ! multiply analysed snow depth [m] by (first-guess) density
       ! to get water equivalent in [m H2O]
       IF (soiltyp(jc) /= 1) THEN       ! 1=ice
         ! limit snow depth to 4m for non-glacier points
@@ -1027,7 +1026,7 @@ END SUBROUTINE get_wsnow
 !!$! Subroutine / Function arguments
 !!$! Scalar arguments with intent(in):
 !!$      INTEGER, INTENT(IN) ::  ie, je   ! Dimensions of snws
-!!$      INTEGER, INTENT(IN) ::  imode  
+!!$      INTEGER, INTENT(IN) ::  imode
 !!$!     imode= 1: calculate water equivalent from snow depth
 !!$!     imode=-1: calculate snow depth from water equivalent
 !!$
@@ -1057,7 +1056,7 @@ END SUBROUTINE get_wsnow
 !!$        do i = 1,ie
 !!$          if (snw(i,j) > 0.) then
 !!$             if (rho(i,j) < 1.) rho(i,j)=rhosnw
-!!$!           scale analysed snow depth [mm] to get in m and multiply it by density 
+!!$!           scale analysed snow depth [mm] to get in m and multiply it by density
 !!$            snw(i,j) = snw(i,j)/1000.*rho(i,j)
 !!$          endif
 !!$        enddo
@@ -1073,7 +1072,7 @@ END SUBROUTINE get_wsnow
 !!$          else
 !!$            rho(i,j) = 0.
 !!$          endif
-!!$!         scale snow depth to have it in mm 
+!!$!         scale snow depth to have it in mm
 !!$          snw(i,j) = snw(i,j)*1000.
 !!$        enddo
 !!$        enddo

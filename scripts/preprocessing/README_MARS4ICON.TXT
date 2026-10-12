@@ -56,5 +56,3 @@ Note: At the end of this script, volumetric soil water layer fields (SWVL1-4) ar
       according to the procedure described in
 
       http://www.ecmwf.int/products/changes/soil_hydrology_cy32r3/#compute_smi
-
-

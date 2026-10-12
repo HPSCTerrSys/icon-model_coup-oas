@@ -1,16 +1,16 @@
-! Physical constants and SST specification for the Aqua-Planet Experiments.
-! See <http://www.met.reading.ac.uk/~mike/APE/ape_spec.html>
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Physical constants and SST specification for the Aqua-Planet Experiments.
+! See <http://www.met.reading.ac.uk/~mike/APE/ape_spec.html>
 
 MODULE mo_ape_params
 
@@ -213,4 +213,3 @@ CONTAINS
   END FUNCTION ape_sst
 
 END MODULE mo_ape_params
-

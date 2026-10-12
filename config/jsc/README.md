@@ -18,6 +18,3 @@
 
  - juwels_booster.gpu.psmpi_nvhpc-23.1
    - used for MSA runs to compile the booster part
-
-
-

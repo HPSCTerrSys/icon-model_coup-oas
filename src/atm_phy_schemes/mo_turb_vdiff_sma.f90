@@ -1,17 +1,16 @@
-!
-! Subroutines for computing turbulent exchange coefficients of
-! 3D Smagorinsky turbulent scheme.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Subroutines for computing turbulent exchange coefficients of
+! 3D Smagorinsky turbulent scheme.
 
 !------------------
 #include "fsel.inc"
@@ -25,15 +24,15 @@ MODULE mo_turb_vdiff_sma
   USE mo_turb_vdiff_config ,ONLY: t_vdiff_config
   USE mo_turb_vdiff_params ,ONLY: ckap
   USE mo_physical_constants,ONLY: grav, rd, cpd, rd_o_cpd,             &
-    &                             vtmpc1, p0ref, rgrav
+    &                             vtmpc1, p0ref, rgrav, tmelt
   USE mo_model_domain      ,ONLY: t_patch
   USE mo_nonhydro_types    ,ONLY: t_nh_metrics
   USE mo_intp_data_strc    ,ONLY: t_int_state
   USE mo_nonhydro_state    ,ONLY: p_nh_state
   USE mo_intp_data_strc    ,ONLY: p_int_state
-  USE mo_fortran_tools     ,ONLY: init
+  USE mo_fortran_tools     ,ONLY: assert_acc_device_only, init
   USE mo_impl_constants    ,ONLY: min_rlcell, min_rledge_int, min_rlcell_int, &
-    &                             min_rlvert_int
+    &                             min_rlvert_int, iaes
   USE mo_parallel_config   ,ONLY: p_test_run
   USE mo_loopindices       ,ONLY: get_indices_e, get_indices_c
   USE mo_nh_vert_interp_les,ONLY: brunt_vaisala_freq, vert_intp_full2half_cell_3d
@@ -44,10 +43,11 @@ MODULE mo_turb_vdiff_sma
   USE mo_intp_rbf          ,ONLY: rbf_vec_interpol_vertex, rbf_vec_interpol_edge
   USE mo_impl_constants_grf,ONLY: grf_bdywidth_c, grf_bdywidth_e
   USE mo_nh_testcases_nml  ,ONLY: is_dry_cbl
-  USE mo_satad             ,ONLY: spec_humi, sat_pres_water
+  USE mo_thdyn_functions   ,ONLY: spec_humi, sat_pres_water, sat_pres_ice
   USE mo_math_constants    ,ONLY: pi_2, ln2
   USE mo_math_utilities    ,ONLY: tdma_solver_vec
   USE mo_intp_rbf          ,ONLY: rbf_vec_interpol_cell
+  USE mo_run_config        ,ONLY: iforcing
 
   IMPLICIT NONE
   PRIVATE
@@ -92,7 +92,7 @@ CONTAINS
                                & p_patch,                                 &! in
                                & pz0m, ptsfc, pfrc,                       &! in
                                & ppsfc,                                   &! in
-                               & pghf,                                    &! in
+                               & pghf, pgeof,                             &! in
                                & pum1, pvm1, pwm1,                        &! in
                                & ptm1, ptvm1,                             &! in
                                & pqm1, pxm1,                              &! in
@@ -114,6 +114,7 @@ CONTAINS
                                & vn,                                      &! out
                                & pch_tile,                                &! out
                                & pbn_tile, pbhn_tile, pbm_tile, pbh_tile, &! out
+                               & lacc,                                    &! in
                                & pcsat, pcair                             &! in, optional
                                & )
 
@@ -125,6 +126,7 @@ CONTAINS
     INTEGER, INTENT(IN) :: klev, klevm1, klevp1
     INTEGER :: nlev, nlevp1
     REAL(wp),INTENT(IN) :: pghf(:,:,:)
+    REAL(wp),INTENT(IN) :: pgeof(:,:,:) !< Geopotential above ground (full level) [m2/s2]
     REAL(wp),INTENT(IN) :: pxm1(:,:,:)
     REAL(wp),INTENT(IN) :: ptvm1(:,:,:)
     REAL(wp),INTENT(IN) :: pqm1(:,:,:)
@@ -134,16 +136,16 @@ CONTAINS
 
     TYPE(t_vdiff_config), INTENT(IN) :: vdiff_config
 
-    REAL(wp),INTENT(OUT) :: ptottevn(:,:,:) !< TTE at intermediate time step
-    REAL(wp),INTENT(OUT) :: pcftotte(:,:,:) !< exchange coeff. for TTE
-    REAL(wp),INTENT(OUT) :: pcfthv  (:,:,:) !< exchange coeff. for var. of theta_v
-    REAL(wp),INTENT(OUT) :: pcfm    (:,:,:) !< exchange coeff. for u, v
-    REAL(wp),INTENT(OUT) :: pcfh    (:,:,:) !< exchange coeff. for cptgz and tracers
-    REAL(wp),INTENT(OUT) :: pcfv    (:,:,:) !< exchange coeff. for variance of qx
-    REAL(wp),INTENT(OUT) :: pzthvvar(:,:,:) !< variance of theta_v at interm. step
-    REAL(wp),INTENT(OUT) :: pcptgz  (:,:,:) !< dry static energy
-    REAL(wp),INTENT(OUT) :: pprfac  (:,:,:) !< prefactor for the exchange coeff.
-    REAL(wp),INTENT(OUT) :: pmixlen (:,:,:) !< prefactor for the exchange coeff.
+    REAL(wp),INTENT(INOUT) :: ptottevn(:,:,:) !< OUT TTE at intermediate time step
+    REAL(wp),INTENT(INOUT) :: pcftotte(:,:,:) !< OUT exchange coeff. for TTE
+    REAL(wp),INTENT(INOUT) :: pcfthv  (:,:,:) !< OUT exchange coeff. for var. of theta_v
+    REAL(wp),INTENT(INOUT) :: pcfm    (:,:,:) !< OUT exchange coeff. for u, v
+    REAL(wp),INTENT(INOUT) :: pcfh    (:,:,:) !< OUT exchange coeff. for cptgz and tracers
+    REAL(wp),INTENT(INOUT) :: pcfv    (:,:,:) !< OUT exchange coeff. for variance of qx
+    REAL(wp),INTENT(INOUT) :: pzthvvar(:,:,:) !< OUT variance of theta_v at interm. step
+    REAL(wp),INTENT(INOUT) :: pcptgz  (:,:,:) !< OUT dry static energy
+    REAL(wp),INTENT(INOUT) :: pprfac  (:,:,:) !< OUT prefactor for the exchange coeff.
+    REAL(wp),INTENT(INOUT) :: pmixlen (:,:,:) !< OUT prefactor for the exchange coeff.
 
     ! Local variables
     ! - Variables defined at full levels
@@ -164,16 +166,16 @@ CONTAINS
     INTEGER :: jc, jb, je
 
   !Variables for the module
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: km_c
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: km_iv
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: km_ie
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: kh_ic, km_ic
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: u_vert, v_vert
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: div_c
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: w_vert
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: w_ie
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: inv_rho_ic
-    REAL(wp), INTENT(OUT), DIMENSION(:,:,:)   :: vn !< normal wind vector
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: km_c !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: km_iv !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: km_ie !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: kh_ic, km_ic !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: u_vert, v_vert !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: div_c !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: w_vert !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: w_ie !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: inv_rho_ic !< OUT
+    REAL(wp), INTENT(INOUT), DIMENSION(:,:,:) :: vn !< OUT normal wind vector
 
     REAL(wp), DIMENSION(kbdim,klev,nblks_c)   :: theta_v
     REAL(wp), DIMENSION(kbdim,klevp1,nblks_c) :: bruvais
@@ -196,22 +198,24 @@ CONTAINS
     REAL(wp),INTENT(IN) :: pfrc  (:,:,:) !< fraction of the grid box occupied
     REAL(wp),INTENT(IN) :: ppsfc (:,:)  !< surface pressure
 
+    LOGICAL,INTENT(IN) :: lacc
+
     ! optional arguments for use with jsbach
     REAL(wp),OPTIONAL,INTENT(IN) :: pcsat  (:,:)  !< area fraction with wet land surface
     REAL(wp),OPTIONAL,INTENT(IN) :: pcair  (:,:)  !< area fraction with wet land surface (air)
 
-    REAL(wp),INTENT(OUT) :: pqsat_tile (:,:,:)!< saturation specific humidity
-    REAL(wp),INTENT(OUT) :: pcpt_tile (:,:,:) !< dry static energy
-    REAL(wp),INTENT(OUT) :: pcfm_tile (:,:,:) !< exchange coeff. of momentum,
+    REAL(wp),INTENT(INOUT) :: pqsat_tile (:,:,:)!< OUT saturation specific humidity
+    REAL(wp),INTENT(INOUT) :: pcpt_tile (:,:,:) !< OUT dry static energy
+    REAL(wp),INTENT(INOUT) :: pcfm_tile (:,:,:) !< OUT exchange coeff. of momentum,
                                                                 !< for each type of surface
-    REAL(wp),INTENT(OUT) :: pcfh_tile (:,:,:) !< exchange coeff. of heat and
+    REAL(wp),INTENT(INOUT) :: pcfh_tile (:,:,:) !< OUT exchange coeff. of heat and
                                                                 !<  vapor for each surface type
-    REAL(wp),INTENT(OUT) :: pbn_tile  (:,:,:) !< for diagnostics
-    REAL(wp),INTENT(OUT) :: pbhn_tile (:,:,:) !< for diagnostics
-    REAL(wp),INTENT(OUT) :: pbm_tile  (:,:,:) !< for diagnostics
-    REAL(wp),INTENT(OUT) :: pbh_tile  (:,:,:) !< for diagnostics
-    REAL(wp),INTENT(OUT) :: pch_tile  (:,:,:) !< for TTE boundary condition
-    REAL(wp),INTENT(OUT) :: pri_tile  (:,:,:) !< Richardson number for diagnostics
+    REAL(wp),INTENT(INOUT) :: pbn_tile  (:,:,:) !< OUT for diagnostics
+    REAL(wp),INTENT(INOUT) :: pbhn_tile (:,:,:) !< OUT for diagnostics
+    REAL(wp),INTENT(INOUT) :: pbm_tile  (:,:,:) !< OUT for diagnostics
+    REAL(wp),INTENT(INOUT) :: pbh_tile  (:,:,:) !< OUT for diagnostics
+    REAL(wp),INTENT(INOUT) :: pch_tile  (:,:,:) !< OUT for TTE boundary condition
+    REAL(wp),INTENT(INOUT) :: pri_tile  (:,:,:) !< OUT Richardson number for diagnostics
 
     REAL(wp) :: zqts
     REAL(wp) :: zvn1, zvn2
@@ -219,6 +223,7 @@ CONTAINS
     INTEGER  :: loidx (kbdim,ksfc_type)     !< counter for masks
     INTEGER  :: is    (ksfc_type)           !< counter for masks
     INTEGER  :: jsfc, jls, js
+    INTEGER  :: dim_km_1, dim_km_2, dim_km_3
     INTEGER  :: jcn,jbn                     !< jc and jb of neighbor cells sharing an edge je
     REAL(wp),parameter :: zcons17 = 1._wp / ckap**2
 
@@ -249,6 +254,8 @@ CONTAINS
     REAL(wp) :: fsl, min_sfc_wind, km_min, turb_prandtl, rturb_prandtl
     !
 
+    CALL assert_acc_device_only ('atm_exchange_coeff3d', lacc)
+
     jg = p_patch%id
     p_nh_metrics => p_nh_state(jg)%metrics
     p_int        => p_int_state(jg)
@@ -269,7 +276,7 @@ CONTAINS
 
     !$ACC DATA &
     !---- Argument arrays - intent(in)
-    !$ACC   PRESENT(pghf, pxm1, ptvm1, pqm1, pwm1, ptm1, rho, papm1, paphm1) &
+    !$ACC   PRESENT(pghf, pgeof, pxm1, ptvm1, pqm1, pwm1, ptm1, rho, papm1, paphm1) &
     !$ACC   PRESENT(pz0m, ptsfc, pfrc, ppsfc, pcsat, pcair) &
     !---- Argument arrays - intent(inout)
     !$ACC   PRESENT(pum1, pvm1, p_patch) &
@@ -291,17 +298,17 @@ CONTAINS
 !#########################################################################
 
 !$OMP PARALLEL
-    CALL init(km_iv)
-    CALL init(km_c)
-    CALL init(km_ie)
-    CALL init(kh_ic)
-    CALL init(km_ic)
-    CALL init(vn)
+    CALL init(km_iv, lacc=.TRUE.)
+    CALL init(km_c, lacc=.TRUE.)
+    CALL init(km_ie, lacc=.TRUE.)
+    CALL init(kh_ic, lacc=.TRUE.)
+    CALL init(km_ic, lacc=.TRUE.)
+    CALL init(vn, lacc=.TRUE.)
 
     IF(p_test_run)THEN
-      CALL init(u_vert(:,:,:))
-      CALL init(v_vert(:,:,:))
-      CALL init(w_vert(:,:,:))
+      CALL init(u_vert(:,:,:), lacc=.TRUE.)
+      CALL init(v_vert(:,:,:), lacc=.TRUE.)
+      CALL init(w_vert(:,:,:), lacc=.TRUE.)
     END IF
 !$OMP END PARALLEL
 
@@ -372,8 +379,7 @@ CONTAINS
 !$OMP END DO
 !$OMP END PARALLEL
 
-   !$ACC WAIT
-   CALL sync_patch_array(SYNC_E, p_patch, vn)
+   CALL sync_patch_array(SYNC_E, p_patch, vn, lacc=.TRUE.)
 
 !#########################################################################
 !## variables for TTE scheme and JSBACH LSM
@@ -410,7 +416,7 @@ CONTAINS
         ztvmid = zsdep1*ptvm1(jl,jk,jb)+zsdep2*ptvm1(jl,jk+1,jb)
 
         ! Virtual dry static energy
-        pcptgz(jl,jk,jb) = pghf(jl,jk,jb)*grav+ptm1(jl,jk,jb)*cpd !+(cpv-cpd)*pqm1(jl,jk,jb))
+        pcptgz(jl,jk,jb) = pgeof(jl,jk,jb)+ptm1(jl,jk,jb)*cpd !+(cpv-cpd)*pqm1(jl,jk,jb))
 
         ! Potential temperature
         ztheta(jl,jk,jb) = ptm1(jl,jk,jb)*(p0ref/papm1(jl,jk,jb))**rd_o_cpd
@@ -424,7 +430,7 @@ CONTAINS
 
       ! dry static energy pcpt_tile
       !
-      pcptgz(jl,klev,jb) = pghf(jl,klev,jb)*grav+ptm1(jl,klev,jb)*cpd!+(cpv-cpd)*pqm1(jl,klev,jb))
+      pcptgz(jl,klev,jb) = pgeof(jl,klev,jb)+ptm1(jl,klev,jb)*cpd!+(cpv-cpd)*pqm1(jl,klev,jb))
 
       ! Potential temperature
       ztheta(jl,klev,jb) = ptm1(jl,klev,jb)*(p0ref/papm1(jl,klev,jb))**rd_o_cpd
@@ -454,21 +460,32 @@ CONTAINS
     END DO
     !$ACC END PARALLEL LOOP
 
-    CALL generate_index_list_batched(pfrc_test, loidx, i_startidx, i_endidx, is, 1)
+    CALL generate_index_list_batched(pfrc_test, loidx, i_startidx, i_endidx, is, &
+      &   lacc=.TRUE., opt_acc_async_queue=1)
     !$ACC UPDATE HOST(is) ASYNC(1)
     !$ACC WAIT(1)
 
     DO jsfc = 1, ksfc_type
-      CALL compute_qsat( kbdim, is(jsfc), loidx(:,jsfc), ppsfc(:,jb), ptsfc(:,jb,jsfc), pqsat_tile(:,jb,jsfc) )
 
-     ! loop over mask only
-     !
+      IF (iforcing == iaes) THEN
+        CALL compute_qsat( kbdim, is(jsfc), loidx(:,jsfc), ppsfc(:,jb), ptsfc(:,jb,jsfc), pqsat_tile(:,jb,jsfc), lacc=.TRUE. )
+      END IF
 
+      ! loop over mask only
+      !
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
       !$ACC LOOP GANG VECTOR
       DO jls = 1, is(jsfc)
         js=loidx(jls,jsfc)
 
+        ! saturation specific humidity
+        IF (iforcing /= iaes) THEN
+          IF (ptsfc(js,jb,jsfc) >= tmelt) THEN
+            pqsat_tile(js,jb,jsfc) = spec_humi(sat_pres_water(ptsfc(js,jb,jsfc)),ppsfc(js,jb))
+          ELSE
+            pqsat_tile(js,jb,jsfc) = spec_humi(sat_pres_ice(ptsfc(js,jb,jsfc)),ppsfc(js,jb))
+          END IF
+        END IF
         ! dry static energy pcpt_tile
         !
         IF(jsfc == idx_lnd ) THEN
@@ -488,8 +505,9 @@ CONTAINS
 
         !Get surface pot. temperature and humidity
         theta_sfc = ptsfc(js,jb,jsfc) / EXP( rd_o_cpd*LOG(ppsfc(js,jb)/p0ref) )
-        qv_s    = spec_humi(sat_pres_water(ptsfc(js,jb,jsfc)),ppsfc(js,jb))
-
+        IF (iforcing == iaes) THEN
+          qv_s = spec_humi(sat_pres_water(ptsfc(js,jb,jsfc)),ppsfc(js,jb))
+        END IF
 
         mwind = MAX( min_sfc_wind, SQRT(pum1(js,klev,jb)**2+pvm1(js,klev,jb)**2) )
 
@@ -507,7 +525,11 @@ CONTAINS
         !now iterate
         DO itr = 1 , 5
            shfl = tch*mwind*(theta_sfc-ztheta(js,klev,jb))
-           lhfl = tch*mwind*(qv_s-pqm1(js,klev,jb))
+           IF (iforcing == iaes) THEN
+             lhfl = tch*mwind*(qv_s-pqm1(js,klev,jb))
+           ELSE
+             lhfl = tch*mwind*(pqsat_tile(js,jb,jsfc)-pqm1(js,klev,jb))
+           END IF
            bflx1= shfl + vtmpc1 * theta_sfc * lhfl
            ustar= SQRT(tcm)*mwind
 
@@ -581,13 +603,13 @@ CONTAINS
     !Get rho at interfaces to be used later
     CALL vert_intp_full2half_cell_3d(p_patch, p_nh_metrics, rho, rho_ic, &
                                      1, min_rlcell_int-2, lacc=.TRUE.)
-    
+
     ! Compute the Brunt Vaisala frequency where theta_v was defined
-                                     
+
     CALL brunt_vaisala_freq(p_patch, p_nh_metrics, kbdim, theta_v, bruvais, &
                             opt_rlstart=3, lacc=.TRUE.)
-    
-    
+
+
 !#########################################################################
 !## Smagorinsky_model
   !!------------------------------------------------------------------------
@@ -631,18 +653,16 @@ CONTAINS
     ! Here pwm1 is assumed to be synchronized already, see interface_iconam_aes.
 
     CALL cells2verts_scalar(pwm1, p_patch, p_int%cells_aw_verts, w_vert,                   &
-                            opt_rlend=min_rlvert_int, opt_acc_async=.TRUE.)
-    CALL cells2edges_scalar(pwm1, p_patch, p_int%c_lin_e, w_ie, opt_rlend=min_rledge_int-2,&
-                            lacc=.TRUE.)
+                            lacc=.TRUE., opt_rlend=min_rlvert_int, opt_acc_async=.TRUE.)
+    CALL cells2edges_scalar(pwm1, p_patch, p_int%c_lin_e, w_ie, lacc=.TRUE., &
+                            opt_rlend=min_rledge_int-2)
 
     ! RBF reconstruction of velocity at vertices: include halos
-    CALL rbf_vec_interpol_vertex(vn, p_patch, p_int, u_vert, v_vert, &
+    CALL rbf_vec_interpol_vertex(vn, p_patch, p_int, u_vert, v_vert, lacc=.TRUE., &
                                  opt_rlend=min_rlvert_int, opt_acc_async=.TRUE. )
 
-    !$ACC WAIT
-
     !sync them
-    CALL sync_patch_array_mult(SYNC_V, p_patch, 3, w_vert, u_vert, v_vert)
+    CALL sync_patch_array_mult(SYNC_V, p_patch, 3, lacc=.TRUE., f3din1=w_vert, f3din2=u_vert, f3din3=v_vert)
 
     !Get vn at interfaces and then get vt at interfaces
     !Boundary values are extrapolated like dynamics although
@@ -689,8 +709,8 @@ CONTAINS
 !$OMP END DO
 !$OMP END PARALLEL
 
-    CALL rbf_vec_interpol_edge(vn_ie, p_patch, p_int, vt_ie, opt_rlstart=3, &
-                               opt_rlend=min_rledge_int-2, opt_acc_async=.TRUE.)
+    CALL rbf_vec_interpol_edge(vn_ie, p_patch, p_int, vt_ie, lacc=.TRUE., &
+                               opt_rlstart=3, opt_rlend=min_rledge_int-2, opt_acc_async=.TRUE.)
 
     !--------------------------------------------------------------------------
     !2) Compute horizontal strain rate tensor at full levels
@@ -949,10 +969,8 @@ CONTAINS
 !$OMP END DO
 !$OMP END PARALLEL
 
-    !$ACC WAIT
-
-    CALL sync_patch_array(SYNC_C, p_patch, kh_ic)
-    CALL sync_patch_array(SYNC_C, p_patch, km_ic)
+    CALL sync_patch_array(SYNC_C, p_patch, kh_ic, lacc=.TRUE.)
+    CALL sync_patch_array(SYNC_C, p_patch, km_ic, lacc=.TRUE.)
 
     !--------------------------------------------------------------------------
     !4) Interpolate difusivity (viscosity) to different locations: calculate them for
@@ -991,14 +1009,17 @@ CONTAINS
 
     !4b) visc at vertices
     CALL cells2verts_scalar(kh_ic, p_patch, p_int%cells_aw_verts, km_iv, &
-                            opt_rlstart=5, opt_rlend=min_rlvert_int-1,   &
+                            lacc=.TRUE., opt_rlstart=5, opt_rlend=min_rlvert_int-1,   &
                             opt_acc_async=.TRUE.)
 
+    dim_km_1 = SIZE(km_iv, 1)
+    dim_km_2 = SIZE(km_iv, 2)
+    dim_km_3 = SIZE(km_iv, 3)
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP GANG VECTOR COLLAPSE(3)
-    DO jb = 1, SIZE(km_iv, 3)
-      DO jk = 1, SIZE(km_iv, 2)
-        DO jc = 1, SIZE(km_iv, 1)
+    DO jb = 1, dim_km_3
+      DO jk = 1, dim_km_2
+        DO jc = 1, dim_km_1
           km_iv(jc,jk,jb) = MAX( km_min,  km_iv(jc,jk,jb) * turb_prandtl )
         END DO
       END DO
@@ -1006,15 +1027,17 @@ CONTAINS
     !$ACC END PARALLEL
 
     !4c) Now calculate visc at half levels at edge
-    CALL cells2edges_scalar(kh_ic, p_patch, p_int%c_lin_e, km_ie,                   &
-                            opt_rlstart=grf_bdywidth_e, opt_rlend=min_rledge_int-1, &
-                            lacc=.TRUE.)
+    CALL cells2edges_scalar(kh_ic, p_patch, p_int%c_lin_e, km_ie, lacc=.TRUE.,      &
+                            opt_rlstart=grf_bdywidth_e, opt_rlend=min_rledge_int-1  )
 
+    dim_km_1 = SIZE(km_ie, 1)
+    dim_km_2 = SIZE(km_ie, 2)
+    dim_km_3 = SIZE(km_ie, 3)
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
     !$ACC LOOP GANG VECTOR COLLAPSE(3)
-    DO jb = 1,  SIZE(km_ie, 3)
-      DO jk = 1, SIZE(km_ie, 2)
-        DO jc = 1, SIZE(km_ie, 1)
+    DO jb = 1, dim_km_3
+      DO jk = 1, dim_km_2
+        DO jc = 1, dim_km_1
           km_ie(jc,jk,jb) = MAX( km_min,  km_ie(jc,jk,jb) * turb_prandtl )
         END DO
       END DO
@@ -1100,8 +1123,8 @@ CONTAINS
     REAL(wp), INTENT(IN), DIMENSION(nproma,p_patch%nlev,p_patch%nblks_c) :: div_c
     REAL(wp), INTENT(IN), DIMENSION(nproma,p_patch%nlev,p_patch%nblks_c) :: rho
 
-    REAL(wp), INTENT(out) :: ddt_u(nproma,p_patch%nlev,p_patch%nblks_c) !< u tendency
-    REAL(wp), INTENT(out) :: ddt_v(nproma,p_patch%nlev,p_patch%nblks_c) !< v tendency
+    REAL(wp), INTENT(INOUT) :: ddt_u(nproma,p_patch%nlev,p_patch%nblks_c) !< OUT u tendency
+    REAL(wp), INTENT(INOUT) :: ddt_v(nproma,p_patch%nlev,p_patch%nblks_c) !< OUT v tendency
 
     REAL(wp) :: flux_up_v, flux_dn_v, flux_up_c, flux_dn_c
     REAL(wp) :: vn_vert1, vn_vert2, vn_vert3, vn_vert4, dvt
@@ -1138,9 +1161,8 @@ CONTAINS
     ! Here rho is assumed to be synchronized already, see interface_iconam_aes.
 
     !density at edge
-    CALL cells2edges_scalar(rho, p_patch, p_int%c_lin_e, inv_rhoe,                  &
-                            opt_rlstart=grf_bdywidth_e+1, opt_rlend=min_rledge_int, &
-                            lacc=.TRUE.)
+    CALL cells2edges_scalar(rho, p_patch, p_int%c_lin_e, inv_rhoe, lacc=.TRUE.,     &
+                            opt_rlstart=grf_bdywidth_e+1, opt_rlend=min_rledge_int  )
 
     rl_start   = grf_bdywidth_e+1
     rl_end     = min_rledge_int
@@ -1269,10 +1291,10 @@ CONTAINS
     END DO
 !$OMP END DO
 !$OMP END PARALLEL
-    !$ACC WAIT
 
-    CALL sync_patch_array(SYNC_E, p_patch, tot_tend)
-    CALL rbf_vec_interpol_cell(tot_tend, p_patch, p_int, ddt_u, ddt_v, opt_rlend=min_rlcell_int)
+    CALL sync_patch_array(SYNC_E, p_patch, tot_tend, lacc=.TRUE.)
+    CALL rbf_vec_interpol_cell(tot_tend, p_patch, p_int, ddt_u, ddt_v, &
+                               lacc=.TRUE., opt_rlend=min_rlcell_int)
 
   NULLIFY(p_int)
 
@@ -1317,7 +1339,7 @@ CONTAINS
     REAL(wp), INTENT(IN), DIMENSION(nproma,p_patch%nlev,p_patch%nblks_c) :: div_c
     REAL(wp), INTENT(IN), DIMENSION(nproma,p_patch%nlev,p_patch%nblks_c) :: pum1, pvm1
     REAL(wp), INTENT(IN), DIMENSION(nproma,p_patch%nlevp1,p_patch%nblks_c) :: pwm1
-    REAL(wp), INTENT(OUT),DIMENSION(nproma,p_patch%nlevp1,p_patch%nblks_c) :: ddt_w
+    REAL(wp), INTENT(INOUT),DIMENSION(nproma,p_patch%nlevp1,p_patch%nblks_c) :: ddt_w !< OUT
 
     REAL(wp) :: flux_up_c, flux_dn_c, dvn1, dvn2, dvt1, dvt2, flux_up_v, flux_dn_v
     REAL(wp) :: vt_e(nproma,p_patch%nlev,p_patch%nblks_e), inv_dt
@@ -1372,8 +1394,8 @@ CONTAINS
     END IF
     !$ACC END KERNELS
 
-    CALL rbf_vec_interpol_edge( vn, p_patch, p_int, vt_e, opt_rlend=min_rledge_int-1, &
-                                opt_acc_async=.TRUE.)
+    CALL rbf_vec_interpol_edge( vn, p_patch, p_int, vt_e, lacc=.TRUE., &
+                                opt_rlend=min_rledge_int-1, opt_acc_async=.TRUE.)
 
     ! 1) Get horizontal tendencies at half level edges
     rl_start   = grf_bdywidth_e
@@ -1642,7 +1664,7 @@ CONTAINS
     INTEGER,           INTENT(in)           :: scalar_name
     REAL(wp), INTENT(IN) :: rturb_prandtl !< inverse turbulent prandtl number
     REAL(wp), INTENT(IN)                    :: km_ie(nproma,p_patch%nlev+1,p_patch%nblks_e)
-    REAL(wp), INTENT(OUT)                   :: hori_tend(nproma,p_patch%nlev,p_patch%nblks_c) !< total tendency
+    REAL(wp), INTENT(INOUT)                 :: hori_tend(nproma,p_patch%nlev,p_patch%nblks_c) !< total tendency
     REAL(wp)                                :: var(nproma,p_patch%nlev,p_patch%nblks_c)      ! input scalar
 
     !Local variables
@@ -1688,8 +1710,7 @@ CONTAINS
     END DO
     !$ACC END PARALLEL LOOP
 
-    !$ACC WAIT
-    CALL sync_patch_array(SYNC_C, p_patch, var)
+    CALL sync_patch_array(SYNC_C, p_patch, var, lacc=.TRUE.)
 
     !1) First set local vars to 1 for other scalars
     !   Soon get different routines for different scalars
@@ -1847,7 +1868,7 @@ CONTAINS
        IF(zeta > 1._wp)THEN !Zeng etal 1997 J. Clim
          psi    = -bsm*LOG(zeta) - zeta + 1
          psi0   = -bsm*LOG(zeta0) - zeta0 + 1
-         factor = (LOG(L/z0) + bsh - psi + psi0  ) / ckap
+         factor = (LOG(L/z0) + bsm - psi + psi0  ) / ckap
        ELSE
          psi  = -bsm*zeta
          psi0 = -bsm*zeta0

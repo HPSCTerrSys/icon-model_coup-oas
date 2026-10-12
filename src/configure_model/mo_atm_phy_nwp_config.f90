@@ -1,15 +1,15 @@
-! Setup of config-state for NWP physics package
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Setup of config-state for NWP physics package
 
 MODULE mo_atm_phy_nwp_config
 
@@ -34,7 +34,6 @@ MODULE mo_atm_phy_nwp_config
   USE mo_les_config,          ONLY: configure_les, les_config
 #endif
   USE mo_limarea_config,      ONLY: configure_latbc
-  USE mo_initicon_config,     ONLY: timeshift
   USE mo_nwp_tuning_config,   ONLY: itune_o3
   USE mtime,                  ONLY: datetime, timedelta, newTimedelta, event, newEvent, no_Error,     &
     &                               getPTStringFromMS, MAX_TIMEDELTA_STR_LEN, datetimeToString,       &
@@ -47,7 +46,7 @@ MODULE mo_atm_phy_nwp_config
   USE mo_nudging_config,      ONLY: configure_nudging, nudging_config
   USE mo_name_list_output_config, ONLY: is_variable_in_output
   USE mo_io_config,           ONLY: dt_lpi, dt_celltracks, dt_radar_dbz, dt_hailcast
-  USE mo_2mom_mcrph_config,   ONLY: t_cfg_2mom
+  USE mo_2mom_mcrph_config,   ONLY: t_cfg_2mom, t_cfg_2mom_pert
 
   IMPLICIT NONE
 
@@ -68,10 +67,15 @@ MODULE mo_atm_phy_nwp_config
   PUBLIC :: ltuning_kessler
   PUBLIC :: icpl_aero_conv
   PUBLIC :: icpl_o3_tp
-  PUBLIC :: iprog_aero
+  PUBLIC :: itype_dissip_heat
+  PUBLIC :: itype_icecloud_diag
+  PUBLIC :: i2daero_dust, i2daero_seas, i2daero_anthro, i2daero_fire
   PUBLIC :: setup_nwp_diag_events
   PUBLIC :: icpl_aero_ice
   PUBLIC :: lcuda_graph_turb_tran
+  PUBLIC :: icpl_gwd_prec
+  PUBLIC :: itype_stoch_phys
+  PUBLIC :: spg_num
 
   !!--------------------------------------------------------------------------
   !! Basic configuration setup for nwp physics
@@ -82,6 +86,7 @@ MODULE mo_atm_phy_nwp_config
 
     INTEGER ::  inwp_gscp        !> microphysics
     TYPE(t_cfg_2mom) :: cfg_2mom !> config parameters of 2-mom cloud microphysics (inwp_gscp = 4...7)
+    TYPE(t_cfg_2mom_pert) :: cfg_2mom_pert !> subset of config parameters of 2-mom cloud microphysics for perturbations
     INTEGER ::  inwp_satad       !! saturation adjustment
     INTEGER ::  inwp_convection  !! convection
     LOGICAL ::  lshallowconv_only !! use shallow convection only
@@ -89,14 +94,16 @@ MODULE mo_atm_phy_nwp_config
     LOGICAL  :: lstoch_sde         !! use stochastic differential equations for shallow convection
     LOGICAL  :: lstoch_deep        !! use stochastic deep convection (SDE scheme)
     LOGICAL  :: lvvcouple          !! use vertical velocity at 650hPa as criterion to couple shallow convection
-                                   !! shallow convection with resolved deep convection 
-    LOGICAL  :: lvv_shallow_deep   !! use vertical velocity at 650hPa to distinguish between shallow and 
+                                   !! shallow convection with resolved deep convection
+    LOGICAL  :: lvv_shallow_deep   !! use vertical velocity at 650hPa to distinguish between shallow and
                                    !! deep convection within convection routines (instead of cloud depth)
     LOGICAL ::  lstoch_spinup      !! spinup stochastic cloud ensemble into equilibrium at first time step
     LOGICAL ::  lrestune_off       !! switch off all resolution-dependent tuning in convection setup
     LOGICAL ::  lmflimiter_off     !! switch off mass flux limiters in convection
     INTEGER ::  nclds              !! max number of clouds in stochastic cloud ensemble
     LOGICAL ::  lgrayzone_deepconv !! use grayzone tuning for deep convection
+    LOGICAL ::  lconv_cdnc_interp  !! switch for cloud droplet number to replace land/sea mask in convection scheme
+    INTEGER ::  itype_parcel_ascent!! options for parcel ascent in parameterized convection
     LOGICAL ::  ldetrain_conv_prec !! detrain convective rain and snow
     LOGICAL ::  lsgs_cond          !! subgrid-scale condensation related to cloud cover
     INTEGER ::  inwp_radiation   !! radiation
@@ -106,65 +113,77 @@ MODULE mo_atm_phy_nwp_config
     INTEGER ::  inwp_turb        !! turbulence
     INTEGER ::  inwp_surface     !! surface including soil, ocean, ice,lake
     INTEGER  :: itype_z0         !! type of roughness length data
+    INTEGER  :: itype_satpres_coeffs  !! set of coefficients for saturation pressure
     REAL(wp) :: dt_conv          !> time step for convection
     REAL(wp) :: dt_ccov          !! time step for subscale cloud cover
     REAL(wp) :: dt_rad           !! "-"                     radiation
     REAL(wp) :: dt_sso           !! "-"  for subscale orographic gravity waves
     REAL(wp) :: dt_gwd           !! "-"  for subscale gravity waves
     REAL(wp) :: dt_fastphy       !! time step for fast physics processes
-                                 !! microphysics, saturation adjustment, turbulence, 
+                                 !! microphysics, saturation adjustment, turbulence,
                                  !! surface (in addition: update and radheat)
-    ! hydci_pp                   
+    ! hydci_pp
     REAL(wp) :: mu_rain          !! parameter in gamma distribution for rain
     REAL(wp) :: mu_snow          !! ...for snow
     REAL(wp) :: rain_n0_factor   !! tuning factor for intercept parameter of raindrop size distribution
-    LOGICAL ::  lsbm_warm_full    !! false: Piggy Backing with 2M, true: full warm-phase SBM
+    LOGICAL  :: lvariable_rain_n0 !! if true: use variable rain_n0_factor approaching 1 for large QR
+    LOGICAL  :: lmicrophysicsFirst !! if true: run microphysics before turbdiff
+    LOGICAL  :: lsbm_coupled       !! FALSE: use 2M for feedback and run uncoupled SBM, TRUE: use SBM feedback
     REAL(wp) :: qi0, qc0
 
     INTEGER  :: icpl_aero_gscp     !! type of aerosol-microphysics coupling
-    LOGICAL  :: lscale_cdnc        !! switch to activate the scaling of MODIS CDNCs
+    INTEGER  :: scale_cdnc_mode    !! type of the scaling of MODIS CDNCs
 
     REAL(wp) :: ustart_raylfric    !! velocity at which extra Rayleigh friction starts
-    REAL(wp) :: efdt_min_raylfric  !! e-folding time corresponding to maximum relaxation 
+    REAL(wp) :: efdt_min_raylfric  !! e-folding time corresponding to maximum relaxation
                                    !! coefficient
-    LOGICAL  :: latm_above_top     !! use extra layer above model top for radiation 
+    LOGICAL  :: latm_above_top     !! use extra layer above model top for radiation
                                    !! (reduced grid only)
     INTEGER  :: icalc_reff         !! type of effective radius calculation
     INTEGER  :: icpl_rad_reff      !! couplig of radiation and effective radius
     INTEGER  :: ithermo_water      !! thermodynamic of water
+
+    ! stochastic pattern generator
+    LOGICAL  :: spg_fourier_modes  !! use Fourier modes for limited area
+    LOGICAL  :: spg_use_asl        !! use ASL library on NEC
+    LOGICAL  :: lstoch_pattern_generator        !! use stochastic pattern generator
+    REAL(wp), DIMENSION(5) :: spg_length_scale  !! length scale
+    REAL(wp), DIMENSION(5) :: spg_time_scale    !! time scale of AR1 process
+    INTEGER,  DIMENSION(5) :: spg_spec_modes    !! number of spectral modes
+    REAL(wp), DIMENSION(5) :: spg_variance      !! variance in grid point space
 
     ! upper atmosphere
     LOGICAL ::  lupatmo_phy        !! use upper atmosphere physics
 
     ! Derived variables
 
-    LOGICAL :: lenabled(iphysproc) !> contains information about status of 
+    LOGICAL :: lenabled(iphysproc) !> contains information about status of
                                    !! corresponding physical process
                                    !! enabled: TRUE; disabled: FALSE
+                                   !! (externally specified: disabled)
 
     LOGICAL, ALLOCATABLE :: &      !> ith physics package must be called at the current time step
       &  lcall_phy(:)              !! TRUE/FALSE, time dependent
 
     LOGICAL :: lcalc_acc_avg       ! TRUE: calculate accumulated and averaged quantities
 
-    LOGICAL :: lcalc_extra_avg     ! TRUE: calculate aditional temporally averaged fields, which normally 
+    LOGICAL :: lcalc_extra_avg     ! TRUE: calculate aditional temporally averaged fields, which normally
                                    !       are not computed in operational runs.
-                                   !       lcalc_extra_avg is set to true automatically, if any of the 
+                                   !       lcalc_extra_avg is set to true automatically, if any of the
                                    !       non-standard fields is specified in the output namelist.
 
     LOGICAL :: lhave_graupel       ! Flag if microphysics scheme has a prognostic variable for graupel
-    LOGICAL :: l2moment            ! Flag if 2-moment microphysics scheme is used 
-    LOGICAL :: lsbm                ! Flag if sbm microphysics scheme is used    
+    LOGICAL :: l2moment            ! Flag if 2-moment microphysics scheme is used
     LOGICAL :: lhydrom_read_from_fg(1:20)  ! Flag for each hydrometeor tracer, if it has been read from fg file
     LOGICAL :: lhydrom_read_from_ana(1:20) ! Flag for each hydrometeor tracer, if it has been read from ana file
 
     LOGICAL :: luse_clc_rad
 
 #ifndef __NO_ICON_LES__
-    LOGICAL :: is_les_phy          !>TRUE is turbulence is 3D 
+    LOGICAL :: is_les_phy          !>TRUE is turbulence is 3D
                                    !>FALSE otherwise
 #endif
-    INTEGER :: nclass_gscp         !> number of hydrometeor classes for 
+    INTEGER :: nclass_gscp         !> number of hydrometeor classes for
                                    ! chosen grid scale microphysics
 
     LOGICAL :: l_3d_rad_fluxes     ! logical to determine if 3d radiative flux variable are allocated
@@ -212,20 +231,30 @@ MODULE mo_atm_phy_nwp_config
   CHARACTER(LEN=filename_max) :: cldopt_filename
 
   INTEGER  :: icpl_aero_conv     !! type of coupling between aerosols and convection scheme
-  INTEGER  :: iprog_aero         !! type of prognostic aerosol
+  INTEGER  :: i2daero_dust       !! 2D-Aerosol: Activate dust advection, sinks & sources
+  INTEGER  :: i2daero_seas       !! 2D-Aerosol: Activate sea salt advection, sinks & sources
+  INTEGER  :: i2daero_anthro     !! 2D-Aerosol: Activate bc/oc/so4 aerosol advection, sinks & sources
+  INTEGER  :: i2daero_fire       !! 2D-Aerosol: Activate wildfire sinks & sources (additional to i2daero_anthro)
   INTEGER  :: icpl_o3_tp         !! type of coupling between ozone and the tropopause
   INTEGER  :: icpl_aero_ice      !! type of coupling between aersols and ice nucleation
+  INTEGER  :: itype_dissip_heat  !! Options for the calculation of dissipative heating
+  INTEGER  :: icpl_gwd_prec      !! coupling between gwd momentum flux and total precipitation
+  INTEGER  :: itype_stoch_phys   !! type of stochastic physics scheme
+  INTEGER  :: spg_num            !! number of stochastic patterns in grid point space
+  INTEGER ::  itype_icecloud_diag!! options for parameterization of ice clouds in cover_koe
+
+  !$ACC DECLARE CREATE(itype_dissip_heat, icpl_o3_tp, itype_icecloud_diag)
 
   REAL(wp) ::  &                       !> Field of calling-time interval (seconds) for
     &  dt_phy(max_dom,iphysproc_short) !! each domain and phys. process
 
   ! Optimization
   LOGICAL :: lcuda_graph_turb_tran   !! activate CUDA GRAPH in turbulent transfer
-  
+
   !!--------------------------------------------------------------------------
   !! Tuning parameters for physics
   !!--------------------------------------------------------------------------
-  
+
   ! convection:
   ! GZ, 2013-09-13: tuning to reduce drizzle (may be overridden by icpl_aero_conv=1)
   LOGICAL,  PARAMETER :: ltuning_kessler  = .TRUE.
@@ -260,8 +289,8 @@ CONTAINS
     CHARACTER(len=*), PARAMETER ::  &
       &      routine = modname//":configure_atm_phy_nwp"
     REAL(wp) :: z_mc_ref
-    REAL(wp) :: &                             ! time-intervals for calling various 
-      &  dt_phy_orig(max_dom,iphysproc_short) ! physical processes. Original values as 
+    REAL(wp) :: &                             ! time-intervals for calling various
+      &  dt_phy_orig(max_dom,iphysproc_short) ! physical processes. Original values as
                                               ! provided by user
 
     CHARACTER(LEN=MAX_TIMEDELTA_STR_LEN) :: td_start_str
@@ -272,7 +301,6 @@ CONTAINS
     TYPE(timedelta), POINTER :: td_start, td_end, td_dt   => NULL()
 
   !-------------------------------------------------------------------------
-
 
     !$ACC ENTER DATA CREATE(atm_phy_nwp_config)
 
@@ -302,12 +330,12 @@ CONTAINS
 
 
       ! Fill derived variable lenabled
- 
+
       IF ( atm_phy_nwp_config(jg)%inwp_satad > 0 )               &
-        &  atm_phy_nwp_config(jg)%lenabled(itsatad)   = .TRUE. 
+        &  atm_phy_nwp_config(jg)%lenabled(itsatad)   = .TRUE.
 
       IF ( atm_phy_nwp_config(jg)%inwp_convection > 0 )          &
-        &  atm_phy_nwp_config(jg)%lenabled(itconv)    = .TRUE. 
+        &  atm_phy_nwp_config(jg)%lenabled(itconv)    = .TRUE.
 
       IF ( atm_phy_nwp_config(jg)%inwp_cldcover > 0 )            &
         &  atm_phy_nwp_config(jg)%lenabled(itccov)    = .TRUE.
@@ -333,9 +361,7 @@ CONTAINS
       IF ( atm_phy_nwp_config(jg)%inwp_gwd > 0 )                 &
         &  atm_phy_nwp_config(jg)%lenabled(itgwd)     = .TRUE.
 
-
       ! Set flags for the microphysics schemes:
-      atm_phy_nwp_config(jg)%lsbm = .FALSE.
       SELECT CASE (atm_phy_nwp_config(jg)%inwp_gscp)
       CASE (2)
         atm_phy_nwp_config(jg)%lhave_graupel = .TRUE.
@@ -345,7 +371,6 @@ CONTAINS
         atm_phy_nwp_config(jg)%l2moment = .TRUE.
       CASE (8)
         atm_phy_nwp_config(jg)%lhave_graupel = .TRUE.
-        atm_phy_nwp_config(jg)%lsbm = .TRUE.
       CASE DEFAULT
         atm_phy_nwp_config(jg)%lhave_graupel = .FALSE.
         atm_phy_nwp_config(jg)%l2moment = .FALSE.
@@ -385,12 +410,12 @@ CONTAINS
 #ifndef __NO_ICON_LES__
       ! Configure LES physics (if activated)
       !
-      atm_phy_nwp_config(jg)%is_les_phy = .FALSE. 
-    
+      atm_phy_nwp_config(jg)%is_les_phy = .FALSE.
+
       IF(ANY( (/ismag,iprog/)  == atm_phy_nwp_config(jg)%inwp_turb ) )THEN
         CALL configure_les(jg, dtime = time_config%get_model_timestep_sec(p_patch(jg)%nest_level))
-        atm_phy_nwp_config(jg)%is_les_phy = .TRUE. 
-      END IF 
+        atm_phy_nwp_config(jg)%is_les_phy = .TRUE.
+      END IF
 
       !sanity check
       IF( atm_phy_nwp_config(jg)%inwp_surface>0 .AND. les_config(jg)%isrfc_type>1)THEN
@@ -427,21 +452,21 @@ CONTAINS
 
       !$ACC ENTER DATA COPYIN(atm_phy_nwp_config(jg)%lenabled)
 
-      ! Check, whether the user-defined slow-physics timesteps adhere 
+      ! Check, whether the user-defined slow-physics timesteps adhere
       ! to ICON-internal rules. If not, adapt the timesteps accordingly.
       ! RULES:
-      !  I) Every slow-physics timestep must be an integer multiple  
+      !  I) Every slow-physics timestep must be an integer multiple
       !     of the advection/fast-physics timestep.
-      !     If not, the slow physics timestep is rounded up to the 
+      !     If not, the slow physics timestep is rounded up to the
       !     next integer multiple.
-      ! II) Special rules for cloud cover time step are set 
+      ! II) Special rules for cloud cover time step are set
       !     when using no convection scheme (see below)
-      !III) The radiation timestep must be an integer multiple of the 
-      !     cloud-cover timestep and the convection. If not, the radiation timestep is 
+      !III) The radiation timestep must be an integer multiple of the
+      !     cloud-cover timestep and the convection. If not, the radiation timestep is
       !     rounded up to the next integer multiple.
 
 
-      ! These rules are applied for every patch. As a result, timesteps for a 
+      ! These rules are applied for every patch. As a result, timesteps for a
       ! particular process may differ from patch to patch.
 
       ! RULE (I)
@@ -561,14 +586,12 @@ CONTAINS
     ENDDO  ! jg loop
 
 
-
-
     ! Configure lateral boundary condition for limited area model (or global nudging)
     IF( l_limited_area .OR. ANY(nudging_config(1:n_dom)%lnudging) ) THEN
       CALL configure_latbc()
     END IF
     ! Configure nudging (primary domain only)
-    CALL configure_nudging(p_patch(1)%nlev, p_patch(1:)%nshift_total, n_dom, msg_level, timers_level) 
+    CALL configure_nudging(p_patch(1)%nlev, p_patch(1:)%nshift_total, n_dom, msg_level, timers_level)
 
     ! Settings for ozone tuning, depending on option for ozone climatology
     SELECT CASE (irad_o3)
@@ -590,14 +613,19 @@ CONTAINS
       ENDIF
     CASE (79,97) ! Blending between GEMS and MACC climatologies
       IF (itune_o3 > 0) CALL message(routine, 'Use blending between GEMS and MACC ozone climatologies with tuning')
-      IF (itune_o3 >= 2) THEN
+      IF (itune_o3 == 3) THEN
+        tune_ozone_ztop   = 29000.0_wp
+        tune_ozone_zmid2  = 22500.0_wp
+        tune_ozone_zmid   = 20000.0_wp
+      ELSE IF (itune_o3 >= 2) THEN
         tune_ozone_ztop   = 29000.0_wp
         tune_ozone_zmid2  = 24000.0_wp
+        tune_ozone_zmid   = 19000.0_wp
       ELSE
         tune_ozone_ztop   = 29000.0_wp
         tune_ozone_zmid2  = 26000.0_wp
+        tune_ozone_zmid   = 19000.0_wp
       ENDIF
-      tune_ozone_zmid   = 19000.0_wp
       tune_ozone_zbot   = 16000.0_wp
       ozone_shapemode   = 2
       tune_ozone_lat    = 30._wp
@@ -605,17 +633,13 @@ CONTAINS
       CASE (1,2)
         tune_ozone_fac    = 0.25_wp
       CASE (3)
-        tune_ozone_fac    = 0.35_wp
+        tune_ozone_fac    = 0.2_wp
       CASE (4)
         tune_ozone_fac    = 0.1_wp
       CASE DEFAULT
         tune_ozone_fac    = 0.0_wp
       END SELECT
-      IF (itune_o3 == 3) THEN
-        tune_ozone_maxinc = 1.75e-6_wp
-      ELSE
-        tune_ozone_maxinc = 1.25e-6_wp
-      ENDIF
+      tune_ozone_maxinc = 1.25e-6_wp
     CASE DEFAULT
       IF (itune_o3 /= 0) THEN
         CALL message(routine, 'itune_o3 is reset to 0 because irad_o3 is not 7, 79 or 97')
@@ -631,7 +655,7 @@ CONTAINS
       tune_ozone_maxinc = 0._wp
     END SELECT
 
-    ! Ozone tuning function, applied to the ozone climatology as 
+    ! Ozone tuning function, applied to the ozone climatology as
     ! o3clim_tuned = o3clim*(1.+fac_ozone*shapefunc_ozone)
     DO jg = 1, n_dom
       atm_phy_nwp_config(jg)%ozone_maxinc = tune_ozone_maxinc
@@ -647,7 +671,7 @@ CONTAINS
             atm_phy_nwp_config(jg)%fac_ozone(jk) = tune_ozone_fac *                        &
                  & sin((z_mc_ref-tune_ozone_zbot)/(tune_ozone_zmid-tune_ozone_zbot)*pi_2)**2
           ELSE IF ( z_mc_ref < tune_ozone_zmid2 ) THEN
-            atm_phy_nwp_config(jg)%fac_ozone(jk) = tune_ozone_fac 
+            atm_phy_nwp_config(jg)%fac_ozone(jk) = tune_ozone_fac
           ELSE
             atm_phy_nwp_config(jg)%fac_ozone(jk) = tune_ozone_fac *                        &
                  & cos((z_mc_ref-tune_ozone_zmid2)/(tune_ozone_ztop-tune_ozone_zmid2)*pi_2)**2
@@ -659,7 +683,7 @@ CONTAINS
       !$ACC ENTER DATA COPYIN(atm_phy_nwp_config(jg)%fac_ozone)
       ! Horizontal profile function for fac_ozone
       DO jb = 1, p_patch(jg)%nblks_c
-        DO jc = 1, nproma          
+        DO jc = 1, nproma
           IF (ozone_shapemode == 1 .AND. tune_ozone_lat > 0._wp) THEN
             IF (ABS(p_patch(jg)%cells%center(jc,jb)%lat) < tune_ozone_lat * deg2rad) THEN
               atm_phy_nwp_config(jg)%shapefunc_ozone(jc,jb) = &
@@ -690,12 +714,12 @@ CONTAINS
     ! initialize event-management for parameterized physical processes
     !
     ! - Event start/end dates are set equal to the domain start/end dates
-    ! - For the computation of domain start/end dates we have to distinguish 
+    ! - For the computation of domain start/end dates we have to distinguish
     !   between global/master domains (i.e. DOM(1)) and the nests.
     !   Start dates:
-    !   * DOM(1): dom_start_date = tc_exp_startdate + timeshift%dt_shift 
+    !   * DOM(1): dom_start_date = tc_exp_startdate + time_config%timeshift%dt_shift
     !             where dt_shift is a possible timeshift due to IAU.
-    !   * DOM(i>1): dom_start_date = tc_exp_startdate + start_time(i) 
+    !   * DOM(i>1): dom_start_date = tc_exp_startdate + start_time(i)
     !   End dates:
     !   * DOM(1)  : dom_end_date = tc_exp_stopdate
     !   * DOM(i>1): dom_end_date = tc_exp_startdate +  end_time(i)
@@ -703,15 +727,15 @@ CONTAINS
     !
     ! - for each domain, the event start dates are set to
     !   event_start_date(i) =  dom_start_date(i) +  dt_fastphy(i)
-    !   * adding dt_fastphy is necessitated by the fact, that the model time 
+    !   * adding dt_fastphy is necessitated by the fact, that the model time
     !     is updated at the beginning of a timestep.
-    !   * by doing so, care is taken that all physics processes are called during the 
+    !   * by doing so, care is taken that all physics processes are called during the
     !   first integration step of the given patch.
     !
-    ! - initialization calls are not controlled by mtime events. 
-    !   It is decided upon the physical process TYPE metainformation, 
+    ! - initialization calls are not controlled by mtime events.
+    !   It is decided upon the physical process TYPE metainformation,
     !   whether an intialization call should be issued or not.
-    ! 
+    !
     DO jg = 1,n_dom
 
 
@@ -724,13 +748,13 @@ CONTAINS
       ELSE
         domStartDate = time_config%tc_exp_startdate
         ! take care of possibe IAU-Timeshift
-        IF (timeshift%dt_shift < 0._wp) THEN
-          domStartDate = domStartDate + timeshift%mtime_shift
+        IF (time_config%timeshift%dt_shift < 0._wp) THEN
+          domStartDate = domStartDate + time_config%timeshift%mtime_shift
         ENDIF
       ENDIF
       ! Note that the model time is updated at the beginning of a timestep.
       !
-      ! by adding td_dt we make sure, that all events are triggered 
+      ! by adding td_dt we make sure, that all events are triggered
       ! during the first integration step of the given patch.
       CALL getPTStringFromMS(INT(atm_phy_nwp_config(jg)%dt_fastphy*1000._wp,i8), td_dt_str)
       td_dt => newTimedelta(td_dt_str)
@@ -767,7 +791,7 @@ CONTAINS
         &                 dt_phy             = dt_phy(jg,:)                 ) !in
 
 
-      ! allocate lcall_phy to be of the same size as phyProcs%proc(:),  
+      ! allocate lcall_phy to be of the same size as phyProcs%proc(:),
       ! since lcall_phy shall contain one entry per physical process.
       ALLOCATE(atm_phy_nwp_config(jg)%lcall_phy(          &
         &  SIZE(atm_phy_nwp_config(jg)%phyProcs%proc, 1)  &
@@ -796,7 +820,7 @@ CONTAINS
       atm_phy_nwp_config(jg)%l_3d_turb_fluxes  =                 &
                is_variable_in_output( var_name="tetfl_turb")     &
           .OR. is_variable_in_output( var_name="vapfl_turb")     &
-          .OR. is_variable_in_output( var_name="liqfl_turb")     
+          .OR. is_variable_in_output( var_name="liqfl_turb")
 
     ENDDO  ! jg
 
@@ -811,26 +835,26 @@ CONTAINS
   !! Makes use of mtime events
   !!
   !! Creating and adding a new physics event works as follows:
-  !! 1) Add a new variable X of type t_phyProcFast/t_phyProcSlow 
-  !!    to the config state. Initialize the new physics event by calling 
-  !!    X%initialize() and pass details describing the new event via the 
+  !! 1) Add a new variable X of type t_phyProcFast/t_phyProcSlow
+  !!    to the config state. Initialize the new physics event by calling
+  !!    X%initialize() and pass details describing the new event via the
   !!    argument list.
   !! 2) Add the new variable to the existing physics event group G by calling
-  !!    G%addToGroup(X). You may alternatively add X to another group. 
-  !!    A new group, say G2, can be constructed by calling G2%construct() just 
+  !!    G%addToGroup(X). You may alternatively add X to another group.
+  !!    A new group, say G2, can be constructed by calling G2%construct() just
   !!    before G2%addToGroup(X).
-  !! 3) A single physics event and/or an entire group can be queried with 
+  !! 3) A single physics event and/or an entire group can be queried with
   !!    the help of various type-bound procedures listed in atm_phy_nwp:mo_phy_events.
-  !! 4) Calling the routine atm_phy_nwp:mtime_ctrl_physics will provide you with 
-  !!    an array of logicals of the same size as your group. This array tells you 
-  !!    whether a specific physics event is due at the current time step, or not.  
+  !! 4) Calling the routine atm_phy_nwp:mtime_ctrl_physics will provide you with
+  !!    an array of logicals of the same size as your group. This array tells you
+  !!    whether a specific physics event is due at the current time step, or not.
   !!
   SUBROUTINE setupEventsNwp(atm_phy_nwp_config, pid, grpName, eventStartDate, eventEndDate, dt_phy)
 
     TYPE(t_atm_phy_nwp_config), TARGET, INTENT(INOUT)  :: atm_phy_nwp_config  !< config state
     !
     INTEGER       , INTENT(IN)      :: pid                  !< patch ID
-    CHARACTER(len=*)                :: grpName              !< group name 
+    CHARACTER(len=*)                :: grpName              !< group name
     TYPE(datetime), INTENT(IN)      :: eventStartDate
     TYPE(datetime), INTENT(IN)      :: eventEndDate
     REAL(wp)      , INTENT(IN)      :: dt_phy(:)            !< physics time intervals
@@ -1073,7 +1097,7 @@ CONTAINS
       &                     dt          = eventInterval,                          & !in
       &                     plusSlack   = plusSlack,                              & !in
       &                     optReqInit  = .TRUE.,                                 & !in
-      &                     optInclStart= .TRUE.                                  ) !in 
+      &                     optInclStart= .TRUE.                                  ) !in
     ! add to physics group
     CALL atm_phy_nwp_config%phyProcs%addToGroup(                          &
       &                     phyProc = atm_phy_nwp_config%phyProc_radheat)
@@ -1200,9 +1224,9 @@ CONTAINS
   !>
   !! Checks, whether the modulo operation remainder is above a certain threshold.
   !!
-  !! Checks, whether the modulo operation results in a remainder 
-  !! which is above a certain threshold. The threshold can be given 
-  !! as an optional argument. If nothing is specified the threshold 
+  !! Checks, whether the modulo operation results in a remainder
+  !! which is above a certain threshold. The threshold can be given
+  !! as an optional argument. If nothing is specified the threshold
   !! is set to 10._wp*dbl_eps.
   !!
   LOGICAL FUNCTION isModulo (dividend, divisor, optThresh)
@@ -1249,14 +1273,14 @@ CONTAINS
   !!
   !! Screen print out of physics timesteps.
   !! Printout in any case, if the respective timestep was modified by ICON
-  !! Conditional printout (msg_lev>10), if the respective timestep was not modified. 
+  !! Conditional printout (msg_lev>10), if the respective timestep was not modified.
   !!
   SUBROUTINE phy_nwp_print_dt (atm_phy_nwp_config, dt_phy_orig, dt_phy, pid)
     !
     TYPE(t_atm_phy_nwp_config), INTENT(IN) :: atm_phy_nwp_config  !< object for which the setup will be printed
     REAL(wp)                  , INTENT(IN) :: dt_phy_orig(:)      !< calling intervals as defined by user
     REAL(wp)                  , INTENT(IN) :: dt_phy(:)           !< final calling intervals
-    INTEGER                   , INTENT(IN) :: pid                 !< patch ID 
+    INTEGER                   , INTENT(IN) :: pid                 !< patch ID
 
     ! local variables
     TYPE(t_table)   :: table
@@ -1327,7 +1351,7 @@ CONTAINS
     !$ACC EXIT DATA DELETE(me%lcall_phy) IF(ALLOCATED(me%lcall_phy))
     !$ACC EXIT DATA DELETE(me%fac_ozone) IF(ALLOCATED(me%fac_ozone))
     !$ACC EXIT DATA DELETE(me%shapefunc_ozone) IF(ALLOCATED(me%shapefunc_ozone))
-    IF (ALLOCATED(me%lcall_phy))          DEALLOCATE(me%lcall_phy) 
+    IF (ALLOCATED(me%lcall_phy))          DEALLOCATE(me%lcall_phy)
     IF (ALLOCATED(me%fac_ozone)) THEN
       !$ACC EXIT DATA DELETE(me%fac_ozone)
       DEALLOCATE(me%fac_ozone)

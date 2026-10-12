@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 #
 set -e
@@ -61,7 +62,7 @@ WORKDIR=/mnt/lustre01/work/mh0081/m214091/
 MODELDIR=~/icon-aes
 #######################################################
 #
-# cell=filled triangles cont=filled contour 
+# cell=filled triangles cont=filled contour
 # default= 1: model=cell, ERAinterim=cont, model-ERAinterim=cont
 default=1
 # otherwise default = 0
@@ -95,7 +96,7 @@ cd ${PLTDIR}
 pwd
 
 
-# Load modules 
+# Load modules
 MODULES=
 
     case `hostname` in
@@ -117,7 +118,7 @@ MODULES=
     module unload ncl
     module load $MODULES
 
-which cdo 
+which cdo
 which ncl
 
 
@@ -186,12 +187,12 @@ ${QUELLE}/PREPAREatm_3d_diff $ANAME $ADIR $BNAME $BDIR
 
 if [ "$PAGE" = "1" ]
 then
-  nclsh  ${QUELLE}/atm_3d_linp_diff_page.ncl 
+  nclsh  ${QUELLE}/atm_3d_linp_diff_page.ncl
   nclsh  ${QUELLE}/atm_3d_map_diff_page.ncl -default=${default} -cell=${cell}
 fi
 if [ "$SINGLE" = "1" ]
 then
-  nclsh  ${QUELLE}/atm_3d_linp_diff_single.ncl 
+  nclsh  ${QUELLE}/atm_3d_linp_diff_single.ncl
   nclsh  ${QUELLE}/atm_3d_map_diff_single.ncl -default=${default} -cell=${cell}
 fi
 
@@ -235,17 +236,17 @@ exit
 #
 # COMMENT= the comment appears in the subtitle of the plots
 #          maximum length 20 characters (it works only for single plots)
-# 
+#
 # TYP= average to compare with ERAinterim-data(1979-1999)or (1979-2008)
 #      ANN(annual), DJF(Dec-Feb), MAM(mar-may)  JJA(jul-aug), SON(sep-nov),
 #      JAN ... DEC
 #
 # YY1= start date, appears in the caption of the plots
 # YY2= end date, appears in the caption of the plots
-#                                
-#      
+#
+#
 # NAME= XXX name of data files (XXX_atm_2d_ml.nc and XXX_atm_3d_ml.nc)
-# WORKDIR= working directory 
+# WORKDIR= working directory
 # DATDIR = directory for input data XXX_atm_2d_ml.nc and XXX_atm_3d_ml.nc
 # MODELDIR= model directory
 #
@@ -257,30 +258,30 @@ exit
 #
 #       the plot program expects the following two files:
 #               XXX_atm_2d_ml.nc (surface data, containing at least:
-#                           variable: 
+#                           variable:
 #                                 clwvi Liquid water + ice content
-#                                 clt   total cloud cover     
-#                                 psl   sea level pressure    
-#                                 tas   2 m temperature       
-#                                 ts    surface temperature   
-#                                 tauu  zonal wind stress     
-#                                 prw   column water vapor    
+#                                 clt   total cloud cover
+#                                 psl   sea level pressure
+#                                 tas   2 m temperature
+#                                 ts    surface temperature
+#                                 tauu  zonal wind stress
+#                                 prw   column water vapor
 #                                       vertical integral of cloud liquid water
-#                                 pr    total precipitation   
-#                                                          
-#       the interpolation from model level to pressure level computes this programm automatically 
-# 
-#              XXX_atm_3d_ml.nc (atmosphere data, pressure levels 
+#                                 pr    total precipitation
+#
+#       the interpolation from model level to pressure level computes this programm automatically
+#
+#              XXX_atm_3d_ml.nc (atmosphere data, pressure levels
 #                         in hPa:  1000,925,850,775,700,600,500,400,300,250,
 #                                   200,150,100,70,50,30,10
 #                         containing at least:
-#                             variable: ta  temperature           
-#                                       ua  zonal wind            
-#                                       va  meridional wind       
-#                                       hus specific humidity     
+#                             variable: ta  temperature
+#                                       ua  zonal wind
+#                                       va  meridional wind
+#                                       hus specific humidity
 #                                           velocity potential
-#                                       clw cloud liquid water    
-#                                       cli cloud ice             
+#                                       clw cloud liquid water
+#                                       cli cloud ice
 #                                       zg  geopotential height
 #                                       hur relative humidity
 #                                       cl  cloud cover
@@ -292,10 +293,9 @@ exit
 #                         13239,11066,9102,7406,5964,4752,3743,2914,2235,1685,
 #                         1245,901,637,440,296,193,122,74,43,23,11,4,1
 #
-#                         
+#
 #                         containing at least:
 #                             variable: ta  temperature
 #                                       ua  zonal wind
 #                                       va  meridional wind
-#        
-
+#

@@ -1,16 +1,15 @@
-! Contains extension to solver backend type: GMRES (legacy implementation)
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Contains extension to solver backend type: GMRES (legacy implementation)
 
 !#include "omp_definitions.inc"
 
@@ -24,11 +23,11 @@ MODULE mo_ocean_solve_legacy_gmres
   USE mo_timer, ONLY: timer_start, timer_stop
   USE mo_run_config, ONLY: ltimer
   USE mo_fortran_tools, ONLY: set_acc_host_or_device
- 
+
   IMPLICIT NONE
-  
+
   PRIVATE
- 
+
   PUBLIC :: t_ocean_solve_legacy_gmres
   CHARACTER(LEN=*), PARAMETER :: this_mod_name = 'mo_ocean_solve_legacy_gmres'
 
@@ -66,7 +65,7 @@ CONTAINS
   SUBROUTINE ocean_solve_legacy_gmres_cal_sp(this)
     CLASS(t_ocean_solve_legacy_gmres), INTENT(INOUT) :: this
     CHARACTER(len=*), PARAMETER :: routine='ocean_solve_legacy_gmres'
- 
+
     CALL finish(routine, "not implemented!")
   END SUBROUTINE ocean_solve_legacy_gmres_cal_sp
 
@@ -189,7 +188,9 @@ CONTAINS
 
     INTEGER :: mythreadno
 !    TYPE(t_patch), POINTER :: patch_2d
+#if !defined(_OPENACC) && !defined(__NO_CONT_SOLV_OCE__)
     CONTIGUOUS :: b, x
+#endif
 
 #ifdef _OPENMP
     INTEGER OMP_GET_THREAD_NUM
@@ -380,7 +381,7 @@ CONTAINS
       !    w(pad_nproma+1:nproma, no_of_blocks)
       !    CALL p_barrier
       !    w(pad_nproma:nproma, no_of_blocks) = 0.0_wp
-      !    CALL sync_patch_array(SYNC_C, patch_2D, w(:,:) )
+      !    CALL sync_patch_array(SYNC_C, patch_2D, w(:,:), lacc=.FALSE.)
 
 ! !ICON_OMP_PARALLEL PRIVATE(rh, myThreadNo)
 ! !$   myThreadNo = OMP_GET_THREAD_NUM()
@@ -482,7 +483,7 @@ CONTAINS
       ENDDO
     ENDDO
 !ICON_OMP_END_DO NOWAIT
-!ICON_OMP_END_PARALLEL 
+!ICON_OMP_END_PARALLEL
     res(1) = ABS(rn2(niter))
     CALL trans%sync(x)
 !    stop_timer(timer_gmres,2)

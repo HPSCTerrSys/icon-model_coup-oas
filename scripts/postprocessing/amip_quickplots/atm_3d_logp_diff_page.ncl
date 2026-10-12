@@ -1,15 +1,15 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
 ; SPDX-License-Identifier: BSD-3-Clause
 ; ------------------------------------------
 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl" 
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl" 
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 
@@ -71,7 +71,7 @@ begin
   nlats=nlati/2
   gs=doubletofloat(gaus(nlats))
   gweight=gs(:,1)
-;***compute mean 
+;***compute mean
   meanV=dim_avg_wgt(Code,gweight,0)
 
   minV=min(Code)
@@ -88,14 +88,14 @@ begin
   txres                  =  True                 ; text mods desired
   txres@txFontHeightF    =  0.014                 ;-- smaller font
   txid = gsn_create_text(wks, statV, txres)
-  
+
   amres                  =  True
   amres@amParallelPosF   =  0.0                  ;-- center position
   amres@amOrthogonalPosF =  0.7                  ;-- move downward
   amres@amSide           = "Bottom"
   annoid = gsn_add_annotation(plot, txid, amres)
 end
-;***end procedure 
+;***end procedure
 
 
 
@@ -112,8 +112,8 @@ begin
     res@gsnDraw              = False             ; don't draw plot yet
     res@tiMainString         = mainTitle
     res@tiYAxisString        = " "              ; Y-Axis no label
-    res@gsnLeftString        = " "  
-    res@gsnRightString       = " "  
+    res@gsnLeftString        = " "
+    res@gsnRightString       = " "
     res@gsnCenterString      = subTitle
 
     res@trYLog                = True            ; logarithmic Y-axis
@@ -123,7 +123,7 @@ begin
     res@tmYMajorGridLineColor = "grey"  ; color Y Axis grid lines
     res@tmYLMode = "Explicit"
     res@tmYLValues = (/0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000/)
-    res@tmYLLabels = (/0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000/) 
+    res@tmYLLabels = (/0.1,0.2,0.5,1,2,5,10,20,50,100,200,500,1000/)
     res@tmYRMode = "Automatic"
     res=res_in
     res@cnFillOn             = True               ; turn on color fill
@@ -131,8 +131,8 @@ begin
     res@gsnSpreadColors      = False              ; use full colormap
     res@pmLabelBarOrthogonalPosF = 0.07           ; move farther to plot
     res@lbOrientation        = "horizontal"       ; vertical label bars
-    
-    res@vpWidthF  = 0.8		; set width of plot 
+
+    res@vpWidthF  = 0.8		; set width of plot
     res@vpHeightF = 0.5		; set height of plot
 
     plot = gsn_csm_pres_hgt(wks,var, res)  ; create plot
@@ -162,13 +162,13 @@ begin
    pltType = "pdf"                        ; x11, eps, ps, pdf, png
    pltPath = workdir
    pltName = pltPath+"/"+Arun+"_"+Brun+"_atm_3d_"+typ+"_logp"        ; plot name
-   wks     = gsn_open_wks(pltType, pltName) 
+   wks     = gsn_open_wks(pltType, pltName)
 ;***plot array for panel
    listplots = new(14,graphic)
    noPlot=-1  ;number of listplots
-;***Define color map and add gray 
-    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map 
-    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map 
+;***Define color map and add gray
+    gsn_define_colormap(wks,"amwg_blueyellowred") ; Define color map
+    missColor = NhlNewColor(wks,0.5,0.5,0.5)      ; add gray to color map
 
 
 
@@ -178,14 +178,14 @@ begin
 
     Cvar="ta"
     fili    = workdir+"/Ubusy_d"+Cvar+".nc"
-    
+
     mainTitle = "Temperature [C] "+typ
     subTitle  = meantime
 
 if (isfilepresent(fili)) then
 
 ;***read code 130
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     d130    = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(d130)
@@ -196,11 +196,11 @@ if (isfilepresent(fili)) then
 
 ;***create plot
     res                      = True             ; plot mods desired
-    res@cnLevelSelectionMode = "ExplicitLevels"   
+    res@cnLevelSelectionMode = "ExplicitLevels"
     res@cnLevels             = (/-8,-4,-2,-1,-.5,.5,1,2,4,8/)
     res@cnFillColors         = (/2,4,6,7,9,0,11,12,14,15,17/)
-    res@cnMissingValFillColor = missColor 
-                      
+    res@cnMissingValFillColor = missColor
+
     plot_cont_zon_log (listplots(noPlot), wks,d130, nlati, res,pltName,\
                 mainTitle,subTitle,comment )
 
@@ -211,19 +211,19 @@ if (isfilepresent(fili)) then
 
 
 ;************************************************
-;   U code131 zonal 
+;   U code131 zonal
 ;************************************************
 
     Cvar="ua"
     fili    = workdir+"/Ubusy_d"+Cvar+".nc"
-    
+
     mainTitle = "U [m/s] "+typ
     subTitle  = meantime
 
 if (isfilepresent(fili)) then
 
 ;***read code 131
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     d131     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(d131)
@@ -237,7 +237,7 @@ if (isfilepresent(fili)) then
     res@cnLevels             = (/-8,-4,-2,-1,-.5,.5,1,2,4,8/)
     res@cnFillColors         = (/2,4,6,7,9,0,11,12,14,15,17/)
     res@cnMissingValFillColor = missColor
-                     
+
     plot_cont_zon_log (listplots(noPlot), wks,d131, nlati, res,pltName,\
                 mainTitle,subTitle,comment )
 
@@ -252,14 +252,14 @@ if (isfilepresent(fili)) then
 
     Cvar="va"
     fili    = workdir+"/Ubusy_d"+Cvar+".nc"
-    
+
     mainTitle = "V [m/s] "+typ
     subTitle  = meantime
 
 if (isfilepresent(fili)) then
 
 ;***read code 132
-    f       = addfile (fili , "r") 
+    f       = addfile (fili , "r")
     d132     = f->$Cvar$(time|0,lev|:,lat|:,lon|0)
     print("ploted: "+mainTitle)
 ;   printVarSummary(d132)
@@ -273,7 +273,7 @@ if (isfilepresent(fili)) then
     res@cnLevels             = (/-0.8,-0.6,-0.4,-0.2,-0.1,0.1,0.2,0.4,0.6,0.8/)
     res@cnFillColors         = (/2,4,7,8,9,0,11,12,14,15,17/)
     res@cnMissingValFillColor = missColor
-                     
+
     plot_cont_zon_log (listplots(noPlot), wks,d132, nlati, res,pltName,\
                 mainTitle,subTitle,comment )
 
@@ -284,9 +284,9 @@ if (isfilepresent(fili)) then
 ;***number of listplots
     noPlot=noPlot+1
 print("number of plots:  "+noPlot)
-;--KMF prepare plots for panel   
+;--KMF prepare plots for panel
    pltres          =  True
    pltres@gsnPanelScalePlotIndex = 1  ; 2rd plot in list, which is the biggest
-                    
-   gsn_panel(wks, (/listplots(0),listplots(1),listplots(2)/), (/3,1/), pltres)  
+
+   gsn_panel(wks, (/listplots(0),listplots(1),listplots(2)/), (/3,1/), pltres)
 end

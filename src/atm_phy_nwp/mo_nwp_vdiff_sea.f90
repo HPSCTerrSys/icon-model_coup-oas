@@ -1,18 +1,17 @@
-!
-! Sea and sea-ice handling for the NWP VDIFF interface.
-!
-! \note Do not use directly, use mo_nwp_vdiff_interface instead.
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Sea and sea-ice handling for the NWP VDIFF interface.
+!
+! \note Do not use directly, use mo_nwp_vdiff_interface instead.
 
 MODULE mo_nwp_vdiff_sea
 
@@ -21,11 +20,12 @@ MODULE mo_nwp_vdiff_sea
   USE mo_exception, ONLY: message, message_text
   USE mo_ext_data_init, ONLY: interpol_monthly_mean
   USE mo_ext_data_types, ONLY: t_external_data
-  USE mo_fortran_tools, ONLY: copy, init, set_acc_host_or_device
+  USE mo_fortran_tools, ONLY: assert_acc_device_only, copy, init, set_acc_host_or_device
   USE mo_idx_list, ONLY: t_idx_list_blocked
   USE mo_impl_constants, ONLY: SSTICE_ANA_CLINC, end_prog_cells, start_prog_cells
   USE mo_kind, ONLY: wp
-  USE mo_lnd_nwp_config, ONLY: frsi_min, hice_min, hice_max, lprog_albsi, lseaice, sstice_mode
+  USE mo_lnd_nwp_config, ONLY: frsi_min, hice_min, hice_max, lprog_albsi, lseaice, sstice_mode, &
+      & loskin, itype_oskin_warm, itype_oskin_cold, tf_salt
   USE mo_loopindices, ONLY: get_indices_c
   USE mo_master_config, ONLY: isRestart
   USE mo_model_domain, ONLY: t_patch
@@ -34,14 +34,14 @@ MODULE mo_nwp_vdiff_sea
   USE mo_nwp_vdiff_radfluxes, ONLY: t_nwp_vdiff_surface_rad_fluxes
   USE mo_nwp_vdiff_types, ONLY: t_nwp_vdiff_albedos, t_nwp_vdiff_sea_state, SFT_SICE, SFT_SWTR
   USE mo_parallel_config, ONLY: nproma
-  USE mo_physical_constants, ONLY: als, alv, cpd, salinity_fac, stbo, tf_fresh => tmelt, tf_salt, &
-      & zemiss_def
+  USE mo_physical_constants, ONLY: als, alv, cpd, salinity_fac, stbo, tf_fresh => tmelt, zemiss_def
   USE mo_radiation_config, ONLY: albedo_whitecap, direct_albedo_water
   USE mo_run_config, ONLY: msg_level
-  USE mo_satad, ONLY: sat_pres_ice, sat_pres_water, spec_humi
+  USE mo_thdyn_functions, ONLY: sat_pres_ice, sat_pres_water, spec_humi
   USE mo_sync, ONLY: global_sum
   USE mo_timer, ONLY: ltimer, timer_coupling, timer_start, timer_stop
   USE mo_turb_vdiff, ONLY: vdiff_mixed_time_value, vdiff_surface_flux
+  USE mo_voskin, ONLY: voskin
 
   USE mtime, ONLY: datetime
 
@@ -81,13 +81,13 @@ CONTAINS
   !! off, every sea point is considered open water.
   !!
   SUBROUTINE sea_model ( &
-        & iblk, ics, ice, dtime, steplen, ext_data, rain, snow, latent_hflx_ice_old, &
-        & sensible_hflx_ice_old, flx_rad, sea_state, cos_zenith_angle, press_srf, wind_10m, &
-        & prefactor_exchange, exchange_coeff_h_wtr, exchange_coeff_h_ice, t_acoef_wtr, &
-        & t_bcoef_wtr, q_acoef_wtr, q_bcoef_wtr, t_acoef_ice, t_bcoef_ice, q_acoef_ice, &
-        & q_bcoef_ice, prog_wtr_now, diag_lnd, t_wtr, t_ice, s_wtr, s_ice, qsat_wtr, qsat_ice, &
-        & evapo_wtr, evapo_ice, latent_hflx_wtr, latent_hflx_ice, sensible_hflx_wtr, &
-        & sensible_hflx_ice, conductive_hflx_ice, melt_potential_ice, alb, prog_wtr_new &
+        & iblk, ics, ice, dtime, steplen, ext_data, rain, snow, latent_hflx_sft_old, &
+        & sensible_hflx_sft_old, flx_mom_u_sft, flx_mom_v_sft, flx_rad, sea_state, &
+        & cos_zenith_angle, press_srf, wind_10m, prefactor_exchange, exchange_coeff_h_wtr, &
+        & exchange_coeff_h_ice, t_acoef_wtr, t_bcoef_wtr, q_acoef_wtr, q_bcoef_wtr, t_acoef_ice, &
+        & t_bcoef_ice, q_acoef_ice, q_bcoef_ice, prog_wtr_now, diag_lnd, t_wtr, t_ice, s_wtr, &
+        & s_ice, qsat_wtr, qsat_ice, evapo_wtr, evapo_ice, latent_hflx_wtr, latent_hflx_ice, sensible_hflx_wtr, &
+        & sensible_hflx_ice, conductive_hflx_ice, melt_potential_ice, alb, prog_wtr_new, lacc &
       )
 
     !> Current block index.
@@ -108,10 +108,15 @@ CONTAINS
     !> Snow at surface [kg/m**2/s].
     REAL(wp), INTENT(IN) :: snow(:)
 
-    !> Latent heat flux into ice surface at time `t` [W/m**2].
-    REAL(wp), INTENT(IN) :: latent_hflx_ice_old(:)
-    !> Sensible heat flux into ice surface at time `t` [W/m**2].
-    REAL(wp), INTENT(IN) :: sensible_hflx_ice_old(:)
+    !> Latent heat flux into surface at time `t` [W/m^2].
+    REAL(wp), INTENT(IN) :: latent_hflx_sft_old(:,:)
+    !> Sensible heat flux into surface at time `t` [W/m^2].
+    REAL(wp), INTENT(IN) :: sensible_hflx_sft_old(:,:)
+
+    !> Zonal momentum flux for current time step [N/m^2].
+    REAL(wp), INTENT(IN) :: flx_mom_u_sft(:,:)
+    !> Meridional momentum flux for current time step [N/m^2].
+    REAL(wp), INTENT(IN) :: flx_mom_v_sft(:,:)
 
     !> Radiation fluxes at surface [W/m**2].
     TYPE(t_nwp_vdiff_surface_rad_fluxes), INTENT(IN) :: flx_rad
@@ -155,7 +160,8 @@ CONTAINS
     !> Prognostic water variables at current time step.
     TYPE(t_wtr_prog), INTENT(IN) :: prog_wtr_now
 
-    !> Diagnostic land variables. Reads `t_seasfc` and updates `fr_seaice`.
+    !> Diagnostic land variables. Reads `t_seasfc` and updates `fr_seaice`, `sst_cold_skin`, and
+    !! `sst_warm_layer`.
     TYPE(t_lnd_diag), INTENT(INOUT) :: diag_lnd
 
     !> Water temperature at time `t+1` [K].
@@ -198,6 +204,7 @@ CONTAINS
     !> Prognostic water variables at time `t+1`.
     TYPE(t_wtr_prog), INTENT(INOUT) :: prog_wtr_new
 
+    LOGICAL,INTENT(IN) :: lacc
     !
     ! Local variables
     !
@@ -212,7 +219,7 @@ CONTAINS
     !> Mixed-time saturation specific humidity over ice [kg/kg].
     REAL(wp) :: qsat_hat_ice(SIZE(t_acoef_wtr))
 
-    REAL(wp) :: t_ice_old !< Old ice temperature, sanitized [K].
+    REAL(wp) :: t_ice_old(SIZE(t_acoef_wtr)) !< Old surface (snow or ice) temperature, sanitized [K].
     REAL(wp) :: qsat_ice_now !< Saturation specific humidity at time `t`.
 
     REAL(wp) :: wc_frac !< Whitecap fraction.
@@ -244,35 +251,18 @@ CONTAINS
 
     REAL(wp) :: alb_nir_dir, alb_nir_dif, alb_vis_dir, alb_vis_dif
 
+    REAL(wp), POINTER :: p_sst_cold_skin(:)
+    REAL(wp), POINTER :: p_sst_warm_layer(:)
+
     LOGICAL :: have_conductive_hflx_ice
     LOGICAL :: have_melt_potential_ice
 
-    ! Asynchronous data regions are a too recent feature. We have to resort to unstructured ones.
-    ! This crutch ensures that we don't forget to delete any variable.
-#   define LIST_CREATE \
-        s_hat_wtr, \
-        s_hat_ice, \
-        qsat_hat_wtr, \
-        qsat_hat_ice, \
-        qsen, \
-        qlat, \
-        qlwrnet, \
-        qsolnet, \
-        snow_rate, \
-        rain_rate, \
-        tice_p, \
-        hice_p, \
-        tsnow_p, \
-        hsnow_p, \
-        albsi_p, \
-        tice_n, \
-        hice_n, \
-        tsnow_n, \
-        hsnow_n, \
-        condhf, \
-        meltpot, \
-        albsi_n
-    !$ACC ENTER DATA ASYNC(1) CREATE(LIST_CREATE)
+    CALL assert_acc_device_only ('sea_model', lacc)
+
+    !$ACC DATA ASYNC(1) &
+    !$ACC   CREATE(s_hat_wtr, s_hat_ice, qsat_hat_wtr, qsat_hat_ice, t_ice_old, qsen, qlat) &
+    !$ACC   CREATE(qlwrnet, qsolnet, snow_rate, rain_rate, tice_p, hice_p, tsnow_p, hsnow_p) &
+    !$ACC   CREATE(albsi_p, tice_n, hice_n, tsnow_n, hsnow_n, condhf, meltpot, albsi_n)
 
 #ifdef __NVCOMPILER
     ! nvfortran does not understand passing a NULL pointer to an optional (Fortran 2008) :(
@@ -287,6 +277,16 @@ CONTAINS
     !$ACC DATA PRESENT(melt_potential_ice) IF(have_melt_potential_ice)
     !$ACC DATA NO_CREATE(conductive_hflx_ice, melt_potential_ice)
 
+    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+      !$ACC LOOP GANG VECTOR
+      DO ic = ics, ice
+        ! Someone is messing with the old ice temperatures, setting them to zero for ice-free
+        ! cells.
+        t_ice_old(ic) = MERGE( &
+            & tf_fresh, prog_wtr_now%t_snow_si(ic,iblk), prog_wtr_now%t_snow_si(ic,iblk) < 100._wp)
+      END DO
+    !$ACC END PARALLEL
+
     IF (lseaice) THEN
 
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
@@ -299,10 +299,10 @@ CONTAINS
           alb_vis_dir = sea_state%alb_vis_dir(jc,iblk,SFT_SICE)
           alb_vis_dif = sea_state%alb_vis_dif(jc,iblk,SFT_SICE)
 
-          qsen(ic) = sensible_hflx_ice_old(jc)
-          qlat(ic) = als / alv * latent_hflx_ice_old(jc)
+          qsen(ic) = sensible_hflx_sft_old(jc, SFT_SICE)
+          qlat(ic) = als / alv * latent_hflx_sft_old(jc, SFT_SICE)
           qlwrnet(ic) = sea_state%lw_emissivity(jc,iblk,SFT_SICE) &
-              & * (flx_rad%flx_lw_down(jc,iblk) - stbo * prog_wtr_now%t_ice(jc,iblk)**4)
+              & * (flx_rad%flx_lw_down(jc,iblk) - stbo * prog_wtr_now%t_snow_si(jc,iblk)**4)
           qsolnet(ic) = &
               & ((1._wp - alb_nir_dir) &
               &   + (alb_nir_dir - alb_nir_dif) * flx_rad%fr_nir_diffuse(jc,iblk) &
@@ -350,7 +350,6 @@ CONTAINS
       !$ACC LOOP GANG VECTOR
       DO ic = ics, ice
         t_ice(ic) = tf_fresh
-        t_wtr(ic) = tf_salt
 
         IF (have_conductive_hflx_ice) &
             & conductive_hflx_ice(ic) = 0._wp
@@ -365,15 +364,6 @@ CONTAINS
       END DO
     !$ACC END PARALLEL
 
-    !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR PRIVATE(jc)
-      DO ic = 1, ext_data%atm%list_sea%ncount(iblk)
-        jc = ext_data%atm%list_sea%idx(ic,iblk)
-
-        t_wtr(jc) = MAX(diag_lnd%t_seasfc(jc,iblk), tf_salt)
-      END DO
-    !$ACC END PARALLEL
-
     IF (lseaice) THEN
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR PRIVATE(jc)
@@ -381,14 +371,17 @@ CONTAINS
           jc = ext_data%atm%list_seaice%idx(ic,iblk)
 
           IF (hice_n(ic) >= hice_min) THEN
-            t_ice(jc) = tice_n(ic)
+            ! t_ice refers to the surface temperature of vdiff's ice surface type.
+            ! tsnow_n is the surface temperature of the sea-ice sheet ( = tice_n
+            ! if there is no snow).
+            t_ice(jc) = tsnow_n(ic)
 
             IF (have_conductive_hflx_ice) &
                 & conductive_hflx_ice(jc) = condhf(ic)
             IF (have_melt_potential_ice) &
                 & melt_potential_ice(jc) = meltpot(ic)
 
-            prog_wtr_new%t_ice(jc,iblk) = t_ice(jc)
+            prog_wtr_new%t_ice(jc,iblk) = tice_n(ic)
             prog_wtr_new%h_ice(jc,iblk) = hice_n(ic)
             prog_wtr_new%t_snow_si(jc,iblk) = tsnow_n(ic)
             prog_wtr_new%h_snow_si(jc,iblk) = hsnow_n(ic)
@@ -403,12 +396,34 @@ CONTAINS
       !$ACC END PARALLEL
     END IF
 
+    NULLIFY(p_sst_warm_layer, p_sst_cold_skin)
+    IF (itype_oskin_warm > 0) p_sst_warm_layer => diag_lnd%sst_warm_layer(:, iblk)
+    IF (itype_oskin_cold > 0) p_sst_cold_skin  => diag_lnd%sst_cold_skin(:, iblk)
+
+    CALL calc_ocean_skin_temp ( &
+        & iblk=iblk, &
+        & dtime=dtime, &
+        & list_sea=ext_data%atm%list_sea, &
+        & sea_state=sea_state, &
+        & flx_rad=flx_rad, &
+        & flx_heat_latent_wtr=latent_hflx_sft_old(:, SFT_SWTR), &
+        & flx_heat_sensible_wtr=sensible_hflx_sft_old(:, SFT_SWTR), &
+        & flx_mom_u_wtr=flx_mom_u_sft(:, SFT_SWTR), &
+        & flx_mom_v_wtr=flx_mom_v_sft(:, SFT_SWTR), &
+        & wind_10m=wind_10m(:), &
+        & t_seasfc=diag_lnd%t_seasfc(:, iblk), &
+        & delta_t_cool_skin=p_sst_cold_skin, &
+        & delta_t_warm_layer=p_sst_warm_layer, &
+        & t_wtr=t_wtr(:),  &
+        & fr_seaice=diag_lnd%fr_seaice(:, iblk) &
+      )
+
     ! We need a parallel region around these orphaned routines because we are in a parallel region
     ! ourselves.
     !$OMP PARALLEL
-      CALL init (alb%alb_vis_dif(ics:ice,iblk,SFT_SWTR), csalb(ist_seawtr), lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init (alb%lw_emissivity(ics:ice,iblk,SFT_SWTR), zemiss_def, lacc=.TRUE., opt_acc_async=.TRUE.)
-      CALL init (alb%lw_emissivity(ics:ice,iblk,SFT_SICE), lw_emissivity_ice, lacc=.TRUE., opt_acc_async=.TRUE.)
+      CALL init (alb%alb_vis_dif(ics:ice,iblk,SFT_SWTR), csalb(ist_seawtr), lacc=.TRUE.)
+      CALL init (alb%lw_emissivity(ics:ice,iblk,SFT_SWTR), zemiss_def, lacc=.TRUE.)
+      CALL init (alb%lw_emissivity(ics:ice,iblk,SFT_SICE), lw_emissivity_ice, lacc=.TRUE.)
     !$OMP END PARALLEL
 
     IF (lprog_albsi) THEN
@@ -416,15 +431,15 @@ CONTAINS
         CALL copy ( &
             & prog_wtr_new%alb_si(ics:ice,iblk), &
             & alb%alb_vis_dif(ics:ice,iblk,SFT_SICE), &
-            & lacc=.TRUE., &
-            & opt_acc_async=.TRUE. &
+            & lacc=.TRUE. &
           )
       !$OMP END PARALLEL
     ELSE
       !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
         !$ACC LOOP GANG VECTOR
         DO ic = ics, ice
-          alb%alb_vis_dif(ic,iblk,SFT_SICE) = alb_seaice_equil(prog_wtr_new%t_ice(ic,iblk))
+          alb%alb_vis_dif(ic,iblk,SFT_SICE) = &
+              & alb_seaice_equil(prog_wtr_new%t_snow_si(ic,iblk), prog_wtr_new%h_snow_si(ic,iblk))
         END DO
       !$ACC END PARALLEL
     END IF
@@ -463,46 +478,39 @@ CONTAINS
       CALL copy ( &
           & alb%alb_vis_dir(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
           & alb%alb_nir_dir(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
       CALL copy ( &
           & alb%alb_vis_dif(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
           & alb%alb_nir_dif(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
 
       ! Save state for next invocation.
       CALL copy ( &
           & alb%alb_nir_dir(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
           & sea_state%alb_nir_dir(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
       CALL copy ( &
           & alb%alb_nir_dif(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
           & sea_state%alb_nir_dif(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
       CALL copy ( &
           & alb%alb_vis_dir(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
           & sea_state%alb_vis_dir(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
       CALL copy ( &
           & alb%alb_vis_dif(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
           & sea_state%alb_vis_dif(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
       CALL copy ( &
           & alb%lw_emissivity(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
           & sea_state%lw_emissivity(ics:ice,iblk,SFT_SWTR:SFT_SICE), &
-          & lacc=.TRUE., &
-          & opt_acc_async=.TRUE. &
+          & lacc=.TRUE. &
         )
     !$OMP END PARALLEL
 
@@ -512,15 +520,9 @@ CONTAINS
     ! old pressure. The sea surface temperature changes infrequently, so it can be considered
     ! constant.
     !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
-      !$ACC LOOP GANG VECTOR PRIVATE(t_ice_old, qsat_ice_now)
+      !$ACC LOOP GANG VECTOR PRIVATE(qsat_ice_now)
       DO ic = ics, ice
-
-        ! Someone is messing with the old ice temperatures, setting them to zero for ice-free
-        ! cells.
-        t_ice_old = MERGE( &
-            & tf_fresh, prog_wtr_now%t_ice(ic,iblk), prog_wtr_now%t_ice(ic,iblk) < 100._wp)
-
-        qsat_ice_now = spec_humi(sat_pres_ice(t_ice_old),  press_srf(ic))
+        qsat_ice_now = spec_humi(sat_pres_ice(t_ice_old(ic)),  press_srf(ic))
 
         qsat_wtr(ic) = salinity_fac * spec_humi(sat_pres_water(t_wtr(ic)), press_srf(ic))
         qsat_ice(ic) = spec_humi(sat_pres_ice(t_ice(ic)),  press_srf(ic))
@@ -531,7 +533,7 @@ CONTAINS
         s_wtr(ic) = cpd * t_wtr(ic)
         s_ice(ic) = cpd * t_ice(ic)
         s_hat_wtr(ic) = s_wtr(ic)
-        s_hat_ice(ic) = vdiff_mixed_time_value(s_ice(ic), cpd * t_ice_old)
+        s_hat_ice(ic) = vdiff_mixed_time_value(s_ice(ic), cpd * t_ice_old(ic))
       END DO
     !$ACC END PARALLEL
 
@@ -566,8 +568,7 @@ CONTAINS
     !$ACC END DATA ! NO_CREATE(conductive_hflx_ice, melt_potential_ice)
     !$ACC END DATA ! PRESENT(melt_potential_ice)
     !$ACC END DATA ! PRESENT(conductive_hflx_ice)
-    !$ACC EXIT DATA DELETE(LIST_CREATE)
-#   undef LIST_CREATE
+    !$ACC END DATA
 
   END SUBROUTINE sea_model
 
@@ -581,7 +582,7 @@ CONTAINS
     TYPE(t_external_data), INTENT(IN) :: ext_data !< Patch external data.
     REAL(wp), INTENT(IN) :: cos_zenith_angle(:,:) !< Cosine of the zenith angle [1].
     REAL(wp), INTENT(IN) :: t_seasfc(:,:) !< Sea-surface temperature [K].
-    REAL(wp), INTENT(IN) :: sst_m(:,:,:) !< Monthly mean SSTs [K].
+    REAL(wp), OPTIONAL, INTENT(IN) :: sst_m(:,:,:) !< Monthly mean SSTs (req'd for SSTICE_ANA_CLINC) [K].
     TYPE(t_nwp_vdiff_sea_state), INTENT(INOUT) :: sea_state !< sea model state structure.
 
     !> Climatological SST for experiment start date [K].
@@ -662,7 +663,7 @@ CONTAINS
 
   !> Update sea-surface temperature for the analysis + cimatological increments mode. For the
   !! other modes t_seasfc is kept current in mo_nwp_sfc_utils:update_sst_and_seaice.
-  SUBROUTINE sea_model_update_sst (patch, sea_state, current_datetime, sst_m, t_seasfc)
+  SUBROUTINE sea_model_update_sst (patch, sea_state, current_datetime, sst_m, t_seasfc, lacc)
 
     !> Current patch.
     TYPE(t_patch), INTENT(IN) :: patch
@@ -671,12 +672,16 @@ CONTAINS
     !> Current time.
     TYPE(datetime), INTENT(IN) :: current_datetime
     !> Monthly SST means [K].
-    REAL(wp), INTENT(IN) :: sst_m(:,:,:)
+    REAL(wp), OPTIONAL, INTENT(IN) :: sst_m(:,:,:)
     !> Sea-surface temperature [K].
     REAL(wp), INTENT(INOUT) :: t_seasfc(:,:)
 
+    LOGICAL,INTENT(IN) :: lacc
+
     INTEGER :: i_startblk, i_endblk, i_blk
     INTEGER :: ics, ice, ic
+
+    CALL assert_acc_device_only ('sea_model_update_sst', lacc)
 
     IF (sstice_mode /= SSTICE_ANA_CLINC) RETURN
     IF (current_datetime%date%day == sea_state%time_last_update_t_seasfc%date%day) RETURN
@@ -711,7 +716,7 @@ CONTAINS
   SUBROUTINE sea_model_couple_ocean ( &
         & patch, list_sea, fr_sft, alb, flx_rad, pres_sfc, t_eff_sft, evapo_sft, flx_heat_latent_sft, &
         & flx_heat_sensible_sft, condhf_ice, meltpot_ice, co2_concentration_srf, rain_srf, snow_srf, &
-        & umfl_sft, vmfl_sft, sp_10m, t_seasfc, fr_seaice, h_ice, sea_state &
+        & umfl_sft, vmfl_sft, sp_10m, t_seasfc, fr_seaice, h_ice, h_snow, sea_state, lacc &
       )
 
     TYPE(t_patch), INTENT(IN) :: patch !< Current patch.
@@ -758,8 +763,12 @@ CONTAINS
     REAL(wp), CONTIGUOUS, TARGET, INTENT(INOUT) :: fr_seaice(:,:)
     !> Sea-ice height [m] (nproma, nblks_c).
     REAL(wp), CONTIGUOUS, TARGET, INTENT(INOUT) :: h_ice(:,:)
+    !> Snow-on-sea-ice height [m] (nproma, nblks_c).
+    REAL(wp), CONTIGUOUS, TARGET, INTENT(INOUT) :: h_snow(:,:)
     !> Sea state.
     TYPE(t_nwp_vdiff_sea_state), INTENT(INOUT) :: sea_state
+    !> OpenACC flag.
+    LOGICAL :: lacc
 
     ! Locals
 
@@ -782,13 +791,19 @@ CONTAINS
 
     IF (ltimer) CALL timer_start(timer_coupling)
 
+    !$ACC DATA CREATE(lwflx, swflx, lhfl_s_i) ASYNC(1) IF(lacc)
+
     !$OMP PARALLEL
       !$OMP DO PRIVATE(i_blk, ics, ice, ic, isft) &
       !$OMP   PRIVATE(alb_nir_dir, alb_nir_dif, alb_vis_dir, alb_vis_dif, lw_emissivity)
       DO i_blk = i_startblk, i_endblk
         CALL get_indices_c(patch, i_blk, i_startblk, i_endblk, ics, ice, start_prog_cells, &
             & end_prog_cells)
+
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+        !$ACC LOOP GANG VECTOR PRIVATE(alb_nir_dir, alb_nir_dif, alb_vis_dir, alb_vis_dif, lw_emissivity)
         DO ic = ics, ice
+          !$ACC LOOP SEQ
           DO isft = SFT_SWTR, SFT_SICE
             alb_nir_dir = alb%alb_nir_dir(ic,i_blk,isft)
             alb_nir_dif = alb%alb_nir_dif(ic,i_blk,isft)
@@ -811,6 +826,7 @@ CONTAINS
           ! the atmosphere because ice has negative latent heat.
           lhfl_s_i(ic,i_blk) = als / alv * flx_heat_latent_sft(ic,i_blk,SFT_SICE)
         END DO
+        !$ACC END PARALLEL
       END DO
     !$OMP END PARALLEL
 
@@ -840,28 +856,44 @@ CONTAINS
 
     rx%fr_seaice => fr_seaice(:,:)
     rx%h_ice => h_ice(:,:)
+    rx%h_snow => h_snow(:,:)
     rx%ocean_u => sea_state%ocean_u(:,:)
     rx%ocean_v => sea_state%ocean_v(:,:)
+    rx%ice_u => sea_state%ice_u(:,:)
+    rx%ice_v => sea_state%ice_v(:,:)
+
     rx%t_seasfc => t_seasfc(:,:)
 
     ! May not be associated.
     rx%flx_co2 => sea_state%flx_co2_natural_sea(:,:)
 
-    CALL couple_ocean(patch, list_sea, tx, rx)
+    CALL couple_ocean(patch, list_sea, tx, rx, lacc)
 
     ! Limit sea-ice height to allowed range.
     !$OMP PARALLEL
       !$OMP DO PRIVATE(i_blk, ic, jc)
       DO i_blk = i_startblk, i_endblk
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+        !$ACC LOOP GANG VECTOR PRIVATE(jc)
         DO ic = 1, list_sea%ncount(i_blk)
           jc = list_sea%idx(ic,i_blk)
 
           IF (fr_seaice(jc,i_blk) >= frsi_min) THEN
             h_ice(jc,i_blk) = MIN(MAX(hice_min, h_ice(jc,i_blk)), hice_max)
+            IF (fr_seaice(jc,i_blk) > 1._wp-frsi_min) THEN
+              fr_seaice(jc,i_blk) = 1.0_wp
+            END IF
+          ELSE
+            ! fr_seaice close to 0
+            fr_seaice(jc,i_blk) = 0._wp
+            h_ice(jc,i_blk)     = 0._wp
           END IF
         END DO
+        !$ACC END PARALLEL
       END DO
     !$OMP END PARALLEL
+
+    !$ACC END DATA
 
     IF (ltimer) CALL timer_stop(timer_coupling)
 
@@ -900,6 +932,8 @@ CONTAINS
     CALL nwp_vdiff_update_seaice_vars ( &
         & patch, init_hice, fr_seaice(:,:), new_ice_list, prog_wtr, lacc=lzacc &
       )
+
+    CALL new_ice_list%finalize()
 
   END SUBROUTINE nwp_vdiff_update_seaice
 
@@ -976,6 +1010,7 @@ CONTAINS
 
               IF (fr_seaice(jc,iblk) < frsi_min) THEN
                 prog_wtr%h_ice(jc,iblk) = 0._wp
+                prog_wtr%h_snow_si(jc,iblk) = 0._wp
               END IF
             END DO
           END IF
@@ -1184,5 +1219,159 @@ CONTAINS
     !$ACC EXIT DATA DELETE(LIST_CREATE) IF(lzacc)
 
   END SUBROUTINE nwp_vdiff_update_seaice_vars
+
+
+  SUBROUTINE calc_ocean_skin_temp ( &
+        & iblk, dtime, list_sea, sea_state, flx_rad, flx_heat_latent_wtr, flx_heat_sensible_wtr, &
+        & flx_mom_u_wtr, flx_mom_v_wtr, wind_10m, t_seasfc, delta_t_cool_skin, delta_t_warm_layer, &
+        & t_wtr, fr_seaice &
+      )
+
+    INTEGER, INTENT(IN) :: iblk !< Block number.
+    REAL(wp), INTENT(IN) :: dtime !< Time step [s].
+
+    TYPE(t_idx_list_blocked), INTENT(IN) :: list_sea !< Index list of all sea grid points.
+    TYPE(t_nwp_vdiff_sea_state), INTENT(IN) :: sea_state !< Current sea model state.
+    TYPE(t_nwp_vdiff_surface_rad_fluxes), INTENT(IN) :: flx_rad !< Radiation fluxes.
+
+    REAL(wp), INTENT(IN) :: flx_heat_latent_wtr(:) !< Latent heat flux over sea water [W/m^2].
+    REAL(wp), INTENT(IN) :: flx_heat_sensible_wtr(:) !< Sensible heat flux over sea water [W/m^2].
+
+    REAL(wp), INTENT(IN) :: flx_mom_u_wtr(:) !< Zonal momentum flux over sea water [N/m^2].
+    REAL(wp), INTENT(IN) :: flx_mom_v_wtr(:) !< Meridional momentum flux over sea water [N/m^2].
+    REAL(wp), INTENT(IN) :: wind_10m(:) !< Wind speed 10m above ground [m/s].
+
+    REAL(wp), INTENT(IN) :: t_seasfc(:) !< Sea surface temperature (foundation temperature) [K].
+
+    REAL(wp), OPTIONAL, INTENT(INOUT) :: delta_t_cool_skin(:) !< Temperature increment due to cool skin [K].
+    REAL(wp), OPTIONAL, INTENT(INOUT) :: delta_t_warm_layer(:)!< Temperature increment due to warm layer [K].
+
+    REAL(wp), INTENT(INOUT) :: t_wtr(:) !< Sea water skin temperature [K].
+
+    REAL(wp), INTENT(IN) :: fr_seaice(:) !< Sea ice fraction
+
+    ! Compressed arrays.
+    REAL(wp) :: flx_rad_sw(nproma)
+    REAL(wp) :: flx_rad_lw(nproma)
+    REAL(wp) :: flx_heat_sen(nproma)
+    REAL(wp) :: flx_heat_lat(nproma)
+    REAL(wp) :: flx_mom_u(nproma)
+    REAL(wp) :: flx_mom_v(nproma)
+    REAL(wp) :: u_10m(nproma)
+    REAL(wp) :: v_10m(nproma)
+    REAL(wp) :: t_wtr_old(nproma)
+    REAL(wp) :: t_foundation(nproma)
+    REAL(wp) :: dt_cool(nproma)
+    REAL(wp) :: dt_warm(nproma)
+
+    REAL(wp) :: alb_nir_dir, alb_nir_dif, alb_vis_dir, alb_vis_dif
+
+    INTEGER :: ic, jc
+
+    IF (loskin) THEN
+
+      !$ACC DATA CREATE(flx_rad_sw, flx_rad_lw, flx_heat_sen, flx_heat_lat, flx_mom_u, flx_mom_v) &
+      !$ACC   CREATE(u_10m, v_10m, t_wtr_old, t_foundation, dt_cool, dt_warm)
+
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR PRIVATE(jc, alb_nir_dir, alb_nir_dif, alb_vis_dir, alb_vis_dif)
+        DO ic = 1, list_sea%ncount(iblk)
+          jc = list_sea%idx(ic, iblk)
+
+          alb_nir_dir = sea_state%alb_nir_dir(jc,iblk,SFT_SWTR)
+          alb_nir_dif = sea_state%alb_nir_dif(jc,iblk,SFT_SWTR)
+          alb_vis_dir = sea_state%alb_vis_dir(jc,iblk,SFT_SWTR)
+          alb_vis_dif = sea_state%alb_vis_dif(jc,iblk,SFT_SWTR)
+
+          flx_rad_sw(ic) = &
+              & ((1._wp - alb_nir_dir) &
+              &   + (alb_nir_dir - alb_nir_dif) * flx_rad%fr_nir_diffuse(jc,iblk) &
+              & ) * flx_rad%flx_nir_down(jc,iblk) &
+              & + ((1._wp - alb_vis_dir) &
+              &   + (alb_vis_dir - alb_vis_dif) * flx_rad%fr_vis_diffuse(jc,iblk) &
+              & ) * flx_rad%flx_vis_down(jc,iblk)
+          flx_rad_lw(ic) = sea_state%lw_emissivity(jc,iblk,SFT_SWTR) &
+              & * (flx_rad%flx_lw_down(jc,iblk) - stbo * t_wtr(jc)**4)
+
+          flx_heat_lat(ic) = flx_heat_latent_wtr(jc)
+          flx_heat_sen(ic) = flx_heat_sensible_wtr(jc)
+          flx_mom_u(ic) = flx_mom_u_wtr(jc)
+          flx_mom_v(ic) = flx_mom_v_wtr(jc)
+
+          ! Wind-speed dependence of ocean skin is isotropic.
+          u_10m(ic) = wind_10m(jc)
+          v_10m(ic) = 0._wp
+
+          t_wtr_old(ic) = t_wtr(jc)
+          t_foundation(ic) = t_seasfc(jc)
+
+          IF (itype_oskin_warm > 0) THEN
+            dt_warm(ic) = delta_t_warm_layer(jc)
+          ELSE
+            dt_warm(ic) = 0._wp
+          END IF
+        END DO
+      !$ACC END PARALLEL
+
+      !$ACC UPDATE ASYNC(1) HOST(flx_rad_sw, flx_rad_lw, flx_heat_sen, flx_heat_lat, flx_mom_u) &
+      !$ACC   HOST(flx_mom_v, u_10m, v_10m, t_wtr_old, t_foundation, dt_warm)
+      !$ACC WAIT(1)
+
+      CALL VOSKIN ( &
+          & KIDIA=1, &
+          & KFDIA=list_sea%ncount(iblk), &
+          & KLON=nproma, &
+          & PTMST=dtime, &
+          & PSSRFL=flx_rad_sw(:), &
+          & PSLRFL=flx_rad_lw(:), &
+          & PAHFS=flx_heat_sen(:), &
+          & PAHFL=flx_heat_lat(:), &
+          & PUSTR=flx_mom_u(:), &
+          & PVSTR=flx_mom_v(:), &
+          & PU10=u_10m(:), &
+          & PV10=v_10m(:), &
+          & PTSKM1M=t_wtr_old(:), &
+          & PSST=t_foundation(:), &
+          & PDWARM=dt_warm(:), &
+          & PDCOOL=dt_cool(:) &
+        )
+
+      !$ACC UPDATE DEVICE(dt_warm, dt_cool) ASYNC(1)
+
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR PRIVATE(jc)
+        DO ic = 1, list_sea%ncount(iblk)
+          jc = list_sea%idx(ic, iblk)
+
+          IF (fr_seaice(jc) <= 1._wp - frsi_min) THEN
+            IF (itype_oskin_warm > 0) delta_t_warm_layer(jc) = dt_warm(ic)
+            IF (itype_oskin_cold > 0) delta_t_cool_skin(jc) = dt_cool(ic)
+          ELSE
+            IF (itype_oskin_warm > 0) delta_t_warm_layer(jc) = 0._wp
+            IF (itype_oskin_cold > 0) delta_t_cool_skin(jc)  = 0._wp
+          END IF
+
+          t_wtr(jc) = MAX(t_seasfc(jc), tf_salt)
+
+          IF (itype_oskin_cold > 0) t_wtr(jc) = t_wtr(jc) + dt_cool(ic)
+          IF (itype_oskin_warm > 0) t_wtr(jc) = t_wtr(jc) + dt_warm(ic)
+
+        END DO
+      !$ACC END PARALLEL
+      !$ACC END DATA
+
+    ELSE ! loskin
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1)
+        !$ACC LOOP GANG VECTOR PRIVATE(jc)
+        DO ic = 1, list_sea%ncount(iblk)
+          jc = list_sea%idx(ic,iblk)
+
+          t_wtr(jc) = MAX(t_seasfc(jc), tf_salt)
+
+        END DO
+      !$ACC END PARALLEL
+    END IF
+
+  END SUBROUTINE
 
 END MODULE mo_nwp_vdiff_sea

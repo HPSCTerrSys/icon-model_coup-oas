@@ -3,7 +3,7 @@
 # ICON
 #
 # ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
@@ -17,7 +17,7 @@ require 'pp'
 # USAGE =======================================================================
 #   MODEL=icon  GRID=../ocean_grid/iconR2B04-ocean_etopo40_planet.nc RESOLUTION=R2B04 OMIP_DIR=. FORCE=1 ./preproc4omip.rb
 #   MODEL=mpiom GRID=../../mpiom/GR30L20_fx.nc  RESOLUTION=GR15 OMIP_DIR=. FORCE=1 ./preproc4omip.rb
-#============================================================================== 
+#==============================================================================
 
 #==============================================================================
 # CONFIGURATION
@@ -60,7 +60,7 @@ remapConfig = {
   'targetGrid'   => "#{MODEL}_cell_grid-#{RESOLUTION}.nc",
   'targetWeight' => "#{MODEL}_#{TARGET}-cell_weight-#{RESOLUTION}.nc",
 }
-#============================================================================== 
+#==============================================================================
 #   operator for the temporal resolution of the output
 #timeIntervalOperator  = ARGV[4].nil? ? TIMEINTERVAL_OPERATOR           : ARGV[4]
 #
@@ -69,7 +69,7 @@ nWorkers              = 4
 
 targetGrid   = remapConfig['targetGrid']
 targetWeight = remapConfig['targetWeight']
-#============================================================================== 
+#==============================================================================
 # get the filename with the land-sea-mask; warn if missing
 #   lsm is used to limit the horizontal interpolation to the ocean area, this
 #   is esp. important for wind stress, but here it;s done for all variables
@@ -82,7 +82,7 @@ targetWeight = remapConfig['targetWeight']
 filterLSM = lambda {|iFiles|
   lsmFile = iFiles.find {|v| v =~ /land_sea_mask.ECMWF.nc/}
   if lsmFile.nil?
-    warn "#================================================================================" 
+    warn "#================================================================================"
     warn "Land-Sea-Mask (land_sea_mask.ECMWF.nc) file is MISSING! Going on without respecting continents ..."
     sleep 1
   else
@@ -115,7 +115,7 @@ Cdo.forceOutput = false
 # preproc grids/weight for omip data
 # compute integer lsm with MPIOMs threshold
 sourceLsm = Cdo.gtc(1.0e-4,:input => filterLSM[OMIP_FILES], :output => '_lsm.nc')
-if not File.exist?(targetWeight ) or FORCE then 
+if not File.exist?(targetWeight ) or FORCE then
   if not File.exist?(targetGrid) or FORCE then
     if not File.exist?(GRID) then
       puts "GRID variablen has to be set correctly!"
@@ -130,8 +130,8 @@ if not File.exist?(targetWeight ) or FORCE then
            :output => targetWeight)
 end
 
-#============================================================================== 
-# PROCESSING ================================================================== 
+#==============================================================================
+# PROCESSING ==================================================================
 # proccess variables in parallel with the following steps:
 # * correct the time axes
 # * mask out the land points with original land sea mask
@@ -167,4 +167,4 @@ Cdo.settaxis('2001-01-01,12:00:00,1day',
              :input => Cdo.merge(:input => oFiles.sort.join(" ")),
              :output => "#{TARGET_MODEL_OUTPUT}")
 
-#============================================================================== 
+#==============================================================================

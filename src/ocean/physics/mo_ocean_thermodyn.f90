@@ -1,19 +1,18 @@
-! Provide an implementation of the ocean thermodynamics
-!
-! Provide an implementation of the parameters used for the thermodynamics
-! of the hydrostatic ocean model.
-!
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
 ! See LICENSES/ for license information
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
+
+! Provide an implementation of the ocean thermodynamics
+!
+! Provide an implementation of the parameters used for the thermodynamics
+! of the hydrostatic ocean model.
 
 !----------------------------
 #include "iconfor_dsl_definitions.inc"
@@ -24,7 +23,7 @@ MODULE mo_ocean_thermodyn
   USE mo_kind,                ONLY: wp
   USE mo_ocean_nml,           ONLY: n_zlev, eos_type, no_tracer, fast_performance_level,l_partial_cells, &
     & LinearThermoExpansionCoefficient, LinearHalineContractionCoefficient,OceanReferenceDensity, &
-   &  ReferencePressureIndbars, OceanReferenceDensity_inv
+   &  ReferencePressureIndbars, OceanReferenceDensity_inv, sp_thermal_coefficient
   USE mo_model_domain,        ONLY: t_patch, t_patch_3d
   USE mo_impl_constants,      ONLY: sea_boundary, sea_boundary, min_dolic !, &
   USE mo_exception,           ONLY: finish, warning
@@ -63,6 +62,7 @@ MODULE mo_ocean_thermodyn
   PUBLIC :: convert_insitu2pot_temp_func
   PUBLIC :: calc_neutralslope_coeff_func_onColumn_UNESCO
   PUBLIC :: calc_neutralslope_coeff_func_onColumn
+  PUBLIC :: calc_neutralslope_coeff_func_elem
 
   REAL(wp), PARAMETER :: eosmdjwfnum(0:11) = (/                                 &
     & 9.99843699e+02_wp,  7.35212840e+00_wp, -5.45928211e-02_wp,                 &
@@ -283,7 +283,6 @@ CONTAINS
         ic2=patch_2D%edges%cell_idx(je,jb,2)
         ib2=patch_2D%edges%cell_blk(je,jb,2)
 
-        !$ACC LOOP SEQ
         DO jk = 1, patch_3d%p_patch_1d(1)%dolic_e(je,jb)
           !! For each edge, we can determine for the bottom layer only
           !! what the shallower cell is by comparing
@@ -336,7 +335,7 @@ CONTAINS
   !! Calculation the hydrostatic pressure gradient at edges with zstar
   !!
   SUBROUTINE calc_internal_press_grad_zstar(patch_3d, rho, pressure_hyd, bc_total_top_potential, &
-      & grad_coeff, stretch_c, press_grad)
+      & grad_coeff, stretch_c, press_grad, lacc)
     !
     TYPE(t_patch_3d ),TARGET, INTENT(in) :: patch_3d
     REAL(wp), INTENT(in)                 :: rho          (nproma,n_zlev, patch_3d%p_patch_2d(1)%alloc_cell_blocks)  !< density
@@ -345,6 +344,7 @@ CONTAINS
     REAL(wp), INTENT(in)                 :: grad_coeff(:,:,:)
     REAL(wp), INTENT(IN)                 :: stretch_c(nproma, patch_3d%p_patch_2d(1)%alloc_cell_blocks) !! stretch factor
     REAL(wp), INTENT(inout)              :: press_grad    (nproma,n_zlev, patch_3d%p_patch_2d(1)%nblks_e)  !< hydrostatic pressure gradient
+    LOGICAL, INTENT(in), OPTIONAL        :: lacc
 
     ! local variables:
     !CHARACTER(len=max_char_length), PARAMETER :: &
@@ -360,6 +360,10 @@ CONTAINS
     REAL(wp) :: phy(nproma,n_zlev, patch_3d%p_patch_2d(1)%alloc_cell_blocks) !! Extra pressure term for zstar
     REAL(wp) :: press_L, press_R, phy_L, phy_R
     REAL(wp) :: thick1, thick2
+    LOGICAL :: lzacc
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+
     !-----------------------------------------------------------------------
     z_grav_rho_inv = OceanReferenceDensity_inv * grav
     patch_2D        => patch_3d%p_patch_2d(1)
@@ -370,8 +374,13 @@ CONTAINS
     iidx => patch_3D%p_patch_2D(1)%edges%cell_idx
     iblk => patch_3D%p_patch_2D(1)%edges%cell_blk
 
+    !$ACC DATA CREATE(phy) IF(lzacc)
+
+    !$ACC KERNELS DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
     pressure_hyd (1:nproma,1:n_zlev, 1:patch_3d%p_patch_2d(1)%alloc_cell_blocks)=0.0_wp
     phy          (1:nproma,1:n_zlev, 1:patch_3d%p_patch_2d(1)%alloc_cell_blocks)=0.0_wp
+    !$ACC END KERNELS
+    !$ACC WAIT(1)
     !-------------------------------------------------------------------------
 
 !ICON_OMP_PARALLEL
@@ -379,6 +388,8 @@ CONTAINS
     DO jb = all_cells%start_block, all_cells%end_block
       CALL get_index_range(all_cells, jb, start_index, end_index)
 
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      !$ACC LOOP GANG VECTOR
       DO jc = start_index, end_index
 
         pressure_hyd(jc,1,jb) = rho(jc,1,jb)*z_grav_rho_inv*&
@@ -389,8 +400,21 @@ CONTAINS
         !! momentum eqn
         phy(jc, 1, jb) = 0.0_wp - &
             & stretch_c(jc, jb)*patch_3D%p_patch_1d(1)%constantPrismCenters_Zdistance(jc, 1, jb)
+#ifdef __LVECTOR__
+      ENDDO
+      !$ACC END PARALLEL
 
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+      !$ACC LOOP SEQ
+      DO jk = 2, MAXVAL(patch_3d%p_patch_1d(1)%dolic_c(start_index:end_index,jb))
+        !$ACC LOOP GANG VECTOR
+        DO jc = start_index, end_index
+          IF ( jk > patch_3d%p_patch_1d(1)%dolic_c(jc,jb) ) CYCLE
+#else
+
+       !$ACC LOOP SEQ
         DO jk = 2, patch_3d%p_patch_1d(1)%dolic_c(jc,jb)
+#endif
 
           pressure_hyd(jc,jk,jb) = pressure_hyd(jc,jk-1,jb) + 0.5_wp*(rho(jc,jk,jb)+rho(jc,jk-1,jb))&
             &*z_grav_rho_inv*stretch_c(jc, jb)*patch_3D%p_patch_1d(1)%constantPrismCenters_Zdistance(jc,jk,jb)
@@ -401,7 +425,9 @@ CONTAINS
 
         END DO
       END DO
+      !$ACC END PARALLEL
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_DO
 
 
@@ -410,6 +436,7 @@ CONTAINS
     DO jb = edges_in_domain%start_block, edges_in_domain%end_block
       CALL get_index_range(edges_in_domain, jb, start_index, end_index)
 
+      !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
       DO je = start_index, end_index
 
           ic1=patch_2D%edges%cell_idx(je,jb,1)
@@ -471,10 +498,13 @@ CONTAINS
 
         END DO
       END DO
+      !$ACC END PARALLEL LOOP
     END DO
+    !$ACC WAIT(1)
 !ICON_OMP_END_DO NOWAIT
 !ICON_OMP_END_PARALLEL
 
+    !$ACC END DATA
   END SUBROUTINE calc_internal_press_grad_zstar
   !-------------------------------------------------------------------------
 
@@ -849,6 +879,8 @@ CONTAINS
     CASE(3)
       CALL calculate_density_jmdwfg06(patch_3d, tracer, rho)
       !CALL calculate_density_JM_EOS(patch_2D, tracer, rho)
+    CASE(4) ! simplistic state-of-equation from Stuhne and Peltier
+      CALL calculate_density_linear_Stuhne_Peltier(patch_3d, tracer, rho)
     CASE(5)
       CALL calculate_density_lin(patch_3d, tracer, rho)
     CASE(10)
@@ -894,6 +926,8 @@ CONTAINS
     CASE(3)
       CALL calculate_density_jmdwfg06(patch_3d, tracer, rho)
       !CALL calculate_density_JM_EOS(patch_2D, tracer, rho)k
+    CASE(4) ! simplistic state-of-equation from Stuhne and Peltier
+      CALL calculate_density_linear_Stuhne_Peltier(patch_3d, tracer, rho)
     CASE(5)
       CALL calculate_density_lin(patch_3d, tracer, rho)
     CASE(10)
@@ -927,6 +961,9 @@ CONTAINS
     CASE(3)
       rho(1:levels) = calculate_density_jmdwfg06_onColumn( &
         & temperature(1:levels),  salinity(1:levels), p(1:levels))
+    CASE(4) ! simplistic state-of-equation from Stuhne and Peltier
+      rho(1:levels) = calculate_density_linear_Stuhne_Peltier_onColumn( &
+        & temperature(1:levels))
     CASE(10)
       rho(1:levels) = calculate_density_EOS10_onColumn( &
         & temperature(1:levels),  salinity(1:levels), p(1:levels))
@@ -953,10 +990,12 @@ CONTAINS
       rho = calculate_density_mpiom_onColumn(temperature, salinity, p*0.1_wp)
     CASE(3)
       rho = calculate_density_jmdwfg06_onColumn(temperature, salinity, p)
+    CASE(4) ! simplistic state-of-equation from Stuhne and Peltier
+      rho = calculate_density_linear_Stuhne_Peltier_onColumn(temperature)
     CASE(10)
       rho = calculate_density_EOS10_onColumn(temperature, salinity, p)
     CASE default
-
+      rho = 0._wp
     END SELECT
 
   END FUNCTION calculate_density_onColumn_elem
@@ -1089,16 +1128,11 @@ CONTAINS
 !ICON_OMP_DO PRIVATE(start_index, end_index, jc, jk) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, start_index, end_index)
-        rho(:,:,jb) = OceanReferenceDensity   !  plotting purpose
+        rho(:,:,jb) = OceanReferenceDensity
         DO jc = start_index, end_index
           DO jk=1, patch_3d%p_patch_1d(1)%dolic_c(jc,jb)
-!            IF(patch_3d%lsm_c(jc,jk,jb) <= sea_boundary ) THEN
               rho(jc,jk,jb) = OceanReferenceDensity - LinearThermoExpansionCoefficient * tracer(jc,jk,jb,1) &
               &+ LinearHalineContractionCoefficient * sal_ref
-              !write(123,*)'density',jk,jc,jb,rho(jc,jk,jb), tracer(jc,jk,jb,1),a_T
-!            ELSE
-!              rho(jc,jk,jb) = OceanReferenceDensity   !  plotting purpose
-!            ENDIF
           END DO
         END DO
       END DO
@@ -1108,6 +1142,45 @@ CONTAINS
     ENDIF
 
   END SUBROUTINE calculate_density_linear
+  !-------------------------------------------------------------------------
+
+  !-------------------------------------------------------------------------
+  !>
+  !!Calculates the density via a salinity-invariant, temperature-linear eq.
+  !!
+  SUBROUTINE calculate_density_linear_Stuhne_Peltier(patch_3d, tracer, rho)
+    !
+    TYPE(t_patch_3d ),TARGET, INTENT(in)   :: patch_3d
+    REAL(wp),    INTENT(in)       :: tracer(:,:,:,:)     !< input of S and T
+    REAL(wp), INTENT(inout)       :: rho   (:,:,:)       !< density
+
+    INTEGER :: jc, jk, jb
+    INTEGER :: start_index, end_index
+    TYPE(t_subset_range), POINTER :: all_cells
+    TYPE(t_patch), POINTER :: patch_2D
+    !-----------------------------------------------------------------------
+    patch_2D   => patch_3d%p_patch_2d(1)
+    !-------------------------------------------------------------------------
+    all_cells => patch_2D%cells%ALL
+
+    IF(no_tracer < 1) CALL finish('calculate_density_linear_Stuhne_Peltier', 'no_tracer must be >=1')
+
+!ICON_OMP_PARALLEL
+!ICON_OMP_DO PRIVATE(start_index, end_index, jc, jk) ICON_OMP_DEFAULT_SCHEDULE
+    DO jb = all_cells%start_block, all_cells%end_block
+      CALL get_index_range(all_cells, jb, start_index, end_index)
+      !  tracer 1: potential temperature
+      rho(:,:,jb) = OceanReferenceDensity
+      DO jc = start_index, end_index
+        DO jk=1, patch_3d%p_patch_1d(1)%dolic_c(jc,jb)
+            rho(jc,jk,jb) = OceanReferenceDensity * (1 - tracer(jc,jk,jb,1) * sp_thermal_coefficient)
+        END DO
+      END DO
+    END DO
+!ICON_OMP_END_DO NOWAIT
+!ICON_OMP_END_PARALLEL
+
+  END SUBROUTINE calculate_density_linear_Stuhne_Peltier
   !-------------------------------------------------------------------------
 
   !---------------------------------------------------------------------------
@@ -1276,7 +1349,8 @@ CONTAINS
         CALL get_index_range(all_cells, jb, start_index, end_index)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(z_p) ASYNC(1) IF(lzacc)
         DO jc = start_index, end_index
-          levels = max(1,patch_3d%p_patch_1d(1)%dolic_c(jc,jb))
+          levels = patch_3d%p_patch_1d(1)%dolic_c(jc,jb)
+          IF (levels == 0) CYCLE
           z_p(1:levels - 1) = patch_3d%p_patch_1d(1)%depth_CellMiddle(jc,1:levels - 1,jb) * OceanReferenceDensity * sitodbar
           !! For bottom, use the uniform depth without partial cells
           !! This allows well-balancedness for pressure gradients
@@ -1302,7 +1376,8 @@ CONTAINS
         CALL get_index_range(all_cells, jb, start_index, end_index)
         !$ACC PARALLEL LOOP GANG DEFAULT(PRESENT) PRIVATE(z_p) ASYNC(1) IF(lzacc)
         DO jc = start_index, end_index
-          levels = max(1,patch_3d%p_patch_1d(1)%dolic_c(jc,jb))
+          levels = patch_3d%p_patch_1d(1)%dolic_c(jc,jb)
+          IF (levels == 0) CYCLE
           z_p(1:levels - 1) = patch_3d%p_patch_1d(1)%depth_CellMiddle(jc,1:levels - 1,jb) * OceanReferenceDensity * sitodbar
           !! For bottom, use the uniform depth without partial cells
           z_p(levels) = patch_3d%p_patch_1d(1)%zlev_m(levels) * OceanReferenceDensity * sitodbar
@@ -1362,7 +1437,7 @@ CONTAINS
         !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jk = 1, max_level
           DO jc = start_index, end_index
-            levels = max(1, patch_3d%p_patch_1d(1)%dolic_c(jc,jb))
+            levels = patch_3d%p_patch_1d(1)%dolic_c(jc,jb)
             IF (jk > levels) CYCLE
 
             IF (jk < levels) THEN
@@ -1388,11 +1463,11 @@ CONTAINS
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, start_index, end_index)
         max_level = MAXVAL(patch_3d%p_patch_1d(1)%dolic_c(start_index:end_index,jb))
-  
+
         !$ACC PARALLEL LOOP GANG VECTOR COLLAPSE(2) DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jk = 1, max_level
           DO jc = start_index, end_index
-            levels = max(1, patch_3d%p_patch_1d(1)%dolic_c(jc,jb))
+            levels = patch_3d%p_patch_1d(1)%dolic_c(jc,jb)
             IF (jk > levels) CYCLE
 
             IF (jk < levels) THEN
@@ -1550,6 +1625,19 @@ CONTAINS
       & + LinearHalineContractionCoefficient * s
 
   END FUNCTION calculate_density_linear_onColumn
+
+  !-------------------------------------------------------------------------
+  !>
+  !!Calculates the density via a salinity-invariant, temperature-linear eq.
+  !!
+  ELEMENTAL FUNCTION calculate_density_linear_Stuhne_Peltier_onColumn(t) result(rho)
+    !$ACC ROUTINE SEQ
+    REAL(wp),INTENT(in)  :: t
+    REAL(wp)             :: rho
+
+    rho = OceanReferenceDensity * (1.0_wp - t * sp_thermal_coefficient)
+
+  END FUNCTION calculate_density_linear_Stuhne_Peltier_onColumn
 
   !----------------------------------------------------------------
   !>
@@ -2002,6 +2090,114 @@ CONTAINS
 
   END FUNCTION calc_neutralslope_coeff_func_onColumn
 
+  FUNCTION calc_neutralslope_coeff_func_elem(t,s,p,variant) result(coeff)
+!NEC$ always_inline
+    !$ACC ROUTINE SEQ
+    !-----------------------------------------------------------------
+    ! REFERENCES:
+    !    McDougall, T.J. 1987.  Neutral Surfaces
+    !    Journal of Physical Oceanography, Vol 17, 1950-1964,
+    !-----------------------------------------------------------------
+    ! CHECK VALUE:
+    !    sw_beta=0.72088e-3 psu^-1 @ S=40.0psu, ptmp=10.0C (ITS-90), p=4000db
+    !    a_over_b=0.34765 psu*C^-1 @ S=40.0psu, ptmp=10.0C, p=4000db
+    ! Valid Range:
+    !    S=25 to 40psu, p=0 to 4000db (ptmp=10C)
+    !                   p=0 to 1000db (ptmp=20-40C)
+    !-----------------------------------------------------------------
+    !
+    REAL(wp), INTENT(in)  :: t        !  potential temperature (in ITS-90) [C]
+    REAL(wp), INTENT(in)  :: s        !  salinity (in PSS-78) [psu]
+    REAL(wp), INTENT(in)  :: p        !  pressure (in dezi-bar) [db]
+    INTEGER               :: variant
+    REAL(wp)              :: coeff    !  thermal expansion [1/C] and saline contraction [1/psu] coefficients
+
+    ! local variables, following the naming of the FESOM implementation
+    REAL(wp):: aob, t1, t2, t3, t4, s35, s35sq, s1, s2, s3, p1, p2, p3
+
+    !  polynomial parameter for calculation of saline contraction coeff beta
+    REAL(wp), PARAMETER :: &
+      & bet_t0   = 0.785567e-3_wp,  &
+      & bet_t1   = 0.301985e-5_wp,  &
+      & bet_t2   = 0.555579e-7_wp,  &
+      & bet_t3   = 0.415613e-9_wp,  &
+      & bet_st0  = 0.356603e-6_wp,  &
+      & bet_st1  = 0.788212e-8_wp,  &
+      & bet_sp1  = 0.408195e-10_wp, &
+      & bet_sp2  = 0.602281e-15_wp, &
+      & bet_s2   = 0.515032e-8_wp,  &
+      & bet_p1t0 = 0.121555e-7_wp,  &
+      & bet_p1t1 = 0.192867e-9_wp,  &
+      & bet_p1t2 = 0.213127e-11_wp, &
+      & bet_p2t0 = 0.176621e-12_wp, &
+      & bet_p2t1 = 0.175379e-14_wp, &
+      & bet_p3   = 0.121551e-17_wp
+
+    !  polynomial parameter for calculation of thermal expansion coefficient alpha
+    !  via fraction alpha over beta (aob)
+    REAL(wp), PARAMETER :: &
+      & aob_t0   = 0.665157e-1_wp,  &
+      & aob_t1   = 0.170907e-1_wp,  &
+      & aob_t2   = 0.203814e-3_wp,  &
+      & aob_t3   = 0.298357e-5_wp,  &
+      & aob_t4   = 0.255019e-7_wp,  &
+      & aob_st0  = 0.378110e-2_wp,  &
+      & aob_st1  = 0.846960e-4_wp,  &
+      & aob_sp1  = 0.164759e-6_wp,  &
+      & aob_sp2  = 0.251520e-11_wp, &
+      & aob_s2   = 0.678662e-5_wp,  &
+      & aob_p1t0 = 0.380374e-4_wp,  &
+      & aob_p1t1 = 0.933746e-6_wp,  &
+      & aob_p1t2 = 0.791325e-8_wp,  &
+      & aob_p2t2 = 0.512857e-12_wp, &
+      & aob_p3   = 0.302285e-13_wp
+
+    ! t1 = t
+    s1 = s
+    p1 = p
+
+   ! correction factor for conversion of 1990 to 1968 temperature standard (IPTS-68 to IPTS-90)
+   ! the correction is less than 0.01 K in ocean water temperature range
+   !  - T68 = 1.00024*T90
+   !  - above mentioned CHECK VALUES of the paper are better met by this correction
+    t1 = t * 1.00024_wp
+
+    t2    = t1 * t1
+    t3    = t2 * t1
+    t4    = t3 * t1
+    p2    = p1 * p1
+    p3    = p2 * p1
+    s35   = s - 35.0_wp
+    s35sq = s35 * s35
+
+    ! calculate beta, saline contraction
+    coeff = bet_t0 - bet_t1*t1                            &
+      &      + bet_t2*t2 - bet_t3*t3                      &
+      &      + s35*(-bet_st0    + bet_st1*t1              &
+      &      +       bet_sp1*p1 - bet_sp2*p2)             &
+      &      + s35sq*bet_s2                               &
+      &      + p1*(-bet_p1t0 + bet_p1t1*t1 - bet_p1t2*t2) &
+      &      + p2*( bet_p2t0 - bet_p2t1*t1)               &
+      &      + p3*bet_p3
+
+    IF (variant == 1) THEN
+      ! calculate alpha/beta
+      aob = aob_t0 + aob_t1*t1                                 &
+        &         - aob_t2*t2 + aob_t3*t3                      &
+        &         - aob_t4*t4                                  &
+        &         + s35*(+aob_st0    - aob_st1*t1              &
+        &                -aob_sp1*p1 - aob_sp2*p2)             &
+        &         - s35sq*aob_s2                               &
+        &         + p1*(+aob_p1t0 - aob_p1t1*t1 + aob_p1t2*t2) &
+        &         + p2*t2*aob_p2t2                             &
+        &         - p3*aob_p3
+
+      ! calculate alpha, thermal expansion
+      coeff = aob * coeff
+    END IF
+
+  END FUNCTION calc_neutralslope_coeff_func_elem
+
 
   !-------------------------------------------------------------------------
   !>
@@ -2161,15 +2357,26 @@ CONTAINS
 !ICON_OMP_DO PRIVATE(start_index, end_index, jc, jk) ICON_OMP_DEFAULT_SCHEDULE
       DO jb = all_cells%start_block, all_cells%end_block
         CALL get_index_range(all_cells, jb, start_index, end_index)
-        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+#ifdef __LVECTOR__
+        !$ACC LOOP SEQ
+        DO jk=1, MAXVAL( patch_3d%p_patch_1d(1)%dolic_c(start_index:end_index,jb) )
+          !$ACC LOOP GANG VECTOR
+          DO jc = start_index, end_index
+            IF (jk <= patch_3d%p_patch_1d(1)%dolic_c(jc,jb)) THEN ! operate on wet ocean points only
+#else
+        !$ACC LOOP GANG VECTOR
         DO jc = start_index, end_index
-          !$ACC LOOP SEQ
           DO jk=1, patch_3d%p_patch_1d(1)%dolic_c(jc,jb) ! operate on wet ocean points only
+#endif
             rhopot(jc,jk,jb) = calc_potential_density_mpiom_elemental( &
               & tracer(jc,jk,jb,1), tracer(jc,jk,jb,2))
+#ifdef __LVECTOR__
+            ENDIF
+#endif
           END DO
         END DO
-        !$ACC END PARALLEL LOOP
+        !$ACC END PARALLEL
       END DO
       !$ACC WAIT(1)
 !ICON_OMP_END_DO NOWAIT
@@ -2181,7 +2388,6 @@ CONTAINS
         CALL get_index_range(all_cells, jb, start_index, end_index)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
         DO jc = start_index, end_index
-          !$ACC LOOP SEQ
           DO jk=1, patch_3d%p_patch_1d(1)%dolic_c(jc,jb) ! operate on wet ocean points only
             rhopot(jc,jk,jb) = calc_potential_density_mpiom_elemental( &
               & tracer(jc,jk,jb,1), sal_ref)

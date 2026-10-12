@@ -1,4 +1,14 @@
+! ICON
 !
+! ---------------------------------------------------------------
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Contact information: icon-model.org
+!
+! See AUTHORS.TXT for a list of authors
+! See LICENSES/ for license information
+! SPDX-License-Identifier: BSD-3-Clause
+! ---------------------------------------------------------------
+
 ! Module to calculate source terms for different aerosol species.
 !
 ! This module contains routines to calculate source terms for different aerosol species.
@@ -42,17 +52,7 @@
 !                         Mineral Dust Entrainment and Deposition (DEAD) model:
 !                         Description and 1990s dust climatology.
 !                         Journal of Geophysical Research: Atmospheres, 108(D14).
-!
-! ICON
-!
-! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
-! Contact information: icon-model.org
-!
-! See AUTHORS.TXT for a list of authors
-! See LICENSES/ for license information
-! SPDX-License-Identifier: BSD-3-Clause
-! ---------------------------------------------------------------
+
 MODULE mo_aerosol_sources
 
   USE mo_kind,                          ONLY: wp
@@ -67,7 +67,8 @@ MODULE mo_aerosol_sources
   USE mo_io_units,                      ONLY: filename_max
   USE mo_run_config,                    ONLY: msg_level
   USE mo_read_interface,                ONLY: openInputFile, closeFile, on_cells, t_stream_id, read_2D, read_2D_1time
-  USE mtime,                            ONLY: datetime
+  USE mtime,                            ONLY: datetime, timedelta, juliandelta, newDatetime, OPERATOR(-), &
+                                          &   timeDeltaToJulianDelta, deallocateDatetime
 
   IMPLICIT NONE
 
@@ -78,7 +79,7 @@ MODULE mo_aerosol_sources
 
   PUBLIC :: aerosol_dust_aod_source, aerosol_ssa_aod_source
   PUBLIC :: aerosol2d_read_data, calc_anthro_aod, calc_so4_nucleation
-  PUBLIC :: inquire_fire2d_data
+  PUBLIC :: inquire_fire2d_data, get_time_weights, calc_regression
 
 CONTAINS
 
@@ -145,7 +146,7 @@ CONTAINS
     dust_flux   = calc_aerosol_dust_mflux_kok2014 (ustar, ustart, f_bare, f_clay, rho_a)
     dust_flux   = dust_flux * h_snow_fac
     aod_flux    = calc_dust_aod (dust_flux)
-    
+
     IF(PRESENT(dust_flux_out)) &
       &  dust_flux_out = dust_flux
 
@@ -226,7 +227,7 @@ CONTAINS
      &  D_0   = 75.e-6_wp,    & !< Saltation occurs for u_* > u_*t(D_0) (m)
      &  A_N   = 0.0123_wp,    & !< Coefficient (-)       (Shao and Lu, 2000)
      &  gamma = 3.e-4_wp,     & !< Coefficient (kg s-2)  (Shao and Lu, 2000)
-     &  rho_s = 2650_wp,      & !< Bulk soil density (kg m-3)
+     &  rho_s = 2650._wp,      & !< Bulk soil density (kg m-3)
      &  constval = A_N * ( rho_s * grav * D_0 + gamma / D_0)
 
     ! Use global minimum of threshold friction velocity d_min as in Rieger et al. (2017)
@@ -242,13 +243,13 @@ CONTAINS
   !>
   !! FUNCTION calc_aerosol_dust_mflux_kok2014
   !!
-  !! Calculates the mineral dust emission flux according to Kok et al. (2014). 
+  !! Calculates the mineral dust emission flux according to Kok et al. (2014).
   !!
   ELEMENTAL FUNCTION calc_aerosol_dust_mflux_kok2014 (ustar, ustart, f_bare, f_clay, rho_a) RESULT(dust_flux)
 
     REAL(wp), INTENT(in)  :: &
       &  ustar,              & !< Input: Friction wind speed (m s-1)
-      &  ustart,             & !< Input: Threshold friction wind speed (m s-1) 
+      &  ustart,             & !< Input: Threshold friction wind speed (m s-1)
       &  f_bare,             & !< Input: Bare soil fraction (-)
       &  f_clay,             & !< Input: Clay fraction (-)
       &  rho_a                 !< Input: Air density (kg m-3)
@@ -333,14 +334,14 @@ CONTAINS
     !wgrav=100._wp*(w_so/dzsoil)*rho_s_bulk/rho_w
     ! Give w_so_ice a factor 10 penalty to efficiently inhibit
     ! mineral dust emission on frozen soil
-    wgrav=150_wp*( (w_so + 9._wp * w_so_ice )/dzsoil)
+    wgrav=150._wp*( (w_so + 9._wp * w_so_ice )/dzsoil)
 
   END FUNCTION calc_wgrav
 
   !>
   !! FUNCTION calc_hsnow_fac
   !!
-  !! Calculate a factor to consider the impact of snow height. For a snow height 
+  !! Calculate a factor to consider the impact of snow height. For a snow height
   !! above 5 cm, the factor is 0.
   !! Use a simple linear fit in between f(h_snow=0) = 1 and f(h_snow=0.05) = 0
   !!
@@ -375,12 +376,13 @@ CONTAINS
       &  sst_degc              !< Sea surface temperature in degree celcius
 
     sst_degc   = sst - 273.15_wp
-    ! ssa_flux and ssa_flux_t calculate the sea spray aerosol mass flux. 
+    ! ssa_flux and ssa_flux_t calculate the sea spray aerosol mass flux.
     ! For the 2D-aerosol implementation, only the change in AOD (aod_flux) is needed.
     ! For future checking or debugging, we leave the calls commented here.
     ! ssa_flux   = calc_ssa_mflux_grythe2014(sp_10m)
     ! ssa_flux_t = calc_ssa_sst_weighting(sst_degc) * ssa_flux
-    aod_flux   = calc_ssa_sst_weighting(sst_degc) * calc_ssa_aod(sp_10m)
+    ! Tuning factor 1.75
+    aod_flux   = 1.75_wp * calc_ssa_sst_weighting(sst_degc) * calc_ssa_aod(sp_10m)
 
   END SUBROUTINE aerosol_ssa_aod_source
 
@@ -412,7 +414,7 @@ CONTAINS
   !!
   !! Calculates the sea salt aerosol optical depth.
   !! In order to derive mass fluxes instead of aod,
-  !! the following factors can be used. 
+  !! the following factors can be used.
   !! (assuming sphericity and a density of 2200 kg m-3)
   !! fac1 = 0.00023865_wp
   !! fac2 = 3.6086e-06_wp
@@ -509,7 +511,7 @@ CONTAINS
     TYPE(t_stream_id) :: stream_id
 
     CALL openinputfile(stream_id, filename, p_patch, default_read_method)
-    
+
     IF (has_time_dim) THEN
       CALL read_2D_1time(stream_id, on_cells, varname, var)
     ELSE
@@ -517,8 +519,73 @@ CONTAINS
     ENDIF
 
     CALL closeFile    (stream_id)
-    
+
   END SUBROUTINE aerosol2d_read_data
+
+  !>
+  !! FUNCTION get_time_weights
+  !!
+  !! Get relative location of current day in current season
+  !! (-1: mid of prev. season, 0 curr. season, 1 post season)
+  !! Used in calc_regression to get the value of the day
+  SUBROUTINE get_time_weights(current_datetime, idx_pre, idx_cur, idx_post, time_weight)
+    TYPE(datetime), POINTER, INTENT(in) :: current_datetime
+    INTEGER, INTENT(out) :: idx_pre, idx_cur, idx_post
+    REAL(wp), INTENT(out) :: time_weight
+    ! Local
+    TYPE(datetime), POINTER :: current_season
+    TYPE(timedelta) :: td
+    TYPE(juliandelta) :: jd
+    INTEGER :: current_year, season
+    CHARACTER(LEN=23) :: newdate_string
+
+    current_year  = INT(current_datetime%date%year)
+    ! Find out current season via integer division
+    idx_cur       = INT(current_datetime%date%month) / 3 + 1
+    season        = (INT(current_datetime%date%month) / 3) * 3 + 1
+    IF (season > 12) THEN ! Exception for next year
+      season       = season - 12
+      idx_cur      = idx_cur - 4
+      current_year = current_year + 1
+    ENDIF
+    idx_pre  = idx_cur - 1
+    IF (idx_pre == 0)  idx_pre = 4
+    idx_post = idx_cur + 1
+    IF (idx_post == 5) idx_post = 1
+
+    WRITE(newdate_string,'(i4.4,a,i2.2,a)') current_year, "-",season,"-15T00:00:00.000"
+    current_season  => newDatetime(newdate_string)
+    td = current_datetime - current_season
+    CALL timeDeltaToJulianDelta(td,current_season,jd)
+    time_weight = real(jd%day, wp) / 90._wp ! 90: simplified number of days in 3 months
+
+    call deallocateDatetime(current_season)
+  END SUBROUTINE get_time_weights
+
+  !>
+  !! FUNCTION calc_regression
+  !!
+  !! Calculate quadratic regression.
+  !! Note that this assumes normalized seasons x1=-1, x2=0, x3=1
+  !! with f(x1)=val_pre, f(x2)=val_cur, f(x3)=val_post
+  !!
+  FUNCTION calc_regression(x, val_pre, val_cur, val_post) RESULT(val_now)
+    REAL(wp), INTENT(in)  :: &
+      &  x,                  & !< Relative time
+      &  val_pre,            & !< Value of previous season
+      &  val_cur,            & !< Value of current season
+      &  val_post              !< Value of following season
+    REAL(wp)              :: &
+      &  val_now               !< Emission value
+    REAL(wp)              :: &
+      &  a, b, c               !< Coefficients quadr. fct.: ax**2+bx+c
+
+    a = (val_pre - 2._wp*val_cur + val_post) / 2._wp
+    b = (val_post - val_pre ) / 2._wp
+    c = val_cur
+
+    val_now = a*x**2 + b*x + c
+  END FUNCTION calc_regression
 
   !>
   !! Function generate_filename_aerosol_data
@@ -573,9 +640,10 @@ CONTAINS
   !!
   !! Calc pseudo-nucleation of so4 particles in remote regions. (Method is described below)
   !!
-  SUBROUTINE calc_so4_nucleation(istart, iend, kstart, kend, temp, relhum, cosmu0, aod_so4)
+  SUBROUTINE calc_so4_nucleation(istart, iend, nproma, kstart, kend, temp, relhum, cosmu0, aod_so4)
     INTEGER, INTENT(in)   :: &
       &  istart, iend,       & !< Input: Column loop
+      &  nproma,             & !< Input: Column dimension
       &  kstart, kend          !< Input: Vertical area for averaging
     REAL(wp), INTENT(in)  :: &
       &  temp(:,:),          & !< Temperature
@@ -587,29 +655,31 @@ CONTAINS
     REAL(wp)              :: &
       &  aod_so4_target,     & !< maximum value for AOD due to nucleation
       &  aod_fac,            & !< factor accounting for previously existing AOD
-      &  ccrit(istart:iend), & !< critical so2 concentration (vertical average) (mug m-3)
-      &  ccritref,           & !< Reference value for ccrit at 255K and RH=1i (mug m-3)
+      &  ccrit_min(nproma),  & !< layer minimum of critical so2 concentration (mug m-3)
+      &  ccritref,           & !< Reference value for ccrit at 243K and RH=1 (mug m-3)
       &  ccrit_fac             !< factor to account for ccrit exceeding ccritref (mug m-3)
     INTEGER               :: &
       &  jc, jk
 
-    ccritref       = calc_ccrit(255._wp,1._wp)
-    aod_so4_target = 1._wp
-    ccrit(:)       = 0._wp
+    ccritref       = calc_ccrit(243._wp,1._wp)
+    aod_so4_target = 1.5_wp
+    ccrit_min(:)   = 0._wp
 
     DO jk = kstart, kend
       DO jc = istart, iend
-        ccrit(jc) = ccrit(jc) + calc_ccrit( temp(jc,jk), relhum(jc,jk) )
+        IF (jk == kstart) THEN
+          ccrit_min(jc) = calc_ccrit( temp(jc,jk), relhum(jc,jk) )
+        ELSE
+          ccrit_min(jc) = MIN(ccrit_min(jc), calc_ccrit( temp(jc,jk), relhum(jc,jk) ))
+        ENDIF
       ENDDO
     ENDDO
-
     DO jc = istart, iend
-      ccrit(jc) = ccrit(jc) / real( (kend-kstart+1), wp )
       ! 2nd order polynomial with 1 at aod_so4=0, 0 at aod_so4=0.5 and minimum at aod_so4=0.5
       aod_fac   = MIN( 1._wp , MAX( 0._wp , (4._wp*aod_so4(jc)*(aod_so4(jc)-1._wp)+1._wp) ) )
-      ! At 255K and RH=1, ccrit is rather low. Compute scaling factor in relation to that low value
+      ! At 243K and RH=1, ccrit is rather low. Compute scaling factor in relation to that low value
       ! (=1 for ccritref, =>0 for large T and low RH)
-      ccrit_fac = MIN( 1._wp , MAX( 0._wp , ccritref / ccrit(jc) ) )
+      ccrit_fac = MIN( 1._wp , MAX( 0._wp , (2._wp*ccritref / (ccritref+ccrit_min(jc)) ) ) )
       ! Update aod_so4, pull towards target value aod_so4_target (if higher than current concentration):
       ! As the formation of sulfuric acid from sulfur dioxide includes photocatalytic reactions
       ! Multiply with cosine**4 of solar zenith angle to reduce nucleation close to poles

@@ -1,7 +1,7 @@
 ; ICON
 ;
 ; ------------------------------------------
-; Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+; Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ; Contact information: icon-model.org
 ; See AUTHORS.TXT for a list of authors
 ; See LICENSES/ for license information
@@ -14,25 +14,25 @@
 ;	Example ncl script to produce the
 ;	kinetic energy plot.
 ; 	Created by James Kent, Christiane Jablonowski
-;	and Paul Ullrich (University of Michigan).  
+;	and Paul Ullrich (University of Michigan).
 ;
 ;   modified by levi silvers
-;   modified by pilar ripodas: this version uses div and vorticity 
+;   modified by pilar ripodas: this version uses div and vorticity
 ;                  instead of u and v
-;                  it uses the internal vertical interpolation to 
+;                  it uses the internal vertical interpolation to
 ;                  pressure levels that is in the model
-;                  it calculates the spectra for different days and pressure 
+;                  it calculates the spectra for different days and pressure
 ;                   levels and calculates the mean
-;                   
+;
 ;       to use this script simply type
 ;       >ncl spectra_vordiv.ncl
 ;
 
 ;================================================;
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"   
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
 load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"   
-load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"   
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
 ; ================================================;
 
 
@@ -40,7 +40,7 @@ begin
 
   re=6371229.    ;Radius of the Earth
 ;=================================================;
-; open file and read in data 
+; open file and read in data
 ; GIVEN AS (time,lev,lat,long) from 0 to n-1
 ;=================================================;
 
@@ -93,14 +93,14 @@ begin
         f_lev=7    ; first level
         l_lev=9      ; last level
         n_lev=l_lev-f_lev+1
- 
-; The previous values could be passed via environment variables 
+
+; The previous values could be passed via environment variables
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
   spc=new ( (/n_lev,n_days,n_exp,10000/), "double", 1e-30 )
   spc_plm=new ( (/n_days,n_exp,10000/), "double", 1e-30 )
 
-  spc_plm_tm=new ( (/n_exp,10000/), "double", 1e-30 ) 
+  spc_plm_tm=new ( (/n_exp,10000/), "double", 1e-30 )
   nlat_e=new((/n_exp/),"integer")
   print ("dimsizes of spc are: "+dimsizes(spc))
   spc    = spc@_FillValue
@@ -115,7 +115,7 @@ begin
 ;        FileN=dirbase+exper(iexp)+"/"+exper(iexp)+"_DOM01_PL_0001.nc"
          FileN=dirbase+exper(iexp)+"/"+"real_spectra"+"_DOM01_PL_0001.nc"
 ;        FileN=dirbase+exper(iexp)+"/"+"real_spectra_div_avg"+"_DOM01_PL_0001.nc"
-  
+
 
         print(FileN)
         ;print(exper(iexp))
@@ -132,7 +132,7 @@ begin
 	nlat   = getfilevardimsizes(f, "lat" )
 	nlon   = getfilevardimsizes(f, "lon" )
 	nlev   = getfilevardimsizes(f, "lev" )
-  
+
         nlat_e(iexp)=nlat
         if (nlat .gt. max_nlat) then
           max_nlat=nlat
@@ -154,7 +154,7 @@ begin
   do iday=0,n_days-1
   do ilev=0,n_lev-1
 
-    
+
         day=f_day+iday
         mlev=f_lev+ilev    ;model level
 
@@ -172,14 +172,14 @@ begin
 
 ; getfilevartypes() this function returns the type of each var name listed, U here
 ;
-; new (dimension_sizes,vartype,parameter) new is used to create a new NCL variable 
+; new (dimension_sizes,vartype,parameter) new is used to create a new NCL variable
 ; and gives the new variable dimension sizes
 ;
-; ispan(start,finish,stride) This function returns an array of values beginning at 
-;                            start and ending at finish, stride must be positive 
+; ispan(start,finish,stride) This function returns an array of values beginning at
+;                            start and ending at finish, stride must be positive
 ;
    	;spc    = new ( (/nlat/), getfilevartypes(f,"div"), 1e20 )
- 
+
         DIV   = f->div(day,mlev,:,:)
      	VOR   = f->vor(day,mlev,:,:)
 
@@ -187,10 +187,10 @@ begin
         print(iexp)
 
 
-      
+
         ;printVarSummary(DIV)
         ;printVarSummary(VOR)
- 
+
      	print ("computing scalar spherical harmonic transform...")
      	if (gauGrid) then
          	abdiv = shagC(DIV(:,:))
@@ -200,12 +200,12 @@ begin
          	abvor = shaeC(VOR(:,:));   ; Equal spaced grid with both poles
      	end if
         ;printVarSummary(abdiv)
-        ;printVarSummary(abvor) 
+        ;printVarSummary(abvor)
 
         ;a triangular truncation can be performed
         ;triangular truncation of coefficients
         ;trunc=159
-        ;abdiv=tri_trunC(abdiv, trunc) 
+        ;abdiv=tri_trunC(abdiv, trunc)
         ;abvor=tri_trunC(abvor, trunc)
 
      	divr  = abdiv(0,:,:)                		; real coef  (nlat,N)
@@ -227,7 +227,7 @@ begin
         ;print(spc)
    ; spc() is the array that the results need to be saved into.  do we need to create more
 ; spc() arrays or simply increase the dimensionality?  i also need to check how to overlay
-; multiple lines on one ncl plot.   
+; multiple lines on one ncl plot.
 
      delete(divr)
      delete(divi)
@@ -257,25 +257,25 @@ begin
  	; 				plot
  	;------------------------------------------------------------
      	lthick = 2.0
-  
+
         FontHeight = 0.02
- 
+
      	res          = True
      	res@xyXStyle = "Log"
      	res@xyYStyle = "Log"
-     	res@tmXBMinorPerMajor = 8   
-     	res@tmXTMinorPerMajor = 8   
-     	res@tmYRMinorPerMajor = 8   
-     	res@tmYLMinorPerMajor = 8 
+     	res@tmXBMinorPerMajor = 8
+     	res@tmXTMinorPerMajor = 8
+     	res@tmYRMinorPerMajor = 8
+     	res@tmYLMinorPerMajor = 8
 
         res@gsnLeftStringFontHeightF  = FontHeight
         res@gsnRightStringFontHeightF = FontHeight
         res@tiXAxisFontHeightF        = FontHeight
-        res@tiYAxisFontHeightF        = FontHeight 
+        res@tiYAxisFontHeightF        = FontHeight
 
-	pltTitle="Real case. DIV/VOR. Model vert. intp. " ; Plot title if required 
+	pltTitle="Real case. DIV/VOR. Model vert. intp. " ; Plot title if required
 	pltTitle=""
-     
+
      	res@tiMainString      = pltTitle
      	res@gsnCenterString   = "KE at "+myf_lev+"-"+myl_lev+" hPa  days "+f_day+"-"+l_day
      	res@tiXAxisString     = "Spherical wavenumber"
@@ -283,7 +283,7 @@ begin
      	res@gsnDraw           = False
      	res@gsnFrame          = False
      	res@xyLineThicknessF  = lthick
-   
+
                            ; create custom color map
      	colors = (/"white","black","OrangeRed4","Red3",     \
      	           "red1","Red3","Red4","Blue",             \
@@ -292,14 +292,14 @@ begin
      	"DarkTurquoise","Turquoise","Cyan","blue",          \
      	"gold","greenyellow","GoldenRod","DarkGoldenRod1",  \
      	"lightgoldenrod1","lightyellow","lightgoldenrodyellow","khaki1"/)
-     
-	
+
+
 	gsn_define_colormap(wks, colors)
-       
-     	res@trXMinF = 1       
-     	res@trXMaxF = 1500   ; !!This must be larger than max_nlat    
-     	res@trYMinF = 1e-6      
-     	res@trYMaxF = 1e3   
+
+     	res@trXMinF = 1
+     	res@trXMaxF = 1500   ; !!This must be larger than max_nlat
+     	res@trYMinF = 1e-6
+     	res@trYMaxF = 1e3
         ;res@gsnMaximize    = True
 
         ;legend
@@ -318,12 +318,12 @@ begin
 
      	res@xyDashPattern = 0
      	res@xyLineColors  = (/"Red","BLue","orange","brown"/)
-     	plot    = gsn_csm_xy (wks,x(1:),spc_plm_tm(:,1:),res) 		; create plot    
-    
+     	plot    = gsn_csm_xy (wks,x(1:),spc_plm_tm(:,1:),res) 		; create plot
+
      	xref    = (/10.,200./)
      	spc_ref = 5*(xref/15)^(-3) 				; make it 6 @ k=15
      	spc_ref = .06*(xref/100.)^(-3) 				; make it 0.8 @ k=40
-     
+
      	polyres                  = True
      	polyres@gsLineThicknessF = lthick
      	polyres@gsLineColor      = "black"
@@ -331,14 +331,14 @@ begin
 
      	xref    = (/50.,400./)
      	spc_ref = .06*(xref/100.)^(-5./3.) 				; make it 0.8 @ k=40
-     
+
      	polyres                  = True
      	polyres@gsLineThicknessF = lthick
      	polyres@gsLineColor      = "black"
      	gsn_polyline(wks,plot,xref,spc_ref,polyres)             ; add polyline
         draw(plot)
      	frame(wks)                                     		; now advance
-     
+
 
 
 end

@@ -2,13 +2,14 @@
 
 # ICON
 #
-# ------------------------------------------
-# Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+# ---------------------------------------------------------------
+# Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 # Contact information: icon-model.org
+#
 # See AUTHORS.TXT for a list of authors
 # See LICENSES/ for license information
 # SPDX-License-Identifier: BSD-3-Clause
-# ------------------------------------------
+# ---------------------------------------------------------------
 
 set -e
 
@@ -40,10 +41,10 @@ run_bg $BINDIR/OQs_icon_moc.sh
 
 wait
 cd ${EXPID}_${Y1}-${Y2}
-cat *_moc*.lst_ > ${EXPID}.lst 
-cat *_surf_*.lst_ >> ${EXPID}.lst 
-cat *_surf39_*.lst_ >> ${EXPID}.lst 
-cat *_subsurf*.lst_ >> ${EXPID}.lst 
+cat *_moc*.lst_ > ${EXPID}.lst
+cat *_surf_*.lst_ >> ${EXPID}.lst
+cat *_surf39_*.lst_ >> ${EXPID}.lst
+cat *_subsurf*.lst_ >> ${EXPID}.lst
 
 
 $BINDIR/create_plot_browser -t $EXPID ${EXPID}.lst > index.html

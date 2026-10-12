@@ -1,9 +1,7 @@
-! Module determining gas profiles used in radiative transfer
-!
 ! ICON
 !
 ! ---------------------------------------------------------------
-! Copyright (C) 2004-2024, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
+! Copyright (C) 2004-2026, DWD, MPI-M, DKRZ, KIT, ETH, MeteoSwiss
 ! Contact information: icon-model.org
 !
 ! See AUTHORS.TXT for a list of authors
@@ -11,12 +9,13 @@
 ! SPDX-License-Identifier: BSD-3-Clause
 ! ---------------------------------------------------------------
 
+! Module determining gas profiles used in radiative transfer
+
 MODULE mo_cloud_gas_profiles
 
   USE mo_kind,                 ONLY: wp
   USE mo_impl_constants,       ONLY: max_dom
   USE mo_run_config,           ONLY: ntracer
-  USE mo_parallel_config,      ONLY: nproma
   USE mo_aes_phy_config,       ONLY: aes_phy_config
   USE mo_aes_cov_config,       ONLY: aes_cov_config
   USE mo_aes_rad_config,       ONLY: aes_rad_config
@@ -29,14 +28,14 @@ MODULE mo_cloud_gas_profiles
   USE mtime,                   ONLY: datetime
   USE mo_exception,            ONLY: finish
 
-  
+
   IMPLICIT NONE
 
   PRIVATE
 
   PUBLIC              :: gas_profiles, cloud_profiles, snow_profiles, &
                        & init_gas_profiles
-  
+
   INTEGER, PARAMETER  :: ngases=8
   TYPE t_gas
     CHARACTER(LEN=5)     :: name        !< name of gas (chemical composition)
@@ -56,20 +55,20 @@ MODULE mo_cloud_gas_profiles
     !         includes an annual cycle but no interannual variability
     ! irad>=12: hyperbolic tangent form of profiles:
     ! irad=12: as irad=2, but modified by a hyperbolic tangent function
-    ! irad=13: as irad=3, but modified by a hyperbolic tangent function 
-    INTEGER              :: itrac=-999  !< index of tracer in icon 
+    ! irad=13: as irad=3, but modified by a hyperbolic tangent function
+    INTEGER              :: itrac=-999  !< index of tracer in icon
     REAL(wp)             :: vmr         !< globally constant VMR given in namelist
     REAL(wp)             :: vmr_scenario!< globally constant VMR given by greenouse gas scenario
     REAL(wp)             :: mmr2vmr
     REAL(wp)             :: vpp(3)      !< vertical profile parameters for tanh-profile
-    REAL(wp)             :: frad        !< multiplication factor of gas concentration 
+    REAL(wp)             :: frad        !< multiplication factor of gas concentration
   END TYPE t_gas
 
   TYPE (t_gas), TARGET   :: gas(ngases,max_dom)
   REAL(wp), PARAMETER    :: missing_value=-999999._wp
 #ifdef _OPENACC
   LOGICAL, PARAMETER     :: use_acc = .TRUE.
-#else  
+#else
   LOGICAL, PARAMETER     :: use_acc = .FALSE.
 #endif
 
@@ -90,7 +89,7 @@ CONTAINS
       gas(1,jg)%itrac= iqv
       gas(1,jg)%frad = aes_rad_config(jg)% frad_h2o
       gas(1,jg)%mmr2vmr = amd/amw
-!   CO2    
+!   CO2
       gas(2,jg)%name = 'co2  '
       gas(2,jg)%irad = aes_rad_config(jg)% irad_co2
       gas(2,jg)%vmr  = aes_rad_config(jg)% vmr_co2
@@ -141,11 +140,11 @@ CONTAINS
       gas(8,jg)%mmr2vmr = amd/amc12
     END DO
 
-    ! vpp(:) values are not used in the OpenACC code, so no need to copy them 
+    ! vpp(:) values are not used in the OpenACC code, so no need to copy them
     !$ACC ENTER DATA COPYIN(gas)
   END SUBROUTINE init_gas_profiles
 
-  
+
   SUBROUTINE gas_profiles ( jg,               jb,               jcs,        &
                           & jce,              kbdim,            klev,       &
                           & ntracer,          this_datetime,    pp_hl,      &
@@ -171,7 +170,7 @@ CONTAINS
     !       at the surface and precipitation have no effect on the atmospheric mass.
     !       Therefore let let us use here the total air mass as dry air mass.
     !
-    TYPE(datetime),POINTER, INTENT(IN)  :: this_datetime !< actual time step
+    TYPE(datetime), INTENT(IN)  :: this_datetime !< actual time step
     REAL(wp), INTENT(INOUT) ::      &
     & xvmr_vap(kbdim,klev),         & !< water vapor mass in layer [kg/m2]
     & xvmr_co2(kbdim,klev),         & !< CO2 volume mixing ratio
@@ -244,7 +243,7 @@ CONTAINS
           gas_profile(jcs:jce,jk,igas) = dom_gas(igas)%vmr_scenario
         END DO
         !$ACC END PARALLEL LOOP
-      
+
       !  O3
       CASE (4) ! ozone is constant in time in climatology, first time is used
         IF (igas /= 5) &
@@ -317,7 +316,7 @@ CONTAINS
       DO jl=jcs,jce
 !       H2O
         xvmr_vap(jl,jk)   = gas_profile(jl,jk,1)
-!       CO2    
+!       CO2
         xvmr_co2(jl,jk)   = gas_profile(jl,jk,2)
 !       CH4
         xvmr_ch4(jl,jk)   = gas_profile(jl,jk,3)
@@ -334,7 +333,7 @@ CONTAINS
       END DO
     END DO
     !$ACC END PARALLEL LOOP
-    
+
     !$ACC WAIT
     !$ACC END DATA
   END SUBROUTINE gas_profiles
@@ -374,7 +373,7 @@ CONTAINS
       !
     CASE (1) ! clouds in radiation in layers jks_cloudy to klev, where the mass fraction of
       !        cloud water + cloud ice in air exceeds cqx, with the cloud mass scaled by frad_h2o
-      !  
+      !
       jks  = aes_phy_config(jg)%jks_cloudy
       cqx  = aes_cov_config(jg)%cqx
       frad = aes_rad_config(jg)%frad_h2o
@@ -384,7 +383,7 @@ CONTAINS
       ELSE
          xrad = 1.0_wp
       END IF
-      
+
       !$ACC PARALLEL LOOP DEFAULT(PRESENT) GANG VECTOR COLLAPSE(2) ASYNC(1)
       DO jk=1,jks-1 ! no clouds in layers 1 to jks-1
         DO jl = jcs,jce
@@ -404,7 +403,7 @@ CONTAINS
           xc_frc(jl,jk) = xrad*MERGE(1.0_wp, 0.0_wp, xq_trc(jl,jk,iqc) + xq_trc(jl,jk,iqi) >= cqx)
           !
           ! apply this cloud cover as mask, scale cloud mass in layer by frad, and make >= 0
-          xm_liq(jl,jk) = xc_frc(jl,jk)*MAX(xq_trc(jl,jk,iqc)*xm_air(jl,jk)*frad,0._wp) 
+          xm_liq(jl,jk) = xc_frc(jl,jk)*MAX(xq_trc(jl,jk,iqc)*xm_air(jl,jk)*frad,0._wp)
           xm_ice(jl,jk) = xc_frc(jl,jk)*MAX(xq_trc(jl,jk,iqi)*xm_air(jl,jk)*frad,0._wp)
           !
         END DO
@@ -425,7 +424,7 @@ CONTAINS
     INTEGER, INTENT(IN)    :: klev           ! number of vertical levels
     REAL(wp), INTENT(IN)   :: xq_trc(:,:,:)  ! in  tracer  mass fraction [kg/kg]
     REAL(wp), INTENT(IN)   :: xm_air(:,:)    ! air mass in layer
-    REAL(wp), INTENT(OUT)  :: xm_snw(:,:)    ! snow     
+    REAL(wp), INTENT(OUT)  :: xm_snw(:,:)    ! snow
 
     INTEGER                    :: jl, jk
     REAL(wp)                   :: frad
