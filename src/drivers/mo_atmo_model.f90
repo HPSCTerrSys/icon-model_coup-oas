@@ -242,10 +242,14 @@ CONTAINS
 #ifdef COUP_OAS_ECLM
    IF ( lpe_cpl ) THEN
     ! descruct oasis variables
+    !$ACC EXIT DATA DELETE(oas_snd_field, oas_rcv_field, oas_field_bnd) &
+    !$ACC   DELETE(oas_rcv_field_icon, loas_clm_c, oas_jc, oas_jb)
     DEALLOCATE( oas_snd_field, stat=oas_error )
     DEALLOCATE( oas_rcv_field, stat=oas_error )
+    DEALLOCATE( oas_field_bnd, stat=oas_error )
     DEALLOCATE( oas_rcv_field_icon, stat=oas_error )
     DEALLOCATE( loas_clm_c, stat=oas_error )
+    DEALLOCATE( oas_jc, oas_jb, stat=oas_error )
    END IF
 #endif
 

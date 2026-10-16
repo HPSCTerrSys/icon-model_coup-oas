@@ -21,6 +21,8 @@ INTEGER               :: oas_vshape(2)
 INTEGER               :: oas_part_id
 INTEGER               :: oas_rcv_nvar
 INTEGER, ALLOCATABLE  :: oas_part(:)
+! SPo: index map from OASIS partition point (ioas_part) to ICON cell (jc,jb) for lacc
+INTEGER, ALLOCATABLE  :: oas_jc(:), oas_jb(:)
 TYPE :: t_oas_field
   CHARACTER(len = 8)  :: clpname
   INTEGER             :: vid
@@ -39,7 +41,7 @@ REAL, ALLOCATABLE     :: oas_field_bnd(:,:) ! staging buffer for bundled put/get
 
 PUBLIC :: &
  oas_comp_id, oas_comp_name, kl_comm, oas_error, oas_nlat, &
- oas_nlon, oas_var_nodims, oas_vshape, oas_part, &
+ oas_nlon, oas_var_nodims, oas_vshape, oas_part, oas_jc, oas_jb, &
  oas_snd_field, oas_rcv_field, oas_snd_meta, oas_rcv_meta, &
  loas_clm_c, loascplscheme_exchcoef, loas_rcv_valid
 

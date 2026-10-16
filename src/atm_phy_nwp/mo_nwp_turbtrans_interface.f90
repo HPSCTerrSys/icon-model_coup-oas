@@ -520,7 +520,12 @@ SUBROUTINE nwp_turbtrans  ( tcall_turb_jg,                     & !>in
       IF (ntiles_total == 1) THEN ! tile approach not used; use tile-averaged fields from extpar
       !----------------------------
 
+#ifdef COUP_OAS_ECLM
+        !$ACC DATA CREATE(l_hori, l_lake, l_sice, z0_waves_t) &
+        !$ACC   CREATE(shfl_s_t, lhfl_s_t, qhfl_s_t, umfl_s_t, vmfl_s_t) ASYNC(1) IF(lzacc)
+#else
         !$ACC DATA CREATE(l_hori, l_lake, l_sice, z0_waves_t) ASYNC(1) IF(lzacc)
+#endif
 
         !$ACC KERNELS ASYNC(1) DEFAULT(PRESENT) IF(lzacc)
         l_hori(i_startidx:i_endidx)=phy_params(jg)%mean_charlen !horizontal grid-scale (should be dependent on location in future!)

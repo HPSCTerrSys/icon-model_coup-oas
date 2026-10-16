@@ -1055,7 +1055,8 @@ CONTAINS
         &  opt_acc_async_queue = acc_async_queue               ) !IN OpenACC stream to run on
 #else
         CALL oasis_apply_surface(jb, i_startidx, i_endidx, nlev, p_diag, p_prog, &
-          &                      p_prog_rcf, prm_diag, lnd_prog_new, lnd_diag)
+          &                      p_prog_rcf, prm_diag, lnd_prog_new, lnd_diag,   &
+          &                      lacc=lzacc, opt_acc_async_queue=acc_async_queue)
 #endif
 
         ! Multiply w_snow with old snow fraction in order to obtain the area-average SWE needed for

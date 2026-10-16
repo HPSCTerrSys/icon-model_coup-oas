@@ -18,7 +18,7 @@ MODULE mo_oasis_land_coupling
                                    config_loascplscheme_exchcoef => loascplscheme_exchcoef
   USE mo_dynamics_config,   ONLY: nnow, nnow_rcf
   USE mo_nonhydro_state,    ONLY: p_nh_state
-  USE mo_nonhydro_types,    ONLY: t_nh_state, t_nh_diag, t_nh_prog
+  USE mo_nonhydro_types,    ONLY: t_nh_state, t_nh_diag, t_nh_prog, t_nh_metrics
   USE mo_impl_constants,    ONLY: min_rlcell_int, grf_bdywidth_c
   USE mo_model_domain,      ONLY: p_patch, t_patch
   USE mo_ext_data_state,    ONLY: ext_data
@@ -35,6 +35,7 @@ MODULE mo_oasis_land_coupling
   USE mo_loopindices,       ONLY: get_indices_c 
   USE mo_grid_config,       ONLY: n_dom
   USE mo_mpi,               ONLY: p_pe_work, p_comm_work_only, mpi_comm_null, p_sum
+  USE mo_fortran_tools,     ONLY: set_acc_host_or_device, set_acc_async_queue
   USE mod_oasis,            ONLY: oasis_abort, oasis_set_couplcomm, oasis_enddef,      &
                                   oasis_def_partition, oasis_def_var, OASIS_In,        &
                                   OASIS_Out, OASIS_Real
@@ -130,7 +131,7 @@ CONTAINS
         CALL get_indices_c(p_patch(1), jb, i_startblk, i_endblk, i_startidx, i_endidx, rl_start, rl_end)
         c = c + i_endidx - i_startidx + 1
       END DO
-      ALLOCATE( oas_part(c+2) )
+      ALLOCATE( oas_part(c+2), oas_jc(c), oas_jb(c) )
       oas_part(1) = 4 ! 4: POINTS partitioning
       oas_part(2) = c ! number of points in the partition
 
@@ -150,6 +151,8 @@ CONTAINS
           c = c + 1
           ic = idx_1d(jc,jb)
           oas_part(c+2) = p_patch(1)%cells%decomp_info%glb_index(ic)-cl ! shift global index for coupling
+          oas_jc(c) = jc
+          oas_jb(c) = jb
         END DO
       END DO
 
@@ -292,6 +295,17 @@ CONTAINS
         FLUSH(oas_prt)
       END IF
 
+      ! Initialize buffers with dummy values
+      oas_snd_field = -1000._wp
+      oas_rcv_field = -1000._wp
+      oas_field_bnd = -1000._wp
+      oas_rcv_field_icon = -1000._wp
+
+      ! Coupling buffers, mask and index map direct on the device for the whole run,
+      ! only the OASIS put/get buffers are exchanged with the host
+      !$ACC ENTER DATA COPYIN(oas_snd_field, oas_rcv_field, oas_field_bnd) &
+      !$ACC   COPYIN(oas_rcv_field_icon, loas_clm_c, oas_jc, oas_jb)
+
     ELSE ! lpe_cpl
 
       ! For non-coupling PEs, still call oasis_enddef
@@ -303,12 +317,6 @@ CONTAINS
       END IF
 
     END IF ! lpe_cpl
-
-    ! Initialize buffers with dummy values
-    oas_snd_field = -1000._wp
-    oas_rcv_field = -1000._wp
-    oas_field_bnd = -1000._wp
-    oas_rcv_field_icon = -1000._wp
 
     IF(msg_level >= 30 ) THEN
       WRITE(oas_prt,*) 'ICONOAS: ',TRIM(routine),' OASIS coupling initialization completed'
@@ -357,67 +365,65 @@ CONTAINS
 
   !-----------------------------------------------------------------------------
 
-  SUBROUTINE oasis_send_fields(sim_time_oas, p_patch, p_nh_state, prm_diag)
+  SUBROUTINE oasis_send_fields(sim_time_oas, p_patch, p_metrics, p_prog, p_diag, prm_diag, lacc)
     !
     ! Sends OASIS fields to the coupler
     !
     ! Arguments
     INTEGER, INTENT(IN) :: sim_time_oas  !< OASIS simulation time (0 for init, sim_time_oas for periodic)
     TYPE(t_patch), INTENT(IN) :: p_patch   !< Unstructured triangular grid and patch info
-    TYPE(t_nh_state), INTENT(IN) :: p_nh_state   !< Non-hydrostatic state
+    TYPE(t_nh_metrics), INTENT(IN) :: p_metrics   !< Non-hydrostatic metrics
+    TYPE(t_nh_prog), INTENT(IN) :: p_prog   !< Prognostic variables (time level nnow)
+    TYPE(t_nh_diag), INTENT(IN) :: p_diag   !< Diagnostic variables
     TYPE(t_nwp_phy_diag), INTENT(IN) :: prm_diag   !< Parametrized physics diagnostics
+    LOGICAL, OPTIONAL, INTENT(IN) :: lacc   !< If true, use OpenACC
 
     ! Local variables
-    INTEGER :: nlev, ii, jb, jc, isnd, rl_start, rl_end
-    INTEGER :: i_startblk, i_endblk, i_startidx, i_endidx
+    INTEGER :: nlev, ii, jb, jc, isnd, npts
+    LOGICAL :: lzacc
     CHARACTER(len=1024) :: oas_message
     INTEGER :: oas_prt = 6
     CHARACTER(LEN=*), PARAMETER :: routine = modname//':oasis_send_fields'
 
+    CALL set_acc_host_or_device(lzacc, lacc)
+
     ! Initialize nlev
     nlev = p_patch%nlev
+    npts = SIZE(oas_jc)
 
     IF(msg_level >= 30 ) then
       WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis send fields'
       FLUSH(oas_prt)
     END IF
 
-    oas_snd_field(:,7)  = 0._wp
-    oas_snd_field(:,8)  = 0._wp
-    oas_snd_field(:,13) = 0._wp
-    oas_snd_field(:,14) = 0._wp
-
-    rl_start = grf_bdywidth_c+1
-    rl_end   = min_rlcell_int
-    i_startblk = p_patch%cells%start_blk(rl_start, 1)
-    i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
-    ii = 0
-    DO jb = i_startblk, i_endblk
-      CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
-        i_endidx, rl_start, rl_end)
-      DO jc = i_startidx, i_endidx
-        ii = ii+1
-!        WRITE(oas_message,*) 'DEBUG SPo swflx_dn_sfc_diff  ',ii, ' at 0: ', MAX(0._wp, prm_diag(1)%swflxsfc(jc,jb) - prm_diag(1)%swflx_dn_sfc_diff(jc,jb))
-!        CALL message(routine, oas_message)
-        oas_snd_field(ii,1)  = p_nh_state%diag%temp(jc,nlev,jb)
-        oas_snd_field(ii,2)  = p_nh_state%diag%u(jc,nlev,jb)
-        oas_snd_field(ii,3)  = p_nh_state%diag%v(jc,nlev,jb)
-        oas_snd_field(ii,4)  = p_nh_state%prog(nnow(1))%tracer(jc,nlev,jb,iqv)
-        oas_snd_field(ii,5)  = &
-          p_nh_state%metrics%z_mc(jc,nlev,jb) - p_nh_state%metrics%z_ifc(jc,nlev+1,jb)
-        oas_snd_field(ii,6)  = p_nh_state%diag%pres_sfc(jc,jb)
-        oas_snd_field(ii,7)  = prm_diag%swflx_vis_sfc(jc,jb) * (1._wp - prm_diag%fr_vis_sfc_diff(jc,jb))
-        oas_snd_field(ii,13) = prm_diag%swflx_nir_sfc(jc,jb) * (1._wp - prm_diag%fr_nir_sfc_diff(jc,jb))
-        oas_snd_field(ii,8)  = prm_diag%swflx_vis_sfc(jc,jb) * prm_diag%fr_vis_sfc_diff(jc,jb)
-        oas_snd_field(ii,14) = prm_diag%swflx_nir_sfc(jc,jb) * prm_diag%fr_nir_sfc_diff(jc,jb)
-        oas_snd_field(ii,9)  = prm_diag%lwflxsfc(jc,jb) + prm_diag%lwflx_up_sfc(jc,jb)
-        oas_snd_field(ii,10) = prm_diag%rain_con_rate(jc,jb) + prm_diag%rain_gsp_rate(jc,jb)
-        oas_snd_field(ii,11) = prm_diag%snow_con_rate(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)! + &
-        !  prm_diag(1)%ice_gsp_rate(jc,jb) + prm_diag(1)%graupel_gsp_rate(jc,jb) + &
-        ! prm_diag(1)%hail_gsp_rate(jc,jb)
-        oas_snd_field(ii,12) = p_nh_state%metrics%z_ifc(jc,nlev+1,jb)
-      END DO
+    ! Gather all snd fields
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) PRIVATE(jc, jb) ASYNC(1) IF(lzacc)
+    DO ii = 1, npts
+      jc = oas_jc(ii)
+      jb = oas_jb(ii)
+      oas_snd_field(ii,1)  = p_diag%temp(jc,nlev,jb)
+      oas_snd_field(ii,2)  = p_diag%u(jc,nlev,jb)
+      oas_snd_field(ii,3)  = p_diag%v(jc,nlev,jb)
+      oas_snd_field(ii,4)  = p_prog%tracer(jc,nlev,jb,iqv)
+      oas_snd_field(ii,5)  = &
+        p_metrics%z_mc(jc,nlev,jb) - p_metrics%z_ifc(jc,nlev+1,jb)
+      oas_snd_field(ii,6)  = p_diag%pres_sfc(jc,jb)
+      oas_snd_field(ii,7)  = prm_diag%swflx_vis_sfc(jc,jb) * (1._wp - prm_diag%fr_vis_sfc_diff(jc,jb))
+      oas_snd_field(ii,13) = prm_diag%swflx_nir_sfc(jc,jb) * (1._wp - prm_diag%fr_nir_sfc_diff(jc,jb))
+      oas_snd_field(ii,8)  = prm_diag%swflx_vis_sfc(jc,jb) * prm_diag%fr_vis_sfc_diff(jc,jb)
+      oas_snd_field(ii,14) = prm_diag%swflx_nir_sfc(jc,jb) * prm_diag%fr_nir_sfc_diff(jc,jb)
+      oas_snd_field(ii,9)  = prm_diag%lwflxsfc(jc,jb) + prm_diag%lwflx_up_sfc(jc,jb)
+      oas_snd_field(ii,10) = prm_diag%rain_con_rate(jc,jb) + prm_diag%rain_gsp_rate(jc,jb)
+      oas_snd_field(ii,11) = prm_diag%snow_con_rate(jc,jb) + prm_diag%snow_gsp_rate(jc,jb)! + &
+      !  prm_diag(1)%ice_gsp_rate(jc,jb) + prm_diag(1)%graupel_gsp_rate(jc,jb) + &
+      ! prm_diag(1)%hail_gsp_rate(jc,jb)
+      oas_snd_field(ii,12) = p_metrics%z_ifc(jc,nlev+1,jb)
     END DO
+    !$ACC END PARALLEL LOOP
+
+    ! oasis_put works on host memory
+    !$ACC UPDATE HOST(oas_snd_field) ASYNC(1) IF(lzacc)
+    !$ACC WAIT(1) IF(lzacc)
 
     ! Send and log fields
     DO isnd = 1, SIZE(oas_snd_meta)
@@ -445,7 +451,7 @@ CONTAINS
   !-----------------------------------------------------------------------------
 
 !  SUBROUTINE oasis_receive_fields(sim_time_oas, p_patch, p_lnd_state)
-   SUBROUTINE oasis_receive_fields(sim_time_oas, p_patch)
+   SUBROUTINE oasis_receive_fields(sim_time_oas, p_patch, lacc)
     !
     ! Receives OASIS fields from the coupler and transforms them into ICON format
     !
@@ -453,13 +459,18 @@ CONTAINS
     INTEGER, INTENT(IN) :: sim_time_oas  !< OASIS simulation time (0 for init, sim_time_oas for periodic)
     TYPE(t_patch), INTENT(IN) :: p_patch   !< Unstructured triangular grid and patch info
 !    TYPE(t_lnd_state), INTENT(INOUT) :: p_lnd_state  !< Land state (receives data from coupler)
- 
+    LOGICAL, OPTIONAL, INTENT(IN) :: lacc   !< If true, use OpenACC
+
     ! Local variables
-    INTEGER :: ii, jb, jc, oas_i, rl_start, rl_end
-    INTEGER :: i_startblk, i_endblk, i_startidx, i_endidx
+    INTEGER :: ii, oas_i, i_bnd, npts
+    LOGICAL :: lzacc
     CHARACTER(len=1024) :: oas_message
     INTEGER :: oas_prt = 6
     CHARACTER(LEN=*), PARAMETER :: routine = modname//':oasis_receive_fields'
+
+    CALL set_acc_host_or_device(lzacc, lacc)
+
+    npts = SIZE(oas_jc)
 
     IF(msg_level >= 30 ) then
       WRITE(oas_prt,*) 'iconoas: ',TRIM(routine),' oasis receive fields'
@@ -506,22 +517,25 @@ CONTAINS
       END IF
 
       IF (oas_error >= OASIS_Recvd) THEN
-        rl_start = grf_bdywidth_c+1
-        rl_end   = min_rlcell_int
-        i_startblk = p_patch%cells%start_blk(rl_start, 1)
-        i_endblk   = p_patch%cells%end_blk(rl_end, MAX(1,p_patch%n_childdom))
-        ii = 0
-        DO jb = i_startblk, i_endblk
-          CALL get_indices_c(p_patch, jb, i_startblk, i_endblk, i_startidx,&
-            i_endidx, rl_start, rl_end)
-          DO jc = i_startidx, i_endidx
-            ii = ii + 1
-            oas_rcv_field_icon(jc,jb,oas_i) = oas_rcv_field(ii,oas_i)
-            IF (oas_i == 2 .OR. oas_i == 3) THEN
-              oas_rcv_field_icon(jc,jb,oas_rcv_nvar+oas_i-1) = oas_field_bnd(ii,2)
-            END IF
-          END DO
+        ! oasis_get works on host memory; copy the received buffers to the device
+        ! and scatter them onto the ICON grid there
+        !$ACC UPDATE DEVICE(oas_rcv_field(:,oas_i)) IF(lzacc)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+        DO ii = 1, npts
+          oas_rcv_field_icon(oas_jc(ii),oas_jb(ii),oas_i) = oas_rcv_field(ii,oas_i)
         END DO
+        !$ACC END PARALLEL LOOP
+        IF (oas_i == 2 .OR. oas_i == 3) THEN
+          i_bnd = oas_rcv_nvar+oas_i-1
+          !$ACC UPDATE DEVICE(oas_field_bnd(:,2)) IF(lzacc)
+          !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lzacc)
+          DO ii = 1, npts
+            oas_rcv_field_icon(oas_jc(ii),oas_jb(ii),i_bnd) = oas_field_bnd(ii,2)
+          END DO
+          !$ACC END PARALLEL LOOP
+        END IF
+        ! the device buffers are reused for the next field
+        !$ACC WAIT(1) IF(lzacc)
       END IF
 
       IF(msg_level > 30 ) THEN
@@ -544,7 +558,8 @@ CONTAINS
   ! Applies the fields received from eCLM to the ICON surface state
   !
   SUBROUTINE oasis_apply_surface(jb, i_startidx, i_endidx, nlev, p_diag, p_prog, &
-    &                            p_prog_rcf, prm_diag, lnd_prog_new, lnd_diag)
+    &                            p_prog_rcf, prm_diag, lnd_prog_new, lnd_diag,   &
+    &                            lacc, opt_acc_async_queue)
 
     ! Arguments
     INTEGER,              INTENT(IN)    :: jb           !< block index
@@ -557,12 +572,22 @@ CONTAINS
     TYPE(t_nwp_phy_diag), INTENT(INOUT) :: prm_diag     !< atm phys vars
     TYPE(t_lnd_prog),     INTENT(INOUT) :: lnd_prog_new !< prog vars for sfc
     TYPE(t_lnd_diag),     INTENT(INOUT) :: lnd_diag     !< diag vars for sfc
+    LOGICAL, OPTIONAL,    INTENT(IN)    :: lacc         !< If true, use OpenACC
+    INTEGER, OPTIONAL,    INTENT(IN)    :: opt_acc_async_queue !< OpenACC stream to run on
 
     ! Local variables
-    INTEGER  :: jc
-    REAL(wp) :: vel_2d, zrhoch, zrhocw, qhfl_help, qv_s_help
+    INTEGER  :: jc, acc_async_queue
+    LOGICAL  :: lzacc
+    REAL(wp) :: vel_2d, zrhoch, zrhocw, qhfl_help, qv_s_help, vel_min
 
+    CALL set_acc_host_or_device(lzacc, lacc)
+    CALL set_acc_async_queue(acc_async_queue, opt_acc_async_queue)
+
+    vel_min = turbdiff_config(1)%vel_min
+
+        !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
         ! ground temperature
+        !$ACC LOOP GANG VECTOR
         DO jc = i_startidx, i_endidx
           IF ( loas_clm_c(jc,jb) ) THEN
             lnd_prog_new%t_s_t (jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
@@ -570,13 +595,16 @@ CONTAINS
             lnd_prog_new%t_sk_t(jc,jb,1) = oas_rcv_field_icon(jc,jb,8)
           END IF
         END DO
+        !$ACC END PARALLEL
 
         IF (loascplscheme_exchcoef) THEN
           ! Exchange coefficient approach: couple transfer coefficients
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
+          !$ACC LOOP GANG VECTOR PRIVATE(vel_2d, zrhoch, zrhocw, qhfl_help)
           DO jc = i_startidx, i_endidx
             IF ( loas_clm_c(jc,jb) ) THEN
               ! Calculate 2D wind speed at lowest level with minimum threshold
-              vel_2d = MAX( turbdiff_config(1)%vel_min, SQRT(p_diag%u(jc,nlev,jb)**2 + p_diag%v(jc,nlev,jb)**2) )
+              vel_2d = MAX( vel_min, SQRT(p_diag%u(jc,nlev,jb)**2 + p_diag%v(jc,nlev,jb)**2) )
 
               ! Exchange coefficients
               ! Convert from eCLM
@@ -611,8 +639,11 @@ CONTAINS
               prm_diag%vmfl_s_t(jc,jb,1) = p_prog%rho(jc,nlev,jb) * prm_diag%tcm_t(jc,jb,1) * vel_2d * p_diag%v(jc,nlev,jb)
             END IF
           END DO
+          !$ACC END PARALLEL
         ELSE
           ! Direct flux approach: couple fluxes
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
+          !$ACC LOOP GANG VECTOR PRIVATE(qhfl_help)
           DO jc = i_startidx, i_endidx
             IF ( loas_clm_c(jc,jb) ) THEN
              ! revise sign based on ICON definition
@@ -629,9 +660,12 @@ CONTAINS
                    (qhfl_help*lh_v + (1._wp-qhfl_help)*lh_s)
             END IF
           END DO
+          !$ACC END PARALLEL
 
           ! SPo calculate effective qv_s based on clm fluxes following
           ! terra_multlay
+          !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
+          !$ACC LOOP GANG VECTOR PRIVATE(qv_s_help)
           DO jc = i_startidx, i_endidx
             IF ( loas_clm_c(jc,jb) ) THEN
               qv_s_help =  prm_diag%tvh_t(jc,jb,1) * &
@@ -646,6 +680,7 @@ CONTAINS
               lnd_diag%qv_s_t(jc,jb,1) = MIN(MAX(1.E-5_wp,lnd_diag%qv_s_t(jc,jb,1)),1E-1_wp)
             END IF
           END DO
+          !$ACC END PARALLEL
 
         END IF
 
@@ -658,7 +693,7 @@ CONTAINS
   ! near-surface diagnostics are formed.
   !
   SUBROUTINE oasis_apply_transfer(iblock, ivstart, ivend, vel_2d, rho_s,       &
-    &                             tvm, tvh, tcm, tch)
+    &                             tvm, tvh, tcm, tch, lacc, opt_acc_async_queue)
 
     ! Arguments
     INTEGER,  INTENT(IN)    :: iblock          !< block index
@@ -668,12 +703,19 @@ CONTAINS
     REAL(wp), INTENT(IN)    :: rho_s(:)        !< air density at the surface level
     REAL(wp), INTENT(INOUT) :: tvm(:), tvh(:)  !< transfer velocities
     REAL(wp), INTENT(INOUT) :: tcm(:), tch(:)  !< transfer coefficients
+    LOGICAL, OPTIONAL, INTENT(IN) :: lacc      !< If true, use OpenACC
+    INTEGER, OPTIONAL, INTENT(IN) :: opt_acc_async_queue !< OpenACC stream to run on
 
     ! Local variables
-    INTEGER :: i
+    INTEGER :: i, acc_async_queue
+    LOGICAL :: lzacc
 
     IF ( loascplscheme_exchcoef .OR. .NOT. loas_rcv_valid ) RETURN
 
+    CALL set_acc_host_or_device(lzacc, lacc)
+    CALL set_acc_async_queue(acc_async_queue, opt_acc_async_queue)
+
+    !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
     DO i = ivstart, ivend
       IF ( loas_clm_c(i,iblock) ) THEN
         tvm(i) = SQRT(oas_rcv_field_icon(i,iblock,4)**2 +                      &
@@ -684,6 +726,7 @@ CONTAINS
         tch(i) = tvh(i) / vel_2d(i)
       END IF
     END DO
+    !$ACC END PARALLEL LOOP
 
   END SUBROUTINE oasis_apply_transfer
 

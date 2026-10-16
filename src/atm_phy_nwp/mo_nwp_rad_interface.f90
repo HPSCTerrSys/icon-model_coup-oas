@@ -274,26 +274,29 @@ MODULE mo_nwp_rad_interface
     ENDIF
 #ifdef COUP_OAS_ECLM
     ! for masked points run full albedo calculation; should be revised in future
-    rl_start = grf_bdywidth_c+1
-!    rl_start = 1
-    rl_end   = min_rlcell_int
-    i_startblk = pt_patch%cells%start_blk(rl_start, 1)
-    i_endblk   = pt_patch%cells%end_blk(rl_end,MAX(1,pt_patch%n_childdom))
-    DO jb = i_startblk, i_endblk
-      CALL get_indices_c(pt_patch, jb, i_startblk, i_endblk, i_startidx, &
-        i_endidx, rl_start, rl_end)
-      DO jc = i_startidx, i_endidx
-        IF ( loas_clm_c(jc,jb) .AND. loas_rcv_valid ) THEN
-          prm_diag%albvisdir(jc,jb) = oas_rcv_field_icon(jc,jb,2)
-          prm_diag%albvisdif(jc,jb) = oas_rcv_field_icon(jc,jb,3)
-          prm_diag%albnirdir(jc,jb) = oas_rcv_field_icon(jc,jb,oas_rcv_nvar+1)
-          prm_diag%albnirdif(jc,jb) = oas_rcv_field_icon(jc,jb,oas_rcv_nvar+2)
-          ! SPo: Take weights from EURO-CORDEX domain (EXTPAR)
-          prm_diag%albdif(jc,jb) = 0.46_wp*prm_diag%albvisdif(jc,jb) &
-            &                    + 0.54_wp*prm_diag%albnirdif(jc,jb)
-        END IF
+    IF ( loas_rcv_valid ) THEN
+      rl_start = grf_bdywidth_c+1
+      rl_end   = min_rlcell_int
+      i_startblk = pt_patch%cells%start_blk(rl_start, 1)
+      i_endblk   = pt_patch%cells%end_blk(rl_end,MAX(1,pt_patch%n_childdom))
+      DO jb = i_startblk, i_endblk
+        CALL get_indices_c(pt_patch, jb, i_startblk, i_endblk, i_startidx, &
+          i_endidx, rl_start, rl_end)
+        !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lacc)
+        DO jc = i_startidx, i_endidx
+          IF ( loas_clm_c(jc,jb) ) THEN
+            prm_diag%albvisdir(jc,jb) = oas_rcv_field_icon(jc,jb,2)
+            prm_diag%albvisdif(jc,jb) = oas_rcv_field_icon(jc,jb,3)
+            prm_diag%albnirdir(jc,jb) = oas_rcv_field_icon(jc,jb,oas_rcv_nvar+1)
+            prm_diag%albnirdif(jc,jb) = oas_rcv_field_icon(jc,jb,oas_rcv_nvar+2)
+            ! SPo: Take weights from EURO-CORDEX domain (EXTPAR)
+            prm_diag%albdif(jc,jb) = 0.46_wp*prm_diag%albvisdif(jc,jb) &
+              &                    + 0.54_wp*prm_diag%albnirdif(jc,jb)
+          END IF
+        END DO
+        !$ACC END PARALLEL LOOP
       END DO
-    END DO
+    END IF
 #endif
 
     IF (timers_level > 6) CALL timer_stop(timer_preradiaton)

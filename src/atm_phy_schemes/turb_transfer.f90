@@ -1660,8 +1660,11 @@ LOGICAL        ::   ldebug = .FALSE.
       END DO
 
 #ifdef COUP_OAS_ECLM
+      !$ACC END PARALLEL
       CALL oasis_apply_transfer(iblock, ivstart, ivend, vel_2d(:,ke), rhon(:,ke1),   &
-        &                       tvm, tvh, tcm, tch)
+        &                       tvm, tvh, tcm, tch,                                  &
+        &                       lacc=lzacc, opt_acc_async_queue=acc_async_queue)
+      !$ACC PARALLEL DEFAULT(PRESENT) ASYNC(acc_async_queue) IF(lzacc)
 #endif
 
 !-----------------------------------------------

@@ -626,7 +626,7 @@ MODULE mo_nh_stepping
     !     &                      pt_diag, pt_patch,                 &
     !     &                      lnd_prog          = lnd_prog_new)
 
-    CALL diag_for_output_dyn(lacc=.FALSE.)
+    CALL diag_for_output_dyn(lacc=.TRUE.)
     IF(.NOT.atm_phy_nwp_config(1)%is_les_phy) THEN
       ! diagnostics which are only required for output
       CALL nwp_diag_for_output(mtime_current, kstart_moist(1), & !in
@@ -641,11 +641,14 @@ MODULE mo_nh_stepping
         & p_lnd_state(1)%prog_lnd(nnow_rcf(1)), & !in
         & p_lnd_state(1)%prog_wtr(nnow_rcf(1)), & !inout
         &                      ext_data(1), & !in
-        &                      prm_diag(1) ) !inout
+        &                      prm_diag(1), & !inout
+        &                      lacc=.TRUE. ) !in
     END IF
 
-    CALL oasis_send_fields(0, p_patch(1), p_nh_state(1), prm_diag(1))
-    CALL oasis_receive_fields(0, p_patch(1))
+    CALL oasis_send_fields(0, p_patch(1), p_nh_state(1)%metrics,              &
+      &                    p_nh_state(1)%prog(nnow(1)), p_nh_state(1)%diag,   &
+      &                    prm_diag(1), lacc=.TRUE.)
+    CALL oasis_receive_fields(0, p_patch(1), lacc=.TRUE.)
 #endif
 #endif /* __NO_NWP__ */
 
@@ -2084,12 +2087,15 @@ MODULE mo_nh_stepping
         & p_lnd_state(1)%prog_lnd(nnow_rcf(1)), & !in
         & p_lnd_state(1)%prog_wtr(nnow_rcf(1)), & !inout
         &                      ext_data(1), & !in
-        &                      prm_diag(1) ) !inout
+        &                      prm_diag(1), & !inout
+        &                      lacc=.TRUE. ) !in
     END IF
 
     ! Call the OASIS coupling subroutines for time step exchange
-    CALL oasis_send_fields(sim_time_oas, p_patch(1), p_nh_state(1), prm_diag(1))
-    CALL oasis_receive_fields(sim_time_oas, p_patch(1))
+    CALL oasis_send_fields(sim_time_oas, p_patch(1), p_nh_state(1)%metrics,   &
+      &                    p_nh_state(1)%prog(nnow(1)), p_nh_state(1)%diag,   &
+      &                    prm_diag(1), lacc=.TRUE.)
+    CALL oasis_receive_fields(sim_time_oas, p_patch(1), lacc=.TRUE.)
 !    CALL oasis_receive_fields(sim_time_oas, p_patch(1), p_lnd_state(1))
 
 #endif
