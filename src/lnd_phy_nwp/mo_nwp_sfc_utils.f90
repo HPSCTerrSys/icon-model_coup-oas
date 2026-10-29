@@ -1856,16 +1856,55 @@ CONTAINS
 
 
       IF ( ntiles_total == 1 ) THEN  ! no tile approach
-#ifdef _OPENACC
-        IF (lzacc) THEN
-          CALL finish('init_sea_lists', "The code path without tiling is not ported to GPU")
-        ENDIF
-#endif _OPENACC
 
         !
         ! mixed water/ice points are not allowed. A sea point can be either
         ! ice-free or completely ice-covered
         !
+
+        IF (lzacc) THEN
+          !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
+          !$ACC LOOP GANG(STATIC: 1) VECTOR PRIVATE(jc)
+          DO ic = 1, i_count_sea
+            jc = ext_data%atm%list_sea%idx(ic,jb)
+            IF ( fr_seaice(jc,jb) >= 0.5_wp ) THEN
+              cond_ice(ic)   = 1
+              cond_water(ic) = 0
+              ! set surface area index (needed by turbtran)
+              ext_data%atm%sai_t(jc,jb,isub_seaice) = turbdiff_config(jg)%c_sea
+            ELSE
+              cond_ice(ic)   = 0
+              cond_water(ic) = 1
+            ENDIF
+            ! Initialize frac_t for sea-ice and water points
+            ext_data%atm%frac_t(jc,jb,1) = ext_data%atm%lc_frac_t(jc,jb,1)
+          ENDDO
+          !$ACC END PARALLEL
+
+          CALL generate_index_list(cond_ice, idx_ice, 1, i_count_sea, ext_data%atm%list_seaice%ncount(jb), &
+            lacc=lzacc, opt_acc_async_queue=1, opt_acc_copy_to_host=.FALSE.)
+          CALL generate_index_list(cond_water, idx_water, 1, i_count_sea, ext_data%atm%list_seawtr%ncount(jb), &
+            lacc=lzacc, opt_acc_async_queue=1, opt_acc_copy_to_host=.FALSE.)
+          !$ACC WAIT
+          !$ACC UPDATE HOST(ext_data%atm%list_seaice%ncount(jb:jb), ext_data%atm%list_seawtr%ncount(jb:jb))
+          ncount_ice = ext_data%atm%list_seaice%ncount(jb)
+          ncount_water = ext_data%atm%list_seawtr%ncount(jb)
+
+          !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
+          !$ACC LOOP GANG(STATIC: 1) VECTOR
+          DO ic = 1, ncount_ice
+            ext_data%atm%list_seaice%idx(ic,jb) = ext_data%atm%list_sea%idx(idx_ice(ic),jb)
+          ENDDO
+          !$ACC END PARALLEL
+
+          !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
+          !$ACC LOOP GANG(STATIC: 1) VECTOR
+          DO ic = 1, ncount_water
+            ext_data%atm%list_seawtr%idx(ic,jb) = ext_data%atm%list_sea%idx(idx_water(ic),jb)
+          ENDDO
+          !$ACC END PARALLEL
+
+        ELSE
 
 !$NEC ivdep
         DO ic = 1, i_count_sea
@@ -1900,6 +1939,8 @@ CONTAINS
           ext_data%atm%frac_t(jc,jb,1) = ext_data%atm%lc_frac_t(jc,jb,1)
 
         ENDDO  ! ic
+
+        ENDIF  ! lzacc
 
       ELSE   ! tile approach
 
@@ -2507,10 +2548,8 @@ CONTAINS
     ! Loop over old sea-ice points, only
 
     IF ( ntiles_total == 1 ) THEN  ! no tile approach
-#ifdef _OPENACC
-      CALL finish('update_idx_lists_sea', "The code path without tiling is not tested on GPU")
-#endif
       !$ACC PARALLEL ASYNC(1) DEFAULT(PRESENT)
+      IF (l_update_required) THEN
 !$NEC ivdep
       !$ACC LOOP GANG VECTOR PRIVATE(jc, i_capture)
       DO ic = 1, list_seaice_count_old
@@ -2565,6 +2604,7 @@ CONTAINS
           ENDIF
         ENDIF
       ENDDO  ! ic
+      END IF  ! l_update_required
 
       !$ACC END PARALLEL
     ELSE
