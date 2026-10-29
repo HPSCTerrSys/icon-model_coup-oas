@@ -135,6 +135,7 @@ MODULE mo_nwp_rad_interface
     INTEGER :: rl_start, rl_end
     INTEGER :: i_startblk, i_endblk    !> blocks
     INTEGER :: i_startidx, i_endidx    !< slices
+    REAL(wp), PARAMETER :: alb_eclm_max = 0.999_wp  !< eCLM albedos at/above this are its night flag
 #endif
     LOGICAL :: is_new_day
     LOGICAL :: is_new_month
@@ -284,7 +285,11 @@ MODULE mo_nwp_rad_interface
           i_endidx, rl_start, rl_end)
         !$ACC PARALLEL LOOP GANG VECTOR DEFAULT(PRESENT) ASYNC(1) IF(lacc)
         DO jc = i_startidx, i_endidx
-          IF ( loas_clm_c(jc,jb) ) THEN
+          ! SPo: eCLM sends albedo 1 in the night. Keep ICON's own albedo there.
+          IF ( loas_clm_c(jc,jb) .AND.                                           &
+            &  MAX(oas_rcv_field_icon(jc,jb,2), oas_rcv_field_icon(jc,jb,3),     &
+            &      oas_rcv_field_icon(jc,jb,oas_rcv_nvar+1),                     &
+            &      oas_rcv_field_icon(jc,jb,oas_rcv_nvar+2)) < alb_eclm_max ) THEN
             prm_diag%albvisdir(jc,jb) = oas_rcv_field_icon(jc,jb,2)
             prm_diag%albvisdif(jc,jb) = oas_rcv_field_icon(jc,jb,3)
             prm_diag%albnirdir(jc,jb) = oas_rcv_field_icon(jc,jb,oas_rcv_nvar+1)
